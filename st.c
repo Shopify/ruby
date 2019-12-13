@@ -860,8 +860,7 @@ static inline st_index_t
 secondary_hash(st_index_t ind, st_table *tab, st_index_t *perterb)
 {
     *perterb >>= 11;
-    ind = (ind << 2) + ind + *perterb + 1;
-    return hash_bin(ind, tab);
+    return hash_bin((ind << 2) + ind + *perterb + 1, tab);
 }
 
 /* Find an entry with HASH_VALUE and KEY in TABLE using a linear
@@ -872,18 +871,17 @@ static inline st_index_t
 find_entry(st_table *tab, st_hash_t hash_value, st_data_t key)
 {
     int eq_p, rebuilt_p;
-    st_index_t i, bound;
-    st_table_entry *entries;
+    st_table_entry *entries = tab->entries;
 
-    bound = tab->entries_bound;
-    entries = tab->entries;
-    for (i = tab->entries_start; i < bound; i++) {
-	DO_PTR_EQUAL_CHECK(tab, &entries[i], hash_value, key, eq_p, rebuilt_p);
-	if (EXPECT(rebuilt_p, 0))
-	    return REBUILT_TABLE_ENTRY_IND;
-	if (eq_p)
-	    return i;
+    for (st_index_t i = tab->entries_start; i < tab->entries_bound; ++i) {
+        DO_PTR_EQUAL_CHECK(tab, &entries[i], hash_value, key, eq_p, rebuilt_p);
+
+        if (EXPECT(rebuilt_p, 0))
+            return REBUILT_TABLE_ENTRY_IND;
+        if (eq_p)
+            return i;
     }
+
     return UNDEFINED_ENTRY_IND;
 }
 
@@ -895,26 +893,20 @@ find_entry(st_table *tab, st_hash_t hash_value, st_data_t key)
 /* Return index of entry with HASH_VALUE and KEY in table TAB.  If
    there is no such entry, return UNDEFINED_ENTRY_IND.  If the table
    was rebuilt during the search, return REBUILT_TABLE_ENTRY_IND.  */
-static st_index_t
+static inline st_index_t
 find_table_entry_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
 {
-    int eq_p, rebuilt_p;
-    st_index_t ind;
-#ifdef QUADRATIC_PROBE
-    st_index_t d;
-#else
-    st_index_t peterb;
-#endif
-    st_index_t bin;
-    st_table_entry *entries = tab->entries;
-
     st_assert(tab != NULL);
     st_assert(tab->bins != NULL);
-    ind = hash_bin(hash_value, tab);
+
+    int eq_p, rebuilt_p;
+    st_index_t ind = hash_bin(hash_value, tab);
+    st_index_t bin;
+    st_table_entry *entries = tab->entries;
 #ifdef QUADRATIC_PROBE
-    d = 1;
+    st_index_t d = 1;
 #else
-    peterb = hash_value;
+    st_index_t peterb = hash_value;
 #endif
     FOUND_BIN;
     for (;;) {
@@ -945,23 +937,17 @@ find_table_entry_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
 static st_index_t
 find_table_bin_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
 {
-    int eq_p, rebuilt_p;
-    st_index_t ind;
-#ifdef QUADRATIC_PROBE
-    st_index_t d;
-#else
-    st_index_t peterb;
-#endif
-    st_index_t bin;
-    st_table_entry *entries = tab->entries;
-
     st_assert(tab != NULL);
     st_assert(tab->bins != NULL);
-    ind = hash_bin(hash_value, tab);
+
+    int eq_p, rebuilt_p;
+    st_index_t ind = hash_bin(hash_value, tab);
+    st_index_t bin;
+    st_table_entry *entries = tab->entries;
 #ifdef QUADRATIC_PROBE
-    d = 1;
+    st_index_t d = 1;
 #else
-    peterb = hash_value;
+    st_index_t peterb = hash_value;
 #endif
     FOUND_BIN;
     for (;;) {
@@ -991,22 +977,16 @@ find_table_bin_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
 static st_index_t
 find_table_bin_ind_direct(st_table *tab, st_hash_t hash_value, st_data_t key)
 {
-    st_index_t ind;
-#ifdef QUADRATIC_PROBE
-    st_index_t d;
-#else
-    st_index_t peterb;
-#endif
-    st_index_t bin;
-    st_table_entry *entries = tab->entries;
-
     st_assert(tab != NULL);
     st_assert(tab->bins != NULL);
-    ind = hash_bin(hash_value, tab);
+
+    st_index_t ind = hash_bin(hash_value, tab);;
+    st_index_t bin;
+    st_table_entry *entries = tab->entries;
 #ifdef QUADRATIC_PROBE
-    d = 1;
+    st_index_t d = 1;
 #else
-    peterb = hash_value;
+    st_index_t peterb = hash_value;
 #endif
     FOUND_BIN;
     for (;;) {
@@ -1157,9 +1137,7 @@ st_get_key(st_table *tab, st_data_t key, st_data_t *result)
 static inline void
 rebuild_table_if_necessary (st_table *tab)
 {
-    st_index_t bound = tab->entries_bound;
-
-    if (bound == get_allocated_entries(tab))
+    if (tab->entries_bound == get_allocated_entries(tab))
         rebuild_table(tab);
     st_assert(tab->entries_bound < get_allocated_entries(tab));
 }
@@ -1439,14 +1417,10 @@ st_delete_safe(st_table *tab, st_data_t *key, st_data_t *value,
 int
 st_shift(st_table *tab, st_data_t *key, st_data_t *value)
 {
-    st_index_t i, bound;
-    st_index_t bin;
-    st_table_entry *entries, *curr_entry_ptr;
-    st_index_t bin_ind;
+    st_index_t bin, bin_ind;
+    st_table_entry *curr_entry_ptr, *entries = tab->entries;
 
-    entries = tab->entries;
-    bound = tab->entries_bound;
-    for (i = tab->entries_start; i < bound; i++) {
+    for (st_index_t i = tab->entries_start; i < tab->entries_bound; ++i) {
         curr_entry_ptr = &entries[i];
 	if (! DELETED_ENTRY_P(curr_entry_ptr)) {
 	    st_hash_t entry_hash = curr_entry_ptr->hash;
