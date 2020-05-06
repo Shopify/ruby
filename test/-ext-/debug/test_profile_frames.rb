@@ -5,8 +5,16 @@ require '-test-/debug'
 class SampleClassForTestProfileFrames
   class Sample2
     def baz(block)
-      instance_eval "def zab(block) block.call end"
+      instance_eval "def zab(block) Sample3.qux(block) end"
       [self, zab(block)]
+    end
+  end
+
+  module Sample3
+    class << self
+      def qux(block)
+        block.call
+      end
     end
   end
 
