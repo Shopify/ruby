@@ -1142,10 +1142,21 @@ vm_setivar(VALUE obj, ID id, VALUE val, IVC ic, const struct rb_callcache *cc, i
 	if (LIKELY(
 	    (!is_attr && RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_serial, ic->ic_serial == RCLASS_SERIAL(klass))) ||
 	    ( is_attr && RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_unset, vm_cc_attr_index(cc) > 0)))) {
-	    VALUE *ptr = ROBJECT_IVPTR(obj);
+            VALUE *ptr;
+            uint32_t numiv;
+            struct RObject *const robj = ROBJECT(obj);
+
+            if (RB_FL_ANY_RAW(obj, ROBJECT_EMBED)) {
+                ptr = robj->as.ary;
+                numiv = ROBJECT_EMBED_LEN_MAX;
+            } else {
+                ptr = robj->as.heap.ivptr;
+                numiv = robj->as.heap.numiv;
+            }
+
 	    index = !is_attr ? ic->index : vm_cc_attr_index(cc)-1;
 
-	    if (RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_oorange, index < ROBJECT_NUMIV(obj))) {
+	    if (RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_oorange, index < numiv)) {
 		RB_OBJ_WRITE(obj, &ptr[index], val);
 		RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 		return val; /* inline cache hit */
