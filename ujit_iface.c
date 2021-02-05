@@ -136,8 +136,6 @@ struct compiled_region_array {
     int32_t capa;
     struct compiled_region {
         block_t *block;
-        const struct rb_callcache *cc;
-        const rb_callable_method_entry_t *cme;
     } data[];
 };
 
@@ -159,7 +157,7 @@ add_compiled_region(struct compiled_region_array *array, struct compiled_region 
     }
     // Check if the region is already present
     for (int32_t i = 0; i < array->size; i++) {
-        if (array->data[i].block == region->block && array->data[i].cc == region->cc && array->data[i].cme == region->cme) {
+        if (array->data[i].block == region->block) {
             return array;
         }
     }
@@ -195,33 +193,76 @@ add_lookup_dependency_i(st_data_t *key, st_data_t *value, st_data_t data, int ex
     if (!regions) {
         rb_bug("ujit: failed to add method lookup dependency"); // TODO: we could bail out of compiling instead
     }
+
     *value = (st_data_t)regions;
     return ST_CONTINUE;
 }
 
 // Remember that the currently compiling region is only valid while cme and cc are valid
 void
-assume_method_lookup_stable(const struct rb_callcache *cc, const rb_callable_method_entry_t *cme, block_t* block)
+assume_method_lookup_stable(const struct rb_callcache *cc, const rb_callable_method_entry_t *cme, block_t *block)
 {
     RUBY_ASSERT(block != NULL);
-    struct compiled_region region = { .block = block, .cc = cc, .cme = cme };
+    RUBY_ASSERT(block->dependencies.cc == 0 && block->dependencies.cme == 0);
+    struct compiled_region region = { .block = block };
     st_update(method_lookup_dependency, (st_data_t)cme, add_lookup_dependency_i, (st_data_t)&region);
+    block->dependencies.cme = (VALUE)cme;
     st_update(method_lookup_dependency, (st_data_t)cc, add_lookup_dependency_i, (st_data_t)&region);
-    // FIXME: This is a leak! When either the cme or the cc become invalid, the other also needs to go
+    block->dependencies.cc = (VALUE)cc;
 }
 
 static int
 ujit_root_mark_i(st_data_t k, st_data_t v, st_data_t ignore)
 {
-    // FIXME: This leaks everything that end up in the dependency table!
-    // One way to deal with this is with weak references...
-    rb_gc_mark((VALUE)k);
-    struct compiled_region_array *regions = (void *)v;
-    for (int32_t i = 0; i < regions->size; i++) {
-        rb_gc_mark((VALUE)regions->data[i].block->blockid.iseq);
-    }
+    // Lifetime notes: cc and cme get added in pairs into the table. One of
+    // them should become invalid before dying. When one of them invalidate we
+    // remove the pair from the table. Blocks remove themself from the table
+    // when they die.
+    rb_gc_mark_movable((VALUE)k);
 
     return ST_CONTINUE;
+}
+
+static int
+method_lookup_dep_table_update_keys(st_data_t *key, st_data_t *value, st_data_t argp, int existing)
+{
+    *key = rb_gc_location(rb_gc_location((VALUE)*key));
+
+    return ST_CONTINUE;
+}
+
+static int
+replace_all(st_data_t key, st_data_t value, st_data_t argp, int error)
+{
+    return ST_REPLACE;
+}
+
+static int
+update_blockid_iseq(st_data_t *key, st_data_t *value, st_data_t argp, int existing)
+{
+    blockid_t *blockid = (blockid_t *)*key;
+    blockid->iseq = (const rb_iseq_t *)rb_gc_location((VALUE)blockid->iseq);
+
+    return ST_CONTINUE;
+}
+
+// GC callback during compaction
+static void
+ujit_root_update_references(void *ptr)
+{
+    if (method_lookup_dependency) {
+        if (st_foreach_with_replace(method_lookup_dependency, replace_all, method_lookup_dep_table_update_keys, 0)) {
+            RUBY_ASSERT(false);
+        }
+    }
+
+    if (version_tbl) {
+        // If any of the iseqs in the version table moves, we need to rehash their corresponding blockid.
+        // TODO: this seems very inefficient. This can be more targeted if each store their own version_tbl.
+        if (st_foreach_with_replace(version_tbl, replace_all, update_blockid_iseq, 0)) {
+            RUBY_ASSERT(false);
+        }
+    }
 }
 
 // GC callback during mark phase
@@ -251,7 +292,7 @@ ujit_root_memsize(const void *ptr)
 // TODO: make this write barrier protected
 static const rb_data_type_t ujit_root_type = {
     "ujit_root",
-    {ujit_root_mark, ujit_root_free, ujit_root_memsize, },
+    {ujit_root_mark, ujit_root_free, ujit_root_memsize, ujit_root_update_references},
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -266,46 +307,54 @@ rb_ujit_method_lookup_change(VALUE cme_or_cc)
 
     RUBY_ASSERT(IMEMO_TYPE_P(cme_or_cc, imemo_ment) || IMEMO_TYPE_P(cme_or_cc, imemo_callcache));
 
-    st_data_t image, other_image;
-    if (st_lookup(method_lookup_dependency, (st_data_t)cme_or_cc, &image)) {
+    // Invalidate all regions that depend on the cme or cc
+    st_data_t key = (st_data_t)cme_or_cc, image;
+    if (st_delete(method_lookup_dependency, &key, &image)) {
         struct compiled_region_array *array = (void *)image;
 
-        // Invalidate all regions that depend on the cme or cc
         for (int32_t i = 0; i < array->size; i++) {
-            struct compiled_region *region = &array->data[i];
-            
-            VALUE other_key;
-            if (IMEMO_TYPE_P(cme_or_cc, imemo_ment)) {
-                other_key = (VALUE)region->cc;
-            }
-            else {
-                other_key = (VALUE)region->cme;
-            }
-
-            if (!st_lookup(method_lookup_dependency, (st_data_t)other_key, &other_image)) {
-                // See assume_method_lookup_stable() for why this should always hit.
-                rb_bug("method lookup dependency bookkeeping bug");
-            }
-            struct compiled_region_array *other_region_array = (void *)other_image;
-            const int32_t other_size = other_region_array->size;
-            // Find the block we are invalidating in the other region array
-            for (int32_t i = 0; i < other_size; i++) {
-                if (other_region_array->data[i].block == region->block) {
-                    // Do a shuffle remove. Order in the region array doesn't matter.
-                    other_region_array->data[i] = other_region_array->data[other_size - 1];
-                    other_region_array->size--;
-                    break;
-                }
-            }
-            RUBY_ASSERT(other_region_array->size < other_size);
-
-            invalidate_block_version(region->block);
+            invalidate_block_version(array->data[i].block);
         }
 
-        array->size = 0;
+        free(array);
     }
 
     RB_VM_LOCK_LEAVE();
+}
+
+// Remove a block from the method lookup dependency table
+static void
+remove_method_lookup_dependency(VALUE cc_or_cme, block_t *block)
+{
+    st_data_t key = (st_data_t)cc_or_cme, image;
+    if (st_lookup(method_lookup_dependency, key, &image)) {
+        struct compiled_region_array *array = (void *)image;
+
+        const int32_t size = array->size;
+        // Find the block we are removing
+        for (int32_t i = 0; i < size; i++) {
+            if (array->data[i].block == block) {
+                // Do a shuffle remove. Order in the region array doesn't matter.
+                array->data[i] = array->data[size - 1];
+                array->size--;
+                break;
+            }
+        }
+        RUBY_ASSERT(array->size < size);
+
+        if (array->size == 0) {
+            st_delete(method_lookup_dependency, &key, NULL);
+            free(array);
+        }
+    }
+
+}
+
+void
+ujit_unlink_method_lookup_dependency(block_t *block)
+{
+    if (block->dependencies.cc) remove_method_lookup_dependency(block->dependencies.cc, block);
+    if (block->dependencies.cme) remove_method_lookup_dependency(block->dependencies.cme, block);
 }
 
 void
@@ -570,6 +619,41 @@ print_ujit_stats(void)
     print_insn_count_buffer(sorted_exit_ops, 10, 4);
 }
 #endif // if RUBY_DEBUG
+
+void
+rb_ujit_iseq_mark(const struct rb_iseq_constant_body *body)
+{
+    block_t *block = NULL;
+    list_for_each(&body->ujit_blocks, block, iseq_block_node) {
+        rb_gc_mark_movable((VALUE)block->blockid.iseq);
+
+        rb_gc_mark_movable(block->dependencies.cc);
+        rb_gc_mark_movable(block->dependencies.cme);
+        rb_gc_mark_movable(block->dependencies.iseq);
+    }
+}
+
+void
+rb_ujit_iseq_update_references(const struct rb_iseq_constant_body *body)
+{
+    block_t *block = NULL;
+    list_for_each(&body->ujit_blocks, block, iseq_block_node) {
+        block->blockid.iseq = (const rb_iseq_t *)rb_gc_location((VALUE)block->blockid.iseq);
+
+        block->dependencies.cc = rb_gc_location(block->dependencies.cc);
+        block->dependencies.cme = rb_gc_location(block->dependencies.cme);
+        block->dependencies.iseq = rb_gc_location(block->dependencies.iseq);
+    }
+}
+
+void
+rb_ujit_iseq_free(const struct rb_iseq_constant_body *body)
+{
+    block_t *block = NULL;
+    list_for_each(&body->ujit_blocks, block, iseq_block_node) {
+        invalidate_block_version(block);
+    }
+}
 
 void
 rb_ujit_init(struct rb_ujit_options *options)

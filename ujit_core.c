@@ -147,8 +147,9 @@ int ctx_diff(const ctx_t* src, const ctx_t* dst)
     return diff;
 }
 
-// Add a block version to the map
-static void add_block_version(blockid_t blockid, block_t* block)
+// Add a block version to the map. Block should be fully constructed
+static void
+add_block_version(blockid_t blockid, block_t* block)
 {
     // Function entry blocks must have stack size 0
     RUBY_ASSERT(!(block->blockid.idx == 0 && block->ctx.stack_size > 0));
@@ -166,6 +167,17 @@ static void add_block_version(blockid_t blockid, block_t* block)
     // Add the block version to the map
     st_insert(version_tbl, (st_data_t)&block->blockid, (st_data_t)block);
     RUBY_ASSERT(find_block_version(blockid, &block->ctx) != NULL);
+
+    {
+        // Store the block on the iseq
+        list_add_tail(&block->blockid.iseq->body->ujit_blocks, &block->iseq_block_node);
+
+        const rb_iseq_t *iseq = block->blockid.iseq;
+        // Run write barriers for block dependencies
+        RB_OBJ_WRITTEN(iseq, Qundef, block->dependencies.iseq);
+        RB_OBJ_WRITTEN(iseq, Qundef, block->dependencies.cc);
+        RB_OBJ_WRITTEN(iseq, Qundef, block->dependencies.cme);
+    }
 }
 
 // Add an incoming branch for a given block version
@@ -633,9 +645,9 @@ invalidate_block_version(block_t* block)
         }
     }
 
-    // If the block is an entry point, it needs to be unmapped from its iseq
     const rb_iseq_t* iseq = block->blockid.iseq;
     uint32_t idx = block->blockid.idx;
+    // If the block is an entry point, it needs to be unmapped from its iseq
     VALUE* entry_pc = &iseq->body->iseq_encoded[idx];
     int entry_opcode = opcode_at_pc(iseq, entry_pc);
 
@@ -652,6 +664,9 @@ invalidate_block_version(block_t* block)
     // FIXME:
     // Call continuation addresses on the stack can also be atomically replaced by jumps going to the stub.
 
+    // Remove block from iseq
+    list_del_from(&iseq->body->ujit_blocks, &block->iseq_block_node);
+    ujit_unlink_method_lookup_dependency(block);
     // Free the old block version object
     free(block->incoming);
     free(block);

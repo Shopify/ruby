@@ -125,6 +125,15 @@ typedef struct BlockVersion
     // Next block version for this blockid (singly-linked list)
     struct BlockVersion* next;
 
+    // List node for all block versions in an iseq
+    struct list_node iseq_block_node;
+
+    // GC managed objects that this block depend on
+    struct {
+        VALUE cc;
+        VALUE cme;
+        VALUE iseq;
+    } dependencies;
 } block_t;
 
 // Context object methods

@@ -437,6 +437,8 @@ struct rb_iseq_constant_body {
     long unsigned total_calls; /* number of total calls with `mjit_exec()` */
     struct rb_mjit_unit *jit_unit;
 #endif
+
+    struct list_head ujit_blocks;
 };
 
 /* T_IMEMO/iseq */
