@@ -14,6 +14,7 @@
 #include "ujit_core.h"
 #include "ujit_hooks.inc"
 #include "ujit.rbinc"
+#include "dary.h"
 
 #if HAVE_LIBCAPSTONE
 #include <capstone/capstone.h>
@@ -131,66 +132,22 @@ struct ujit_root_struct {};
 // is only valid when cme_or_cc is valid
 static st_table *method_lookup_dependency;
 
-struct compiled_region_array {
-    int32_t size;
-    int32_t capa;
-    struct compiled_region {
-        block_t *block;
-    } data[];
+struct compiled_region {
+    block_t *block;
 };
 
-// Add an element to a region array, or allocate a new region array.
-static struct compiled_region_array *
-add_compiled_region(struct compiled_region_array *array, struct compiled_region *region)
-{
-    if (!array) {
-        // Allocate a brand new array with space for one
-        array = malloc(sizeof(*array) + sizeof(array->data[0]));
-        if (!array) {
-            return NULL;
-        }
-        array->size = 0;
-        array->capa = 1;
-    }
-    if (array->size == INT32_MAX) {
-        return NULL;
-    }
-    // Check if the region is already present
-    for (int32_t i = 0; i < array->size; i++) {
-        if (array->data[i].block == region->block) {
-            return array;
-        }
-    }
-    if (array->size + 1 > array->capa) {
-        // Double the array's capacity.
-        int64_t double_capa = ((int64_t)array->capa) * 2;
-        int32_t new_capa = (int32_t)double_capa;
-        if (new_capa != double_capa) {
-            return NULL;
-        }
-        array = realloc(array, sizeof(*array) + new_capa * sizeof(array->data[0]));
-        if (array == NULL) {
-            return NULL;
-        }
-        array->capa = new_capa;
-    }
-
-    array->data[array->size] = *region;
-    array->size++;
-    return array;
-}
+typedef rb_dary(struct compiled_region) block_array_t;
 
 static int
 add_lookup_dependency_i(st_data_t *key, st_data_t *value, st_data_t data, int existing)
 {
     struct compiled_region *region = (struct compiled_region *)data;
 
-    struct compiled_region_array *regions = NULL;
+    block_array_t regions = NULL;
     if (existing) {
-        regions = (struct compiled_region_array *)*value;
+        regions = (block_array_t )*value;
     }
-    regions = add_compiled_region(regions, region);
-    if (!regions) {
+    if (!rb_dary_append(&regions, *region)) {
         rb_bug("ujit: failed to add method lookup dependency"); // TODO: we could bail out of compiling instead
     }
 
@@ -310,13 +267,14 @@ rb_ujit_method_lookup_change(VALUE cme_or_cc)
     // Invalidate all regions that depend on the cme or cc
     st_data_t key = (st_data_t)cme_or_cc, image;
     if (st_delete(method_lookup_dependency, &key, &image)) {
-        struct compiled_region_array *array = (void *)image;
+        block_array_t array = (void *)image;
+        struct compiled_region *elem;
 
-        for (int32_t i = 0; i < array->size; i++) {
-            invalidate_block_version(array->data[i].block);
+        rb_dary_foreach(array, i, elem) {
+            invalidate_block_version(elem->block);
         }
 
-        free(array);
+        rb_dary_free(array);
     }
 
     RB_VM_LOCK_LEAVE();
@@ -328,26 +286,25 @@ remove_method_lookup_dependency(VALUE cc_or_cme, block_t *block)
 {
     st_data_t key = (st_data_t)cc_or_cme, image;
     if (st_lookup(method_lookup_dependency, key, &image)) {
-        struct compiled_region_array *array = (void *)image;
+        block_array_t array = (void *)image;
+        struct compiled_region *elem;
 
-        const int32_t size = array->size;
         // Find the block we are removing
-        for (int32_t i = 0; i < size; i++) {
-            if (array->data[i].block == block) {
-                // Do a shuffle remove. Order in the region array doesn't matter.
-                array->data[i] = array->data[size - 1];
-                array->size--;
+        rb_dary_foreach(array, i, elem) {
+            if (elem->block == block) {
+                // Remove the current element by moving the last element here.
+                // Order in the region array doesn't matter.
+                *elem = *rb_dary_ref(array, rb_dary_size(array) - 1);
+                rb_dary_pop_back(array);
                 break;
             }
         }
-        RUBY_ASSERT(array->size < size);
 
-        if (array->size == 0) {
+        if (rb_dary_size(array) == 0) {
             st_delete(method_lookup_dependency, &key, NULL);
-            free(array);
+            rb_dary_free(array);
         }
     }
-
 }
 
 void
