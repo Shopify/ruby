@@ -31,7 +31,6 @@ int64_t rb_ujit_exec_insns_count = 0;
 static int64_t exit_op_count[VM_INSTRUCTION_SIZE] = { 0 };
 static int64_t compiled_iseq_count = 0;
 
-extern st_table * version_tbl;
 extern codeblock_t *cb;
 extern codeblock_t *ocb;
 // Hash table of encoded instructions
@@ -194,29 +193,12 @@ replace_all(st_data_t key, st_data_t value, st_data_t argp, int error)
     return ST_REPLACE;
 }
 
-static int
-update_blockid_iseq(st_data_t *key, st_data_t *value, st_data_t argp, int existing)
-{
-    blockid_t *blockid = (blockid_t *)*key;
-    blockid->iseq = (const rb_iseq_t *)rb_gc_location((VALUE)blockid->iseq);
-
-    return ST_CONTINUE;
-}
-
 // GC callback during compaction
 static void
 ujit_root_update_references(void *ptr)
 {
     if (method_lookup_dependency) {
         if (st_foreach_with_replace(method_lookup_dependency, replace_all, method_lookup_dep_table_update_keys, 0)) {
-            RUBY_ASSERT(false);
-        }
-    }
-
-    if (version_tbl) {
-        // If any of the iseqs in the version table moves, we need to rehash their corresponding blockid.
-        // TODO: this seems very inefficient. This can be more targeted if each store their own version_tbl.
-        if (st_foreach_with_replace(version_tbl, replace_all, update_blockid_iseq, 0)) {
             RUBY_ASSERT(false);
         }
     }
@@ -294,7 +276,7 @@ remove_method_lookup_dependency(VALUE cc_or_cme, block_t *block)
             if (elem->block == block) {
                 // Remove the current element by moving the last element here.
                 // Order in the region array doesn't matter.
-                *elem = *rb_dary_ref(array, rb_dary_size(array) - 1);
+                *elem = rb_dary_get(array, rb_dary_size(array) - 1);
                 rb_dary_pop_back(array);
                 break;
             }
@@ -342,19 +324,6 @@ struct ujit_block_itr {
     VALUE list;
 };
 
-static int
-iseqw_ujit_collect_blocks(st_data_t key, st_data_t value, st_data_t argp)
-{
-    block_t * block = (block_t *)value;
-    struct ujit_block_itr * itr = (struct ujit_block_itr *)argp;
-
-    if (block->blockid.iseq == itr->iseq) {
-        VALUE rb_block = TypedData_Wrap_Struct(cUjitBlock, &ujit_block_type, block);
-        rb_ary_push(itr->list, rb_block);
-    }
-    return ST_CONTINUE;
-}
-
 /* Get a list of the UJIT blocks associated with `rb_iseq` */
 static VALUE
 ujit_blocks_for(VALUE mod, VALUE rb_iseq)
@@ -362,15 +331,19 @@ ujit_blocks_for(VALUE mod, VALUE rb_iseq)
     if (CLASS_OF(rb_iseq) != rb_cISeq) {
         return rb_ary_new();
     }
+
     const rb_iseq_t *iseq = rb_iseqw_to_iseq(rb_iseq);
-    st_table * vt = (st_table *)version_tbl;
-    struct ujit_block_itr itr;
-    itr.iseq = iseq;
-    itr.list = rb_ary_new();
+    block_t **element;
+    VALUE all_versions = rb_ary_new();
 
-    rb_st_foreach(vt, iseqw_ujit_collect_blocks, (st_data_t)&itr);
+    rb_dary_foreach(iseq->body->ujit_blocks, idx, element) {
+        for (block_t *version = *element; version; version = version->next) {
+            VALUE rb_block = TypedData_Wrap_Struct(cUjitBlock, &ujit_block_type, version);
+            rb_ary_push(all_versions, rb_block);
+        }
+    }
 
-    return itr.list;
+    return all_versions;
 }
 
 static VALUE
@@ -580,35 +553,44 @@ print_ujit_stats(void)
 void
 rb_ujit_iseq_mark(const struct rb_iseq_constant_body *body)
 {
-    block_t *block = NULL;
-    list_for_each(&body->ujit_blocks, block, iseq_block_node) {
-        rb_gc_mark_movable((VALUE)block->blockid.iseq);
+    block_t **element;
+    rb_dary_foreach(body->ujit_blocks, idx, element) {
+        for (block_t *block = *element; block; block = block->next) {
+            rb_gc_mark_movable((VALUE)block->blockid.iseq);
 
-        rb_gc_mark_movable(block->dependencies.cc);
-        rb_gc_mark_movable(block->dependencies.cme);
-        rb_gc_mark_movable(block->dependencies.iseq);
+            rb_gc_mark_movable(block->dependencies.cc);
+            rb_gc_mark_movable(block->dependencies.cme);
+            rb_gc_mark_movable(block->dependencies.iseq);
+        }
     }
 }
 
 void
 rb_ujit_iseq_update_references(const struct rb_iseq_constant_body *body)
 {
-    block_t *block = NULL;
-    list_for_each(&body->ujit_blocks, block, iseq_block_node) {
-        block->blockid.iseq = (const rb_iseq_t *)rb_gc_location((VALUE)block->blockid.iseq);
+    block_t **element;
+    rb_dary_foreach(body->ujit_blocks, idx, element) {
+        for (block_t *block = *element; block; block = block->next) {
+            block->blockid.iseq = (const rb_iseq_t *)rb_gc_location((VALUE)block->blockid.iseq);
 
-        block->dependencies.cc = rb_gc_location(block->dependencies.cc);
-        block->dependencies.cme = rb_gc_location(block->dependencies.cme);
-        block->dependencies.iseq = rb_gc_location(block->dependencies.iseq);
+            block->dependencies.cc = rb_gc_location(block->dependencies.cc);
+            block->dependencies.cme = rb_gc_location(block->dependencies.cme);
+            block->dependencies.iseq = rb_gc_location(block->dependencies.iseq);
+        }
     }
 }
 
 void
 rb_ujit_iseq_free(const struct rb_iseq_constant_body *body)
 {
-    block_t *block = NULL;
-    list_for_each(&body->ujit_blocks, block, iseq_block_node) {
-        invalidate_block_version(block);
+    block_t **element;
+    rb_dary_foreach(body->ujit_blocks, idx, element) {
+        block_t *block = *element;
+        while (block) {
+            block_t *next = block->next;
+            ujit_free_block(block);
+            block = next;
+        }
     }
 }
 

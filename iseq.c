@@ -493,7 +493,6 @@ rb_iseq_constant_body_alloc(void)
 {
     struct rb_iseq_constant_body *iseq_body;
     iseq_body = ZALLOC(struct rb_iseq_constant_body);
-    list_head_init(&iseq_body->ujit_blocks);
     return iseq_body;
 }
 
