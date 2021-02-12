@@ -14,7 +14,7 @@
 #include "ujit_core.h"
 #include "ujit_hooks.inc"
 #include "ujit.rbinc"
-#include "dary.h"
+#include "darray.h"
 
 #if HAVE_LIBCAPSTONE
 #include <capstone/capstone.h>
@@ -135,7 +135,7 @@ struct compiled_region {
     block_t *block;
 };
 
-typedef rb_dary(struct compiled_region) block_array_t;
+typedef rb_darray(struct compiled_region) block_array_t;
 
 static int
 add_lookup_dependency_i(st_data_t *key, st_data_t *value, st_data_t data, int existing)
@@ -146,7 +146,7 @@ add_lookup_dependency_i(st_data_t *key, st_data_t *value, st_data_t data, int ex
     if (existing) {
         regions = (block_array_t )*value;
     }
-    if (!rb_dary_append(&regions, *region)) {
+    if (!rb_darray_append(&regions, *region)) {
         rb_bug("ujit: failed to add method lookup dependency"); // TODO: we could bail out of compiling instead
     }
 
@@ -252,11 +252,11 @@ rb_ujit_method_lookup_change(VALUE cme_or_cc)
         block_array_t array = (void *)image;
         struct compiled_region *elem;
 
-        rb_dary_foreach(array, i, elem) {
+        rb_darray_foreach(array, i, elem) {
             invalidate_block_version(elem->block);
         }
 
-        rb_dary_free(array);
+        rb_darray_free(array);
     }
 
     RB_VM_LOCK_LEAVE();
@@ -272,19 +272,19 @@ remove_method_lookup_dependency(VALUE cc_or_cme, block_t *block)
         struct compiled_region *elem;
 
         // Find the block we are removing
-        rb_dary_foreach(array, i, elem) {
+        rb_darray_foreach(array, i, elem) {
             if (elem->block == block) {
                 // Remove the current element by moving the last element here.
                 // Order in the region array doesn't matter.
-                *elem = rb_dary_get(array, rb_dary_size(array) - 1);
-                rb_dary_pop_back(array);
+                *elem = rb_darray_get(array, rb_darray_size(array) - 1);
+                rb_darray_pop_back(array);
                 break;
             }
         }
 
-        if (rb_dary_size(array) == 0) {
+        if (rb_darray_size(array) == 0) {
             st_delete(method_lookup_dependency, &key, NULL);
-            rb_dary_free(array);
+            rb_darray_free(array);
         }
     }
 }
@@ -336,7 +336,7 @@ ujit_blocks_for(VALUE mod, VALUE rb_iseq)
     block_t **element;
     VALUE all_versions = rb_ary_new();
 
-    rb_dary_foreach(iseq->body->ujit_blocks, idx, element) {
+    rb_darray_foreach(iseq->body->ujit_blocks, idx, element) {
         for (block_t *version = *element; version; version = version->next) {
             VALUE rb_block = TypedData_Wrap_Struct(cUjitBlock, &ujit_block_type, version);
             rb_ary_push(all_versions, rb_block);
@@ -554,7 +554,7 @@ void
 rb_ujit_iseq_mark(const struct rb_iseq_constant_body *body)
 {
     block_t **element;
-    rb_dary_foreach(body->ujit_blocks, idx, element) {
+    rb_darray_foreach(body->ujit_blocks, idx, element) {
         for (block_t *block = *element; block; block = block->next) {
             rb_gc_mark_movable((VALUE)block->blockid.iseq);
 
@@ -569,7 +569,7 @@ void
 rb_ujit_iseq_update_references(const struct rb_iseq_constant_body *body)
 {
     block_t **element;
-    rb_dary_foreach(body->ujit_blocks, idx, element) {
+    rb_darray_foreach(body->ujit_blocks, idx, element) {
         for (block_t *block = *element; block; block = block->next) {
             block->blockid.iseq = (const rb_iseq_t *)rb_gc_location((VALUE)block->blockid.iseq);
 
@@ -584,7 +584,7 @@ void
 rb_ujit_iseq_free(const struct rb_iseq_constant_body *body)
 {
     block_t **element;
-    rb_dary_foreach(body->ujit_blocks, idx, element) {
+    rb_darray_foreach(body->ujit_blocks, idx, element) {
         block_t *block = *element;
         while (block) {
             block_t *next = block->next;

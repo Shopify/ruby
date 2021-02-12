@@ -77,7 +77,7 @@
 #include "ruby/st.h"
 #include "ruby_atomic.h"
 #include "vm_opts.h"
-#include "dary.h"
+#include "darray.h"
 
 #include "ruby/thread_native.h"
 #if   defined(_WIN32)
@@ -303,7 +303,7 @@ pathobj_realpath(VALUE pathobj)
 /* Forward declarations */
 struct rb_mjit_unit;
 
-typedef rb_dary(struct ujit_block_version *) rb_ujit_block_array_t;
+typedef rb_darray(struct ujit_block_version *) rb_ujit_block_array_t;
 
 struct rb_iseq_constant_body {
     enum iseq_type {

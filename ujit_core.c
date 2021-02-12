@@ -148,10 +148,10 @@ static block_t *
 get_first_version(const rb_iseq_t *iseq, unsigned idx)
 {
     struct rb_iseq_constant_body *body = iseq->body;
-    if (rb_dary_size(body->ujit_blocks) == 0) {
+    if (rb_darray_size(body->ujit_blocks) == 0) {
         return NULL;
     }
-    return rb_dary_get(body->ujit_blocks, idx);
+    return rb_darray_get(body->ujit_blocks, idx);
 }
 
 // Add a block version to the map. Block should be fully constructed
@@ -164,11 +164,11 @@ add_block_version(blockid_t blockid, block_t* block)
     struct rb_iseq_constant_body *body = iseq->body;
 
     // Ensure ujit_blocks is initialized
-    if (rb_dary_size(body->ujit_blocks) == 0) {
+    if (rb_darray_size(body->ujit_blocks) == 0) {
         // Initialize ujit_blocks to be as wide as body->iseq_encoded
         // TODO: add resize API for dary
-        while ((unsigned)rb_dary_size(body->ujit_blocks) < body->iseq_size) {
-            (void)rb_dary_append(&body->ujit_blocks, NULL);
+        while ((unsigned)rb_darray_size(body->ujit_blocks) < body->iseq_size) {
+            (void)rb_darray_append(&body->ujit_blocks, NULL);
         }
     }
 
@@ -182,7 +182,7 @@ add_block_version(blockid_t blockid, block_t* block)
     }
 
     // Make new block the first version
-    rb_dary_set(body->ujit_blocks, blockid.idx, block);
+    rb_darray_set(body->ujit_blocks, blockid.idx, block);
     RUBY_ASSERT(find_block_version(blockid, &block->ctx) != NULL);
 
     {
@@ -603,7 +603,7 @@ invalidate_block_version(block_t* block)
     // Remove references to this block
     if (first_block == block) {
         // Make the next block the new first version
-        rb_dary_set(iseq->body->ujit_blocks, block->blockid.idx, block->next);
+        rb_darray_set(iseq->body->ujit_blocks, block->blockid.idx, block->next);
     }
     else {
         bool deleted = false;
