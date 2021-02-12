@@ -592,6 +592,8 @@ rb_ujit_iseq_free(const struct rb_iseq_constant_body *body)
             block = next;
         }
     }
+
+    rb_darray_free(body->ujit_blocks);
 }
 
 void
