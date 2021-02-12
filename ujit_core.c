@@ -151,6 +151,7 @@ get_first_version(const rb_iseq_t *iseq, unsigned idx)
     if (rb_darray_size(body->ujit_blocks) == 0) {
         return NULL;
     }
+    RUBY_ASSERT((unsigned)rb_darray_size(body->ujit_blocks) == body->iseq_size);
     return rb_darray_get(body->ujit_blocks, idx);
 }
 

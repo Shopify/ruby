@@ -441,7 +441,7 @@ struct rb_iseq_constant_body {
     struct rb_mjit_unit *jit_unit;
 #endif
 
-    rb_ujit_block_array_t ujit_blocks;
+    rb_ujit_block_array_t ujit_blocks; // empty, or has a size equal to iseq_size
 };
 
 /* T_IMEMO/iseq */
