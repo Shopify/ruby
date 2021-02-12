@@ -600,9 +600,10 @@ invalidate_block_version(block_t* block)
     block_t *first_block = get_first_version(iseq, block->blockid.idx);
     RUBY_ASSERT(first_block != NULL);
 
-    // Remove the version object from the map so we can re-generate stubs
+    // Remove references to this block
     if (first_block == block) {
-        rb_dary_set(iseq->body->ujit_blocks, block->blockid.idx, NULL);
+        // Make the next block the new first version
+        rb_dary_set(iseq->body->ujit_blocks, block->blockid.idx, block->next);
     }
     else {
         bool deleted = false;
