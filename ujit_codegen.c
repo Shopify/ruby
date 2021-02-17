@@ -1277,6 +1277,11 @@ gen_opt_swb_iseq(jitstate_t* jit, ctx_t* ctx, struct rb_call_data * cd, const rb
         return false;
     }
 
+    if (vm_ci_flag(cd->ci) & VM_CALL_TAILCALL) {
+        // We can't handle tailcalls
+        return false;
+    }
+
     rb_gc_register_mark_object((VALUE)iseq); // FIXME: intentional LEAK!
 
     // Create a size-exit to fall back to the interpreter
