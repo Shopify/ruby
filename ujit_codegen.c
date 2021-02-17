@@ -1454,6 +1454,11 @@ gen_opt_send_without_block(jitstate_t* jit, ctx_t* ctx)
         return false;
     }
 
+    // We don't generate code to check protected method calls
+    if (METHOD_ENTRY_VISI(cme) == METHOD_VISI_PROTECTED) {
+        return false;
+    }
+
     // If this is a C call
     if (cme->def->type == VM_METHOD_TYPE_CFUNC)
     {
