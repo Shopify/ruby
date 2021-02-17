@@ -539,7 +539,7 @@ void gen_direct_jump(
     generic_ctx.sp_offset = ctx->sp_offset;
     if (count_block_versions(target0) >= MAX_VERSIONS - 1)
     {
-        fprintf(stderr, "version limit hit in branch_stub_hit\n");
+        fprintf(stderr, "version limit hit in gen_direct_jump\n");
         ctx = &generic_ctx;
     }
 
