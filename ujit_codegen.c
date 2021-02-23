@@ -1112,6 +1112,7 @@ gen_oswb_cfunc(jitstate_t* jit, ctx_t* ctx, struct rb_call_data * cd, const rb_c
     // Pointer to the klass field of the receiver &(recv->klass)
     x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
 
+    // FIXME: This leaks when st_insert raises NoMemoryError
     assume_method_lookup_stable(cd->cc, cme, jit->block);
 
     // Bail if receiver class is different from compile-time call cache class
@@ -1560,9 +1561,11 @@ gen_opt_getinlinecache(jitstate_t *jit, ctx_t *ctx)
     }
 
     // Optimize for single ractor mode.
+    // FIXME: This leaks when st_insert raises NoMemoryError
     if (!assume_single_ractor_mode(jit->block)) return false;
 
     // Invalidate output code on any and all constant writes
+    // FIXME: This leaks when st_insert raises NoMemoryError
     if (!assume_stable_global_constant_state(jit->block)) return false;
 
     x86opnd_t stack_top = ctx_stack_push(ctx, T_NONE);

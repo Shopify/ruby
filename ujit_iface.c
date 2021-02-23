@@ -49,7 +49,7 @@ static const rb_data_type_t ujit_block_type = {
 };
 
 // Write the uJIT entry point pre-call bytes
-void 
+void
 cb_write_pre_call_bytes(codeblock_t* cb)
 {
     for (size_t i = 0; i < sizeof(ujit_with_ec_pre_call_bytes); ++i)
@@ -57,7 +57,7 @@ cb_write_pre_call_bytes(codeblock_t* cb)
 }
 
 // Write the uJIT exit post-call bytes
-void 
+void
 cb_write_post_call_bytes(codeblock_t* cb)
 {
     for (size_t i = 0; i < sizeof(ujit_with_ec_post_call_bytes); ++i)
@@ -178,35 +178,27 @@ assume_method_lookup_stable(const struct rb_callcache *cc, const rb_callable_met
     block->dependencies.cc = (VALUE)cc;
 }
 
-static rb_ujit_block_array_t blocks_assuming_single_ractor_mode = NULL;
+static st_table *blocks_assuming_single_ractor_mode;
 
+// Can raise NoMemoryError.
 RBIMPL_ATTR_NODISCARD()
 bool
 assume_single_ractor_mode(block_t *block) {
-    if (block->assume_single_ractor_mode) return true;
-
     if (rb_multi_ractor_p()) return false;
 
-    if (rb_darray_append(&blocks_assuming_single_ractor_mode, block)) {
-        block->assume_single_ractor_mode = true;
-        return true;
-    }
-    return false;
+    st_insert(blocks_assuming_single_ractor_mode, (st_data_t)block, 1);
+    return true;
 }
 
-static rb_ujit_block_array_t blocks_assuming_stable_global_constant_state = NULL;
+static st_table *blocks_assuming_stable_global_constant_state;
 
 // Assume that the global constant state has not changed since call to this function.
+// Can raise NoMemoryError.
 RBIMPL_ATTR_NODISCARD()
 bool
 assume_stable_global_constant_state(block_t *block) {
-    if (block->assume_stable_global_constant_state) return true;
-
-    if (rb_darray_append(&blocks_assuming_stable_global_constant_state, block)) {
-        block->assume_stable_global_constant_state = true;
-        return true;
-    }
-    return false;
+    st_insert(blocks_assuming_stable_global_constant_state, (st_data_t)block, 1);
+    return true;
 }
 
 static int
@@ -333,8 +325,14 @@ ujit_unlink_method_lookup_dependency(block_t *block)
 void
 ujit_block_assumptions_free(block_t *block)
 {
-    if (block->assume_single_ractor_mode) block_array_shuffle_remove(blocks_assuming_single_ractor_mode, block);
-    if (block->assume_stable_global_constant_state) block_array_shuffle_remove(blocks_assuming_stable_global_constant_state, block);
+    st_data_t as_st_data = (st_data_t)block;
+    if (blocks_assuming_stable_global_constant_state) {
+        st_delete(blocks_assuming_stable_global_constant_state, &as_st_data, NULL);
+    }
+
+    if (blocks_assuming_single_ractor_mode) {
+        st_delete(blocks_assuming_single_ractor_mode, &as_st_data, NULL);
+    }
 }
 
 void
@@ -448,24 +446,27 @@ rb_ujit_bop_redefined(VALUE klass, const rb_method_entry_t *me, enum ruby_basic_
     //fprintf(stderr, "bop redefined\n");
 }
 
+static int
+block_invalidation_iterator(st_data_t key, st_data_t value, st_data_t data) {
+    block_t *block = (block_t *)key;
+    invalidate_block_version(block); // Thankfully, st_table supports deleteing while iterating
+    return ST_CONTINUE;
+}
+
 /* Called when the constant state changes */
 void
 rb_ujit_constant_state_changed(void)
 {
-    block_t **element;
-    rb_darray_foreach(blocks_assuming_stable_global_constant_state, i, element) {
-        block_t *block = *element;
-        invalidate_block_version(block);
+    if (blocks_assuming_stable_global_constant_state) {
+        st_foreach(blocks_assuming_stable_global_constant_state, block_invalidation_iterator, 0);
     }
 }
 
 void
 rb_ujit_before_ractor_spawn(void)
 {
-    block_t **element;
-    rb_darray_foreach(blocks_assuming_single_ractor_mode, i, element) {
-        block_t *block = *element;
-        invalidate_block_version(block);
+    if (blocks_assuming_single_ractor_mode) {
+        st_foreach(blocks_assuming_single_ractor_mode, block_invalidation_iterator, 0);
     }
 }
 
@@ -687,6 +688,9 @@ rb_ujit_init(struct rb_ujit_options *options)
     rb_ujit_opts = *options;
 
     rb_ujit_enabled = true;
+
+    blocks_assuming_stable_global_constant_state = st_init_numtable();
+    blocks_assuming_single_ractor_mode = st_init_numtable();
 
     ujit_init_core();
     ujit_init_codegen();

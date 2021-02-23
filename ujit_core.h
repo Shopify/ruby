@@ -135,12 +135,6 @@ typedef struct ujit_block_version
 
     // Index one past the last instruction in the iseq
     uint32_t end_idx;
-
-    // Version only correct under single ractor mode
-    bool assume_single_ractor_mode : 1;
-    // Version only correct if constant state has not changed
-    // since the construction of the version
-    bool assume_stable_global_constant_state : 1;
 } block_t;
 
 // Context object methods
