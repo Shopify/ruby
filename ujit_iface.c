@@ -13,7 +13,6 @@
 #include "ujit_codegen.h"
 #include "ujit_core.h"
 #include "ujit_hooks.inc"
-#include "ujit.rbinc"
 #include "darray.h"
 
 #if HAVE_LIBCAPSTONE
@@ -26,9 +25,9 @@ VALUE cUjitDisasmInsn;
 
 #if RUBY_DEBUG
 static int64_t vm_insns_count = 0;
-int64_t rb_ujit_exec_insns_count = 0;
 static int64_t exit_op_count[VM_INSTRUCTION_SIZE] = { 0 };
 int64_t rb_compiled_iseq_count = 0;
+struct rb_ujit_runtime_counters ujit_runtime_counters = { 0 };
 #endif
 
 // Machine code blocks (executable memory)
@@ -506,6 +505,52 @@ ujit_disasm(VALUE self, VALUE code, VALUE from)
 }
 #endif
 
+// Primitive called in ujit.rb. Export all runtime counters as a Ruby hash.
+static VALUE
+runtime_counters_to_hash(rb_execution_context_t *ec, VALUE self)
+{
+    VALUE hash = rb_hash_new();
+#if RUBY_DEBUG
+    RB_VM_LOCK_ENTER();
+    {
+        int64_t *counter_reader = (int64_t *)&ujit_runtime_counters;
+        int64_t *counter_reader_end = &ujit_runtime_counters.last_member;
+
+        // Iterate through comma separated counter name list
+        char *name_reader = ujit_counter_names;
+        char *counter_name_end = ujit_counter_names + sizeof(ujit_counter_names);
+        while (name_reader < counter_name_end && counter_reader < counter_reader_end) {
+            if (*name_reader == ',' || *name_reader == ' ') {
+                name_reader++;
+                continue;
+            }
+
+            // Compute name of counter name
+            int name_len;
+            char *name_end;
+            {
+                name_end = strchr(name_reader, ',');
+                if (name_end == NULL) break;
+                name_len = (int)(name_end - name_reader);
+            }
+
+            // Put counter into hash
+            VALUE key = ID2SYM(rb_intern2(name_reader, name_len));
+            VALUE value = LL2NUM((long long)*counter_reader);
+            rb_hash_aset(hash, key, value);
+
+            counter_reader++;
+            name_reader = name_end;
+        }
+    }
+    RB_VM_LOCK_LEAVE();
+
+#endif
+    return hash;
+}
+
+#include "ujit.rbinc"
+
 #if RUBY_DEBUG
 // implementation for --ujit-stats
 
@@ -590,16 +635,17 @@ print_ujit_stats(void)
 
     const struct insn_count *sorted_exit_ops = sort_insn_count_array(exit_op_count);
 
-    double total_insns_count = vm_insns_count + rb_ujit_exec_insns_count;
-    double ratio = rb_ujit_exec_insns_count / total_insns_count;
+    double total_insns_count = vm_insns_count + ujit_runtime_counters.exec_instruction;
+    double ratio = ujit_runtime_counters.exec_instruction / total_insns_count;
 
     fprintf(stderr, "compiled_iseq_count:   %10" PRId64 "\n", rb_compiled_iseq_count);
     fprintf(stderr, "main_block_code_size:  %6.1f MiB\n", ((double)cb->write_pos) / 1048576.0);
     fprintf(stderr, "side_block_code_size:  %6.1f MiB\n", ((double)ocb->write_pos) / 1048576.0);
     fprintf(stderr, "vm_insns_count:        %10" PRId64 "\n", vm_insns_count);
-    fprintf(stderr, "ujit_exec_insns_count: %10" PRId64 "\n", rb_ujit_exec_insns_count);
+    fprintf(stderr, "ujit_exec_insns_count: %10" PRId64 "\n", ujit_runtime_counters.exec_instruction);
     fprintf(stderr, "ratio_in_ujit:         %9.1f%%\n", ratio * 100);
     print_insn_count_buffer(sorted_exit_ops, 10, 4);
+    //print_runtime_counters();
 }
 #endif // if RUBY_DEBUG
 
@@ -726,6 +772,10 @@ rb_ujit_init(struct rb_ujit_options *options)
     rb_define_method(cUjitDisasm, "disasm", ujit_disasm, 2);
     cUjitDisasmInsn = rb_struct_define_under(cUjitDisasm, "Insn", "address", "mnemonic", "op_str", NULL);
 #endif
+
+    if (RUBY_DEBUG && rb_ujit_opts.gen_stats) {
+        rb_define_const(mUjit, "GEN_STATS", Qtrue);
+    }
 
     // Initialize the GC hooks
     method_lookup_dependency = st_init_numtable();
