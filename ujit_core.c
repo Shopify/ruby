@@ -201,7 +201,7 @@ add_block_version(blockid_t blockid, block_t* block)
         RB_OBJ_WRITTEN(iseq, Qundef, block->dependencies.cc);
         RB_OBJ_WRITTEN(iseq, Qundef, block->dependencies.cme);
 
-        // Run write barrier for all objects in generated code.
+        // Run write barriers for all objects in generated code.
         uint32_t *offset_element;
         rb_darray_foreach(block->gc_object_offsets, offset_idx, offset_element) {
             uint32_t offset_to_value = *offset_element;
