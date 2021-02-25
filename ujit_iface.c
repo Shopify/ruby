@@ -20,6 +20,7 @@
 #include <capstone/capstone.h>
 #endif
 
+#if RUBY_DEBUG
 VALUE cUjitBlock;
 VALUE cUjitDisasm;
 VALUE cUjitDisasmInsn;
