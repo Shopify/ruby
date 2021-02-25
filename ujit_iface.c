@@ -20,7 +20,6 @@
 #include <capstone/capstone.h>
 #endif
 
-
 VALUE cUjitBlock;
 VALUE cUjitDisasm;
 VALUE cUjitDisasmInsn;
