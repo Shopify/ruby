@@ -1,6 +1,8 @@
 MicroJIT (uJIT)
 ===============
 
+**DISCLAIMER: Please note that this project is in early stages of development. It is very much a work in progress, it may cause your software to crash, and current performance results are likely to leave you feeling unimpressed.**
+
 MicroJIT is a lightweight, minimalistic Ruby JIT built inside the CRuby/MRI binary.
 It lazily compiles code using a Basic Block Versioning (BBV) architecture. The target use case is that of servers running
 Ruby on Rails, an area where CRuby's MJIT has not yet managed to deliver speedups. 
@@ -14,7 +16,15 @@ If you would like to learn more about BBV, there are two published papers, and a
 
 ## Installation
 
-The uJIT `ruby` binary can be built with either GCC or Clang.  We recommend enabling debug symbols so that assertions are enabled
+Start by cloning the `microjit` branch of the `Shopify/ruby` repository:
+
+```
+git clone https://github.com/Shopify/ruby.git microjit
+cd microjit
+git checkout microjit
+```
+
+The uJIT `ruby` binary can be built with either GCC or Clang. We recommend enabling debug symbols so that assertions are enabled:
 
 ```
 autoconf

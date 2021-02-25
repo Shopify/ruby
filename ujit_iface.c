@@ -24,9 +24,6 @@ VALUE cUjitBlock;
 VALUE cUjitDisasm;
 VALUE cUjitDisasmInsn;
 
-bool rb_ujit_enabled;
-
-#if RUBY_DEBUG
 static int64_t vm_insns_count = 0;
 int64_t rb_ujit_exec_insns_count = 0;
 static int64_t exit_op_count[VM_INSTRUCTION_SIZE] = { 0 };
@@ -677,6 +674,16 @@ rb_ujit_iseq_free(const struct rb_iseq_constant_body *body)
     rb_darray_free(body->ujit_blocks);
 }
 
+bool rb_ujit_enabled_p(void)
+{
+    return rb_ujit_opts.ujit_enabled;
+}
+
+unsigned rb_ujit_call_threshold(void)
+{
+    return rb_ujit_opts.call_threshold;
+}
+
 void
 rb_ujit_init(struct rb_ujit_options *options)
 {
@@ -686,8 +693,12 @@ rb_ujit_init(struct rb_ujit_options *options)
     }
 
     rb_ujit_opts = *options;
+    rb_ujit_opts.ujit_enabled = true;
 
-    rb_ujit_enabled = true;
+    // Normalize options
+    if (rb_ujit_opts.call_threshold < 1) {
+        rb_ujit_opts.call_threshold = 2;
+    }
 
     blocks_assuming_stable_global_constant_state = st_init_numtable();
     blocks_assuming_single_ractor_mode = st_init_numtable();
