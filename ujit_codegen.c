@@ -167,7 +167,7 @@ _gen_counter_inc(codeblock_t *cb, int64_t *counter)
 {
     if (!rb_ujit_opts.gen_stats) return;
      mov(cb, REG0, const_ptr_opnd(counter));
-     // XXX: Will want lock prefix for ractors.
+     gen_lock_prefix(cb); // for ractors.
      add(cb, mem_opnd(64, REG0, 0), imm_opnd(1));
 }
 
