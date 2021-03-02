@@ -19,9 +19,10 @@
 #include <capstone/capstone.h>
 #endif
 
-VALUE cUjitBlock;
-VALUE cUjitDisasm;
-VALUE cUjitDisasmInsn;
+static VALUE mUjit;
+static VALUE cUjitBlock;
+static VALUE cUjitDisasm;
+static VALUE cUjitDisasmInsn;
 
 #if RUBY_DEBUG
 static int64_t vm_insns_count = 0;
@@ -505,6 +506,14 @@ ujit_disasm(VALUE self, VALUE code, VALUE from)
 }
 #endif
 
+static VALUE
+at_exit_print_stats(RB_BLOCK_CALL_FUNC_ARGLIST(yieldarg, data))
+{
+    // Defined in ujit.rb
+    rb_funcall(mUjit, rb_intern("_print_stats"), 0);
+    return Qnil;
+}
+
 // Primitive called in ujit.rb. Export all runtime counters as a Ruby hash.
 static VALUE
 get_stat_counters(rb_execution_context_t *ec, VALUE self)
@@ -757,7 +766,7 @@ rb_ujit_init(struct rb_ujit_options *options)
     ujit_init_codegen();
 
     // UJIT Ruby module
-    VALUE mUjit = rb_define_module("UJIT");
+    mUjit = rb_define_module("UJIT");
     rb_define_module_function(mUjit, "install_entry", ujit_install_entry, 1);
     rb_define_module_function(mUjit, "blocks_for", ujit_blocks_for, 1);
 
@@ -777,7 +786,8 @@ rb_ujit_init(struct rb_ujit_options *options)
 #endif
 
     if (RUBY_DEBUG && rb_ujit_opts.gen_stats) {
-        rb_define_const(mUjit, "GEN_STATS", Qtrue);
+        // Setup at_exit callback for printing out counters
+        rb_block_call(rb_mKernel, rb_intern("at_exit"), 0, NULL, at_exit_print_stats, Qfalse);
     }
 
     // Initialize the GC hooks
