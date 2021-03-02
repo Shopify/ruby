@@ -161,6 +161,7 @@ ujit_side_exit(jitstate_t* jit, ctx_t* ctx)
 
 #if RUBY_DEBUG
 
+// Increment a profiling counter with counter_name
 #define GEN_COUNTER_INC(cb, counter_name) _gen_counter_inc(cb, &(ujit_runtime_counters . counter_name))
 static void
 _gen_counter_inc(codeblock_t *cb, int64_t *counter)
@@ -171,8 +172,8 @@ _gen_counter_inc(codeblock_t *cb, int64_t *counter)
      add(cb, mem_opnd(64, REG0, 0), imm_opnd(1));
 }
 
-#define COUNTED_EXIT(existing, counter_name) _counted_side_exit(existing, &(ujit_runtime_counters . counter_name))
 // Increment a counter then take an existing side exit.
+#define COUNTED_EXIT(side_exit, counter_name) _counted_side_exit(side_exit, &(ujit_runtime_counters . counter_name))
 static uint8_t *
 _counted_side_exit(uint8_t *existing_side_exit, int64_t *counter)
 {
@@ -186,7 +187,7 @@ _counted_side_exit(uint8_t *existing_side_exit, int64_t *counter)
 
 #else
 #define GEN_COUNTER_INC(cb, counter_name) ((void)0)
-#define COUNTED_EXIT(existing, counter_name) existing
+#define COUNTED_EXIT(side_exit, counter_name) side_exit
 #endif // if RUBY_DEBUG
 
 /*
