@@ -507,10 +507,12 @@ ujit_disasm(VALUE self, VALUE code, VALUE from)
 
 // Primitive called in ujit.rb. Export all runtime counters as a Ruby hash.
 static VALUE
-runtime_counters_to_hash(rb_execution_context_t *ec, VALUE self)
+get_stat_counters(rb_execution_context_t *ec, VALUE self)
 {
-    VALUE hash = rb_hash_new();
 #if RUBY_DEBUG
+    if (!rb_ujit_opts.gen_stats) return Qnil;
+
+    VALUE hash = rb_hash_new();
     RB_VM_LOCK_ENTER();
     {
         int64_t *counter_reader = (int64_t *)&ujit_runtime_counters;
@@ -544,9 +546,10 @@ runtime_counters_to_hash(rb_execution_context_t *ec, VALUE self)
         }
     }
     RB_VM_LOCK_LEAVE();
-
-#endif
     return hash;
+#else
+    return Qnil;
+#endif // if RUBY_DEBUG
 }
 
 #include "ujit.rbinc"

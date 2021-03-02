@@ -36,30 +36,32 @@ module UJIT
     str
   end if defined?(Disasm)
 
-  # Return a hash for statistics generated for the --ujit-gen-stats command line option
+  # Return a hash for statistics generated for the --ujit-stats command line option.
+  # Return nil when option is not passed or unavailable.
   def self.runtime_stats
     # defined in ujit_iface.c
-    Primitive.runtime_counters_to_hash
+    Primitive.get_stat_counters
   end
 
-  # defined in ujit_iface.c
-  if defined?(GEN_STATS)
-    at_exit do
-      $stderr.puts("***uJIT: Printing runtime counters from ujit.rb***")
-      $stderr.puts("opt_send_without_block exit reasons: ")
+  at_exit do
+    counters = runtime_stats
 
-      counters = runtime_stats.filter { |key, _| key.start_with?('oswb_') }
-      counters.transform_keys! { |key| key.to_s.delete_prefix('oswb_') }
+    next unless counters
 
-      counters = counters.to_a
-      counters.sort_by! { |(_, counter_value)| counter_value }
-      longest_name_length = counters.max_by { |(name, _)| name.length }.first.length
-      total = counters.sum { |(_, counter_value)| counter_value }
+    $stderr.puts("***uJIT: Printing runtime counters from ujit.rb***")
+    $stderr.puts("opt_send_without_block exit reasons: ")
 
-      counters.reverse_each do |(name, value)|
-        percentage = value.fdiv(total) * 100
-        $stderr.printf("    %*s %10d (%4.1f%%)\n", longest_name_length, name, value, percentage);
-      end
+    counters.filter { |key, _| key.start_with?('oswb_') }
+    counters.transform_keys! { |key| key.to_s.delete_prefix('oswb_') }
+
+    counters = counters.to_a
+    counters.sort_by! { |(_, counter_value)| counter_value }
+    longest_name_length = counters.max_by { |(name, _)| name.length }.first.length
+    total = counters.sum { |(_, counter_value)| counter_value }
+
+    counters.reverse_each do |(name, value)|
+      percentage = value.fdiv(total) * 100
+      $stderr.printf("    %*s %10d (%4.1f%%)\n", longest_name_length, name, value, percentage);
     end
   end
 end
