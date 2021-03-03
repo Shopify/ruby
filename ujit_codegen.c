@@ -1100,6 +1100,7 @@ jit_protected_guard(jitstate_t *jit, codeblock_t *cb, const rb_callable_method_e
     mov(cb, C_ARG_REGS[0], member_opnd(REG_CFP, rb_control_frame_t, self));
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[1], cme->defined_class);
     // Note: PC isn't written to current control frame as rb_is_kind_of() shouldn't raise.
+    // VALUE rb_obj_is_kind_of(VALUE obj, VALUE klass);
     call_ptr(cb, REG0, (void *)&rb_obj_is_kind_of);
     ujit_load_regs(cb);
     cmp(cb, RAX, imm_opnd(0));
