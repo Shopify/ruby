@@ -131,7 +131,6 @@ typedef struct ujit_block_version
     struct {
         VALUE cc;
         VALUE cme;
-        VALUE iseq;
     } dependencies;
 
     // Index one past the last instruction in the iseq
