@@ -6,6 +6,7 @@
 #include "builtin.h"
 #include "internal/compile.h"
 #include "internal/class.h"
+#include "internal/object.h"
 #include "insns_info.inc"
 #include "yjit.h"
 #include "yjit_iface.h"
@@ -96,6 +97,12 @@ jit_peek_at_stack(jitstate_t* jit, ctx_t* ctx)
     VALUE* sp = jit->ec->cfp->sp + ctx->sp_offset;
 
     return *(sp - 1);
+}
+
+static VALUE
+jit_peek_at_self(jitstate_t *jit, ctx_t *ctx)
+{
+    return jit->ec->cfp->self;
 }
 
 // Save YJIT registers prior to a C call
@@ -563,102 +570,208 @@ guard_self_is_object(codeblock_t *cb, x86opnd_t self_opnd, uint8_t *side_exit, c
         je_ptr(cb, side_exit);
         cmp(cb, self_opnd, imm_opnd(Qnil));
         je_ptr(cb, side_exit);
+
+        // maybe we can do
+        // RUBY_ASSERT(Qfalse < Qnil);
+        // cmp(cb, self_opnd, imm_opnd(Qnil));
+        // jbe(cb, side_exit);
+
+
         ctx->self_is_object = true;
     }
 }
 
+static void
+gen_jnz_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+{
+    switch (shape)
+    {
+        case SHAPE_NEXT0:
+        case SHAPE_NEXT1:
+        RUBY_ASSERT(false);
+        break;
+
+        case SHAPE_DEFAULT:
+        jnz_ptr(cb, target0);
+        break;
+    }
+}
+
+static void
+gen_jz_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+{
+    switch (shape)
+    {
+        case SHAPE_NEXT0:
+        case SHAPE_NEXT1:
+        RUBY_ASSERT(false);
+        break;
+
+        case SHAPE_DEFAULT:
+        jz_ptr(cb, target0);
+        break;
+    }
+}
+
+enum jcc_kinds {
+    jcc_jne,
+    jcc_jnz,
+    jcc_jz,
+    jcc_je,
+};
+
+// Generate a jump to a stub that recompiles the current YARV instruction on failure.
+// When depth_limitk is exceeded, generate a jump to a side exit.
+static void
+jit_recompiling_guard(enum jcc_kinds jcc, jitstate_t *jit, ctx_t *ctx, uint8_t depth_limit, uint8_t *side_exit)
+{
+    branchgen_fn target0_gen_fn;
+
+    switch (jcc) {
+        case jcc_jne:
+        case jcc_jnz:
+            target0_gen_fn = gen_jnz_to_target0;
+            break;
+        case jcc_jz:
+        case jcc_je:
+            target0_gen_fn = gen_jz_to_target0;
+            break;
+        default:
+            RUBY_ASSERT(false && "unimplemented jump kind");
+            break;
+    };
+
+    if (ctx->chain_depth < depth_limit) {
+        ctx_t deeper = *ctx;
+        deeper.chain_depth++;
+
+        gen_branch(
+            ctx,
+            (blockid_t) { jit->iseq, jit->insn_idx },
+            &deeper,
+            BLOCKID_NULL,
+            NULL,
+            target0_gen_fn
+        );
+    }
+    else {
+        target0_gen_fn(cb, side_exit, NULL, SHAPE_DEFAULT);
+    }
+}
+
+
+bool rb_iv_index_tbl_lookup(struct st_table *iv_index_tbl, ID id, struct rb_iv_index_tbl_entry **ent); // vm_insnhelper.c
+
+enum {
+    getivar_max_depth = 10 // up to 5 different classes, and embedded or not for each
+};
+
 static codegen_status_t
 gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
 {
-    IVC ic = (IVC)jit_get_arg(jit, 1);
-
-    // Check that the inline cache has been set, slot index is known
-    if (!ic->entry) {
-        return YJIT_CANT_COMPILE;
-    }
-
     // Defer compilation so we can peek at the topmost object
-    if (!jit_at_current_insn(jit))
-    {
+    if (!jit_at_current_insn(jit)) {
         defer_compilation(jit->block, jit->insn_idx, ctx);
         return YJIT_END_BLOCK;
     }
 
-    // Peek at the topmost value on the stack at compilation time
-    VALUE top_val = jit_peek_at_stack(jit, ctx);
+    // Specialize base on the compile time self
+    VALUE self_val = jit_peek_at_self(jit, ctx);
+    VALUE self_klass = rb_class_of(self_val);
 
-    // TODO: play with deferred compilation and sidechains! :)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    uint8_t *side_exit = yjit_side_exit(jit, ctx);
 
     // If the class uses the default allocator, instances should all be T_OBJECT
     // NOTE: This assumes nobody changes the allocator of the class after allocation.
     //       Eventually, we can encode whether an object is T_OBJECT or not
     //       inside object shapes.
-    if (rb_get_alloc_func(ic->entry->class_value) != rb_class_allocate_instance) {
-        return YJIT_CANT_COMPILE;
+    if (rb_get_alloc_func(self_klass) != rb_class_allocate_instance) {
+        jmp_ptr(cb, side_exit);
+        return YJIT_END_BLOCK;
     }
+    RUBY_ASSERT(BUILTIN_TYPE(self_val) == T_OBJECT); // because we checked the allocator
 
-    uint32_t ivar_index = ic->entry->index;
-
+    ID id = (ID)jit_get_arg(jit, 0);
+    struct rb_iv_index_tbl_entry *ent;
+    struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(self_val);
     // Create a size-exit to fall back to the interpreter
-    uint8_t* side_exit = yjit_side_exit(jit, ctx);
 
-    // Load self from CFP
-    mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, self));
+    if (iv_index_tbl && rb_iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
+        uint32_t ivar_index = ent->index;
 
-    guard_self_is_object(cb, REG0, side_exit, ctx);
+        // Load self from CFP
+        mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, self));
 
-    // Bail if receiver class is different from compiled time call cache class
-    x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
-    mov(cb, REG1, klass_opnd);
-    x86opnd_t serial_opnd = mem_opnd(64, REG1, offsetof(struct RClass, class_serial));
-    cmp(cb, serial_opnd, imm_opnd(ic->entry->class_serial));
-    jne_ptr(cb, side_exit);
+        guard_self_is_object(cb, REG0, COUNTED_EXIT(side_exit, getivar_se_self_not_heap), ctx);
 
-    // Bail if the ivars are not on the extended table
-    // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
-    x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
-    test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
-    jnz_ptr(cb, side_exit);
+        // Guard that self has a known class
+        x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
+        mov(cb, REG1, klass_opnd);
+        x86opnd_t serial_opnd = mem_opnd(64, REG1, offsetof(struct RClass, class_serial));
+        cmp(cb, serial_opnd, imm_opnd(RCLASS_SERIAL(self_klass)));
+        jit_recompiling_guard(jcc_jne, jit, ctx, getivar_max_depth, side_exit);
 
-    // check that the extended table is big enough
-    if (ivar_index >= ROBJECT_EMBED_LEN_MAX + 1) {
-        // Check that the slot is inside the extended table (num_slots > index)
-        x86opnd_t num_slots = mem_opnd(32, REG0, offsetof(struct RObject, as.heap.numiv));
-        cmp(cb, num_slots, imm_opnd(ivar_index));
-        jle_ptr(cb, side_exit);
+        if (RB_FL_TEST_RAW(self_val, ROBJECT_EMBED) && ivar_index < ROBJECT_EMBED_LEN_MAX) {
+            // Compile time self is embeded.
+            // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
+
+            // Guard that self is embedded
+            // TODO: BT and JC is shorter
+            x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
+            test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
+            jit_recompiling_guard(jcc_jz, jit, ctx, getivar_max_depth, side_exit);
+
+            // Load the variable
+            x86opnd_t ivar_opnd = mem_opnd(64, REG0, offsetof(struct RObject, as.ary) + ivar_index * SIZEOF_VALUE);
+            mov(cb, REG1, ivar_opnd);
+
+            // Guard that the variable is not Qundef
+            cmp(cb, REG1, imm_opnd(Qundef));
+            je_ptr(cb, COUNTED_EXIT(side_exit, getivar_undef));
+
+            // Push the ivar on the stack
+            x86opnd_t out_opnd = ctx_stack_push(ctx, T_NONE);
+            mov(cb, out_opnd, REG1);
+        }
+        else {
+            // Compile time self is *not* embeded.
+
+            // Guard that self is *not* embedded
+            // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
+            x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
+            test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
+            jit_recompiling_guard(jcc_jnz, jit, ctx, getivar_max_depth, side_exit);
+
+            // check that the extended table is big enough
+            if (ivar_index >= ROBJECT_EMBED_LEN_MAX + 1) {
+                // Check that the slot is inside the extended table (num_slots > index)
+                x86opnd_t num_slots = mem_opnd(32, REG0, offsetof(struct RObject, as.heap.numiv));
+                cmp(cb, num_slots, imm_opnd(ivar_index));
+                jle_ptr(cb, COUNTED_EXIT(side_exit, getivar_idx_out_of_range));
+            }
+
+            // Get a pointer to the extended table
+            x86opnd_t tbl_opnd = mem_opnd(64, REG0, offsetof(struct RObject, as.heap.ivptr));
+            mov(cb, REG0, tbl_opnd);
+
+            // Read the ivar from the extended table
+            x86opnd_t ivar_opnd = mem_opnd(64, REG0, sizeof(VALUE) * ivar_index);
+            mov(cb, REG0, ivar_opnd);
+
+            // Check that the ivar is not Qundef
+            cmp(cb, REG0, imm_opnd(Qundef));
+            je_ptr(cb, COUNTED_EXIT(side_exit, getivar_undef));
+
+            // Push the ivar on the stack
+            x86opnd_t out_opnd = ctx_stack_push(ctx, T_NONE);
+            mov(cb, out_opnd, REG0);
+        }
+
+        return YJIT_KEEP_COMPILING;
     }
 
-    // Get a pointer to the extended table
-    x86opnd_t tbl_opnd = mem_opnd(64, REG0, offsetof(struct RObject, as.heap.ivptr));
-    mov(cb, REG0, tbl_opnd);
-
-    // Read the ivar from the extended table
-    x86opnd_t ivar_opnd = mem_opnd(64, REG0, sizeof(VALUE) * ivar_index);
-    mov(cb, REG0, ivar_opnd);
-
-    // Check that the ivar is not Qundef
-    cmp(cb, REG0, imm_opnd(Qundef));
-    je_ptr(cb, side_exit);
-
-    // Push the ivar on the stack
-    x86opnd_t out_opnd = ctx_stack_push(ctx, T_NONE);
-    mov(cb, out_opnd, REG0);
-
-    return YJIT_KEEP_COMPILING;
+    jmp_ptr(cb, side_exit);
+    return YJIT_END_BLOCK;
 }
 
 static codegen_status_t
