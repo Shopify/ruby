@@ -17,10 +17,10 @@ module YJIT
       str << "== BLOCK #{i+1}/#{blocks.length}: #{block.code.length} BYTES, ISEQ RANGE [#{block.iseq_start_index},#{block.iseq_end_index}] ".ljust(80, "=")
       str << "\n"
 
-      cs.disasm(block.code, 0).each do |i|
+      cs.disasm(block.code, block.address).each do |i|
         str << sprintf(
           "  %<address>08X:  %<instruction>s\t%<details>s\n",
-          address: block.address + i.address,
+          address: i.address,
           instruction: i.mnemonic,
           details: i.op_str
         )
