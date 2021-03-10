@@ -767,7 +767,22 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
             mov(cb, out_opnd, REG0);
         }
 
-        return YJIT_KEEP_COMPILING;
+
+        // Jump to next instruction. This allows guard chains to share the same successor.
+        {
+            ctx_t reset_depth = *ctx;
+            reset_depth.chain_depth = 0;
+
+            blockid_t jump_block = { jit->iseq, jit_next_insn_idx(jit) };
+
+            // Generate the jump instruction
+            gen_direct_jump(
+                &reset_depth,
+                jump_block
+            );
+        }
+
+        return YJIT_END_BLOCK;
     }
 
     jmp_ptr(cb, side_exit);
