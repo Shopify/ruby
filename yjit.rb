@@ -19,7 +19,7 @@ module YJIT
 
       cs.disasm(block.code, block.address).each do |i|
         str << sprintf(
-          "  %<address>08X:  %<instruction>s\t%<details>s\n",
+          "  %<address>08x:  %<instruction>s\t%<details>s\n",
           address: i.address,
           instruction: i.mnemonic,
           details: i.op_str
