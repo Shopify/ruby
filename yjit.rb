@@ -62,7 +62,7 @@ module YJIT
 
       print_counters(counters, prefix: 'oswb_', prompt: 'opt_send_without_block exit reasons: ')
       print_counters(counters, prefix: 'leave_', prompt: 'leave exit reasons: ')
-      print_counters(counters, prefix: 'getivar_', prompt: 'leave exit reasons: ')
+      print_counters(counters, prefix: 'getivar_', prompt: 'getinstancevariable exit reasons:')
     end
 
     def print_counters(counters, prefix:, prompt:)
