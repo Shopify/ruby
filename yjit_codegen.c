@@ -614,26 +614,26 @@ gen_jz_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t s
 }
 
 enum jcc_kinds {
-    jcc_jne,
-    jcc_jnz,
-    jcc_jz,
-    jcc_je,
+    JCC_JNE,
+    JCC_JNZ,
+    JCC_JZ,
+    JCC_JE,
 };
 
 // Generate a jump to a stub that recompiles the current YARV instruction on failure.
 // When depth_limitk is exceeded, generate a jump to a side exit.
 static void
-jit_recompiling_guard(enum jcc_kinds jcc, jitstate_t *jit, ctx_t *ctx, uint8_t depth_limit, uint8_t *side_exit)
+jit_chain_guard(enum jcc_kinds jcc, jitstate_t *jit, ctx_t *ctx, uint8_t depth_limit, uint8_t *side_exit)
 {
     branchgen_fn target0_gen_fn;
 
     switch (jcc) {
-        case jcc_jne:
-        case jcc_jnz:
+        case JCC_JNE:
+        case JCC_JNZ:
             target0_gen_fn = gen_jnz_to_target0;
             break;
-        case jcc_jz:
-        case jcc_je:
+        case JCC_JZ:
+        case JCC_JE:
             target0_gen_fn = gen_jz_to_target0;
             break;
         default:
@@ -663,13 +663,13 @@ jit_recompiling_guard(enum jcc_kinds jcc, jitstate_t *jit, ctx_t *ctx, uint8_t d
 bool rb_iv_index_tbl_lookup(struct st_table *iv_index_tbl, ID id, struct rb_iv_index_tbl_entry **ent); // vm_insnhelper.c
 
 enum {
-    getivar_max_depth = 10 // up to 5 different classes, and embedded or not for each
+    GETIVAR_MAX_DEPTH = 10 // up to 5 different classes, and embedded or not for each
 };
 
 static codegen_status_t
 gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
 {
-    // Defer compilation so we can peek at the topmost object
+    // Defer compilation so we can specialize a runtime `self`
     if (!jit_at_current_insn(jit)) {
         defer_compilation(jit->block, jit->insn_idx, ctx);
         return YJIT_END_BLOCK;
@@ -679,6 +679,7 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
     VALUE self_val = jit_peek_at_self(jit, ctx);
     VALUE self_klass = rb_class_of(self_val);
 
+    // Create a size-exit to fall back to the interpreter
     uint8_t *side_exit = yjit_side_exit(jit, ctx);
 
     // If the class uses the default allocator, instances should all be T_OBJECT
@@ -694,8 +695,8 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
     ID id = (ID)jit_get_arg(jit, 0);
     struct rb_iv_index_tbl_entry *ent;
     struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(self_val);
-    // Create a size-exit to fall back to the interpreter
 
+    // Lookup index for the ivar the instruction loads
     if (iv_index_tbl && rb_iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
         uint32_t ivar_index = ent->index;
 
@@ -709,17 +710,17 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
         mov(cb, REG1, klass_opnd);
         x86opnd_t serial_opnd = mem_opnd(64, REG1, offsetof(struct RClass, class_serial));
         cmp(cb, serial_opnd, imm_opnd(RCLASS_SERIAL(self_klass)));
-        jit_recompiling_guard(jcc_jne, jit, ctx, getivar_max_depth, side_exit);
+        jit_chain_guard(JCC_JNE, jit, ctx, GETIVAR_MAX_DEPTH, side_exit);
 
+        // Compile time self is embedded and the ivar index is within the object
         if (RB_FL_TEST_RAW(self_val, ROBJECT_EMBED) && ivar_index < ROBJECT_EMBED_LEN_MAX) {
-            // Compile time self is embeded.
             // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
 
             // Guard that self is embedded
             // TODO: BT and JC is shorter
             x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
             test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
-            jit_recompiling_guard(jcc_jz, jit, ctx, getivar_max_depth, side_exit);
+            jit_chain_guard(JCC_JZ, jit, ctx, GETIVAR_MAX_DEPTH, side_exit);
 
             // Load the variable
             x86opnd_t ivar_opnd = mem_opnd(64, REG0, offsetof(struct RObject, as.ary) + ivar_index * SIZEOF_VALUE);
@@ -740,7 +741,7 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
             // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
             x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
             test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
-            jit_recompiling_guard(jcc_jnz, jit, ctx, getivar_max_depth, side_exit);
+            jit_chain_guard(JCC_JNZ, jit, ctx, GETIVAR_MAX_DEPTH, side_exit);
 
             // check that the extended table is big enough
             if (ivar_index >= ROBJECT_EMBED_LEN_MAX + 1) {
