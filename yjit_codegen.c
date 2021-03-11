@@ -786,6 +786,8 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
         return YJIT_END_BLOCK;
     }
 
+    // Take side exit because YJIT_CANT_COMPILE can exit to a JIT entry point and
+    // form an infinite loop when chain_depth > 0.
     jmp_ptr(cb, side_exit);
     return YJIT_END_BLOCK;
 }
