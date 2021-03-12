@@ -3220,28 +3220,84 @@ struct each_obj_args {
     void *data;
 };
 
+struct each_obj_data {
+    struct each_obj_args args;
+    struct heap_page **pages;
+    size_t num_pages;
+};
+
+static bool
+is_ptr_to_heap_page(rb_objspace_t *objspace, struct heap_page *page)
+{
+    for (size_t i = 0; i < heap_allocated_pages; i++) {
+        if (heap_pages_sorted[i] == page) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static VALUE
+objspace_each_objects_ensure(VALUE arg)
+{
+    struct each_obj_data *data = (struct each_obj_data *)arg;
+    struct heap_page **pages = data->pages;
+    GC_ASSERT(pages);
+    free(pages);
+
+    return Qnil;
+}
+
+static VALUE
+objspace_each_objects_try(VALUE arg)
+{
+    struct each_obj_data *data = (struct each_obj_data *)arg;
+    rb_objspace_t *objspace = data->args.objspace;
+
+    for (size_t i = 0; i < data->num_pages; i++) {
+        struct heap_page *page = data->pages[i];
+
+        /* Skip this page if it has been freed. */
+        if (!is_ptr_to_heap_page(objspace, page)) continue;
+
+        RVALUE *pstart = page->start;
+        RVALUE *pend = pstart + page->total_slots;
+
+        if ((*data->args.callback)(pstart, pend, sizeof(RVALUE), data->args.data)) {
+            break;
+        }
+    }
+
+    return Qnil;
+}
+
 static void
 objspace_each_objects_without_setup(rb_objspace_t *objspace, each_obj_callback *callback, void *data)
 {
-    size_t i;
     struct heap_page *page;
-    RVALUE *pstart = NULL, *pend;
 
-    i = 0;
-    while (i < heap_allocated_pages) {
-	while (0 < i && pstart < heap_pages_sorted[i-1]->start)              i--;
-	while (i < heap_allocated_pages && heap_pages_sorted[i]->start <= pstart) i++;
-	if (heap_allocated_pages <= i) break;
+    struct heap_page **pages = malloc(heap_allocated_pages * sizeof(struct heap_page *));
+    if (!pages) rb_memerror();
 
-	page = heap_pages_sorted[i];
-
-	pstart = page->start;
-	pend = pstart + page->total_slots;
-
-        if ((*callback)(pstart, pend, sizeof(RVALUE), data)) {
-	    break;
-	}
+    size_t num_pages = 0;
+    list_for_each(&heap_eden->pages, page, page_node) {
+        GC_ASSERT(num_pages < heap_allocated_pages);
+        pages[num_pages] = page;
+        num_pages++;
     }
+
+    struct each_obj_data each_obj_data = {
+        .args = {
+            .objspace = objspace,
+            .callback = callback,
+            .data = data
+        },
+        .pages = pages,
+        .num_pages = num_pages
+    };
+    rb_ensure(objspace_each_objects_try, (VALUE)&each_obj_data,
+              objspace_each_objects_ensure, (VALUE)&each_obj_data);
 }
 
 static VALUE
