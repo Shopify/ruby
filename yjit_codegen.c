@@ -683,8 +683,7 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
     //       Eventually, we can encode whether an object is T_OBJECT or not
     //       inside object shapes.
     if (rb_get_alloc_func(self_klass) != rb_class_allocate_instance) {
-        jmp_ptr(cb, side_exit);
-        return YJIT_END_BLOCK;
+        return YJIT_CANT_COMPILE;
     }
     RUBY_ASSERT(BUILTIN_TYPE(self_val) == T_OBJECT); // because we checked the allocator
 
@@ -782,10 +781,7 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
         return YJIT_END_BLOCK;
     }
 
-    // Take side exit because YJIT_CANT_COMPILE can exit to a JIT entry point and
-    // form an infinite loop when chain_depth > 0.
-    jmp_ptr(cb, side_exit);
-    return YJIT_END_BLOCK;
+    return YJIT_CANT_COMPILE;
 }
 
 static codegen_status_t
