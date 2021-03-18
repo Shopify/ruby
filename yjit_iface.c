@@ -5,6 +5,7 @@
 #include "vm_sync.h"
 #include "vm_callinfo.h"
 #include "builtin.h"
+#include "gc.h"
 #include "internal/compile.h"
 #include "internal/class.h"
 #include "insns_info.inc"
