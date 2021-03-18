@@ -238,7 +238,7 @@ assume_method_lookup_stable(VALUE receiver_klass, const rb_callable_method_entry
     RUBY_ASSERT(!block->receiver_klass && !block->callee_cme);
     RUBY_ASSERT(cme_validity_dependency);
     RUBY_ASSERT(method_lookup_dependency);
-    RUBY_ASSERT(RB_TYPE_P(receiver_klass, T_CLASS));
+    RUBY_ASSERT_ALWAYS(RB_TYPE_P(receiver_klass, T_CLASS));
 
     block->callee_cme = (VALUE)cme;
     st_update(cme_validity_dependency, (st_data_t)cme, add_cme_validity_dependency_i, (st_data_t)block);
