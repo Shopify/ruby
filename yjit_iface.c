@@ -141,19 +141,6 @@ struct yjit_root_struct {
     int unused; // empty structs are not legal in C99
 };
 
-static void
-block_array_shuffle_remove(rb_yjit_block_array_t blocks, block_t *to_remove) {
-    block_t **elem;
-    rb_darray_foreach(blocks, i, elem) {
-        if (*elem == to_remove) {
-            // Remove the current element by moving the last element here then popping.
-            *elem = rb_darray_get(blocks, rb_darray_size(blocks) - 1);
-            rb_darray_pop_back(blocks);
-            break;
-        }
-    }
-}
-
 // Hash table of BOP blocks
 static st_table *blocks_assuming_bops;
 
@@ -251,6 +238,7 @@ assume_method_lookup_stable(VALUE receiver_klass, const rb_callable_method_entry
     RUBY_ASSERT(!block->receiver_klass && !block->callee_cme);
     RUBY_ASSERT(cme_validity_dependency);
     RUBY_ASSERT(method_lookup_dependency);
+    RUBY_ASSERT(RB_TYPE_P(receiver_klass, T_CLASS));
 
     block->callee_cme = (VALUE)cme;
     st_update(cme_validity_dependency, (st_data_t)cme, add_cme_validity_dependency_i, (st_data_t)block);
