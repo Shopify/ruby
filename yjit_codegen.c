@@ -283,6 +283,7 @@ jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
 
     // Generate the jump instruction
     gen_direct_jump(
+        jit->block,
         &reset_depth,
         jump_block
     );
@@ -710,6 +711,7 @@ jit_chain_guard(enum jcc_kinds jcc, jitstate_t *jit, const ctx_t *ctx, uint8_t d
         deeper.chain_depth++;
 
         gen_branch(
+            jit->block,
             ctx,
             (blockid_t) { jit->iseq, jit->insn_idx },
             &deeper,
@@ -1322,6 +1324,7 @@ gen_branchif(jitstate_t* jit, ctx_t* ctx)
 
     // Generate the branch instructions
     gen_branch(
+        jit->block,
         ctx,
         jump_block,
         ctx,
@@ -1375,6 +1378,7 @@ gen_branchunless(jitstate_t* jit, ctx_t* ctx)
 
     // Generate the branch instructions
     gen_branch(
+        jit->block,
         ctx,
         jump_block,
         ctx,
@@ -1400,6 +1404,7 @@ gen_jump(jitstate_t* jit, ctx_t* ctx)
 
     // Generate the jump instruction
     gen_direct_jump(
+        jit->block,
         ctx,
         jump_block
     );
@@ -1792,6 +1797,7 @@ gen_oswb_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const r
 
     // Write the JIT return address on the callee frame
     gen_branch(
+        jit->block,
         ctx,
         return_block,
         &return_ctx,
@@ -1808,6 +1814,7 @@ gen_oswb_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const r
 
     // Directly jump to the entry point of the callee
     gen_direct_jump(
+        jit->block,
         &callee_ctx,
         (blockid_t){ iseq, 0 }
     );
@@ -2039,6 +2046,7 @@ gen_opt_getinlinecache(jitstate_t *jit, ctx_t *ctx)
     // Jump over the code for filling the cache
     uint32_t jump_idx = jit_next_insn_idx(jit) + (int32_t)jump_offset;
     gen_direct_jump(
+        jit->block,
         ctx,
         (blockid_t){ .iseq = jit->iseq, .idx = jump_idx }
     );
