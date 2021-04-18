@@ -1721,6 +1721,7 @@ gen_oswb_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const r
 
     // Stack overflow check
     // #define CHECK_VM_STACK_OVERFLOW0(cfp, sp, margin)
+    ADD_COMMENT(cb, "stack overflow check");
     lea(cb, REG0, ctx_sp_opnd(ctx, sizeof(VALUE) * (num_locals + iseq->body->stack_max) + sizeof(rb_control_frame_t)));
     cmp(cb, REG_CFP, REG0);
     jle_ptr(cb, COUNTED_EXIT(side_exit, oswb_se_cf_overflow));
