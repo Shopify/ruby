@@ -941,8 +941,9 @@ rb_yjit_iseq_mark(const struct rb_iseq_constant_body *body)
             // Update outgoing branch entries
             rb_darray_for(block->outgoing, branch_idx) {
                 branch_t* branch = rb_darray_get(block->outgoing, branch_idx);
-                branch->targets[0].iseq = (const void *)rb_gc_location((VALUE)branch->targets[0].iseq);
-                branch->targets[1].iseq = (const void *)rb_gc_location((VALUE)branch->targets[1].iseq);
+                for (int i = 0; i < 2; ++i) {
+                    branch->targets[i].iseq = (const void *)rb_gc_location((VALUE)branch->targets[i].iseq);
+                }
             }
 
             // Walk over references to objects in generated code.

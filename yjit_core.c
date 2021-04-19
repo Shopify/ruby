@@ -813,7 +813,7 @@ yjit_free_block(block_t *block)
                 continue;
 
             // FIXME: we need a darray_remove() method
-            // Remove this block from the incoming
+            // Remove this block from the successor's incoming list
             rb_darray_for(succ->incoming, incoming_idx) {
                 branch_t* pred_branch = rb_darray_get(succ->incoming, incoming_idx);
                 if (pred_branch == out_branch) {
