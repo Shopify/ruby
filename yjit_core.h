@@ -181,7 +181,6 @@ typedef struct yjit_branch_entry
     ctx_t src_ctx;
 
     // Branch target blocks and their contexts
-    // NOTE: we could store the blocks/ids in a union if size matters
     blockid_t targets[2];
     ctx_t target_ctxs[2];
     struct yjit_block_version *blocks[2];
@@ -194,10 +193,6 @@ typedef struct yjit_branch_entry
 
     // Shape of the branch
     branch_shape_t shape : 2;
-
-    // Two flag bits to indicate target addresses
-    // have been patched (are not stubs)
-    uint8_t dst_patched : 2;
 
 } branch_t;
 

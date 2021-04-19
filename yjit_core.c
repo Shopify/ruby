@@ -529,7 +529,7 @@ branch_stub_hit(branch_t* branch, const uint32_t target_idx, rb_execution_contex
 
     // If this branch has already been patched, return the dst address
     // Note: ractors can cause the same stub to be hit multiple times
-    if (branch->dst_patched & (1 << target_idx)) {
+    if (branch->blocks[target_idx]) {
         dst_addr = branch->dst_addrs[target_idx];
     }
     else
@@ -569,6 +569,9 @@ branch_stub_hit(branch_t* branch, const uint32_t target_idx, rb_execution_contex
 
             // If the new block can be generated right after the branch (at cb->write_pos)
             if (cb->write_pos == branch->end_pos) {
+                // This branch should be terminating its block
+                RUBY_ASSERT(branch->end_pos == branch->block->end_pos);
+
                 // Change the branch shape to indicate the target block will be placed next
                 branch->shape = (uint8_t)target_idx;
 
@@ -577,8 +580,10 @@ branch_stub_hit(branch_t* branch, const uint32_t target_idx, rb_execution_contex
                 branch->gen_fn(cb, branch->dst_addrs[0], branch->dst_addrs[1], branch->shape);
                 RUBY_ASSERT(cb->write_pos <= branch->end_pos && "can't enlarge branches");
                 branch->end_pos = cb->write_pos;
+                branch->block->end_pos = cb->write_pos;
             }
 
+            // Compile the new block version
             p_block = gen_block_version(target, target_ctx, ec);
             RUBY_ASSERT(p_block);
             RUBY_ASSERT(!(branch->shape == (uint8_t)target_idx && p_block->start_pos != branch->end_pos));
@@ -601,7 +606,6 @@ branch_stub_hit(branch_t* branch, const uint32_t target_idx, rb_execution_contex
 
         // Mark this branch target as patched (no longer a stub)
         branch->blocks[target_idx] = p_block;
-        branch->dst_patched |= (1 << target_idx);
 
         // Restore interpreter sp, since the code hitting the stub expects the original.
         ec->cfp->sp = original_interp_sp;
@@ -885,7 +889,6 @@ invalidate_block_version(block_t* block)
 
         // Mark this target as being a stub
         branch->blocks[target_idx] = NULL;
-        branch->dst_patched &= ~(1 << target_idx);
 
         // Check if the invalidated block immediately follows
         bool target_next = block->start_pos == branch->end_pos;
