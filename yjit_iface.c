@@ -938,11 +938,11 @@ rb_yjit_iseq_mark(const struct rb_iseq_constant_body *body)
             rb_gc_mark_movable(block->receiver_klass);
             rb_gc_mark_movable(block->callee_cme);
 
-            // Update outgoing branch entries
+            // Mark outgoing branch entries
             rb_darray_for(block->outgoing, branch_idx) {
                 branch_t* branch = rb_darray_get(block->outgoing, branch_idx);
                 for (int i = 0; i < 2; ++i) {
-                    branch->targets[i].iseq = (const void *)rb_gc_location((VALUE)branch->targets[i].iseq);
+                    rb_gc_mark_movable((VALUE)branch->targets[i].iseq);
                 }
             }
 
@@ -973,6 +973,14 @@ rb_yjit_iseq_update_references(const struct rb_iseq_constant_body *body)
 
             block->receiver_klass = rb_gc_location(block->receiver_klass);
             block->callee_cme = rb_gc_location(block->callee_cme);
+
+            // Update outgoing branch entries
+            rb_darray_for(block->outgoing, branch_idx) {
+                branch_t* branch = rb_darray_get(block->outgoing, branch_idx);
+                for (int i = 0; i < 2; ++i) {
+                    branch->targets[i].iseq = (const void *)rb_gc_location((VALUE)branch->targets[i].iseq);
+                }
+            }
 
             // Walk over references to objects in generated code.
             uint32_t *offset_element;

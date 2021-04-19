@@ -812,14 +812,11 @@ yjit_free_block(block_t *block)
             if (succ == NULL)
                 continue;
 
-            // FIXME: we need a darray_remove() method
             // Remove this block from the successor's incoming list
             rb_darray_for(succ->incoming, incoming_idx) {
                 branch_t* pred_branch = rb_darray_get(succ->incoming, incoming_idx);
                 if (pred_branch == out_branch) {
-                    branch_t* last_branch = rb_darray_back(succ->incoming);
-                    rb_darray_pop_back(succ->incoming);
-                    rb_darray_set(succ->incoming, incoming_idx, last_branch);
+                    rb_darray_remove_unordered(succ->incoming, incoming_idx);
                     break;
                 }
             }
@@ -836,24 +833,19 @@ yjit_free_block(block_t *block)
     free(block);
 }
 
-// Remove a block version without reordering the version array
-static bool
+// Remove a block version
+static void
 block_array_remove(rb_yjit_block_array_t block_array, block_t *block)
 {
-    bool after_target = false;
     block_t **element;
     rb_darray_foreach(block_array, idx, element) {
-        if (after_target) {
-            rb_darray_set(block_array, idx - 1, *element);
-        }
-        else if (*element == block) {
-            after_target = true;
+        if (*element == block) {
+            rb_darray_remove_unordered(block_array, idx);
+            return;
         }
     }
 
-    if (after_target) rb_darray_pop_back(block_array);
-
-    return after_target;
+    RUBY_ASSERT(false);
 }
 
 // Invalidate one specific block version
@@ -871,9 +863,7 @@ invalidate_block_version(block_t* block)
 
     // Remove this block from the version array
     rb_yjit_block_array_t versions = yjit_get_version_array(iseq, block->blockid.idx);
-    RB_UNUSED_VAR(bool removed);
-    removed = block_array_remove(versions, block);
-    RUBY_ASSERT(removed);
+    block_array_remove(versions, block);
 
     // Get a pointer to the generated code for this block
     uint8_t* code_ptr = cb_get_ptr(cb, block->start_pos);

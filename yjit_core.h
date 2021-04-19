@@ -222,10 +222,10 @@ typedef struct yjit_block_version
     uint32_t start_pos;
     uint32_t end_pos;
 
-    // List of incoming branches
+    // List of incoming branches (from predecessors)
     branch_array_t incoming;
 
-    // List of outgoing branches
+    // List of outgoing branches (to successors)
     // Note: these are owned by this block version
     branch_array_t outgoing;
 
