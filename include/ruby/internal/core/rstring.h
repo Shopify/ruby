@@ -31,6 +31,7 @@
 #include "ruby/internal/value_type.h"
 #include "ruby/internal/warning_push.h"
 #include "ruby/assert.h"
+#include "ruby/st.h"
 
 /**
  * Convenient casting macro.
@@ -298,6 +299,18 @@ struct RString {
             char ary[RSTRING_EMBED_LEN_MAX + 1];
 #endif
         } embed;
+
+        struct {
+            /**
+             * When a  string is short enough,  it uses this area  to store the
+             * contents themselves.  This was  impractical in the 20th century,
+             * but these days 64 bit machines can typically hold 24 bytes here.
+             * Could be sufficiently large.  In this case the length is encoded
+             * into the flags.
+             */
+            char ary[RSTRING_EMBED_LEN_MAX + 1 - sizeof(st_index_t)];
+            st_index_t hash;
+        } prehashed_embed;
     } as;
 };
 

@@ -246,6 +246,7 @@ static VALUE str_new(VALUE klass, const char *ptr, long len);
 static void str_make_independent_expand(VALUE str, long len, long expand, const int termlen);
 static inline void str_modifiable(VALUE str);
 static VALUE rb_str_downcase(int argc, VALUE *argv, VALUE str);
+static inline st_index_t str_hash(VALUE str);
 
 static inline void
 str_make_independent(VALUE str)
@@ -441,6 +442,10 @@ register_fstring(VALUE str, bool copy)
 {
     struct fstr_update_arg args;
     args.copy = copy;
+
+    if (STR_EMBED_P(str) && RSTRING_LEN(str) + (long)sizeof(st_index_t) <= str_embed_capa(str)) {
+        RSTRING(str)->as.prehashed_embed.hash = 0; //str_hash(str);
+    }
 
     RB_VM_LOCK_ENTER();
     {
@@ -3506,14 +3511,25 @@ rb_str_prepend_multi(int argc, VALUE *argv, VALUE str)
     return str;
 }
 
-st_index_t
-rb_str_hash(VALUE str)
+static inline st_index_t
+str_hash(VALUE str)
 {
     int e = ENCODING_GET(str);
     if (e && rb_enc_str_coderange(str) == ENC_CODERANGE_7BIT) {
 	e = 0;
     }
     return rb_memhash((const void *)RSTRING_PTR(str), RSTRING_LEN(str)) ^ e;
+}
+
+st_index_t
+rb_str_hash(VALUE str)
+{
+    if (STR_EMBED_P(str) && FL_TEST_RAW(str, RSTRING_FSTR)) {
+        return RSTRING(str)->as.prehashed_embed.hash;
+    } else
+    {
+        return str_hash(str); 
+    }
 }
 
 int
