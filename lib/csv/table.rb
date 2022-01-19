@@ -584,9 +584,17 @@ class CSV
     # This method assumes you want the Table.headers(), unless you explicitly
     # pass <tt>:write_headers => false</tt>.
     #
-    def to_csv(write_headers: true, **options)
+    # Omits the headers if option +write_headers+ is given as +false+
+    # (see {Option +write_headers+}[../CSV.html#class-CSV-label-Option+write_headers]):
+    #   table.to_csv(write_headers: false) # => "foo,0\nbar,1\nbaz,2\n"
+    #
+    # Limit rows if option +limit+ is given like +2+:
+    #   table.to_csv(limit: 2) # => "Name,Value\nfoo,0\nbar,1\n"
+    def to_csv(write_headers: true, limit: nil, **options)
       array = write_headers ? [headers.to_csv(**options)] : []
-      @table.each do |row|
+      limit ||= @table.size
+      limit = @table.size + 1 + limit if limit < 0
+      @table.first(limit).each do |row|
         array.push(row.fields.to_csv(**options)) unless row.header_row?
       end
 
@@ -612,9 +620,24 @@ class CSV
       end
     end
 
-    # Shows the mode and size of this table in a US-ASCII String.
+    # :call-seq:
+    #   table.inspect => string
+    #
+    # Returns a <tt>US-ASCII</tt>-encoded \String showing table:
+    # - Class: <tt>CSV::Table</tt>.
+    # - Access mode: <tt>:row</tt>, <tt>:col</tt>, or <tt>:col_or_row</tt>.
+    # - Size:  Row count, including the header row.
+    #
+    # Example:
+    #   source = "Name,Value\nfoo,0\nbar,1\nbaz,2\n"
+    #   table = CSV.parse(source, headers: true)
+    #   table.inspect # => "#<CSV::Table mode:col_or_row row_count:4>\nName,Value\nfoo,0\nbar,1\nbaz,2\n"
+    #
     def inspect
-      "#<#{self.class} mode:#{@mode} row_count:#{to_a.size}>".encode("US-ASCII")
+      inspected = +"#<#{self.class} mode:#{@mode} row_count:#{to_a.size}>"
+      summary = to_csv(limit: 5)
+      inspected << "\n" << summary if summary.encoding.ascii_compatible?
+      inspected
     end
   end
 end

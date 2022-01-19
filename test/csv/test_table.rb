@@ -549,7 +549,25 @@ A
     assert_send([Encoding, :compatible?,
                  Encoding.find("US-ASCII"),
                  @table.inspect.encoding],
-            "inspect() was not ASCII compatible." )
+                "inspect() was not ASCII compatible." )
+  end
+
+  def test_inspect_with_rows
+    additional_rows  = [ CSV::Row.new(%w{A B C}, [101, 102, 103]),
+                         CSV::Row.new(%w{A B C}, [104, 105, 106]),
+                         CSV::Row.new(%w{A B C}, [107, 108, 109]) ]
+    table = CSV::Table.new(@rows + additional_rows)
+    str_table = table.inspect
+
+    assert_equal(<<-CSV, str_table)
+#<CSV::Table mode:col_or_row row_count:7>
+A,B,C
+1,2,3
+4,5,6
+7,8,9
+101,102,103
+104,105,106
+    CSV
   end
 
   def test_dig_mixed
