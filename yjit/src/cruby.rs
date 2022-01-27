@@ -29,6 +29,7 @@ pub const SIZEOF_VALUE: usize = 8;
 
 // TODO: need constants for all the YARV opcodes
 pub const OP_NOP: usize = 0;
+pub const OP_POP: usize = 1;
 //...
 
 // TODO: need the actual value of VM_INSTRUCTION_SIZE

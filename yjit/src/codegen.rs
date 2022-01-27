@@ -51,6 +51,19 @@ pub struct JITState
     record_boundary_patch_point : bool,
 }
 
+impl JITState {
+    pub fn new() -> Self {
+        return JITState {
+            block: Block::new(BLOCKID_NULL),
+            iseq: IseqPtr(0),
+            insn_idx: 0,
+            opcode: 0,
+            side_exit_for_pc: CodePtr::null(),
+            record_boundary_patch_point: false
+        };
+    }
+}
+
 enum CodegenStatus {
     EndBlock,
     KeepCompiling,
@@ -58,7 +71,7 @@ enum CodegenStatus {
 }
 
 // Code generation function signature
-type CodeGenFn = fn(jit: &JITState, ctx: &Context, cb: &CodeBlock) -> CodegenStatus;
+type CodeGenFn = fn(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus;
 
 
 
@@ -803,15 +816,39 @@ gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context
 
 
 
-fn gen_nop(jit: &JITState, ctx: &Context, cb: &CodeBlock) -> CodegenStatus
+fn gen_nop(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus
 {
     // Do nothing
     return KeepCompiling;
 }
 
+fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus
+{
+    // Decrement SP
+    ctx.stack_pop(1);
+    return KeepCompiling;
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn test_gen_nop() {
+        let status = gen_nop(&JITState::new(), &mut Context::new(), &CodeBlock::new());
 
+        assert!(matches!(KeepCompiling, status));
+    }
+
+    #[test]
+    fn test_gen_pop() {
+        let mut context = Context::new_with_stack_size(1);
+        let status = gen_pop(&JITState::new(), &mut context, &CodeBlock::new());
+
+        assert!(matches!(KeepCompiling, status));
+        assert_eq!(context.diff(&Context::new()), 0);
+    }
+}
 
 /*
 static codegen_status_t
@@ -914,14 +951,6 @@ gen_topn(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     mov(cb, REG0, top_n_val);
     mov(cb, loc0, REG0);
 
-    return YJIT_KEEP_COMPILING;
-}
-
-static codegen_status_t
-gen_pop(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    // Decrement SP
-    ctx_stack_pop(ctx, 1);
     return YJIT_KEEP_COMPILING;
 }
 
@@ -4951,6 +4980,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
 
     match opcode {
         OP_NOP => Some(gen_nop),
+        OP_POP => Some(gen_pop),
 
         /*
         yjit_reg_op(BIN(dup), gen_dup);
@@ -4958,7 +4988,6 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(swap), gen_swap);
         yjit_reg_op(BIN(setn), gen_setn);
         yjit_reg_op(BIN(topn), gen_topn);
-        yjit_reg_op(BIN(pop), gen_pop);
         yjit_reg_op(BIN(adjuststack), gen_adjuststack);
         yjit_reg_op(BIN(newarray), gen_newarray);
         yjit_reg_op(BIN(duparray), gen_duparray);

@@ -401,6 +401,18 @@ static uint8_t *alloc_exec_mem(uint32_t mem_size)
 
 impl CodeBlock
 {
+    pub fn new() -> Self {
+        return CodeBlock {
+            mem_size: 0,
+            write_pos: 0,
+            label_addrs: Vec::new(),
+            label_names: Vec::new(),
+            label_refs: Vec::new(),
+            current_aligned_write_pos: 0,
+            dropped_bytes: false
+        };
+    }
+
     /*
     // Initialize a code block object
     void cb_init(codeblock_t *cb, uint8_t *mem_block, uint32_t mem_size)

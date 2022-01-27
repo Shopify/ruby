@@ -226,6 +226,15 @@ pub struct CodePtr(*mut u8);
 
 // TODO: do we want constructor (new) or some from() methods for code pointers?
 impl CodePtr {
+    pub fn null() -> Self {
+        return CodePtr::from(0 as *mut u8);
+    }
+}
+
+impl From<*mut u8> for CodePtr {
+    fn from(value: *mut u8) -> Self {
+        return CodePtr(value);
+    }
 }
 
 /// Branch code shape enumeration
@@ -429,7 +438,42 @@ fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
 // Filled by gen_code_for_exit_from_stub().
 //static uint8_t *code_for_exit_from_stub = NULL;
 
+impl Block {
+    pub fn new(blockid: BlockId) -> Self {
+        let ptr = 0;
+
+        return Block {
+            blockid,
+            end_idx: 0,
+            ctx: Context::new(),
+            start_addr: CodePtr::null(),
+            end_addr: CodePtr::null(),
+            incoming: Vec::new(),
+            outgoing: Vec::new(),
+            gc_object_offsets: Vec::new(),
+            cme_dependencies: Vec::new(),
+            entry_exit: CodePtr::null()
+        };
+    }
+}
+
 impl Context {
+    pub fn new_with_stack_size(size: i16) -> Self {
+        return Context {
+            stack_size: size as u16,
+            sp_offset: size,
+            chain_depth: 0,
+            local_types: [Type::Unknown; MAX_LOCAL_TYPES],
+            temp_types: [Type::Unknown; MAX_TEMP_TYPES],
+            self_type: Type::Unknown,
+            temp_mapping: [TempMapping::MapToStack; MAX_TEMP_TYPES]
+        };
+    }
+
+    pub fn new() -> Self {
+        return Self::new_with_stack_size(0);
+    }
+
     /// Get an operand for the adjusted stack pointer address
     fn sp_opnd(&self, offset_bytes: usize) -> X86Opnd
     {
@@ -494,7 +538,7 @@ impl Context {
 
     // Pop N values off the stack
     // Return a pointer to the stack top before the pop operation
-    fn stack_pop(&mut self, n: usize) -> X86Opnd
+    pub fn stack_pop(&mut self, n: usize) -> X86Opnd
     {
         assert!(n <= self.stack_size.into());
 
@@ -720,7 +764,7 @@ impl Context {
     /// Returns 0 if the two contexts are the same
     /// Returns > 0 if different but compatible
     /// Returns usize::MAX if incompatible
-    fn diff(&self, dst: &Context) -> usize
+    pub fn diff(&self, dst: &Context) -> usize
     {
         // Self is the source context (at the end of the predecessor)
         let src = self;
