@@ -1513,7 +1513,7 @@ zero_extendable_32bit(uint64_t number)
 */
 
 /// mov - Data move operation
-pub fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd)
+fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd)
 {
     todo!();
 
