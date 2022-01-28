@@ -871,21 +871,6 @@ mod tests {
 }
 
 /*
-static codegen_status_t
-gen_dup(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    // Get the top value and its type
-    x86opnd_t dup_val = ctx_stack_pop(ctx, 0);
-    temp_type_mapping_t mapping = ctx_get_opnd_mapping(ctx, OPND_STACK(0));
-
-    // Push the same value on top
-    x86opnd_t loc0 = ctx_stack_push_mapping(ctx, mapping);
-    mov(cb, REG0, dup_val);
-    mov(cb, loc0, REG0);
-
-    return YJIT_KEEP_COMPILING;
-}
-
 // duplicate stack top n elements
 static codegen_status_t
 gen_dupn(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
