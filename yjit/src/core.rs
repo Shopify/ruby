@@ -477,7 +477,7 @@ impl Context {
     }
 
     /// Get an operand for the adjusted stack pointer address
-    fn sp_opnd(&self, offset_bytes: usize) -> X86Opnd
+    pub fn sp_opnd(&self, offset_bytes: usize) -> X86Opnd
     {
         let offset = ((self.sp_offset as usize) * SIZEOF_VALUE) + offset_bytes;
         let offset = offset as i32;
@@ -486,7 +486,7 @@ impl Context {
 
     /// Push one new value on the temp stack with an explicit mapping
     /// Return a pointer to the new stack top
-    fn stack_push_mapping(&mut self, (mapping, temp_type): (TempMapping, Type)) -> X86Opnd
+    pub fn stack_push_mapping(&mut self, (mapping, temp_type): (TempMapping, Type)) -> X86Opnd
     {
         // If type propagation is disabled, store no types
         if get_option!(no_type_prop) {
@@ -515,19 +515,19 @@ impl Context {
 
     /// Push one new value on the temp stack
     /// Return a pointer to the new stack top
-    fn stack_push(&mut self, val_type: Type) -> X86Opnd
+    pub fn stack_push(&mut self, val_type: Type) -> X86Opnd
     {
         return self.stack_push_mapping((MapToStack, val_type));
     }
 
     /// Push the self value on the stack
-    fn stack_push_self(&mut self) -> X86Opnd
+    pub fn stack_push_self(&mut self) -> X86Opnd
     {
         return self.stack_push_mapping((MapToSelf, Type::Unknown));
     }
 
     /// Push a local variable on the stack
-    fn stack_push_local(&mut self, local_idx: usize) -> X86Opnd
+    pub fn stack_push_local(&mut self, local_idx: usize) -> X86Opnd
     {
         if local_idx >= MAX_LOCAL_TYPES {
             return self.stack_push(Type::Unknown);
@@ -565,7 +565,7 @@ impl Context {
     }
 
     /// Get an operand pointing to a slot on the temp stack
-    fn stack_opnd(&self, idx: i32) -> X86Opnd
+    pub fn stack_opnd(&self, idx: i32) -> X86Opnd
     {
         // SP points just above the topmost value
         let offset = ((self.sp_offset as i32) - 1 - idx) * (SIZEOF_VALUE as i32);
@@ -574,7 +574,7 @@ impl Context {
     }
 
     /// Get the type of an instruction operand
-    fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
+    pub fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
     {
         match opnd {
             SelfOpnd => {
@@ -612,7 +612,7 @@ impl Context {
     /// This value must be compatible and at least as specific as the previously known type.
     /// If this value originated from self, or an lvar, the learned type will be
     /// propagated back to its source.
-    fn upgrade_opnd_type(&mut self, opnd: InsnOpnd, opnd_type: Type)
+    pub fn upgrade_opnd_type(&mut self, opnd: InsnOpnd, opnd_type: Type)
     {
         // If type propagation is disabled, store no types
         if get_option!(no_type_prop) {
@@ -657,7 +657,7 @@ impl Context {
     This is can be used with stack_push_mapping or set_opnd_mapping to copy
     a stack value's type while maintaining the mapping.
     */
-    fn get_opnd_mapping(&self, opnd: InsnOpnd) -> (TempMapping, Type)
+    pub fn get_opnd_mapping(&self, opnd: InsnOpnd) -> (TempMapping, Type)
     {
         let opnd_type = self.get_opnd_type(opnd);
 
@@ -684,7 +684,7 @@ impl Context {
     }
 
     /// Overwrite both the type and mapping of a stack operand.
-    fn set_opnd_mapping(&mut self, opnd: InsnOpnd, (mapping, opnd_type): (TempMapping, Type))
+    pub fn set_opnd_mapping(&mut self, opnd: InsnOpnd, (mapping, opnd_type): (TempMapping, Type))
     {
         match opnd {
             SelfOpnd => unreachable!("self always maps to self"),
@@ -711,7 +711,7 @@ impl Context {
     }
 
     /// Set the type of a local variable
-    fn set_local_type(&mut self, local_idx: usize, local_type: Type) {
+    pub fn set_local_type(&mut self, local_idx: usize, local_type: Type) {
         let ctx = self;
 
         // If type propagation is disabled, store no types
@@ -744,7 +744,7 @@ impl Context {
 
     /// Erase local variable type information
     /// eg: because of a call we can't track
-    fn clear_local_types(ctx: &mut Self) {
+    pub fn clear_local_types(ctx: &mut Self) {
         // When clearing local types we must detach any stack mappings to those
         // locals. Even if local values may have changed, stack values will not.
         for (i, mapping) in ctx.temp_mapping.iter_mut().enumerate() {
@@ -846,7 +846,7 @@ impl Context {
 }
 
 /// Keep track of a block version. Block should be fully constructed.
-fn add_block_version(block: &mut Block)
+pub fn add_block_version(block: &mut Block)
 {
     todo!();
 

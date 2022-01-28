@@ -413,6 +413,10 @@ impl CodeBlock
         };
     }
 
+    pub fn get_write_pos(self) -> usize {
+        return self.write_pos;
+    }
+
     /*
     // Initialize a code block object
     void cb_init(codeblock_t *cb, uint8_t *mem_block, uint32_t mem_size)
@@ -1509,7 +1513,7 @@ zero_extendable_32bit(uint64_t number)
 */
 
 /// mov - Data move operation
-fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd)
+pub fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd)
 {
     todo!();
 

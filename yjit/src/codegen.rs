@@ -1,6 +1,7 @@
 use crate::cruby::*;
 use crate::asm::x86_64::*;
 use crate::core::*;
+use InsnOpnd::*;
 use CodegenStatus::*;
 
 // Callee-saved registers
@@ -71,7 +72,7 @@ enum CodegenStatus {
 }
 
 // Code generation function signature
-type CodeGenFn = fn(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus;
+type CodeGenFn = fn(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus;
 
 
 
@@ -816,16 +817,28 @@ gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context
 
 
 
-fn gen_nop(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus
+fn gen_nop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Do nothing
     return KeepCompiling;
 }
 
-fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus
+fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Decrement SP
     ctx.stack_pop(1);
+    return KeepCompiling;
+}
+
+fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+{
+    let dup_val = ctx.stack_pop(1);
+    let (mapping, tmp_type) = ctx.get_opnd_mapping(StackOpnd(0));
+
+    let loc0 = ctx.stack_push_mapping((mapping, tmp_type));
+    mov(cb, REG0, dup_val);
+    mov(cb, loc0, REG0);
+
     return KeepCompiling;
 }
 
@@ -833,17 +846,24 @@ fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus
 mod tests {
     use super::*;
 
+    //use crate::codegen::*;
+    use crate::asm::x86_64::*;
+
     #[test]
     fn test_gen_nop() {
-        let status = gen_nop(&JITState::new(), &mut Context::new(), &CodeBlock::new());
+        let mut context = Context::new();
+        let mut cb = CodeBlock::new();
+        let status = gen_nop(&JITState::new(), &mut context, &mut cb);
 
         assert!(matches!(KeepCompiling, status));
+        assert_eq!(context.diff(&Context::new()), 0);
+        assert_eq!(cb.get_write_pos(), 0);
     }
 
     #[test]
     fn test_gen_pop() {
         let mut context = Context::new_with_stack_size(1);
-        let status = gen_pop(&JITState::new(), &mut context, &CodeBlock::new());
+        let status = gen_pop(&JITState::new(), &mut context, &mut CodeBlock::new());
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
@@ -4981,9 +5001,9 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
     match opcode {
         OP_NOP => Some(gen_nop),
         OP_POP => Some(gen_pop),
+        OP_DUP => Some(gen_dup),
 
         /*
-        yjit_reg_op(BIN(dup), gen_dup);
         yjit_reg_op(BIN(dupn), gen_dupn);
         yjit_reg_op(BIN(swap), gen_swap);
         yjit_reg_op(BIN(setn), gen_setn);
