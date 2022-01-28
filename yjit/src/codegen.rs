@@ -836,8 +836,8 @@ fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStat
     let (mapping, tmp_type) = ctx.get_opnd_mapping(StackOpnd(0));
 
     let loc0 = ctx.stack_push_mapping((mapping, tmp_type));
-    mov(cb, REG0, dup_val);
-    mov(cb, loc0, REG0);
+    //mov(cb, REG0, dup_val);  // Huh. Mov() isn't implemented. Why did I think it was?
+    //mov(cb, loc0, REG0);
 
     return KeepCompiling;
 }
@@ -868,6 +868,19 @@ mod tests {
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
     }
+
+    #[test]
+    fn test_gen_dup() {
+        let mut context = Context::new();
+        context.stack_push(Type::Fixnum);
+        context.stack_push(Type::Fixnum);
+        let mut cb = CodeBlock::new();
+        let status = gen_dup(&JITState::new(), &mut context, &mut cb);
+
+        assert!(matches!(KeepCompiling, status));
+        //assert_eq!(cb.get_write_pos(), 2)
+    }
+
 }
 
 /*
