@@ -842,6 +842,30 @@ fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStat
     return KeepCompiling;
 }
 
+// Swap top 2 stack entries
+fn gen_swap(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+{
+    stack_swap(ctx, cb, 0, 1, REG0, REG1);
+    return KeepCompiling;
+}
+
+fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16, reg0: X86Opnd, reg1: X86Opnd) -> ()
+{
+    let opnd0 = ctx.stack_opnd(offset0 as i32);
+    let opnd1 = ctx.stack_opnd(offset1 as i32);
+
+    let mapping0 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset0));
+    let mapping1 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset1));
+
+    //mov(cb, REG0, opnd0);
+    //mov(cb, REG1, opnd1);
+    //mov(cb, opnd0, REG1);
+    //mov(cb, opnd1, REG0);
+
+    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset0), mapping1);
+    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset1), mapping0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -873,14 +897,29 @@ mod tests {
     fn test_gen_dup() {
         let mut context = Context::new();
         context.stack_push(Type::Fixnum);
-        context.stack_push(Type::Fixnum);
+        context.stack_push(Type::Fixnum);  // I feel like this shouldn't be needed - asking on Slack.
         let mut cb = CodeBlock::new();
         let status = gen_dup(&JITState::new(), &mut context, &mut cb);
 
         assert!(matches!(KeepCompiling, status));
-        //assert_eq!(cb.get_write_pos(), 2)
+        //assert_eq!(cb.get_write_pos(), 2);  // Can check the write_pos once the mov statements can be uncommented
     }
 
+    #[test]
+    fn test_gen_swap() {
+        let mut context = Context::new();
+        context.stack_push(Type::Fixnum);
+        context.stack_push(Type::Flonum);
+        let mut cb = CodeBlock::new();
+        let status = gen_swap(&JITState::new(), &mut context, &mut cb);
+
+        let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
+        let (_, tmp_type_next) = context.get_opnd_mapping(StackOpnd(1));
+
+        assert!(matches!(KeepCompiling, status));
+        assert_eq!(tmp_type_top, Type::Fixnum);
+        assert_eq!(tmp_type_next, Type::Flonum);
+    }
 }
 
 /*
@@ -908,32 +947,6 @@ gen_dupn(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     mov(cb, REG0, opnd0);
     mov(cb, dst0, REG0);
 
-    return YJIT_KEEP_COMPILING;
-}
-
-static void
-stack_swap(ctx_t *ctx, codeblock_t *cb, int offset0, int offset1, x86opnd_t reg0, x86opnd_t reg1)
-{
-    x86opnd_t opnd0 = ctx_stack_opnd(ctx, offset0);
-    x86opnd_t opnd1 = ctx_stack_opnd(ctx, offset1);
-
-    temp_type_mapping_t mapping0 = ctx_get_opnd_mapping(ctx, OPND_STACK(offset0));
-    temp_type_mapping_t mapping1 = ctx_get_opnd_mapping(ctx, OPND_STACK(offset1));
-
-    mov(cb, reg0, opnd0);
-    mov(cb, reg1, opnd1);
-    mov(cb, opnd0, reg1);
-    mov(cb, opnd1, reg0);
-
-    ctx_set_opnd_mapping(ctx, OPND_STACK(offset0), mapping1);
-    ctx_set_opnd_mapping(ctx, OPND_STACK(offset1), mapping0);
-}
-
-// Swap top 2 stack entries
-static codegen_status_t
-gen_swap(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    stack_swap(ctx , cb, 0, 1, REG0, REG1);
     return YJIT_KEEP_COMPILING;
 }
 
