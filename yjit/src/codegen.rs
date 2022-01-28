@@ -54,14 +54,14 @@ pub struct JITState
 
 impl JITState {
     pub fn new() -> Self {
-        return JITState {
+        JITState {
             block: Block::new(BLOCKID_NULL),
             iseq: IseqPtr(0),
             insn_idx: 0,
             opcode: 0,
             side_exit_for_pc: CodePtr::null(),
             record_boundary_patch_point: false
-        };
+        }
     }
 }
 
@@ -820,14 +820,14 @@ gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context
 fn gen_nop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Do nothing
-    return KeepCompiling;
+    KeepCompiling
 }
 
 fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Decrement SP
     ctx.stack_pop(1);
-    return KeepCompiling;
+    KeepCompiling
 }
 
 fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
@@ -839,14 +839,14 @@ fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStat
     //mov(cb, REG0, dup_val);  // Huh. Mov() isn't implemented. Why did I think it was?
     //mov(cb, loc0, REG0);
 
-    return KeepCompiling;
+    KeepCompiling
 }
 
 // Swap top 2 stack entries
 fn gen_swap(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     stack_swap(ctx, cb, 0, 1, REG0, REG1);
-    return KeepCompiling;
+    KeepCompiling
 }
 
 fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16, reg0: X86Opnd, reg1: X86Opnd) -> ()
