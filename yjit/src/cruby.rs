@@ -5,6 +5,9 @@
 // RBasic
 // ... and more!
 
+// TODO: For #defines that affect memory layout, we need to check for them
+// on build and fail if they're wrong. e.g. USE_FLONUM *must* be true.
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(C)]
 pub struct VALUE(pub usize);
@@ -21,18 +24,103 @@ pub struct EcPtr(pub usize);
 
 impl VALUE {
     // TODO: these could be in a trait for VALUE
-    // SPECIAL_CONST_P(val)
-    // STATIC_SYM_P(val)
-    // FIXNUM_P(val)
-    // FLONUM_P(val)
-    // NIL_P(val)
-    // BUILTIN_TYPE(val)
+
+    // Return whether the value is truthy or falsy in Ruby -- only nil and false are falsy.
+    pub fn test(self:VALUE) -> bool
+    {
+        let VALUE(cval) = self;
+        let VALUE(qnilval) = QNIL;
+        (cval & !qnilval) != 0
+    }
+
+    // Return true if the number is an immediate integer, flonum or static symbol
+    pub fn immediate_p(self:VALUE) -> bool
+    {
+        let VALUE(cval) = self;
+        (cval & 7) != 0
+    }
+
+    // Return true if the value is a Ruby immediate integer, flonum, static symbol, nil or false
+    pub fn special_const_p(self:VALUE) -> bool
+    {
+        self.immediate_p() || !self.test()
+    }
+
+    // Return true if the value is a Ruby Fixnum (immediate-size integer)
+    pub fn fixnum_p(self:VALUE) -> bool
+    {
+        let VALUE(cval) = self;
+        (cval & 1) == 1
+    }
+
+    // Return true if the value is an immediate Ruby floating-point number (flonum)
+    pub fn flonum_p(self:VALUE) -> bool {
+        let VALUE(cval) = self;
+        (cval & 3) == 2
+    }
+
+    // Return true for a static (non-heap) Ruby symbol
+    pub fn static_sym_p(self:VALUE) -> bool {
+        let VALUE(cval) = self;
+        (cval & 0xff) == RB_SYMBOL_FLAG
+    }
+
+    // Returns true or false depending on whether the value is nil
+    pub fn nil_p(self:VALUE) -> bool {
+        self == QNIL
+    }
+
+    // Read the flags bits from the RBasic object, then return a Ruby type enum (e.g. RUBY_T_ARRAY)
+    pub fn builtin_type(self:VALUE) -> usize {
+        assert!(self.special_const_p());
+
+        let VALUE(cval) = self;
+        let rbasic_ptr:*const usize = cval as *const usize;
+        let flags_bits:usize = unsafe { *rbasic_ptr };
+        flags_bits & RUBY_T_MASK
+    }
 }
 
-// TODO: need constants for
-// Qtrue
-// Qfalse
-// Qnil
+pub const QFALSE:VALUE = VALUE(0);
+pub const QNIL:VALUE = VALUE(8);
+pub const QTRUE:VALUE = VALUE(20);
+pub const QUNDEF:VALUE = VALUE(52);
+
+pub const RB_SYMBOL_FLAG: usize = 0x0c;
+
+// These are the types used by BUILTIN_TYPE from include/ruby/internal/value_type.h.
+pub const RUBY_T_NONE    :usize = 0x00;
+
+pub const RUBY_T_OBJECT  :usize = 0x01;
+pub const RUBY_T_CLASS   :usize = 0x02;
+pub const RUBY_T_MODULE  :usize = 0x03;
+pub const RUBY_T_FLOAT   :usize = 0x04;
+pub const RUBY_T_STRING  :usize = 0x05;
+pub const RUBY_T_REGEXP  :usize = 0x06;
+pub const RUBY_T_ARRAY   :usize = 0x07;
+pub const RUBY_T_HASH    :usize = 0x08;
+pub const RUBY_T_STRUCT  :usize = 0x09;
+pub const RUBY_T_BIGNUM  :usize = 0x0a;
+pub const RUBY_T_FILE    :usize = 0x0b;
+pub const RUBY_T_DATA    :usize = 0x0c;
+pub const RUBY_T_MATCH   :usize = 0x0d;
+pub const RUBY_T_COMPLEX :usize = 0x0e;
+pub const RUBY_T_RATIONAL:usize = 0x0f;
+
+pub const RUBY_T_NIL     :usize = 0x11;
+pub const RUBY_T_TRUE    :usize = 0x12;
+pub const RUBY_T_FALSE   :usize = 0x13;
+pub const RUBY_T_SYMBOL  :usize = 0x14;
+pub const RUBY_T_FIXNUM  :usize = 0x15;
+pub const RUBY_T_UNDEF   :usize = 0x16;
+
+pub const RUBY_T_IMEMO   :usize = 0x1a;
+pub const RUBY_T_NODE    :usize = 0x1b;
+pub const RUBY_T_ICLASS  :usize = 0x1c;
+pub const RUBY_T_ZOMBIE  :usize = 0x1d;
+pub const RUBY_T_MOVED   :usize = 0x1e;
+
+pub const RUBY_T_MASK    :usize = 0x1f;
 
 pub const SIZEOF_VALUE: usize = 8;
 

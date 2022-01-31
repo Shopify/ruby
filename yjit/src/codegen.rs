@@ -1,8 +1,12 @@
 use crate::cruby::*;
+use crate::asm::*;
 use crate::asm::x86_64::*;
 use crate::core::*;
 use InsnOpnd::*;
 use CodegenStatus::*;
+
+use std::cell::{RefCell, RefMut};
+use std::rc::Rc;
 
 // Callee-saved registers
 pub const REG_CFP: X86Opnd = R13;
@@ -55,13 +59,18 @@ pub struct JITState
 impl JITState {
     pub fn new() -> Self {
         JITState {
-            block: Block::new(BLOCKID_NULL),
+            block: Block::new(BLOCKID_NULL),   // Rc<RefCell<Block>>
             iseq: IseqPtr(0),
             insn_idx: 0,
             opcode: 0,
             side_exit_for_pc: CodePtr::null(),
             record_boundary_patch_point: false
         }
+    }
+
+    pub fn add_gc_object_offset(self:&mut JITState, ptr_offset:u32) -> () {
+        let mut gc_obj_vec: RefMut<_> = self.block.borrow_mut();
+        gc_obj_vec.add_gc_object_offset(ptr_offset);
     }
 }
 
@@ -142,26 +151,27 @@ jit_get_arg(jitstate_t *jit, size_t arg_idx)
     RUBY_ASSERT(arg_idx + 1 < (size_t)insn_len(jit_get_opcode(jit)));
     return *(jit->pc + arg_idx + 1);
 }
+*/
 
 // Load a VALUE into a register and keep track of the reference if it is on the GC heap.
-static void
-jit_mov_gc_ptr(jitstate_t *jit, codeblock_t *cb, x86opnd_t reg, VALUE ptr)
+pub fn jit_mov_gc_ptr(jit:&mut JITState, cb: &mut CodeBlock, reg:X86Opnd, ptr: VALUE) -> ()
 {
-    RUBY_ASSERT(reg.type == OPND_REG && reg.num_bits == 64);
+    // TODO: figure out how to get at the currently-private num_bits field
+    //assert!( matches!(reg, X86Opnd::Reg(x) if x.num_bits == 64) );
 
     // Load the pointer constant into the specified register
-    mov(cb, reg, const_ptr_opnd((void*)ptr));
+    let VALUE(ptr_value) = ptr;
+    mov(cb, reg, const_ptr_opnd(ptr_value as *const u8));
 
     // The pointer immediate is encoded as the last part of the mov written out
-    uint32_t ptr_offset = cb->write_pos - sizeof(VALUE);
+    let ptr_offset:u32 = (cb.get_write_pos() as u32) - (SIZEOF_VALUE as u32);
 
-    if (!SPECIAL_CONST_P(ptr)) {
-        if (!rb_darray_append(&jit->block->gc_object_offsets, ptr_offset)) {
-            rb_bug("allocation failed");
-        }
+    if !ptr.special_const_p() {
+        jit.add_gc_object_offset(ptr_offset);
     }
 }
 
+/*
 // Check if we are compiling the instruction at the stub PC
 // Meaning we are compiling the instruction that is next to execute
 static bool
@@ -843,8 +853,8 @@ fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStat
     let (mapping, tmp_type) = ctx.get_opnd_mapping(StackOpnd(0));
 
     let loc0 = ctx.stack_push_mapping((mapping, tmp_type));
-    //mov(cb, REG0, dup_val);  // Huh. Mov() isn't implemented. Why did I think it was?
-    //mov(cb, loc0, REG0);
+    mov(cb, REG0, dup_val);  // Huh. Mov() isn't implemented. Why did I think it was?
+    mov(cb, loc0, REG0);
 
     KeepCompiling
 }
@@ -864,14 +874,52 @@ fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16,
     let mapping0 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset0));
     let mapping1 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset1));
 
-    //mov(cb, REG0, opnd0);
-    //mov(cb, REG1, opnd1);
-    //mov(cb, opnd0, REG1);
-    //mov(cb, opnd1, REG0);
+    mov(cb, REG0, opnd0);
+    mov(cb, REG1, opnd1);
+    mov(cb, opnd0, REG1);
+    mov(cb, opnd1, REG0);
 
     ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset0), mapping1);
     ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset1), mapping0);
 }
+
+fn gen_putnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+{
+    jit_putobject(jit, ctx, cb, QNIL);
+    KeepCompiling
+}
+
+fn jit_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, arg: VALUE)
+{
+    let val_type:Type = Type::from(arg);
+    let VALUE(arg_value) = arg;
+    let stack_top = ctx.stack_push(val_type);
+
+    if arg.special_const_p() {
+        // Immediates will not move and do not need to be tracked for GC
+        // Thanks to this we can mov directly to memory when possible.
+
+        // TODO: change to uimm_opnd, though it doesn't matter for simple things like nil
+        assert!(arg_value <= 0xFF_FF_FF_FF); // More than 32 bits? Our hack bit us. Runtime panic, so we'll fix it.
+        let imm = imm_opnd(arg_value as i64);
+
+        // 64-bit immediates can't be directly written to memory
+        if arg_value <= 0xFF_FF_FF_FF {
+            mov(cb, stack_top, imm);
+        } else {
+            mov(cb, REG0, imm);
+            mov(cb, stack_top, REG0);
+        }
+    } else {
+        // Load the value to push into REG0
+        // Note that this value may get moved by the GC
+        jit_mov_gc_ptr(jit, cb, REG0, arg);
+
+        // Write argument at SP
+        mov(cb, stack_top, REG0);
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -908,11 +956,12 @@ mod tests {
         let status = gen_dup(&JITState::new(), &mut context, &mut cb);
 
         assert!(matches!(KeepCompiling, status));
+
         // Did we duplicate the type information for the Fixnum type?
         assert_eq!(Type::Fixnum, context.get_opnd_type(StackOpnd(0)));
         assert_eq!(Type::Fixnum, context.get_opnd_type(StackOpnd(1)));
 
-        //assert_eq!(cb.get_write_pos(), 2);  // Can check the write_pos once the mov statements can be uncommented
+        assert!(cb.get_write_pos() > 0); // Write some movs
     }
 
     #[test]
@@ -929,6 +978,19 @@ mod tests {
         assert!(matches!(KeepCompiling, status));
         assert_eq!(tmp_type_top, Type::Fixnum);
         assert_eq!(tmp_type_next, Type::Flonum);
+    }
+
+    #[test]
+    fn test_putnil() {
+        let mut context = Context::new();
+        let mut cb = CodeBlock::new();
+        let status = gen_putnil(&mut JITState::new(), &mut context, &mut cb);
+
+        let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
+
+        assert!(matches!(KeepCompiling, status));
+        assert_eq!(tmp_type_top, Type::Nil);
+        assert!(cb.get_write_pos() > 0);
     }
 }
 
@@ -1264,49 +1326,6 @@ gen_newhash(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
         mov(cb, stack_ret, RAX);
     }
 
-    return YJIT_KEEP_COMPILING;
-}
-
-// Push a constant value to the stack, including type information.
-// The constant may be a heap object or a special constant.
-static void
-jit_putobject(jitstate_t *jit, ctx_t *ctx, VALUE arg)
-{
-    val_type_t val_type = yjit_type_of_value(arg);
-    x86opnd_t stack_top = ctx_stack_push(ctx, val_type);
-
-    if (SPECIAL_CONST_P(arg)) {
-        // Immediates will not move and do not need to be tracked for GC
-        // Thanks to this we can mov directly to memory when possible.
-
-        // NOTE: VALUE -> int64_t cast below is implementation defined.
-        // Hopefully it preserves the the bit pattern or raise a signal.
-        // See N1256 section 6.3.1.3.
-        x86opnd_t imm = imm_opnd((int64_t)arg);
-
-        // 64-bit immediates can't be directly written to memory
-        if (imm.num_bits <= 32) {
-            mov(cb, stack_top, imm);
-        }
-        else {
-            mov(cb, REG0, imm);
-            mov(cb, stack_top, REG0);
-        }
-    }
-    else {
-        // Load the value to push into REG0
-        // Note that this value may get moved by the GC
-        jit_mov_gc_ptr(jit, cb, REG0, arg);
-
-        // Write argument at SP
-        mov(cb, stack_top, REG0);
-    }
-}
-
-static codegen_status_t
-gen_putnil(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    jit_putobject(jit, ctx, Qnil);
     return YJIT_KEEP_COMPILING;
 }
 

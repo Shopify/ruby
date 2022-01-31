@@ -40,49 +40,32 @@ impl Default for Type {
 
 impl Type {
     /// This returns an appropriate Type based on a known value
-    fn from(val: VALUE) -> Type
+    pub fn from(val: VALUE) -> Type
     {
-        todo!();
-
-        /*
-        if (SPECIAL_CONST_P(val)) {
-            if (FIXNUM_P(val)) {
-                return TYPE_FIXNUM;
+        if val.special_const_p() {
+            if val.fixnum_p() {
+                Type::Fixnum
+            } else if val.nil_p() {
+                Type::Nil
+            } else if val == QTRUE {
+                Type::True
+            } else if val == QFALSE {
+                Type::False
+            } else if val.static_sym_p() {
+                Type::ImmSymbol
+            } else if val.flonum_p() {
+                Type::Flonum
+            } else {
+                unreachable!()
             }
-            else if (NIL_P(val)) {
-                return TYPE_NIL;
-            }
-            else if (val == Qtrue) {
-                return TYPE_TRUE;
-            }
-            else if (val == Qfalse) {
-                return TYPE_FALSE;
-            }
-            else if (STATIC_SYM_P(val)) {
-                return TYPE_STATIC_SYMBOL;
-            }
-            else if (FLONUM_P(val)) {
-                return TYPE_FLONUM;
-            }
-            else {
-                RUBY_ASSERT(false);
-                UNREACHABLE_RETURN(TYPE_IMM);
+        } else {
+            match val.builtin_type() {
+                RUBY_T_ARRAY => Type::Array,
+                RUBY_T_HASH => Type::Hash,
+                RUBY_T_STRING => Type::String,
+                _ => Type::UnknownHeap,
             }
         }
-        else {
-            switch (BUILTIN_TYPE(val)) {
-            case T_ARRAY:
-                return TYPE_ARRAY;
-            case T_HASH:
-                return TYPE_HASH;
-            case T_STRING:
-                return TYPE_STRING;
-            default:
-                // generic heap object
-                return TYPE_HEAP;
-            }
-        }
-        */
     }
 
     /// Check if the type is an immediate
@@ -522,6 +505,10 @@ impl Block {
         let block_ref = Rc::new(RefCell::new(block));
 
         return block_ref
+    }
+
+    pub fn add_gc_object_offset(self:&mut Block, ptr_offset:u32) -> () {
+        self.gc_object_offsets.push(ptr_offset);
     }
 }
 

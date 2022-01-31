@@ -372,17 +372,17 @@ static x86opnd_t resize_opnd(x86opnd_t opnd, uint32_t num_bits)
 }
 */
 
-fn imm_opnd(value: i64) -> X86Opnd
+pub fn imm_opnd(value: i64) -> X86Opnd
 {
     X86Opnd::Imm(X86Imm { num_bits: sig_imm_size(value), value })
 }
 
-fn uimm_opnd(value: u64) -> X86Opnd
+pub fn uimm_opnd(value: u64) -> X86Opnd
 {
     X86Opnd::UImm(X86UImm { num_bits: unsig_imm_size(value), value })
 }
 
-fn const_ptr_opnd(ptr: *const u8) -> X86Opnd
+pub fn const_ptr_opnd(ptr: *const u8) -> X86Opnd
 {
     uimm_opnd(ptr as u64)
 }
@@ -487,7 +487,7 @@ impl CodeBlock
         }
     }
 
-    pub fn get_write_pos(self) -> usize {
+    pub fn get_write_pos(&self) -> usize {
         self.write_pos
     }
 
@@ -1361,7 +1361,7 @@ fn lea(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
 }
 
 /// mov - Data move operation
-fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
+pub fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
     match (dst, src) {
         // R + Imm
         (X86Opnd::Reg(reg), X86Opnd::Imm(imm)) => {
