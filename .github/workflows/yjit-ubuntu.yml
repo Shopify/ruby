@@ -26,7 +26,7 @@ jobs:
       # We want to avoid external dependencies.
       # NOTE: if we want to test disassembly with capstone, we could run cargo test
       # a second time with the disassembly feature enabled
-      - run: cargo test --offline
+      - run: cargo test --locked --offline
         working-directory: yjit
   make:
     strategy:
