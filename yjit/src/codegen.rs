@@ -832,7 +832,7 @@ fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStat
 
 fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
-    let dup_val = ctx.stack_pop(1);
+    let dup_val = ctx.stack_pop(0);
     let (mapping, tmp_type) = ctx.get_opnd_mapping(StackOpnd(0));
 
     let loc0 = ctx.stack_push_mapping((mapping, tmp_type));
@@ -897,11 +897,14 @@ mod tests {
     fn test_gen_dup() {
         let mut context = Context::new();
         context.stack_push(Type::Fixnum);
-        context.stack_push(Type::Fixnum);  // I feel like this shouldn't be needed - asking on Slack.
         let mut cb = CodeBlock::new();
         let status = gen_dup(&JITState::new(), &mut context, &mut cb);
 
         assert!(matches!(KeepCompiling, status));
+        // Did we duplicate the type information for the Fixnum type?
+        assert_eq!(Type::Fixnum, context.get_opnd_type(StackOpnd(0)));
+        assert_eq!(Type::Fixnum, context.get_opnd_type(StackOpnd(1)));
+
         //assert_eq!(cb.get_write_pos(), 2);  // Can check the write_pos once the mov statements can be uncommented
     }
 
