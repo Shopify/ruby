@@ -351,6 +351,28 @@ ifneq ($(REVISION_IN_HEADER),$(REVISION_LATEST))
 $(srcdir)/revision.h: $(REVISION_H)
 endif
 
+# Show Cargo progress when doing `make V=1`
+CARGO_VERBOSE_0 = -q
+CARGO_VERBOSE_1 =
+CARGO_VERBOSE = $(CARGO_VERBOSE_$(V))
+
+.PHONY: yjit-static-lib
+yjit-static-lib:
+	$(ECHO) building Rust YJIT
+	$(Q) cd $(top_srcdir)/yjit && \
+		CARGO_TARGET_DIR='$(CARGO_TARGET_DIR)' \
+		CARGO_TERM_PROGRESS_WHEN='never' \
+		$(CARGO) $(CARGO_VERBOSE) build $(CARGO_BUILD_ARGS)
+
+# This PHONY prerequisite makes it so that we always run cargo. When there are no Rust
+# changes on rebuild, Cargo does not touch the mtime of the static library and GNU make
+# avoids relinking.
+$(YJIT_LIBS): yjit-static-lib
+	$(empty)
+
+# Put this here instead of in common.mk to avoid breaking nmake builds
+miniruby$(EXEEXT): $(YJIT_LIBS)
+
 # Query on the generated rdoc
 #
 #   $ make rdoc:Integer#+

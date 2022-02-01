@@ -3729,7 +3729,7 @@ AS_CASE(["${YJIT_SUPPORT}"],
     )
     AS_IF([test x"$YJIT_SUPPORT" = "xyes"],
             [rb_rust_target_subdir=release
-             CARGO_BUILD_ARGS=--offline --release],
+             CARGO_BUILD_ARGS='--release'],
             [rb_rust_target_subdir=debug])
     YJIT_LIBS="yjit/target/${rb_rust_target_subdir}/libyjit.a"
 ], [])
