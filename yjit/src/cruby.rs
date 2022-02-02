@@ -91,6 +91,8 @@ impl From<usize> for VALUE {
     }
 }
 
+//pub extern "C" fn insn_len(v : usize); // Can't use this until we link against CRuby properly
+
 pub const QFALSE:VALUE = VALUE(0);
 pub const QNIL:VALUE = VALUE(8);
 pub const QTRUE:VALUE = VALUE(20);

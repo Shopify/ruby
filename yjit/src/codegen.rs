@@ -42,7 +42,7 @@ pub struct JITState
     opcode: usize,
 
     // PC of the instruction being compiled
-    //VALUE *pc;
+    pc: *mut VALUE,
 
     // Side exit to the instruction being compiled. See :side-exit:.
     side_exit_for_pc: CodePtr,
@@ -63,8 +63,9 @@ impl JITState {
             iseq: IseqPtr(0),
             insn_idx: 0,
             opcode: 0,
+            pc: 0 as *mut VALUE,
             side_exit_for_pc: CodePtr::null(),
-            record_boundary_patch_point: false
+            record_boundary_patch_point: false,
         }
     }
 
@@ -79,6 +80,13 @@ impl JITState {
     pub fn add_gc_object_offset(self:&mut JITState, ptr_offset:u32) {
         let mut gc_obj_vec: RefMut<_> = self.block.borrow_mut();
         gc_obj_vec.add_gc_object_offset(ptr_offset);
+    }
+
+    pub fn get_pc(self:&JITState) -> *mut VALUE {
+        self.pc
+    }
+    pub fn set_pc(self:&mut JITState, pc: *mut VALUE) {
+        self.pc = pc;
     }
 }
 
@@ -138,28 +146,19 @@ jit_obj_info_dump(codeblock_t *cb, x86opnd_t opnd) {
     pop_regs(cb);
 }
 
-// Get the current instruction's opcode
-static int
-jit_get_opcode(jitstate_t *jit)
-{
-    return jit->opcode;
-}
-
 // Get the index of the next instruction
 static uint32_t
 jit_next_insn_idx(jitstate_t *jit)
 {
     return jit->insn_idx + insn_len(jit_get_opcode(jit));
 }
-
-// Get an instruction argument by index
-static VALUE
-jit_get_arg(jitstate_t *jit, size_t arg_idx)
-{
-    RUBY_ASSERT(arg_idx + 1 < (size_t)insn_len(jit_get_opcode(jit)));
-    return *(jit->pc + arg_idx + 1);
-}
 */
+
+pub fn jit_get_arg(jit:&JITState, arg_idx:isize) -> VALUE
+{
+    //assert!(arg_idx + 1 < insn_len(jit.get_opcode()));
+    unsafe { *(jit.get_pc().offset(arg_idx + 1)) }
+}
 
 // Load a VALUE into a register and keep track of the reference if it is on the GC heap.
 pub fn jit_mov_gc_ptr(jit:&mut JITState, cb: &mut CodeBlock, reg:X86Opnd, ptr: VALUE)
@@ -876,6 +875,34 @@ fn gen_dup(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> Codegen
     KeepCompiling
 }
 
+// duplicate stack top n elements
+fn gen_dupn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+{
+    let nval:VALUE = jit_get_arg(jit, 0);
+    let VALUE(n) = nval;
+
+    // In practice, seems to be only used for n==2
+    if n != 2 {
+        return CantCompile
+    }
+
+    let opnd1:X86Opnd = ctx.stack_opnd(1);
+    let opnd0:X86Opnd = ctx.stack_opnd(0);
+
+    let mapping1 = ctx.get_opnd_mapping(StackOpnd(1));
+    let mapping0 = ctx.get_opnd_mapping(StackOpnd(0));
+
+    let dst1:X86Opnd = ctx.stack_push_mapping(mapping1);
+    mov(cb, REG0, opnd1);
+    mov(cb, dst1, REG0);
+
+    let dst0:X86Opnd = ctx.stack_push_mapping(mapping0);
+    mov(cb, REG0, opnd0);
+    mov(cb, dst0, REG0);
+
+    KeepCompiling
+}
+
 // Swap top 2 stack entries
 fn gen_swap(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
@@ -990,6 +1017,31 @@ mod tests {
     }
 
     #[test]
+    fn test_gen_dupn() {
+        let mut context = Context::new();
+        context.stack_push(Type::Fixnum);
+        context.stack_push(Type::Flonum);
+        let mut cb = CodeBlock::new();
+
+        let mut value_array: [u64; 2] = [ 0, 2 ]; // We only compile for n == 2
+        let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
+
+        let mut jit = JITState::new();
+        jit.set_pc(pc);
+
+        let status = gen_dupn(&mut jit, &mut context, &mut cb);
+
+        assert!(matches!(KeepCompiling, status));
+
+        assert_eq!(Type::Fixnum, context.get_opnd_type(StackOpnd(3)));
+        assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(2)));
+        assert_eq!(Type::Fixnum, context.get_opnd_type(StackOpnd(1)));
+        assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(0)));
+
+        assert!(cb.get_write_pos() > 0); // Write some movs
+    }
+
+    #[test]
     fn test_gen_swap() {
         let mut context = Context::new();
         context.stack_push(Type::Fixnum);
@@ -1035,33 +1087,6 @@ mod tests {
 }
 
 /*
-// duplicate stack top n elements
-static codegen_status_t
-gen_dupn(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
-
-    // In practice, seems to be only used for n==2
-    if (n != 2) {
-        return YJIT_CANT_COMPILE;
-    }
-
-    x86opnd_t opnd1 = ctx_stack_opnd(ctx, 1);
-    x86opnd_t opnd0 = ctx_stack_opnd(ctx, 0);
-    temp_type_mapping_t mapping1 = ctx_get_opnd_mapping(ctx, OPND_STACK(1));
-    temp_type_mapping_t mapping0 = ctx_get_opnd_mapping(ctx, OPND_STACK(0));
-
-    x86opnd_t dst1 = ctx_stack_push_mapping(ctx, mapping1);
-    mov(cb, REG0, opnd1);
-    mov(cb, dst1, REG0);
-
-    x86opnd_t dst0 = ctx_stack_push_mapping(ctx, mapping0);
-    mov(cb, REG0, opnd0);
-    mov(cb, dst0, REG0);
-
-    return YJIT_KEEP_COMPILING;
-}
-
 // set Nth stack entry to stack top
 static codegen_status_t
 gen_setn(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
@@ -5072,6 +5097,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_NOP => Some(gen_nop),
         OP_POP => Some(gen_pop),
         OP_DUP => Some(gen_dup),
+        OP_DUPN => Some(gen_dupn),
         OP_SWAP => Some(gen_swap),
         OP_PUTNIL => Some(gen_putnil),
         OP_PUTOBJECT_INT2FIX_0_ => Some(gen_putobject_int2fix),
