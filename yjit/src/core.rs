@@ -507,7 +507,7 @@ impl Block {
         return block_ref
     }
 
-    pub fn add_gc_object_offset(self:&mut Block, ptr_offset:u32) -> () {
+    pub fn add_gc_object_offset(self:&mut Block, ptr_offset:u32) {
         self.gc_object_offsets.push(ptr_offset);
     }
 }
