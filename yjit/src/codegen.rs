@@ -96,7 +96,7 @@ enum CodegenStatus {
 }
 
 // Code generation function signature
-type CodeGenFn = fn(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus;
+type CodeGenFn = fn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus;
 
 
 
@@ -849,20 +849,20 @@ gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context
 
 
 
-fn gen_nop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+fn gen_nop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Do nothing
     KeepCompiling
 }
 
-fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+fn gen_pop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Decrement SP
     ctx.stack_pop(1);
     KeepCompiling
 }
 
-fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+fn gen_dup(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     let dup_val = ctx.stack_pop(0);
     let (mapping, tmp_type) = ctx.get_opnd_mapping(StackOpnd(0));
@@ -875,7 +875,7 @@ fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStat
 }
 
 // Swap top 2 stack entries
-fn gen_swap(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+fn gen_swap(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     stack_swap(ctx, cb, 0, 1, REG0, REG1);
     KeepCompiling
@@ -955,7 +955,7 @@ mod tests {
     fn test_gen_nop() {
         let mut context = Context::new();
         let mut cb = CodeBlock::new();
-        let status = gen_nop(&JITState::new(), &mut context, &mut cb);
+        let status = gen_nop(&mut JITState::new(), &mut context, &mut cb);
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
@@ -965,7 +965,7 @@ mod tests {
     #[test]
     fn test_gen_pop() {
         let mut context = Context::new_with_stack_size(1);
-        let status = gen_pop(&JITState::new(), &mut context, &mut CodeBlock::new());
+        let status = gen_pop(&mut JITState::new(), &mut context, &mut CodeBlock::new());
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
@@ -976,7 +976,7 @@ mod tests {
         let mut context = Context::new();
         context.stack_push(Type::Fixnum);
         let mut cb = CodeBlock::new();
-        let status = gen_dup(&JITState::new(), &mut context, &mut cb);
+        let status = gen_dup(&mut JITState::new(), &mut context, &mut cb);
 
         assert!(matches!(KeepCompiling, status));
 
@@ -993,7 +993,7 @@ mod tests {
         context.stack_push(Type::Fixnum);
         context.stack_push(Type::Flonum);
         let mut cb = CodeBlock::new();
-        let status = gen_swap(&JITState::new(), &mut context, &mut cb);
+        let status = gen_swap(&mut JITState::new(), &mut context, &mut cb);
 
         let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
         let (_, tmp_type_next) = context.get_opnd_mapping(StackOpnd(1));
