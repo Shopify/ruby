@@ -63,7 +63,7 @@ impl JITState {
             iseq: IseqPtr(0),
             insn_idx: 0,
             opcode: 0,
-            pc: 0 as *mut VALUE,
+            pc: std::ptr::null_mut::<VALUE>(),
             side_exit_for_pc: CodePtr::null(),
             record_boundary_patch_point: false,
         }
