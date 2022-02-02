@@ -68,6 +68,10 @@ impl JITState {
         }
     }
 
+    pub fn get_opcode(self:&JITState) -> usize {
+        self.opcode
+    }
+
     pub fn set_opcode(self:&mut JITState, opcode: usize) {
         self.opcode = opcode;
     }
@@ -75,10 +79,6 @@ impl JITState {
     pub fn add_gc_object_offset(self:&mut JITState, ptr_offset:u32) {
         let mut gc_obj_vec: RefMut<_> = self.block.borrow_mut();
         gc_obj_vec.add_gc_object_offset(ptr_offset);
-    }
-
-    pub fn get_opcode(self:&JITState) -> usize {
-        self.opcode
     }
 }
 
