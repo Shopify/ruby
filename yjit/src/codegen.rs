@@ -68,7 +68,7 @@ impl JITState {
         }
     }
 
-    pub fn add_gc_object_offset(self:&mut JITState, ptr_offset:u32) -> () {
+    pub fn add_gc_object_offset(self:&mut JITState, ptr_offset:u32) {
         let mut gc_obj_vec: RefMut<_> = self.block.borrow_mut();
         gc_obj_vec.add_gc_object_offset(ptr_offset);
     }
@@ -154,7 +154,7 @@ jit_get_arg(jitstate_t *jit, size_t arg_idx)
 */
 
 // Load a VALUE into a register and keep track of the reference if it is on the GC heap.
-pub fn jit_mov_gc_ptr(jit:&mut JITState, cb: &mut CodeBlock, reg:X86Opnd, ptr: VALUE) -> ()
+pub fn jit_mov_gc_ptr(jit:&mut JITState, cb: &mut CodeBlock, reg:X86Opnd, ptr: VALUE)
 {
     // TODO: figure out how to get at the currently-private num_bits field
     //assert!( matches!(reg, X86Opnd::Reg(x) if x.num_bits == 64) );
@@ -853,7 +853,7 @@ fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStat
     let (mapping, tmp_type) = ctx.get_opnd_mapping(StackOpnd(0));
 
     let loc0 = ctx.stack_push_mapping((mapping, tmp_type));
-    mov(cb, REG0, dup_val);  // Huh. Mov() isn't implemented. Why did I think it was?
+    mov(cb, REG0, dup_val);
     mov(cb, loc0, REG0);
 
     KeepCompiling
@@ -866,7 +866,7 @@ fn gen_swap(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenSta
     KeepCompiling
 }
 
-fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16, reg0: X86Opnd, reg1: X86Opnd) -> ()
+fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16, reg0: X86Opnd, reg1: X86Opnd)
 {
     let opnd0 = ctx.stack_opnd(offset0 as i32);
     let opnd1 = ctx.stack_opnd(offset1 as i32);
