@@ -85,6 +85,7 @@ impl JITState {
     pub fn get_pc(self:&JITState) -> *mut VALUE {
         self.pc
     }
+
     pub fn set_pc(self:&mut JITState, pc: *mut VALUE) {
         self.pc = pc;
     }
