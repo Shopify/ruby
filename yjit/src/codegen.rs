@@ -68,9 +68,24 @@ impl JITState {
         }
     }
 
+    pub fn new_with_opcode(opcode: usize) -> Self {
+        JITState {
+            block: Block::new(BLOCKID_NULL),
+            iseq: IseqPtr(0),
+            insn_idx: 0,
+            opcode,
+            side_exit_for_pc: CodePtr::null(),
+            record_boundary_patch_point: false,
+        }
+    }
+
     pub fn add_gc_object_offset(self:&mut JITState, ptr_offset:u32) {
         let mut gc_obj_vec: RefMut<_> = self.block.borrow_mut();
         gc_obj_vec.add_gc_object_offset(ptr_offset);
+    }
+
+    pub fn get_opcode(self:&JITState) -> usize {
+        self.opcode
     }
 }
 
@@ -920,6 +935,14 @@ fn jit_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, arg:
     }
 }
 
+fn gen_putobject_int2fix(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+{
+    let opcode = jit.get_opcode();
+    let cst_val:usize = if opcode == OP_PUTOBJECT_INT2FIX_0_ { 0 } else { 1 };
+
+    jit_putobject(jit, ctx, cb, VALUE::from(cst_val));
+    KeepCompiling
+}
 
 #[cfg(test)]
 mod tests {
@@ -991,6 +1014,19 @@ mod tests {
         assert!(matches!(KeepCompiling, status));
         assert_eq!(tmp_type_top, Type::Nil);
         assert!(cb.get_write_pos() > 0);
+    }
+
+    #[test]
+    fn test_int2fix() {
+        let mut context = Context::new();
+        let mut cb = CodeBlock::new();
+        let status = gen_putobject_int2fix(&mut JITState::new_with_opcode(OP_PUTOBJECT_INT2FIX_0_), &mut context, &mut cb);
+
+        let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
+
+        // Right now we're not testing the generated machine code to make sure a literal 1 or 0 was pushed. I've checked locally.
+        assert!(matches!(KeepCompiling, status));
+        assert_eq!(tmp_type_top, Type::Fixnum);
     }
 }
 
@@ -1353,16 +1389,6 @@ gen_putstring(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     x86opnd_t stack_top = ctx_stack_push(ctx, TYPE_STRING);
     mov(cb, stack_top, RAX);
 
-    return YJIT_KEEP_COMPILING;
-}
-
-static codegen_status_t
-gen_putobject_int2fix(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    int opcode = jit_get_opcode(jit);
-    int cst_val = (opcode == BIN(putobject_INT2FIX_0_))? 0:1;
-
-    jit_putobject(jit, ctx, INT2FIX(cst_val));
     return YJIT_KEEP_COMPILING;
 }
 
@@ -5042,6 +5068,10 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_NOP => Some(gen_nop),
         OP_POP => Some(gen_pop),
         OP_DUP => Some(gen_dup),
+        OP_SWAP => Some(gen_swap),
+        OP_PUTNIL => Some(gen_putnil),
+        OP_PUTOBJECT_INT2FIX_0_ => Some(gen_putobject_int2fix),
+        OP_PUTOBJECT_INT2FIX_1_ => Some(gen_putobject_int2fix),
 
         /*
         yjit_reg_op(BIN(dupn), gen_dupn);

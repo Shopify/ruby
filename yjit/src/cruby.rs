@@ -5,6 +5,8 @@
 // RBasic
 // ... and more!
 
+use std::convert::From;
+
 // TODO: For #defines that affect memory layout, we need to check for them
 // on build and fail if they're wrong. e.g. USE_FLONUM *must* be true.
 
@@ -81,6 +83,14 @@ impl VALUE {
     }
 }
 
+impl From<usize> for VALUE {
+    fn from(item: usize) -> Self {
+        assert!(item <= (RUBY_FIXNUM_MAX as usize)); // An unsigned will always be greater than RUBY_FIXNUM_MIN
+        let k : usize = item.wrapping_add(item.wrapping_add(1));
+        VALUE(k)
+    }
+}
+
 pub const QFALSE:VALUE = VALUE(0);
 pub const QNIL:VALUE = VALUE(8);
 pub const QTRUE:VALUE = VALUE(20);
@@ -121,6 +131,13 @@ pub const RUBY_T_ZOMBIE  :usize = 0x1d;
 pub const RUBY_T_MOVED   :usize = 0x1e;
 
 pub const RUBY_T_MASK    :usize = 0x1f;
+
+pub const RUBY_LONG_MIN:isize = -2147483648;
+pub const RUBY_LONG_MAX:isize = 2147483647;
+
+pub const RUBY_FIXNUM_MIN:isize = RUBY_LONG_MIN / 2;
+pub const RUBY_FIXNUM_MAX:isize = RUBY_LONG_MAX / 2;
+pub const RUBY_FIXNUM_FLAG:usize = 0x1;
 
 pub const SIZEOF_VALUE: usize = 8;
 
