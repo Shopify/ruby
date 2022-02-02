@@ -87,28 +87,13 @@ impl Type {
 
     /// Check if the type is an immediate
     fn is_imm(&self) -> bool {
-        match self {
-            Type::UnknownImm => true,
-            Type::Nil => true,
-            Type::True => true,
-            Type::False => true,
-            Type::Fixnum => true,
-            Type::Flonum => true,
-            Type::ImmSymbol => true,
-            _ => false,
-        }
+        matches!(self, Type::UnknownImm | Type::Nil | Type::True | Type::False |
+            Type::Fixnum | Type::Flonum | Type::ImmSymbol)
     }
 
     /// Check if the type is a heap object
     fn is_heap(&self) -> bool {
-        match self {
-            Type::UnknownHeap => true,
-            Type::Array => true,
-            Type::Hash => true,
-            Type::HeapSymbol => true,
-            Type::String => true,
-            _ => false,
-        }
+        matches!(self, Type::UnknownHeap | Type::Array | Type::Hash | Type::HeapSymbol | Type::String)
     }
 
     /// Compute a difference between two value types
@@ -140,7 +125,7 @@ impl Type {
         }
 
         // Incompatible types
-        return usize::MAX;
+        usize::MAX
     }
 
     /// Upgrade this type into a more specific compatible type
@@ -230,13 +215,13 @@ pub struct CodePtr(*mut u8);
 // TODO: do we want constructor (new) or some from() methods for code pointers?
 impl CodePtr {
     pub fn null() -> Self {
-        return CodePtr::from(0 as *mut u8);
+        CodePtr::from(0 as *mut u8)
     }
 }
 
 impl From<*mut u8> for CodePtr {
     fn from(value: *mut u8) -> Self {
-        return CodePtr(value);
+        CodePtr(value)
     }
 }
 
@@ -387,7 +372,7 @@ fn get_version_list(blockid: BlockId) -> &'static mut VersionList
 fn get_num_versions(blockid: BlockId) -> usize
 {
     let payload = get_iseq_payload(blockid.iseq);
-    return payload.version_map[blockid.idx].len();
+    payload.version_map[blockid.idx].len()
 }
 
 /// Retrieve a basic block version for an (iseq, idx) tuple
@@ -421,7 +406,7 @@ fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef>
         }
     }
 
-    return best_version;
+    best_version
 }
 
 // Produce a generic context when the block version limit is hit for a blockid
@@ -438,15 +423,13 @@ fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
         // Produce a generic context that stores no type information,
         // but still respects the stack_size and sp_offset constraints.
         // This new context will then match all future requests.
-        let mut generic_ctx = Context::default();
-        generic_ctx.stack_size = ctx.stack_size;
-        generic_ctx.sp_offset = ctx.sp_offset;
+        let generic_ctx = Context { stack_size: ctx.stack_size, sp_offset: ctx.sp_offset, ..Default::default() };
 
         // Mutate the incoming context
         return generic_ctx;
     }
 
-    return *ctx;
+    *ctx
 }
 
 /// Keep track of a block version. Block should be fully constructed.
@@ -519,15 +502,13 @@ impl Block {
 
         // Wrap the block in a reference counted refcell
         // so that the block ownership can be shared
-        let block_ref = Rc::new(RefCell::new(block));
-
-        return block_ref
+        Rc::new(RefCell::new(block))
     }
 }
 
 impl Context {
     pub fn new_with_stack_size(size: i16) -> Self {
-        return Context {
+        Context {
             stack_size: size as u16,
             sp_offset: size,
             chain_depth: 0,
@@ -535,11 +516,11 @@ impl Context {
             temp_types: [Type::Unknown; MAX_TEMP_TYPES],
             self_type: Type::Unknown,
             temp_mapping: [MapToStack; MAX_TEMP_TYPES]
-        };
+        }
     }
 
     pub fn new() -> Self {
-        return Self::new_with_stack_size(0);
+        Self::new_with_stack_size(0)
     }
 
     /// Get an operand for the adjusted stack pointer address
@@ -547,7 +528,7 @@ impl Context {
     {
         let offset = ((self.sp_offset as usize) * SIZEOF_VALUE) + offset_bytes;
         let offset = offset as i32;
-        return mem_opnd(64, REG_SP, offset);
+        mem_opnd(64, REG_SP, offset)
     }
 
     /// Push one new value on the temp stack with an explicit mapping
@@ -576,20 +557,20 @@ impl Context {
 
         // SP points just above the topmost value
         let offset = ((self.sp_offset as i32) - 1) * (SIZEOF_VALUE as i32);
-        return mem_opnd(64, REG_SP, offset);
+        mem_opnd(64, REG_SP, offset)
     }
 
     /// Push one new value on the temp stack
     /// Return a pointer to the new stack top
     pub fn stack_push(&mut self, val_type: Type) -> X86Opnd
     {
-        return self.stack_push_mapping((MapToStack, val_type));
+        self.stack_push_mapping((MapToStack, val_type))
     }
 
     /// Push the self value on the stack
     pub fn stack_push_self(&mut self) -> X86Opnd
     {
-        return self.stack_push_mapping((MapToSelf, Type::Unknown));
+        self.stack_push_mapping((MapToSelf, Type::Unknown))
     }
 
     /// Push a local variable on the stack
@@ -599,9 +580,9 @@ impl Context {
             return self.stack_push(Type::Unknown);
         }
 
-        return self.stack_push_mapping(
+        self.stack_push_mapping(
             (MapToLocal(local_idx as u8), Type::Unknown)
-        );
+        )
     }
 
     // Pop N values off the stack
@@ -627,7 +608,7 @@ impl Context {
         self.stack_size -= n as u16;
         self.sp_offset -= n as i16;
 
-        return top;
+        top
     }
 
     /// Get an operand pointing to a slot on the temp stack
@@ -635,8 +616,7 @@ impl Context {
     {
         // SP points just above the topmost value
         let offset = ((self.sp_offset as i32) - 1 - idx) * (SIZEOF_VALUE as i32);
-        let opnd = mem_opnd(64, REG_SP, offset);
-        return opnd;
+        mem_opnd(64, REG_SP, offset)
     }
 
     /// Get the type of an instruction operand
@@ -667,7 +647,7 @@ impl Context {
                     },
                     MapToLocal(idx) => {
                         assert!((idx as usize) < MAX_LOCAL_TYPES);
-                        return self.local_types[idx as usize]
+                        self.local_types[idx as usize]
                     },
                 }
             }
@@ -907,7 +887,7 @@ impl Context {
             diff += temp_diff;
         }
 
-        return diff;
+        diff
     }
 }
 
@@ -1058,7 +1038,7 @@ fn gen_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: usize, ec: EcPtr
     //    return None;
     //}
 
-    return code_ptr;
+    code_ptr
 }
 
 /*
