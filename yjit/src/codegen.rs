@@ -68,15 +68,8 @@ impl JITState {
         }
     }
 
-    pub fn new_with_opcode(opcode: usize) -> Self {
-        JITState {
-            block: Block::new(BLOCKID_NULL),
-            iseq: IseqPtr(0),
-            insn_idx: 0,
-            opcode,
-            side_exit_for_pc: CodePtr::null(),
-            record_boundary_patch_point: false,
-        }
+    pub fn set_opcode(self:&mut JITState, opcode: usize) {
+        self.opcode = opcode;
     }
 
     pub fn add_gc_object_offset(self:&mut JITState, ptr_offset:u32) {
@@ -937,7 +930,7 @@ fn jit_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, arg:
 
 fn gen_putobject_int2fix(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
-    let opcode = jit.get_opcode();
+    let opcode = jit.opcode;
     let cst_val:usize = if opcode == OP_PUTOBJECT_INT2FIX_0_ { 0 } else { 1 };
 
     jit_putobject(jit, ctx, cb, VALUE::from(cst_val));
@@ -1020,7 +1013,9 @@ mod tests {
     fn test_int2fix() {
         let mut context = Context::new();
         let mut cb = CodeBlock::new();
-        let status = gen_putobject_int2fix(&mut JITState::new_with_opcode(OP_PUTOBJECT_INT2FIX_0_), &mut context, &mut cb);
+        let mut jit = JITState::new();
+        jit.opcode = OP_PUTOBJECT_INT2FIX_0_;
+        let status = gen_putobject_int2fix(& mut jit, &mut context, &mut cb);
 
         let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
 
