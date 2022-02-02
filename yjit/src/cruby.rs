@@ -132,8 +132,8 @@ pub const RUBY_T_MOVED   :usize = 0x1e;
 
 pub const RUBY_T_MASK    :usize = 0x1f;
 
-pub const RUBY_LONG_MIN:isize = -2147483648;
-pub const RUBY_LONG_MAX:isize = 2147483647;
+pub const RUBY_LONG_MIN:isize = std::os::raw::c_long::MIN as isize;
+pub const RUBY_LONG_MAX:isize = std::os::raw::c_long::MAX as isize;
 
 pub const RUBY_FIXNUM_MIN:isize = RUBY_LONG_MIN / 2;
 pub const RUBY_FIXNUM_MAX:isize = RUBY_LONG_MAX / 2;
