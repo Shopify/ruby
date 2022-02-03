@@ -140,7 +140,7 @@ pub enum X86Opnd
 impl X86Opnd {
     fn rex_needed(&self) -> bool {
         match self {
-            X86Opnd::None => unreachable!(),
+            X86Opnd::None => false,
             X86Opnd::Imm(_) => false,
             X86Opnd::UImm(_) => false,
             X86Opnd::Reg(reg) => reg.reg_no > 7 || reg.num_bits == 8 && reg.reg_no >= 4,
@@ -970,6 +970,25 @@ impl CodeBlock
             _ => unreachable!()
         };
     }
+
+    /// Encode a conditional move instruction
+    fn write_cmov(&mut self, opcode1: u8, dst: X86Opnd, src: X86Opnd) {
+        if let X86Opnd::Reg(reg) = dst {
+            match src {
+                X86Opnd::Reg(_) => (),
+                X86Opnd::Mem(_) => (),
+                _ => unreachable!()
+            };
+
+            assert!(reg.num_bits >= 16);
+            let sz_pref = reg.num_bits == 16;
+            let rex_w = reg.num_bits == 64;
+
+            self.write_rm(sz_pref, rex_w, dst, src, 0xff, 2, &[0x0f, opcode1]);
+        } else {
+            unreachable!()
+        }
+    }
 }
 
 /*
@@ -1014,21 +1033,6 @@ static void cb_write_jcc_ptr(codeblock_t *cb, const char *mnem, uint8_t op0, uin
         // Offset doesn't fit in 4 bytes. Report error.
         cb->dropped_bytes = true;
     }
-}
-
-// Encode a conditional move instruction
-static void cb_write_cmov(codeblock_t *cb, const char *mnem, uint8_t opcode1, x86opnd_t dst, x86opnd_t src)
-{
-    //cb.writeASM(mnem, dst, src);
-
-    assert (dst.type == OPND_REG);
-    assert (src.type == OPND_REG || src.type == OPND_MEM);
-    assert (dst.num_bits >= 16 && "invalid dst reg size in cmov");
-
-    bool szPref = dst.num_bits == 16;
-    bool rexW = dst.num_bits == 64;
-
-    cb_write_rm(cb, szPref, rexW, dst, src, 0xFF, 2, 0x0F, opcode1);
 }
 */
 
@@ -1120,39 +1124,37 @@ fn call(cb: &mut CodeBlock, opnd: X86Opnd) {
     cb.write_rm(false, false, X86Opnd::None, opnd, 2, 1, &[0xff]);
 }
 
-/*
-/// cmovcc - Conditional move
-//void cmova(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmova", 0x47, dst, src); }
-//void cmovae(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovae", 0x43, dst, src); }
-//void cmovb(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovb", 0x42, dst, src); }
-//void cmovbe(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovbe", 0x46, dst, src); }
-//void cmovc(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovc", 0x42, dst, src); }
-void cmove(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmove", 0x44, dst, src); }
-void cmovg(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovg", 0x4F, dst, src); }
-void cmovge(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovge", 0x4D, dst, src); }
-void cmovl(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovl", 0x4C, dst, src); }
-void cmovle(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovle", 0x4E, dst, src); }
-//void cmovna(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovna", 0x46, dst, src); }
-//void cmovnae(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnae", 0x42, dst, src); }
-//void cmovnb(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnb", 0x43, dst, src); }
-//void cmovnbe(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnbe", 0x47, dst, src); }
-//void cmovnc(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnc", 0x43, dst, src); }
-void cmovne(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovne", 0x45, dst, src); }
-//void cmovng(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovng", 0x4E, dst, src); }
-//void cmovnge(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnge", 0x4C, dst, src); }
-//void cmovnl(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnl" , 0x4D, dst, src); }
-//void cmovnle(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnle", 0x4F, dst, src); }
-//void cmovno(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovno", 0x41, dst, src); }
-//void cmovnp(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnp", 0x4B, dst, src); }
-//void cmovns(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovns", 0x49, dst, src); }
-void cmovnz(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnz", 0x45, dst, src); }
-//void cmovo(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovo", 0x40, dst, src); }
-//void cmovp(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovp", 0x4A, dst, src); }
-//void cmovpe(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovpe", 0x4A, dst, src); }
-//void cmovpo(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovpo", 0x4B, dst, src); }
-//void cmovs(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovs", 0x48, dst, src); }
-void cmovz(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovz", 0x44, dst, src); }
-*/
+// cmovcc - Conditional move
+fn cmova(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x47, dst, src); }
+fn cmovae(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x43, dst, src); }
+fn cmovb(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x42, dst, src); }
+fn cmovbe(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x46, dst, src); }
+fn cmovc(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x42, dst, src); }
+fn cmove(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x44, dst, src); }
+fn cmovg(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4f, dst, src); }
+fn cmovge(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4d, dst, src); }
+fn cmovl(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4c, dst, src); }
+fn cmovle(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4e, dst, src); }
+fn cmovna(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x46, dst, src); }
+fn cmovnae(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x42, dst, src); }
+fn cmovnb(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x43, dst, src); }
+fn cmovnbe(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x47, dst, src); }
+fn cmovnc(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x43, dst, src); }
+fn cmovne(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x45, dst, src); }
+fn cmovng(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4e, dst, src); }
+fn cmovnge(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4c, dst, src); }
+fn cmovnl(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov( 0x4d, dst, src); }
+fn cmovnle(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4f, dst, src); }
+fn cmovno(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x41, dst, src); }
+fn cmovnp(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4b, dst, src); }
+fn cmovns(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x49, dst, src); }
+fn cmovnz(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x45, dst, src); }
+fn cmovo(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x40, dst, src); }
+fn cmovp(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4a, dst, src); }
+fn cmovpe(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4a, dst, src); }
+fn cmovpo(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4b, dst, src); }
+fn cmovs(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x48, dst, src); }
+fn cmovz(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x44, dst, src); }
 
 /// cmp - Compare and set flags
 fn cmp(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
