@@ -698,7 +698,7 @@ jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
 pub fn gen_single_block(block: &Block, start_ctx: &Context, ec: EcPtr)
 {
     let blockid = block.get_blockid();
-    //verify_blockid(blockid);
+    verify_blockid(&blockid);
 
     // Copy the starting context to avoid mutating it
     let ctx = limit_block_versions(blockid, start_ctx);
