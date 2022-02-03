@@ -82,6 +82,43 @@ fn test_lea() {
 }
 
 #[test]
+fn test_mov() {
+    check_bytes("b807000000", |cb| mov(cb, EAX, imm_opnd(7)));
+    check_bytes("b8fdffffff", |cb| mov(cb, EAX, imm_opnd(-3)));
+    check_bytes("41bf03000000", |cb| mov(cb, R15, imm_opnd(3)));
+    check_bytes("89d8", |cb| mov(cb, EAX, EBX));
+    check_bytes("89c8", |cb| mov(cb, EAX, ECX));
+    check_bytes("8b9380000000", |cb| mov(cb, EDX, mem_opnd(32, RBX, 128)));
+
+    // Test `mov rax, 3` => `mov eax, 3` optimization
+    check_bytes("41b834000000", |cb| mov(cb, R8, imm_opnd(0x34)));
+    check_bytes("49b80000008000000000", |cb| mov(cb, R8, imm_opnd(0x80000000)));
+    check_bytes("49b8ffffffffffffffff", |cb| mov(cb, R8, imm_opnd(-1)));
+
+    check_bytes("b834000000", |cb| mov(cb, RAX, imm_opnd(0x34)));
+    check_bytes("48b80000008000000000", |cb| mov(cb, RAX, imm_opnd(0x80000000)));
+    check_bytes("48b8ccffffffffffffff", |cb| mov(cb, RAX, imm_opnd(-52)));
+    check_bytes("48b8ffffffffffffffff", |cb| mov(cb, RAX, imm_opnd(-1)));
+    check_bytes("4488c9", |cb| mov(cb, CL, R9B));
+    check_bytes("4889c3", |cb| mov(cb, RBX, RAX));
+    check_bytes("4889df", |cb| mov(cb, RDI, RBX));
+    check_bytes("40b60b", |cb| mov(cb, SIL, imm_opnd(11)));
+    check_bytes("c60424fd", |cb| mov(cb, mem_opnd(8, RSP, 0), imm_opnd(-3)));
+    check_bytes("48c7470801000000", |cb| mov(cb, mem_opnd(64, RDI, 8), imm_opnd(1)));
+}
+
+#[test]
+fn test_movsx() {
+    check_bytes("660fbec0", |cb| movsx(cb, AX, AL));
+    check_bytes("0fbed0", |cb| movsx(cb, EDX, AL));
+    check_bytes("480fbec3", |cb| movsx(cb, RAX, BL));
+    check_bytes("0fbfc8", |cb| movsx(cb, ECX, AX));
+    check_bytes("4c0fbed9", |cb| movsx(cb, R11, CL));
+    check_bytes("4c6354240c", |cb| movsx(cb, R10, mem_opnd(32, RSP, 12)));
+    check_bytes("480fbe0424", |cb| movsx(cb, RAX, mem_opnd(8, RSP, 0)));
+}
+
+#[test]
 fn test_neg() {
     check_bytes("48f7d8", |cb| neg(cb, RAX));
 }
@@ -127,10 +164,8 @@ fn test_pop() {
     check_bytes("8f00", |cb| pop(cb, mem_opnd(64, RAX, 0)));
     check_bytes("418f00", |cb| pop(cb, mem_opnd(64, R8, 0)));
     check_bytes("418f4003", |cb| pop(cb, mem_opnd(64, R8, 3)));
-
-    // TODO(kevin)
-    // check_bytes("8f44c803", |cb| pop(cb, mem_opnd_sib(64, RAX, RCX, 8, 3)));
-    // check_bytes("418f44c803", |cb| pop(cb, mem_opnd_sib(64, R8, RCX, 8, 3)));
+    check_bytes("8f44c803", |cb| pop(cb, mem_opnd_sib(64, RAX, RCX, 8, 3)));
+    check_bytes("418f44c803", |cb| pop(cb, mem_opnd_sib(64, R8, RCX, 8, 3)));
 }
 
 #[test]
@@ -141,10 +176,8 @@ fn test_push() {
     check_bytes("ff30", |cb| push(cb, mem_opnd(64, RAX, 0)));
     check_bytes("41ff30", |cb| push(cb, mem_opnd(64, R8, 0)));
     check_bytes("41ff7003", |cb| push(cb, mem_opnd(64, R8, 3)));
-
-    // TODO(kevin)
-    // check_bytes("ff74c803", |cb| push(cb, mem_opnd_sib(64, RAX, RCX, 8, 3)));
-    // check_bytes("41ff74c803", |cb| push(cb, mem_opnd_sib(64, R8, RCX, 8, 3)));
+    check_bytes("ff74c803", |cb| push(cb, mem_opnd_sib(64, RAX, RCX, 8, 3)));
+    check_bytes("41ff74c803", |cb| push(cb, mem_opnd_sib(64, R8, RCX, 8, 3)));
 }
 
 #[test]
@@ -174,6 +207,37 @@ fn test_shr() {
 fn test_sub() {
     check_bytes("83e801", |cb| sub(cb, EAX, imm_opnd(1)));
     check_bytes("4883e802", |cb| sub(cb, RAX, imm_opnd(2)));
+}
+
+#[test]
+fn test_test() {
+    check_bytes("84c0", |cb| test(cb, AL, AL));
+    check_bytes("6685c0", |cb| test(cb, AX, AX));
+    check_bytes("f6c108", |cb| test(cb, CL, uimm_opnd(8)));
+    check_bytes("f6c207", |cb| test(cb, DL, uimm_opnd(7)));
+    check_bytes("f6c108", |cb| test(cb, RCX, uimm_opnd(8)));
+    check_bytes("f6420808", |cb| test(cb, mem_opnd(8, RDX, 8), uimm_opnd(8)));
+    check_bytes("f64208ff", |cb| test(cb, mem_opnd(8, RDX, 8), uimm_opnd(255)));
+    check_bytes("66f7c2ffff", |cb| test(cb, DX, uimm_opnd(0xffff)));
+    check_bytes("66f74208ffff", |cb| test(cb, mem_opnd(16, RDX, 8), uimm_opnd(0xffff)));
+    check_bytes("f60601", |cb| test(cb, mem_opnd(8, RSI, 0), uimm_opnd(1)));
+    check_bytes("f6461001", |cb| test(cb, mem_opnd(8, RSI, 16), uimm_opnd(1)));
+    check_bytes("f646f001", |cb| test(cb, mem_opnd(8, RSI, -16), uimm_opnd(1)));
+    check_bytes("854640", |cb| test(cb, mem_opnd(32, RSI, 64), EAX));
+    check_bytes("4885472a", |cb| test(cb, mem_opnd(64, RDI, 42), RAX));
+    check_bytes("4885c0", |cb| test(cb, RAX, RAX));
+    check_bytes("4885f0", |cb| test(cb, RAX, RSI));
+
+    // TODO(kevin)
+    // check_bytes("48f74640f7ffffff", |cb| test(cb, mem_opnd(64, RSI, 64), imm_opnd(!0x08)));
+}
+
+#[test]
+fn test_xchg() {
+    check_bytes("4891", |cb| xchg(cb, RAX, RCX));
+    check_bytes("4995", |cb| xchg(cb, RAX, R13));
+    check_bytes("4887d9", |cb| xchg(cb, RCX, RBX));
+    check_bytes("4d87f9", |cb| xchg(cb, R9, R15));
 }
 
 #[test]
@@ -216,127 +280,6 @@ cb_set_pos(cb, 0); call(cb, mem_opnd(64, RSP, 8)); check_bytes(cb, "FF542408");
     jmp_label(cb, loop_label);
     cb_link_labels(cb);
     check_bytes(cb, "E9FBFFFFFF");
-}
-
-// mov
-cb_set_pos(cb, 0); mov(cb, EAX, imm_opnd(7)); check_bytes(cb, "B807000000");
-cb_set_pos(cb, 0); mov(cb, EAX, imm_opnd(-3)); check_bytes(cb, "B8FDFFFFFF");
-cb_set_pos(cb, 0); mov(cb, R15, imm_opnd(3)); check_bytes(cb, "41BF03000000");
-cb_set_pos(cb, 0); mov(cb, EAX, EBX); check_bytes(cb, "89D8");
-cb_set_pos(cb, 0); mov(cb, EAX, ECX); check_bytes(cb, "89C8");
-cb_set_pos(cb, 0); mov(cb, EDX, mem_opnd(32, RBX, 128)); check_bytes(cb, "8B9380000000");
-
-// Test `mov rax, 3` => `mov eax, 3` optimization
-cb_set_pos(cb, 0); mov(cb, R8, imm_opnd(0x34)); check_bytes(cb, "41B834000000");
-cb_set_pos(cb, 0); mov(cb, R8, imm_opnd(0x80000000)); check_bytes(cb, "49B80000008000000000");
-cb_set_pos(cb, 0); mov(cb, R8, imm_opnd(-1)); check_bytes(cb, "49B8FFFFFFFFFFFFFFFF");
-
-cb_set_pos(cb, 0); mov(cb, RAX, imm_opnd(0x34)); check_bytes(cb, "B834000000");
-cb_set_pos(cb, 0); mov(cb, RAX, imm_opnd(0x80000000)); check_bytes(cb, "48B80000008000000000");
-cb_set_pos(cb, 0); mov(cb, RAX, imm_opnd(-52)); check_bytes(cb, "48B8CCFFFFFFFFFFFFFF");
-cb_set_pos(cb, 0); mov(cb, RAX, imm_opnd(-1)); check_bytes(cb, "48B8FFFFFFFFFFFFFFFF");
-/*
-test(
-    delegate void (CodeBlock cb) { cb.mov(X86Opnd(AL), X86Opnd(8, RCX, 0, 1, RDX)); },
-    "8A0411"
-);
-*/
-cb_set_pos(cb, 0); mov(cb, CL, R9B); check_bytes(cb, "4488C9");
-cb_set_pos(cb, 0); mov(cb, RBX, RAX); check_bytes(cb, "4889C3");
-cb_set_pos(cb, 0); mov(cb, RDI, RBX); check_bytes(cb, "4889DF");
-cb_set_pos(cb, 0); mov(cb, SIL, imm_opnd(11)); check_bytes(cb, "40B60B");
-cb_set_pos(cb, 0); mov(cb, mem_opnd(8, RSP, 0), imm_opnd(-3)); check_bytes(cb, "C60424FD");
-cb_set_pos(cb, 0); mov(cb, mem_opnd(64, RDI, 8), imm_opnd(1)); check_bytes(cb, "48C7470801000000");
-
-// movsx
-cb_set_pos(cb, 0); movsx(cb, AX, AL); check_bytes(cb, "660FBEC0");
-cb_set_pos(cb, 0); movsx(cb, EDX, AL); check_bytes(cb, "0FBED0");
-cb_set_pos(cb, 0); movsx(cb, RAX, BL); check_bytes(cb, "480FBEC3");
-cb_set_pos(cb, 0); movsx(cb, ECX, AX); check_bytes(cb, "0FBFC8");
-cb_set_pos(cb, 0); movsx(cb, R11, CL); check_bytes(cb, "4C0FBED9");
-cb_set_pos(cb, 0); movsx(cb, R10, mem_opnd(32, RSP, 12)); check_bytes(cb, "4C6354240C");
-cb_set_pos(cb, 0); movsx(cb, RAX, mem_opnd(8, RSP, 0)); check_bytes(cb, "480FBE0424");
-
-// test
-cb_set_pos(cb, 0); test(cb, AL, AL); check_bytes(cb, "84C0");
-cb_set_pos(cb, 0); test(cb, AX, AX); check_bytes(cb, "6685C0");
-cb_set_pos(cb, 0); test(cb, CL, imm_opnd(8)); check_bytes(cb, "F6C108");
-cb_set_pos(cb, 0); test(cb, DL, imm_opnd(7)); check_bytes(cb, "F6C207");
-cb_set_pos(cb, 0); test(cb, RCX, imm_opnd(8)); check_bytes(cb, "F6C108");
-cb_set_pos(cb, 0); test(cb, mem_opnd(8, RDX, 8), imm_opnd(8)); check_bytes(cb, "F6420808");
-cb_set_pos(cb, 0); test(cb, mem_opnd(8, RDX, 8), imm_opnd(255)); check_bytes(cb, "F64208FF");
-cb_set_pos(cb, 0); test(cb, DX, imm_opnd(0xFFFF)); check_bytes(cb, "66F7C2FFFF");
-cb_set_pos(cb, 0); test(cb, mem_opnd(16, RDX, 8), imm_opnd(0xFFFF)); check_bytes(cb, "66F74208FFFF");
-cb_set_pos(cb, 0); test(cb, mem_opnd(8, RSI, 0), imm_opnd(1)); check_bytes(cb, "F60601");
-cb_set_pos(cb, 0); test(cb, mem_opnd(8, RSI, 16), imm_opnd(1)); check_bytes(cb, "F6461001");
-cb_set_pos(cb, 0); test(cb, mem_opnd(8, RSI, -16), imm_opnd(1)); check_bytes(cb, "F646F001");
-cb_set_pos(cb, 0); test(cb, mem_opnd(32, RSI, 64), EAX); check_bytes(cb, "854640");
-cb_set_pos(cb, 0); test(cb, mem_opnd(64, RDI, 42), RAX); check_bytes(cb, "4885472A");
-cb_set_pos(cb, 0); test(cb, RAX, RAX); check_bytes(cb, "4885C0");
-cb_set_pos(cb, 0); test(cb, RAX, RSI); check_bytes(cb, "4885F0");
-cb_set_pos(cb, 0); test(cb, mem_opnd(64, RSI, 64), imm_opnd(~0x08)); check_bytes(cb, "48F74640F7FFFFFF");
-
-// xchg
-cb_set_pos(cb, 0); xchg(cb, RAX, RCX); check_bytes(cb, "4891");
-cb_set_pos(cb, 0); xchg(cb, RAX, R13); check_bytes(cb, "4995");
-cb_set_pos(cb, 0); xchg(cb, RCX, RBX); check_bytes(cb, "4887D9");
-cb_set_pos(cb, 0); xchg(cb, R9, R15); check_bytes(cb, "4D87F9");
-}
-*/
-
-/*
-void assert_equal(int expected, int actual)
-{
-    if (expected != actual) {
-        fprintf(stderr, "expected %d, got %d\n", expected, actual);
-        exit(-1);
-    }
-}
-
-void run_runtime_tests(void)
-{
-    printf("Running runtime tests\n");
-
-    codeblock_t codeblock;
-    codeblock_t* cb = &codeblock;
-
-    uint8_t* mem_block = alloc_exec_mem(4096);
-    cb_init(cb, mem_block, 4096);
-
-    int (*function)(void);
-    function = (int (*)(void))mem_block;
-
-    #define TEST(BODY) cb_set_pos(cb, 0); BODY ret(cb); cb_mark_all_executable(cb); assert_equal(7, function());
-
-    // add
-    TEST({ mov(cb, RAX, imm_opnd(0)); add(cb, RAX, imm_opnd(7)); })
-    TEST({ mov(cb, RAX, imm_opnd(0)); mov(cb, RCX, imm_opnd(7)); add(cb, RAX, RCX); })
-
-    // and
-    TEST({ mov(cb, RAX, imm_opnd(31)); and(cb, RAX, imm_opnd(7)); })
-    TEST({ mov(cb, RAX, imm_opnd(31)); mov(cb, RCX, imm_opnd(7)); and(cb, RAX, RCX); })
-
-    // or
-    TEST({ mov(cb, RAX, imm_opnd(3)); or(cb, RAX, imm_opnd(4)); })
-    TEST({ mov(cb, RAX, imm_opnd(3)); mov(cb, RCX, imm_opnd(4)); or(cb, RAX, RCX); })
-
-    // push/pop
-    TEST({ mov(cb, RCX, imm_opnd(7)); push(cb, RCX); pop(cb, RAX); })
-
-    // shr
-    TEST({ mov(cb, RAX, imm_opnd(31)); shr(cb, RAX, imm_opnd(2)); })
-
-    // sub
-    TEST({ mov(cb, RAX, imm_opnd(12)); sub(cb, RAX, imm_opnd(5)); })
-    TEST({ mov(cb, RAX, imm_opnd(12)); mov(cb, RCX, imm_opnd(5)); sub(cb, RAX, RCX); })
-
-    // xor
-    TEST({ mov(cb, RAX, imm_opnd(13)); xor(cb, RAX, imm_opnd(10)); })
-    TEST({ mov(cb, RAX, imm_opnd(13)); mov(cb, RCX, imm_opnd(10)); xor(cb, RAX, RCX); })
-
-    #undef TEST
-
-    printf("Runtime tests done\n");
 }
 */
 

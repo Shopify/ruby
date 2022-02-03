@@ -190,12 +190,13 @@ impl X86Opnd {
 pub const RIP: X86Opnd = X86Opnd::Reg(X86Reg { num_bits: 64, reg_type: RegType::IP, reg_no: 5 });
 
 // 64-bit GP registers
+const RAX_REG_NO: u8 = 0;
 const RSP_REG_NO: u8 = 4;
 const RBP_REG_NO: u8 = 5;
 const R12_REG_NO: u8 = 12;
 const R13_REG_NO: u8 = 13;
 
-pub const RAX: X86Opnd  = X86Opnd::Reg(X86Reg { num_bits: 64, reg_type: RegType::GP, reg_no: 0 });
+pub const RAX: X86Opnd  = X86Opnd::Reg(X86Reg { num_bits: 64, reg_type: RegType::GP, reg_no: RAX_REG_NO });
 pub const RCX: X86Opnd  = X86Opnd::Reg(X86Reg { num_bits: 64, reg_type: RegType::GP, reg_no: 1 });
 pub const RDX: X86Opnd  = X86Opnd::Reg(X86Reg { num_bits: 64, reg_type: RegType::GP, reg_no: 2 });
 pub const RBX: X86Opnd  = X86Opnd::Reg(X86Reg { num_bits: 64, reg_type: RegType::GP, reg_no: 3 });
@@ -322,6 +323,30 @@ pub fn mem_opnd(num_bits: u8, base_reg: X86Opnd, disp: i32) -> X86Opnd
             disp: disp,
         }
     );
+}
+
+pub fn mem_opnd_sib(num_bits: u8, base_opnd: X86Opnd, index_opnd: X86Opnd, scale: i32, disp: i32) -> X86Opnd {
+    if let (X86Opnd::Reg(base_reg), X86Opnd::Reg(index_reg)) = (base_opnd, index_opnd) {
+        let scale_exp: u8;
+
+        match scale {
+            8 => { scale_exp = 3; },
+            4 => { scale_exp = 2; },
+            2 => { scale_exp = 1; },
+            1 => { scale_exp = 0; },
+            _ => unreachable!()
+        };
+
+        X86Opnd::Mem(X86Mem {
+            num_bits,
+            base_reg_no: base_reg.reg_no,
+            idx_reg_no: Some(index_reg.reg_no),
+            scale_exp,
+            disp
+        })
+    } else {
+        unreachable!()
+    }
 }
 
 // Compute an offset to a given field of a struct
@@ -690,305 +715,6 @@ impl CodeBlock
         self.current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
         // self.mem_block.mark_executable(0, self.mem_size).unwrap();
     }
-
-
-
-    // TODO: make the following non-public functions within this module
-    // instead of methods on the CodeBlock.
-    // We should try to make it so that CodeBlock can be reused by the ARM64 assembler.
-
-
-
-    /// Write the REX byte
-    fn write_rex(&mut self, w_flag: bool, reg_no: u8, idx_reg_no: u8, rm_reg_no: u8) {
-        // 0 1 0 0 w r x b
-        // w - 64-bit operand size flag
-        // r - MODRM.reg extension
-        // x - SIB.index extension
-        // b - MODRM.rm or SIB.base extension
-        let w: u8 = if w_flag { 1 } else { 0 };
-        let r: u8 = if (reg_no & 8) > 0 { 1 } else { 0 };
-        let x: u8 = if (idx_reg_no & 8) > 0 { 1 } else { 0 };
-        let b: u8 = if (rm_reg_no & 8) > 0 { 1 } else { 0 };
-
-        // Encode and write the REX byte
-        self.write_byte(0x40 + (w << 3) + (r << 2) + (x << 1) + (b));
-    }
-
-    /// Write an opcode byte with an embedded register operand
-    fn write_opcode(&mut self, opcode: u8, reg: X86Reg) {
-        let op_byte: u8 = opcode | (reg.reg_no & 7);
-        self.write_byte(op_byte);
-    }
-
-    /// Encode an RM instruction
-    fn write_rm(&mut self, sz_pref: bool, rex_w: bool, r_opnd: X86Opnd, rm_opnd: X86Opnd, op_ext: u8, op_len: u32, bytes: &[u8]) {
-        assert!(op_len > 0 && op_len <= 3);
-
-        let matched = match r_opnd {
-            X86Opnd::None => Some(()),
-            X86Opnd::Reg(_) => Some(()),
-            _ => None
-        };
-
-        matched.expect("Can only encode an RM instruction with a register or a none");
-
-        // Flag to indicate the REX prefix is needed
-        let need_rex = rex_w || r_opnd.rex_needed() || rm_opnd.rex_needed();
-
-        // Flag to indicate SIB byte is needed
-        let need_sib = r_opnd.sib_needed() || rm_opnd.sib_needed();
-
-        // Add the operand-size prefix, if needed
-        if sz_pref {
-            self.write_byte(0x66)
-        }
-
-        // Add the REX prefix, if needed
-        if need_rex {
-            // 0 1 0 0 w r x b
-            // w - 64-bit operand size flag
-            // r - MODRM.reg extension
-            // x - SIB.index extension
-            // b - MODRM.rm or SIB.base extension
-
-            let w = if rex_w { 1 } else { 0 };
-            let r = match r_opnd {
-                X86Opnd::None => 0,
-                X86Opnd::Reg(reg) => if (reg.reg_no & 8) > 0 { 1 } else { 0 },
-                _ => unreachable!()
-            };
-
-            let x = match (need_sib, rm_opnd) {
-                (true, X86Opnd::Mem(mem)) => if (mem.idx_reg_no.unwrap_or(0) & 8) > 0 { 1 } else { 0 },
-                _ => 0
-            };
-
-            let b = match rm_opnd {
-                X86Opnd::Reg(reg) => if (reg.reg_no & 8) > 0 { 1 } else { 0 },
-                X86Opnd::Mem(mem) => if (mem.base_reg_no & 8) > 0 { 1 } else { 0 },
-                _ => 0
-            };
-
-            // Encode and write the REX byte
-            let rex_byte: u8 = 0x40 + (w << 3) + (r << 2) + (x << 1) + (b);
-            self.write_byte(rex_byte);
-        }
-
-        // Write the opcode bytes to the code block
-        for byte in bytes {
-            self.write_byte(*byte)
-        }
-
-        // MODRM.mod (2 bits)
-        // MODRM.reg (3 bits)
-        // MODRM.rm  (3 bits)
-
-        // assert (
-        //     !(opExt != 0xFF && r_opnd.type != OPND_NONE) &&
-        //     "opcode extension and register operand present"
-        // );
-
-        // Encode the mod field
-        let rm_mod = match rm_opnd {
-            X86Opnd::Reg(_) => 3,
-            X86Opnd::IPRel(_) => 0,
-            X86Opnd::Mem(mem) => {
-                match rm_opnd.disp_size() {
-                    0 => 0,
-                    8 => 1,
-                    32 => 2,
-                    _ => unreachable!()
-                }
-            },
-            _ => unreachable!()
-        };
-
-        // Encode the reg field
-        let reg: u8;
-        if op_ext != 0xff {
-            reg = op_ext;
-        } else {
-            reg = match r_opnd {
-                X86Opnd::Reg(reg) => reg.reg_no & 7,
-                _ => 0
-            };
-        }
-
-        // Encode the rm field
-        let rm = match rm_opnd {
-            X86Opnd::Reg(reg) => reg.reg_no & 7,
-            X86Opnd::Mem(mem) => if need_sib { 4 } else { mem.base_reg_no & 7 },
-            _ => unreachable!()
-        };
-
-        // Encode and write the ModR/M byte
-        let rm_byte: u8 = (rm_mod << 6) + (reg << 3) + (rm);
-        self.write_byte(rm_byte);
-
-        // Add the SIB byte, if needed
-        if need_sib {
-            // SIB.scale (2 bits)
-            // SIB.index (3 bits)
-            // SIB.base  (3 bits)
-
-            match rm_opnd {
-                X86Opnd::Mem(mem) => {
-                    // Encode the scale value
-                    let scale = mem.scale_exp;
-
-                    // Encode the index value
-                    let index = mem.idx_reg_no.map(|no| no & 7).unwrap_or(4);
-
-                    // Encode the base register
-                    let base = mem.base_reg_no & 7;
-
-                    // Encode and write the SIB byte
-                    let sib_byte: u8 = (scale << 6) + (index << 3) + (base);
-                    self.write_byte(sib_byte);
-                },
-                _ => panic!("Expected mem operand")
-            }
-        }
-
-        // Add the displacement
-        if let X86Opnd::Mem(mem) = rm_opnd {
-            let disp_size = rm_opnd.disp_size();
-            if disp_size > 0 {
-                self.write_int(mem.disp as u64, disp_size);
-            }
-        }
-    }
-
-    // Encode a mul-like single-operand RM instruction
-    fn write_rm_unary(&mut self, op_mem_reg_8: u8, op_mem_reg_pref: u8, op_ext: u8, opnd: X86Opnd) {
-        let opnd_size = match opnd {
-            X86Opnd::Reg(reg) => reg.num_bits,
-            X86Opnd::Mem(mem) => mem.num_bits,
-            _ => unreachable!()
-        };
-
-        assert!(opnd_size == 8 || opnd_size == 16 || opnd_size == 32 || opnd_size == 64);
-
-        if opnd_size == 8 {
-            self.write_rm(false, false, X86Opnd::None, opnd, op_ext, 1, &[op_mem_reg_8]);
-        } else {
-            let sz_pref = opnd_size == 16;
-            let rex_w = opnd_size == 64;
-            self.write_rm(sz_pref, rex_w, X86Opnd::None, opnd, op_ext, 1, &[op_mem_reg_pref]);
-        }
-    }
-
-    // Encode an add-like RM instruction with multiple possible encodings
-    fn write_rm_multi(&mut self, op_mem_reg8: u8, op_mem_reg_pref: u8, op_reg_mem8: u8, op_reg_mem_pref: u8, op_mem_imm8: u8, op_mem_imm_sml: u8, op_mem_imm_lrg: u8, op_ext_imm: u8, opnd0: X86Opnd, opnd1: X86Opnd) {
-        // Check the size of opnd0
-        let opnd_size = match opnd0 {
-            X86Opnd::Reg(reg) => reg.num_bits,
-            X86Opnd::Mem(mem) => mem.num_bits,
-            _ => unreachable!()
-        };
-
-        assert!(opnd_size == 8 || opnd_size == 16 || opnd_size == 32 || opnd_size == 64);
-
-        // Check the size of opnd1
-        match opnd1 {
-            X86Opnd::Reg(reg) => assert!(reg.num_bits == opnd_size),
-            X86Opnd::Mem(mem) => assert!(mem.num_bits == opnd_size),
-            X86Opnd::Imm(imm) => assert!(imm.num_bits <= opnd_size),
-            _ => ()
-        };
-
-        let sz_pref = opnd_size == 16;
-        let rex_w = opnd_size == 64;
-
-        match (opnd0, opnd1) {
-            // R/M + Reg
-            (X86Opnd::Mem(_), X86Opnd::Reg(_)) | (X86Opnd::Reg(_), X86Opnd::Reg(_)) => {
-                if opnd_size == 8 {
-                    self.write_rm(false, false, opnd1, opnd0, 0xff, 1, &[op_mem_reg8]);
-                } else {
-                    self.write_rm(sz_pref, rex_w, opnd1, opnd0, 0xff, 1, &[op_mem_reg_pref]);
-                }
-            },
-            // Reg + R/M
-            (X86Opnd::Reg(_), X86Opnd::Mem(_)) => {
-                if opnd_size == 8 {
-                    self.write_rm(false, false, opnd0, opnd1, 0xff, 1, &[op_reg_mem8]);
-                } else {
-                    self.write_rm(sz_pref, rex_w, opnd0, opnd1, 0xff, 1, &[op_reg_mem_pref]);
-                }
-            },
-            // R/M + Imm
-            (_, X86Opnd::Imm(imm)) => {
-                if imm.num_bits <= 8 {
-                    // 8-bit immediate
-
-                    if opnd_size == 8 {
-                        self.write_rm(false, false, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm8]);
-                    } else {
-                        self.write_rm(sz_pref, rex_w, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm_sml]);
-                    }
-
-                    self.write_int(imm.value as u64, 8);
-                } else if imm.num_bits <= 32 {
-                    // 32-bit immediate
-
-                    assert!(imm.num_bits <= opnd_size);
-                    self.write_rm(sz_pref, rex_w, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm_lrg]);
-                    self.write_int(imm.value as u64, if opnd_size > 32 { 32 } else { opnd_size.into() });
-                } else {
-                    panic!("immediate value too large");
-                }
-            },
-            _ => unreachable!()
-        };
-    }
-
-    // Encode a single-operand shift instruction
-    fn write_shift(&mut self, op_mem_one_pref: u8, op_mem_cl_pref: u8, op_mem_imm_pref: u8, op_ext: u8, opnd0: X86Opnd, opnd1: X86Opnd) {
-        // Check the size of opnd0
-        let opnd_size = match opnd0 {
-            X86Opnd::Reg(reg) => reg.num_bits,
-            X86Opnd::Mem(mem) => mem.num_bits,
-            _ => unreachable!()
-        };
-
-        assert!(opnd_size == 16 || opnd_size == 32 || opnd_size == 64);
-        let sz_pref = opnd_size == 16;
-        let rex_w = opnd_size == 64;
-
-        match opnd1 {
-            X86Opnd::Imm(imm) => {
-                if imm.value == 1 {
-                    self.write_rm(sz_pref, rex_w, X86Opnd::None, opnd0, op_ext, 1, &[op_mem_one_pref]);
-                } else {
-                    assert!(imm.num_bits <= 8);
-                    self.write_rm(sz_pref, rex_w, X86Opnd::None, opnd0, op_ext, 1, &[op_mem_imm_pref]);
-                    self.write_byte(imm.value as u8);
-                }
-            },
-            _ => unreachable!()
-        };
-    }
-
-    /// Encode a conditional move instruction
-    fn write_cmov(&mut self, opcode1: u8, dst: X86Opnd, src: X86Opnd) {
-        if let X86Opnd::Reg(reg) = dst {
-            match src {
-                X86Opnd::Reg(_) => (),
-                X86Opnd::Mem(_) => (),
-                _ => unreachable!()
-            };
-
-            assert!(reg.num_bits >= 16);
-            let sz_pref = reg.num_bits == 16;
-            let rex_w = reg.num_bits == 64;
-
-            self.write_rm(sz_pref, rex_w, dst, src, 0xff, 2, &[0x0f, opcode1]);
-        } else {
-            unreachable!()
-        }
-    }
 }
 
 /*
@@ -1036,9 +762,260 @@ static void cb_write_jcc_ptr(codeblock_t *cb, const char *mnem, uint8_t op0, uin
 }
 */
 
+/// Write the REX byte
+fn write_rex(cb: &mut CodeBlock, w_flag: bool, reg_no: u8, idx_reg_no: u8, rm_reg_no: u8) {
+    // 0 1 0 0 w r x b
+    // w - 64-bit operand size flag
+    // r - MODRM.reg extension
+    // x - SIB.index extension
+    // b - MODRM.rm or SIB.base extension
+    let w: u8 = if w_flag { 1 } else { 0 };
+    let r: u8 = if (reg_no & 8) > 0 { 1 } else { 0 };
+    let x: u8 = if (idx_reg_no & 8) > 0 { 1 } else { 0 };
+    let b: u8 = if (rm_reg_no & 8) > 0 { 1 } else { 0 };
+
+    // Encode and write the REX byte
+    cb.write_byte(0x40 + (w << 3) + (r << 2) + (x << 1) + (b));
+}
+
+/// Write an opcode byte with an embedded register operand
+fn write_opcode(cb: &mut CodeBlock, opcode: u8, reg: X86Reg) {
+    let op_byte: u8 = opcode | (reg.reg_no & 7);
+    cb.write_byte(op_byte);
+}
+
+/// Encode an RM instruction
+fn write_rm(cb: &mut CodeBlock, sz_pref: bool, rex_w: bool, r_opnd: X86Opnd, rm_opnd: X86Opnd, op_ext: u8, op_len: u32, bytes: &[u8]) {
+    assert!(op_len > 0 && op_len <= 3);
+
+    let matched = match r_opnd {
+        X86Opnd::None => Some(()),
+        X86Opnd::Reg(_) => Some(()),
+        _ => None
+    };
+
+    matched.expect("Can only encode an RM instruction with a register or a none");
+
+    // Flag to indicate the REX prefix is needed
+    let need_rex = rex_w || r_opnd.rex_needed() || rm_opnd.rex_needed();
+
+    // Flag to indicate SIB byte is needed
+    let need_sib = r_opnd.sib_needed() || rm_opnd.sib_needed();
+
+    // Add the operand-size prefix, if needed
+    if sz_pref {
+        cb.write_byte(0x66)
+    }
+
+    // Add the REX prefix, if needed
+    if need_rex {
+        // 0 1 0 0 w r x b
+        // w - 64-bit operand size flag
+        // r - MODRM.reg extension
+        // x - SIB.index extension
+        // b - MODRM.rm or SIB.base extension
+
+        let w = if rex_w { 1 } else { 0 };
+        let r = match r_opnd {
+            X86Opnd::None => 0,
+            X86Opnd::Reg(reg) => if (reg.reg_no & 8) > 0 { 1 } else { 0 },
+            _ => unreachable!()
+        };
+
+        let x = match (need_sib, rm_opnd) {
+            (true, X86Opnd::Mem(mem)) => if (mem.idx_reg_no.unwrap_or(0) & 8) > 0 { 1 } else { 0 },
+            _ => 0
+        };
+
+        let b = match rm_opnd {
+            X86Opnd::Reg(reg) => if (reg.reg_no & 8) > 0 { 1 } else { 0 },
+            X86Opnd::Mem(mem) => if (mem.base_reg_no & 8) > 0 { 1 } else { 0 },
+            _ => 0
+        };
+
+        // Encode and write the REX byte
+        let rex_byte: u8 = 0x40 + (w << 3) + (r << 2) + (x << 1) + (b);
+        cb.write_byte(rex_byte);
+    }
+
+    // Write the opcode bytes to the code block
+    for byte in bytes {
+        cb.write_byte(*byte)
+    }
+
+    // MODRM.mod (2 bits)
+    // MODRM.reg (3 bits)
+    // MODRM.rm  (3 bits)
+
+    // assert (
+    //     !(opExt != 0xFF && r_opnd.type != OPND_NONE) &&
+    //     "opcode extension and register operand present"
+    // );
+
+    // Encode the mod field
+    let rm_mod = match rm_opnd {
+        X86Opnd::Reg(_) => 3,
+        X86Opnd::IPRel(_) => 0,
+        X86Opnd::Mem(mem) => {
+            match rm_opnd.disp_size() {
+                0 => 0,
+                8 => 1,
+                32 => 2,
+                _ => unreachable!()
+            }
+        },
+        _ => unreachable!()
+    };
+
+    // Encode the reg field
+    let reg: u8;
+    if op_ext != 0xff {
+        reg = op_ext;
+    } else {
+        reg = match r_opnd {
+            X86Opnd::Reg(reg) => reg.reg_no & 7,
+            _ => 0
+        };
+    }
+
+    // Encode the rm field
+    let rm = match rm_opnd {
+        X86Opnd::Reg(reg) => reg.reg_no & 7,
+        X86Opnd::Mem(mem) => if need_sib { 4 } else { mem.base_reg_no & 7 },
+        _ => unreachable!()
+    };
+
+    // Encode and write the ModR/M byte
+    let rm_byte: u8 = (rm_mod << 6) + (reg << 3) + (rm);
+    cb.write_byte(rm_byte);
+
+    // Add the SIB byte, if needed
+    if need_sib {
+        // SIB.scale (2 bits)
+        // SIB.index (3 bits)
+        // SIB.base  (3 bits)
+
+        match rm_opnd {
+            X86Opnd::Mem(mem) => {
+                // Encode the scale value
+                let scale = mem.scale_exp;
+
+                // Encode the index value
+                let index = mem.idx_reg_no.map(|no| no & 7).unwrap_or(4);
+
+                // Encode the base register
+                let base = mem.base_reg_no & 7;
+
+                // Encode and write the SIB byte
+                let sib_byte: u8 = (scale << 6) + (index << 3) + (base);
+                cb.write_byte(sib_byte);
+            },
+            _ => panic!("Expected mem operand")
+        }
+    }
+
+    // Add the displacement
+    if let X86Opnd::Mem(mem) = rm_opnd {
+        let disp_size = rm_opnd.disp_size();
+        if disp_size > 0 {
+            cb.write_int(mem.disp as u64, disp_size);
+        }
+    }
+}
+
+// Encode a mul-like single-operand RM instruction
+fn write_rm_unary(cb: &mut CodeBlock, op_mem_reg_8: u8, op_mem_reg_pref: u8, op_ext: u8, opnd: X86Opnd) {
+    let opnd_size = match opnd {
+        X86Opnd::Reg(reg) => reg.num_bits,
+        X86Opnd::Mem(mem) => mem.num_bits,
+        _ => unreachable!()
+    };
+
+    assert!(opnd_size == 8 || opnd_size == 16 || opnd_size == 32 || opnd_size == 64);
+
+    if opnd_size == 8 {
+        write_rm(cb, false, false, X86Opnd::None, opnd, op_ext, 1, &[op_mem_reg_8]);
+    } else {
+        let sz_pref = opnd_size == 16;
+        let rex_w = opnd_size == 64;
+        write_rm(cb, sz_pref, rex_w, X86Opnd::None, opnd, op_ext, 1, &[op_mem_reg_pref]);
+    }
+}
+
+// Encode an add-like RM instruction with multiple possible encodings
+fn write_rm_multi(cb: &mut CodeBlock, op_mem_reg8: u8, op_mem_reg_pref: u8, op_reg_mem8: u8, op_reg_mem_pref: u8, op_mem_imm8: u8, op_mem_imm_sml: u8, op_mem_imm_lrg: u8, op_ext_imm: u8, opnd0: X86Opnd, opnd1: X86Opnd) {
+    // Check the size of opnd0
+    let opnd_size = match opnd0 {
+        X86Opnd::Reg(reg) => reg.num_bits,
+        X86Opnd::Mem(mem) => mem.num_bits,
+        _ => unreachable!()
+    };
+
+    assert!(opnd_size == 8 || opnd_size == 16 || opnd_size == 32 || opnd_size == 64);
+
+    // Check the size of opnd1
+    match opnd1 {
+        X86Opnd::Reg(reg) => assert!(reg.num_bits == opnd_size),
+        X86Opnd::Mem(mem) => assert!(mem.num_bits == opnd_size),
+        X86Opnd::Imm(imm) => assert!(imm.num_bits <= opnd_size),
+        _ => ()
+    };
+
+    let sz_pref = opnd_size == 16;
+    let rex_w = opnd_size == 64;
+
+    match (opnd0, opnd1) {
+        // R/M + Reg
+        (X86Opnd::Mem(_), X86Opnd::Reg(_)) | (X86Opnd::Reg(_), X86Opnd::Reg(_)) => {
+            if opnd_size == 8 {
+                write_rm(cb, false, false, opnd1, opnd0, 0xff, 1, &[op_mem_reg8]);
+            } else {
+                write_rm(cb, sz_pref, rex_w, opnd1, opnd0, 0xff, 1, &[op_mem_reg_pref]);
+            }
+        },
+        // Reg + R/M
+        (X86Opnd::Reg(_), X86Opnd::Mem(_)) => {
+            if opnd_size == 8 {
+                write_rm(cb, false, false, opnd0, opnd1, 0xff, 1, &[op_reg_mem8]);
+            } else {
+                write_rm(cb, sz_pref, rex_w, opnd0, opnd1, 0xff, 1, &[op_reg_mem_pref]);
+            }
+        },
+        // R/M + Imm
+        (_, X86Opnd::Imm(imm)) => {
+            if imm.num_bits <= 8 {
+                // 8-bit immediate
+
+                if opnd_size == 8 {
+                    write_rm(cb, false, false, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm8]);
+                } else {
+                    write_rm(cb, sz_pref, rex_w, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm_sml]);
+                }
+
+                cb.write_int(imm.value as u64, 8);
+            } else if imm.num_bits <= 32 {
+                // 32-bit immediate
+
+                assert!(imm.num_bits <= opnd_size);
+                write_rm(cb, sz_pref, rex_w, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm_lrg]);
+                cb.write_int(imm.value as u64, if opnd_size > 32 { 32 } else { opnd_size.into() });
+            } else {
+                panic!("immediate value too large");
+            }
+        },
+        _ => unreachable!()
+    };
+}
+
+// LOCK - lock prefix for atomic shared memory operations
+fn write_lock_prefix(cb: &mut CodeBlock) {
+    cb.write_byte(0xf0);
+}
+
 /// add - Integer addition
-fn add(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_rm_multi(
+pub fn add(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+    write_rm_multi(
+        cb,
         0x00, // opMemReg8
         0x01, // opMemRegPref
         0x02, // opRegMem8
@@ -1053,8 +1030,9 @@ fn add(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 }
 
 /// and - Bitwise AND
-fn and(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_rm_multi(
+pub fn and(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+    write_rm_multi(
+        cb,
         0x20, // opMemReg8
         0x21, // opMemRegPref
         0x22, // opRegMem8
@@ -1068,19 +1046,16 @@ fn and(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
     );
 }
 
-/*
-// call - Call to a pointer with a 32-bit displacement offset
-static void call_rel32(codeblock_t *cb, int32_t rel32)
-{
-    //cb.writeASM("call", rel32);
-
+/// call - Call to a pointer with a 32-bit displacement offset
+pub fn call_rel32(cb: &mut CodeBlock, rel32: i32) {
     // Write the opcode
-    cb_write_byte(cb, 0xE8);
+    cb.write_byte(0xe8);
 
     // Write the relative 32-bit jump offset
-    cb_write_int(cb, (int32_t)rel32, 32);
+    cb.write_int(rel32.try_into().unwrap(), 32);
 }
 
+/*
 // call - Call a pointer, encode with a 32-bit offset if possible
 void call_ptr(codeblock_t *cb, x86opnd_t scratch_reg, uint8_t *dst_ptr)
 {
@@ -1120,45 +1095,65 @@ void call_label(codeblock_t *cb, uint32_t label_idx)
 */
 
 /// call - Indirect call with an R/M operand
-fn call(cb: &mut CodeBlock, opnd: X86Opnd) {
-    cb.write_rm(false, false, X86Opnd::None, opnd, 2, 1, &[0xff]);
+pub fn call(cb: &mut CodeBlock, opnd: X86Opnd) {
+    write_rm(cb, false, false, X86Opnd::None, opnd, 2, 1, &[0xff]);
+}
+
+/// Encode a conditional move instruction
+fn write_cmov(cb: &mut CodeBlock, opcode1: u8, dst: X86Opnd, src: X86Opnd) {
+    if let X86Opnd::Reg(reg) = dst {
+        match src {
+            X86Opnd::Reg(_) => (),
+            X86Opnd::Mem(_) => (),
+            _ => unreachable!()
+        };
+
+        assert!(reg.num_bits >= 16);
+        let sz_pref = reg.num_bits == 16;
+        let rex_w = reg.num_bits == 64;
+
+        write_rm(cb, sz_pref, rex_w, dst, src, 0xff, 2, &[0x0f, opcode1]);
+    } else {
+        unreachable!()
+    }
 }
 
 // cmovcc - Conditional move
-fn cmova(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x47, dst, src); }
-fn cmovae(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x43, dst, src); }
-fn cmovb(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x42, dst, src); }
-fn cmovbe(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x46, dst, src); }
-fn cmovc(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x42, dst, src); }
-fn cmove(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x44, dst, src); }
-fn cmovg(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4f, dst, src); }
-fn cmovge(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4d, dst, src); }
-fn cmovl(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4c, dst, src); }
-fn cmovle(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4e, dst, src); }
-fn cmovna(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x46, dst, src); }
-fn cmovnae(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x42, dst, src); }
-fn cmovnb(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x43, dst, src); }
-fn cmovnbe(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x47, dst, src); }
-fn cmovnc(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x43, dst, src); }
-fn cmovne(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x45, dst, src); }
-fn cmovng(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4e, dst, src); }
-fn cmovnge(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4c, dst, src); }
-fn cmovnl(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov( 0x4d, dst, src); }
-fn cmovnle(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4f, dst, src); }
-fn cmovno(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x41, dst, src); }
-fn cmovnp(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4b, dst, src); }
-fn cmovns(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x49, dst, src); }
-fn cmovnz(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x45, dst, src); }
-fn cmovo(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x40, dst, src); }
-fn cmovp(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4a, dst, src); }
-fn cmovpe(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4a, dst, src); }
-fn cmovpo(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x4b, dst, src); }
-fn cmovs(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x48, dst, src); }
-fn cmovz(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { cb.write_cmov(0x44, dst, src); }
+pub fn cmova(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x47, dst, src); }
+pub fn cmovae(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x43, dst, src); }
+pub fn cmovb(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x42, dst, src); }
+pub fn cmovbe(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x46, dst, src); }
+pub fn cmovc(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x42, dst, src); }
+pub fn cmove(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x44, dst, src); }
+pub fn cmovg(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4f, dst, src); }
+pub fn cmovge(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4d, dst, src); }
+pub fn cmovl(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4c, dst, src); }
+pub fn cmovle(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4e, dst, src); }
+pub fn cmovna(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x46, dst, src); }
+pub fn cmovnae(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x42, dst, src); }
+pub fn cmovnb(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x43, dst, src); }
+pub fn cmovnbe(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x47, dst, src); }
+pub fn cmovnc(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x43, dst, src); }
+pub fn cmovne(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x45, dst, src); }
+pub fn cmovng(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4e, dst, src); }
+pub fn cmovnge(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4c, dst, src); }
+pub fn cmovnl(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb,  0x4d, dst, src); }
+pub fn cmovnle(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4f, dst, src); }
+pub fn cmovno(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x41, dst, src); }
+pub fn cmovnp(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4b, dst, src); }
+pub fn cmovns(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x49, dst, src); }
+pub fn cmovnz(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x45, dst, src); }
+pub fn cmovo(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x40, dst, src); }
+pub fn cmovp(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4a, dst, src); }
+pub fn cmovpe(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4a, dst, src); }
+pub fn cmovpo(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x4b, dst, src); }
+pub fn cmovs(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x48, dst, src); }
+pub fn cmovz(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) { write_cmov(cb, 0x44, dst, src); }
 
 /// cmp - Compare and set flags
-fn cmp(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_rm_multi(
+pub fn cmp(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+    write_rm_multi(
+        cb,
         0x38, // opMemReg8
         0x39, // opMemRegPref
         0x3A, // opRegMem8
@@ -1173,117 +1168,19 @@ fn cmp(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 }
 
 /// cdq - Convert doubleword to quadword
-fn cdq(cb: &mut CodeBlock) {
+pub fn cdq(cb: &mut CodeBlock) {
     cb.write_byte(0x99);
 }
 
 /// cqo - Convert quadword to octaword
-fn cqo(cb: &mut CodeBlock) {
+pub fn cqo(cb: &mut CodeBlock) {
     cb.write_bytes(&[0x48, 0x99]);
 }
 
 /// Interrupt 3 - trap to debugger
-fn int3(cb: &mut CodeBlock) {
+pub fn int3(cb: &mut CodeBlock) {
     cb.write_byte(0xcc);
 }
-
-/*
-// div - Unsigned integer division
-alias div = writeRMUnary!(
-    "div",
-    0xF6, // opMemReg8
-    0xF7, // opMemRegPref
-    0x06  // opExt
-);
-*/
-
-/*
-/// divsd - Divide scalar double
-alias divsd = writeXMM64!(
-    "divsd",
-    0xF2, // prefix
-    0x0F, // opRegMem0
-    0x5E  // opRegMem1
-);
-*/
-
-/*
-// idiv - Signed integer division
-alias idiv = writeRMUnary!(
-    "idiv",
-    0xF6, // opMemReg8
-    0xF7, // opMemRegPref
-    0x07  // opExt
-);
-*/
-
-/*
-/// imul - Signed integer multiplication with two operands
-void imul(CodeBlock cb, X86Opnd opnd0, X86Opnd opnd1)
-{
-    cb.writeASM("imul", opnd0, opnd1);
-
-    assert (opnd0.isReg, "invalid first operand");
-    auto opndSize = opnd0.reg.size;
-
-    // Check the size of opnd1
-    if (opnd1.isReg)
-        assert (opnd1.reg.size is opndSize, "operand size mismatch");
-    else if (opnd1.isMem)
-        assert (opnd1.mem.size is opndSize, "operand size mismatch");
-
-    assert (opndSize is 16 || opndSize is 32 || opndSize is 64);
-    auto szPref = opndSize is 16;
-    auto rexW = opndSize is 64;
-
-    cb.writeRMInstr!('r', 0xFF, 0x0F, 0xAF)(szPref, rexW, opnd0, opnd1);
-}
-*/
-
-/*
-/// imul - Signed integer multiplication with three operands (one immediate)
-void imul(CodeBlock cb, X86Opnd opnd0, X86Opnd opnd1, X86Opnd opnd2)
-{
-    cb.writeASM("imul", opnd0, opnd1, opnd2);
-
-    assert (opnd0.isReg, "invalid first operand");
-    auto opndSize = opnd0.reg.size;
-
-    // Check the size of opnd1
-    if (opnd1.isReg)
-        assert (opnd1.reg.size is opndSize, "operand size mismatch");
-    else if (opnd1.isMem)
-        assert (opnd1.mem.size is opndSize, "operand size mismatch");
-
-    assert (opndSize is 16 || opndSize is 32 || opndSize is 64);
-    auto szPref = opndSize is 16;
-    auto rexW = opndSize is 64;
-
-    assert (opnd2.isImm, "invalid third operand");
-    auto imm = opnd2.imm;
-
-    // 8-bit immediate
-    if (imm.immSize <= 8)
-    {
-        cb.writeRMInstr!('r', 0xFF, 0x6B)(szPref, rexW, opnd0, opnd1);
-        cb.writeInt(imm.imm, 8);
-    }
-
-    // 32-bit immediate
-    else if (imm.immSize <= 32)
-    {
-        assert (imm.immSize <= opndSize, "immediate too large for dst");
-        cb.writeRMInstr!('r', 0xFF, 0x69)(szPref, rexW, opnd0, opnd1);
-        cb.writeInt(imm.imm, min(opndSize, 32));
-    }
-
-    // Immediate too large
-    else
-    {
-        assert (false, "immediate value too large");
-    }
-}
-*/
 
 /*
 /// jcc - relative jumps to a label
@@ -1354,22 +1251,22 @@ void jmp_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jmp" , 0xFF
 */
 
 /// jmp - Indirect jump near to an R/M operand.
-fn jmp_rm(cb: &mut CodeBlock, opnd: X86Opnd) {
-    cb.write_rm(false, false, X86Opnd::None, opnd, 4, 1, &[0xff]);
+pub fn jmp_rm(cb: &mut CodeBlock, opnd: X86Opnd) {
+    write_rm(cb, false, false, X86Opnd::None, opnd, 4, 1, &[0xff]);
 }
 
 // jmp - Jump with relative 32-bit offset
-fn jmp32(cb: &mut CodeBlock, offset: i32) {
+pub fn jmp32(cb: &mut CodeBlock, offset: i32) {
     cb.write_byte(0xE9);
     cb.write_int(offset as u64, 32);
 }
 
 /// lea - Load Effective Address
-fn lea(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
+pub fn lea(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
     match dst {
         X86Opnd::Reg(reg) => {
             assert!(reg.num_bits == 64);
-            cb.write_rm(false, true, dst, src, 0xff, 1, &[0x8d]);
+            write_rm(cb, false, true, dst, src, 0xff, 1, &[0x8d]);
         },
         _ => unreachable!()
     }
@@ -1388,9 +1285,9 @@ pub fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
             // mov(eax, 0x34).
             if (reg.num_bits == 64) && (imm.value <= u32::MAX.into()) && (imm.value & (1 << 31) == 0) {
                 if dst.rex_needed() {
-                    cb.write_rex(false, 0, 0, reg.reg_no);
+                    write_rex(cb, false, 0, 0, reg.reg_no);
                 }
-                cb.write_opcode(0xB8, reg);
+                write_opcode(cb, 0xB8, reg);
                 cb.write_int(imm.value as u64, 32);
             } else {
                 if reg.num_bits == 16 {
@@ -1398,10 +1295,10 @@ pub fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
                 }
 
                 if dst.rex_needed() || reg.num_bits == 64 {
-                    cb.write_rex(reg.num_bits == 64, 0, 0, reg.reg_no);
+                    write_rex(cb, reg.num_bits == 64, 0, 0, reg.reg_no);
                 }
 
-                cb.write_opcode(if reg.num_bits == 8 { 0xb0 } else { 0xb8 }, reg);
+                write_opcode(cb, if reg.num_bits == 8 { 0xb0 } else { 0xb8 }, reg);
                 cb.write_int(imm.value as u64, reg.num_bits.into());
             }
         },
@@ -1410,18 +1307,31 @@ pub fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
             assert!(imm.num_bits <= mem.num_bits);
 
             if mem.num_bits == 8 {
-                cb.write_rm(false, false, X86Opnd::None, dst, 0xff, 1, &[0xc6]);
+                write_rm(cb, false, false, X86Opnd::None, dst, 0xff, 1, &[0xc6]);
             } else {
-                cb.write_rm(mem.num_bits == 16, mem.num_bits == 64, X86Opnd::None, dst, 0, 1, &[0xc7]);
+                write_rm(cb, mem.num_bits == 16, mem.num_bits == 64, X86Opnd::None, dst, 0, 1, &[0xc7]);
             }
 
             cb.write_int(imm.value as u64, if mem.num_bits > 32 { 32 } else { mem.num_bits.into() });
         },
-        // * + Imm
-        (_, X86Opnd::Imm(_)) => unreachable!(),
+        // M + UImm
+        (X86Opnd::Mem(mem), X86Opnd::UImm(uimm)) => {
+            assert!(uimm.num_bits <= mem.num_bits);
+
+            if mem.num_bits == 8 {
+                write_rm(cb, false, false, X86Opnd::None, dst, 0xff, 1, &[0xc6]);
+            } else {
+                write_rm(cb, mem.num_bits == 16, mem.num_bits == 64, X86Opnd::None, dst, 0, 1, &[0xc7]);
+            }
+
+            cb.write_int(uimm.value, if mem.num_bits > 32 { 32 } else { mem.num_bits.into() });
+        },
+        // * + Imm/UImm
+        (_, X86Opnd::Imm(_) | X86Opnd::UImm(_)) => unreachable!(),
         // * + *
         (_, _) => {
-            cb.write_rm_multi(
+            write_rm_multi(
+                cb,
                 0x88, // opMemReg8
                 0x89, // opMemRegPref
                 0x8A, // opRegMem8
@@ -1437,76 +1347,32 @@ pub fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
     };
 }
 
-/*
 /// movsx - Move with sign extension (signed integers)
-void movsx(codeblock_t *cb, x86opnd_t dst, x86opnd_t src)
-{
-    assert (dst.type == OPND_REG);
-    assert (src.type == OPND_REG || src.type == OPND_MEM);
-    assert (src.num_bits < dst.num_bits);
+pub fn movsx(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
+    if let X86Opnd::Reg(dst_reg) = dst {
+        let src_num_bits = match src {
+            X86Opnd::Reg(reg) => reg.num_bits,
+            X86Opnd::Mem(mem) => mem.num_bits,
+            _ => unreachable!()
+        };
 
-    //cb.writeASM("movsx", dst, src);
+        assert!(src_num_bits < dst_reg.num_bits);
 
-    if (src.num_bits == 8)
-    {
-        cb_write_rm(cb, dst.num_bits == 16, dst.num_bits == 64, dst, src, 0xFF, 2, 0x0F, 0xBE);
-    }
-    else if (src.num_bits == 16)
-    {
-        cb_write_rm(cb, dst.num_bits == 16, dst.num_bits == 64, dst, src, 0xFF, 2, 0x0F, 0xBF);
-    }
-    else if (src.num_bits == 32)
-    {
-        cb_write_rm(cb, false, true, dst, src, 0xFF, 1, 0x63);
-    }
-    else
-    {
-        assert (false);
+        match src_num_bits {
+            8 => write_rm(cb, dst_reg.num_bits == 16, dst_reg.num_bits == 64, dst, src, 0xff, 2, &[0x0f, 0xbe]),
+            16 => write_rm(cb, dst_reg.num_bits == 16, dst_reg.num_bits == 64, dst, src, 0xff, 2, &[0x0f, 0xbf]),
+            32 => write_rm(cb, false, true, dst, src, 0xff, 1, &[0x63]),
+            _ => unreachable!()
+        };
+    } else {
+        unreachable!();
     }
 }
-
-/// movzx - Move with zero extension (unsigned values)
-void movzx(codeblock_t *cb, x86opnd_t dst, x86opnd_t src)
-{
-    cb.writeASM("movzx", dst, src);
-
-    uint32_t dstSize;
-    if (dst.isReg)
-        dstSize = dst.reg.size;
-    else
-        assert (false, "movzx dst must be a register");
-
-    uint32_t srcSize;
-    if (src.isReg)
-        srcSize = src.reg.size;
-    else if (src.isMem)
-        srcSize = src.mem.size;
-    else
-        assert (false);
-
-    assert (
-        srcSize < dstSize,
-        "movzx: srcSize >= dstSize"
-    );
-
-    if (srcSize is 8)
-    {
-        cb.writeRMInstr!('r', 0xFF, 0x0F, 0xB6)(dstSize is 16, dstSize is 64, dst, src);
-    }
-    else if (srcSize is 16)
-    {
-        cb.writeRMInstr!('r', 0xFF, 0x0F, 0xB7)(dstSize is 16, dstSize is 64, dst, src);
-    }
-    else
-    {
-        assert (false, "invalid src operand size for movxz");
-    }
-}
-*/
 
 // neg - Integer negation (multiplication by -1)
 pub fn neg(cb: &mut CodeBlock, opnd: X86Opnd) {
-    cb.write_rm_unary(
+    write_rm_unary(
+        cb,
         0xF6, // opMemReg8
         0xF7, // opMemRegPref
         0x03,  // opExt
@@ -1540,7 +1406,8 @@ pub fn nop(cb: &mut CodeBlock, length: u32) {
 
 /// not - Bitwise NOT
 pub fn not(cb: &mut CodeBlock, opnd: X86Opnd) {
-    cb.write_rm_unary(
+    write_rm_unary(
+        cb,
         0xf6, // opMemReg8
         0xf7, // opMemRegPref
         0x02, // opExt
@@ -1550,7 +1417,8 @@ pub fn not(cb: &mut CodeBlock, opnd: X86Opnd) {
 
 /// or - Bitwise OR
 pub fn or(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_rm_multi(
+    write_rm_multi(
+        cb,
         0x08, // opMemReg8
         0x09, // opMemRegPref
         0x0A, // opRegMem8
@@ -1571,14 +1439,14 @@ pub fn pop(cb: &mut CodeBlock, opnd: X86Opnd) {
             assert!(reg.num_bits == 64);
 
             if opnd.rex_needed() {
-                cb.write_rex(false, 0, 0, reg.reg_no);
+                write_rex(cb, false, 0, 0, reg.reg_no);
             }
-            cb.write_opcode(0x58, reg);
+            write_opcode(cb, 0x58, reg);
         },
         X86Opnd::Mem(mem) => {
             assert!(mem.num_bits == 64);
 
-            cb.write_rm(false, false, X86Opnd::None, opnd, 0, 1, &[0x8f]);
+            write_rm(cb, false, false, X86Opnd::None, opnd, 0, 1, &[0x8f]);
         },
         _ => unreachable!()
     };
@@ -1595,12 +1463,12 @@ pub fn push(cb: &mut CodeBlock, opnd: X86Opnd) {
     match opnd {
         X86Opnd::Reg(reg) => {
             if opnd.rex_needed() {
-                cb.write_rex(false, 0, 0, reg.reg_no);
+                write_rex(cb, false, 0, 0, reg.reg_no);
             }
-            cb.write_opcode(0x50, reg);
+            write_opcode(cb, 0x50, reg);
         },
         X86Opnd::Mem(mem) => {
-            cb.write_rm(false, false, X86Opnd::None, opnd, 6, 1, &[0xff]);
+            write_rm(cb, false, false, X86Opnd::None, opnd, 6, 1, &[0xff]);
         },
         _ => unreachable!()
     }
@@ -1616,9 +1484,37 @@ pub fn ret(cb: &mut CodeBlock) {
     cb.write_byte(0xC3);
 }
 
+// Encode a single-operand shift instruction
+fn write_shift(cb: &mut CodeBlock, op_mem_one_pref: u8, op_mem_cl_pref: u8, op_mem_imm_pref: u8, op_ext: u8, opnd0: X86Opnd, opnd1: X86Opnd) {
+    // Check the size of opnd0
+    let opnd_size = match opnd0 {
+        X86Opnd::Reg(reg) => reg.num_bits,
+        X86Opnd::Mem(mem) => mem.num_bits,
+        _ => unreachable!()
+    };
+
+    assert!(opnd_size == 16 || opnd_size == 32 || opnd_size == 64);
+    let sz_pref = opnd_size == 16;
+    let rex_w = opnd_size == 64;
+
+    match opnd1 {
+        X86Opnd::Imm(imm) => {
+            if imm.value == 1 {
+                write_rm(cb, sz_pref, rex_w, X86Opnd::None, opnd0, op_ext, 1, &[op_mem_one_pref]);
+            } else {
+                assert!(imm.num_bits <= 8);
+                write_rm(cb, sz_pref, rex_w, X86Opnd::None, opnd0, op_ext, 1, &[op_mem_imm_pref]);
+                cb.write_byte(imm.value as u8);
+            }
+        },
+        _ => unreachable!()
+    };
+}
+
 // sal - Shift arithmetic left
 pub fn sal(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_shift(
+    write_shift(
+        cb,
         0xD1, // opMemOnePref,
         0xD3, // opMemClPref,
         0xC1, // opMemImmPref,
@@ -1630,7 +1526,8 @@ pub fn sal(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 
 /// sar - Shift arithmetic right (signed)
 pub fn sar(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_shift(
+    write_shift(
+        cb,
         0xD1, // opMemOnePref,
         0xD3, // opMemClPref,
         0xC1, // opMemImmPref,
@@ -1641,8 +1538,9 @@ pub fn sar(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 }
 
 // shl - Shift logical left
-fn shl(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_shift(
+pub fn shl(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+    write_shift(
+        cb,
         0xD1, // opMemOnePref,
         0xD3, // opMemClPref,
         0xC1, // opMemImmPref,
@@ -1653,8 +1551,9 @@ fn shl(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 }
 
 /// shr - Shift logical right (unsigned)
-fn shr(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_shift(
+pub fn shr(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+    write_shift(
+        cb,
         0xD1, // opMemOnePref,
         0xD3, // opMemClPref,
         0xC1, // opMemImmPref,
@@ -1665,8 +1564,9 @@ fn shr(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 }
 
 /// sub - Integer subtraction
-fn sub(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_rm_multi(
+pub fn sub(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+    write_rm_multi(
+        cb,
         0x28, // opMemReg8
         0x29, // opMemRegPref
         0x2A, // opRegMem8
@@ -1680,99 +1580,99 @@ fn sub(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
     );
 }
 
-/*
+fn resize_opnd(opnd: X86Opnd, num_bits: u8) -> X86Opnd {
+    match opnd {
+        X86Opnd::Reg(reg) => {
+            let mut cloned = reg.clone();
+            cloned.num_bits = num_bits;
+            X86Opnd::Reg(cloned)
+        },
+        X86Opnd::Mem(mem) => {
+            let mut cloned = mem.clone();
+            cloned.num_bits = num_bits;
+            X86Opnd::Mem(cloned)
+        },
+        _ => unreachable!()
+    }
+}
+
 /// test - Logical Compare
-void test(codeblock_t *cb, x86opnd_t rm_opnd, x86opnd_t test_opnd)
-{
-    assert (rm_opnd.type == OPND_REG || rm_opnd.type == OPND_MEM);
-    assert (test_opnd.type == OPND_REG || test_opnd.type == OPND_IMM);
+pub fn test(cb: &mut CodeBlock, rm_opnd: X86Opnd, test_opnd: X86Opnd) {
+    let rm_num_bits = match rm_opnd {
+        X86Opnd::Reg(reg) => reg.num_bits,
+        X86Opnd::Mem(mem) => mem.num_bits,
+        _ => unreachable!()
+    };
 
-    // If the second operand is an immediate
-    if (test_opnd.type == OPND_IMM)
-    {
-        x86opnd_t imm_opnd = test_opnd;
-
-        if (imm_opnd.as.imm >= 0)
-        {
-            assert (unsig_imm_size(imm_opnd.as.unsig_imm) <= 32);
-            assert (unsig_imm_size(imm_opnd.as.unsig_imm) <= rm_opnd.num_bits);
+    match test_opnd {
+        X86Opnd::UImm(uimm) => {
+            assert!(uimm.num_bits <= 32);
+            assert!(uimm.num_bits <= rm_num_bits);
 
             // Use the smallest operand size possible
-            rm_opnd = resize_opnd(rm_opnd, unsig_imm_size(imm_opnd.as.unsig_imm));
+            assert!(rm_num_bits % 8 == 0);
+            let rm_resized = resize_opnd(rm_opnd, uimm.num_bits);
 
-            if (rm_opnd.num_bits == 8)
-            {
-                cb_write_rm(cb, false, false, NO_OPND, rm_opnd, 0x00, 1, 0xF6);
-                cb_write_int(cb, imm_opnd.as.imm, rm_opnd.num_bits);
+            if uimm.num_bits == 8 {
+                write_rm(cb, false, false, X86Opnd::None, rm_resized, 0x00, 1, &[0xf6]);
+                cb.write_int(uimm.value, uimm.num_bits.into());
+            } else {
+                write_rm(cb, uimm.num_bits == 16, false, X86Opnd::None, rm_resized, 0x00, 1, &[0xf7]);
+                cb.write_int(uimm.value, uimm.num_bits.into());
             }
-            else
-            {
-                cb_write_rm(cb, rm_opnd.num_bits == 16, false, NO_OPND, rm_opnd, 0x00, 1, 0xF7);
-                cb_write_int(cb, imm_opnd.as.imm, rm_opnd.num_bits);
-            }
-        }
-        else
-        {
+        },
+        X86Opnd::Imm(imm) => {
             // This mode only applies to 64-bit R/M operands with 32-bit signed immediates
-            assert (imm_opnd.as.imm < 0);
-            assert (sig_imm_size(imm_opnd.as.imm) <= 32);
-            assert (rm_opnd.num_bits == 64);
-            cb_write_rm(cb, false, true, NO_OPND, rm_opnd, 0x00, 1, 0xF7);
-            cb_write_int(cb, imm_opnd.as.imm, 32);
-        }
-    }
-    else
-    {
-        assert (test_opnd.num_bits == rm_opnd.num_bits);
+            assert!(imm.value < 0);
+            assert!(imm.num_bits <= 32);
+            assert!(rm_num_bits == 64);
 
-        if (rm_opnd.num_bits == 8)
-        {
-            cb_write_rm(cb, false, false, test_opnd, rm_opnd, 0xFF, 1, 0x84);
-        }
-        else
-        {
-            cb_write_rm(cb, rm_opnd.num_bits == 16, rm_opnd.num_bits == 64, test_opnd, rm_opnd, 0xFF, 1, 0x85);
-        }
-    }
+            write_rm(cb, false, true, X86Opnd::None, rm_opnd, 0x00, 1, &[0xf7]);
+            cb.write_int(imm.value.try_into().unwrap(), 32);
+        },
+        X86Opnd::Reg(reg) => {
+            assert!(reg.num_bits == rm_num_bits);
+
+            if rm_num_bits == 8 {
+                write_rm(cb, false, false, test_opnd, rm_opnd, 0xff, 1, &[0x84]);
+            } else {
+                write_rm(cb, rm_num_bits == 16, rm_num_bits == 64, test_opnd, rm_opnd, 0xff, 1, &[0x85]);
+            }
+        },
+        _ => unreachable!()
+    };
 }
 
-#if 0
 /// Undefined opcode
-void ud2(codeblock_t *cb)
-{
-    cb_write_bytes(cb, 2, 0x0F, 0x0B);
+pub fn ud2(cb: &mut CodeBlock) {
+    cb.write_bytes(&[0x0f, 0x0b]);
 }
-#endif
 
-#if 0
 /// xchg - Exchange Register/Memory with Register
-void xchg(codeblock_t *cb, x86opnd_t rm_opnd, x86opnd_t r_opnd)
-{
-    assert (rm_opnd.num_bits == 64);
-    assert (r_opnd.num_bits == 64);
-    assert (rm_opnd.type == OPND_REG);
-    assert (r_opnd.type == OPND_REG);
+pub fn xchg(cb: &mut CodeBlock, rm_opnd: X86Opnd, r_opnd: X86Opnd) {
+    if let (X86Opnd::Reg(rm_reg), X86Opnd::Reg(r_reg)) = (rm_opnd, r_opnd) {
+        assert!(rm_reg.num_bits == 64);
+        assert!(r_reg.num_bits == 64);
 
-    // If we're exchanging with RAX
-    if (rm_opnd.type == OPND_REG && rm_opnd.as.reg.reg_no == RAX.as.reg.reg_no)
-    {
-        // Write the REX byte
-        cb_write_rex(cb, rm_opnd.num_bits == 64, 0, 0, r_opnd.as.reg.reg_no);
+        // If we're exchanging with RAX
+        if rm_reg.reg_no == RAX_REG_NO {
+            // Write the REX byte
+            write_rex(cb, true, 0, 0, r_reg.reg_no);
 
-        // Write the opcode and register number
-        cb_write_byte(cb, 0x90 + (r_opnd.as.reg.reg_no & 7));
-    }
-    else
-    {
-        cb_write_rm(cb, rm_opnd.num_bits == 16, rm_opnd.num_bits == 64, r_opnd, rm_opnd, 0xFF, 1, 0x87);
+            // Write the opcode and register number
+            cb.write_byte(0x90 + (r_reg.reg_no & 7));
+        } else {
+            write_rm(cb, false, true, r_opnd, rm_opnd, 0xff, 1, &[0x87]);
+        }
+    } else {
+        unreachable!();
     }
 }
-#endif
-*/
 
 /// xor - Exclusive bitwise OR
 pub fn xor(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
-    cb.write_rm_multi(
+    write_rm_multi(
+        cb,
         0x30, // opMemReg8
         0x31, // opMemRegPref
         0x32, // opRegMem8
@@ -1785,11 +1685,3 @@ pub fn xor(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
         opnd1
     );
 }
-
-/*
-// LOCK - lock prefix for atomic shared memory operations
-void cb_write_lock_prefix(codeblock_t *cb)
-{
-    cb_write_byte(cb, 0xF0);
-}
-*/
