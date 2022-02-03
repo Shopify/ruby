@@ -70,14 +70,17 @@ impl VALUE {
         self == QNIL
     }
 
-    // Read the flags bits from the RBasic object, then return a Ruby type enum (e.g. RUBY_T_ARRAY)
-    pub fn builtin_type(self:VALUE) -> usize {
-        assert!(self.special_const_p());
-
+    // Read the flags, including type, from this VALUE's RBasic object
+    pub fn rbasic_flags(self:VALUE) -> usize {
+        assert!(! self.special_const_p());
         let VALUE(cval) = self;
         let rbasic_ptr:*const usize = cval as *const usize;
-        let flags_bits:usize = unsafe { *rbasic_ptr };
-        flags_bits & RUBY_T_MASK
+        unsafe { *rbasic_ptr }
+    }
+
+    // Return a Ruby type enum (e.g. RUBY_T_ARRAY) from this VALUE's RBasic object
+    pub fn builtin_type(self:VALUE) -> usize {
+        self.rbasic_flags() & RUBY_T_MASK
     }
 }
 
@@ -86,6 +89,14 @@ impl From<usize> for VALUE {
         assert!(item <= (RUBY_FIXNUM_MAX as usize)); // An unsigned will always be greater than RUBY_FIXNUM_MIN
         let k : usize = item.wrapping_add(item.wrapping_add(1));
         VALUE(k)
+    }
+}
+
+impl IseqPtr {
+    pub fn flags(self:&IseqPtr) -> usize {
+        let IseqPtr(iseq_value) = self;
+        let iseq_ptr:*const usize = iseq_value as *const usize;
+        unsafe { *iseq_ptr }
     }
 }
 
@@ -129,6 +140,26 @@ pub const RUBY_T_ZOMBIE  :usize = 0x1d;
 pub const RUBY_T_MOVED   :usize = 0x1e;
 
 pub const RUBY_T_MASK    :usize = 0x1f;
+
+pub const IMEMO_MASK     :usize = 0x0f;
+pub enum ImemoType {
+    Env            =  0,
+    Cref           =  1, /* class reference */
+    Svar           =  2, /* special variable */
+    ThrowData      =  3,
+    Ifunc          =  4, /* iterator function */
+    Memo           =  5,
+    Ment           =  6,
+    Iseq           =  7,
+    Tmpbuf         =  8,
+    Ast            =  9,
+    ParserStrterm  = 10,
+    Callinfo       = 11,
+    Callcache      = 12,
+    Constcache     = 13,
+}
+// In C, imemo_type is an enum. In Rust, we need it to be integer-comparable without easy number assignment to enums.
+pub const RUBY_FL_USHIFT :usize = 12;
 
 pub const RUBY_LONG_MIN:isize = std::os::raw::c_long::MIN as isize;
 pub const RUBY_LONG_MAX:isize = std::os::raw::c_long::MAX as isize;

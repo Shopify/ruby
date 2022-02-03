@@ -1490,16 +1490,24 @@ block_array_remove(rb_yjit_block_array_t block_array, block_t *block)
 }
 */
 
-/*
-// Some runtime checks for integrity of a program location
-static void
-verify_blockid(const blockid_t blockid)
+pub fn imemo_type_p(imemo:VALUE, it:ImemoType) -> bool
 {
-    const rb_iseq_t *const iseq = blockid.iseq;
-    RUBY_ASSERT_ALWAYS(IMEMO_TYPE_P(iseq, imemo_iseq));
-    RUBY_ASSERT_ALWAYS(blockid.idx < iseq->body->iseq_size);
+    if !imemo.special_const_p() {
+        let mask:usize = (IMEMO_MASK << RUBY_FL_USHIFT) | RUBY_T_MASK;
+        let expected_type:usize = ((it as usize) << RUBY_FL_USHIFT) | RUBY_T_IMEMO;
+        expected_type == (imemo.rbasic_flags() & mask)
+    } else {
+        false
+    }
 }
-*/
+
+pub fn verify_blockid(blockid: &BlockId)
+{
+    let iseq:IseqPtr = blockid.iseq;
+    let IseqPtr(iseq_value) = iseq;
+    assert!(imemo_type_p(VALUE(iseq_value), ImemoType::Iseq));
+    //assert!(blockid.idx < iseq.body.iseq_size); // TODO: Need to dereference iseq as a pointer and have a C struct for body
+}
 
 /*
 // Invalidate one specific block version
