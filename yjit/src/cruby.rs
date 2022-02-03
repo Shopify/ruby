@@ -19,6 +19,42 @@ pub struct VALUE(pub usize);
 #[repr(C)]
 pub struct IseqPtr(pub usize);
 
+// ISEQ iseq_type enum from rb_iseq_constant_body
+#[repr(C)]
+pub enum IseqType {
+    Top,
+    Method,
+    Block,
+    Class,
+    Rescue,
+    Ensure,
+    Eval,
+    Main,
+    Plain,
+}
+
+// ISEQ body (struct rb_iseq_constant_body)
+#[repr(C)]
+pub struct IseqBody {
+    pub iseq_type: IseqType,
+    pub iseq_size: std::os::raw::c_uint,
+    pub iseq_encoded: * mut VALUE,
+
+    pub flags: std::os::raw::c_ushort, // This replaces the bitfield
+    pub size: std::os::raw::c_uint,
+
+    pub lead_num: std::os::raw::c_int,
+    pub opt_num: std::os::raw::c_int,
+    pub rest_start: std::os::raw::c_int,
+    pub post_start: std::os::raw::c_int,
+    pub post_num: std::os::raw::c_int,
+    pub block_start: std::os::raw::c_int,
+
+    pub opt_table: * const VALUE,
+
+    pub keyword: * mut u8, // This is a pointer to struct rb_iseq_param_keyword
+}
+
 /// Pointer to an execution context (EC)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(C)]
@@ -97,6 +133,12 @@ impl IseqPtr {
         let IseqPtr(iseq_value) = self;
         let iseq_ptr:*const usize = iseq_value as *const usize;
         unsafe { *iseq_ptr }
+    }
+
+    pub fn body_ptr(self:&IseqPtr) -> * mut IseqBody {
+        let IseqPtr(iseq_value) = self;
+        let iseq_ptr:*const usize = iseq_value as *const usize;
+        (unsafe { *iseq_ptr.offset(2) }) as * mut IseqBody
     }
 }
 

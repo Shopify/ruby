@@ -1506,7 +1506,8 @@ pub fn verify_blockid(blockid: &BlockId)
     let iseq:IseqPtr = blockid.iseq;
     let IseqPtr(iseq_value) = iseq;
     assert!(imemo_type_p(VALUE(iseq_value), ImemoType::Iseq));
-    //assert!(blockid.idx < iseq.body.iseq_size); // TODO: Need to dereference iseq as a pointer and have a C struct for body
+
+    assert!(blockid.idx < unsafe { (*iseq.body_ptr()).iseq_size as usize } ); // TODO: Need to dereference iseq as a pointer and have a C struct for body
 }
 
 /*
