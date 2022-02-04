@@ -91,6 +91,7 @@ fn test_mov() {
     check_bytes("89d8", |cb| mov(cb, EAX, EBX));
     check_bytes("89c8", |cb| mov(cb, EAX, ECX));
     check_bytes("8b9380000000", |cb| mov(cb, EDX, mem_opnd(32, RBX, 128)));
+    check_bytes("488b442404", |cb| mov(cb, RAX, mem_opnd(64, RSP, 4)));
 
     // Test `mov rax, 3` => `mov eax, 3` optimization
     check_bytes("41b834000000", |cb| mov(cb, R8, imm_opnd(0x34)));
@@ -99,14 +100,20 @@ fn test_mov() {
 
     check_bytes("b834000000", |cb| mov(cb, RAX, imm_opnd(0x34)));
     check_bytes("48b80000008000000000", |cb| mov(cb, RAX, imm_opnd(0x80000000)));
-    check_bytes("48b8ccffffffffffffff", |cb| mov(cb, RAX, imm_opnd(-52)));
-    check_bytes("48b8ffffffffffffffff", |cb| mov(cb, RAX, imm_opnd(-1)));
+    check_bytes("48b8ccffffffffffffff", |cb| mov(cb, RAX, imm_opnd(-52))); // yasm thinks this could use a dword immediate instead of qword
+    check_bytes("48b8ffffffffffffffff", |cb| mov(cb, RAX, imm_opnd(-1))); // yasm thinks this could use a dword immediate instead of qword
     check_bytes("4488c9", |cb| mov(cb, CL, R9B));
     check_bytes("4889c3", |cb| mov(cb, RBX, RAX));
     check_bytes("4889df", |cb| mov(cb, RDI, RBX));
     check_bytes("40b60b", |cb| mov(cb, SIL, imm_opnd(11)));
+
     check_bytes("c60424fd", |cb| mov(cb, mem_opnd(8, RSP, 0), imm_opnd(-3)));
     check_bytes("48c7470801000000", |cb| mov(cb, mem_opnd(64, RDI, 8), imm_opnd(1)));
+    //check_bytes("67c7400411000000", |cb| mov(cb, mem_opnd(32, EAX, 4), imm_opnd(0x34))); // We don't distinguish between EAX and RAX here - that's probably fine?
+    check_bytes("c7400411000000", |cb| mov(cb, mem_opnd(32, RAX, 4), imm_opnd(17)));
+    check_bytes("41895814", |cb| mov(cb, mem_opnd(32, R8, 20), EBX));
+    check_bytes("4d8913", |cb| mov(cb, mem_opnd(64, R11, 0), R10));
+    check_bytes("48c742f8f4ffffff", |cb| mov(cb, mem_opnd(64, RDX, -8), imm_opnd(-12)));
 }
 
 #[test]
@@ -118,6 +125,7 @@ fn test_movsx() {
     check_bytes("4c0fbed9", |cb| movsx(cb, R11, CL));
     check_bytes("4c6354240c", |cb| movsx(cb, R10, mem_opnd(32, RSP, 12)));
     check_bytes("480fbe0424", |cb| movsx(cb, RAX, mem_opnd(8, RSP, 0)));
+    check_bytes("490fbf5504", |cb| movsx(cb, RDX, mem_opnd(16, R13, 4)));
 }
 
 #[test]
