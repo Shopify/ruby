@@ -1,4 +1,4 @@
-#[cfg(test)]
+#![cfg(test)]
 
 use crate::asm::x86_64::*;
 use std::fmt;
