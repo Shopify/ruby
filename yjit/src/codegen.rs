@@ -993,6 +993,14 @@ fn gen_putobject_int2fix(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlo
     KeepCompiling
 }
 
+fn gen_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+{
+    let arg:VALUE = jit_get_arg(jit, 0);
+
+    jit_putobject(jit, ctx, cb, arg);
+    KeepCompiling
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1100,6 +1108,50 @@ mod tests {
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(tmp_type_top, Type::Nil);
+        assert!(cb.get_write_pos() > 0);
+    }
+
+    #[test]
+    fn test_putobject_qtrue() {
+        // Test gen_putobject with Qtrue
+        let mut context = Context::new();
+        let mut cb = CodeBlock::new();
+        let mut ocb = CodeBlock::new();
+
+        let VALUE(qtrue_value) = Qtrue;
+        let mut value_array: [u64; 2] = [ 0, qtrue_value as u64 ];
+        let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
+        let mut jit = JITState::new();
+        jit.set_pc(pc);
+
+        let status = gen_putobject(&mut jit, &mut context, &mut cb, &mut ocb);
+
+        let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
+
+        assert!(matches!(KeepCompiling, status));
+        assert_eq!(tmp_type_top, Type::True);
+        assert!(cb.get_write_pos() > 0);
+    }
+
+    #[test]
+    fn test_putobject_fixnum() {
+        // Test gen_putobject with a Fixnum to test another conditional branch
+        let mut context = Context::new();
+        let mut cb = CodeBlock::new();
+        let mut ocb = CodeBlock::new();
+
+        // The Fixnum 7 is encoded as 7 * 2 + 1, or 15
+        let mut value_array: [u64; 2] = [ 0, 15 ];
+        let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
+        let mut jit = JITState::new();
+        jit.set_pc(pc);
+
+        let status = gen_putobject(&mut jit, &mut context, &mut cb, &mut ocb);
+
+        let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
+
+        assert!(matches!(KeepCompiling, status));
+        assert_eq!(tmp_type_top, Type::Fixnum);
         assert!(cb.get_write_pos() > 0);
     }
 
@@ -1423,15 +1475,6 @@ gen_newhash(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
         mov(cb, stack_ret, RAX);
     }
 
-    return YJIT_KEEP_COMPILING;
-}
-
-static codegen_status_t
-gen_putobject(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    VALUE arg = jit_get_arg(jit, 0);
-
-    jit_putobject(jit, ctx, arg);
     return YJIT_KEEP_COMPILING;
 }
 
@@ -5140,6 +5183,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_DUPN => Some(gen_dupn),
         OP_SWAP => Some(gen_swap),
         OP_PUTNIL => Some(gen_putnil),
+        OP_PUTOBJECT => Some(gen_putobject),
         OP_PUTOBJECT_INT2FIX_0_ => Some(gen_putobject_int2fix),
         OP_PUTOBJECT_INT2FIX_1_ => Some(gen_putobject_int2fix),
 
