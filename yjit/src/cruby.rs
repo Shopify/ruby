@@ -19,6 +19,8 @@ extern "C" {
     //pub fn ID2SYM(id: VALUE) -> VALUE;
     //pub fn LL2NUM((long long)ocb->write_pos) -> VALUE;
 
+    pub fn insn_len(v : VALUE) -> std::os::raw::c_int;
+
     pub fn rb_hash_new() -> VALUE;
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
 }
@@ -167,9 +169,44 @@ pub const RUBY_FIXNUM_MIN:isize = RUBY_LONG_MIN / 2;
 pub const RUBY_FIXNUM_MAX:isize = RUBY_LONG_MAX / 2;
 pub const RUBY_FIXNUM_FLAG:usize = 0x1;
 
+pub const RUBY_IMMEDIATE_MASK:usize = 0x7;
+
 pub const SIZEOF_VALUE: usize = 8;
 
-//pub extern "C" fn insn_len(v : usize); // Can't use this until we link against CRuby properly
+// Constants from include/ruby/internal/fl_type.h
+pub const RUBY_FL_USHIFT:usize = 12;
+pub const RUBY_FL_USER_0:usize = 1 << (RUBY_FL_USHIFT + 0);
+pub const RUBY_FL_USER_1:usize = 1 << (RUBY_FL_USHIFT + 1);
+pub const RUBY_FL_USER_2:usize = 1 << (RUBY_FL_USHIFT + 2);
+pub const RUBY_FL_USER_3:usize = 1 << (RUBY_FL_USHIFT + 3);
+pub const RUBY_FL_USER_4:usize = 1 << (RUBY_FL_USHIFT + 4);
+pub const RUBY_FL_USER_5:usize = 1 << (RUBY_FL_USHIFT + 5);
+pub const RUBY_FL_USER_6:usize = 1 << (RUBY_FL_USHIFT + 6);
+pub const RUBY_FL_USER_7:usize = 1 << (RUBY_FL_USHIFT + 7);
+pub const RUBY_FL_USER_8:usize = 1 << (RUBY_FL_USHIFT + 8);
+pub const RUBY_FL_USER_9:usize = 1 << (RUBY_FL_USHIFT + 9);
+pub const RUBY_FL_USER_10:usize = 1 << (RUBY_FL_USHIFT + 10);
+pub const RUBY_FL_USER_11:usize = 1 << (RUBY_FL_USHIFT + 11);
+pub const RUBY_FL_USER_12:usize = 1 << (RUBY_FL_USHIFT + 12);
+pub const RUBY_FL_USER_13:usize = 1 << (RUBY_FL_USHIFT + 13);
+pub const RUBY_FL_USER_14:usize = 1 << (RUBY_FL_USHIFT + 14);
+pub const RUBY_FL_USER_15:usize = 1 << (RUBY_FL_USHIFT + 15);
+pub const RUBY_FL_USER_16:usize = 1 << (RUBY_FL_USHIFT + 16);
+pub const RUBY_FL_USER_17:usize = 1 << (RUBY_FL_USHIFT + 17);
+pub const RUBY_FL_USER_18:usize = 1 << (RUBY_FL_USHIFT + 18);
+pub const RUBY_FL_USER_19:usize = 1 << (RUBY_FL_USHIFT + 19);
+
+// Constants from include/ruby/internal/core/rarray.h
+pub const RARRAY_EMBED_FLAG:usize = RUBY_FL_USER_1;
+pub const RARRAY_EMBED_LEN_SHIFT:usize = RUBY_FL_USHIFT + 3;
+pub const RARRAY_EMBED_LEN_MASK:usize = RUBY_FL_USER_3 | RUBY_FL_USER_4;
+
+// We'll need to encode a lot of Ruby struct/field offsets as constants unless we want to
+// redeclare all the Ruby C structs and write our own offsetof macro. For now, we use constants.
+pub const RUBY_OFFSET_CFP_RBASIC_FLAGS:i32 = 0;  // struct RBasic, field "flags"
+pub const RUBY_OFFSET_CFP_RARRAY_AS_HEAP_LEN:i32 = 16;  // struct RArray, subfield "as.heap.len"
+pub const RUBY_OFFSET_CFP_RARRAY_AS_ARY:i32 = 16;  // struct RArray, subfield "as.ary"
+pub const RUBY_OFFSET_CFP_RARRAY_AS_HEAP_PTR:i32 = 16;  // struct RArray, subfield "as.heap.ptr"
 
 // TODO: need to dynamically autogenerate constants for all the YARV opcodes from insns.def
 pub const OP_NOP:usize = 0;

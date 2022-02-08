@@ -3,11 +3,13 @@ use crate::asm::*;
 use crate::asm::x86_64::*;
 use crate::core::*;
 use crate::options::*;
+use crate::stats::*;
 use InsnOpnd::*;
 use CodegenStatus::*;
 
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
+use std::mem::size_of;
 
 // Callee-saved registers
 pub const REG_CFP: X86Opnd = R13;
@@ -107,8 +109,8 @@ pub fn jit_get_arg(jit:&JITState, arg_idx:isize) -> VALUE
 // Load a VALUE into a register and keep track of the reference if it is on the GC heap.
 pub fn jit_mov_gc_ptr(jit:&mut JITState, cb: &mut CodeBlock, reg:X86Opnd, ptr: VALUE)
 {
-    // TODO: figure out how to get at the currently-private num_bits field
-    //assert!( matches!(reg, X86Opnd::Reg(x) if x.num_bits == 64) );
+    // TODO: can we assert num_bits == 64 somehow? Field is private.
+    assert!( matches!(reg, X86Opnd::Reg(x)) );
 
     // Load the pointer constant into the specified register
     let VALUE(ptr_value) = ptr;
@@ -1429,70 +1431,70 @@ gen_newrange(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     return YJIT_KEEP_COMPILING;
 }
+*/
 
-static void
-guard_object_is_heap(codeblock_t *cb, x86opnd_t object_opnd, ctx_t *ctx, uint8_t *side_exit)
+fn guard_object_is_heap(cb: &mut CodeBlock, object_opnd: X86Opnd, ctx: &mut Context, side_exit: CodePtr)
 {
     add_comment(cb, "guard object is heap");
 
     // Test that the object is not an immediate
-    test(cb, object_opnd, imm_opnd(RUBY_IMMEDIATE_MASK));
+    test(cb, object_opnd, imm_opnd(RUBY_IMMEDIATE_MASK as i64));
     jnz_ptr(cb, side_exit);
 
     // Test that the object is not false or nil
-    cmp(cb, object_opnd, imm_opnd(Qnil));
-    RUBY_ASSERT(Qfalse < Qnil);
+    let VALUE(qnilval) = Qnil;
+    cmp(cb, object_opnd, imm_opnd(qnilval as i64));
     jbe_ptr(cb, side_exit);
 }
 
-static inline void
-guard_object_is_array(codeblock_t *cb, x86opnd_t object_opnd, x86opnd_t flags_opnd, ctx_t *ctx, uint8_t *side_exit)
+fn guard_object_is_array(cb: &mut CodeBlock, object_opnd: X86Opnd, flags_opnd: X86Opnd, ctx: &mut Context, side_exit: CodePtr)
 {
     add_comment(cb, "guard object is array");
 
     // Pull out the type mask
-    mov(cb, flags_opnd, member_opnd(object_opnd, struct RBasic, flags));
-    and(cb, flags_opnd, imm_opnd(RUBY_T_MASK));
+    mov(cb, flags_opnd, mem_opnd(8 * SIZEOF_VALUE as u8, object_opnd, RUBY_OFFSET_CFP_RBASIC_FLAGS));
+    and(cb, flags_opnd, imm_opnd(RUBY_T_MASK as i64));
 
     // Compare the result with T_ARRAY
-    cmp(cb, flags_opnd, imm_opnd(T_ARRAY));
+    cmp(cb, flags_opnd, imm_opnd(RUBY_T_ARRAY as i64));
     jne_ptr(cb, side_exit);
 }
 
 // push enough nils onto the stack to fill out an array
-static codegen_status_t
-gen_expandarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    int flag = (int) jit_get_arg(jit, 1);
+    let flag = jit_get_arg(jit, 1);
+    let VALUE(flag_value) = flag;
 
     // If this instruction has the splat flag, then bail out.
-    if (flag & 0x01) {
-        gen_counter_incr!(cb, expandarray_splat);
-        return YJIT_CANT_COMPILE;
+    if flag_value & 0x01 == 0x1 {
+        incr_counter!(expandarray_splat);
+        return CantCompile;
     }
 
     // If this instruction has the postarg flag, then bail out.
-    if (flag & 0x02) {
-        gen_counter_incr!(cb, expandarray_postarg);
-        return YJIT_CANT_COMPILE;
+    if flag_value & 0x02 == 0x2 {
+        incr_counter!(expandarray_postarg);
+        return CantCompile;
     }
 
-    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+    let side_exit = get_side_exit(jit, ocb, ctx);
 
     // num is the number of requested values. If there aren't enough in the
     // array then we're going to push on nils.
-    int num = (int)jit_get_arg(jit, 0);
-    val_type_t array_type = ctx_get_opnd_type(ctx, OPND_STACK(0));
-    x86opnd_t array_opnd = ctx_stack_pop(ctx, 1);
+    let num = jit_get_arg(jit, 0);
+    let VALUE(num_value) = num;
+    let array_type = ctx.get_opnd_type(StackOpnd(0));
+    let array_opnd:X86Opnd = ctx.stack_pop(1);
 
-    if (array_type.type == ETYPE_NIL) {
+    if matches!(array_type, Type::Nil) {
         // special case for a, b = nil pattern
         // push N nils onto the stack
-        for (int i = 0; i < num; i++) {
-            x86opnd_t push = ctx_stack_push(ctx, TYPE_NIL);
-            mov(cb, push, imm_opnd(Qnil));
+        for i in 0..num_value {
+            let push_opnd:X86Opnd = ctx.stack_push(Type::Nil);
+            mov(cb, push_opnd, imm_opnd(u64::from(Qnil) as i64));
         }
-        return YJIT_KEEP_COMPILING;
+        return KeepCompiling;
     }
 
     // Move the array from the stack into REG0 and check that it's an array.
@@ -1501,46 +1503,50 @@ gen_expandarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     guard_object_is_array(cb, REG0, REG1, ctx, counted_exit!(ocb, side_exit, expandarray_not_array));
 
     // If we don't actually want any values, then just return.
-    if (num == 0) {
-        return YJIT_KEEP_COMPILING;
+    if num_value == 0 {
+        return KeepCompiling;
     }
 
     // Pull out the embed flag to check if it's an embedded array.
-    x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
+    let flags_opnd:X86Opnd = mem_opnd((8 * SIZEOF_VALUE) as u8, REG0, RUBY_OFFSET_CFP_RBASIC_FLAGS);
     mov(cb, REG1, flags_opnd);
 
     // Move the length of the embedded array into REG1.
-    and(cb, REG1, imm_opnd(RARRAY_EMBED_LEN_MASK));
-    shr(cb, REG1, imm_opnd(RARRAY_EMBED_LEN_SHIFT));
+    and(cb, REG1, imm_opnd(RARRAY_EMBED_LEN_MASK as i64));
+    shr(cb, REG1, imm_opnd(RARRAY_EMBED_LEN_SHIFT as i64));
 
     // Conditionally move the length of the heap array into REG1.
-    test(cb, flags_opnd, imm_opnd(RARRAY_EMBED_FLAG));
-    cmovz(cb, REG1, member_opnd(REG0, struct RArray, as.heap.len));
+    test(cb, flags_opnd, imm_opnd(RARRAY_EMBED_FLAG as i64));
+    let array_len_opnd:X86Opnd = mem_opnd((8 * size_of::<std::os::raw::c_long>()) as u8, REG0, RUBY_OFFSET_CFP_RARRAY_AS_HEAP_LEN);
+    cmovz(cb, REG1, array_len_opnd);
 
     // Only handle the case where the number of values in the array is greater
     // than or equal to the number of values requested.
-    cmp(cb, REG1, imm_opnd(num));
+    cmp(cb, REG1, imm_opnd(num_value as i64));
     jl_ptr(cb, counted_exit!(ocb, side_exit, expandarray_rhs_too_small));
 
     // Load the address of the embedded array into REG1.
     // (struct RArray *)(obj)->as.ary
-    lea(cb, REG1, member_opnd(REG0, struct RArray, as.ary));
+    let ary_opnd:X86Opnd = mem_opnd((8 * SIZEOF_VALUE) as u8, REG0, RUBY_OFFSET_CFP_RARRAY_AS_ARY);
+    lea(cb, REG1, ary_opnd);
 
     // Conditionally load the address of the heap array into REG1.
     // (struct RArray *)(obj)->as.heap.ptr
-    test(cb, flags_opnd, imm_opnd(RARRAY_EMBED_FLAG));
-    cmovz(cb, REG1, member_opnd(REG0, struct RArray, as.heap.ptr));
+    test(cb, flags_opnd, imm_opnd(RARRAY_EMBED_FLAG as i64));
+    let heap_ptr_opnd:X86Opnd = mem_opnd((8 * size_of::<usize>()) as u8, REG0, RUBY_OFFSET_CFP_RARRAY_AS_HEAP_PTR);
+    cmovz(cb, REG1, heap_ptr_opnd);
 
     // Loop backward through the array and push each element onto the stack.
-    for (int32_t i = (int32_t) num - 1; i >= 0; i--) {
-        x86opnd_t top = ctx_stack_push(ctx, TYPE_UNKNOWN);
-        mov(cb, REG0, mem_opnd(64, REG1, i * SIZEOF_VALUE));
+    for i in (0..num_value).rev() {
+        let top:X86Opnd = ctx.stack_push(Type::Unknown);
+        mov(cb, REG0, mem_opnd(64, REG1, (i * SIZEOF_VALUE) as i32));
         mov(cb, top, REG0);
     }
 
-    return YJIT_KEEP_COMPILING;
+    KeepCompiling
 }
 
+/*
 // new hash initialized from top N values
 static codegen_status_t
 gen_newhash(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
