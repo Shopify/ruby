@@ -1,5 +1,5 @@
 use std::io::{Result, Write};
-use std::mem::transmute;
+use std::mem;
 use crate::asm::*;
 
 // Import the CodeBlock tests module
@@ -486,7 +486,7 @@ impl CodeBlock
 {
     pub fn new() -> Self {
         Self {
-            mem_block: Vec::with_capacity(1024),
+            mem_block: vec![0; 1024],
             mem_size: 1024,
             write_pos: 0,
             label_addrs: Vec::new(),
@@ -563,13 +563,7 @@ impl CodeBlock
     pub fn write_byte(&mut self, byte: u8) {
         if self.write_pos < self.mem_size {
             self.mark_position_writable(self.write_pos);
-
-            if self.write_pos + 1 > self.mem_block.len() {
-                self.mem_block.push(byte);
-            } else {
-                self.mem_block[self.write_pos] = byte;
-            }
-
+            self.mem_block[self.write_pos] = byte;
             self.write_pos += 1;
         } else {
             self.dropped_bytes = true;
@@ -613,73 +607,59 @@ impl CodeBlock
         }
     }
 
-    /*
-    // Allocate a new label with a given name
-    uint32_t new_label(codeblock_t *cb, const char *name)
-    {
-        //if (hasASM)
-        //    writeString(to!string(label) ~ ":");
-
-        assert (cb->num_labels < MAX_LABELS);
-
-        // Allocate the new label
-        uint32_t label_idx = cb->num_labels++;
+    /// Allocate a new label with a given name
+    pub fn new_label(&mut self, name: String) -> usize {
+        // assert (cb->num_labels < MAX_LABELS);
 
         // This label doesn't have an address yet
-        cb->label_addrs[label_idx] = 0;
-        cb->label_names[label_idx] = name;
+        self.label_addrs.push(0);
+        self.label_names.push(name);
 
-        return label_idx;
+        return self.label_addrs.len() - 1;
     }
 
-    // Write a label at the current address
-    void write_label(codeblock_t *cb, uint32_t label_idx)
-    {
-        assert (label_idx < MAX_LABELS);
-        cb->label_addrs[label_idx] = cb->write_pos;
+    /// Write a label at the current address
+    pub fn write_label(&mut self, label_idx: usize) {
+        // assert (label_idx < MAX_LABELS);
+        self.label_addrs[label_idx] = self.write_pos;
     }
 
     // Add a label reference at the current write position
-    void label_ref(codeblock_t *cb, uint32_t label_idx)
-    {
-        assert (label_idx < MAX_LABELS);
-        assert (cb->num_refs < MAX_LABEL_REFS);
+    pub fn label_ref(&mut self, label_idx: usize) {
+        // assert (label_idx < MAX_LABELS);
+        // assert (cb->num_refs < MAX_LABEL_REFS);
 
         // Keep track of the reference
-        cb->label_refs[cb->num_refs] = (labelref_t){ cb->write_pos, label_idx };
-        cb->num_refs++;
+        self.label_refs.push(LabelRef { pos: self.write_pos, label_idx });
     }
 
     // Link internal label references
-    void link_labels(codeblock_t *cb)
-    {
-        uint32_t orig_pos = cb->write_pos;
+    pub fn link_labels(&mut self) {
+        let orig_pos = self.write_pos;
 
         // For each label reference
-        for (uint32_t i = 0; i < cb->num_refs; ++i)
-        {
-            uint32_t ref_pos = cb->label_refs[i].pos;
-            uint32_t label_idx = cb->label_refs[i].label_idx;
-            assert (ref_pos < cb->mem_size);
-            assert (label_idx < MAX_LABELS);
+        for label_ref in mem::take(&mut self.label_refs) {
+            let ref_pos = label_ref.pos;
+            let label_idx = label_ref.label_idx;
+            assert!(ref_pos < self.mem_size);
+            // assert (label_idx < MAX_LABELS);
 
-            uint32_t label_addr = cb->label_addrs[label_idx];
-            assert (label_addr < cb->mem_size);
-
+            let label_addr = self.label_addrs[label_idx];
+            assert!(label_addr < self.mem_size);
             // Compute the offset from the reference's end to the label
-            int64_t offset = (int64_t)label_addr - (int64_t)(ref_pos + 4);
+            let offset = (label_addr as i64) - ((ref_pos + 4) as i64);
 
-            cb_set_pos(cb, ref_pos);
-            cb_write_int(cb, offset, 32);
+            self.set_pos(ref_pos);
+            self.write_int(offset as u64, 32);
         }
 
-        cb->write_pos = orig_pos;
+        self.write_pos = orig_pos;
 
         // Clear the label positions and references
-        cb->num_labels = 0;
-        cb->num_refs = 0;
+        self.label_addrs.clear();
+        self.label_names.clear();
+        assert!(self.label_refs.is_empty());
     }
-    */
 
     pub fn mark_position_writable(&mut self, write_pos: usize) {
         // let page_size = page_size();
@@ -705,51 +685,6 @@ impl CodeBlock
         // self.mem_block.mark_executable(0, self.mem_size).unwrap();
     }
 }
-
-/*
-// Encode a relative jump to a label (direct or conditional)
-// Note: this always encodes a 32-bit offset
-static void cb_write_jcc(codeblock_t *cb, const char *mnem, uint8_t op0, uint8_t op1, uint32_t label_idx)
-{
-    //cb.writeASM(mnem, label);
-
-    // Write the opcode
-    if (op0 != 0xFF)
-        cb_write_byte(cb, op0);
-    cb_write_byte(cb, op1);
-
-    // Add a reference to the label
-    cb_label_ref(cb, label_idx);
-
-    // Relative 32-bit offset to be patched
-    cb_write_int(cb, 0, 32);
-}
-
-// Encode a relative jump to a pointer at a 32-bit offset (direct or conditional)
-static void cb_write_jcc_ptr(codeblock_t *cb, const char *mnem, uint8_t op0, uint8_t op1, uint8_t *dst_ptr)
-{
-    //cb.writeASM(mnem, label);
-
-    // Write the opcode
-    if (op0 != 0xFF)
-        cb_write_byte(cb, op0);
-    cb_write_byte(cb, op1);
-
-    // Pointer to the end of this jump instruction
-    uint8_t *end_ptr = cb_get_ptr(cb, cb->write_pos + 4);
-
-    // Compute the jump offset
-    int64_t rel64 = (int64_t)(dst_ptr - end_ptr);
-    if (rel64 >= INT32_MIN && rel64 <= INT32_MAX) {
-        // Write the relative 32-bit jump offset
-        cb_write_int(cb, (int32_t)rel64, 32);
-    }
-    else {
-        // Offset doesn't fit in 4 bytes. Report error.
-        cb->dropped_bytes = true;
-    }
-}
-*/
 
 /// Write the REX byte
 fn write_rex(cb: &mut CodeBlock, w_flag: bool, reg_no: u8, idx_reg_no: u8, rm_reg_no: u8) {
@@ -1044,44 +979,40 @@ pub fn call_rel32(cb: &mut CodeBlock, rel32: i32) {
     cb.write_int(rel32.try_into().unwrap(), 32);
 }
 
-/*
-// call - Call a pointer, encode with a 32-bit offset if possible
-void call_ptr(codeblock_t *cb, x86opnd_t scratch_reg, uint8_t *dst_ptr)
-{
-    assert (scratch_reg.type == OPND_REG);
+/// call - Call a pointer, encode with a 32-bit offset if possible
+pub fn call_ptr(cb: &mut CodeBlock, scratch_opnd: X86Opnd, dst_ptr: CodePtr) {
+    if let X86Opnd::Reg(scratch_reg) = scratch_opnd {
+        // Pointer to the end of this call instruction
+        let end_ptr = cb.get_ptr(cb.write_pos + 5);
 
-    // Pointer to the end of this call instruction
-    uint8_t *end_ptr = cb_get_ptr(cb, cb->write_pos + 5);
+        // Compute the jump offset
+        let rel64: i64 = dst_ptr.into_i64() - end_ptr.into_i64();
 
-    // Compute the jump offset
-    int64_t rel64 = (int64_t)(dst_ptr - end_ptr);
+        // If the offset fits in 32-bit
+        if rel64 >= i32::MIN.into() && rel64 <= i32::MAX.into() {
+            call_rel32(cb, rel64.try_into().unwrap());
+            return;
+        }
 
-    // If the offset fits in 32-bit
-    if (rel64 >= INT32_MIN && rel64 <= INT32_MAX) {
-        call_rel32(cb, (int32_t)rel64);
-        return;
+        // Move the pointer into the scratch register and call
+        mov(cb, scratch_opnd, const_ptr_opnd(dst_ptr.raw_ptr()));
+        call(cb, scratch_opnd);
+    } else {
+        unreachable!();
     }
-
-    // Move the pointer into the scratch register and call
-    mov(cb, scratch_reg, const_ptr_opnd(dst_ptr));
-    call(cb, scratch_reg);
 }
 
 /// call - Call to label with 32-bit offset
-void call_label(codeblock_t *cb, uint32_t label_idx)
-{
-    //cb.writeASM("call", label);
-
+pub fn call_label(cb: &mut CodeBlock, label_idx: usize) {
     // Write the opcode
-    cb_write_byte(cb, 0xE8);
+    cb.write_byte(0xE8);
 
     // Add a reference to the label
-    cb_label_ref(cb, label_idx);
+    cb.label_ref(label_idx);
 
     // Relative 32-bit offset to be patched
-    cb_write_int(cb, 0, 32);
+    cb.write_int(0, 32);
 }
-*/
 
 /// call - Indirect call with an R/M operand
 pub fn call(cb: &mut CodeBlock, opnd: X86Opnd) {
@@ -1171,73 +1102,113 @@ pub fn int3(cb: &mut CodeBlock) {
     cb.write_byte(0xcc);
 }
 
-/*
+// Encode a relative jump to a label (direct or conditional)
+// Note: this always encodes a 32-bit offset
+fn write_jcc(cb: &mut CodeBlock, op0: u8, op1: u8, label_idx: usize) {
+    // Write the opcode
+    if op0 != 0xff {
+        cb.write_byte(op0);
+    }
+
+    cb.write_byte(op1);
+
+    // Add a reference to the label
+    cb.label_ref(label_idx);
+
+    // Relative 32-bit offset to be patched
+    cb.write_int( 0, 32);
+}
+
 /// jcc - relative jumps to a label
-//void ja_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "ja"  , 0x0F, 0x87, label_idx); }
-//void jae_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jae" , 0x0F, 0x83, label_idx); }
-//void jb_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jb"  , 0x0F, 0x82, label_idx); }
-void jbe_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jbe" , 0x0F, 0x86, label_idx); }
-//void jc_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jc"  , 0x0F, 0x82, label_idx); }
-void je_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "je"  , 0x0F, 0x84, label_idx); }
-//void jg_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jg"  , 0x0F, 0x8F, label_idx); }
-//void jge_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jge" , 0x0F, 0x8D, label_idx); }
-//void jl_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jl"  , 0x0F, 0x8C, label_idx); }
-//void jle_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jle" , 0x0F, 0x8E, label_idx); }
-//void jna_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jna" , 0x0F, 0x86, label_idx); }
-//void jnae_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnae", 0x0F, 0x82, label_idx); }
-//void jnb_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnb" , 0x0F, 0x83, label_idx); }
-//void jnbe_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnbe", 0x0F, 0x87, label_idx); }
-//void jnc_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnc" , 0x0F, 0x83, label_idx); }
-//void jne_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jne" , 0x0F, 0x85, label_idx); }
-//void jng_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jng" , 0x0F, 0x8E, label_idx); }
-//void jnge_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnge", 0x0F, 0x8C, label_idx); }
-//void jnl_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnl" , 0x0F, 0x8D, label_idx); }
-//void jnle_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnle", 0x0F, 0x8F, label_idx); }
-//void jno_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jno" , 0x0F, 0x81, label_idx); }
-//void jnp_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnp" , 0x0F, 0x8b, label_idx); }
-//void jns_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jns" , 0x0F, 0x89, label_idx); }
-void jnz_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnz" , 0x0F, 0x85, label_idx); }
-//void jo_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jo"  , 0x0F, 0x80, label_idx); }
-//void jp_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jp"  , 0x0F, 0x8A, label_idx); }
-//void jpe_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jpe" , 0x0F, 0x8A, label_idx); }
-//void jpo_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jpo" , 0x0F, 0x8B, label_idx); }
-//void js_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "js"  , 0x0F, 0x88, label_idx); }
-void jz_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jz"  , 0x0F, 0x84, label_idx); }
-//void jmp_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jmp" , 0xFF, 0xE9, label_idx); }
+pub fn ja_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x87, label_idx); }
+pub fn jae_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x83, label_idx); }
+pub fn jb_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x82, label_idx); }
+pub fn jbe_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x86, label_idx); }
+pub fn jc_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x82, label_idx); }
+pub fn je_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x84, label_idx); }
+pub fn jg_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8F, label_idx); }
+pub fn jge_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8D, label_idx); }
+pub fn jl_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8C, label_idx); }
+pub fn jle_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8E, label_idx); }
+pub fn jna_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x86, label_idx); }
+pub fn jnae_label(cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x82, label_idx); }
+pub fn jnb_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x83, label_idx); }
+pub fn jnbe_label(cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x87, label_idx); }
+pub fn jnc_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x83, label_idx); }
+pub fn jne_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x85, label_idx); }
+pub fn jng_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8E, label_idx); }
+pub fn jnge_label(cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8C, label_idx); }
+pub fn jnl_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8D, label_idx); }
+pub fn jnle_label(cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8F, label_idx); }
+pub fn jno_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x81, label_idx); }
+pub fn jnp_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8b, label_idx); }
+pub fn jns_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x89, label_idx); }
+pub fn jnz_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x85, label_idx); }
+pub fn jo_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x80, label_idx); }
+pub fn jp_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8A, label_idx); }
+pub fn jpe_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8A, label_idx); }
+pub fn jpo_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x8B, label_idx); }
+pub fn js_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x88, label_idx); }
+pub fn jz_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x0F, 0x84, label_idx); }
+pub fn jmp_label (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0xFF, 0xE9, label_idx); }
+
+/// Encode a relative jump to a pointer at a 32-bit offset (direct or conditional)
+fn write_jcc_ptr(cb: &mut CodeBlock, op0: u8, op1: u8, dst_ptr: CodePtr) {
+    // Write the opcode
+    if op0 != 0xFF {
+        cb.write_byte(op0);
+    }
+
+    cb.write_byte(op1);
+
+    // Pointer to the end of this jump instruction
+    let end_ptr = cb.get_ptr(cb.write_pos + 4);
+
+    // Compute the jump offset
+    let rel64 = (dst_ptr.0 as i64) - (end_ptr.0 as i64);
+
+    if rel64 >= i32::MIN.into() && rel64 <= i32::MAX.into() {
+        // Write the relative 32-bit jump offset
+        cb.write_int(rel64.try_into().unwrap(), 32);
+    }
+    else {
+        // Offset doesn't fit in 4 bytes. Report error.
+        cb.dropped_bytes = true;
+    }
+}
 
 /// jcc - relative jumps to a pointer (32-bit offset)
-//void ja_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "ja"  , 0x0F, 0x87, ptr); }
-//void jae_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jae" , 0x0F, 0x83, ptr); }
-//void jb_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jb"  , 0x0F, 0x82, ptr); }
-void jbe_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jbe" , 0x0F, 0x86, ptr); }
-//void jc_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jc"  , 0x0F, 0x82, ptr); }
-void je_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "je"  , 0x0F, 0x84, ptr); }
-//void jg_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jg"  , 0x0F, 0x8F, ptr); }
-//void jge_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jge" , 0x0F, 0x8D, ptr); }
-void jl_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jl"  , 0x0F, 0x8C, ptr); }
-void jle_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jle" , 0x0F, 0x8E, ptr); }
-//void jna_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jna" , 0x0F, 0x86, ptr); }
-//void jnae_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnae", 0x0F, 0x82, ptr); }
-//void jnb_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnb" , 0x0F, 0x83, ptr); }
-//void jnbe_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnbe", 0x0F, 0x87, ptr); }
-//void jnc_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnc" , 0x0F, 0x83, ptr); }
-void jne_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jne" , 0x0F, 0x85, ptr); }
-//void jng_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jng" , 0x0F, 0x8E, ptr); }
-//void jnge_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnge", 0x0F, 0x8C, ptr); }
-//void jnl_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnl" , 0x0F, 0x8D, ptr); }
-//void jnle_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnle", 0x0F, 0x8F, ptr); }
-//void jno_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jno" , 0x0F, 0x81, ptr); }
-//void jnp_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnp" , 0x0F, 0x8b, ptr); }
-//void jns_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jns" , 0x0F, 0x89, ptr); }
-void jnz_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnz" , 0x0F, 0x85, ptr); }
-void jo_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jo"  , 0x0F, 0x80, ptr); }
-//void jp_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jp"  , 0x0F, 0x8A, ptr); }
-//void jpe_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jpe" , 0x0F, 0x8A, ptr); }
-//void jpo_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jpo" , 0x0F, 0x8B, ptr); }
-//void js_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "js"  , 0x0F, 0x88, ptr); }
-void jz_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jz"  , 0x0F, 0x84, ptr); }
-void jmp_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jmp" , 0xFF, 0xE9, ptr); }
-*/
+pub fn ja_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x87, ptr); }
+pub fn jae_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x83, ptr); }
+pub fn jb_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x82, ptr); }
+pub fn jbe_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x86, ptr); }
+pub fn jc_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x82, ptr); }
+pub fn je_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x84, ptr); }
+pub fn jg_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8F, ptr); }
+pub fn jge_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8D, ptr); }
+pub fn jl_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8C, ptr); }
+pub fn jle_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8E, ptr); }
+pub fn jna_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x86, ptr); }
+pub fn jnae_ptr(cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x82, ptr); }
+pub fn jnb_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x83, ptr); }
+pub fn jnbe_ptr(cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x87, ptr); }
+pub fn jnc_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x83, ptr); }
+pub fn jne_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x85, ptr); }
+pub fn jng_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8E, ptr); }
+pub fn jnge_ptr(cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8C, ptr); }
+pub fn jnl_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8D, ptr); }
+pub fn jnle_ptr(cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8F, ptr); }
+pub fn jno_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x81, ptr); }
+pub fn jnp_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8b, ptr); }
+pub fn jns_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x89, ptr); }
+pub fn jnz_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x85, ptr); }
+pub fn jo_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x80, ptr); }
+pub fn jp_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8A, ptr); }
+pub fn jpe_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8A, ptr); }
+pub fn jpo_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x8B, ptr); }
+pub fn js_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x88, ptr); }
+pub fn jz_ptr  (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0x0F, 0x84, ptr); }
+pub fn jmp_ptr (cb: &mut CodeBlock, ptr: CodePtr) { write_jcc_ptr(cb, 0xFF, 0xE9, ptr); }
 
 /// jmp - Indirect jump near to an R/M operand.
 pub fn jmp_rm(cb: &mut CodeBlock, opnd: X86Opnd) {

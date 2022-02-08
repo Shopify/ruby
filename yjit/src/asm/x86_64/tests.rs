@@ -47,6 +47,25 @@ fn test_and() {
 }
 
 #[test]
+fn test_call_label() {
+    check_bytes("e8fbffffff", |cb| {
+        let label_idx = cb.new_label("fn".to_owned());
+        call_label(cb, label_idx);
+        cb.link_labels();
+    });
+}
+
+#[test]
+fn test_call_reg() {
+    check_bytes("ffd0", |cb| call(cb, RAX));
+}
+
+#[test]
+fn test_call_mem() {
+    check_bytes("ff542408", |cb| call(cb, mem_opnd(64, RSP, 8)));
+}
+
+#[test]
 fn test_cmovcc() {
     check_bytes("0f4ff7", |cb| cmovg(cb, ESI, EDI));
     check_bytes("0f4f750c", |cb| cmovg(cb, ESI, mem_opnd(32, RBP, 12)));
@@ -69,8 +88,35 @@ fn test_cqo() {
 }
 
 #[test]
-fn test_jmp_with_rm_operand() {
+fn test_jge_label() {
+    check_bytes("0f8dfaffffff", |cb| {
+        let label_idx = cb.new_label("loop".to_owned());
+        jge_label(cb, label_idx);
+        cb.link_labels();
+    });
+}
+
+#[test]
+fn test_jmp_label() {
+    check_bytes("e9fbffffff", |cb| {
+        let label_idx = cb.new_label("loop".to_owned());
+        jmp_label(cb, label_idx);
+        cb.link_labels();
+    });
+}
+
+#[test]
+fn test_jmp_rm() {
     check_bytes("41ffe4", |cb| jmp_rm(cb, R12));
+}
+
+#[test]
+fn test_jo_label() {
+    check_bytes("0f80faffffff", |cb| {
+        let label_idx = cb.new_label("loop".to_owned());
+        jo_label(cb, label_idx);
+        cb.link_labels();
+    });
 }
 
 #[test]
@@ -251,44 +297,6 @@ fn test_xor() {
     check_bytes("31c0", |cb| xor(cb, EAX, EAX));
 }
 
-/*
-// call
-{
-    cb_set_pos(cb, 0);
-    uint32_t fn_label = cb_new_label(cb, "foo");
-    call_label(cb, fn_label);
-    cb_link_labels(cb);
-    check_bytes(cb, "E8FBFFFFFF");
-}
-cb_set_pos(cb, 0); call(cb, RAX); check_bytes(cb, "FFD0");
-cb_set_pos(cb, 0); call(cb, mem_opnd(64, RSP, 8)); check_bytes(cb, "FF542408");
-
-// jcc to label
-{
-    cb_set_pos(cb, 0);
-    uint32_t loop_label = cb_new_label(cb, "loop");
-    jge_label(cb, loop_label);
-    cb_link_labels(cb);
-    check_bytes(cb, "0F8DFAFFFFFF");
-}
-{
-    cb_set_pos(cb, 0);
-    uint32_t loop_label = cb_new_label(cb, "loop");
-    jo_label(cb, loop_label);
-    cb_link_labels(cb);
-    check_bytes(cb, "0F80FAFFFFFF");
-}
-
-// jmp to label
-{
-    cb_set_pos(cb, 0);
-    uint32_t loop_label = cb_new_label(cb, "loop");
-    jmp_label(cb, loop_label);
-    cb_link_labels(cb);
-    check_bytes(cb, "E9FBFFFFFF");
-}
-*/
-
 #[test]
 #[cfg(feature = "disassembly")]
 fn basic_capstone_usage() -> Result<(), capstone::Error> {
@@ -313,8 +321,6 @@ fn basic_capstone_usage() -> Result<(), capstone::Error> {
         )),
     }
 }
-
-
 
 /*
 #[cfg(test)]
