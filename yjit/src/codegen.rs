@@ -1048,6 +1048,15 @@ fn gen_topn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
     KeepCompiling
 }
 
+fn gen_adjuststack(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+{
+    let nval:VALUE = jit_get_arg(jit, 0);
+    let VALUE(n) = nval;
+
+    ctx.stack_pop(n);
+    KeepCompiling
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1269,6 +1278,30 @@ mod tests {
         assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(0)));
 
         assert!(cb.get_write_pos() > 0); // Write some movs
+    }
+
+    #[test]
+    fn test_gen_adjuststack() {
+        let mut context = Context::new();
+        context.stack_push(Type::Flonum);
+        context.stack_push(Type::String);
+        context.stack_push(Type::Fixnum);
+        let mut cb = CodeBlock::new();
+        let mut ocb = CodeBlock::new();
+
+        let mut value_array: [u64; 3] = [ 0, 2, 0 ];
+        let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
+
+        let mut jit = JITState::new();
+        jit.set_pc(pc);
+
+        let status = gen_adjuststack(&mut jit, &mut context, &mut cb, &mut ocb);
+
+        assert!(matches!(KeepCompiling, status));
+
+        assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(0)));
+
+        assert!(cb.get_write_pos() == 0); // No instructions written
     }
 }
 
@@ -5255,10 +5288,9 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_PUTOBJECT_INT2FIX_1_ => Some(gen_putobject_int2fix),
         OP_SETN => Some(gen_setn),
         OP_TOPN => Some(gen_topn),
+        OP_ADJUSTSTACK => Some(gen_adjuststack),
 
         /*
-        yjit_reg_op(BIN(topn), gen_topn);
-        yjit_reg_op(BIN(adjuststack), gen_adjuststack);
         yjit_reg_op(BIN(newarray), gen_newarray);
         yjit_reg_op(BIN(duparray), gen_duparray);
         yjit_reg_op(BIN(duphash), gen_duphash);
