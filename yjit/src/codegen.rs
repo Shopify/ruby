@@ -1017,7 +1017,7 @@ fn gen_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
 }
 
 // set Nth stack entry to stack top
-fn gen_setn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_setn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     let nval:VALUE = jit_get_arg(jit, 0);
     let VALUE(n) = nval;
@@ -1034,7 +1034,7 @@ fn gen_setn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
 }
 
 // get nth stack value, then push it
-fn gen_topn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_topn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     let nval:VALUE = jit_get_arg(jit, 0);
     let VALUE(n) = nval;
@@ -1050,7 +1050,7 @@ fn gen_topn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
 }
 
 // Pop n values off the stack
-fn gen_adjuststack(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_adjuststack(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     let nval:VALUE = jit_get_arg(jit, 0);
     let VALUE(n) = nval;
@@ -1238,7 +1238,7 @@ mod tests {
         context.stack_push(Type::Flonum);
         context.stack_push(Type::String);
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let mut value_array: [u64; 2] = [ 0, 2 ];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
@@ -1263,7 +1263,7 @@ mod tests {
         context.stack_push(Type::Flonum);
         context.stack_push(Type::String);
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let mut value_array: [u64; 2] = [ 0, 1 ];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
@@ -1289,7 +1289,7 @@ mod tests {
         context.stack_push(Type::String);
         context.stack_push(Type::Fixnum);
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let mut value_array: [u64; 3] = [ 0, 2, 0 ];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
