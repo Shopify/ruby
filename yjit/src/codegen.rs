@@ -950,16 +950,16 @@ fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16,
     let opnd0 = ctx.stack_opnd(offset0 as i32);
     let opnd1 = ctx.stack_opnd(offset1 as i32);
 
-    let mapping0 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset0));
-    let mapping1 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset1));
+    let mapping0 = ctx.get_opnd_mapping(StackOpnd(offset0));
+    let mapping1 = ctx.get_opnd_mapping(StackOpnd(offset1));
 
     mov(cb, REG0, opnd0);
     mov(cb, REG1, opnd1);
     mov(cb, opnd0, REG1);
     mov(cb, opnd1, REG0);
 
-    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset0), mapping1);
-    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset1), mapping0);
+    ctx.set_opnd_mapping(StackOpnd(offset0), mapping1);
+    ctx.set_opnd_mapping(StackOpnd(offset1), mapping0);
 }
 
 fn gen_putnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -1021,15 +1021,14 @@ fn gen_setn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
 {
     let nval:VALUE = jit_get_arg(jit, 0);
     let VALUE(n) = nval;
-    let n_u16:u16 = n.try_into().unwrap();
 
     let top_val:X86Opnd = ctx.stack_pop(0);
-    let dst_opnd:X86Opnd = ctx.stack_opnd(n_u16 as i32);
+    let dst_opnd:X86Opnd = ctx.stack_opnd(n.try_into().unwrap());
     mov(cb, REG0, top_val);
     mov(cb, dst_opnd, REG0);
 
-    let mapping = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(0));
-    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(n_u16), mapping);
+    let mapping = ctx.get_opnd_mapping(StackOpnd(0));
+    ctx.set_opnd_mapping(StackOpnd(n.try_into().unwrap()), mapping);
 
     KeepCompiling
 }
@@ -1041,7 +1040,7 @@ fn gen_topn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
     let VALUE(n) = nval;
 
     let top_n_val = ctx.stack_opnd(n.try_into().unwrap());
-    let mapping = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(n.try_into().unwrap()));
+    let mapping = ctx.get_opnd_mapping(StackOpnd(n.try_into().unwrap()));
 
     let loc0 = ctx.stack_push_mapping(mapping);
     mov(cb, REG0, top_n_val);
