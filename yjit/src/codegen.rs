@@ -1021,18 +1021,20 @@ fn gen_setn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
 {
     let nval:VALUE = jit_get_arg(jit, 0);
     let VALUE(n) = nval;
+    let n_u16:u16 = n.try_into().unwrap();
 
     let top_val:X86Opnd = ctx.stack_pop(0);
-    let dst_opnd:X86Opnd = ctx.stack_opnd(n.try_into().unwrap());
+    let dst_opnd:X86Opnd = ctx.stack_opnd(n_u16 as i32);
     mov(cb, REG0, top_val);
     mov(cb, dst_opnd, REG0);
 
     let mapping = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(0));
-    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(n.try_into().unwrap()), mapping);
+    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(n_u16), mapping);
 
     KeepCompiling
 }
 
+// get nth stack value, then push it
 fn gen_topn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
 {
     let nval:VALUE = jit_get_arg(jit, 0);
@@ -1048,6 +1050,7 @@ fn gen_topn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
     KeepCompiling
 }
 
+// Pop n values off the stack
 fn gen_adjuststack(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
 {
     let nval:VALUE = jit_get_arg(jit, 0);
