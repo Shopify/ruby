@@ -107,7 +107,7 @@ impl VALUE {
 
     pub fn as_i32(self:VALUE) -> i32 {
         let VALUE(i) = self;
-        i as i32
+        i.try_into().unwrap()
     }
 
     pub fn as_usize(self:VALUE) -> usize {
