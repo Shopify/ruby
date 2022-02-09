@@ -184,7 +184,7 @@ impl X86Opnd {
         }
     }
 
-    fn num_bits(&self) -> u8 {
+    pub fn num_bits(&self) -> u8 {
         match self {
             X86Opnd::Reg(reg) => reg.num_bits,
             X86Opnd::Imm(imm) => imm.num_bits,
