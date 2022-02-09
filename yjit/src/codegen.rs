@@ -109,12 +109,12 @@ pub fn jit_get_arg(jit:&JITState, arg_idx:isize) -> VALUE
 // Load a VALUE into a register and keep track of the reference if it is on the GC heap.
 pub fn jit_mov_gc_ptr(jit:&mut JITState, cb: &mut CodeBlock, reg:X86Opnd, ptr: VALUE)
 {
-    // TODO: can we assert num_bits == 64 somehow? Field is private.
     assert!( matches!(reg, X86Opnd::Reg(x)) );
+    assert!( reg.num_bits() == 64 );
 
     // Load the pointer constant into the specified register
     let VALUE(ptr_value) = ptr;
-    //mov(cb, reg, const_ptr_opnd(ptr_value as *const u8));  // when uimm_opnd works with mov() properly, change back to this
+    //mov(cb, reg, const_ptr_opnd(ptr_value as *const u8));  // TODO(noah): when uimm_opnd works with mov() properly, change back to this
     mov(cb, reg, imm_opnd(ptr_value as i64));
 
     // The pointer immediate is encoded as the last part of the mov written out
