@@ -1080,6 +1080,10 @@ mod tests {
     //use crate::codegen::*;
     use crate::asm::x86_64::*;
 
+    fn setup_codegen() -> (JITState, Context, CodeBlock, OutlinedCb) {
+        return (JITState::new(), Context::new(), CodeBlock::new(), OutlinedCb::wrap(CodeBlock::new()));
+    }
+
     #[test]
     fn test_gen_leave_exit() {
         let mut ocb = OutlinedCb::wrap(CodeBlock::new());
@@ -1089,10 +1093,8 @@ mod tests {
 
     #[test]
     fn test_gen_nop() {
-        let mut context = Context::new();
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
-        let status = gen_nop(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
+        let status = gen_nop(&mut jit, &mut context, &mut cb, &mut ocb);
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
@@ -1101,10 +1103,9 @@ mod tests {
 
     #[test]
     fn test_gen_pop() {
+        let (mut jit, _, mut cb, mut ocb) = setup_codegen();
         let mut context = Context::new_with_stack_size(1);
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
-        let status = gen_pop(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
+        let status = gen_pop(&mut jit, &mut context, &mut cb, &mut ocb);
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
@@ -1112,11 +1113,9 @@ mod tests {
 
     #[test]
     fn test_gen_dup() {
-        let mut context = Context::new();
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         context.stack_push(Type::Fixnum);
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
-        let status = gen_dup(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
+        let status = gen_dup(&mut jit, &mut context, &mut cb, &mut ocb);
 
         assert!(matches!(KeepCompiling, status));
 
@@ -1129,16 +1128,12 @@ mod tests {
 
     #[test]
     fn test_gen_dupn() {
-        let mut context = Context::new();
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         context.stack_push(Type::Fixnum);
         context.stack_push(Type::Flonum);
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let mut value_array: [u64; 2] = [ 0, 2 ]; // We only compile for n == 2
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-
-        let mut jit = JITState::new();
         jit.set_pc(pc);
 
         let status = gen_dupn(&mut jit, &mut context, &mut cb, &mut ocb);
@@ -1155,13 +1150,11 @@ mod tests {
 
     #[test]
     fn test_gen_swap() {
-        let mut context = Context::new();
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         context.stack_push(Type::Fixnum);
         context.stack_push(Type::Flonum);
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
-        let status = gen_swap(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
+        let status = gen_swap(&mut jit, &mut context, &mut cb, &mut ocb);
 
         let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
         let (_, tmp_type_next) = context.get_opnd_mapping(StackOpnd(1));
@@ -1173,10 +1166,8 @@ mod tests {
 
     #[test]
     fn test_putnil() {
-        let mut context = Context::new();
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
-        let status = gen_putnil(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
+        let status = gen_putnil(&mut jit, &mut context, &mut cb, &mut ocb);
 
         let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
 
@@ -1188,14 +1179,10 @@ mod tests {
     #[test]
     fn test_putobject_qtrue() {
         // Test gen_putobject with Qtrue
-        let mut context = Context::new();
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
 
-        let VALUE(qtrue_value) = Qtrue;
-        let mut value_array: [u64; 2] = [ 0, qtrue_value as u64 ];
+        let mut value_array: [u64; 2] = [ 0, Qtrue.into() ];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-        let mut jit = JITState::new();
         jit.set_pc(pc);
 
         let status = gen_putobject(&mut jit, &mut context, &mut cb, &mut ocb);
@@ -1210,14 +1197,11 @@ mod tests {
     #[test]
     fn test_putobject_fixnum() {
         // Test gen_putobject with a Fixnum to test another conditional branch
-        let mut context = Context::new();
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
 
         // The Fixnum 7 is encoded as 7 * 2 + 1, or 15
         let mut value_array: [u64; 2] = [ 0, 15 ];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-        let mut jit = JITState::new();
         jit.set_pc(pc);
 
         let status = gen_putobject(&mut jit, &mut context, &mut cb, &mut ocb);
@@ -1231,10 +1215,7 @@ mod tests {
 
     #[test]
     fn test_int2fix() {
-        let mut context = Context::new();
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
-        let mut jit = JITState::new();
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         jit.opcode = OP_PUTOBJECT_INT2FIX_0_;
         let status = gen_putobject_int2fix(& mut jit, &mut context, &mut cb, &mut ocb);
 
@@ -1247,17 +1228,13 @@ mod tests {
 
     #[test]
     fn test_gen_setn() {
-        let mut context = Context::new();
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         context.stack_push(Type::Fixnum);
         context.stack_push(Type::Flonum);
         context.stack_push(Type::String);
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let mut value_array: [u64; 2] = [ 0, 2 ];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-
-        let mut jit = JITState::new();
         jit.set_pc(pc);
 
         let status = gen_setn(&mut jit, &mut context, &mut cb, &mut ocb);
@@ -1273,16 +1250,12 @@ mod tests {
 
     #[test]
     fn test_gen_topn() {
-        let mut context = Context::new();
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         context.stack_push(Type::Flonum);
         context.stack_push(Type::String);
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let mut value_array: [u64; 2] = [ 0, 1 ];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-
-        let mut jit = JITState::new();
         jit.set_pc(pc);
 
         let status = gen_topn(&mut jit, &mut context, &mut cb, &mut ocb);
@@ -1298,17 +1271,13 @@ mod tests {
 
     #[test]
     fn test_gen_adjuststack() {
-        let mut context = Context::new();
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         context.stack_push(Type::Flonum);
         context.stack_push(Type::String);
         context.stack_push(Type::Fixnum);
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let mut value_array: [u64; 3] = [ 0, 2, 0 ];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-
-        let mut jit = JITState::new();
         jit.set_pc(pc);
 
         let status = gen_adjuststack(&mut jit, &mut context, &mut cb, &mut ocb);
