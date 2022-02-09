@@ -114,7 +114,8 @@ pub fn jit_mov_gc_ptr(jit:&mut JITState, cb: &mut CodeBlock, reg:X86Opnd, ptr: V
 
     // Load the pointer constant into the specified register
     let VALUE(ptr_value) = ptr;
-    mov(cb, reg, const_ptr_opnd(ptr_value as *const u8));
+    //mov(cb, reg, const_ptr_opnd(ptr_value as *const u8));  // when uimm_opnd works with mov() properly, change back to this
+    mov(cb, reg, imm_opnd(ptr_value as i64));
 
     // The pointer immediate is encoded as the last part of the mov written out
     let ptr_offset:u32 = (cb.get_write_pos() as u32) - (SIZEOF_VALUE as u32);
@@ -1032,6 +1033,36 @@ fn gen_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     KeepCompiling
 }
 
+fn gen_putself(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    // Load self from CFP
+    let cf_opnd = mem_opnd((8 * SIZEOF_VALUE) as u8, REG_CFP, RUBY_OFFSET_CFP_SELF);
+    mov(cb, REG0, cf_opnd);
+
+    // Write it on the stack
+    let stack_top:X86Opnd = ctx.stack_push_self();
+    mov(cb, stack_top, REG0);
+
+    KeepCompiling
+}
+
+fn gen_putspecialobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    let object_type = jit_get_arg(jit, 0);
+
+    if object_type == VALUE(VM_SPECIAL_OBJECT_VMCORE) {
+        let stack_top:X86Opnd = ctx.stack_push(Type::UnknownHeap);
+        jit_mov_gc_ptr(jit, cb, REG0, get_ruby_vm_frozen_core());
+        mov(cb, stack_top, REG0);
+        KeepCompiling
+    }
+    else {
+        // TODO: implement for VM_SPECIAL_OBJECT_CBASE and
+        // VM_SPECIAL_OBJECT_CONST_BASE
+        CantCompile
+    }
+}
+
 // set Nth stack entry to stack top
 fn gen_setn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
@@ -1219,13 +1250,43 @@ mod tests {
     fn test_int2fix() {
         let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         jit.opcode = OP_PUTOBJECT_INT2FIX_0_;
-        let status = gen_putobject_int2fix(& mut jit, &mut context, &mut cb, &mut ocb);
+        let status = gen_putobject_int2fix(&mut jit, &mut context, &mut cb, &mut ocb);
 
         let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
 
         // Right now we're not testing the generated machine code to make sure a literal 1 or 0 was pushed. I've checked locally.
         assert!(matches!(KeepCompiling, status));
         assert_eq!(tmp_type_top, Type::Fixnum);
+    }
+
+    #[test]
+    fn test_putself() {
+        let mut context = Context::new();
+        let mut cb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+        let mut jit = JITState::new();
+
+        let status = gen_putself(&mut jit, &mut context, &mut cb, &mut ocb);
+
+        assert!(matches!(KeepCompiling, status));
+        assert!(cb.get_write_pos() > 0);
+    }
+
+    #[test]
+    fn test_putspecialobject() {
+        let mut context = Context::new();
+        let mut cb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+
+        let mut value_array: [u64; 2] = [ 0, VM_SPECIAL_OBJECT_VMCORE as u64 ];
+        let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
+        let mut jit = JITState::new();
+        jit.set_pc(pc);
+
+        let status = gen_putspecialobject(&mut jit, &mut context, &mut cb, &mut ocb);
+
+        assert!(matches!(KeepCompiling, status));
+        assert!(cb.get_write_pos() > 0);
     }
 
     #[test]
@@ -1573,37 +1634,6 @@ gen_putstring(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     mov(cb, stack_top, RAX);
 
     return YJIT_KEEP_COMPILING;
-}
-
-static codegen_status_t
-gen_putself(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    // Load self from CFP
-    mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, self));
-
-    // Write it on the stack
-    x86opnd_t stack_top = ctx_stack_push_self(ctx);
-    mov(cb, stack_top, REG0);
-
-    return YJIT_KEEP_COMPILING;
-}
-
-static codegen_status_t
-gen_putspecialobject(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    enum vm_special_object_type type = (enum vm_special_object_type)jit_get_arg(jit, 0);
-
-    if (type == VM_SPECIAL_OBJECT_VMCORE) {
-        x86opnd_t stack_top = ctx_stack_push(ctx, TYPE_HEAP);
-        jit_mov_gc_ptr(jit, cb, REG0, rb_mRubyVMFrozenCore);
-        mov(cb, stack_top, REG0);
-        return YJIT_KEEP_COMPILING;
-    }
-    else {
-        // TODO: implement for VM_SPECIAL_OBJECT_CBASE and
-        // VM_SPECIAL_OBJECT_CONST_BASE
-        return YJIT_CANT_COMPILE;
-    }
 }
 
 // Get EP at level from CFP
@@ -5272,6 +5302,8 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_PUTOBJECT => Some(gen_putobject),
         OP_PUTOBJECT_INT2FIX_0_ => Some(gen_putobject_int2fix),
         OP_PUTOBJECT_INT2FIX_1_ => Some(gen_putobject_int2fix),
+        OP_PUTSELF => Some(gen_putself),
+        OP_PUTSPECIALOBJECT => Some(gen_putspecialobject),
         OP_SETN => Some(gen_setn),
         OP_TOPN => Some(gen_topn),
         OP_ADJUSTSTACK => Some(gen_adjuststack),
@@ -5285,10 +5317,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(newhash), gen_newhash);
         yjit_reg_op(BIN(newrange), gen_newrange);
         yjit_reg_op(BIN(concatstrings), gen_concatstrings);
-        yjit_reg_op(BIN(putobject), gen_putobject);
         yjit_reg_op(BIN(putstring), gen_putstring);
-        yjit_reg_op(BIN(putself), gen_putself);
-        yjit_reg_op(BIN(putspecialobject), gen_putspecialobject);
         yjit_reg_op(BIN(getlocal), gen_getlocal);
         yjit_reg_op(BIN(getlocal_WC_0), gen_getlocal_wc0);
         yjit_reg_op(BIN(getlocal_WC_1), gen_getlocal_wc1);

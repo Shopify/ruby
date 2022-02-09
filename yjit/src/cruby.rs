@@ -25,6 +25,19 @@ extern "C" {
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
 }
 
+#[cfg(not(test))]
+pub fn get_ruby_vm_frozen_core() -> VALUE
+{
+    // The C side reads this as an extern constant from vm.c (see vm_core.h).
+    todo!();
+}
+
+#[cfg(test)]
+pub fn get_ruby_vm_frozen_core() -> VALUE
+{
+    // Until we can link with CRuby, return a fake constant.
+    VALUE(0xACE_DECADE)
+}
 
 
 
@@ -186,6 +199,9 @@ pub const RUBY_FIXNUM_FLAG:usize = 0x1;
 
 pub const RUBY_IMMEDIATE_MASK:usize = 0x7;
 
+// Constants from vm_core.h
+pub const VM_SPECIAL_OBJECT_VMCORE:usize = 0x1;
+
 pub const SIZEOF_VALUE: usize = 8;
 
 // Constants from include/ruby/internal/fl_type.h
@@ -222,6 +238,8 @@ pub const RUBY_OFFSET_RBASIC_FLAGS:i32 = 0;  // struct RBasic, field "flags"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_LEN:i32 = 16;  // struct RArray, subfield "as.heap.len"
 pub const RUBY_OFFSET_RARRAY_AS_ARY:i32 = 16;  // struct RArray, subfield "as.ary"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_PTR:i32 = 16;  // struct RArray, subfield "as.heap.ptr"
+
+pub const RUBY_OFFSET_CFP_SELF:i32 = 24;
 
 // TODO: need to dynamically autogenerate constants for all the YARV opcodes from insns.def
 pub const OP_NOP:usize = 0;
