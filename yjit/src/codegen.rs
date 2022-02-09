@@ -1483,14 +1483,13 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
     // num is the number of requested values. If there aren't enough in the
     // array then we're going to push on nils.
     let num = jit_get_arg(jit, 0);
-    let VALUE(num_value) = num;
     let array_type = ctx.get_opnd_type(StackOpnd(0));
     let array_opnd:X86Opnd = ctx.stack_pop(1);
 
     if matches!(array_type, Type::Nil) {
         // special case for a, b = nil pattern
         // push N nils onto the stack
-        for i in 0..num_value {
+        for i in 0..(num.into()) {
             let push_opnd:X86Opnd = ctx.stack_push(Type::Nil);
             mov(cb, push_opnd, uimm_opnd(Qnil.into()));
         }
@@ -1503,7 +1502,7 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
     guard_object_is_array(cb, REG0, REG1, ctx, counted_exit!(ocb, side_exit, expandarray_not_array));
 
     // If we don't actually want any values, then just return.
-    if num_value == 0 {
+    if num == VALUE(0) {
         return KeepCompiling;
     }
 
@@ -1522,7 +1521,7 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
 
     // Only handle the case where the number of values in the array is greater
     // than or equal to the number of values requested.
-    cmp(cb, REG1, uimm_opnd(num_value as u64));
+    cmp(cb, REG1, uimm_opnd(num.into()));
     jl_ptr(cb, counted_exit!(ocb, side_exit, expandarray_rhs_too_small));
 
     // Load the address of the embedded array into REG1.
@@ -1537,9 +1536,9 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
     cmovz(cb, REG1, heap_ptr_opnd);
 
     // Loop backward through the array and push each element onto the stack.
-    for i in (0..num_value).rev() {
+    for i in (0..(num.as_i32())).rev() {
         let top:X86Opnd = ctx.stack_push(Type::Unknown);
-        mov(cb, REG0, mem_opnd(64, REG1, (i * SIZEOF_VALUE) as i32));
+        mov(cb, REG0, mem_opnd(64, REG1, i * (SIZEOF_VALUE as i32)));
         mov(cb, top, REG0);
     }
 

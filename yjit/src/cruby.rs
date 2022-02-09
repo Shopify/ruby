@@ -99,6 +99,21 @@ impl VALUE {
         let flags_bits:usize = unsafe { *rbasic_ptr };
         flags_bits & RUBY_T_MASK
     }
+
+    pub fn as_isize(self:VALUE) -> isize {
+        let VALUE(is) = self;
+        is as isize
+    }
+
+    pub fn as_i32(self:VALUE) -> i32 {
+        let VALUE(i) = self;
+        i as i32
+    }
+
+    pub fn as_usize(self:VALUE) -> usize {
+        let VALUE(us) = self;
+        us as usize
+    }
 }
 
 impl From<usize> for VALUE {
