@@ -1452,7 +1452,7 @@ fn guard_object_is_array(cb: &mut CodeBlock, object_opnd: X86Opnd, flags_opnd: X
     add_comment(cb, "guard object is array");
 
     // Pull out the type mask
-    mov(cb, flags_opnd, mem_opnd(8 * SIZEOF_VALUE as u8, object_opnd, RUBY_OFFSET_CFP_RBASIC_FLAGS));
+    mov(cb, flags_opnd, mem_opnd(8 * SIZEOF_VALUE as u8, object_opnd, RUBY_OFFSET_RBASIC_FLAGS));
     and(cb, flags_opnd, imm_opnd(RUBY_T_MASK as i64));
 
     // Compare the result with T_ARRAY
@@ -1508,7 +1508,7 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
     }
 
     // Pull out the embed flag to check if it's an embedded array.
-    let flags_opnd:X86Opnd = mem_opnd((8 * SIZEOF_VALUE) as u8, REG0, RUBY_OFFSET_CFP_RBASIC_FLAGS);
+    let flags_opnd:X86Opnd = mem_opnd((8 * SIZEOF_VALUE) as u8, REG0, RUBY_OFFSET_RBASIC_FLAGS);
     mov(cb, REG1, flags_opnd);
 
     // Move the length of the embedded array into REG1.
@@ -1517,7 +1517,7 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
 
     // Conditionally move the length of the heap array into REG1.
     test(cb, flags_opnd, imm_opnd(RARRAY_EMBED_FLAG as i64));
-    let array_len_opnd:X86Opnd = mem_opnd((8 * size_of::<std::os::raw::c_long>()) as u8, REG0, RUBY_OFFSET_CFP_RARRAY_AS_HEAP_LEN);
+    let array_len_opnd:X86Opnd = mem_opnd((8 * size_of::<std::os::raw::c_long>()) as u8, REG0, RUBY_OFFSET_RARRAY_AS_HEAP_LEN);
     cmovz(cb, REG1, array_len_opnd);
 
     // Only handle the case where the number of values in the array is greater
@@ -1527,13 +1527,13 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
 
     // Load the address of the embedded array into REG1.
     // (struct RArray *)(obj)->as.ary
-    let ary_opnd:X86Opnd = mem_opnd((8 * SIZEOF_VALUE) as u8, REG0, RUBY_OFFSET_CFP_RARRAY_AS_ARY);
+    let ary_opnd:X86Opnd = mem_opnd((8 * SIZEOF_VALUE) as u8, REG0, RUBY_OFFSET_RARRAY_AS_ARY);
     lea(cb, REG1, ary_opnd);
 
     // Conditionally load the address of the heap array into REG1.
     // (struct RArray *)(obj)->as.heap.ptr
     test(cb, flags_opnd, imm_opnd(RARRAY_EMBED_FLAG as i64));
-    let heap_ptr_opnd:X86Opnd = mem_opnd((8 * size_of::<usize>()) as u8, REG0, RUBY_OFFSET_CFP_RARRAY_AS_HEAP_PTR);
+    let heap_ptr_opnd:X86Opnd = mem_opnd((8 * size_of::<usize>()) as u8, REG0, RUBY_OFFSET_RARRAY_AS_HEAP_PTR);
     cmovz(cb, REG1, heap_ptr_opnd);
 
     // Loop backward through the array and push each element onto the stack.

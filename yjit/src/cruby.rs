@@ -203,10 +203,10 @@ pub const RARRAY_EMBED_LEN_MASK:usize = RUBY_FL_USER_3 | RUBY_FL_USER_4;
 
 // We'll need to encode a lot of Ruby struct/field offsets as constants unless we want to
 // redeclare all the Ruby C structs and write our own offsetof macro. For now, we use constants.
-pub const RUBY_OFFSET_CFP_RBASIC_FLAGS:i32 = 0;  // struct RBasic, field "flags"
-pub const RUBY_OFFSET_CFP_RARRAY_AS_HEAP_LEN:i32 = 16;  // struct RArray, subfield "as.heap.len"
-pub const RUBY_OFFSET_CFP_RARRAY_AS_ARY:i32 = 16;  // struct RArray, subfield "as.ary"
-pub const RUBY_OFFSET_CFP_RARRAY_AS_HEAP_PTR:i32 = 16;  // struct RArray, subfield "as.heap.ptr"
+pub const RUBY_OFFSET_RBASIC_FLAGS:i32 = 0;  // struct RBasic, field "flags"
+pub const RUBY_OFFSET_RARRAY_AS_HEAP_LEN:i32 = 16;  // struct RArray, subfield "as.heap.len"
+pub const RUBY_OFFSET_RARRAY_AS_ARY:i32 = 16;  // struct RArray, subfield "as.ary"
+pub const RUBY_OFFSET_RARRAY_AS_HEAP_PTR:i32 = 16;  // struct RArray, subfield "as.heap.ptr"
 
 // TODO: need to dynamically autogenerate constants for all the YARV opcodes from insns.def
 pub const OP_NOP:usize = 0;
