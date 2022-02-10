@@ -41,6 +41,25 @@ fn test_add() {
 }
 
 #[test]
+fn test_add_unsigned() {
+    // ADD r/m8, imm8
+    check_bytes("4180c001", |cb| add(cb, R8B, uimm_opnd(1)));
+    check_bytes("4180c07f", |cb| add(cb, R8B, imm_opnd(i8::MAX.try_into().unwrap())));
+
+    // ADD r/m16, imm16
+    check_bytes("664183c001", |cb| add(cb, R8W, uimm_opnd(1)));
+    check_bytes("664181c0ff7f", |cb| add(cb, R8W, uimm_opnd(i16::MAX.try_into().unwrap())));
+
+    // ADD r/m32, imm32
+    check_bytes("4183c001", |cb| add(cb, R8D, uimm_opnd(1)));
+    check_bytes("4181c0ffffff7f", |cb| add(cb, R8D, uimm_opnd(i32::MAX.try_into().unwrap())));
+
+    // ADD r/m64, imm32
+    check_bytes("4983c001", |cb| add(cb, R8, uimm_opnd(1)));
+    check_bytes("4981c0ffffff7f", |cb| add(cb, R8, uimm_opnd(i32::MAX.try_into().unwrap())));
+}
+
+#[test]
 fn test_and() {
     check_bytes("4421e5", |cb| and(cb, EBP, R12D));
     check_bytes("48832008", |cb| and(cb, mem_opnd(64, RAX, 0), imm_opnd(0x08)));

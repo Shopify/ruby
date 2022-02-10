@@ -674,7 +674,7 @@ fn write_rm(cb: &mut CodeBlock, sz_pref: bool, rex_w: bool, r_opnd: X86Opnd, rm_
 
     // Add the operand-size prefix, if needed
     if sz_pref {
-        cb.write_byte(0x66)
+        cb.write_byte(0x66);
     }
 
     // Add the REX prefix, if needed
@@ -822,6 +822,7 @@ fn write_rm_multi(cb: &mut CodeBlock, op_mem_reg8: u8, op_mem_reg_pref: u8, op_r
         X86Opnd::Reg(reg) => assert!(reg.num_bits == opnd_size),
         X86Opnd::Mem(mem) => assert!(mem.num_bits == opnd_size),
         X86Opnd::Imm(imm) => assert!(imm.num_bits <= opnd_size),
+        X86Opnd::UImm(uimm) => assert!(uimm.num_bits <= opnd_size),
         _ => ()
     };
 
@@ -863,6 +864,30 @@ fn write_rm_multi(cb: &mut CodeBlock, op_mem_reg8: u8, op_mem_reg_pref: u8, op_r
                 assert!(imm.num_bits <= opnd_size);
                 write_rm(cb, sz_pref, rex_w, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm_lrg]);
                 cb.write_int(imm.value as u64, if opnd_size > 32 { 32 } else { opnd_size.into() });
+            } else {
+                panic!("immediate value too large");
+            }
+        },
+        // R/M + UImm
+        (_, X86Opnd::UImm(uimm)) => {
+            let num_bits = sig_imm_size(uimm.value.try_into().unwrap());
+
+            if num_bits <= 8 {
+                // 8-bit immediate
+
+                if opnd_size == 8 {
+                    write_rm(cb, false, false, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm8]);
+                } else {
+                    write_rm(cb, sz_pref, rex_w, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm_sml]);
+                }
+
+                cb.write_int(uimm.value, 8);
+            } else if num_bits <= 32 {
+                // 32-bit immediate
+
+                assert!(num_bits <= opnd_size);
+                write_rm(cb, sz_pref, rex_w, X86Opnd::None, opnd0, op_ext_imm, 1, &[op_mem_imm_lrg]);
+                cb.write_int(uimm.value, if opnd_size > 32 { 32 } else { opnd_size.into() });
             } else {
                 panic!("immediate value too large");
             }
