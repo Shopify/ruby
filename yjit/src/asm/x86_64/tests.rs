@@ -163,6 +163,47 @@ fn test_mov() {
 }
 
 #[test]
+fn test_mov_unsigned() {
+    // MOV AL, moffs8
+    check_bytes("b001", |cb| mov(cb, AL, uimm_opnd(1)));
+    check_bytes("b0ff", |cb| mov(cb, AL, uimm_opnd(u8::MAX.into())));
+
+    // MOV AX, moffs16
+    check_bytes("66b80100", |cb| mov(cb, AX, uimm_opnd(1)));
+    check_bytes("66b8ffff", |cb| mov(cb, AX, uimm_opnd(u16::MAX.into())));
+
+    // MOV EAX, moffs32
+    check_bytes("b801000000", |cb| mov(cb, EAX, uimm_opnd(1)));
+    check_bytes("b8ffffffff", |cb| mov(cb, EAX, uimm_opnd(u32::MAX.into())));
+
+    // MOV RAX, moffs64, will move down into EAX since it fits into 32 bits
+    check_bytes("b801000000", |cb| mov(cb, RAX, uimm_opnd(1)));
+    check_bytes("b8ffffffff", |cb| mov(cb, RAX, uimm_opnd(u32::MAX.into())));
+
+    // MOV RAX, moffs64, will not move down into EAX since it does not fit into 32 bits
+    check_bytes("48b80000000001000000", |cb| mov(cb, RAX, uimm_opnd(u32::MAX as u64 + 1)));
+    check_bytes("48b8ffffffffffffffff", |cb| mov(cb, RAX, uimm_opnd(u64::MAX.into())));
+
+    // MOV r8, imm8
+    check_bytes("41b001", |cb| mov(cb, R8B, uimm_opnd(1)));
+    check_bytes("41b0ff", |cb| mov(cb, R8B, uimm_opnd(u8::MAX.into())));
+
+    // MOV r16, imm16
+    check_bytes("6641b80100", |cb| mov(cb, R8W, uimm_opnd(1)));
+    check_bytes("6641b8ffff", |cb| mov(cb, R8W, uimm_opnd(u16::MAX.into())));
+
+    // MOV r32, imm32
+    check_bytes("41b801000000", |cb| mov(cb, R8D, uimm_opnd(1)));
+    check_bytes("41b8ffffffff", |cb| mov(cb, R8D, uimm_opnd(u32::MAX.into())));
+
+    // MOV r64, imm64, will move down into 32 bit since it fits into 32 bits
+    check_bytes("41b801000000", |cb| mov(cb, R8, uimm_opnd(1)));
+
+    // MOV r64, imm64, will not move down into 32 bit since it does not fit into 32 bits
+    check_bytes("49b8ffffffffffffffff", |cb| mov(cb, R8, uimm_opnd(u64::MAX)));
+}
+
+#[test]
 fn test_movsx() {
     check_bytes("660fbec0", |cb| movsx(cb, AX, AL));
     check_bytes("0fbed0", |cb| movsx(cb, EDX, AL));

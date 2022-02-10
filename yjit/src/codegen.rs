@@ -437,12 +437,8 @@ fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
     pop(cb, REG_EC);
     pop(cb, REG_CFP);
 
-    //mov(cb, RAX, uimm_opnd(Qundef.into()));
+    mov(cb, RAX, uimm_opnd(Qundef.into()));
     ret(cb);
-
-
-    todo!("missing uimm");
-
 
     return code_ptr;
 }
@@ -1137,9 +1133,8 @@ mod tests {
     fn test_gen_exit() {
         let (_, ctx, mut cb, _) = setup_codegen();
 
-        // TODO: missing encoding of uimm operands
-        //gen_exit(0 as *mut VALUE, &ctx, &mut cb);
-        //assert!(cb.get_write_pos() > 0);
+        gen_exit(0 as *mut VALUE, &ctx, &mut cb);
+        assert!(cb.get_write_pos() > 0);
     }
 
     #[test]

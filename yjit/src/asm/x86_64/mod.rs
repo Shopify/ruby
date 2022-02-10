@@ -1201,6 +1201,33 @@ pub fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd) {
                 cb.write_int(imm.value as u64, reg.num_bits.into());
             }
         },
+        // R + UImm
+        (X86Opnd::Reg(reg), X86Opnd::UImm(uimm)) => {
+            assert!(uimm.num_bits <= reg.num_bits);
+
+            // In case the source immediate could be zero extended to be 64
+            // bit, we can use the 32-bit operands version of the instruction.
+            // For example, we can turn mov(rax, 0x34) into the equivalent
+            // mov(eax, 0x34).
+            if (reg.num_bits == 64) && (uimm.value <= u32::MAX.into()) {
+                if dst.rex_needed() {
+                    write_rex(cb, false, 0, 0, reg.reg_no);
+                }
+                write_opcode(cb, 0xB8, reg);
+                cb.write_int(uimm.value, 32);
+            } else {
+                if reg.num_bits == 16 {
+                    cb.write_byte(0x66);
+                }
+
+                if dst.rex_needed() || reg.num_bits == 64 {
+                    write_rex(cb, reg.num_bits == 64, 0, 0, reg.reg_no);
+                }
+
+                write_opcode(cb, if reg.num_bits == 8 { 0xb0 } else { 0xb8 }, reg);
+                cb.write_int(uimm.value, reg.num_bits.into());
+            }
+        },
         // M + Imm
         (X86Opnd::Mem(mem), X86Opnd::Imm(imm)) => {
             assert!(imm.num_bits <= mem.num_bits);
