@@ -99,13 +99,24 @@ extern "C" {
     //pub fn LL2NUM((long long)ocb->write_pos) -> VALUE;
 
     #[link_name = "rb_yarv_insn_len"]
-    pub fn insn_len(v: VALUE) -> std::os::raw::c_int;
+    pub fn raw_insn_len(v: VALUE) -> std::os::raw::c_int;
 
     pub fn rb_hash_new() -> VALUE;
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
 
     #[link_name = "rb_yjit_alloc_exec_mem"] // we can rename functions with this attribute
     pub fn alloc_exec_mem(mem_size: u32) -> *mut u8;
+}
+
+pub fn insn_len(opcode:usize) -> u32
+{
+    #[cfg(test)]
+    panic!("insn_len is a CRuby function, and we don't link against CRuby for Rust testing!");
+
+    #[cfg(not(test))]
+    unsafe {
+        raw_insn_len(VALUE(opcode)).try_into().unwrap()
+    }
 }
 
 #[cfg(not(test))]

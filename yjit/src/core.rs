@@ -546,6 +546,10 @@ impl Context {
         self.sp_offset
     }
 
+    pub fn set_sp_offset(&mut self, offset: i16) {
+        self.sp_offset = offset;
+    }
+
     /// Get an operand for the adjusted stack pointer address
     pub fn sp_opnd(&self, offset_bytes: usize) -> X86Opnd
     {

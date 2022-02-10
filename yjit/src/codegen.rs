@@ -44,7 +44,7 @@ pub struct JITState
     iseq: IseqPtr,
 
     // Index of the current instruction being compiled
-    insn_idx: usize,
+    insn_idx: u32,
 
     // Opcode for the instruction being compiled
     opcode: usize,
@@ -102,7 +102,8 @@ impl JITState {
 
 pub fn jit_get_arg(jit:&JITState, arg_idx:isize) -> VALUE
 {
-    //assert!(arg_idx + 1 < insn_len(jit.get_opcode()));
+    // This assertion only works when linked against CRuby -- avoid in tests
+    //assert!(insn_len(jit.get_opcode()) > (arg_idx + 1).try_into().unwrap());
     unsafe { *(jit.get_pc().offset(arg_idx + 1)) }
 }
 
@@ -147,14 +148,12 @@ jit_obj_info_dump(codeblock_t *cb, x86opnd_t opnd) {
     call_ptr(cb, REG0, (void *)rb_obj_info_dump);
     pop_regs(cb);
 }
-
-// Get the index of the next instruction
-static uint32_t
-jit_next_insn_idx(jitstate_t *jit)
-{
-    return jit->insn_idx + insn_len(jit_get_opcode(jit));
-}
 */
+// Get the index of the next instruction
+fn jit_next_insn_idx(jit: &JITState) -> u32
+{
+    jit.insn_idx + insn_len(jit.get_opcode())
+}
 
 /*
 // Check if we are compiling the instruction at the stub PC
@@ -286,50 +285,46 @@ macro_rules! counted_exit {
 
 
 
-// FIXME: there is no longer a cb on the JITState object, so these
-// should take a &mut CodeBlock argument instead of JITState
-// Should also rename to be no longer jit_*
-//
-/*
 // Save the incremented PC on the CFP
-// This is necessary when calleees can raise or allocate
-static void
-jit_save_pc(jitstate_t *jit, x86opnd_t scratch_reg)
+// This is necessary when callees can raise or allocate
+fn jit_save_pc(jit: &JITState, cb: &mut CodeBlock, scratch_reg: X86Opnd)
 {
-    codeblock_t *cb = jit->cb;
-    mov(cb, scratch_reg, const_ptr_opnd(jit->pc + insn_len(jit->opcode)));
-    mov(cb, mem_opnd(64, REG_CFP, offsetof(rb_control_frame_t, pc)), scratch_reg);
+    let pc: *mut VALUE = jit.get_pc();
+    let ptr: *mut VALUE = unsafe {
+        let cur_insn_len = insn_len(jit.get_opcode()) as isize;
+        pc.offset(cur_insn_len)
+    };
+    mov(cb, scratch_reg, const_ptr_opnd(ptr as *const u8));
+    mov(cb, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_PC), scratch_reg);
 }
 
 // Save the current SP on the CFP
 // This realigns the interpreter SP with the JIT SP
 // Note: this will change the current value of REG_SP,
 //       which could invalidate memory operands
-static void
-jit_save_sp(jitstate_t *jit, ctx_t *ctx)
+fn gen_save_sp(cb: &mut CodeBlock, ctx: &mut Context)
 {
-    if (ctx->sp_offset != 0) {
-        x86opnd_t stack_pointer = ctx_sp_opnd(ctx, 0);
-        codeblock_t *cb = jit->cb;
+    if ctx.get_sp_offset() != 0 {
+        let stack_pointer = ctx.sp_opnd(0);
         lea(cb, REG_SP, stack_pointer);
-        mov(cb, member_opnd(REG_CFP, rb_control_frame_t, sp), REG_SP);
-        ctx->sp_offset = 0;
+        let cfp_sp_opnd = mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SP);
+        mov(cb, cfp_sp_opnd, REG_SP);
+        ctx.set_sp_offset(0);
     }
 }
 
-// jit_save_pc() + jit_save_sp(). Should be used before calling a routine that
+// jit_save_pc() + gen_save_sp(). Should be used before calling a routine that
 // could:
 //  - Perform GC allocation
 //  - Take the VM lock through RB_VM_LOCK_ENTER()
 //  - Perform Ruby method call
-static void
-jit_prepare_routine_call(jitstate_t *jit, ctx_t *ctx, x86opnd_t scratch_reg)
+fn jit_prepare_routine_call(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, scratch_reg: X86Opnd)
 {
-    jit->record_boundary_patch_point = true;
-    jit_save_pc(jit, scratch_reg);
-    jit_save_sp(jit, ctx);
+    jit.record_boundary_patch_point = true;
+    jit_save_pc(jit, cb, scratch_reg);
+    gen_save_sp(cb, ctx);
 }
-
+/*
 // Record the current codeblock write position for rewriting into a jump into
 // the outlined block later. Used to implement global code invalidation.
 static void

@@ -68,6 +68,13 @@ rb_yjit_alloc_exec_mem(uint32_t mem_size)
     return alloc_exec_mem(mem_size);
 }
 
+// Add a wrapper around this const static function so that Rust can see it.
+int
+rb_yarv_insn_len(VALUE insn)
+{
+    return insn_len(insn);
+}
+
 #if YJIT_STATS
 // Comments for generated code
 struct yjit_comment {
