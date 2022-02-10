@@ -15,6 +15,20 @@
 # define YJIT_STATS RUBY_DEBUG
 #endif
 
+// We generate x86 assembly
+#if (defined(__x86_64__) && !defined(_WIN32)) || (defined(_WIN32) && defined(_M_AMD64)) // x64 platforms without mingw/msys
+# define YJIT_SUPPORTED_P 1
+#else
+# define YJIT_SUPPORTED_P 0
+#endif
+
+// Is the output binary going to include YJIT?
+#if USE_MJIT && USE_YJIT && YJIT_SUPPORTED_P
+# define YJIT_BUILD 1
+#else
+# define YJIT_BUILD 0
+#endif
+
 struct rb_yjit_options {
     // Enable compilation with YJIT
     bool yjit_enabled;
@@ -43,6 +57,9 @@ struct rb_yjit_options {
     bool test_backend;
 };
 
+#if YJIT_BUILD
+
+// Expose these as declarations since we are building YJIT.
 bool rb_yjit_enabled_p(void);
 unsigned rb_yjit_call_threshold(void);
 
@@ -62,5 +79,29 @@ void rb_yjit_iseq_free(const struct rb_iseq_constant_body *body);
 void rb_yjit_before_ractor_spawn(void);
 void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic);
 void rb_yjit_tracing_invalidate_all(void);
+#else
+// !YJIT_BUILD
+// In these builds, YJIT could never be turned on. Provide dummy implementations.
+
+static inline bool rb_yjit_enabled_p(void) { return false; }
+static inline unsigned rb_yjit_call_threshold(void) { return UINT_MAX; }
+static inline void rb_yjit_invalidate_all_method_lookup_assumptions(void) {}
+static inline void rb_yjit_method_lookup_change(VALUE klass, ID mid) {}
+static inline void rb_yjit_cme_invalidate(VALUE cme) {}
+static inline void rb_yjit_collect_vm_usage_insn(int insn) {}
+static inline void rb_yjit_collect_binding_alloc(void) {}
+static inline void rb_yjit_collect_binding_set(void) {}
+static inline bool rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec) { return false; }
+static inline void rb_yjit_init(struct rb_yjit_options *options) {}
+static inline void rb_yjit_bop_redefined(VALUE klass, const rb_method_entry_t *me, enum ruby_basic_operators bop) {}
+static inline void rb_yjit_constant_state_changed(void) {}
+static inline void rb_yjit_iseq_mark(const struct rb_iseq_constant_body *body) {}
+static inline void rb_yjit_iseq_update_references(const struct rb_iseq_constant_body *body) {}
+static inline void rb_yjit_iseq_free(const struct rb_iseq_constant_body *body) {}
+static inline void rb_yjit_before_ractor_spawn(void) {}
+static inline void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic) {}
+static inline void rb_yjit_tracing_invalidate_all(void) {}
+
+#endif // #if YJIT_BUILD
 
 #endif // #ifndef YJIT_H

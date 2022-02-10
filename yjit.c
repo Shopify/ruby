@@ -42,6 +42,32 @@ static codeblock_t *cb = NULL;
 static codeblock_t outline_block;
 static codeblock_t *ocb = NULL;
 
+// NOTE: We can trust that uint8_t has no "padding bits" since the C spec
+// guarantees it. Wording about padding bits is more explicit in C11 compared
+// to C99. See C11 7.20.1.1p2. All this is to say we have _some_ standards backing to
+// use a Rust `* u8` to represent a C `* uint8_t`.
+//
+// If we don't want to trust that we can interpreter the C standard correctly, we
+// could outsource that work to the Rust standard library by sticking to fundamental
+// types in C such as int, long, etc. and use `std::os::raw::c_long` and friends on
+// the Rust side.
+//
+// What's up with the long prefix? The "rb_" part is to apease `make leaked-globals`
+// which runs on upstream CI. The rationale for the check is unclear to Alan as
+// we build with `-fvisibility=hidden` so only explicitly marked functions end
+// up as public symbols in libruby.so. Perhaps the check is for the static
+// libruby and or general namspacing hygiene? Alan admits his bias towards ELF
+// platforms and newer compilers.
+//
+// The "_yjit_" part is for trying to be informative. We might want different
+// suffixes for symbols meant for Rust and symbols meant for broader CRuby.
+uint8_t *
+rb_yjit_alloc_exec_mem(uint32_t mem_size)
+{
+    // It's a diff minimization move to wrap instead of rename to export.
+    return alloc_exec_mem(mem_size);
+}
+
 #if YJIT_STATS
 // Comments for generated code
 struct yjit_comment {
@@ -163,31 +189,5 @@ static uint32_t yjit_codepage_frozen_bytes = 0;
 #include "yjit_core.c"
 #include "yjit_iface.c"
 #include "yjit_codegen.c"
-
-#else
-// !JIT_ENABLED || !PLATFORM_SUPPORTED_P
-// In these builds, YJIT could never be turned on. Provide dummy
-// implementations for YJIT functions exposed to the rest of the code base.
-// See yjit.h.
-
-void Init_builtin_yjit(void) {}
-bool rb_yjit_enabled_p(void) { return false; }
-unsigned rb_yjit_call_threshold(void) { return UINT_MAX; }
-void rb_yjit_invalidate_all_method_lookup_assumptions(void) {};
-void rb_yjit_method_lookup_change(VALUE klass, ID mid) {};
-void rb_yjit_cme_invalidate(VALUE cme) {}
-void rb_yjit_collect_vm_usage_insn(int insn) {}
-void rb_yjit_collect_binding_alloc(void) {}
-void rb_yjit_collect_binding_set(void) {}
-bool rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec) { return false; }
-void rb_yjit_init(struct rb_yjit_options *options) {}
-void rb_yjit_bop_redefined(VALUE klass, const rb_method_entry_t *me, enum ruby_basic_operators bop) {}
-void rb_yjit_constant_state_changed(void) {}
-void rb_yjit_iseq_mark(const struct rb_iseq_constant_body *body) {}
-void rb_yjit_iseq_update_references(const struct rb_iseq_constant_body *body) {}
-void rb_yjit_iseq_free(const struct rb_iseq_constant_body *body) {}
-void rb_yjit_before_ractor_spawn(void) {}
-void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic) {}
-void rb_yjit_tracing_invalidate_all(void) {}
 
 #endif // if JIT_ENABLED && PLATFORM_SUPPORTED_P

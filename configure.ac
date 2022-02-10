@@ -3712,6 +3712,7 @@ AC_ARG_ENABLE(yjit,
         [enable experimental in-process JIT compiler that requires Rust build tools [default=no]]),
         [YJIT_SUPPORT=$enableval], [YJIT_SUPPORT=no])
 
+CARGO=
 CARGO_BUILD_ARGS=
 YJIT_LIBS=
 AS_CASE(["${YJIT_SUPPORT}"],
@@ -3732,12 +3733,17 @@ AS_CASE(["${YJIT_SUPPORT}"],
              CARGO_BUILD_ARGS='--release'],
             [rb_rust_target_subdir=debug])
     YJIT_LIBS="yjit/target/${rb_rust_target_subdir}/libyjit.a"
-], [])
+    YJIT_OBJ='yjit.$(OBJEXT)'
+    AC_DEFINE(USE_YJIT, 1)
+], [AC_DEFINE(USE_YJIT, 0)])
 
-AC_SUBST(CARGO)
-AC_SUBST(YJIT_SUPPORT)
-AC_SUBST(CARGO_BUILD_ARGS)
-AC_SUBST(YJIT_LIBS)
+
+dnl These variables end up in ::RbConfig::CONFIG
+AC_SUBST(YJIT_SUPPORT) dnl what flavor of YJIT the Ruby build includes
+AC_SUBST(CARGO) dnl Cargo executable Rust builds
+AC_SUBST(CARGO_BUILD_ARGS) dnl for selecting Rust build profiles
+AC_SUBST(YJIT_LIBS) dnl for optionally building the Rust parts
+AC_SUBST(YJIT_OBJ) dnl for optionally building the C parts
 
 AC_ARG_ENABLE(install-static-library,
 	AS_HELP_STRING([--disable-install-static-library], [do not install static ruby library]),

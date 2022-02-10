@@ -5471,9 +5471,10 @@ impl CodegenGlobals {
     /// Initialize the codegen globals
     pub fn init() {
 
-        // TODO
-        //uint32_t mem_size = rb_yjit_opts.exec_mem_size * 1024 * 1024;
-        //uint8_t *mem_block = alloc_exec_mem(mem_size);
+        // TODO --yjit-exec-mem-size command line option
+        const MEM_SIZE: u32 = 256 * 1024 * 1024;
+        let mem_block: *mut u8 = unsafe { crate::cruby::alloc_exec_mem(MEM_SIZE) };
+        dbg!(mem_block);
 
         /*
         cb = &block;

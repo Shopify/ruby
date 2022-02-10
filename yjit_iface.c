@@ -855,24 +855,6 @@ simulate_oom_bang(rb_execution_context_t *ec, VALUE self)
 #include "yjit.rbinc"
 
 #if YJIT_STATS
-void
-rb_yjit_collect_vm_usage_insn(int insn)
-{
-    yjit_runtime_counters.vm_insns_count++;
-}
-
-void
-rb_yjit_collect_binding_alloc(void)
-{
-    yjit_runtime_counters.binding_allocations++;
-}
-
-void
-rb_yjit_collect_binding_set(void)
-{
-    yjit_runtime_counters.binding_set++;
-}
-
 static const VALUE *
 yjit_count_side_exit_op(const VALUE *exit_pc)
 {
@@ -1237,10 +1219,9 @@ rb_yjit_init(struct rb_yjit_options *options)
         return;
     }
 
-#if 0
-    void init_yjit(void);
-    init_yjit();
-#endif
+    void rb_yjit_init_in_rust(void);
+
+    return rb_yjit_init_in_rust(); // let the Rust do the rest.
 
     rb_yjit_opts = *options;
     rb_yjit_opts.yjit_enabled = true;

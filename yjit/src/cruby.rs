@@ -1,3 +1,82 @@
+//! This module deals with making relevant C functions available to Rust YJIT.
+//! Some C functions we use we maintain, some are public C extension APIs,
+//! some are internal CRuby APIs.
+//!
+//! ## General notes about linking
+//!
+//! The YJIT crate compiles to a native static library, which for our purposes
+//! we can understand as a collection of object files. On ELF platforms at least,
+//! object files can refer to "external symbols" which we could take some
+//! liberty and understand as assembly labels that refer to code defined in other
+//! object files resolved when linking. When we are linking, say to produce miniruby,
+//! the linker resolves and put concrete addresses for each usage of C function in
+//! the Rust static library.
+//!
+//! By declaring external functions and using them, we are asserting the symbols
+//! we use have definition in one of the object files we pass to the linker. Declaring
+//! a function here that has no definition anywhere causes a linking error.
+//!
+//! There are more things going on during linking and this section makes a lot of
+//! simplifications but hopefully this gives a good enough working mental model.
+//!
+//! ## Difference from example in the Rustonomicon
+//!
+//! You might be wondering about why this is different from the [FFI example]
+//! in the Nomicon, an official book about Unsafe Rust.
+//!
+//! There is no #[link] attribute because we are not linking against an external
+//! library, but rather implicitly asserting that we'll supply a concrete definition
+//! for all C functions we call, similar to how pure C projects put functions
+//! across different compilation units and link them together.
+//!
+//! TODO(alan): is the model different enough on Windows that this setup is unworkable?
+//!             Seems prudent to at least learn more about Windows binary tooling before
+//!             committing to a design.
+//!
+//! Alan recommends reading the Nomicon cover to cover as he thinks the book is
+//! not very long in general and especially for something that can save hours of
+//! debugging Undefined Behavior (UB) down the road.
+//!
+//! UBs can cause Safe Rust to crash, at which point it's hard to tell which
+//! usage of `unsafe` in the codebase invokes UB. Providing safe Rust interface
+//! wrapping `unsafe` Rust is a good technique, but requires practice and knowledge
+//! about what's well defined and what's undefined.
+//!
+//! For an extremely advanced example of building safe primitives using Unsafe Rust,
+//! see the [GhostCell] paper. Some parts of the paper assume less background knowledge
+//! than other parts, so there should be learning opportunities in it for all experience
+//! levels.
+//!
+//! ## Binding generation
+//!
+//! For the moment declarations on the Rust side are hand written. The code is boilerplate
+//! and could be generated automatically with a custom tooling that depend on
+//! rust-lang/rust-bindgen. The output Rust code could be checked in to version control
+//! and verified on CI like `make update-deps`.
+//!
+//! Upsides for this design:
+//!  - the YJIT static lib that links with miniruby and friends will not need bindgen
+//!    as a dependency at all. This is an important property so Ruby end users can
+//!    build a YJIT enabled Ruby with no internet connection using a release tarball
+//!  - Less hand-typed boilerplate
+//!  - Helps reduce risk of C definitions and Rust declaration going out of sync since
+//!    CI verifies synchronicity
+//!
+//! Downsides and known unknowns:
+//!  - Using rust-bindgen this way seems unusual. We might be depending on parts
+//!    that the project is not committed to maintaining
+//!  - This setup assumes rust-bindgen gives deterministic output, which can't be taken
+//!    for granted
+//!  - YJIT contributors will need to install libclang on their system to get rust-bindgen
+//!    to work if they want to run the generation tool locally
+//!
+//! The elephant in the room is that we'll still need to use Unsafe Rust to call C functions,
+//! and the binding generation can't magically save us from learning Unsafe Rust.
+//!
+//!
+//! [FFI example]: https://doc.rust-lang.org/nomicon/ffi.html
+//! [GhostCell]: http://plv.mpi-sws.org/rustbelt/ghostcell/
+
 use std::convert::From;
 
 // TODO: For #defines that affect memory layout, we need to check for them
@@ -19,10 +98,14 @@ extern "C" {
     //pub fn ID2SYM(id: VALUE) -> VALUE;
     //pub fn LL2NUM((long long)ocb->write_pos) -> VALUE;
 
-    pub fn insn_len(v : VALUE) -> std::os::raw::c_int;
+    #[link_name = "rb_yarv_insn_len"]
+    pub fn insn_len(v: VALUE) -> std::os::raw::c_int;
 
     pub fn rb_hash_new() -> VALUE;
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
+
+    #[link_name = "rb_yjit_alloc_exec_mem"] // we can rename functions with this attribute
+    pub fn alloc_exec_mem(mem_size: u32) -> *mut u8;
 }
 
 #[cfg(not(test))]

@@ -1,17 +1,28 @@
-use crate::cruby::*;
-use crate::core::*;
+use crate::cruby::{EcPtr, IseqPtr};
 use crate::codegen::*;
+use crate::core::*;
 
 /// This function is called from C code
 /// NOTE: this should be wrapped in RB_VM_LOCK_ENTER(), rb_vm_barrier() on the C side
 #[no_mangle]
-pub extern "C" fn rb_yjit_init() {
+pub extern "C" fn rb_yjit_init_in_rust() {
     println!("Entering init_yjit() function");
+    // Catch panics to avoid UB for unwinding into C frames.
+    // See https://doc.rust-lang.org/nomicon/exception-safety.html
+    // TODO: set a panic handler so the we don't print a message
+    //       everytime we panic.
+    let result = std::panic::catch_unwind(|| {
 
-    CodegenGlobals::init();
+        CodegenGlobals::init();
 
-    // TODO:
-    //Invariants::init() ?
+        // TODO:
+        //Invariants::init() ?
+
+    });
+    if let Err(_) = result {
+        println!("YJIT: init_yjit() panicked. Aborting.");
+        std::process::abort();
+    }
 
     println!("Leaving init_yjit() function");
 }
