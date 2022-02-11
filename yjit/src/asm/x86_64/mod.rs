@@ -658,14 +658,7 @@ fn write_opcode(cb: &mut CodeBlock, opcode: u8, reg: X86Reg) {
 fn write_rm(cb: &mut CodeBlock, sz_pref: bool, rex_w: bool, r_opnd: X86Opnd, rm_opnd: X86Opnd, op_ext: u8, bytes: &[u8]) {
     let op_len = bytes.len();
     assert!(op_len > 0 && op_len <= 3);
-
-    let matched = match r_opnd {
-        X86Opnd::None => Some(()),
-        X86Opnd::Reg(_) => Some(()),
-        _ => None
-    };
-
-    matched.expect("Can only encode an RM instruction with a register or a none");
+    assert!(matches!(r_opnd, X86Opnd::Reg(_) | X86Opnd::None), "Can only encode an RM instruction with a register or a none");
 
     // Flag to indicate the REX prefix is needed
     let need_rex = rex_w || r_opnd.rex_needed() || rm_opnd.rex_needed();
