@@ -102,8 +102,9 @@ impl JITState {
 
 pub fn jit_get_arg(jit:&JITState, arg_idx:isize) -> VALUE
 {
-    // This assertion only works when linked against CRuby -- avoid in tests
-    //assert!(insn_len(jit.get_opcode()) > (arg_idx + 1).try_into().unwrap());
+    // insn_len require non-test config
+    #[cfg(not(test))]
+    assert!(insn_len(jit.get_opcode()) > (arg_idx + 1).try_into().unwrap());
     unsafe { *(jit.get_pc().offset(arg_idx + 1)) }
 }
 
