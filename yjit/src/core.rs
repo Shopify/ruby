@@ -119,7 +119,7 @@ impl Type {
             return 1;
         }
 
-        // Specific type into unknown immediate type is imperfect but valid
+        // Specific immediate type into unknown immediate type is imperfect but valid
         if self.is_imm() && dst == Type::UnknownImm {
             return 1;
         }
@@ -305,7 +305,7 @@ type BranchRef = Rc<RefCell<Branch>>;
 /// List of block versions for a given blockid
 type VersionList = Vec<BlockRef>;
 
-/// Map from iseq indices to lists of versions for that give blockid
+/// Map from iseq indices to lists of versions for that given blockid
 /// An instance of this is stored on each iseq
 type VersionMap = Vec<VersionList>;
 
