@@ -151,11 +151,9 @@ fn test_jo_label() {
 #[test]
 fn test_lea() {
     check_bytes("488d5108", |cb| lea(cb, RDX, mem_opnd(64, RCX, 8)));
-
-    // TODO(kevin)
-    // check_bytes("488d0500000000", |cb| lea(cb, RAX, mem_opnd(8, RIP, 0)));
-    // check_bytes("488d0505000000", |cb| lea(cb, RAX, mem_opnd(8, RIP, 5)));
-    // check_bytes("488d3d05000000", |cb| lea(cb, RDI, mem_opnd(8, RIP, 5)));
+    check_bytes("488d0500000000", |cb| lea(cb, RAX, mem_opnd(8, RIP, 0)));
+    check_bytes("488d0505000000", |cb| lea(cb, RAX, mem_opnd(8, RIP, 5)));
+    check_bytes("488d3d05000000", |cb| lea(cb, RDI, mem_opnd(8, RIP, 5)));
 }
 
 #[test]
@@ -236,6 +234,16 @@ fn test_mov_unsigned() {
 }
 
 #[test]
+fn test_mov_iprel() {
+    check_bytes("8b0500000000", |cb| mov(cb, EAX, mem_opnd(32, RIP, 0)));
+    check_bytes("8b0505000000", |cb| mov(cb, EAX, mem_opnd(32, RIP, 5)));
+
+    check_bytes("488b0500000000", |cb| mov(cb, RAX, mem_opnd(64, RIP, 0)));
+    check_bytes("488b0505000000", |cb| mov(cb, RAX, mem_opnd(64, RIP, 5)));
+    check_bytes("488b3d05000000", |cb| mov(cb, RDI, mem_opnd(64, RIP, 5)));
+}
+
+#[test]
 fn test_movsx() {
     check_bytes("660fbec0", |cb| movsx(cb, AX, AL));
     check_bytes("0fbed0", |cb| movsx(cb, EDX, AL));
@@ -250,7 +258,17 @@ fn test_movsx() {
 #[test]
 fn test_nop() {
     check_bytes("90", |cb| nop(cb, 1));
-    // TODO: we should test some multibyte nop encodings
+    check_bytes("6690", |cb| nop(cb, 2));
+    check_bytes("0f1f00", |cb| nop(cb, 3));
+    check_bytes("0f1f4000", |cb| nop(cb, 4));
+    check_bytes("0f1f440000", |cb| nop(cb, 5));
+    check_bytes("660f1f440000", |cb| nop(cb, 6));
+    check_bytes("0f1f8000000000", |cb| nop(cb, 7));
+    check_bytes("0f1f840000000000", |cb| nop(cb, 8));
+    check_bytes("660f1f840000000000", |cb| nop(cb, 9));
+    check_bytes("660f1f84000000000090", |cb| nop(cb, 10));
+    check_bytes("660f1f8400000000006690", |cb| nop(cb, 11));
+    check_bytes("660f1f8400000000000f1f00", |cb| nop(cb, 12));
 }
 
 #[test]
@@ -352,9 +370,7 @@ fn test_test() {
     check_bytes("4885472a", |cb| test(cb, mem_opnd(64, RDI, 42), RAX));
     check_bytes("4885c0", |cb| test(cb, RAX, RAX));
     check_bytes("4885f0", |cb| test(cb, RAX, RSI));
-
-    // TODO(kevin)
-    // check_bytes("48f74640f7ffffff", |cb| test(cb, mem_opnd(64, RSI, 64), imm_opnd(!0x08)));
+    check_bytes("48f74640f7ffffff", |cb| test(cb, mem_opnd(64, RSI, 64), imm_opnd(!0x08)));
 }
 
 #[test]

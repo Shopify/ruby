@@ -73,7 +73,7 @@ pub struct X86UImm
     value: u64
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RegType
 {
     GP,
@@ -323,15 +323,19 @@ pub fn mem_opnd(num_bits: u8, base_reg: X86Opnd, disp: i32) -> X86Opnd
         _ => unreachable!()
     };
 
-    return X86Opnd::Mem(
-        X86Mem {
-            num_bits: num_bits,
-            base_reg_no: base_reg.reg_no,
-            idx_reg_no: None,
-            scale_exp: 0,
-            disp: disp,
-        }
-    );
+    if base_reg.reg_type == RegType::IP {
+        X86Opnd::IPRel(disp)
+    } else {
+        X86Opnd::Mem(
+            X86Mem {
+                num_bits: num_bits,
+                base_reg_no: base_reg.reg_no,
+                idx_reg_no: None,
+                scale_exp: 0,
+                disp: disp,
+            }
+        )
+    }
 }
 
 /// Memory operand with SIB (Scale Index Base) indexing
@@ -746,6 +750,7 @@ fn write_rm(cb: &mut CodeBlock, sz_pref: bool, rex_w: bool, r_opnd: X86Opnd, rm_
     let rm = match rm_opnd {
         X86Opnd::Reg(reg) => reg.reg_no & 7,
         X86Opnd::Mem(mem) => if need_sib { 4 } else { mem.base_reg_no & 7 },
+        X86Opnd::IPRel(_) => 0b101,
         _ => unreachable!()
     };
 
@@ -779,12 +784,18 @@ fn write_rm(cb: &mut CodeBlock, sz_pref: bool, rex_w: bool, r_opnd: X86Opnd, rm_
     }
 
     // Add the displacement
-    if let X86Opnd::Mem(mem) = rm_opnd {
-        let disp_size = rm_opnd.disp_size();
-        if disp_size > 0 {
-            cb.write_int(mem.disp as u64, disp_size);
-        }
-    }
+    match rm_opnd {
+        X86Opnd::Mem(mem) => {
+            let disp_size = rm_opnd.disp_size();
+            if disp_size > 0 {
+                cb.write_int(mem.disp as u64, disp_size);
+            }
+        },
+        X86Opnd::IPRel(rel) => {
+            cb.write_int(rel as u64, 32);
+        },
+        _ => ()
+    };
 }
 
 // Encode a mul-like single-operand RM instruction
@@ -832,8 +843,8 @@ fn write_rm_multi(cb: &mut CodeBlock, op_mem_reg8: u8, op_mem_reg_pref: u8, op_r
                 write_rm(cb, sz_pref, rex_w, opnd1, opnd0, 0xff, &[op_mem_reg_pref]);
             }
         },
-        // Reg + R/M
-        (X86Opnd::Reg(_), X86Opnd::Mem(_)) => {
+        // Reg + R/M/IPRel
+        (X86Opnd::Reg(_), X86Opnd::Mem(_) | X86Opnd::IPRel(_)) => {
             if opnd_size == 8 {
                 write_rm(cb, false, false, opnd0, opnd1, 0xff, &[op_reg_mem8]);
             } else {
@@ -1594,7 +1605,7 @@ pub fn test(cb: &mut CodeBlock, rm_opnd: X86Opnd, test_opnd: X86Opnd) {
             assert!(rm_num_bits == 64);
 
             write_rm(cb, false, true, X86Opnd::None, rm_opnd, 0x00, &[0xf7]);
-            cb.write_int(imm.value.try_into().unwrap(), 32);
+            cb.write_int(imm.value as u64, 32);
         },
         X86Opnd::Reg(reg) => {
             assert!(reg.num_bits == rm_num_bits);
