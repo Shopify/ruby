@@ -309,7 +309,9 @@ pub const RUBY_IMMEDIATE_MASK:usize = 0x7;
 // Constants from vm_core.h
 pub const VM_SPECIAL_OBJECT_VMCORE:usize = 0x1;
 pub const VM_ENV_DATA_INDEX_SPECVAL:isize = -1;
+pub const VM_ENV_DATA_INDEX_FLAGS:isize = 0;
 pub const VM_ENV_DATA_SIZE:usize = 3;
+pub const VM_ENV_FLAG_WB_REQUIRED:usize = 0x008;
 
 pub const SIZEOF_VALUE: usize = 8;
 

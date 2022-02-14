@@ -1361,7 +1361,7 @@ fn gen_newarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     // Save the PC and SP because we are allocating
     jit_prepare_routine_call(jit, ctx, REG0);
 
-    x86opnd_t values_ptr = ctx_sp_opnd(ctx, -(sizeof(VALUE) * (uint32_t)n));
+    x86opnd_t values_ptr = ctx_sp_opnd(ctx, -(SIZEOF_VALUE * (uint32_t)n));
 
     // call rb_ec_ary_new_from_values(struct rb_execution_context_struct *ec, long n, const VALUE *elts);
     mov(cb, C_ARG_REGS[0], REG_EC);
@@ -1650,6 +1650,91 @@ fn gen_getlocal_wc1(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
     gen_getlocal_generic(ctx, cb, idx.as_u32(), 1)
 }
 
+fn gen_setlocal_wc0(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    /*
+    vm_env_write(const VALUE *ep, int index, VALUE v)
+    {
+        VALUE flags = ep[VM_ENV_DATA_INDEX_FLAGS];
+        if (LIKELY((flags & VM_ENV_FLAG_WB_REQUIRED) == 0)) {
+            VM_STACK_ENV_WRITE(ep, index, v);
+        }
+        else {
+            vm_env_write_slowpath(ep, index, v);
+        }
+    }
+    */
+
+    let slot_idx = jit_get_arg(jit, 0).as_i32();
+    let local_idx = slot_to_local_idx(jit.get_iseq(), slot_idx) as usize;
+
+    // Load environment pointer EP (level 0) from CFP
+    gen_get_ep(cb, REG0, 0);
+
+    // flags & VM_ENV_FLAG_WB_REQUIRED
+    let flags_opnd = mem_opnd(64, REG0, SIZEOF_VALUE as i32 * VM_ENV_DATA_INDEX_FLAGS as i32);
+    test(cb, flags_opnd, imm_opnd(VM_ENV_FLAG_WB_REQUIRED as i64));
+
+    // Create a side-exit to fall back to the interpreter
+    let side_exit = get_side_exit(jit, ocb, ctx);
+
+    // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
+    jnz_ptr(cb, side_exit);
+
+    // Set the type of the local variable in the context
+    let temp_type = ctx.get_opnd_type(InsnOpnd::StackOpnd(0));
+    ctx.set_local_type(local_idx, temp_type);
+
+    // Pop the value to write from the stack
+    let stack_top = ctx.stack_pop(1);
+    mov(cb, REG1, stack_top);
+
+    // Write the value at the environment pointer
+    let offs:i32 = -8 * slot_idx;
+    mov(cb, mem_opnd(64, REG0, offs), REG1);
+
+    KeepCompiling
+}
+
+fn gen_setlocal_generic(jit:&mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb, local_idx:i32, level:u32) -> CodegenStatus
+{
+    // Load environment pointer EP at level
+    gen_get_ep(cb, REG0, level);
+
+    // flags & VM_ENV_FLAG_WB_REQUIRED
+    let flags_opnd = mem_opnd(64, REG0, SIZEOF_VALUE as i32 * VM_ENV_DATA_INDEX_FLAGS as i32);
+    test(cb, flags_opnd, imm_opnd(VM_ENV_FLAG_WB_REQUIRED as i64));
+
+    // Create a side-exit to fall back to the interpreter
+    let side_exit = get_side_exit(jit, ocb, ctx);
+
+    // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
+    jnz_ptr(cb, side_exit);
+
+    // Pop the value to write from the stack
+    let stack_top = ctx.stack_pop(1);
+    mov(cb, REG1, stack_top);
+
+    // Write the value at the environment pointer
+    let offs = -(SIZEOF_VALUE as i32 * local_idx);
+    mov(cb, mem_opnd(64, REG0, offs), REG1);
+
+    KeepCompiling
+}
+
+fn gen_setlocal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    let idx = jit_get_arg(jit, 0).as_i32();
+    let level = jit_get_arg(jit, 1).as_u32();
+    gen_setlocal_generic(jit, ctx, cb, ocb, idx, level)
+}
+
+fn gen_setlocal_wc1(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    let idx = jit_get_arg(jit, 0).as_i32();
+    gen_setlocal_generic(jit, ctx, cb, ocb, idx, 1)
+}
+
 /*
 // new hash initialized from top N values
 fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -1709,68 +1794,6 @@ fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     return YJIT_KEEP_COMPILING;
 }
 
-// Get EP at level from CFP
-static void
-gen_get_ep(codeblock_t *cb, x86opnd_t reg, uint32_t level)
-{
-    // Load environment pointer EP from CFP
-    mov(cb, reg, member_opnd(REG_CFP, rb_control_frame_t, ep));
-
-    while (level--) {
-        // Get the previous EP from the current EP
-        // See GET_PREV_EP(ep) macro
-        // VALUE *prev_ep = ((VALUE *)((ep)[VM_ENV_DATA_INDEX_SPECVAL] & ~0x03))
-        mov(cb, reg, mem_opnd(64, REG0, SIZEOF_VALUE * VM_ENV_DATA_INDEX_SPECVAL));
-        and(cb, reg, imm_opnd(~0x03));
-    }
-}
-
-fn gen_setlocal_wc0(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
-{
-    /*
-    vm_env_write(const VALUE *ep, int index, VALUE v)
-    {
-        VALUE flags = ep[VM_ENV_DATA_INDEX_FLAGS];
-        if (LIKELY((flags & VM_ENV_FLAG_WB_REQUIRED) == 0)) {
-            VM_STACK_ENV_WRITE(ep, index, v);
-        }
-        else {
-            vm_env_write_slowpath(ep, index, v);
-        }
-    }
-    */
-
-    int32_t slot_idx = (int32_t)jit_get_arg(jit, 0);
-    uint32_t local_idx = slot_to_local_idx(jit->iseq, slot_idx);
-
-    // Load environment pointer EP (level 0) from CFP
-    gen_get_ep(cb, REG0, 0);
-
-    // flags & VM_ENV_FLAG_WB_REQUIRED
-    x86opnd_t flags_opnd = mem_opnd(64, REG0, sizeof(VALUE) * VM_ENV_DATA_INDEX_FLAGS);
-    test(cb, flags_opnd, imm_opnd(VM_ENV_FLAG_WB_REQUIRED));
-
-    // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
-
-    // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
-    jnz_ptr(cb, side_exit);
-
-    // Set the type of the local variable in the context
-    val_type_t temp_type = ctx_get_opnd_type(ctx, OPND_STACK(0));
-    ctx_set_local_type(ctx, local_idx, temp_type);
-
-    // Pop the value to write from the stack
-    x86opnd_t stack_top = ctx_stack_pop(ctx, 1);
-    mov(cb, REG1, stack_top);
-
-    // Write the value at the environment pointer
-    const int32_t offs = -8 * slot_idx;
-    mov(cb, mem_opnd(64, REG0, offs), REG1);
-
-    return YJIT_KEEP_COMPILING;
-}
-
 // Push Qtrue or Qfalse depending on whether the given keyword was supplied by
 // the caller
 fn gen_checkkeyword(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -1791,7 +1814,7 @@ fn gen_checkkeyword(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
     gen_get_ep(cb, REG0, 0);
 
     // VALUE kw_bits = *(ep - bits);
-    x86opnd_t bits_opnd = mem_opnd(64, REG0, sizeof(VALUE) * -bits_offset);
+    x86opnd_t bits_opnd = mem_opnd(64, REG0, SIZEOF_VALUE * -bits_offset);
 
     // unsigned int b = (unsigned int)FIX2ULONG(kw_bits);
     // if ((b & (0x01 << idx))) {
@@ -1807,45 +1830,6 @@ fn gen_checkkeyword(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
     mov(cb, stack_ret, REG0);
 
     return YJIT_KEEP_COMPILING;
-}
-
-fn gen_setlocal_generic(jitstate_t *jit, ctx_t *ctx, uint32_t local_idx, uint32_t level)
-{
-    // Load environment pointer EP at level
-    gen_get_ep(cb, REG0, level);
-
-    // flags & VM_ENV_FLAG_WB_REQUIRED
-    x86opnd_t flags_opnd = mem_opnd(64, REG0, sizeof(VALUE) * VM_ENV_DATA_INDEX_FLAGS);
-    test(cb, flags_opnd, imm_opnd(VM_ENV_FLAG_WB_REQUIRED));
-
-    // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
-
-    // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
-    jnz_ptr(cb, side_exit);
-
-    // Pop the value to write from the stack
-    x86opnd_t stack_top = ctx_stack_pop(ctx, 1);
-    mov(cb, REG1, stack_top);
-
-    // Write the value at the environment pointer
-    const int32_t offs = -(SIZEOF_VALUE * local_idx);
-    mov(cb, mem_opnd(64, REG0, offs), REG1);
-
-    return YJIT_KEEP_COMPILING;
-}
-
-fn gen_setlocal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
-{
-    int32_t idx = (int32_t)jit_get_arg(jit, 0);
-    int32_t level = (int32_t)jit_get_arg(jit, 1);
-    return gen_setlocal_generic(jit, ctx, idx, level);
-}
-
-fn gen_setlocal_wc1(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
-{
-    int32_t idx = (int32_t)jit_get_arg(jit, 0);
-    return gen_setlocal_generic(jit, ctx, idx, 1);
 }
 
 static void
@@ -2098,7 +2082,7 @@ fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE co
         mov(cb, REG0, tbl_opnd);
 
         // Read the ivar from the extended table
-        x86opnd_t ivar_opnd = mem_opnd(64, REG0, sizeof(VALUE) * ivar_index);
+        x86opnd_t ivar_opnd = mem_opnd(64, REG0, SIZEOF_VALUE * ivar_index);
         mov(cb, REG0, ivar_opnd);
 
         // Check that the ivar is not Qundef
@@ -2271,7 +2255,7 @@ fn gen_concatstrings(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, 
     // Save the PC and SP because we are allocating
     jit_prepare_routine_call(jit, ctx, REG0);
 
-    x86opnd_t values_ptr = ctx_sp_opnd(ctx, -(sizeof(VALUE) * (uint32_t)n));
+    x86opnd_t values_ptr = ctx_sp_opnd(ctx, SIZEOF_VALUE * (uint32_t)n));
 
     // call rb_str_concat_literals(long n, const VALUE *strings);
     mov(cb, C_ARG_REGS[0], imm_opnd(n));
@@ -3586,8 +3570,8 @@ fn gen_send_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, con
 
     // Stack overflow check
     // #define CHECK_VM_STACK_OVERFLOW0(cfp, sp, margin)
-    // REG_CFP <= REG_SP + 4 * sizeof(VALUE) + sizeof(rb_control_frame_t)
-    lea(cb, REG0, ctx_sp_opnd(ctx, sizeof(VALUE) * 4 + 2 * sizeof(rb_control_frame_t)));
+    // REG_CFP <= REG_SP + 4 * SIZEOF_VALUE + sizeof(rb_control_frame_t)
+    lea(cb, REG0, ctx_sp_opnd(ctx, SIZEOF_VALUE * 4 + 2 * sizeof(rb_control_frame_t)));
     cmp(cb, REG_CFP, REG0);
     jle_ptr(cb, counted_exit!(ocb, side_exit, send_se_cf_overflow));
 
@@ -3607,7 +3591,7 @@ fn gen_send_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, con
 
     // Increment the stack pointer by 3 (in the callee)
     // sp += 3
-    lea(cb, REG0, ctx_sp_opnd(ctx, sizeof(VALUE) * 3));
+    lea(cb, REG0, ctx_sp_opnd(ctx, SIZEOF_VALUE * 3));
 
     // Write method entry at sp[-3]
     // sp[-3] = me;
@@ -3656,7 +3640,7 @@ fn gen_send_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, con
     mov(cb, member_opnd(REG1, rb_control_frame_t, iseq), imm_opnd(0));
     mov(cb, member_opnd(REG1, rb_control_frame_t, block_code), imm_opnd(0));
     mov(cb, member_opnd(REG1, rb_control_frame_t, __bp__), REG0);
-    sub(cb, REG0, imm_opnd(sizeof(VALUE)));
+    sub(cb, REG0, imm_opnd(SIZEOF_VALUE));
     mov(cb, member_opnd(REG1, rb_control_frame_t, ep), REG0);
     mov(cb, REG0, recv);
     mov(cb, member_opnd(REG1, rb_control_frame_t, self), REG0);
@@ -3986,7 +3970,7 @@ fn gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, cons
     // Note that vm_push_frame checks it against a decremented cfp, hence the multiply by 2.
     // #define CHECK_VM_STACK_OVERFLOW0(cfp, sp, margin)
     add_comment(cb, "stack overflow check");
-    lea(cb, REG0, ctx_sp_opnd(ctx, sizeof(VALUE) * (num_locals + iseq->body->stack_max) + 2 * sizeof(rb_control_frame_t)));
+    lea(cb, REG0, ctx_sp_opnd(ctx, SIZEOF_VALUE * (num_locals + iseq->body->stack_max) + 2 * sizeof(rb_control_frame_t)));
     cmp(cb, REG_CFP, REG0);
     jle_ptr(cb, counted_exit!(ocb, side_exit, send_se_cf_overflow));
 
@@ -4106,7 +4090,7 @@ fn gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, cons
 
     // Store the updated SP on the current frame (pop arguments and receiver)
     add_comment(cb, "store caller sp");
-    lea(cb, REG0, ctx_sp_opnd(ctx, sizeof(VALUE) * -(argc + 1)));
+    lea(cb, REG0, ctx_sp_opnd(ctx, SIZEOF_VALUE * -(argc + 1)));
     mov(cb, member_opnd(REG_CFP, rb_control_frame_t, sp), REG0);
 
     // Store the next PC in the current frame
@@ -4121,11 +4105,11 @@ fn gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, cons
     }
 
     // Adjust the callee's stack pointer
-    lea(cb, REG0, ctx_sp_opnd(ctx, sizeof(VALUE) * (3 + num_locals + doing_kw_call)));
+    lea(cb, REG0, ctx_sp_opnd(ctx, SIZEOF_VALUE * (3 + num_locals + doing_kw_call)));
 
     // Initialize local variables to Qnil
     for (int i = 0; i < num_locals; i++) {
-        mov(cb, mem_opnd(64, REG0, sizeof(VALUE) * (i - num_locals - 3)), imm_opnd(Qnil));
+        mov(cb, mem_opnd(64, REG0, SIZEOF_VALUE * (i - num_locals - 3)), imm_opnd(Qnil));
     }
 
     add_comment(cb, "push env");
@@ -4173,7 +4157,7 @@ fn gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, cons
     mov(cb, REG_SP, REG0); // Switch to the callee's REG_SP
     mov(cb, member_opnd(REG_CFP, rb_control_frame_t, sp), REG0);
     mov(cb, member_opnd(REG_CFP, rb_control_frame_t, __bp__), REG0);
-    sub(cb, REG0, imm_opnd(sizeof(VALUE)));
+    sub(cb, REG0, imm_opnd(SIZEOF_VALUE));
     mov(cb, member_opnd(REG_CFP, rb_control_frame_t, ep), REG0);
     jit_mov_gc_ptr(jit, cb, REG0, (VALUE)iseq);
     mov(cb, member_opnd(REG_CFP, rb_control_frame_t, iseq), REG0);
@@ -4778,7 +4762,7 @@ fn gen_toregexp(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     // raise an exception.
     jit_prepare_routine_call(jit, ctx, REG0);
 
-    x86opnd_t values_ptr = ctx_sp_opnd(ctx, -(sizeof(VALUE) * (uint32_t)cnt));
+    x86opnd_t values_ptr = ctx_sp_opnd(ctx, -(SIZEOF_VALUE * (uint32_t)cnt));
     ctx_stack_pop(ctx, cnt);
 
     mov(cb, C_ARG_REGS[0], imm_opnd(0));
@@ -5238,6 +5222,9 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_GETLOCAL => Some(gen_getlocal),
         OP_GETLOCAL_WC_0 => Some(gen_getlocal_wc0),
         OP_GETLOCAL_WC_1 => Some(gen_getlocal_wc1),
+        OP_SETLOCAL => Some(gen_setlocal),
+        OP_SETLOCAL_WC_0 => Some(gen_setlocal_wc0),
+        OP_SETLOCAL_WC_1 => Some(gen_setlocal_wc1),
 
         /*
         yjit_reg_op(BIN(newarray), gen_newarray);
@@ -5249,9 +5236,6 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(newrange), gen_newrange);
         yjit_reg_op(BIN(concatstrings), gen_concatstrings);
         yjit_reg_op(BIN(putstring), gen_putstring);
-        yjit_reg_op(BIN(setlocal), gen_setlocal);
-        yjit_reg_op(BIN(setlocal_WC_0), gen_setlocal_wc0);
-        yjit_reg_op(BIN(setlocal_WC_1), gen_setlocal_wc1);
         yjit_reg_op(BIN(getinstancevariable), gen_getinstancevariable);
         yjit_reg_op(BIN(setinstancevariable), gen_setinstancevariable);
         yjit_reg_op(BIN(defined), gen_defined);
