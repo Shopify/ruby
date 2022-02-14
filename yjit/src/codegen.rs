@@ -5237,7 +5237,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_ADJUSTSTACK => Some(gen_adjuststack),
         OP_GETLOCAL => Some(gen_getlocal),
         OP_GETLOCAL_WC_0 => Some(gen_getlocal_wc0),
-        OP_GETLOCAL_WC_0 => Some(gen_getlocal_wc1),
+        OP_GETLOCAL_WC_1 => Some(gen_getlocal_wc1),
 
         /*
         yjit_reg_op(BIN(newarray), gen_newarray);
