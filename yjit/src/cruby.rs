@@ -110,6 +110,8 @@ extern "C" {
     // TODO: export these functions from the C side
     pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> std::os::raw::c_int;
 
+    pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> std::os::raw::c_uint;
+
     pub fn rb_hash_new() -> VALUE;
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
 }
@@ -223,6 +225,11 @@ impl VALUE {
         i.try_into().unwrap()
     }
 
+    pub fn as_u32(self:VALUE) -> u32 {
+        let VALUE(i) = self;
+        i.try_into().unwrap()
+    }
+
     pub fn as_usize(self:VALUE) -> usize {
         let VALUE(us) = self;
         us as usize
@@ -301,6 +308,8 @@ pub const RUBY_IMMEDIATE_MASK:usize = 0x7;
 
 // Constants from vm_core.h
 pub const VM_SPECIAL_OBJECT_VMCORE:usize = 0x1;
+pub const VM_ENV_DATA_INDEX_SPECVAL:isize = -1;
+pub const VM_ENV_DATA_SIZE:usize = 3;
 
 pub const SIZEOF_VALUE: usize = 8;
 

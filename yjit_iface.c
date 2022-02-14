@@ -533,6 +533,18 @@ block_code(VALUE self)
     );
 }
 
+/* Query the instruction length in bytes for YARV opcode insn */
+int
+rb_yarv_insn_len(VALUE insn)
+{
+    return insn_len(insn);
+}
+
+unsigned int
+get_iseq_body_local_table_size(rb_iseq_t* iseq) {
+    return iseq->body->local_table_size;
+}
+
 /* Get the start index in the Instruction Sequence that corresponds to this
  * YJIT::Block */
 static VALUE

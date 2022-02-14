@@ -78,6 +78,10 @@ impl JITState {
         }
     }
 
+    pub fn get_iseq(self:&JITState) -> IseqPtr {
+        self.iseq
+    }
+
     pub fn get_opcode(self:&JITState) -> usize {
         self.opcode
     }
@@ -1565,6 +1569,87 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
     KeepCompiling
 }
 
+fn gen_getlocal_wc0(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    // Compute the offset from BP to the local
+    let slot_idx = jit_get_arg(jit, 0).as_i32();
+    let offs:i32 = -(SIZEOF_VALUE as i32) * slot_idx;
+    let local_idx = slot_to_local_idx(jit.get_iseq(), slot_idx);
+
+    // Load environment pointer EP (level 0) from CFP
+    gen_get_ep(cb, REG0, 0);
+
+    // Load the local from the EP
+    mov(cb, REG0, mem_opnd(64, REG0, offs));
+
+    // Write the local at SP
+    let stack_top = ctx.stack_push_local(local_idx.try_into().unwrap());
+    mov(cb, stack_top, REG0);
+
+    KeepCompiling
+}
+
+// Compute the index of a local variable from its slot index
+fn slot_to_local_idx(iseq: IseqPtr, slot_idx:i32) -> u32
+{
+    // Convoluted rules from local_var_name() in iseq.c
+    // Equivalent of iseq->body->local_table_size
+    let local_table_size:i32 = unsafe {
+        let val:i32 = get_iseq_body_local_table_size(iseq).try_into().unwrap();
+        val // return values from unsafe blocks don't pick up type inference from let bindings outside the block
+    };
+    let op = slot_idx - (VM_ENV_DATA_SIZE as i32);
+    let local_idx = local_table_size - op - 1;
+    assert!(local_idx >= 0 && local_idx < local_table_size);
+    local_idx.try_into().unwrap()
+}
+
+// Get EP at level from CFP
+fn gen_get_ep(cb:&mut CodeBlock, reg:X86Opnd, level:u32)
+{
+    // Load environment pointer EP from CFP
+    let ep_opnd = mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_EP);
+    mov(cb, reg, ep_opnd);
+
+    for _ in (0..level).rev() {
+        // Get the previous EP from the current EP
+        // See GET_PREV_EP(ep) macro
+        // VALUE *prev_ep = ((VALUE *)((ep)[VM_ENV_DATA_INDEX_SPECVAL] & ~0x03))
+        let offs = (SIZEOF_VALUE as i32) * (VM_ENV_DATA_INDEX_SPECVAL as i32);
+        mov(cb, reg, mem_opnd(64, REG0, offs));
+        and(cb, reg, imm_opnd(!0x03));
+    }
+}
+
+fn gen_getlocal_generic(ctx:&mut Context, cb: &mut CodeBlock, local_idx: u32, level: u32) -> CodegenStatus
+{
+    gen_get_ep(cb, REG0, level);
+
+    // Load the local from the block
+    // val = *(vm_get_ep(GET_EP(), level) - idx);
+    let offs = -(SIZEOF_VALUE as i32 * local_idx as i32);
+    mov(cb, REG0, mem_opnd(64, REG0, offs));
+
+    // Write the local at SP
+    let stack_top = ctx.stack_push(Type::Unknown);
+    mov(cb, stack_top, REG0);
+
+    KeepCompiling
+}
+
+fn gen_getlocal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    let idx = jit_get_arg(jit, 0);
+    let level = jit_get_arg(jit, 1);
+    gen_getlocal_generic(ctx, cb, idx.as_u32(), level.as_u32())
+}
+
+fn gen_getlocal_wc1(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    let idx = jit_get_arg(jit, 0);
+    gen_getlocal_generic(ctx, cb, idx.as_u32(), 1)
+}
+
 /*
 // new hash initialized from top N values
 fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -1650,55 +1735,6 @@ slot_to_local_idx(const rb_iseq_t *iseq, int32_t slot_idx)
     int32_t local_idx = local_idx = local_table_size - op - 1;
     RUBY_ASSERT(local_idx >= 0 && local_idx < local_table_size);
     return (uint32_t)local_idx;
-}
-
-fn gen_getlocal_wc0(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
-{
-    // Compute the offset from BP to the local
-    int32_t slot_idx = (int32_t)jit_get_arg(jit, 0);
-    const int32_t offs = -(SIZEOF_VALUE * slot_idx);
-    uint32_t local_idx = slot_to_local_idx(jit->iseq, slot_idx);
-
-    // Load environment pointer EP (level 0) from CFP
-    gen_get_ep(cb, REG0, 0);
-
-    // Load the local from the EP
-    mov(cb, REG0, mem_opnd(64, REG0, offs));
-
-    // Write the local at SP
-    x86opnd_t stack_top = ctx_stack_push_local(ctx, local_idx);
-    mov(cb, stack_top, REG0);
-
-    return YJIT_KEEP_COMPILING;
-}
-
-fn gen_getlocal_generic(ctx_t *ctx, uint32_t local_idx, uint32_t level)
-{
-    gen_get_ep(cb, REG0, level);
-
-    // Load the local from the block
-    // val = *(vm_get_ep(GET_EP(), level) - idx);
-    const int32_t offs = -(SIZEOF_VALUE * local_idx);
-    mov(cb, REG0, mem_opnd(64, REG0, offs));
-
-    // Write the local at SP
-    x86opnd_t stack_top = ctx_stack_push(ctx, TYPE_UNKNOWN);
-    mov(cb, stack_top, REG0);
-
-    return YJIT_KEEP_COMPILING;
-}
-
-fn gen_getlocal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
-{
-    int32_t idx = (int32_t)jit_get_arg(jit, 0);
-    int32_t level = (int32_t)jit_get_arg(jit, 1);
-    return gen_getlocal_generic(ctx, idx, level);
-}
-
-fn gen_getlocal_wc1(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
-{
-    int32_t idx = (int32_t)jit_get_arg(jit, 0);
-    return gen_getlocal_generic(ctx, idx, 1);
 }
 
 fn gen_setlocal_wc0(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -5211,6 +5247,9 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_SETN => Some(gen_setn),
         OP_TOPN => Some(gen_topn),
         OP_ADJUSTSTACK => Some(gen_adjuststack),
+        OP_GETLOCAL => Some(gen_getlocal),
+        OP_GETLOCAL_WC_0 => Some(gen_getlocal_wc0),
+        OP_GETLOCAL_WC_0 => Some(gen_getlocal_wc1),
 
         /*
         yjit_reg_op(BIN(newarray), gen_newarray);
@@ -5222,9 +5261,6 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(newrange), gen_newrange);
         yjit_reg_op(BIN(concatstrings), gen_concatstrings);
         yjit_reg_op(BIN(putstring), gen_putstring);
-        yjit_reg_op(BIN(getlocal), gen_getlocal);
-        yjit_reg_op(BIN(getlocal_WC_0), gen_getlocal_wc0);
-        yjit_reg_op(BIN(getlocal_WC_1), gen_getlocal_wc1);
         yjit_reg_op(BIN(setlocal), gen_setlocal);
         yjit_reg_op(BIN(setlocal_WC_0), gen_setlocal_wc0);
         yjit_reg_op(BIN(setlocal_WC_1), gen_setlocal_wc1);
