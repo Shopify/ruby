@@ -78,7 +78,7 @@
 //! [GhostCell]: http://plv.mpi-sws.org/rustbelt/ghostcell/
 
 use std::convert::From;
-use std::os::*;
+use std::os::raw::{c_int, c_uint, c_long};
 
 // TODO: For #defines that affect memory layout, we need to check for them
 // on build and fail if they're wrong. e.g. USE_FLONUM *must* be true.
@@ -102,7 +102,7 @@ extern "C" {
     //pub fn LL2NUM((long long)ocb->write_pos) -> VALUE;
 
     #[link_name = "rb_yarv_insn_len"]
-    pub fn raw_insn_len(v: VALUE) -> raw::c_int;
+    pub fn raw_insn_len(v: VALUE) -> c_int;
 
     pub fn ec_get_cfp(ec: EcPtr) -> CfpPtr;
 
@@ -112,18 +112,18 @@ extern "C" {
     pub fn cfp_get_ep(cfp: CfpPtr) -> *mut VALUE;
 
     #[link_name = "rb_iseq_encoded_size"]
-    pub fn get_iseq_encoded_size(iseq: IseqPtr) -> raw::c_uint;
+    pub fn get_iseq_encoded_size(iseq: IseqPtr) -> c_uint;
 
     // TODO: export these functions from the C side
-    pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> raw::c_int;
+    pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> c_int;
 
-    pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> raw::c_uint;
+    pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> c_uint;
 
     pub fn rb_hash_new() -> VALUE;
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
 
     pub fn rb_hash_new_with_size(sz:usize) -> VALUE;
-    pub fn rb_hash_bulk_insert(argc:raw::c_long, argv: *mut u8, hash:VALUE);
+    pub fn rb_hash_bulk_insert(argc:c_long, argv: *mut u8, hash:VALUE);
 }
 
 pub fn insn_len(opcode:usize) -> u32
