@@ -104,6 +104,13 @@ extern "C" {
     #[link_name = "rb_yarv_insn_len"]
     pub fn raw_insn_len(v: VALUE) -> std::os::raw::c_int;
 
+    pub fn ec_get_cfp(ec: EcPtr) -> CfpPtr;
+
+    pub fn cfp_get_pc(cfp: CfpPtr) -> *mut VALUE;
+    pub fn cfp_get_sp(cfp: CfpPtr) -> *mut VALUE;
+    pub fn cfp_get_self(cfp: CfpPtr) -> VALUE;
+    pub fn cfp_get_ep(cfp: CfpPtr) -> *mut VALUE;
+
     #[link_name = "rb_iseq_encoded_size"]
     pub fn get_iseq_encoded_size(iseq: IseqPtr) -> std::os::raw::c_uint;
 
@@ -158,6 +165,11 @@ pub struct IseqPtr(pub usize);
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(C)]
 pub struct EcPtr(pub usize);
+
+/// Pointer to a control frame pointer (CFP)
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(C)]
+pub struct CfpPtr(pub usize);
 
 impl VALUE {
     // Return whether the value is truthy or falsy in Ruby -- only nil and false are falsy.

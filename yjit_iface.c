@@ -545,6 +545,31 @@ get_iseq_body_local_table_size(rb_iseq_t* iseq) {
     return iseq->body->local_table_size;
 }
 
+struct rb_control_frame_struct *
+ec_get_cfp(rb_execution_context_t *ec) {
+    return ec->cfp;
+}
+
+VALUE*
+cfp_get_pc(struct rb_control_frame_struct *cfp) {
+    return cfp->pc;
+}
+
+VALUE*
+cfp_get_sp(struct rb_control_frame_struct *cfp) {
+    return cfp->sp;
+}
+
+VALUE
+cfp_get_self(struct rb_control_frame_struct *cfp) {
+    return cfp->self;
+}
+
+VALUE*
+cfp_get_ep(rb_execution_context_t *ec) {
+    return cfp->ep;
+}
+
 /* Get the start index in the Instruction Sequence that corresponds to this
  * YJIT::Block */
 static VALUE

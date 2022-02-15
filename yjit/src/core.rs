@@ -1,5 +1,6 @@
 use std::rc::{Rc, Weak};
 use std::cell::*;
+use std::ptr;
 use crate::cruby::*;
 use crate::asm::*;
 use crate::asm::x86_64::*;
@@ -85,7 +86,7 @@ impl Type {
     }
 
     /// Check if the type is a heap object
-    fn is_heap(&self) -> bool {
+    pub fn is_heap(&self) -> bool {
         match self {
             Type::UnknownHeap => true,
             Type::Array => true,
@@ -210,6 +211,7 @@ pub struct BlockId
 pub const BLOCKID_NULL: BlockId = BlockId { iseq: IseqPtr(0), idx: 0 };
 
 /// Branch code shape enumeration
+#[derive(PartialEq, Eq, Debug)]
 enum BranchShape
 {
     Next0,  // Target 0 is next
@@ -218,7 +220,7 @@ enum BranchShape
 }
 
 // Branch code generation function signature
-type BranchGenFn = fn(cb: &CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape) -> ();
+type BranchGenFn = fn(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape) -> ();
 
 /// Store info about an outgoing branch in a code segment
 /// Note: care must be taken to minimize the size of branch objects
@@ -1116,7 +1118,7 @@ fn regenerate_branch(cb: &mut CodeBlock, branch: &mut Branch)
 
     cb_set_write_ptr(cb, branch->start_addr);
     branch->gen_fn(cb, branch->dst_addrs[0], branch->dst_addrs[1], branch->shape);
-    branch->end_addr = cb_get_write_ptr(cb);
+    branch->end_addr = cb.get_write_ptr();
 
     if (branch_terminates_block) {
         // Adjust block size
@@ -1227,7 +1229,7 @@ branch_stub_hit(branch_t *branch, const uint32_t target_idx, rb_execution_contex
             bool branch_modified = false;
 
             // If the new block can be generated right after the branch (at cb->write_pos)
-            if (cb_get_write_ptr(cb) == branch->end_addr) {
+            if (cb.get_write_ptr() == branch->end_addr) {
                 // This branch should be terminating its block
                 RUBY_ASSERT(branch->end_addr == branch->block->end_addr);
 
@@ -1375,29 +1377,21 @@ fn gen_branch(
     branch->dst_addrs[1] = ctx1? get_branch_target(target1, ctx1, branch, 1):NULL;
 
     // Call the branch generation function
-    branch->start_addr = cb_get_write_ptr(cb);
+    branch->start_addr = cb.get_write_ptr();
     regenerate_branch(cb, branch);
     */
 }
 
-/*
-static void
-gen_jump_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+fn gen_jump_branch(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
 {
-    switch (shape) {
-      case SHAPE_NEXT0:
-        break;
+    if shape == BranchShape::Next1 {
+        panic!("Branch shape Next1 not allowed in gen_jump_branch!");
+    }
 
-      case SHAPE_NEXT1:
-        RUBY_ASSERT(false);
-        break;
-
-      case SHAPE_DEFAULT:
+    if shape == BranchShape::Default {
         jmp_ptr(cb, target0);
-        break;
     }
 }
-*/
 
 fn gen_direct_jump(
     jit: &JITState,
@@ -1422,60 +1416,52 @@ fn gen_direct_jump(
 
         branch->dst_addrs[0] = p_block->start_addr;
         branch->blocks[0] = p_block;
-        branch->shape = SHAPE_DEFAULT;
+        branch->shape = BranchShape::Default;
 
         // Call the branch generation function
-        branch->start_addr = cb_get_write_ptr(cb);
-        gen_jump_branch(cb, branch->dst_addrs[0], NULL, SHAPE_DEFAULT);
-        branch->end_addr = cb_get_write_ptr(cb);
+        branch->start_addr = cb.get_write_ptr();
+        gen_jump_branch(cb, branch->dst_addrs[0], NULL, BranchShape::Default);
+        branch->end_addr = cb.get_write_ptr();
     }
     else {
         // This NULL target address signals gen_block_series() to compile the
         // target block right after this one (fallthrough).
         branch->dst_addrs[0] = NULL;
-        branch->shape = SHAPE_NEXT0;
-        branch->start_addr = cb_get_write_ptr(cb);
-        branch->end_addr = cb_get_write_ptr(cb);
+        branch->shape = BranchShape::Next0;
+        branch->start_addr = cb.get_write_ptr();
+        branch->end_addr = cb.get_write_ptr();
     }
     */
 }
 
-/*
-// Create a stub to force the code up to this point to be executed
-static void
-defer_compilation(
-    jitstate_t *jit,
-    ctx_t *cur_ctx
-)
+pub fn defer_compilation(jit: &JITState, cb: &mut CodeBlock, cur_ctx: &Context)
 {
-    //fprintf(stderr, "defer compilation at (%p, %d) depth=%d\n", block->blockid.iseq, insn_idx, cur_ctx->chain_depth);
-
-    if (cur_ctx->chain_depth != 0) {
-        rb_bug("double defer");
+    if cur_ctx.chain_depth != 0 {
+        panic!("Double defer!");
     }
 
-    ctx_t next_ctx = *cur_ctx;
+    let mut next_ctx = cur_ctx.clone();
 
-    if (next_ctx.chain_depth >= UINT8_MAX) {
-        rb_bug("max block version chain depth reached");
+    if next_ctx.chain_depth >= u8::MAX {
+        panic!("max block version chain depth reached!");
     }
 
     next_ctx.chain_depth += 1;
 
-    branch_t *branch = make_branch_entry(jit->block, cur_ctx, gen_jump_branch);
+    /*
+    let branch = make_branch_entry(cb, cur_ctx, gen_jump_branch);
 
-    // Get the branch targets or stubs
-    branch->target_ctxs[0] = next_ctx;
-    branch->targets[0] = (blockid_t){ jit->block->blockid.iseq, jit->insn_idx };
-    branch->dst_addrs[0] = get_branch_target(branch->targets[0], &next_ctx, branch, 0);
+    branch.target_ctxs[0] = next_ctx;
+    branch.targets[0] = BlockId { iseq: jit.get_block().blockid.iseq, idx: jit.get_insn_idx() };
+    branch.dst_addrs[0] = Some(get_branch_target(branch.targets[0], &next_ctx, &branch, 0));
 
     // Call the branch generation function
-    codeblock_t *cb = jit->cb;
-    branch->start_addr = cb_get_write_ptr(cb);
-    gen_jump_branch(cb, branch->dst_addrs[0], NULL, SHAPE_DEFAULT);
-    branch->end_addr = cb_get_write_ptr(cb);
+    branch.start_addr = Some(cb.get_write_ptr());
+    gen_jump_branch(cb, branch.dst_addrs[0], CodePtr::from(ptr::null()), BranchShape::Default);
+    branch.end_addr = Some(cb.get_write_ptr());
+    */
+    todo!()
 }
-*/
 
 /*
 // Remove all references to a block then free it.
@@ -1630,7 +1616,7 @@ invalidate_block_version(block_t *block)
             // The new block will no longer be adjacent.
             // Note that we could be enlarging the branch and writing into the
             // start of the block being invalidated.
-            branch->shape = SHAPE_DEFAULT;
+            branch->shape = BranchShape::Default;
         }
 
         // Rewrite the branch with the new jump target address
