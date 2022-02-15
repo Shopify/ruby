@@ -250,6 +250,11 @@ impl VALUE {
         i.try_into().unwrap()
     }
 
+    pub fn as_u64(self:VALUE) -> u64 {
+        let VALUE(i) = self;
+        i.try_into().unwrap()
+    }
+
     pub fn as_usize(self:VALUE) -> usize {
         let VALUE(us) = self;
         us as usize

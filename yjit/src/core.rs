@@ -72,7 +72,7 @@ impl Type {
     }
 
     /// Check if the type is an immediate
-    fn is_imm(&self) -> bool {
+    pub fn is_imm(&self) -> bool {
         match self {
             Type::UnknownImm => true,
             Type::Nil => true,

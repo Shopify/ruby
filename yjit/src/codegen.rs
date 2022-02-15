@@ -2229,59 +2229,59 @@ fn gen_defined(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
 
     KeepCompiling
 }
+*/
 
 fn gen_checktype(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    enum ruby_value_type type_val = (enum ruby_value_type)jit_get_arg(jit, 0);
+    let type_val = jit_get_arg(jit, 0).as_usize();
+
     // Only three types are emitted by compile.c
-    if (type_val == T_STRING || type_val == T_ARRAY || type_val == T_HASH) {
-        val_type_t val_type = ctx.get_opnd_type(StackOpnd(0));
+    if type_val == RUBY_T_STRING || type_val == RUBY_T_ARRAY || type_val == RUBY_T_HASH {
+        let val_type = ctx.get_opnd_type(StackOpnd(0));
         let val = ctx.stack_pop(1);
 
-        x86opnd_t stack_ret;
-
         // Check if we know from type information
-        if ((type_val == T_STRING && val_type.type == ETYPE_STRING) ||
-                (type_val == T_ARRAY && val_type.type == ETYPE_ARRAY) ||
-                (type_val == T_HASH && val_type.type == ETYPE_HASH)) {
+        if (type_val == RUBY_T_STRING && val_type == Type::String) ||
+                (type_val == RUBY_T_ARRAY && val_type == Type::Array) ||
+                (type_val == RUBY_T_HASH && val_type == Type::Hash) {
             // guaranteed type match
-            stack_ret = ctx.stack_push(Type::True);
-            mov(cb, stack_ret, imm_opnd(Qtrue));
+            let stack_ret = ctx.stack_push(Type::True);
+            mov(cb, stack_ret, uimm_opnd(Qtrue.as_u64()));
             return KeepCompiling;
         }
-        else if (val_type.is_imm || val_type.type != ETYPE_UNKNOWN) {
+        else if val_type.is_imm() || val_type != Type::Unknown {
             // guaranteed not to match T_STRING/T_ARRAY/T_HASH
-            stack_ret = ctx.stack_push(Type::False);
-            mov(cb, stack_ret, imm_opnd(Qfalse));
+            let stack_ret = ctx.stack_push(Type::False);
+            mov(cb, stack_ret, uimm_opnd(Qfalse.as_u64()));
             return KeepCompiling;
         }
 
         mov(cb, REG0, val);
-        mov(cb, REG1, imm_opnd(Qfalse));
+        mov(cb, REG1, uimm_opnd(Qfalse.as_u64()));
 
-        uint32_t ret = cb_new_label(cb, "ret");
+        let ret = cb.new_label("ret".to_string());
 
-        if (!val_type.is_heap) {
+        if !val_type.is_heap() {
             // if (SPECIAL_CONST_P(val)) {
             // Return Qfalse via REG1 if not on heap
-            test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK));
+            test(cb, REG0, uimm_opnd(RUBY_IMMEDIATE_MASK as u64));
             jnz_label(cb, ret);
-            cmp(cb, REG0, imm_opnd(Qnil));
+            cmp(cb, REG0, uimm_opnd(Qnil.as_u64()));
             jbe_label(cb, ret);
         }
 
         // Check type on object
-        mov(cb, REG0, mem_opnd(64, REG0, offsetof(struct RBasic, flags)));
-        and(cb, REG0, imm_opnd(RUBY_T_MASK));
-        cmp(cb, REG0, imm_opnd(type_val));
-        mov(cb, REG0, imm_opnd(Qtrue));
+        mov(cb, REG0, mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS));
+        and(cb, REG0, uimm_opnd(RUBY_T_MASK as u64));
+        cmp(cb, REG0, uimm_opnd(type_val as u64));
+        mov(cb, REG0, uimm_opnd(Qtrue.as_u64()));
         // REG1 contains Qfalse from above
         cmove(cb, REG1, REG0);
 
-        cb_write_label(cb, ret);
-        stack_ret = ctx.stack_push(Type::UnknownImm);
+        cb.write_label(ret);
+        let stack_ret = ctx.stack_push(Type::UnknownImm);
         mov(cb, stack_ret, REG1);
-        cb_link_labels(cb);
+        cb.link_labels();
 
         KeepCompiling
     }
@@ -2289,7 +2289,7 @@ fn gen_checktype(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
         CantCompile
     }
 }
-
+/*
 fn gen_concatstrings(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
@@ -5231,6 +5231,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_SETLOCAL_WC_1 => Some(gen_setlocal_wc1),
         OP_OPT_PLUS => Some(gen_opt_plus),
         OP_NEWHASH => Some(gen_newhash),
+        OP_CHECKTYPE => Some(gen_checktype),
 
         /*
         yjit_reg_op(BIN(newarray), gen_newarray);
@@ -5244,12 +5245,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(getinstancevariable), gen_getinstancevariable);
         yjit_reg_op(BIN(setinstancevariable), gen_setinstancevariable);
         yjit_reg_op(BIN(defined), gen_defined);
-        yjit_reg_op(BIN(checktype), gen_checktype);
         yjit_reg_op(BIN(checkkeyword), gen_checkkeyword);
-        yjit_reg_op(BIN(opt_lt), gen_opt_lt);
-        yjit_reg_op(BIN(opt_le), gen_opt_le);
-        yjit_reg_op(BIN(opt_ge), gen_opt_ge);
-        yjit_reg_op(BIN(opt_gt), gen_opt_gt);
         yjit_reg_op(BIN(opt_eq), gen_opt_eq);
         yjit_reg_op(BIN(opt_neq), gen_opt_neq);
         yjit_reg_op(BIN(opt_aref), gen_opt_aref);
