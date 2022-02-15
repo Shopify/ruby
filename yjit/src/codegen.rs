@@ -1786,8 +1786,9 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     if num != 0 {
         // val = rb_hash_new_with_size(num / 2);
         mov(cb, C_ARG_REGS[0], imm_opnd(num / 2));
-        let hn_code_ptr = CodePtr::from(rb_hash_new_with_size as *mut u8);
-        call_ptr(cb, REG0, hn_code_ptr);
+        let hn_code_opnd = const_ptr_opnd(rb_hash_new_with_size as *mut u8);
+        mov(cb, REG0, hn_code_opnd);
+        call(cb, REG0);
 
         // save the allocated hash as we want to push it after insertion
         push(cb, RAX);
@@ -1797,8 +1798,9 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
         mov(cb, C_ARG_REGS[0], imm_opnd(num));
         lea(cb, C_ARG_REGS[1], ctx.stack_opnd((num - 1).try_into().unwrap()));
         mov(cb, C_ARG_REGS[2], RAX);
-        let bi_code_ptr = CodePtr::from(rb_hash_bulk_insert as *mut u8);
-        call_ptr(cb, REG0, bi_code_ptr);
+        let bi_code_opnd = const_ptr_opnd(rb_hash_bulk_insert as *mut u8);
+        mov(cb, REG0, bi_code_opnd);
+        call(cb, REG0);
 
         pop(cb, RAX); // alignment
         pop(cb, RAX);
@@ -1809,8 +1811,9 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     }
     else {
         // val = rb_hash_new();
-        let hn_code_ptr = CodePtr::from(rb_hash_new as *mut u8);
-        call_ptr(cb, REG0, hn_code_ptr);
+        let hn_code_opnd = const_ptr_opnd(rb_hash_new as *mut u8);
+        mov(cb, REG0, hn_code_opnd);
+        call(cb, REG0);
 
         let stack_ret = ctx.stack_push(Type::Hash);
         mov(cb, stack_ret, RAX);
