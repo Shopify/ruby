@@ -1775,19 +1775,19 @@ fn gen_setlocal_wc1(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
     gen_setlocal_generic(jit, ctx, cb, ocb, idx, 1)
 }
 
-/*
 // new hash initialized from top N values
 fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    int32_t num = (int32_t)jit_get_arg(jit, 0);
+    let num:i64 = jit_get_arg(jit, 0).as_i64();
 
     // Save the PC and SP because we are allocating
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
-    if (num) {
+    if num != 0 {
         // val = rb_hash_new_with_size(num / 2);
         mov(cb, C_ARG_REGS[0], imm_opnd(num / 2));
-        call_ptr(cb, REG0, (void *)rb_hash_new_with_size);
+        let hn_code_ptr = CodePtr::from(rb_hash_new_with_size as *mut u8);
+        call_ptr(cb, REG0, hn_code_ptr);
 
         // save the allocated hash as we want to push it after insertion
         push(cb, RAX);
@@ -1795,20 +1795,22 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
 
         // rb_hash_bulk_insert(num, STACK_ADDR_FROM_TOP(num), val);
         mov(cb, C_ARG_REGS[0], imm_opnd(num));
-        lea(cb, C_ARG_REGS[1], ctx.stack_opnd(num - 1));
+        lea(cb, C_ARG_REGS[1], ctx.stack_opnd((num - 1).try_into().unwrap()));
         mov(cb, C_ARG_REGS[2], RAX);
-        call_ptr(cb, REG0, (void *)rb_hash_bulk_insert);
+        let bi_code_ptr = CodePtr::from(rb_hash_bulk_insert as *mut u8);
+        call_ptr(cb, REG0, bi_code_ptr);
 
         pop(cb, RAX); // alignment
         pop(cb, RAX);
 
-        ctx.stack_pop(num);
+        ctx.stack_pop(num.try_into().unwrap());
         let stack_ret = ctx.stack_push(Type::Hash);
         mov(cb, stack_ret, RAX);
     }
     else {
         // val = rb_hash_new();
-        call_ptr(cb, REG0, (void *)rb_hash_new);
+        let hn_code_ptr = CodePtr::from(rb_hash_new as *mut u8);
+        call_ptr(cb, REG0, hn_code_ptr);
 
         let stack_ret = ctx.stack_push(Type::Hash);
         mov(cb, stack_ret, RAX);
@@ -1816,7 +1818,7 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
 
     KeepCompiling
 }
-
+/*
 fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     VALUE put_val = jit_get_arg(jit, 0);
@@ -5228,6 +5230,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_SETLOCAL_WC_0 => Some(gen_setlocal_wc0),
         OP_SETLOCAL_WC_1 => Some(gen_setlocal_wc1),
         OP_OPT_PLUS => Some(gen_opt_plus),
+        OP_NEWHASH => Some(gen_newhash),
 
         /*
         yjit_reg_op(BIN(newarray), gen_newarray);
@@ -5235,7 +5238,6 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(duphash), gen_duphash);
         yjit_reg_op(BIN(splatarray), gen_splatarray);
         yjit_reg_op(BIN(expandarray), gen_expandarray);
-        yjit_reg_op(BIN(newhash), gen_newhash);
         yjit_reg_op(BIN(newrange), gen_newrange);
         yjit_reg_op(BIN(concatstrings), gen_concatstrings);
         yjit_reg_op(BIN(putstring), gen_putstring);

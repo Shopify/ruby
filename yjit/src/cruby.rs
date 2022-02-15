@@ -78,6 +78,7 @@
 //! [GhostCell]: http://plv.mpi-sws.org/rustbelt/ghostcell/
 
 use std::convert::From;
+use std::os::*;
 
 // TODO: For #defines that affect memory layout, we need to check for them
 // on build and fail if they're wrong. e.g. USE_FLONUM *must* be true.
@@ -86,7 +87,6 @@ use std::convert::From;
 // Temporary, these external bindings will likely be auto-generated
 // and textually included in this file
 extern "C" {
-
     #[link_name = "rb_yjit_alloc_exec_mem"] // we can rename functions with this attribute
     pub fn alloc_exec_mem(mem_size: u32) -> *mut u8;
 
@@ -102,7 +102,7 @@ extern "C" {
     //pub fn LL2NUM((long long)ocb->write_pos) -> VALUE;
 
     #[link_name = "rb_yarv_insn_len"]
-    pub fn raw_insn_len(v: VALUE) -> std::os::raw::c_int;
+    pub fn raw_insn_len(v: VALUE) -> raw::c_int;
 
     pub fn ec_get_cfp(ec: EcPtr) -> CfpPtr;
 
@@ -112,15 +112,18 @@ extern "C" {
     pub fn cfp_get_ep(cfp: CfpPtr) -> *mut VALUE;
 
     #[link_name = "rb_iseq_encoded_size"]
-    pub fn get_iseq_encoded_size(iseq: IseqPtr) -> std::os::raw::c_uint;
+    pub fn get_iseq_encoded_size(iseq: IseqPtr) -> raw::c_uint;
 
     // TODO: export these functions from the C side
-    pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> std::os::raw::c_int;
+    pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> raw::c_int;
 
-    pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> std::os::raw::c_uint;
+    pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> raw::c_uint;
 
     pub fn rb_hash_new() -> VALUE;
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
+
+    pub fn rb_hash_new_with_size(sz:usize) -> VALUE;
+    pub fn rb_hash_bulk_insert(argc:raw::c_long, argv: *mut u8, hash:VALUE);
 }
 
 pub fn insn_len(opcode:usize) -> u32
@@ -238,6 +241,11 @@ impl VALUE {
     }
 
     pub fn as_u32(self:VALUE) -> u32 {
+        let VALUE(i) = self;
+        i.try_into().unwrap()
+    }
+
+    pub fn as_i64(self:VALUE) -> i64 {
         let VALUE(i) = self;
         i.try_into().unwrap()
     }
