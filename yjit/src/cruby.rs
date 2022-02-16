@@ -117,6 +117,8 @@ extern "C" {
     #[link_name = "rb_iseq_encoded_size"]
     pub fn get_iseq_encoded_size(iseq: IseqPtr) -> c_uint;
 
+    pub fn get_iseq_body_iseq_encoded(iseq: IseqPtr) -> *mut VALUE;
+
     // TODO: export these functions from the C side
     pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> c_int;
 
@@ -277,6 +279,23 @@ impl From<VALUE> for u64 {
     fn from(value: VALUE) -> Self {
         let VALUE(uimm) = value;
         uimm as u64
+    }
+}
+
+// TODO: write this for parameterized integer types as generic code?
+impl From<VALUE> for i64 {
+    fn from(value: VALUE) -> Self {
+        let VALUE(uimm) = value;
+        assert!(uimm <= (i64::MAX as usize));
+        uimm as i64
+    }
+}
+
+impl From<VALUE> for i32 {
+    fn from(value: VALUE) -> Self {
+        let VALUE(uimm) = value;
+        assert!(uimm <= (i32::MAX as usize));
+        uimm as i32
     }
 }
 

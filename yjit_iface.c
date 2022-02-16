@@ -519,6 +519,11 @@ get_iseq_body_local_table_size(rb_iseq_t* iseq) {
     return iseq->body->local_table_size;
 }
 
+VALUE*
+get_iseq_body_iseq_encoded(rb_iseq_t* iseq) {
+    return iseq->body->iseq_encoded;
+}
+
 struct rb_control_frame_struct *
 ec_get_cfp(rb_execution_context_t *ec) {
     return ec->cfp;

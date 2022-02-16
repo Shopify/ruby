@@ -517,17 +517,17 @@ jit_ensure_block_entry_exit(jitstate_t *jit)
 // assumes the entry point is 0.
 fn gen_pc_guard(cb: &mut CodeBlock, iseq: IseqPtr)
 {
-    todo!();
+    //RUBY_ASSERT(cb != NULL);
 
-    /*
-    RUBY_ASSERT(cb != NULL);
-
-    mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, pc));
-    mov(cb, REG1, const_ptr_opnd(iseq->body->iseq_encoded));
+    let pc_opnd = mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_PC);
+    mov(cb, REG0, pc_opnd);
+    let encoded_iseq: *mut VALUE = unsafe { get_iseq_body_iseq_encoded(iseq) };
+    let encoded_iseq_opnd = const_ptr_opnd(encoded_iseq as *const u8);
+    mov(cb, REG1, encoded_iseq_opnd);
     xor(cb, REG0, REG1);
 
     // xor should impact ZF, so we can jz here
-    uint32_t pc_is_zero = cb_new_label(cb, "pc_is_zero");
+    let pc_is_zero = cb.new_label("pc_is_zero".to_string());
     jz_label(cb, pc_is_zero);
 
     // We're not starting at the first PC, so we need to exit.
@@ -537,13 +537,12 @@ fn gen_pc_guard(cb: &mut CodeBlock, iseq: IseqPtr)
     pop(cb, REG_EC);
     pop(cb, REG_CFP);
 
-    mov(cb, RAX, imm_opnd(Qundef));
+    mov(cb, RAX, imm_opnd(Qundef.into()));
     ret(cb);
 
     // PC should be at the beginning
-    cb_write_label(cb, pc_is_zero);
-    cb_link_labels(cb);
-    */
+    cb.write_label(pc_is_zero);
+    cb.link_labels();
 }
 
 /*
@@ -670,9 +669,9 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     // has optional parameters, we'll add a runtime check that the PC we've
     // compiled for is the same PC that the interpreter wants us to run with.
     // If they don't match, then we'll take a side exit.
-    //if get_iseq_flags_has_opt(iseq) != 0 {
-    //    gen_pc_guard(cb, iseq);
-    //}
+    if unsafe { get_iseq_flags_has_opt(iseq) } != 0 {
+        gen_pc_guard(cb, iseq);
+    }
 
     // Verify MAX_PROLOGUE_SIZE
     assert!(cb.get_write_pos() - old_write_pos <= MAX_PROLOGUE_SIZE);
