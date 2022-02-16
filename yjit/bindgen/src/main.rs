@@ -1,3 +1,4 @@
+//! See https://docs.rs/bindgen/0.59.2/bindgen/struct.Builder.html
 //! This is the binding generation tool that the YJIT cruby module talks about.
 //! More docs later once we have more experience with this, for now, check
 //! the output to make sure it looks reasonable and allowlist things you want
@@ -33,6 +34,12 @@ fn main() {
 
         .allowlist_function("rb_hash_new")
         .allowlist_function("rb_hash_aset")
+
+        // `ruby_value_type` is a C enum and this stops it from
+        // prefixing all the members with the name of the type
+        .prepend_enum_name(false)
+        .translate_enum_integer_types(true) // so we get fixed width Rust types for members
+        .allowlist_type("ruby_value_type") // really old C extension API
 
         .allowlist_function("rb_iseq_(get|set)_yjit_payload")
 

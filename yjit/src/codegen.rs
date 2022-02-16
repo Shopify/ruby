@@ -2222,7 +2222,7 @@ fn gen_defined(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
 
 fn gen_checktype(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    let type_val = jit_get_arg(jit, 0).as_usize();
+    let type_val = jit_get_arg(jit, 0).as_u32();
 
     // Only three types are emitted by compile.c
     if type_val == RUBY_T_STRING || type_val == RUBY_T_ARRAY || type_val == RUBY_T_HASH {

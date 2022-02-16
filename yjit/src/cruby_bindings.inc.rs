@@ -5,6 +5,35 @@ pub struct RBasic {
     pub flags: VALUE,
     pub klass: VALUE,
 }
+pub const RUBY_T_NONE: ruby_value_type = 0;
+pub const RUBY_T_OBJECT: ruby_value_type = 1;
+pub const RUBY_T_CLASS: ruby_value_type = 2;
+pub const RUBY_T_MODULE: ruby_value_type = 3;
+pub const RUBY_T_FLOAT: ruby_value_type = 4;
+pub const RUBY_T_STRING: ruby_value_type = 5;
+pub const RUBY_T_REGEXP: ruby_value_type = 6;
+pub const RUBY_T_ARRAY: ruby_value_type = 7;
+pub const RUBY_T_HASH: ruby_value_type = 8;
+pub const RUBY_T_STRUCT: ruby_value_type = 9;
+pub const RUBY_T_BIGNUM: ruby_value_type = 10;
+pub const RUBY_T_FILE: ruby_value_type = 11;
+pub const RUBY_T_DATA: ruby_value_type = 12;
+pub const RUBY_T_MATCH: ruby_value_type = 13;
+pub const RUBY_T_COMPLEX: ruby_value_type = 14;
+pub const RUBY_T_RATIONAL: ruby_value_type = 15;
+pub const RUBY_T_NIL: ruby_value_type = 17;
+pub const RUBY_T_TRUE: ruby_value_type = 18;
+pub const RUBY_T_FALSE: ruby_value_type = 19;
+pub const RUBY_T_SYMBOL: ruby_value_type = 20;
+pub const RUBY_T_FIXNUM: ruby_value_type = 21;
+pub const RUBY_T_UNDEF: ruby_value_type = 22;
+pub const RUBY_T_IMEMO: ruby_value_type = 26;
+pub const RUBY_T_NODE: ruby_value_type = 27;
+pub const RUBY_T_ICLASS: ruby_value_type = 28;
+pub const RUBY_T_ZOMBIE: ruby_value_type = 29;
+pub const RUBY_T_MOVED: ruby_value_type = 30;
+pub const RUBY_T_MASK: ruby_value_type = 31;
+pub type ruby_value_type = u32;
 extern "C" {
     pub fn rb_hash_new() -> VALUE;
 }
