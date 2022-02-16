@@ -4681,17 +4681,17 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
     EndBlock
 }
 
-/*
 fn gen_getglobal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    ID gid = jit_get_arg(jit, 0);
+    let gid = jit_get_arg(jit, 0);
 
     // Save the PC and SP because we might make a Ruby call for warning
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
-    mov(cb, C_ARG_REGS[0], imm_opnd(gid));
+    mov(cb, C_ARG_REGS[0], imm_opnd(gid.as_i64()));
 
-    call_ptr(cb, REG0, (void *)&rb_gvar_get);
+    let gvar_get = CodePtr::from(rb_gvar_get as *mut u8);
+    call_ptr(cb, REG0, gvar_get);
 
     let top = ctx.stack_push(Type::Unknown);
     mov(cb, top, RAX);
@@ -4701,23 +4701,25 @@ fn gen_getglobal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
 
 fn gen_setglobal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    ID gid = jit_get_arg(jit, 0);
+    let gid = jit_get_arg(jit, 0);
 
     // Save the PC and SP because we might make a Ruby call for
     // Kernel#set_trace_var
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
-    mov(cb, C_ARG_REGS[0], imm_opnd(gid));
+    mov(cb, C_ARG_REGS[0], imm_opnd(gid.as_i64()));
 
     let val = ctx.stack_pop(1);
 
     mov(cb, C_ARG_REGS[1], val);
 
-    call_ptr(cb, REG0, (void *)&rb_gvar_set);
+    let gvar_set = CodePtr::from(rb_gvar_set as *mut u8);
+    call_ptr(cb, REG0, gvar_set);
 
     KeepCompiling
 }
 
+/*
 fn gen_anytostring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Save the PC and SP because we might make a Ruby call for
@@ -5291,9 +5293,9 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         //yjit_reg_op(BIN(invokesuper), gen_invokesuper);
         OP_LEAVE => Some(gen_leave),
 
+        OP_GETGLOBAL => Some(gen_getglobal),
+        OP_SETGLOBAL => Some(gen_setglobal),
         /*
-        yjit_reg_op(BIN(getglobal), gen_getglobal);
-        yjit_reg_op(BIN(setglobal), gen_setglobal);
         yjit_reg_op(BIN(anytostring), gen_anytostring);
         yjit_reg_op(BIN(objtostring), gen_objtostring);
         yjit_reg_op(BIN(toregexp), gen_toregexp);
