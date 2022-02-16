@@ -608,9 +608,9 @@ impl Context {
     }
 
     /// Get an operand for the adjusted stack pointer address
-    pub fn sp_opnd(&self, offset_bytes: usize) -> X86Opnd
+    pub fn sp_opnd(&self, offset_bytes: isize) -> X86Opnd
     {
-        let offset = ((self.sp_offset as usize) * SIZEOF_VALUE) + offset_bytes;
+        let offset = ((self.sp_offset as isize) * (SIZEOF_VALUE as isize)) + offset_bytes;
         let offset = offset as i32;
         return mem_opnd(64, REG_SP, offset);
     }

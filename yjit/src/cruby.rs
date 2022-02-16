@@ -127,13 +127,11 @@ extern "C" {
 
     pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> c_uint;
 
-    pub fn rb_hash_new_with_size(sz:usize) -> VALUE;
-    pub fn rb_hash_bulk_insert(argc:c_long, argv: *mut u8, hash:VALUE);
+    // Even opaque/blocklisting rb_execution_context_t, bindgen pulls in huge amounts of irrelevant definitions from this
+    pub fn rb_ec_ary_new_from_values(ec: EcPtr, n:c_long, elts: *const VALUE) -> VALUE;
 
-    pub fn rb_vm_opt_mod(recv:VALUE, obj:VALUE) -> VALUE;
-
-    pub fn rb_gvar_get(id:usize) -> VALUE;
-    pub fn rb_gvar_set(id:usize, val:VALUE) -> VALUE;
+    // Ruby only defines this in vm_insnhelper.c, which bindgen has trouble using b/c of duplicate definitions
+    pub fn rb_vm_opt_mod(recv:VALUE, obj: VALUE) -> VALUE;
 }
 
 pub fn insn_len(opcode:usize) -> u32
@@ -178,10 +176,16 @@ pub struct VALUE(pub usize);
 /// Pointer to an ISEQ
 pub type IseqPtr = *const rb_iseq_t;
 
-/// Pointer to an execution context (EC)
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+/// Opaque execution-context type
 #[repr(C)]
-pub struct EcPtr(pub usize);
+pub struct rb_execution_context_t {
+    _data: [u8; 0],
+    _marker:
+        core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+}
+
+/// Pointer to an execution context (EC)
+pub type EcPtr = *const rb_execution_context_t;
 
 /// Pointer to a control frame pointer (CFP)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

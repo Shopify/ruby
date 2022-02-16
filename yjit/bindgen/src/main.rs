@@ -33,7 +33,12 @@ fn main() {
         .allowlist_type("RBasic")
 
         .allowlist_function("rb_hash_new")
+        .allowlist_function("rb_hash_new_with_size")
         .allowlist_function("rb_hash_aset")
+        .allowlist_function("rb_hash_resurrect")
+        .allowlist_function("rb_hash_bulk_insert")
+
+        .allowlist_function("rb_ary_resurrect")
 
         // `ruby_value_type` is a C enum and this stops it from
         // prefixing all the members with the name of the type
@@ -50,10 +55,16 @@ fn main() {
         .allowlist_function("rb_iseq_pc_at_idx")
         .allowlist_function("rb_iseq_opcode_at_pc")
 
+        .allowlist_function("rb_gvar_(get|set)")
+
         // We define VALUE manually
         .blocklist_type("VALUE")
         .opaque_type("rb_iseq_t")
         .blocklist_type("rb_iseq_t")
+
+        // rb_execution_context_t should be opaque (TODO: get this actually working)
+        .opaque_type("rb_execution_context_t")
+        .blocklist_type("rb_execution_context_t")
 
         // Finish the builder and generate the bindings.
         .generate()

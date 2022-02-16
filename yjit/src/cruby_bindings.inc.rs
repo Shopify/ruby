@@ -13,6 +13,7 @@ pub const TRUE_REDEFINED_OP_FLAG: u32 = 1024;
 pub const FALSE_REDEFINED_OP_FLAG: u32 = 2048;
 pub const PROC_REDEFINED_OP_FLAG: u32 = 4096;
 pub type __uint32_t = ::std::os::raw::c_uint;
+pub type ID = ::std::os::raw::c_ulong;
 #[repr(C)]
 pub struct RBasic {
     pub flags: VALUE,
@@ -47,11 +48,19 @@ pub const RUBY_T_ZOMBIE: ruby_value_type = 29;
 pub const RUBY_T_MOVED: ruby_value_type = 30;
 pub const RUBY_T_MASK: ruby_value_type = 31;
 pub type ruby_value_type = u32;
+pub type st_data_t = ::std::os::raw::c_ulong;
+pub type st_index_t = st_data_t;
+extern "C" {
+    pub fn rb_ary_resurrect(ary: VALUE) -> VALUE;
+}
 extern "C" {
     pub fn rb_hash_new() -> VALUE;
 }
 extern "C" {
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, val: VALUE) -> VALUE;
+}
+extern "C" {
+    pub fn rb_hash_bulk_insert(argc: ::std::os::raw::c_long, argv: *const VALUE, hash: VALUE);
 }
 pub const BOP_PLUS: ruby_basic_operators = 0;
 pub const BOP_MINUS: ruby_basic_operators = 1;
@@ -95,4 +104,16 @@ extern "C" {
 }
 extern "C" {
     pub fn rb_iseq_opcode_at_pc(iseq: *const rb_iseq_t, pc: *const VALUE) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn rb_hash_new_with_size(size: st_index_t) -> VALUE;
+}
+extern "C" {
+    pub fn rb_hash_resurrect(hash: VALUE) -> VALUE;
+}
+extern "C" {
+    pub fn rb_gvar_get(arg1: ID) -> VALUE;
+}
+extern "C" {
+    pub fn rb_gvar_set(arg1: ID, arg2: VALUE) -> VALUE;
 }

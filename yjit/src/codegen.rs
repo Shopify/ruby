@@ -1380,24 +1380,25 @@ mod tests {
     }
 }
 
-/*
 // new array initialized from top N values
 fn gen_newarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
+    let n = jit_get_arg(jit, 0).as_u32();
 
     // Save the PC and SP because we are allocating
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
-    let values_ptr = ctx.sp_opnd(-(SIZEOF_VALUE * (uint32_t)n));
+    let offset_magnitude = SIZEOF_VALUE as u32 * n;
+    let values_ptr = ctx.sp_opnd(-(offset_magnitude as isize));
 
     // call rb_ec_ary_new_from_values(struct rb_execution_context_struct *ec, long n, const VALUE *elts);
     mov(cb, C_ARG_REGS[0], REG_EC);
-    mov(cb, C_ARG_REGS[1], imm_opnd(n));
+    mov(cb, C_ARG_REGS[1], imm_opnd(n.into()));
     lea(cb, C_ARG_REGS[2], values_ptr);
-    call_ptr(cb, REG0, (void *)rb_ec_ary_new_from_values);
+    let ary_new = CodePtr::from(rb_ec_ary_new_from_values as *mut u8);
+    call_ptr(cb, REG0, ary_new);
 
-    ctx.stack_pop(n);
+    ctx.stack_pop(n as usize);
     let stack_ret = ctx.stack_push(Type::Array);
     mov(cb, stack_ret, RAX);
 
@@ -1407,14 +1408,15 @@ fn gen_newarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 // dup array
 fn gen_duparray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    VALUE ary = jit_get_arg(jit, 0);
+    let ary = jit_get_arg(jit, 0);
 
     // Save the PC and SP because we are allocating
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     // call rb_ary_resurrect(VALUE ary);
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], ary);
-    call_ptr(cb, REG0, (void *)rb_ary_resurrect);
+    let ary_res = CodePtr::from(rb_ary_resurrect as *mut u8);
+    call_ptr(cb, REG0, ary_res);
 
     let stack_ret = ctx.stack_push(Type::Array);
     mov(cb, stack_ret, RAX);
@@ -1425,14 +1427,15 @@ fn gen_duparray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 // dup hash
 fn gen_duphash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    VALUE hash = jit_get_arg(jit, 0);
+    let hash = jit_get_arg(jit, 0);
 
     // Save the PC and SP because we are allocating
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     // call rb_hash_resurrect(VALUE hash);
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], hash);
-    call_ptr(cb, REG0, (void *)rb_hash_resurrect);
+    let hash_res = CodePtr::from(rb_hash_resurrect as *mut u8);
+    call_ptr(cb, REG0, hash_res);
 
     let stack_ret = ctx.stack_push(Type::Hash);
     mov(cb, stack_ret, RAX);
@@ -1440,6 +1443,7 @@ fn gen_duphash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     KeepCompiling
 }
 
+/*
 // call to_a on the array on the stack
 fn gen_splatarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
@@ -1447,7 +1451,7 @@ fn gen_splatarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb
 
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     // Get the operands from the stack
     let ary_opnd = ctx.stack_pop(1);
@@ -1469,7 +1473,7 @@ fn gen_newrange(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     rb_num_t flag = (rb_num_t)jit_get_arg(jit, 0);
 
     // rb_range_new() allocates and can raise
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     // val = rb_range_new(low, high, (int)flag);
     mov(cb, C_ARG_REGS[0], ctx.stack_opnd(1));
@@ -1813,7 +1817,7 @@ fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     VALUE put_val = jit_get_arg(jit, 0);
 
     // Save the PC and SP because the callee will allocate
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     mov(cb, C_ARG_REGS[0], REG_EC);
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[1], put_val);
@@ -1978,7 +1982,7 @@ fn gen_set_ivar(jitstate_t *jit, ctx_t *ctx, VALUE recv, VALUE klass, ID ivar_na
 {
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     // Get the operands from the stack
     let val_opnd = ctx.stack_pop(1);
@@ -2019,7 +2023,7 @@ fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE co
         add_comment(cb, "call rb_ivar_get()");
 
         // The function could raise exceptions.
-        jit_prepare_routine_call(jit, ctx, REG1);
+        jit_prepare_routine_call(jit, ctx, cb, REG1);
 
         mov(cb, C_ARG_REGS[0], REG0);
         mov(cb, C_ARG_REGS[1], imm_opnd((int64_t)ivar_name));
@@ -2164,7 +2168,7 @@ fn gen_setinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeB
 
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     // Get the operands from the stack
     let val_opnd = ctx.stack_pop(1);
@@ -2190,7 +2194,7 @@ fn gen_defined(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
 
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     // Get the operands from the stack
     let v_opnd = ctx.stack_pop(1);
@@ -2285,7 +2289,7 @@ fn gen_concatstrings(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, 
     rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
 
     // Save the PC and SP because we are allocating
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     let values_ptr = ctx.sp_opnd(-(SIZEOF_VALUE * (uint32_t)n));
 
@@ -2621,7 +2625,7 @@ fn gen_opt_aref(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
         mov(cb, C_ARG_REGS[1], key_opnd);
 
         // Prepare to call rb_hash_aref(). It might call #hash on the key.
-        jit_prepare_routine_call(jit, ctx, REG0);
+        jit_prepare_routine_call(jit, ctx, cb, REG0);
 
         call_ptr(cb, REG0, (void *)rb_hash_aref);
 
@@ -2676,7 +2680,7 @@ fn gen_opt_aset(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
         mov(cb, C_ARG_REGS[2], val);
 
         // We might allocate or raise
-        jit_prepare_routine_call(jit, ctx, REG0);
+        jit_prepare_routine_call(jit, ctx, cb, REG0);
 
         call_ptr(cb, REG0, (void *)rb_ary_store);
 
@@ -2705,7 +2709,7 @@ fn gen_opt_aset(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
         mov(cb, C_ARG_REGS[2], val);
 
         // We might allocate or raise
-        jit_prepare_routine_call(jit, ctx, REG0);
+        jit_prepare_routine_call(jit, ctx, cb, REG0);
 
         call_ptr(cb, REG0, (void *)rb_hash_aset);
 
@@ -4724,7 +4728,7 @@ fn gen_anytostring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
 {
     // Save the PC and SP because we might make a Ruby call for
     // Kernel#set_trace_var
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     let str = ctx.stack_pop(1);
     let val = ctx.stack_pop(1);
@@ -4772,7 +4776,7 @@ fn gen_toregexp(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 
     // Save the PC and SP because this allocates an object and could
     // raise an exception.
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     let values_ptr = ctx.sp_opnd(-(SIZEOF_VALUE * (uint32_t)cnt));
     ctx.stack_pop(cnt);
@@ -4820,7 +4824,7 @@ fn gen_getspecial(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb
         // Fetch a "special" backref based on a char encoded by shifting by 1
 
         // Can raise if matchdata uninitialized
-        jit_prepare_routine_call(jit, ctx, REG0);
+        jit_prepare_routine_call(jit, ctx, cb, REG0);
 
         // call rb_backref_get()
         add_comment(cb, "rb_backref_get");
@@ -4857,7 +4861,7 @@ fn gen_getspecial(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb
         // Fetch the N-th match from the last backref based on type shifted by 1
 
         // Can raise if matchdata uninitialized
-        jit_prepare_routine_call(jit, ctx, REG0);
+        jit_prepare_routine_call(jit, ctx, cb, REG0);
 
         // call rb_backref_get()
         add_comment(cb, "rb_backref_get");
@@ -4882,7 +4886,7 @@ rb_vm_getclassvariable(const rb_iseq_t *iseq, const rb_control_frame_t *cfp, ID 
 fn gen_getclassvariable(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb)
 {
     // rb_vm_getclassvariable can raise exceptions.
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     mov(cb, C_ARG_REGS[0], member_opnd(REG_CFP, rb_control_frame_t, iseq));
     mov(cb, C_ARG_REGS[1], REG_CFP);
@@ -4903,7 +4907,7 @@ rb_vm_setclassvariable(const rb_iseq_t *iseq, const rb_control_frame_t *cfp, ID 
 fn gen_setclassvariable(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb)
 {
     // rb_vm_setclassvariable can raise exceptions.
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     mov(cb, C_ARG_REGS[0], member_opnd(REG_CFP, rb_control_frame_t, iseq));
     mov(cb, C_ARG_REGS[1], REG_CFP);
@@ -5028,7 +5032,7 @@ fn gen_invokebuiltin(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, 
     }
 
     // If the calls don't allocate, do they need up to date PC, SP?
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     // Call the builtin func (ec, recv, arg1, arg2, ...)
     mov(cb, C_ARG_REGS[0], REG_EC);
@@ -5065,7 +5069,7 @@ fn gen_opt_invokebuiltin_delegate(jit: &mut JITState, ctx: &mut Context, cb: &mu
     }
 
     // If the calls don't allocate, do they need up to date PC, SP?
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     if (bf->argc > 0) {
         // Load environment pointer EP from CFP
@@ -5242,6 +5246,9 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_OPT_AND => Some(gen_opt_and),
         OP_OPT_OR => Some(gen_opt_or),
         OP_NEWHASH => Some(gen_newhash),
+        OP_DUPHASH => Some(gen_duphash),
+        OP_NEWARRAY => Some(gen_newarray),
+        OP_DUPARRAY => Some(gen_duparray),
         OP_CHECKTYPE => Some(gen_checktype),
         OP_OPT_LT => Some(gen_opt_lt),
         OP_OPT_LE => Some(gen_opt_le),
@@ -5252,9 +5259,6 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_OPT_STR_UMINUS => Some(gen_opt_str_uminus),
 
         /*
-        yjit_reg_op(BIN(newarray), gen_newarray);
-        yjit_reg_op(BIN(duparray), gen_duparray);
-        yjit_reg_op(BIN(duphash), gen_duphash);
         yjit_reg_op(BIN(splatarray), gen_splatarray);
         yjit_reg_op(BIN(expandarray), gen_expandarray);
         yjit_reg_op(BIN(newrange), gen_newrange);
