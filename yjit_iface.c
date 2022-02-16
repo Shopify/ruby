@@ -507,53 +507,6 @@ block_code(VALUE self)
     );
 }
 
-/* Query the instruction length in bytes for YARV opcode insn */
-int
-rb_yarv_insn_len(VALUE insn)
-{
-    return insn_len(insn);
-}
-
-unsigned int
-get_iseq_body_local_table_size(rb_iseq_t* iseq) {
-    return iseq->body->local_table_size;
-}
-
-VALUE*
-get_iseq_body_iseq_encoded(rb_iseq_t* iseq) {
-    return iseq->body->iseq_encoded;
-}
-
-int
-get_iseq_flags_has_opt(rb_iseq_t* iseq) {
-    return iseq->body->param.flags.has_opt;
-}
-
-struct rb_control_frame_struct *
-ec_get_cfp(rb_execution_context_t *ec) {
-    return ec->cfp;
-}
-
-VALUE*
-cfp_get_pc(struct rb_control_frame_struct *cfp) {
-    return cfp->pc;
-}
-
-VALUE*
-cfp_get_sp(struct rb_control_frame_struct *cfp) {
-    return cfp->sp;
-}
-
-VALUE
-cfp_get_self(struct rb_control_frame_struct *cfp) {
-    return cfp->self;
-}
-
-VALUE*
-cfp_get_ep(struct rb_control_frame_struct *cfp) {
-    return cfp->ep;
-}
-
 /* Get the start index in the Instruction Sequence that corresponds to this
  * YJIT::Block */
 static VALUE

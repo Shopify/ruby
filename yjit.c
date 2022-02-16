@@ -112,116 +112,52 @@ rb_iseq_opcode_at_pc(const rb_iseq_t *iseq, const VALUE *pc)
     return rb_vm_insn_addr2opcode((const void *)at_pc);
 }
 
-#if YJIT_STATS
-// Comments for generated code
-struct yjit_comment {
-    uint32_t offset;
-    const char *comment;
-};
+// Query the instruction length in bytes for YARV opcode insn
+int
+rb_yarv_insn_len(VALUE insn)
+{
+    return insn_len(insn);
+}
 
-typedef rb_darray(struct yjit_comment) yjit_comment_array_t;
-static yjit_comment_array_t yjit_code_comments;
+unsigned int
+get_iseq_body_local_table_size(rb_iseq_t* iseq) {
+    return iseq->body->local_table_size;
+}
 
-// Counters for generated code
-#define YJIT_DECLARE_COUNTERS(...) struct rb_yjit_runtime_counters { \
-    int64_t __VA_ARGS__; \
-}; \
-static char yjit_counter_names[] = #__VA_ARGS__;
+VALUE*
+get_iseq_body_iseq_encoded(rb_iseq_t* iseq) {
+    return iseq->body->iseq_encoded;
+}
 
-YJIT_DECLARE_COUNTERS(
-    exec_instruction,
+int
+get_iseq_flags_has_opt(rb_iseq_t* iseq) {
+    return iseq->body->param.flags.has_opt;
+}
 
-    send_keywords,
-    send_kw_splat,
-    send_args_splat,
-    send_block_arg,
-    send_ivar_set_method,
-    send_zsuper_method,
-    send_undef_method,
-    send_optimized_method,
-    send_optimized_method_send,
-    send_optimized_method_call,
-    send_optimized_method_block_call,
-    send_missing_method,
-    send_bmethod,
-    send_refined_method,
-    send_cfunc_ruby_array_varg,
-    send_cfunc_argc_mismatch,
-    send_cfunc_toomany_args,
-    send_cfunc_tracing,
-    send_cfunc_kwargs,
-    send_attrset_kwargs,
-    send_iseq_tailcall,
-    send_iseq_arity_error,
-    send_iseq_only_keywords,
-    send_iseq_kwargs_req_and_opt_missing,
-    send_iseq_kwargs_mismatch,
-    send_iseq_complex_callee,
-    send_not_implemented_method,
-    send_getter_arity,
-    send_se_cf_overflow,
-    send_se_protected_check_failed,
+struct rb_control_frame_struct *
+ec_get_cfp(rb_execution_context_t *ec) {
+    return ec->cfp;
+}
 
-    traced_cfunc_return,
+VALUE*
+cfp_get_pc(struct rb_control_frame_struct *cfp) {
+    return cfp->pc;
+}
 
-    invokesuper_me_changed,
-    invokesuper_block,
+VALUE*
+cfp_get_sp(struct rb_control_frame_struct *cfp) {
+    return cfp->sp;
+}
 
-    leave_se_interrupt,
-    leave_interp_return,
-    leave_start_pc_non_zero,
+VALUE
+cfp_get_self(struct rb_control_frame_struct *cfp) {
+    return cfp->self;
+}
 
-    getivar_se_self_not_heap,
-    getivar_idx_out_of_range,
-    getivar_megamorphic,
-
-    setivar_se_self_not_heap,
-    setivar_idx_out_of_range,
-    setivar_val_heapobject,
-    setivar_name_not_mapped,
-    setivar_not_object,
-    setivar_frozen,
-
-    oaref_argc_not_one,
-    oaref_arg_not_fixnum,
-
-    opt_getinlinecache_miss,
-
-    binding_allocations,
-    binding_set,
-
-    vm_insns_count,
-    compiled_iseq_count,
-    compiled_block_count,
-    compilation_failure,
-
-    exit_from_branch_stub,
-
-    invalidation_count,
-    invalidate_method_lookup,
-    invalidate_bop_redefined,
-    invalidate_ractor_spawn,
-    invalidate_constant_state_bump,
-    invalidate_constant_ic_fill,
-
-    constant_state_bumps,
-
-    expandarray_splat,
-    expandarray_postarg,
-    expandarray_not_array,
-    expandarray_rhs_too_small,
-
-    gbpp_block_param_modified,
-    gbpp_block_handler_not_iseq,
-
-    // Member with known name for iterating over counters
-    last_member
-)
-
-static struct rb_yjit_runtime_counters yjit_runtime_counters = { 0 };
-#undef YJIT_DECLARE_COUNTERS
-
-#endif // YJIT_STATS
+VALUE*
+cfp_get_ep(struct rb_control_frame_struct *cfp) {
+    return cfp->ep;
+}
 
 // The number of bytes counting from the beginning of the inline code block
 // that should not be changed. After patching for global invalidation, no one
