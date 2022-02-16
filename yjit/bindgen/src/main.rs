@@ -41,6 +41,10 @@ fn main() {
         .translate_enum_integer_types(true) // so we get fixed width Rust types for members
         .allowlist_type("ruby_value_type") // really old C extension API
 
+        // Constants defined in vm_core.h
+        .allowlist_type("ruby_basic_operators")
+        .allowlist_var(".*_REDEFINED_OP_FLAG")
+
         .allowlist_function("rb_iseq_(get|set)_yjit_payload")
 
         .allowlist_function("rb_iseq_pc_at_idx")
