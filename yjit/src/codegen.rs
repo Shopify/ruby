@@ -251,7 +251,7 @@ macro_rules! gen_counter_incr {
 
             // Use REG1 because there might be return value in REG0
             mov(cb, REG1, const_ptr_opnd(ptr));
-            cb_write_lock_prefix(cb); // for ractors.
+            cb.write_lock_prefix(); // for ractors.
             add(cb, mem_opnd(64, REG1, 0), imm_opnd(1));
         }
     };
@@ -2468,7 +2468,7 @@ gen_equality_specialized(jitstate_t *jit, ctx_t *ctx, uint8_t *side_exit)
         mov(cb, REG0, C_ARG_REGS[0]);
         jit_guard_known_klass(jit, ctx, rb_cString, StackOpnd(1), comptime_a, SEND_MAX_DEPTH, side_exit);
 
-        uint32_t ret = cb_new_label(cb, "ret");
+        let ret = cb.new_label("ret");
 
         // If they are equal by identity, return true
         cmp(cb, C_ARG_REGS[0], C_ARG_REGS[1]);
@@ -5126,11 +5126,11 @@ rb_yjit_tracing_invalidate_all(void)
     const uint32_t old_pos = cb->write_pos;
     rb_darray_for(global_inval_patches, patch_idx) {
         struct codepage_patch patch = rb_darray_get(global_inval_patches, patch_idx);
-        cb_set_pos(cb, patch.inline_patch_pos);
+        cb.set_pos(patch.inline_patch_pos);
         uint8_t *jump_target = cb_get_ptr(ocb, patch.outlined_target_pos);
         jmp_ptr(cb, jump_target);
     }
-    cb_set_pos(cb, old_pos);
+    cb.set_pos(old_pos);
 
     // Freeze invalidated part of the codepage. We only want to wait for
     // running instances of the code to exit from now on, so we shouldn't
