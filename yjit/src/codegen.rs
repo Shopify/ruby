@@ -386,8 +386,8 @@ verify_ctx(jitstate_t *jit, ctx_t *ctx)
             }
         }
 
-        if (type_diff(detected, learned.type) == INT_MAX) {
-            rb_bug("verify_ctx: ctx type (%s) incompatible with actual value on stack: %s", yjit_type_name(learned.type), rb_obj_info(val));
+        if (type_diff(detected, learned) == INT_MAX) {
+            rb_bug("verify_ctx: ctx type (%s) incompatible with actual value on stack: %s", yjit_type_name(learned), rb_obj_info(val));
         }
     }
 
@@ -3197,8 +3197,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
 
     if (known_klass == rb_cNilClass) {
         RUBY_ASSERT(!val_type.is_heap);
-        if (val_type.type != ETYPE_NIL) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::Nil) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is nil");
             cmp(cb, REG0, imm_opnd(Qnil));
@@ -3209,8 +3209,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
     }
     else if (known_klass == rb_cTrueClass) {
         RUBY_ASSERT(!val_type.is_heap);
-        if (val_type.type != ETYPE_TRUE) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::True) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is true");
             cmp(cb, REG0, imm_opnd(Qtrue));
@@ -3221,8 +3221,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
     }
     else if (known_klass == rb_cFalseClass) {
         RUBY_ASSERT(!val_type.is_heap);
-        if (val_type.type != ETYPE_FALSE) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::False) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is false");
             STATIC_ASSERT(qfalse_is_zero, Qfalse == 0);
@@ -3236,8 +3236,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
         RUBY_ASSERT(!val_type.is_heap);
         // We will guard fixnum and bignum as though they were separate classes
         // BIGNUM can be handled by the general else case below
-        if (val_type.type != ETYPE_FIXNUM || !val_type.is_imm) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::Fixnum || !val_type.is_imm) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is fixnum");
             test(cb, REG0, imm_opnd(RUBY_FIXNUM_FLAG));
@@ -3249,8 +3249,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
         RUBY_ASSERT(!val_type.is_heap);
         // We will guard STATIC vs DYNAMIC as though they were separate classes
         // DYNAMIC symbols can be handled by the general else case below
-        if (val_type.type != ETYPE_SYMBOL || !val_type.is_imm) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::ImmSymbol || !val_type.is_imm) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is static symbol");
             STATIC_ASSERT(special_shift_is_8, RUBY_SPECIAL_SHIFT == 8);
@@ -3261,8 +3261,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
     }
     else if (known_klass == rb_cFloat && FLONUM_P(sample_instance)) {
         RUBY_ASSERT(!val_type.is_heap);
-        if (val_type.type != ETYPE_FLONUM || !val_type.is_imm) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::Flonum || !val_type.is_imm) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             // We will guard flonum vs heap float as though they were separate classes
             add_comment(cb, "guard object is flonum");
@@ -3369,14 +3369,14 @@ jit_rb_obj_not(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const 
 {
     const val_type_t recv_opnd = ctx.get_opnd_type(StackOpnd(0));
 
-    if (recv_opnd.type == ETYPE_NIL || recv_opnd.type == ETYPE_FALSE) {
+    if (recv_opnd == Type::Nil || recv_opnd == Type::False) {
         add_comment(cb, "rb_obj_not(nil_or_false)");
         ctx.stack_pop(1);
         let out_opnd = ctx.stack_push(Type::True);
         mov(cb, out_opnd, imm_opnd(Qtrue));
     }
-    else if (recv_opnd.is_heap || recv_opnd.type != ETYPE_UNKNOWN) {
-        // Note: recv_opnd.type != ETYPE_NIL && recv_opnd.type != ETYPE_FALSE.
+    else if (recv_opnd.is_heap || recv_opnd != Type::Unknown) {
+        // Note: recv_opnd != Type::Nil && recv_opnd != Type::False.
         add_comment(cb, "rb_obj_not(truthy)");
         ctx.stack_pop(1);
         let out_opnd = ctx.stack_push(Type::False);
