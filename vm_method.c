@@ -131,6 +131,9 @@ rb_clear_constant_cache(void)
 {
     rb_yjit_constant_state_changed();
     INC_GLOBAL_CONSTANT_STATE();
+    if (RB_TEST((*rb_const_cache_debug_ptr()))) {
+        rb_warn("rb_clear_constant_cache");
+    }
 }
 
 static void

@@ -1556,6 +1556,7 @@ rb_ractor_living_threads_init(rb_ractor_t *r)
 static void
 ractor_init(rb_ractor_t *r, VALUE name, VALUE loc)
 {
+    r->const_cache_debug = Qfalse;
     ractor_queue_setup(&r->sync.incoming_queue);
     rb_native_mutex_initialize(&r->sync.lock);
     rb_native_cond_initialize(&r->sync.cond);
@@ -1604,6 +1605,7 @@ ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VAL
     rb_ractor_t *cr = rb_ec_ractor_ptr(ec);
     r->verbose = cr->verbose;
     r->debug = cr->debug;
+    r->const_cache_debug = cr->const_cache_debug;
 
     rb_yjit_before_ractor_spawn();
     rb_thread_create_ractor(r, args, block);

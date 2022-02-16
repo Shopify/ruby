@@ -2667,9 +2667,22 @@ debug_setter(VALUE val, ID id, VALUE *dmy)
     *rb_ruby_debug_ptr() = val;
 }
 
+static VALUE
+const_cache_debug_getter(ID id, VALUE *dmy)
+{
+    return *rb_const_cache_debug_ptr();
+}
+
+static void
+const_cache_debug_setter(VALUE val, ID id, VALUE *dmy)
+{
+    *rb_const_cache_debug_ptr() = val;
+}
+
 void
 ruby_prog_init(void)
 {
+    rb_define_virtual_variable("$CONST_CACHE_DEBUG", const_cache_debug_getter, const_cache_debug_setter);
     rb_define_virtual_variable("$VERBOSE", verbose_getter, verbose_setter);
     rb_define_virtual_variable("$-v",      verbose_getter, verbose_setter);
     rb_define_virtual_variable("$-w",      verbose_getter, verbose_setter);
