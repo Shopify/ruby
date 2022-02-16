@@ -2881,16 +2881,15 @@ fn gen_opt_div(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     // Delegate to send, call the method on the recv
     return gen_opt_send_without_block(jit, ctx, cb);
 }
-
-VALUE rb_vm_opt_mod(VALUE recv, VALUE obj);
+*/
 
 fn gen_opt_mod(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Save the PC and SP because the callee may allocate bignums
     // Note that this modifies REG_SP, which is why we do it first
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
-    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+    let side_exit = get_side_exit(jit, ocb, ctx);
 
     // Get the operands from the stack
     let arg1 = ctx.stack_pop(1);
@@ -2899,10 +2898,11 @@ fn gen_opt_mod(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     // Call rb_vm_opt_mod(VALUE recv, VALUE obj)
     mov(cb, C_ARG_REGS[0], arg0);
     mov(cb, C_ARG_REGS[1], arg1);
-    call_ptr(cb, REG0, (void *)rb_vm_opt_mod);
+    let vm_mod = CodePtr::from(rb_vm_opt_mod as *mut u8);
+    call_ptr(cb, REG0, vm_mod);
 
     // If val == Qundef, bail to do a method call
-    cmp(cb, RAX, imm_opnd(Qundef));
+    cmp(cb, RAX, imm_opnd(Qundef.as_i64()));
     je_ptr(cb, side_exit);
 
     // Push the return value onto the stack
@@ -2912,6 +2912,7 @@ fn gen_opt_mod(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     KeepCompiling
 }
 
+/*
 fn gen_opt_ltlt(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Delegate to send, call the method on the recv
@@ -5247,6 +5248,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_OPT_LE => Some(gen_opt_le),
         OP_OPT_GT => Some(gen_opt_gt),
         OP_OPT_GE => Some(gen_opt_ge),
+        OP_OPT_MOD => Some(gen_opt_mod),
 
         /*
         yjit_reg_op(BIN(newarray), gen_newarray);
@@ -5267,7 +5269,6 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(opt_aset), gen_opt_aset);
         yjit_reg_op(BIN(opt_mult), gen_opt_mult);
         yjit_reg_op(BIN(opt_div), gen_opt_div);
-        yjit_reg_op(BIN(opt_mod), gen_opt_mod);
         yjit_reg_op(BIN(opt_ltlt), gen_opt_ltlt);
         yjit_reg_op(BIN(opt_nil_p), gen_opt_nil_p);
         yjit_reg_op(BIN(opt_empty_p), gen_opt_empty_p);

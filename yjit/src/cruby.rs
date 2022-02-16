@@ -124,6 +124,8 @@ extern "C" {
 
     pub fn rb_hash_new_with_size(sz:usize) -> VALUE;
     pub fn rb_hash_bulk_insert(argc:c_long, argv: *mut u8, hash:VALUE);
+
+    pub fn rb_vm_opt_mod(recv:VALUE, obj:VALUE) -> VALUE;
 }
 
 pub fn insn_len(opcode:usize) -> u32
