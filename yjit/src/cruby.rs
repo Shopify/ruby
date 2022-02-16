@@ -371,16 +371,6 @@ pub const RUBY_OFFSET_RARRAY_AS_HEAP_LEN:i32 = 16;  // struct RArray, subfield "
 pub const RUBY_OFFSET_RARRAY_AS_ARY:i32 = 16;  // struct RArray, subfield "as.ary"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_PTR:i32 = 16;  // struct RArray, subfield "as.heap.ptr"
 
-// vm_core.h, enum ruby_basic_operators
-pub const BOP_PLUS: usize = 0;
-pub const BOP_MINUS: usize = 1;
-// ... more to export ...
-
-// Defined in vm_core.h
-pub const INTEGER_REDEFINED_OP_FLAG: usize = 1 << 0;
-pub const FLOAT_REDEFINED_OP_FLAG: usize = 1 << 1;
-// ... more to export ...
-
 // Constants from rb_control_frame_t vm_core.h
 pub const RUBY_OFFSET_CFP_PC: i32 = 0;
 pub const RUBY_OFFSET_CFP_SP: i32 = 8;
