@@ -445,6 +445,8 @@ VALUE *rb_ruby_verbose_ptr(void);
  */
 VALUE *rb_ruby_debug_ptr(void);
 
+VALUE *rb_const_cache_debug_ptr(void);
+
 /**
  * This variable  controls whether the  interpreter is in debug  mode.  Setting
  * this  to  some truthy  value  is  equivalent to  passing  `-W`  flag to  the

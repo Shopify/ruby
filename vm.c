@@ -3865,6 +3865,13 @@ rb_ruby_verbose_ptr(void)
 }
 
 VALUE *
+rb_const_cache_debug_ptr(void)
+{
+    rb_ractor_t *cr = GET_RACTOR();
+    return &cr->const_cache_debug;
+}
+
+VALUE *
 rb_ruby_debug_ptr(void)
 {
     rb_ractor_t *cr = GET_RACTOR();
