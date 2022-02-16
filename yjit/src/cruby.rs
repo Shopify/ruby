@@ -77,6 +77,9 @@
 //! [FFI example]: https://doc.rust-lang.org/nomicon/ffi.html
 //! [GhostCell]: http://plv.mpi-sws.org/rustbelt/ghostcell/
 
+// CRuby types use snake_case. Allow them so we use one name across languages.
+#![allow(non_camel_case_types)]
+
 use std::convert::From;
 use std::os::raw::{c_int, c_uint, c_long};
 
