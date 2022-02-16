@@ -2930,14 +2930,17 @@ fn gen_opt_empty_p(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
     // Delegate to send, call the method on the recv
     return gen_opt_send_without_block(jit, ctx, cb);
 }
+*/
 
 fn gen_opt_str_freeze(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
+    /*
     if (!assume_bop_not_redefined(jit, STRING_REDEFINED_OP_FLAG, BOP_FREEZE)) {
         return CantCompile;
     }
+    */
 
-    VALUE str = jit_get_arg(jit, 0);
+    let str = jit_get_arg(jit, 0);
     jit_mov_gc_ptr(jit, cb, REG0, str);
 
     // Push the return value onto the stack
@@ -2949,11 +2952,13 @@ fn gen_opt_str_freeze(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock,
 
 fn gen_opt_str_uminus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
+    /*
     if (!assume_bop_not_redefined(jit, STRING_REDEFINED_OP_FLAG, BOP_UMINUS)) {
         return CantCompile;
     }
+    */
 
-    VALUE str = jit_get_arg(jit, 0);
+    let str = jit_get_arg(jit, 0);
     jit_mov_gc_ptr(jit, cb, REG0, str);
 
     // Push the return value onto the stack
@@ -2963,6 +2968,7 @@ fn gen_opt_str_uminus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock,
     KeepCompiling
 }
 
+/*
 fn gen_opt_not(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     return gen_opt_send_without_block(jit, ctx, cb);
@@ -5249,6 +5255,8 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_OPT_GT => Some(gen_opt_gt),
         OP_OPT_GE => Some(gen_opt_ge),
         OP_OPT_MOD => Some(gen_opt_mod),
+        OP_OPT_STR_FREEZE => Some(gen_opt_str_freeze),
+        OP_OPT_STR_UMINUS => Some(gen_opt_str_uminus),
 
         /*
         yjit_reg_op(BIN(newarray), gen_newarray);
@@ -5272,8 +5280,6 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(opt_ltlt), gen_opt_ltlt);
         yjit_reg_op(BIN(opt_nil_p), gen_opt_nil_p);
         yjit_reg_op(BIN(opt_empty_p), gen_opt_empty_p);
-        yjit_reg_op(BIN(opt_str_freeze), gen_opt_str_freeze);
-        yjit_reg_op(BIN(opt_str_uminus), gen_opt_str_uminus);
         yjit_reg_op(BIN(opt_not), gen_opt_not);
         yjit_reg_op(BIN(opt_size), gen_opt_size);
         yjit_reg_op(BIN(opt_length), gen_opt_length);
