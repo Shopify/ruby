@@ -1,13 +1,19 @@
 #![cfg(test)]
 
-use crate::asm::x86_64::*;
-use std::fmt;
+use crate::{asm::x86_64::*, cruby::alloc_exec_mem};
+use std::{fmt, mem};
+
+extern {
+    fn yjit_mark_all_writable(mem_block: *mut u8, mem_size: u32);
+    fn yjit_mark_all_executable(mem_block: *mut u8, mem_size: u32);
+    fn yjit_alloc_exec_mem(mem_size: u32) -> *mut u8;
+}
 
 /// Produce hex string output from the bytes in a code block
 impl<'a> fmt::LowerHex for super::CodeBlock {
     fn fmt(&self, fmtr: &mut fmt::Formatter) -> fmt::Result {
         for byte in 0..self.write_pos {
-            fmtr.write_fmt(format_args!("{:02x}", self.mem_block[byte]))?;
+            fmtr.write_fmt(format_args!("{:02x}", unsafe { *self.mem_block.add(byte) }))?;
         }
         Ok(())
     }
@@ -15,9 +21,28 @@ impl<'a> fmt::LowerHex for super::CodeBlock {
 
 /// Check that the bytes for an instruction sequence match a hex string
 fn check_bytes<R>(bytes: &str, run: R) where R: FnOnce(&mut super::CodeBlock) {
-    let mut cb = super::CodeBlock::new();
+    let mem_size: u16 = 1024;
+    let mem_block = unsafe { yjit_alloc_exec_mem(mem_size.into()) };
+
+    let mut cb = super::CodeBlock::new(mem_block, mem_size.into());
+    unsafe { yjit_mark_all_writable(mem_block, mem_size.into()) };
     run(&mut cb);
+
     assert_eq!(format!("{:x}", cb), bytes);
+}
+
+/// Check that the return value of the executed function matche the expected value
+fn check_exec<R>(expected: i32, run: R) where R: FnOnce(&mut super::CodeBlock) {
+    let mem_size: u16 = 1024;
+    let mem_block = unsafe { yjit_alloc_exec_mem(mem_size.into()) };
+
+    let mut cb = super::CodeBlock::new(mem_block, mem_size.into());
+    unsafe { yjit_mark_all_writable(mem_block, mem_size.into()) };
+    run(&mut cb);
+
+    unsafe { yjit_mark_all_executable(cb.mem_block, mem_size.into()) };
+    let function = unsafe { mem::transmute::<*mut u8, fn() -> i32>(cb.mem_block) };
+    assert_eq!(expected, function());
 }
 
 #[test]
@@ -38,6 +63,12 @@ fn test_add() {
     check_bytes("4883c408", |cb| add(cb, RSP, imm_opnd(8)));
     check_bytes("83c108", |cb| add(cb, ECX, imm_opnd(8)));
     check_bytes("81c1ff000000", |cb| add(cb, ECX, imm_opnd(255)));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(3));
+        add(cb, RAX, imm_opnd(4));
+        ret(cb);
+    });
 }
 
 #[test]
@@ -57,12 +88,24 @@ fn test_add_unsigned() {
     // ADD r/m64, imm32
     check_bytes("4983c001", |cb| add(cb, R8, uimm_opnd(1)));
     check_bytes("4981c0ffffff7f", |cb| add(cb, R8, uimm_opnd(i32::MAX.try_into().unwrap())));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, uimm_opnd(3));
+        add(cb, RAX, uimm_opnd(4));
+        ret(cb);
+    });
 }
 
 #[test]
 fn test_and() {
     check_bytes("4421e5", |cb| and(cb, EBP, R12D));
     check_bytes("48832008", |cb| and(cb, mem_opnd(64, RAX, 0), imm_opnd(0x08)));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(23));
+        and(cb, RAX, imm_opnd(15));
+        ret(cb);
+    });
 }
 
 #[test]
@@ -290,11 +333,23 @@ fn test_not() {
     check_bytes("f79239050000", |cb| not(cb, mem_opnd(32, RDX, 1337)));
     check_bytes("f752c9", |cb| not(cb, mem_opnd(32, RDX, -55)));
     check_bytes("f792d5fdffff", |cb| not(cb, mem_opnd(32, RDX, -555)));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(i64::MAX - 7));
+        not(cb, RAX);
+        ret(cb);
+    });
 }
 
 #[test]
 fn test_or() {
     check_bytes("09f2", |cb| or(cb, EDX, ESI));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(5));
+        or(cb, RAX, imm_opnd(2));
+        ret(cb);
+    });
 }
 
 #[test]
@@ -309,6 +364,14 @@ fn test_pop() {
     check_bytes("418f4003", |cb| pop(cb, mem_opnd(64, R8, 3)));
     check_bytes("8f44c803", |cb| pop(cb, mem_opnd_sib(64, RAX, RCX, 8, 3)));
     check_bytes("418f44c803", |cb| pop(cb, mem_opnd_sib(64, R8, RCX, 8, 3)));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(7));
+        push(cb, RAX);
+        mov(cb, RAX, imm_opnd(3));
+        pop(cb, RAX);
+        ret(cb);
+    });
 }
 
 #[test]
@@ -326,6 +389,11 @@ fn test_push() {
 #[test]
 fn test_ret() {
     check_bytes("c3", |cb| ret(cb));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(7));
+        ret(cb);
+    });
 }
 
 #[test]
@@ -334,22 +402,57 @@ fn test_sal() {
     check_bytes("d1e1", |cb| sal(cb, ECX, imm_opnd(1)));
     check_bytes("c1e505", |cb| sal(cb, EBP, imm_opnd(5)));
     check_bytes("d1642444", |cb| sal(cb, mem_opnd(32, RSP, 68), imm_opnd(1)));
+
+    check_exec(6, |cb| {
+        mov(cb, RAX, imm_opnd(3));
+        sal(cb, RAX, imm_opnd(1));
+        ret(cb);
+    });
 }
 
 #[test]
 fn test_sar() {
     check_bytes("d1fa", |cb| sar(cb, EDX, imm_opnd(1)));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(15));
+        sar(cb, RAX, imm_opnd(1));
+        ret(cb);
+    });
+}
+
+#[test]
+fn test_shl() {
+    check_bytes("49c1e607", |cb| shl(cb, R14, imm_opnd(7)));
+
+    check_exec(6, |cb| {
+        mov(cb, RAX, imm_opnd(3));
+        shl(cb, RAX, imm_opnd(1));
+        ret(cb);
+    });
 }
 
 #[test]
 fn test_shr() {
     check_bytes("49c1ee07", |cb| shr(cb, R14, imm_opnd(7)));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(15));
+        shr(cb, RAX, imm_opnd(1));
+        ret(cb);
+    });
 }
 
 #[test]
 fn test_sub() {
     check_bytes("83e801", |cb| sub(cb, EAX, imm_opnd(1)));
     check_bytes("4883e802", |cb| sub(cb, RAX, imm_opnd(2)));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(13));
+        sub(cb, RAX, imm_opnd(6));
+        ret(cb);
+    });
 }
 
 #[test]
@@ -384,6 +487,12 @@ fn test_xchg() {
 #[test]
 fn test_xor() {
     check_bytes("31c0", |cb| xor(cb, EAX, EAX));
+
+    check_exec(7, |cb| {
+        mov(cb, RAX, imm_opnd(5));
+        xor(cb, RAX, imm_opnd(2));
+        ret(cb);
+    });
 }
 
 #[test]

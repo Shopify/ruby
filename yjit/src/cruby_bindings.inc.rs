@@ -12,7 +12,6 @@ pub const NIL_REDEFINED_OP_FLAG: u32 = 512;
 pub const TRUE_REDEFINED_OP_FLAG: u32 = 1024;
 pub const FALSE_REDEFINED_OP_FLAG: u32 = 2048;
 pub const PROC_REDEFINED_OP_FLAG: u32 = 4096;
-pub type __uint32_t = ::std::os::raw::c_uint;
 pub type ID = ::std::os::raw::c_ulong;
 #[repr(C)]
 pub struct RBasic {

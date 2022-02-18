@@ -26,7 +26,7 @@ pub struct CodeBlock
 {
     // Memory block
     // Users are advised to not use this directly.
-    mem_block: Vec<u8>,
+    mem_block: *mut u8,
 
     // Memory block size
     mem_size: usize,
@@ -413,10 +413,10 @@ pub fn code_ptr_opnd(code_ptr: CodePtr) -> X86Opnd
 
 impl CodeBlock
 {
-    pub fn new() -> Self {
+    pub fn new(mem_block: *mut u8, mem_size: usize) -> Self {
         Self {
-            mem_block: vec![0; 2048],
-            mem_size: 2048,
+            mem_block,
+            mem_size,
             write_pos: 0,
             label_addrs: Vec::new(),
             label_names: Vec::new(),
@@ -479,7 +479,7 @@ impl CodeBlock
         assert!(offset < self.mem_size);
 
         unsafe {
-            let ptr = self.mem_block.as_ptr().offset(offset as isize);
+            let ptr = self.mem_block.offset(offset as isize);
             CodePtr(ptr)
         }
     }
@@ -492,7 +492,7 @@ impl CodeBlock
     pub fn write_byte(&mut self, byte: u8) {
         if self.write_pos < self.mem_size {
             self.mark_position_writable(self.write_pos);
-            self.mem_block[self.write_pos] = byte;
+            unsafe { self.mem_block.add(self.write_pos).write(byte) };
             self.write_pos += 1;
         } else {
             self.dropped_bytes = true;
