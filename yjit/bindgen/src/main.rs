@@ -50,6 +50,8 @@ fn main() {
         .allowlist_var("rb_cFloat")
         .allowlist_var("rb_cString")
 
+        .allowlist_function("rb_str_concat_literals")
+
         // `ruby_value_type` is a C enum and this stops it from
         // prefixing all the members with the name of the type
         .prepend_enum_name(false)

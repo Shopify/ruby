@@ -135,6 +135,11 @@ get_iseq_flags_has_opt(rb_iseq_t* iseq) {
     return iseq->body->param.flags.has_opt;
 }
 
+int
+get_iseq_body_param_num(rb_iseq_t* iseq) {
+    return iseq->body->param.keyword->num;
+}
+
 struct rb_control_frame_struct *
 ec_get_cfp(rb_execution_context_t *ec) {
     return ec->cfp;
