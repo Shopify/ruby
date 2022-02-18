@@ -251,53 +251,96 @@ rb_iseq_opcode_at_pc(const rb_iseq_t *iseq, const VALUE *pc)
 
 // Query the instruction length in bytes for YARV opcode insn
 int
-rb_yarv_insn_len(VALUE insn)
+rb_insn_len(VALUE insn)
 {
     return insn_len(insn);
 }
 
 unsigned int
-get_iseq_body_local_table_size(rb_iseq_t* iseq) {
+rb_vm_ci_argc(const struct rb_callinfo *ci) {
+    return vm_ci_argc(ci);
+}
+
+ID
+rb_vm_ci_mid(const struct rb_callinfo *ci) {
+    return vm_ci_mid(ci);
+}
+
+unsigned int
+rb_vm_ci_flag(const struct rb_callinfo *ci) {
+    return vm_ci_flag(ci);
+}
+
+rb_method_visibility_t
+rb_METHOD_ENTRY_VISI(rb_callable_method_entry_t *me) {
+    return METHOD_ENTRY_VISI(me);
+}
+
+VALUE
+rb_get_cme_defined_class(rb_callable_method_entry_t* cme) {
+    return cme->defined_class;
+}
+
+rb_method_type_t
+rb_get_cme_def_type(rb_callable_method_entry_t* cme)
+{
+    return cme->def->type;
+}
+
+ID
+rb_get_cme_def_body_attr_id(rb_callable_method_entry_t* cme)
+{
+    return cme->def->body.attr.id;
+}
+
+enum method_optimized_type
+rb_get_cme_def_body_optimized_type(rb_callable_method_entry_t* cme)
+{
+    return cme->def->body.optimized.type;
+}
+
+unsigned int
+rb_get_iseq_body_local_table_size(rb_iseq_t* iseq) {
     return iseq->body->local_table_size;
 }
 
 VALUE*
-get_iseq_body_iseq_encoded(rb_iseq_t* iseq) {
+rb_get_iseq_body_iseq_encoded(rb_iseq_t* iseq) {
     return iseq->body->iseq_encoded;
 }
 
 int
-get_iseq_flags_has_opt(rb_iseq_t* iseq) {
+rb_get_iseq_flags_has_opt(rb_iseq_t* iseq) {
     return iseq->body->param.flags.has_opt;
 }
 
 int
-get_iseq_body_param_num(rb_iseq_t* iseq) {
+rb_get_iseq_body_param_num(rb_iseq_t* iseq) {
     return iseq->body->param.keyword->num;
 }
 
 struct rb_control_frame_struct *
-ec_get_cfp(rb_execution_context_t *ec) {
+rb_get_ec_cfp(rb_execution_context_t *ec) {
     return ec->cfp;
 }
 
 VALUE*
-cfp_get_pc(struct rb_control_frame_struct *cfp) {
+rb_get_cfp_pc(struct rb_control_frame_struct *cfp) {
     return cfp->pc;
 }
 
 VALUE*
-cfp_get_sp(struct rb_control_frame_struct *cfp) {
+rb_get_cfp_sp(struct rb_control_frame_struct *cfp) {
     return cfp->sp;
 }
 
 VALUE
-cfp_get_self(struct rb_control_frame_struct *cfp) {
+rb_get_cfp_self(struct rb_control_frame_struct *cfp) {
     return cfp->self;
 }
 
 VALUE*
-cfp_get_ep(struct rb_control_frame_struct *cfp) {
+rb_get_cfp_ep(struct rb_control_frame_struct *cfp) {
     return cfp->ep;
 }
 
@@ -317,7 +360,7 @@ rb_yarv_str_eql_internal(VALUE str1, VALUE str2)
 
 // The FL_TEST() macro
 VALUE
-rb_yarv_FL_TEST(VALUE obj, VALUE flags)
+rb_FL_TEST(VALUE obj, VALUE flags)
 {
     return RB_FL_TEST(obj, flags);
 }
@@ -334,6 +377,11 @@ bool
 rb_RB_TYPE_P(VALUE obj, enum ruby_value_type t)
 {
     return RB_TYPE_P(obj, t);
+}
+
+const struct rb_callinfo*
+rb_get_call_data_ci(struct rb_call_data* cd) {
+    return cd->ci;
 }
 
 // The number of bytes counting from the beginning of the inline code block

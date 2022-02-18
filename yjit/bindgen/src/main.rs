@@ -19,6 +19,8 @@ fn main() {
         .clang_args(filtered_clang_args)
         .header("internal.h")
         .header("include/ruby/ruby.h")
+        .header("vm_core.h")  // includes method.h
+        .header("vm_callinfo.h")
 
         // Some C functions that were expressly for Rust YJIT in this
         // file. TODO: Might want to move them later.
@@ -32,6 +34,8 @@ fn main() {
 
         // This struct is public to Ruby C extensions
         .allowlist_type("RBasic")
+
+        .allowlist_function("rb_obj_is_kind_of")
 
         .allowlist_function("rb_hash_new")
         .allowlist_function("rb_hash_new_with_size")
@@ -51,6 +55,9 @@ fn main() {
         .allowlist_var("rb_cFloat")
         .allowlist_var("rb_cString")
 
+        .allowlist_type("VM_CALL.*") // This doesn't work, possibly due to the odd structure of the #defines
+        .allowlist_type("vm_call_flag_bits") // So instead we include the other enum and do the bit-shift ourselves
+
         .allowlist_function("rb_range_new")
 
         .allowlist_function("rb_ec_str_resurrect")
@@ -63,6 +70,11 @@ fn main() {
         .allowlist_type("ruby_value_type") // really old C extension API
 
         .allowlist_type("ruby_method_ids")
+
+        .allowlist_function("rb_callable_method_entry")
+        .allowlist_type("rb_method_visibility_t")
+        .allowlist_type("rb_method_type_t")
+        .allowlist_type("method_optimized_type")
 
         // Constants defined in vm_core.h
         .allowlist_type("ruby_basic_operators")
@@ -100,6 +112,12 @@ fn main() {
         .allowlist_type("IVC") // pointer to cache entry
         .opaque_type("iseq_inline_iv_cache_entry")
         .blocklist_type("iseq_inline_iv_cache_entry")
+
+        .blocklist_type("rb_call_data")
+        .opaque_type("rb_call_data")
+
+        .blocklist_type("rb_callable_method_entry_t")
+        .opaque_type("rb_callable_method_entry_t")
 
         // Finish the builder and generate the bindings.
         .generate()

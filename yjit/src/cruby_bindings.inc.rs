@@ -89,6 +89,9 @@ extern "C" {
     pub fn rb_hash_bulk_insert(argc: ::std::os::raw::c_long, argv: *const VALUE, hash: VALUE);
 }
 extern "C" {
+    pub fn rb_obj_is_kind_of(obj: VALUE, klass: VALUE) -> VALUE;
+}
+extern "C" {
     pub fn rb_range_new(beg: VALUE, end: VALUE, excl: ::std::os::raw::c_int) -> VALUE;
 }
 extern "C" {
@@ -96,12 +99,6 @@ extern "C" {
 }
 extern "C" {
     pub fn rb_attr_get(obj: VALUE, name: ID) -> VALUE;
-}
-extern "C" {
-    pub fn rb_str_concat_literals(num: size_t, strary: *const VALUE) -> VALUE;
-}
-extern "C" {
-    pub fn rb_ec_str_resurrect(ec: *mut rb_execution_context_struct, str_: VALUE) -> VALUE;
 }
 pub const idDot2: ruby_method_ids = 128;
 pub const idDot3: ruby_method_ids = 129;
@@ -320,6 +317,35 @@ extern "C" {
 extern "C" {
     pub fn rb_class_allocate_instance(klass: VALUE) -> VALUE;
 }
+pub const METHOD_VISI_UNDEF: rb_method_visibility_t = 0;
+pub const METHOD_VISI_PUBLIC: rb_method_visibility_t = 1;
+pub const METHOD_VISI_PRIVATE: rb_method_visibility_t = 2;
+pub const METHOD_VISI_PROTECTED: rb_method_visibility_t = 3;
+pub const METHOD_VISI_MASK: rb_method_visibility_t = 3;
+pub type rb_method_visibility_t = u32;
+pub const VM_METHOD_TYPE_ISEQ: rb_method_type_t = 0;
+pub const VM_METHOD_TYPE_CFUNC: rb_method_type_t = 1;
+pub const VM_METHOD_TYPE_ATTRSET: rb_method_type_t = 2;
+pub const VM_METHOD_TYPE_IVAR: rb_method_type_t = 3;
+pub const VM_METHOD_TYPE_BMETHOD: rb_method_type_t = 4;
+pub const VM_METHOD_TYPE_ZSUPER: rb_method_type_t = 5;
+pub const VM_METHOD_TYPE_ALIAS: rb_method_type_t = 6;
+pub const VM_METHOD_TYPE_UNDEF: rb_method_type_t = 7;
+pub const VM_METHOD_TYPE_NOTIMPLEMENTED: rb_method_type_t = 8;
+pub const VM_METHOD_TYPE_OPTIMIZED: rb_method_type_t = 9;
+pub const VM_METHOD_TYPE_MISSING: rb_method_type_t = 10;
+pub const VM_METHOD_TYPE_REFINED: rb_method_type_t = 11;
+pub type rb_method_type_t = u32;
+pub const OPTIMIZED_METHOD_TYPE_SEND: method_optimized_type = 0;
+pub const OPTIMIZED_METHOD_TYPE_CALL: method_optimized_type = 1;
+pub const OPTIMIZED_METHOD_TYPE_BLOCK_CALL: method_optimized_type = 2;
+pub const OPTIMIZED_METHOD_TYPE_STRUCT_AREF: method_optimized_type = 3;
+pub const OPTIMIZED_METHOD_TYPE_STRUCT_ASET: method_optimized_type = 4;
+pub const OPTIMIZED_METHOD_TYPE__MAX: method_optimized_type = 5;
+pub type method_optimized_type = u32;
+extern "C" {
+    pub fn rb_callable_method_entry(klass: VALUE, id: ID) -> *const rb_callable_method_entry_t;
+}
 pub type rb_num_t = ::std::os::raw::c_ulong;
 pub const BOP_PLUS: ruby_basic_operators = 0;
 pub const BOP_MINUS: ruby_basic_operators = 1;
@@ -353,6 +379,27 @@ pub const BOP_OR: ruby_basic_operators = 28;
 pub const BOP_LAST_: ruby_basic_operators = 29;
 pub type ruby_basic_operators = u32;
 pub type IVC = *mut iseq_inline_iv_cache_entry;
+pub const VM_CALL_ARGS_SPLAT_bit: vm_call_flag_bits = 0;
+pub const VM_CALL_ARGS_BLOCKARG_bit: vm_call_flag_bits = 1;
+pub const VM_CALL_FCALL_bit: vm_call_flag_bits = 2;
+pub const VM_CALL_VCALL_bit: vm_call_flag_bits = 3;
+pub const VM_CALL_ARGS_SIMPLE_bit: vm_call_flag_bits = 4;
+pub const VM_CALL_BLOCKISEQ_bit: vm_call_flag_bits = 5;
+pub const VM_CALL_KWARG_bit: vm_call_flag_bits = 6;
+pub const VM_CALL_KW_SPLAT_bit: vm_call_flag_bits = 7;
+pub const VM_CALL_TAILCALL_bit: vm_call_flag_bits = 8;
+pub const VM_CALL_SUPER_bit: vm_call_flag_bits = 9;
+pub const VM_CALL_ZSUPER_bit: vm_call_flag_bits = 10;
+pub const VM_CALL_OPT_SEND_bit: vm_call_flag_bits = 11;
+pub const VM_CALL_KW_SPLAT_MUT_bit: vm_call_flag_bits = 12;
+pub const VM_CALL__END: vm_call_flag_bits = 13;
+pub type vm_call_flag_bits = u32;
+extern "C" {
+    pub fn rb_str_concat_literals(num: size_t, strary: *const VALUE) -> VALUE;
+}
+extern "C" {
+    pub fn rb_ec_str_resurrect(ec: *mut rb_execution_context_struct, str_: VALUE) -> VALUE;
+}
 extern "C" {
     pub fn rb_yjit_mark_writable(mem_block: *mut ::std::os::raw::c_void, mem_size: u32);
 }

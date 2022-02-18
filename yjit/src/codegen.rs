@@ -2,6 +2,7 @@ use crate::cruby::*;
 use crate::asm::*;
 use crate::asm::x86_64::*;
 use crate::core::*;
+use crate::invariants::*;
 use crate::options::*;
 use crate::stats::*;
 use InsnOpnd::*;
@@ -181,7 +182,7 @@ fn jit_next_insn_idx(jit: &JITState) -> u32
 // Meaning we are compiling the instruction that is next to execute
 fn jit_at_current_insn(jit: &JITState) -> bool
 {
-    let ec_pc:*mut VALUE = unsafe { cfp_get_pc(ec_get_cfp(jit.ec.unwrap())) };
+    let ec_pc:*mut VALUE = unsafe { get_cfp_pc(get_ec_cfp(jit.ec.unwrap())) };
     ec_pc == jit.pc
 }
 
@@ -196,7 +197,7 @@ fn jit_peek_at_stack(jit: &JITState, ctx: &Context, n:isize) -> VALUE
     // hitting a stub, cfp->sp needs to be up to date in case
     // codegen functions trigger GC. See :stub-sp-flush:.
     return unsafe {
-        let sp:*mut VALUE = cfp_get_sp(ec_get_cfp(jit.ec.unwrap()));
+        let sp:*mut VALUE = get_cfp_sp(get_ec_cfp(jit.ec.unwrap()));
 
         *(sp.offset(-1 - n))
     }
@@ -204,7 +205,7 @@ fn jit_peek_at_stack(jit: &JITState, ctx: &Context, n:isize) -> VALUE
 
 fn jit_peek_at_self(jit: &JITState, ctx: &Context) -> VALUE
 {
-    unsafe { cfp_get_self(ec_get_cfp(jit.ec.unwrap())) }
+    unsafe { get_cfp_self(get_ec_cfp(jit.ec.unwrap())) }
 }
 
 /*
@@ -216,7 +217,7 @@ fn jit_peek_at_local(jit: &JITState, ctx: &Context, n: i32) -> VALUE
     assert!(n < local_table_size.try_into().unwrap());
 
     unsafe {
-        let ep = cfp_get_ep(ec_get_cfp(jit.ec.unwrap()));
+        let ep = get_cfp_ep(get_ec_cfp(jit.ec.unwrap()));
         let n_isize:isize = n.try_into().unwrap();
         let offs:isize = -(VM_ENV_DATA_SIZE as isize) - local_table_size + n_isize + 1;
         * ep.offset(offs)
@@ -3323,22 +3324,24 @@ fn jit_guard_known_klass(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlo
     true
 }
 
-/*
 // Generate ancestry guard for protected callee.
 // Calls to protected callees only go through when self.is_a?(klass_that_defines_the_callee).
-static void
-jit_protected_callee_ancestry_guard(jitstate_t *jit, codeblock_t *cb, const rb_callable_method_entry_t *cme, uint8_t *side_exit)
+fn jit_protected_callee_ancestry_guard(jit: &mut JITState, cb: &mut CodeBlock, cme: *const rb_callable_method_entry_t, side_exit: CodePtr)
 {
     // See vm_call_method().
-    mov(cb, C_ARG_REGS[0], member_opnd(REG_CFP, rb_control_frame_t, self));
-    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[1], cme->defined_class);
+    mov(cb, C_ARG_REGS[0], mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SELF));
+    let def_class = unsafe { get_cme_defined_class(cme) };
+    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[1], def_class);
     // Note: PC isn't written to current control frame as rb_is_kind_of() shouldn't raise.
     // VALUE rb_obj_is_kind_of(VALUE obj, VALUE klass);
-    call_ptr(cb, REG0, (void *)&rb_obj_is_kind_of);
+
+    let obj_is_kind_of = CodePtr::from(rb_obj_is_kind_of as *mut u8);
+    call_ptr(cb, REG0, obj_is_kind_of);
     test(cb, RAX, RAX);
     jz_ptr(cb, counted_exit!(ocb, side_exit, send_se_protected_check_failed));
 }
 
+/*
 // Return true when the codegen function generates code.
 // known_recv_klass is non-NULL when the caller has used jit_guard_known_klass().
 // See yjit_reg_method().
@@ -3502,11 +3505,13 @@ lookup_cfunc_codegen(const rb_method_definition_t *def)
     }
     return NULL;
 }
+*/
 
 // Is anyone listening for :c_call and :c_return event currently?
-static bool
-c_method_tracing_currently_enabled(const jitstate_t *jit)
+fn c_method_tracing_currently_enabled(jit: &JITState) -> bool
 {
+    todo!();
+    /*
     rb_event_flag_t tracing_events;
     if (rb_multi_ractor_p()) {
         tracing_events = ruby_vm_event_enabled_global_flags;
@@ -3519,10 +3524,13 @@ c_method_tracing_currently_enabled(const jitstate_t *jit)
     }
 
     return tracing_events & (RUBY_EVENT_C_CALL | RUBY_EVENT_C_RETURN);
+    */
 }
 
-fn gen_send_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, rb_iseq_t *block, const int32_t argc, VALUE *recv_known_klass)
+fn gen_send_cfunc(jit: &JITState, ctx: &Context, ci: * const rb_callinfo, cme: * const rb_callable_method_entry_t, block: Option<IseqPtr>, argc: i32, recv_known_klass: *const VALUE) -> CodegenStatus
 {
+    todo!();
+    /*
     const rb_method_cfunc_t *cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
 
     // If the function expects a Ruby array of arguments
@@ -3724,8 +3732,10 @@ fn gen_send_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, con
     // We do this to end the current block after the call
     jit_jump_to_next_insn(jit, ctx);
     EndBlock
+    */
 }
 
+/*
 static void
 gen_return_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
 {
@@ -3783,9 +3793,13 @@ rb_leaf_builtin_function(const rb_iseq_t *iseq)
         return NULL;
     return (const struct rb_builtin_function *)iseq->body->iseq_encoded[1];
 }
+*/
 
-fn gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, rb_iseq_t *block, int32_t argc)
+fn gen_send_iseq(jit: &JITState, ctx: &Context, ci: * const rb_callinfo, cme: * const rb_callable_method_entry_t, block: Option<IseqPtr>, argc: i32) -> CodegenStatus
 {
+    todo!();
+
+    /*
     const rb_iseq_t *iseq = def_iseq_ptr(cme->def);
 
     // When you have keyword arguments, there is an extra object that gets
@@ -4225,9 +4239,12 @@ fn gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, cons
     );
 
     EndBlock
+    */
 }
 
-fn gen_struct_aref(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, VALUE comptime_recv, VALUE comptime_recv_klass) {
+/*
+fn gen_struct_aref(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, VALUE comptime_recv, VALUE comptime_recv_klass)
+{
     if (vm_ci_argc(ci) != 0) {
         return CantCompile;
     }
@@ -4301,11 +4318,9 @@ fn gen_struct_aset(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, co
     jit_jump_to_next_insn(jit, ctx);
     EndBlock
 }
+*/
 
-const rb_callable_method_entry_t *
-rb_aliased_callable_method_entry(const rb_callable_method_entry_t *me);
-
-fn gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_iseq_t *block)
+fn gen_send_general(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb, cd: *const rb_call_data, block: Option<IseqPtr>) -> CodegenStatus
 {
     // Relevant definitions:
     // rb_execution_context_t       : vm_core.h
@@ -4317,185 +4332,206 @@ fn gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_ise
     // For a general overview for how the interpreter calls methods,
     // see vm_call_method().
 
-    const struct rb_callinfo *ci = cd->ci; // info about the call site
-
-    int32_t argc = (int32_t)vm_ci_argc(ci);
-    ID mid = vm_ci_mid(ci);
+    let ci = unsafe { get_call_data_ci(cd) }; // info about the call site
+    let argc = unsafe { vm_ci_argc(ci) };
+    let mid = unsafe { vm_ci_mid(ci) };
+    let flags = unsafe { vm_ci_flag(ci) };
 
     // Don't JIT calls with keyword splat
-    if (vm_ci_flag(ci) & VM_CALL_KW_SPLAT) {
+    if flags & VM_CALL_KW_SPLAT != 0 {
         gen_counter_incr!(cb, send_kw_splat);
         return CantCompile;
     }
 
     // Don't JIT calls that aren't simple
     // Note, not using VM_CALL_ARGS_SIMPLE because sometimes we pass a block.
-    if ((vm_ci_flag(ci) & VM_CALL_ARGS_SPLAT) != 0) {
+    if flags & VM_CALL_ARGS_SPLAT != 0 {
         gen_counter_incr!(cb, send_args_splat);
         return CantCompile;
     }
-    if ((vm_ci_flag(ci) & VM_CALL_ARGS_BLOCKARG) != 0) {
+    if flags & VM_CALL_ARGS_BLOCKARG != 0 {
         gen_counter_incr!(cb, send_block_arg);
         return CantCompile;
     }
 
     // Defer compilation so we can specialize on class of receiver
-    if (!jit_at_current_insn(jit)) {
+    if !jit_at_current_insn(jit) {
         defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
-    VALUE comptime_recv = jit_peek_at_stack(jit, ctx, argc);
-    VALUE comptime_recv_klass = CLASS_OF(comptime_recv);
+    let comptime_recv = jit_peek_at_stack(jit, ctx, argc as isize);
+    let comptime_recv_klass = comptime_recv.class_of();
 
     // Guard that the receiver has the same class as the one from compile time
-    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+    let side_exit = get_side_exit(jit, ocb, ctx);
 
     // Points to the receiver operand on the stack
     let recv = ctx.stack_opnd(argc);
-    insn_opnd_t recv_opnd = StackOpnd(argc);
+    let recv_opnd = StackOpnd(argc.try_into().unwrap());
     mov(cb, REG0, recv);
-    if (!jit_guard_known_klass(jit, ctx, cb, comptime_recv_klass, recv_opnd, comptime_recv, SEND_MAX_DEPTH, side_exit)) {
+    if !jit_guard_known_klass(jit, ctx, cb, comptime_recv_klass, recv_opnd, comptime_recv, SEND_MAX_DEPTH, side_exit) {
         return CantCompile;
     }
 
     // Do method lookup
-    const rb_callable_method_entry_t *cme = rb_callable_method_entry(comptime_recv_klass, mid);
-    if (!cme) {
+    let mut cme = unsafe { rb_callable_method_entry(comptime_recv_klass, mid) };
+    if cme == (0 as *mut rb_callable_method_entry_t) {
         // TODO: counter
         return CantCompile;
     }
 
-    switch (METHOD_ENTRY_VISI(cme)) {
-      case METHOD_VISI_PUBLIC:
-        // Can always call public methods
-        break;
-      case METHOD_VISI_PRIVATE:
-        if (!(vm_ci_flag(ci) & VM_CALL_FCALL)) {
-            // Can only call private methods with FCALL callsites.
-            // (at the moment they are callsites without a receiver or an explicit `self` receiver)
-            return CantCompile;
+    let visi = unsafe { METHOD_ENTRY_VISI(cme) };
+    match visi {
+        METHOD_VISI_PUBLIC => {
+            // Can always call public methods
+        },
+        METHOD_VISI_PRIVATE => {
+            if flags & VM_CALL_FCALL == 0 {
+                // Can only call private methods with FCALL callsites.
+                // (at the moment they are callsites without a receiver or an explicit `self` receiver)
+                return CantCompile;
+            }
+        },
+        METHOD_VISI_PROTECTED => {
+            jit_protected_callee_ancestry_guard(jit, cb, cme, side_exit);
+        },
+        _ => {
+            panic!("cmes should always have a visibility!");
         }
-        break;
-      case METHOD_VISI_PROTECTED:
-        jit_protected_callee_ancestry_guard(jit, cb, cme, side_exit);
-        break;
-      case METHOD_VISI_UNDEF:
-        RUBY_ASSERT(false && "cmes should always have a visibility");
-        break;
     }
 
     // Register block for invalidation
-    RUBY_ASSERT(cme->called_id == mid);
+    //assert!(cme->called_id == mid);
     assume_method_lookup_stable(comptime_recv_klass, cme, jit);
 
     // To handle the aliased method case (VM_METHOD_TYPE_ALIAS)
-    while (true) {
-        // switch on the method type
-        switch (cme->def->type) {
-          case VM_METHOD_TYPE_ISEQ:
-            return gen_send_iseq(jit, ctx, ci, cme, block, argc);
-          case VM_METHOD_TYPE_CFUNC:
-            if ((vm_ci_flag(ci) & VM_CALL_KWARG) != 0) {
-                gen_counter_incr!(cb, send_cfunc_kwargs);
-                return CantCompile;
-            }
-            return gen_send_cfunc(jit, ctx, ci, cme, block, argc, &comptime_recv_klass);
-          case VM_METHOD_TYPE_IVAR:
-            if (argc != 0) {
-                // Argument count mismatch. Getters take no arguments.
-                gen_counter_incr!(cb, send_getter_arity);
-                return CantCompile;
-            }
-            if (c_method_tracing_currently_enabled(jit)) {
-                // Can't generate code for firing c_call and c_return events
-                // :attr-tracing:
-                // Handling the C method tracing events for attr_accessor
-                // methods is easier than regular C methods as we know the
-                // "method" we are calling into never enables those tracing
-                // events. Once global invalidation runs, the code for the
-                // attr_accessor is invalidated and we exit at the closest
-                // instruction boundary which is always outside of the body of
-                // the attr_accessor code.
-                gen_counter_incr!(cb, send_cfunc_tracing);
-                return CantCompile;
-            }
+    loop {
+        let def_type = unsafe { get_cme_def_type(cme) };
+        match def_type {
+            VM_METHOD_TYPE_ISEQ => {
+                return gen_send_iseq(jit, ctx, ci, cme, block, argc);
+            },
+            VM_METHOD_TYPE_CFUNC => {
+                if flags & VM_CALL_KWARG != 0 {
+                    gen_counter_incr!(cb, send_cfunc_kwargs);
+                    return CantCompile;
+                }
+                return gen_send_cfunc(jit, ctx, ci, cme, block, argc, &comptime_recv_klass);
+            },
+            VM_METHOD_TYPE_IVAR => {
+                if argc != 0 {
+                    // Argument count mismatch. Getters take no arguments.
+                    gen_counter_incr!(cb, send_getter_arity);
+                    return CantCompile;
+                }
 
-            mov(cb, REG0, recv);
+                if c_method_tracing_currently_enabled(jit) {
+                    // Can't generate code for firing c_call and c_return events
+                    // :attr-tracing:
+                    // Handling the C method tracing events for attr_accessor
+                    // methods is easier than regular C methods as we know the
+                    // "method" we are calling into never enables those tracing
+                    // events. Once global invalidation runs, the code for the
+                    // attr_accessor is invalidated and we exit at the closest
+                    // instruction boundary which is always outside of the body of
+                    // the attr_accessor code.
+                    gen_counter_incr!(cb, send_cfunc_tracing);
+                    return CantCompile;
+                }
 
-            ID ivar_name = cme->def->body.attr.id;
-            return gen_get_ivar(jit, ctx, SEND_MAX_DEPTH, comptime_recv, ivar_name, recv_opnd, side_exit);
-          case VM_METHOD_TYPE_ATTRSET:
-            if ((vm_ci_flag(ci) & VM_CALL_KWARG) != 0) {
-                gen_counter_incr!(cb, send_attrset_kwargs);
+                mov(cb, REG0, recv);
+                let ivar_name = unsafe { get_cme_def_body_attr_id(cme) };
+
+                todo!();
+                //return gen_get_ivar(jit, ctx, SEND_MAX_DEPTH, comptime_recv, ivar_name, recv_opnd, side_exit);
+            },
+            VM_METHOD_TYPE_ATTRSET => {
+                if flags & VM_CALL_KWARG != 0 {
+                    gen_counter_incr!(cb, send_attrset_kwargs);
+                    return CantCompile;
+                }
+                else if argc != 1 || unsafe { !RB_TYPE_P(comptime_recv, RUBY_T_OBJECT) } {
+                    gen_counter_incr!(cb, send_ivar_set_method);
+                    return CantCompile;
+                }
+                else if c_method_tracing_currently_enabled(jit) {
+                    // Can't generate code for firing c_call and c_return events
+                    // See :attr-tracing:
+                    gen_counter_incr!(cb, send_cfunc_tracing);
+                    return CantCompile;
+                }
+                else {
+                    let ivar_name = unsafe { get_cme_def_body_attr_id(cme) };
+                    todo!();
+                    //return gen_set_ivar(jit, ctx, comptime_recv, comptime_recv_klass, ivar_name);
+                }
+            },
+            // Block method, e.g. define_method(:foo) { :my_block }
+            VM_METHOD_TYPE_BMETHOD => {
+                gen_counter_incr!(cb, send_bmethod);
                 return CantCompile;
-            }
-            else if (argc != 1 || !RB_TYPE_P(comptime_recv, T_OBJECT)) {
-                gen_counter_incr!(cb, send_ivar_set_method);
+            },
+            VM_METHOD_TYPE_ZSUPER => {
+                gen_counter_incr!(cb, send_zsuper_method);
                 return CantCompile;
-            }
-            else if (c_method_tracing_currently_enabled(jit)) {
-                // Can't generate code for firing c_call and c_return events
-                // See :attr-tracing:
-                gen_counter_incr!(cb, send_cfunc_tracing);
+            },
+            VM_METHOD_TYPE_ALIAS => {
+                // Retrieve the aliased method and re-enter the switch
+                cme = unsafe { rb_aliased_callable_method_entry(cme) };
+                continue;
+            },
+            VM_METHOD_TYPE_UNDEF => {
+                gen_counter_incr!(cb, send_undef_method);
                 return CantCompile;
-            }
-            else {
-                ID ivar_name = cme->def->body.attr.id;
-                return gen_set_ivar(jit, ctx, comptime_recv, comptime_recv_klass, ivar_name);
-            }
-          // Block method, e.g. define_method(:foo) { :my_block }
-          case VM_METHOD_TYPE_BMETHOD:
-            gen_counter_incr!(cb, send_bmethod);
-            return CantCompile;
-          case VM_METHOD_TYPE_ZSUPER:
-            gen_counter_incr!(cb, send_zsuper_method);
-            return CantCompile;
-          case VM_METHOD_TYPE_ALIAS: {
-            // Retrieve the alised method and re-enter the switch
-            cme = rb_aliased_callable_method_entry(cme);
-            continue;
-          }
-          case VM_METHOD_TYPE_UNDEF:
-            gen_counter_incr!(cb, send_undef_method);
-            return CantCompile;
-          case VM_METHOD_TYPE_NOTIMPLEMENTED:
-            gen_counter_incr!(cb, send_not_implemented_method);
-            return CantCompile;
-          // Send family of methods, e.g. call/apply
-          case VM_METHOD_TYPE_OPTIMIZED:
-            switch (cme->def->body.optimized.type) {
-              case OPTIMIZED_METHOD_TYPE_SEND:
-                gen_counter_incr!(cb, send_optimized_method_send);
+            },
+            VM_METHOD_TYPE_NOTIMPLEMENTED => {
+                gen_counter_incr!(cb, send_not_implemented_method);
                 return CantCompile;
-              case OPTIMIZED_METHOD_TYPE_CALL:
-                gen_counter_incr!(cb, send_optimized_method_call);
+            },
+            // Send family of methods, e.g. call/apply
+            VM_METHOD_TYPE_OPTIMIZED => {
+                let opt_type = unsafe { get_cme_def_body_optimized_type(cme) };
+                match opt_type {
+                    OPTIMIZED_METHOD_TYPE_SEND => {
+                        gen_counter_incr!(cb, send_optimized_method_send);
+                        return CantCompile;
+                    },
+                    OPTIMIZED_METHOD_TYPE_CALL => {
+                        gen_counter_incr!(cb, send_optimized_method_call);
+                        return CantCompile;
+                    },
+                    OPTIMIZED_METHOD_TYPE_BLOCK_CALL => {
+                        gen_counter_incr!(cb, send_optimized_method_block_call);
+                        return CantCompile;
+                    },
+                    OPTIMIZED_METHOD_TYPE_STRUCT_AREF => {
+                        todo!();
+                        //return gen_struct_aref(jit, ctx, ci, cme, comptime_recv, comptime_recv_klass);
+                    },
+                    OPTIMIZED_METHOD_TYPE_STRUCT_ASET => {
+                        todo!();
+                        //return gen_struct_aset(jit, ctx, ci, cme, comptime_recv, comptime_recv_klass);
+                    },
+                    _ => {
+                        panic!("unknown optimized method type!")
+                    },
+                }
+            },
+            VM_METHOD_TYPE_MISSING => {
+                gen_counter_incr!(cb, send_missing_method);
                 return CantCompile;
-              case OPTIMIZED_METHOD_TYPE_BLOCK_CALL:
-                gen_counter_incr!(cb, send_optimized_method_block_call);
+            },
+            VM_METHOD_TYPE_REFINED => {
+                gen_counter_incr!(cb, send_refined_method);
                 return CantCompile;
-              case OPTIMIZED_METHOD_TYPE_STRUCT_AREF:
-                return gen_struct_aref(jit, ctx, ci, cme, comptime_recv, comptime_recv_klass);
-              case OPTIMIZED_METHOD_TYPE_STRUCT_ASET:
-                return gen_struct_aset(jit, ctx, ci, cme, comptime_recv, comptime_recv_klass);
-              default:
-                rb_bug("unknown optimized method type (%d)", cme->def->body.optimized.type);
-                UNREACHABLE_RETURN(YJIT_CANT_COMPILE);
-            }
-          case VM_METHOD_TYPE_MISSING:
-            gen_counter_incr!(cb, send_missing_method);
-            return CantCompile;
-          case VM_METHOD_TYPE_REFINED:
-            gen_counter_incr!(cb, send_refined_method);
-            return CantCompile;
-            // no default case so compiler issues a warning if this is not exhaustive
+            },
+            _ => {
+                unreachable!();
+            },
         }
-
-        // Unreachable
-        RUBY_ASSERT(false);
     }
 }
-*/
 
 fn gen_opt_send_without_block(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {

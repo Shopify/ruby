@@ -109,31 +109,61 @@ extern "C" {
     //pub fn ID2SYM(id: VALUE) -> VALUE;
     //pub fn LL2NUM((long long)ocb->write_pos) -> VALUE;
 
-    #[link_name = "rb_yarv_insn_len"]
+    #[link_name = "rb_insn_len"]
     pub fn raw_insn_len(v: VALUE) -> c_int;
 
     #[link_name = "rb_yarv_class_of"]
     pub fn CLASS_OF(v:VALUE) -> VALUE;
 
-    pub fn ec_get_cfp(ec: EcPtr) -> CfpPtr;
+    #[link_name = "rb_get_ec_cfp"]
+    pub fn get_ec_cfp(ec: EcPtr) -> CfpPtr;
 
-    pub fn cfp_get_pc(cfp: CfpPtr) -> *mut VALUE;
-    pub fn cfp_get_sp(cfp: CfpPtr) -> *mut VALUE;
-    pub fn cfp_get_self(cfp: CfpPtr) -> VALUE;
-    pub fn cfp_get_ep(cfp: CfpPtr) -> *mut VALUE;
+    #[link_name = "rb_get_cfp_pc"]
+    pub fn get_cfp_pc(cfp: CfpPtr) -> *mut VALUE;
+
+    #[link_name = "rb_get_cfp_sp"]
+    pub fn get_cfp_sp(cfp: CfpPtr) -> *mut VALUE;
+
+    #[link_name = "rb_get_cfp_self"]
+    pub fn get_cfp_self(cfp: CfpPtr) -> VALUE;
+
+    #[link_name = "rb_get_cfp_ep"]
+    pub fn get_cfp_ep(cfp: CfpPtr) -> *mut VALUE;
+
+    #[link_name = "rb_get_cme_defined_class"]
+    pub fn get_cme_defined_class(cme: * const rb_callable_method_entry_t) -> VALUE;
+
+    #[link_name = "rb_get_cme_def_type"]
+    pub fn get_cme_def_type(cme: * const rb_callable_method_entry_t) -> rb_method_type_t;
+
+    #[link_name = "rb_get_cme_def_body_attr_id"]
+    pub fn get_cme_def_body_attr_id(cme: * const rb_callable_method_entry_t) -> ID;
+
+    #[link_name = "rb_get_cme_def_body_optimized_type"]
+    pub fn get_cme_def_body_optimized_type(cme: * const rb_callable_method_entry_t) -> method_optimized_type;
 
     #[link_name = "rb_iseq_encoded_size"]
     pub fn get_iseq_encoded_size(iseq: IseqPtr) -> c_uint;
 
+    #[link_name = "rb_get_iseq_body_iseq_encoded"]
     pub fn get_iseq_body_iseq_encoded(iseq: IseqPtr) -> *mut VALUE;
+
+    #[link_name = "rb_get_iseq_flags_has_opt"]
     pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> c_int;
+
+    #[link_name = "rb_get_iseq_body_local_table_size"]
     pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> c_uint;
+
+    #[link_name = "rb_get_iseq_body_param_num"]
     pub fn get_iseq_body_param_num(iseq: IseqPtr) -> c_int;
+
+    #[link_name = "rb_get_call_data_ci"]
+    pub fn get_call_data_ci(cd: * const rb_call_data) -> *const rb_callinfo;
 
     #[link_name = "rb_yarv_str_eql_internal"]
     pub fn rb_str_eql_internal(str1: VALUE, str2: VALUE) -> VALUE;
 
-    #[link_name = "rb_yarv_FL_TEST"]
+    #[link_name = "rb_FL_TEST"]
     pub fn FL_TEST(obj: VALUE, flags: VALUE) -> VALUE;
 
     #[link_name = "rb_FL_TEST_RAW"]
@@ -149,6 +179,19 @@ extern "C" {
     pub fn rb_vm_defined(ec: EcPtr, reg_cfp: CfpPtr, op_type: rb_num_t, obj: VALUE, v: VALUE) -> bool;
     pub fn rb_vm_set_ivar_idx(obj: VALUE, idx: u32, val: VALUE) -> VALUE;
     pub fn rb_vm_setinstancevariable(iseq: IseqPtr, obj: VALUE, id: ID, val: VALUE, ic: IVC);
+    pub fn rb_aliased_callable_method_entry(me: *const rb_callable_method_entry_t) -> *const rb_callable_method_entry_t;
+
+    #[link_name = "rb_vm_ci_argc"]
+    pub fn vm_ci_argc(ci: * const rb_callinfo) -> c_int;
+
+    #[link_name = "rb_vm_ci_mid"]
+    pub fn vm_ci_mid(ci: * const rb_callinfo) -> ID;
+
+    #[link_name = "rb_vm_ci_flag"]
+    pub fn vm_ci_flag(ci: * const rb_callinfo) -> c_uint;
+
+    #[link_name = "rb_METHOD_ENTRY_VISI"]
+    pub fn METHOD_ENTRY_VISI(me: * const rb_callable_method_entry_t) -> rb_method_visibility_t;
 }
 
 pub fn insn_len(opcode:usize) -> u32
@@ -175,7 +218,6 @@ pub fn get_ruby_vm_frozen_core() -> VALUE
     // Until we can link with CRuby, return a fake constant.
     VALUE(0xACE_DECADE)
 }
-
 
 /// Opaque iseq type for opaque iseq pointers.
 /// See: https://doc.rust-lang.org/nomicon/ffi.html#representing-opaque-structs
@@ -210,6 +252,30 @@ pub struct iseq_inline_iv_cache_entry {
     _data: [u8; 0],
     _marker:
         core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+}
+
+/// Opaque call-data type
+#[repr(C)]
+pub struct rb_call_data {
+    _data: [u8; 0],
+    _marker:
+    core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+}
+
+/// Opaque call-info type
+#[repr(C)]
+pub struct rb_callinfo {
+    _data: [u8; 0],
+    _marker:
+    core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+}
+
+/// Opaque call-info type
+#[repr(C)]
+pub struct rb_callable_method_entry_t {
+    _data: [u8; 0],
+    _marker:
+    core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
 
 /// Pointer to a control frame pointer (CFP)
@@ -371,6 +437,13 @@ pub const VM_ENV_DATA_INDEX_SPECVAL:isize = -1;
 pub const VM_ENV_DATA_INDEX_FLAGS:isize = 0;
 pub const VM_ENV_DATA_SIZE:usize = 3;
 pub const VM_ENV_FLAG_WB_REQUIRED:usize = 0x008;
+
+// From vm_callinfo.h
+pub const VM_CALL_ARGS_SPLAT:u32    = 1 << VM_CALL_ARGS_SPLAT_bit;
+pub const VM_CALL_ARGS_BLOCKARG:u32 = 1 << VM_CALL_ARGS_BLOCKARG_bit;
+pub const VM_CALL_FCALL:u32         = 1 << VM_CALL_FCALL_bit;
+pub const VM_CALL_KWARG:u32         = 1 << VM_CALL_KWARG_bit;
+pub const VM_CALL_KW_SPLAT:u32      = 1 << VM_CALL_KW_SPLAT_bit;
 
 pub const SIZEOF_VALUE: usize = 8;
 

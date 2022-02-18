@@ -2,6 +2,8 @@
 //! generated code if and when these assumptions are invalidated.
 
 use crate::core::*;
+use crate::cruby::*;
+use crate::codegen::*;
 
 // Invariants to track:
 // assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_PLUS)
@@ -131,6 +133,7 @@ add_lookup_dependency_i(st_data_t *key, st_data_t *value, st_data_t data, int ex
 
     return ST_CONTINUE;
 }
+*/
 
 // Remember that a block assumes that
 // `rb_callable_method_entry(receiver_klass, cme->called_id) == cme` and that
@@ -139,9 +142,10 @@ add_lookup_dependency_i(st_data_t *key, st_data_t *value, st_data_t data, int ex
 // rb_yjit_cme_invalidate() invalidates the block.
 //
 // @raise NoMemoryError
-static void
-assume_method_lookup_stable(VALUE receiver_klass, const rb_callable_method_entry_t *cme, jitstate_t *jit)
+pub fn assume_method_lookup_stable(receiver_klass:VALUE, cme: *const rb_callable_method_entry_t, jit: &JITState)
 {
+    todo!();
+    /*
     RUBY_ASSERT(cme_validity_dependency);
     RUBY_ASSERT(method_lookup_dependency);
     RUBY_ASSERT(rb_callable_method_entry(receiver_klass, cme->called_id) == cme);
@@ -159,8 +163,8 @@ assume_method_lookup_stable(VALUE receiver_klass, const rb_callable_method_entry
 
     struct lookup_dependency_insertion info = { block, cme->called_id };
     st_update(method_lookup_dependency, (st_data_t)receiver_klass, add_lookup_dependency_i, (st_data_t)&info);
+    */
 }
-*/
 
 
 
