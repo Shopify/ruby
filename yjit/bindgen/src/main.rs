@@ -54,6 +54,7 @@ fn main() {
         .allowlist_function("rb_range_new")
 
         .allowlist_function("rb_ec_str_resurrect")
+        .allowlist_function("rb_str_concat_literals")
 
         // `ruby_value_type` is a C enum and this stops it from
         // prefixing all the members with the name of the type

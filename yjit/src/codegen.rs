@@ -990,7 +990,7 @@ fn gen_putobject_int2fix(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlo
     let opcode = jit.opcode;
     let cst_val:usize = if opcode == OP_PUTOBJECT_INT2FIX_0_ { 0 } else { 1 };
 
-    jit_putobject(jit, ctx, cb, VALUE::from(cst_val));
+    jit_putobject(jit, ctx, cb, VALUE::fixnum_from_usize(cst_val));
     KeepCompiling
 }
 
@@ -1841,37 +1841,36 @@ fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     KeepCompiling
 }
 
-/*
 // Push Qtrue or Qfalse depending on whether the given keyword was supplied by
 // the caller
 fn gen_checkkeyword(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // When a keyword is unspecified past index 32, a hash will be used
     // instead. This can only happen in iseqs taking more than 32 keywords.
-    if (jit->iseq->body->param.keyword->num >= 32) {
+    if unsafe { get_iseq_body_param_num(jit.iseq) >= 32 } {
         return CantCompile;
     }
 
     // The EP offset to the undefined bits local
-    int32_t bits_offset = (int32_t)jit_get_arg(jit, 0);
+    let bits_offset = jit_get_arg(jit, 0).as_i32();
 
     // The index of the keyword we want to check
-    int32_t index = (int32_t)jit_get_arg(jit, 1);
+    let index:i64 = jit_get_arg(jit, 1).as_i64();
 
     // Load environment pointer EP
     gen_get_ep(cb, REG0, 0);
 
     // VALUE kw_bits = *(ep - bits);
-    let bits_opnd = mem_opnd(64, REG0, SIZEOF_VALUE * -bits_offset);
+    let bits_opnd = mem_opnd(64, REG0, (SIZEOF_VALUE as i32) * -bits_offset);
 
     // unsigned int b = (unsigned int)FIX2ULONG(kw_bits);
     // if ((b & (0x01 << idx))) {
     //
     // We can skip the FIX2ULONG conversion by shifting the bit we test
-    int64_t bit_test = 0x01 << (index + 1);
+    let bit_test:i64 = 0x01 << (index + 1);
     test(cb, bits_opnd, imm_opnd(bit_test));
-    mov(cb, REG0, imm_opnd(Qfalse));
-    mov(cb, REG1, imm_opnd(Qtrue));
+    mov(cb, REG0, uimm_opnd(Qfalse.into()));
+    mov(cb, REG1, uimm_opnd(Qtrue.into()));
     cmovz(cb, REG0, REG1);
 
     let stack_ret = ctx.stack_push(Type::UnknownImm);
@@ -1879,7 +1878,6 @@ fn gen_checkkeyword(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
 
     KeepCompiling
 }
-*/
 
 fn gen_jnz_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: Option<CodePtr>, shape: BranchShape)
 {
@@ -2256,28 +2254,27 @@ fn gen_checktype(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     }
 }
 
-/*
 fn gen_concatstrings(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
+    let n = jit_get_arg(jit, 0);
 
     // Save the PC and SP because we are allocating
     jit_prepare_routine_call(jit, ctx, cb, REG0);
 
-    let values_ptr = ctx.sp_opnd(-(SIZEOF_VALUE * (uint32_t)n));
+    let values_ptr = ctx.sp_opnd(-((SIZEOF_VALUE as isize) * n.as_isize()));
 
     // call rb_str_concat_literals(long n, const VALUE *strings);
-    mov(cb, C_ARG_REGS[0], imm_opnd(n));
+    mov(cb, C_ARG_REGS[0], imm_opnd(n.into()));
     lea(cb, C_ARG_REGS[1], values_ptr);
-    call_ptr(cb, REG0, (void *)rb_str_concat_literals);
+    let str_concat_literals = CodePtr::from(rb_str_concat_literals as *mut u8);
+    call_ptr(cb, REG0, str_concat_literals);
 
-    ctx.stack_pop(n);
+    ctx.stack_pop(n.as_usize());
     let stack_ret = ctx.stack_push(Type::String);
     mov(cb, stack_ret, RAX);
 
     KeepCompiling
 }
-*/
 
 fn guard_two_fixnums(ctx: &mut Context, cb: &mut CodeBlock, side_exit: CodePtr)
 {
@@ -5247,12 +5244,13 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_PUTSTRING => Some(gen_putstring),
         OP_EXPANDARRAY => Some(gen_expandarray),
         OP_DEFINED => Some(gen_defined),
+        OP_CHECKKEYWORD => Some(gen_checkkeyword),
+        OP_CONCATSTRINGS => Some(gen_concatstrings),
 
         /*
         yjit_reg_op(BIN(concatstrings), gen_concatstrings);
         yjit_reg_op(BIN(getinstancevariable), gen_getinstancevariable);
         yjit_reg_op(BIN(setinstancevariable), gen_setinstancevariable);
-        yjit_reg_op(BIN(checkkeyword), gen_checkkeyword);
         yjit_reg_op(BIN(opt_eq), gen_opt_eq);
         yjit_reg_op(BIN(opt_neq), gen_opt_neq);
         yjit_reg_op(BIN(opt_aref), gen_opt_aref);

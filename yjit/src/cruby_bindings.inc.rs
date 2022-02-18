@@ -12,6 +12,7 @@ pub const NIL_REDEFINED_OP_FLAG: u32 = 512;
 pub const TRUE_REDEFINED_OP_FLAG: u32 = 1024;
 pub const FALSE_REDEFINED_OP_FLAG: u32 = 2048;
 pub const PROC_REDEFINED_OP_FLAG: u32 = 4096;
+pub type size_t = ::std::os::raw::c_ulong;
 pub type __uint32_t = ::std::os::raw::c_uint;
 pub type ID = ::std::os::raw::c_ulong;
 #[repr(C)]
@@ -88,6 +89,9 @@ extern "C" {
 }
 extern "C" {
     pub fn rb_attr_get(obj: VALUE, name: ID) -> VALUE;
+}
+extern "C" {
+    pub fn rb_str_concat_literals(num: size_t, strary: *const VALUE) -> VALUE;
 }
 extern "C" {
     pub fn rb_ec_str_resurrect(ec: *mut rb_execution_context_struct, str_: VALUE) -> VALUE;
