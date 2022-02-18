@@ -18,6 +18,7 @@ fn main() {
     let bindings = bindgen::builder()
         .clang_args(filtered_clang_args)
         .header("internal.h")
+        .header("include/ruby/ruby.h")
 
         // Some C functions that were expressly for Rust YJIT in this
         // file. TODO: Might want to move them later.
@@ -50,6 +51,10 @@ fn main() {
         .allowlist_var("rb_cFloat")
         .allowlist_var("rb_cString")
 
+        .allowlist_function("rb_range_new")
+
+        .allowlist_function("rb_ec_str_resurrect")
+
         // `ruby_value_type` is a C enum and this stops it from
         // prefixing all the members with the name of the type
         .prepend_enum_name(false)
@@ -61,6 +66,7 @@ fn main() {
         // Constants defined in vm_core.h
         .allowlist_type("ruby_basic_operators")
         .allowlist_var(".*_REDEFINED_OP_FLAG")
+        .allowlist_type("rb_num_t")
 
         .allowlist_function("rb_iseq_(get|set)_yjit_payload")
 

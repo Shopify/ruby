@@ -132,14 +132,17 @@ extern "C" {
 
     pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> c_uint;
 
-    // Ruby only defines this in vm_insnhelper.c, which bindgen has trouble using b/c of duplicate definitions
-    pub fn rb_vm_opt_mod(recv:VALUE, obj: VALUE) -> VALUE;
-
     #[link_name = "rb_yarv_str_eql_internal"]
     pub fn rb_str_eql_internal(str1: VALUE, str2: VALUE) -> VALUE;
 
     #[link_name = "rb_yarv_fl_test"]
     pub fn FL_TEST(obj: VALUE, flags: VALUE) -> VALUE;
+
+    // Ruby only defines these in vm_insnhelper.c, not in any header.
+    // Parsing it would result in a lot of duplicate definitions.
+    pub fn rb_vm_opt_mod(recv: VALUE, obj: VALUE) -> VALUE;
+    pub fn rb_vm_splat_array(flag: VALUE, ary: VALUE) -> VALUE;
+    pub fn rb_vm_defined(ec: EcPtr, reg_cfp: CfpPtr, op_type: rb_num_t, obj: VALUE, v: VALUE) -> bool;
 }
 
 pub fn insn_len(opcode:usize) -> u32

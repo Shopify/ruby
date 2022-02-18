@@ -84,7 +84,13 @@ extern "C" {
     pub fn rb_hash_bulk_insert(argc: ::std::os::raw::c_long, argv: *const VALUE, hash: VALUE);
 }
 extern "C" {
+    pub fn rb_range_new(beg: VALUE, end: VALUE, excl: ::std::os::raw::c_int) -> VALUE;
+}
+extern "C" {
     pub fn rb_attr_get(obj: VALUE, name: ID) -> VALUE;
+}
+extern "C" {
+    pub fn rb_ec_str_resurrect(ec: *mut rb_execution_context_struct, str_: VALUE) -> VALUE;
 }
 pub const idDot2: ruby_method_ids = 128;
 pub const idDot3: ruby_method_ids = 129;
@@ -300,6 +306,7 @@ extern "C" {
         elts: *const VALUE,
     ) -> VALUE;
 }
+pub type rb_num_t = ::std::os::raw::c_ulong;
 pub const BOP_PLUS: ruby_basic_operators = 0;
 pub const BOP_MINUS: ruby_basic_operators = 1;
 pub const BOP_MULT: ruby_basic_operators = 2;

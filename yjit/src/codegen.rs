@@ -1455,11 +1455,10 @@ fn gen_duphash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     KeepCompiling
 }
 
-/*
 // call to_a on the array on the stack
 fn gen_splatarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    VALUE flag = (VALUE) jit_get_arg(jit, 0);
+    let flag = jit_get_arg(jit, 0);
 
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
@@ -1471,7 +1470,8 @@ fn gen_splatarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb
     // Call rb_vm_splat_array(flag, ary)
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], flag);
     mov(cb, C_ARG_REGS[1], ary_opnd);
-    call_ptr(cb, REG1, (void *) rb_vm_splat_array);
+    let splat_array = CodePtr::from(rb_vm_splat_array as *mut u8);
+    call_ptr(cb, REG1, splat_array);
 
     let stack_ret = ctx.stack_push(Type::Array);
     mov(cb, stack_ret, RAX);
@@ -1482,7 +1482,7 @@ fn gen_splatarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb
 // new range initialized from top 2 values
 fn gen_newrange(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    rb_num_t flag = (rb_num_t)jit_get_arg(jit, 0);
+    let flag = jit_get_arg(jit, 0);
 
     // rb_range_new() allocates and can raise
     jit_prepare_routine_call(jit, ctx, cb, REG0);
@@ -1490,8 +1490,9 @@ fn gen_newrange(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     // val = rb_range_new(low, high, (int)flag);
     mov(cb, C_ARG_REGS[0], ctx.stack_opnd(1));
     mov(cb, C_ARG_REGS[1], ctx.stack_opnd(0));
-    mov(cb, C_ARG_REGS[2], imm_opnd(flag));
-    call_ptr(cb, REG0, (void *)rb_range_new);
+    mov(cb, C_ARG_REGS[2], uimm_opnd(flag.into()));
+    let range_new = CodePtr::from(rb_range_new as *mut u8);
+    call_ptr(cb, REG0, range_new);
 
     ctx.stack_pop(2);
     let stack_ret = ctx.stack_push(Type::UnknownHeap);
@@ -1499,7 +1500,6 @@ fn gen_newrange(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 
     KeepCompiling
 }
-*/
 
 fn guard_object_is_heap(cb: &mut CodeBlock, object_opnd: X86Opnd, ctx: &mut Context, side_exit: CodePtr)
 {
@@ -1823,17 +1823,17 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     KeepCompiling
 }
 
-/*
 fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    VALUE put_val = jit_get_arg(jit, 0);
+    let put_val = jit_get_arg(jit, 0);
 
     // Save the PC and SP because the callee will allocate
     jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     mov(cb, C_ARG_REGS[0], REG_EC);
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[1], put_val);
-    call_ptr(cb, REG0, (void *)rb_ec_str_resurrect);
+    let str_resurrect = CodePtr::from(rb_ec_str_resurrect as *mut u8);
+    call_ptr(cb, REG0, str_resurrect);
 
     let stack_top = ctx.stack_push(Type::String);
     mov(cb, stack_top, RAX);
@@ -1841,6 +1841,7 @@ fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     KeepCompiling
 }
 
+/*
 // Push Qtrue or Qfalse depending on whether the given keyword was supplied by
 // the caller
 fn gen_checkkeyword(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -2156,14 +2157,13 @@ fn gen_setinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeB
 
     KeepCompiling
 }
-
-bool rb_vm_defined(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, rb_num_t op_type, VALUE obj, VALUE v);
+*/
 
 fn gen_defined(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    rb_num_t op_type = (rb_num_t)jit_get_arg(jit, 0);
-    VALUE obj = (VALUE)jit_get_arg(jit, 1);
-    VALUE pushval = (VALUE)jit_get_arg(jit, 2);
+    let op_type = jit_get_arg(jit, 0);
+    let obj = jit_get_arg(jit, 1);
+    let pushval = jit_get_arg(jit, 2);
 
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
@@ -2175,27 +2175,27 @@ fn gen_defined(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     // Call vm_defined(ec, reg_cfp, op_type, obj, v)
     mov(cb, C_ARG_REGS[0], REG_EC);
     mov(cb, C_ARG_REGS[1], REG_CFP);
-    mov(cb, C_ARG_REGS[2], imm_opnd(op_type));
-    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[3], (VALUE)obj);
+    mov(cb, C_ARG_REGS[2], uimm_opnd(op_type.into()));
+    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[3], obj);
     mov(cb, C_ARG_REGS[4], v_opnd);
-    call_ptr(cb, REG0, (void *)rb_vm_defined);
+    let vm_defined = CodePtr::from(rb_vm_defined as *mut u8);
+    call_ptr(cb, REG0, vm_defined);
 
     // if (vm_defined(ec, GET_CFP(), op_type, obj, v)) {
     //  val = pushval;
     // }
-    jit_mov_gc_ptr(jit, cb, REG1, (VALUE)pushval);
+    jit_mov_gc_ptr(jit, cb, REG1, pushval);
     cmp(cb, AL, imm_opnd(0));
-    mov(cb, RAX, imm_opnd(Qnil));
+    mov(cb, RAX, uimm_opnd(Qnil.into()));
     cmovnz(cb, RAX, REG1);
 
     // Push the return value onto the stack
-    val_type_t out_type = SPECIAL_CONST_P(pushval)? Type::UnknownImm : Type::Unknown;
+    let out_type = if pushval.special_const_p() { Type::UnknownImm } else { Type::Unknown };
     let stack_ret = ctx.stack_push(out_type);
     mov(cb, stack_ret, RAX);
 
     KeepCompiling
 }
-*/
 
 fn gen_checktype(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
@@ -5242,16 +5242,16 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_OPT_MOD => Some(gen_opt_mod),
         OP_OPT_STR_FREEZE => Some(gen_opt_str_freeze),
         OP_OPT_STR_UMINUS => Some(gen_opt_str_uminus),
+        OP_SPLATARRAY => Some(gen_splatarray),
+        OP_NEWRANGE => Some(gen_newrange),
+        OP_PUTSTRING => Some(gen_putstring),
+        OP_EXPANDARRAY => Some(gen_expandarray),
+        OP_DEFINED => Some(gen_defined),
 
         /*
-        yjit_reg_op(BIN(splatarray), gen_splatarray);
-        yjit_reg_op(BIN(expandarray), gen_expandarray);
-        yjit_reg_op(BIN(newrange), gen_newrange);
         yjit_reg_op(BIN(concatstrings), gen_concatstrings);
-        yjit_reg_op(BIN(putstring), gen_putstring);
         yjit_reg_op(BIN(getinstancevariable), gen_getinstancevariable);
         yjit_reg_op(BIN(setinstancevariable), gen_setinstancevariable);
-        yjit_reg_op(BIN(defined), gen_defined);
         yjit_reg_op(BIN(checkkeyword), gen_checkkeyword);
         yjit_reg_op(BIN(opt_eq), gen_opt_eq);
         yjit_reg_op(BIN(opt_neq), gen_opt_neq);
