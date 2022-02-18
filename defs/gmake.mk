@@ -374,12 +374,14 @@ $(YJIT_LIBS): yjit-static-lib
 # TODO: might need to move for BSD Make support
 miniruby$(EXEEXT): $(YJIT_LIBS)
 
-# generate rust bindings. see source for details
+# Generate rust bindings. See source for details. Needs `./configure --enable-yjit`
+ifneq ($(strip $(CARGO)),) # if configure found Cargo
 .PHONY: yjit-bindgen
-yjit-bindgen:
+yjit-bindgen: miniruby$(EXEEXT)
 	cd '$(top_srcdir)'
 	# See make recipe for `.c.i`
 	$(CARGO) run --manifest-path '$(top_srcdir)/yjit/bindgen/Cargo.toml' -- $(CFLAGS) $(XCFLAGS) $(CPPFLAGS)
+endif
 
 # Query on the generated rdoc
 #

@@ -672,7 +672,8 @@ static VALUE
 comments_for(rb_execution_context_t *ec, VALUE self, VALUE start_address, VALUE end_address)
 {
     VALUE comment_array = rb_ary_new();
-#if RUBY_DEBUG
+// disabled to help porting.
+#if 0
     uint8_t *start = (void *)NUM2ULL(start_address);
     uint8_t *end = (void *)NUM2ULL(end_address);
 

@@ -29,8 +29,7 @@ To generate C bindings for the YJIT Rust code, run:
 
 ```sh
 CC=clang ./configure --enable-yjit=dev
-make -j miniruby
-make yjit-bindgen
+make -j yjit-bindgen
 ```
 
 This will generate/update `yjit/src/cruby_bindings.inc.rs`. Avoid manually editing this file
