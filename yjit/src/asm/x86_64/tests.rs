@@ -6,8 +6,9 @@ use std::fmt;
 /// Produce hex string output from the bytes in a code block
 impl<'a> fmt::LowerHex for super::CodeBlock {
     fn fmt(&self, fmtr: &mut fmt::Formatter) -> fmt::Result {
-        for byte in 0..self.write_pos {
-            fmtr.write_fmt(format_args!("{:02x}", self.mem_block[byte]))?;
+        for pos in 0..self.write_pos {
+            let byte = self.read_byte(pos);
+            fmtr.write_fmt(format_args!("{:02x}", byte))?;
         }
         Ok(())
     }
@@ -15,7 +16,7 @@ impl<'a> fmt::LowerHex for super::CodeBlock {
 
 /// Check that the bytes for an instruction sequence match a hex string
 fn check_bytes<R>(bytes: &str, run: R) where R: FnOnce(&mut super::CodeBlock) {
-    let mut cb = super::CodeBlock::new();
+    let mut cb = super::CodeBlock::new_dummy(4096);
     run(&mut cb);
     assert_eq!(format!("{:x}", cb), bytes);
 }

@@ -1125,26 +1125,20 @@ mod tests {
     use super::*;
     use crate::asm::x86_64::*;
 
-    fn setup_codeblock(mem_size: u16) -> CodeBlock {
-        let mem_block = vec![0; mem_size.into()].as_mut_ptr();
-        CodeBlock::new(mem_block, mem_size.into())
-    }
-
     fn setup_codegen() -> (JITState, Context, CodeBlock, OutlinedCb) {
         let block = Block::new(BLOCKID_NULL, &Context::default());
-        let mem_size = 1024;
 
         return (
             JITState::new(&block),
             Context::new(),
-            setup_codeblock(mem_size),
-            OutlinedCb::wrap(setup_codeblock(mem_size))
+            CodeBlock::new_dummy(256 * 1024),
+            OutlinedCb::wrap(CodeBlock::new_dummy(256 * 1024))
         );
     }
 
     #[test]
     fn test_gen_leave_exit() {
-        let mut ocb = OutlinedCb::wrap(setup_codeblock(1024));
+        let mut ocb = OutlinedCb::wrap( CodeBlock::new_dummy(256 * 1024));
         gen_leave_exit(&mut ocb);
         assert!(ocb.unwrap().get_write_pos() > 0);
     }
@@ -5375,10 +5369,20 @@ impl CodegenGlobals {
     pub fn init() {
         // Executable memory size in MiB
         let mem_size = get_option!(exec_mem_size) * 1024 * 1024;
-        let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size.try_into().unwrap()) };
 
+        #[cfg(not(test))]
+        let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size.try_into().unwrap()) };
+        #[cfg(not(test))]
         let mut cb = CodeBlock::new(mem_block, mem_size / 2);
+        #[cfg(not(test))]
         let mut ocb = OutlinedCb::wrap(CodeBlock::new(unsafe { mem_block.add(mem_size / 2) }, mem_size / 2));
+
+        // In test mode we're not linking with the C code
+        // so we don't allocate executable memory
+        #[cfg(test)]
+        let mut cb = CodeBlock::new_dummy(mem_size / 2);       
+        #[cfg(test)]
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new_dummy(mem_size / 2));
 
         let leave_exit_code = gen_leave_exit(&mut ocb);
 
