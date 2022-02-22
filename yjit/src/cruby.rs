@@ -133,14 +133,22 @@ extern "C" {
     #[link_name = "rb_yarv_str_eql_internal"]
     pub fn rb_str_eql_internal(str1: VALUE, str2: VALUE) -> VALUE;
 
-    #[link_name = "rb_yarv_fl_test"]
+    #[link_name = "rb_yarv_FL_TEST"]
     pub fn FL_TEST(obj: VALUE, flags: VALUE) -> VALUE;
+
+    #[link_name = "rb_FL_TEST_RAW"]
+    pub fn FL_TEST_RAW(obj: VALUE, flags: VALUE) -> VALUE;
+
+    #[link_name = "rb_RB_TYPE_P"]
+    pub fn RB_TYPE_P(obj: VALUE, t: ruby_value_type) -> bool;
 
     // Ruby only defines these in vm_insnhelper.c, not in any header.
     // Parsing it would result in a lot of duplicate definitions.
     pub fn rb_vm_opt_mod(recv: VALUE, obj: VALUE) -> VALUE;
     pub fn rb_vm_splat_array(flag: VALUE, ary: VALUE) -> VALUE;
     pub fn rb_vm_defined(ec: EcPtr, reg_cfp: CfpPtr, op_type: rb_num_t, obj: VALUE, v: VALUE) -> bool;
+    pub fn rb_vm_set_ivar_idx(obj: VALUE, idx: u32, val: VALUE) -> VALUE;
+    pub fn rb_vm_setinstancevariable(iseq: IseqPtr, obj: VALUE, id: ID, val: VALUE, ic: IVC);
 }
 
 pub fn insn_len(opcode:usize) -> u32
@@ -195,6 +203,14 @@ pub struct rb_execution_context_struct {
 
 /// Pointer to an execution context (EC)
 pub type EcPtr = *const rb_execution_context_struct;
+
+/// Opaque execution-context type
+#[repr(C)]
+pub struct iseq_inline_iv_cache_entry {
+    _data: [u8; 0],
+    _marker:
+        core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+}
 
 /// Pointer to a control frame pointer (CFP)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -360,6 +376,9 @@ pub const SIZEOF_VALUE: usize = 8;
 
 pub const RUBY_FL_SINGLETON:usize = RUBY_FL_USER_0;
 
+pub const ROBJECT_EMBED:usize = RUBY_FL_USER_1;
+pub const ROBJECT_EMBED_LEN_MAX:usize = 3; // This is a complex calculation in ruby/internal/core/robject.h
+
 // Constants from include/ruby/internal/fl_type.h
 pub const RUBY_FL_USHIFT:usize = 12;
 pub const RUBY_FL_USER_0:usize = 1 << (RUBY_FL_USHIFT + 0);
@@ -395,6 +414,10 @@ pub const RUBY_OFFSET_RBASIC_KLASS:i32 = 8;  // struct RBasic, field "klass"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_LEN:i32 = 16;  // struct RArray, subfield "as.heap.len"
 pub const RUBY_OFFSET_RARRAY_AS_ARY:i32 = 16;  // struct RArray, subfield "as.ary"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_PTR:i32 = 16;  // struct RArray, subfield "as.heap.ptr"
+
+pub const RUBY_OFFSET_ROBJECT_AS_ARY:i32 = 16; // struct RObject, subfield "as.ary"
+pub const RUBY_OFFSET_ROBJECT_AS_HEAP_NUMIV:i32 = 16; // struct RObject, subfield "as.heap.numiv"
+pub const RUBY_OFFSET_ROBJECT_AS_HEAP_IVPTR:i32 = 20; // struct RObject, subfield "as.heap.ivptr"
 
 // Constants from rb_control_frame_t vm_core.h
 pub const RUBY_OFFSET_CFP_PC: i32 = 0;

@@ -202,12 +202,12 @@ fn jit_peek_at_stack(jit: &JITState, ctx: &Context, n:isize) -> VALUE
     }
 }
 
-/*
 fn jit_peek_at_self(jit: &JITState, ctx: &Context) -> VALUE
 {
     unsafe { cfp_get_self(ec_get_cfp(jit.ec.unwrap())) }
 }
 
+/*
 fn jit_peek_at_local(jit: &JITState, ctx: &Context, n: i32) -> VALUE
 {
     assert!(jit_at_current_insn(jit));
@@ -1944,15 +1944,12 @@ pub const OPT_AREF_MAX_CHAIN_DEPTH:i32 = 2;
 // up to 5 different classes
 pub const SEND_MAX_DEPTH:i32 = 5;
 
-/*
-VALUE rb_vm_set_ivar_idx(VALUE obj, uint32_t idx, VALUE val);
-
 // Codegen for setting an instance variable.
 // Preconditions:
 //   - receiver is in REG0
 //   - receiver has the same class as CLASS_OF(comptime_receiver)
 //   - no stack push or pops to ctx since the entry to the codegen of the instruction being compiled
-fn gen_set_ivar(jitstate_t *jit, ctx_t *ctx, VALUE recv, VALUE klass, ID ivar_name)
+fn gen_set_ivar(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, recv:VALUE, klass:VALUE, ivar_name: ID) -> CodegenStatus
 {
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
@@ -1962,13 +1959,14 @@ fn gen_set_ivar(jitstate_t *jit, ctx_t *ctx, VALUE recv, VALUE klass, ID ivar_na
     let val_opnd = ctx.stack_pop(1);
     let recv_opnd = ctx.stack_pop(1);
 
-    uint32_t ivar_index = rb_obj_ensure_iv_index_mapping(recv, ivar_name);
+    let ivar_index:u32 = unsafe { rb_obj_ensure_iv_index_mapping(recv, ivar_name) };
 
     // Call rb_vm_set_ivar_idx with the receiver, the index of the ivar, and the value
     mov(cb, C_ARG_REGS[0], recv_opnd);
-    mov(cb, C_ARG_REGS[1], imm_opnd(ivar_index));
+    mov(cb, C_ARG_REGS[1], imm_opnd(ivar_index.into()));
     mov(cb, C_ARG_REGS[2], val_opnd);
-    call_ptr(cb, REG0, (void *)rb_vm_set_ivar_idx);
+    let set_ivar_idx = CodePtr::from(rb_vm_set_ivar_idx as *mut u8);
+    call_ptr(cb, REG0, set_ivar_idx);
 
     let out_opnd = ctx.stack_push(Type::Unknown);
     mov(cb, out_opnd, RAX);
@@ -1981,17 +1979,20 @@ fn gen_set_ivar(jitstate_t *jit, ctx_t *ctx, VALUE recv, VALUE klass, ID ivar_na
 //   - receiver is in REG0
 //   - receiver has the same class as CLASS_OF(comptime_receiver)
 //   - no stack push or pops to ctx since the entry to the codegen of the instruction being compiled
-fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE comptime_receiver, ID ivar_name, insn_opnd_t reg0_opnd, uint8_t *side_exit)
+fn gen_get_ivar(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb, max_chain_depth: i32, comptime_receiver: VALUE, ivar_name: ID, reg0_opnd: InsnOpnd, side_exit: CodePtr) -> CodegenStatus
 {
-    VALUE comptime_val_klass = CLASS_OF(comptime_receiver);
-    const ctx_t starting_context = *ctx; // make a copy for use with jit_chain_guard
+    let comptime_val_klass = comptime_receiver.class_of();
+    let starting_context = ctx.clone(); // make a copy for use with jit_chain_guard
+
+    let custom_allocator = unsafe { rb_get_alloc_func(comptime_val_klass).unwrap() as *mut u8 };
+    let allocate_instance = rb_class_allocate_instance as *mut u8;
 
     // If the class uses the default allocator, instances should all be T_OBJECT
     // NOTE: This assumes nobody changes the allocator of the class after allocation.
     //       Eventually, we can encode whether an object is T_OBJECT or not
     //       inside object shapes.
-    if (!RB_TYPE_P(comptime_receiver, T_OBJECT) ||
-            rb_get_alloc_func(comptime_val_klass) != rb_class_allocate_instance) {
+    if ! unsafe { RB_TYPE_P(comptime_receiver, RUBY_T_OBJECT) } ||
+            custom_allocator != allocate_instance {
         // General case. Call rb_ivar_get().
         // VALUE rb_ivar_get(VALUE obj, ID id)
         add_comment(cb, "call rb_ivar_get()");
@@ -2000,18 +2001,19 @@ fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE co
         jit_prepare_routine_call(jit, ctx, cb, REG1);
 
         mov(cb, C_ARG_REGS[0], REG0);
-        mov(cb, C_ARG_REGS[1], imm_opnd((int64_t)ivar_name));
-        call_ptr(cb, REG1, (void *)rb_ivar_get);
+        mov(cb, C_ARG_REGS[1], uimm_opnd(ivar_name));
+        let ivar_get = CodePtr::from(rb_ivar_get as *mut u8);
+        call_ptr(cb, REG1, ivar_get);
 
-        if (!reg0_opnd.is_self) {
-            (void)ctx.stack_pop(1);
+        if reg0_opnd != InsnOpnd::SelfOpnd {
+            ctx.stack_pop(1);
         }
         // Push the ivar on the stack
         let out_opnd = ctx.stack_push(Type::Unknown);
         mov(cb, out_opnd, RAX);
 
         // Jump to next instruction. This allows guard chains to share the same successor.
-        jit_jump_to_next_insn(jit, ctx);
+        jit_jump_to_next_insn(jit, ctx, cb, ocb);
         return EndBlock;
     }
 
@@ -2037,31 +2039,33 @@ fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE co
     // FIXME: Mapping the index could fail when there is too many ivar names. If we're
     // compiling for a branch stub that can cause the exception to be thrown from the
     // wrong PC.
-    uint32_t ivar_index = rb_obj_ensure_iv_index_mapping(comptime_receiver, ivar_name);
+    let ivar_index:usize = unsafe { rb_obj_ensure_iv_index_mapping(comptime_receiver, ivar_name) } as usize;
 
     // Pop receiver if it's on the temp stack
-    if (!reg0_opnd.is_self) {
-        (void)ctx.stack_pop(1);
+    if reg0_opnd != InsnOpnd::SelfOpnd {
+        ctx.stack_pop(1);
     }
 
     // Compile time self is embedded and the ivar index lands within the object
-    if (RB_FL_TEST_RAW(comptime_receiver, ROBJECT_EMBED) && ivar_index < ROBJECT_EMBED_LEN_MAX) {
+    let test_result = unsafe { FL_TEST_RAW(comptime_receiver, VALUE(ROBJECT_EMBED)) != VALUE(0) };
+    if test_result && ivar_index < ROBJECT_EMBED_LEN_MAX {
         // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
 
         // Guard that self is embedded
         // TODO: BT and JC is shorter
         add_comment(cb, "guard embedded getivar");
-        let flags_opnd = member_opnd(REG0, struct RBasic, flags);
-        test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
+        let flags_opnd = mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS);
+        test(cb, flags_opnd, uimm_opnd(ROBJECT_EMBED as u64));
         jit_chain_guard(JCC_JZ, jit, &starting_context, cb, max_chain_depth, counted_exit!(ocb, side_exit, getivar_megamorphic));
 
         // Load the variable
-        let ivar_opnd = mem_opnd(64, REG0, offsetof(struct RObject, as.ary) + ivar_index * SIZEOF_VALUE);
+        let offs = RUBY_OFFSET_ROBJECT_AS_ARY + (ivar_index * SIZEOF_VALUE) as i32;
+        let ivar_opnd = mem_opnd(64, REG0, offs);
         mov(cb, REG1, ivar_opnd);
 
         // Guard that the variable is not Qundef
-        cmp(cb, REG1, imm_opnd(Qundef));
-        mov(cb, REG0, imm_opnd(Qnil));
+        cmp(cb, REG1, uimm_opnd(Qundef.into()));
+        mov(cb, REG0, uimm_opnd(Qnil.into()));
         cmove(cb, REG1, REG0);
 
         // Push the ivar on the stack
@@ -2074,29 +2078,29 @@ fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE co
         // Guard that value is *not* embedded
         // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
         add_comment(cb, "guard extended getivar");
-        let flags_opnd = member_opnd(REG0, struct RBasic, flags);
-        test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
+        let flags_opnd = mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS);
+        test(cb, flags_opnd, uimm_opnd(ROBJECT_EMBED as u64));
         jit_chain_guard(JCC_JNZ, jit, &starting_context, cb, max_chain_depth, counted_exit!(ocb, side_exit, getivar_megamorphic));
 
         // check that the extended table is big enough
-        if (ivar_index >= ROBJECT_EMBED_LEN_MAX + 1) {
+        if ivar_index >= ROBJECT_EMBED_LEN_MAX + 1 {
             // Check that the slot is inside the extended table (num_slots > index)
-            let num_slots = mem_opnd(32, REG0, offsetof(struct RObject, as.heap.numiv));
-            cmp(cb, num_slots, imm_opnd(ivar_index));
+            let num_slots = mem_opnd(32, REG0, RUBY_OFFSET_ROBJECT_AS_HEAP_NUMIV);
+            cmp(cb, num_slots, uimm_opnd(ivar_index as u64));
             jle_ptr(cb, counted_exit!(ocb, side_exit, getivar_idx_out_of_range));
         }
 
         // Get a pointer to the extended table
-        let tbl_opnd = mem_opnd(64, REG0, offsetof(struct RObject, as.heap.ivptr));
+        let tbl_opnd = mem_opnd(64, REG0, RUBY_OFFSET_ROBJECT_AS_HEAP_IVPTR);
         mov(cb, REG0, tbl_opnd);
 
         // Read the ivar from the extended table
-        let ivar_opnd = mem_opnd(64, REG0, SIZEOF_VALUE * ivar_index);
+        let ivar_opnd = mem_opnd(64, REG0, (SIZEOF_VALUE * ivar_index) as i32);
         mov(cb, REG0, ivar_opnd);
 
         // Check that the ivar is not Qundef
-        cmp(cb, REG0, imm_opnd(Qundef));
-        mov(cb, REG1, imm_opnd(Qnil));
+        cmp(cb, REG0, uimm_opnd(Qundef.into()));
+        mov(cb, REG1, uimm_opnd(Qnil.into()));
         cmove(cb, REG0, REG1);
 
         // Push the ivar on the stack
@@ -2105,40 +2109,38 @@ fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE co
     }
 
     // Jump to next instruction. This allows guard chains to share the same successor.
-    jit_jump_to_next_insn(jit, ctx);
+    jit_jump_to_next_insn(jit, ctx, cb, ocb);
     EndBlock
 }
 
 fn gen_getinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
-    if (!jit_at_current_insn(jit)) {
+    if !jit_at_current_insn(jit) {
         defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
-    ID ivar_name = (ID)jit_get_arg(jit, 0);
+    let ivar_name = jit_get_arg(jit, 0).as_u64();
 
-    VALUE comptime_val = jit_peek_at_self(jit, ctx);
-    VALUE comptime_val_klass = CLASS_OF(comptime_val);
+    let comptime_val = jit_peek_at_self(jit, ctx);
+    let comptime_val_klass = comptime_val.class_of();
 
     // Generate a side exit
-    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+    let side_exit = get_side_exit(jit, ocb, ctx);
 
     // Guard that the receiver has the same class as the one from compile time.
-    mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, self));
+    mov(cb, REG0, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SELF));
 
-    jit_guard_known_klass(jit, ctx, cb, comptime_val_klass, OPND_SELF, comptime_val, GETIVAR_MAX_DEPTH, side_exit);
+    jit_guard_known_klass(jit, ctx, cb, comptime_val_klass, InsnOpnd::SelfOpnd, comptime_val, GET_IVAR_MAX_DEPTH, side_exit);
 
-    return gen_get_ivar(jit, ctx, GETIVAR_MAX_DEPTH, comptime_val, ivar_name, OPND_SELF, side_exit);
+    gen_get_ivar(jit, ctx, cb, ocb, GET_IVAR_MAX_DEPTH, comptime_val, ivar_name, InsnOpnd::SelfOpnd, side_exit)
 }
-
-void rb_vm_setinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, VALUE val, IVC ic);
 
 fn gen_setinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    ID id = (ID)jit_get_arg(jit, 0);
-    IVC ic = (IVC)jit_get_arg(jit, 1);
+    let id = jit_get_arg(jit, 0);
+    let ic = jit_get_arg(jit, 1).as_u64(); // type IVC
 
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
@@ -2148,16 +2150,17 @@ fn gen_setinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeB
     let val_opnd = ctx.stack_pop(1);
 
     // Call rb_vm_setinstancevariable(iseq, obj, id, val, ic);
-    mov(cb, C_ARG_REGS[1], member_opnd(REG_CFP, rb_control_frame_t, self));
+    mov(cb, C_ARG_REGS[1], mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SELF));
     mov(cb, C_ARG_REGS[3], val_opnd);
-    mov(cb, C_ARG_REGS[2], imm_opnd(id));
-    mov(cb, C_ARG_REGS[4], const_ptr_opnd(ic));
-    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], (VALUE)jit->iseq);
-    call_ptr(cb, REG0, (void *)rb_vm_setinstancevariable);
+    mov(cb, C_ARG_REGS[2], uimm_opnd(id.into()));
+    mov(cb, C_ARG_REGS[4], const_ptr_opnd(ic as *const u8));
+    let iseq = VALUE(jit.iseq as usize);
+    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], iseq);
+    let vm_setinstancevar = CodePtr::from(rb_vm_setinstancevariable as *mut u8);
+    call_ptr(cb, REG0, vm_setinstancevar);
 
     KeepCompiling
 }
-*/
 
 fn gen_defined(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
@@ -5248,11 +5251,10 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_DEFINED => Some(gen_defined),
         OP_CHECKKEYWORD => Some(gen_checkkeyword),
         OP_CONCATSTRINGS => Some(gen_concatstrings),
+        OP_GETINSTANCEVARIABLE => Some(gen_getinstancevariable),
+        OP_SETINSTANCEVARIABLE => Some(gen_setinstancevariable),
 
         /*
-        yjit_reg_op(BIN(concatstrings), gen_concatstrings);
-        yjit_reg_op(BIN(getinstancevariable), gen_getinstancevariable);
-        yjit_reg_op(BIN(setinstancevariable), gen_setinstancevariable);
         yjit_reg_op(BIN(opt_eq), gen_opt_eq);
         yjit_reg_op(BIN(opt_neq), gen_opt_neq);
         yjit_reg_op(BIN(opt_aref), gen_opt_aref);

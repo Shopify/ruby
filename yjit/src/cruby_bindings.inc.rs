@@ -15,6 +15,10 @@ pub const PROC_REDEFINED_OP_FLAG: u32 = 4096;
 pub type size_t = ::std::os::raw::c_ulong;
 pub type __uint32_t = ::std::os::raw::c_uint;
 pub type ID = ::std::os::raw::c_ulong;
+pub type rb_alloc_func_t = ::std::option::Option<unsafe extern "C" fn(klass: VALUE) -> VALUE>;
+extern "C" {
+    pub fn rb_get_alloc_func(klass: VALUE) -> rb_alloc_func_t;
+}
 #[repr(C)]
 pub struct RBasic {
     pub flags: VALUE,
@@ -86,6 +90,9 @@ extern "C" {
 }
 extern "C" {
     pub fn rb_range_new(beg: VALUE, end: VALUE, excl: ::std::os::raw::c_int) -> VALUE;
+}
+extern "C" {
+    pub fn rb_ivar_get(obj: VALUE, name: ID) -> VALUE;
 }
 extern "C" {
     pub fn rb_attr_get(obj: VALUE, name: ID) -> VALUE;
@@ -310,6 +317,9 @@ extern "C" {
         elts: *const VALUE,
     ) -> VALUE;
 }
+extern "C" {
+    pub fn rb_class_allocate_instance(klass: VALUE) -> VALUE;
+}
 pub type rb_num_t = ::std::os::raw::c_ulong;
 pub const BOP_PLUS: ruby_basic_operators = 0;
 pub const BOP_MINUS: ruby_basic_operators = 1;
@@ -342,6 +352,7 @@ pub const BOP_AND: ruby_basic_operators = 27;
 pub const BOP_OR: ruby_basic_operators = 28;
 pub const BOP_LAST_: ruby_basic_operators = 29;
 pub type ruby_basic_operators = u32;
+pub type IVC = *mut iseq_inline_iv_cache_entry;
 extern "C" {
     pub fn rb_iseq_get_yjit_payload(iseq: *const rb_iseq_t) -> *mut ::std::os::raw::c_void;
 }
@@ -359,6 +370,9 @@ extern "C" {
 }
 extern "C" {
     pub fn rb_hash_resurrect(hash: VALUE) -> VALUE;
+}
+extern "C" {
+    pub fn rb_obj_ensure_iv_index_mapping(obj: VALUE, id: ID) -> u32;
 }
 extern "C" {
     pub fn rb_gvar_get(arg1: ID) -> VALUE;

@@ -298,6 +298,20 @@ rb_yarv_FL_TEST(VALUE obj, VALUE flags)
     return RB_FL_TEST(obj, flags);
 }
 
+// The FL_TEST_RAW() macro, normally an internal implementation detail
+VALUE
+rb_FL_TEST_RAW(VALUE obj, VALUE flags)
+{
+    return FL_TEST_RAW(obj, flags);
+}
+
+// The RB_TYPE_P macro
+bool
+rb_RB_TYPE_P(VALUE obj, enum ruby_value_type t)
+{
+    return RB_TYPE_P(obj, t);
+}
+
 // The number of bytes counting from the beginning of the inline code block
 // that should not be changed. After patching for global invalidation, no one
 // should make changes to the invalidated code region anymore. This is used to
