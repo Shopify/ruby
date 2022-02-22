@@ -322,6 +322,11 @@ get_loaded_features_index(rb_vm_t *vm)
     int i;
 
     if (!rb_ary_shared_with_p(vm->loaded_features_snapshot, vm->loaded_features)) {
+            if (RARRAY_LEN(vm->loaded_features_snapshot) > RARRAY_EMBED_LEN_MAX) {
+                    VALUE diff = rb_funcall(vm->loaded_features, rb_intern("-"), 1, vm->loaded_features_snapshot);
+                    rb_funcall(rb_mKernel, rb_intern("p"), 1, diff);
+            }
+            
 	/* The sharing was broken; something (other than us in rb_provide_feature())
 	   modified loaded_features.  Rebuild the index. */
 	st_foreach(vm->loaded_features_index, loaded_features_index_clear_i, 0);
