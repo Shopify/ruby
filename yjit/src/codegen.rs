@@ -440,7 +440,7 @@ fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
     #[cfg(feature = "stats")]
     if get_option!(gen_stats) {
         mov(cb, RDI, const_ptr_opnd(exit_pc));
-        call_ptr(cb, RSI, CodePtr(yjit_count_side_exit_op));
+        call_ptr(cb, RSI, yjit_count_side_exit_op as *const u8);
     }
 
     pop(cb, REG_SP);
@@ -1423,8 +1423,7 @@ fn gen_newarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     mov(cb, C_ARG_REGS[0], REG_EC);
     mov(cb, C_ARG_REGS[1], imm_opnd(n.into()));
     lea(cb, C_ARG_REGS[2], values_ptr);
-    let ary_new = CodePtr::from(rb_ec_ary_new_from_values as *mut u8);
-    call_ptr(cb, REG0, ary_new);
+    call_ptr(cb, REG0, rb_ec_ary_new_from_values as *const u8);
 
     ctx.stack_pop(n as usize);
     let stack_ret = ctx.stack_push(Type::Array);
@@ -1443,8 +1442,7 @@ fn gen_duparray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 
     // call rb_ary_resurrect(VALUE ary);
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], ary);
-    let ary_res = CodePtr::from(rb_ary_resurrect as *mut u8);
-    call_ptr(cb, REG0, ary_res);
+    call_ptr(cb, REG0, rb_ary_resurrect as *const u8);
 
     let stack_ret = ctx.stack_push(Type::Array);
     mov(cb, stack_ret, RAX);
@@ -1462,8 +1460,7 @@ fn gen_duphash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
 
     // call rb_hash_resurrect(VALUE hash);
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], hash);
-    let hash_res = CodePtr::from(rb_hash_resurrect as *mut u8);
-    call_ptr(cb, REG0, hash_res);
+    call_ptr(cb, REG0, rb_hash_resurrect as *const u8);
 
     let stack_ret = ctx.stack_push(Type::Hash);
     mov(cb, stack_ret, RAX);
@@ -1486,8 +1483,7 @@ fn gen_splatarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb
     // Call rb_vm_splat_array(flag, ary)
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], flag);
     mov(cb, C_ARG_REGS[1], ary_opnd);
-    let splat_array = CodePtr::from(rb_vm_splat_array as *mut u8);
-    call_ptr(cb, REG1, splat_array);
+    call_ptr(cb, REG1, rb_vm_splat_array as *const u8);
 
     let stack_ret = ctx.stack_push(Type::Array);
     mov(cb, stack_ret, RAX);
@@ -1507,8 +1503,7 @@ fn gen_newrange(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     mov(cb, C_ARG_REGS[0], ctx.stack_opnd(1));
     mov(cb, C_ARG_REGS[1], ctx.stack_opnd(0));
     mov(cb, C_ARG_REGS[2], uimm_opnd(flag.into()));
-    let range_new = CodePtr::from(rb_range_new as *mut u8);
-    call_ptr(cb, REG0, range_new);
+    call_ptr(cb, REG0, rb_range_new as *const u8);
 
     ctx.stack_pop(2);
     let stack_ret = ctx.stack_push(Type::UnknownHeap);
@@ -1806,8 +1801,7 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     if num != 0 {
         // val = rb_hash_new_with_size(num / 2);
         mov(cb, C_ARG_REGS[0], imm_opnd(num / 2));
-        let hn_code_ptr = CodePtr::from(rb_hash_new_with_size as *mut u8);
-        call_ptr(cb, REG0, hn_code_ptr);
+        call_ptr(cb, REG0, rb_hash_new_with_size as *const u8);
 
         // save the allocated hash as we want to push it after insertion
         push(cb, RAX);
@@ -1817,8 +1811,7 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
         mov(cb, C_ARG_REGS[0], imm_opnd(num));
         lea(cb, C_ARG_REGS[1], ctx.stack_opnd((num - 1).try_into().unwrap()));
         mov(cb, C_ARG_REGS[2], RAX);
-        let bi_code_opnd = CodePtr::from(rb_hash_bulk_insert as *mut u8);
-        call_ptr(cb, REG0, bi_code_opnd);
+        call_ptr(cb, REG0, rb_hash_bulk_insert as *const u8);
 
         pop(cb, RAX); // alignment
         pop(cb, RAX);
@@ -1829,8 +1822,7 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     }
     else {
         // val = rb_hash_new();
-        let hn_code_ptr = CodePtr::from(rb_hash_new as *mut u8);
-        call_ptr(cb, REG0, hn_code_ptr);
+        call_ptr(cb, REG0, rb_hash_new as *const u8);
 
         let stack_ret = ctx.stack_push(Type::Hash);
         mov(cb, stack_ret, RAX);
@@ -1848,8 +1840,7 @@ fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
 
     mov(cb, C_ARG_REGS[0], REG_EC);
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[1], put_val);
-    let str_resurrect = CodePtr::from(rb_ec_str_resurrect as *mut u8);
-    call_ptr(cb, REG0, str_resurrect);
+    call_ptr(cb, REG0, rb_ec_str_resurrect as *const u8);
 
     let stack_top = ctx.stack_push(Type::String);
     mov(cb, stack_top, RAX);
@@ -1979,8 +1970,7 @@ fn gen_set_ivar(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, recv:
     mov(cb, C_ARG_REGS[0], recv_opnd);
     mov(cb, C_ARG_REGS[1], imm_opnd(ivar_index.into()));
     mov(cb, C_ARG_REGS[2], val_opnd);
-    let set_ivar_idx = CodePtr::from(rb_vm_set_ivar_idx as *mut u8);
-    call_ptr(cb, REG0, set_ivar_idx);
+    call_ptr(cb, REG0, rb_vm_set_ivar_idx as *const u8);
 
     let out_opnd = ctx.stack_push(Type::Unknown);
     mov(cb, out_opnd, RAX);
@@ -1998,8 +1988,8 @@ fn gen_get_ivar(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     let comptime_val_klass = comptime_receiver.class_of();
     let starting_context = ctx.clone(); // make a copy for use with jit_chain_guard
 
-    let custom_allocator = unsafe { rb_get_alloc_func(comptime_val_klass).unwrap() as *mut u8 };
-    let allocate_instance = rb_class_allocate_instance as *mut u8;
+    let custom_allocator = unsafe { rb_get_alloc_func(comptime_val_klass).unwrap() as *const u8 };
+    let allocate_instance = rb_class_allocate_instance as *const u8;
 
     // If the class uses the default allocator, instances should all be T_OBJECT
     // NOTE: This assumes nobody changes the allocator of the class after allocation.
@@ -2016,8 +2006,7 @@ fn gen_get_ivar(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 
         mov(cb, C_ARG_REGS[0], REG0);
         mov(cb, C_ARG_REGS[1], uimm_opnd(ivar_name));
-        let ivar_get = CodePtr::from(rb_ivar_get as *mut u8);
-        call_ptr(cb, REG1, ivar_get);
+        call_ptr(cb, REG1, rb_ivar_get as *const u8);
 
         if reg0_opnd != InsnOpnd::SelfOpnd {
             ctx.stack_pop(1);
@@ -2170,8 +2159,7 @@ fn gen_setinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeB
     mov(cb, C_ARG_REGS[4], const_ptr_opnd(ic as *const u8));
     let iseq = VALUE(jit.iseq as usize);
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], iseq);
-    let vm_setinstancevar = CodePtr::from(rb_vm_setinstancevariable as *mut u8);
-    call_ptr(cb, REG0, vm_setinstancevar);
+    call_ptr(cb, REG0, rb_vm_setinstancevariable as *const u8);
 
     KeepCompiling
 }
@@ -2195,8 +2183,7 @@ fn gen_defined(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     mov(cb, C_ARG_REGS[2], uimm_opnd(op_type.into()));
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[3], obj);
     mov(cb, C_ARG_REGS[4], v_opnd);
-    let vm_defined = CodePtr::from(rb_vm_defined as *mut u8);
-    call_ptr(cb, REG0, vm_defined);
+    call_ptr(cb, REG0, rb_vm_defined as *const u8);
 
     // if (vm_defined(ec, GET_CFP(), op_type, obj, v)) {
     //  val = pushval;
@@ -2285,8 +2272,7 @@ fn gen_concatstrings(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, 
     // call rb_str_concat_literals(long n, const VALUE *strings);
     mov(cb, C_ARG_REGS[0], imm_opnd(n.into()));
     lea(cb, C_ARG_REGS[1], values_ptr);
-    let str_concat_literals = CodePtr::from(rb_str_concat_literals as *mut u8);
-    call_ptr(cb, REG0, str_concat_literals);
+    call_ptr(cb, REG0, rb_str_concat_literals as *const u8);
 
     ctx.stack_pop(n.as_usize());
     let stack_ret = ctx.stack_push(Type::String);
@@ -2484,8 +2470,7 @@ fn gen_equality_specialized(jit: &mut JITState, ctx: &mut Context, cb: &mut Code
         }
 
         // Call rb_str_eql_internal(a, b)
-        let str_eql = CodePtr::from(rb_str_eql_internal as *mut u8);
-        call_ptr(cb, REG0, str_eql);
+        call_ptr(cb, REG0, rb_str_eql_internal as *const u8);
 
         // Push the output on the stack
         cb.write_label(ret);
@@ -2892,8 +2877,7 @@ fn gen_opt_mod(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     // Call rb_vm_opt_mod(VALUE recv, VALUE obj)
     mov(cb, C_ARG_REGS[0], arg0);
     mov(cb, C_ARG_REGS[1], arg1);
-    let vm_mod = CodePtr::from(rb_vm_opt_mod as *mut u8);
-    call_ptr(cb, REG0, vm_mod);
+    call_ptr(cb, REG0, rb_vm_opt_mod as *const u8);
 
     // If val == Qundef, bail to do a method call
     cmp(cb, RAX, imm_opnd(Qundef.as_i64()));
@@ -4695,8 +4679,7 @@ fn gen_getglobal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
 
     mov(cb, C_ARG_REGS[0], imm_opnd(gid.as_i64()));
 
-    let gvar_get = CodePtr::from(rb_gvar_get as *mut u8);
-    call_ptr(cb, REG0, gvar_get);
+    call_ptr(cb, REG0, rb_gvar_get as *const u8);
 
     let top = ctx.stack_push(Type::Unknown);
     mov(cb, top, RAX);
@@ -4718,8 +4701,7 @@ fn gen_setglobal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
 
     mov(cb, C_ARG_REGS[1], val);
 
-    let gvar_set = CodePtr::from(rb_gvar_set as *mut u8);
-    call_ptr(cb, REG0, gvar_set);
+    call_ptr(cb, REG0, rb_gvar_set as *const u8);
 
     KeepCompiling
 }

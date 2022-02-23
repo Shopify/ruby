@@ -1007,13 +1007,13 @@ pub fn call_rel32(cb: &mut CodeBlock, rel32: i32) {
 }
 
 /// call - Call a pointer, encode with a 32-bit offset if possible
-pub fn call_ptr(cb: &mut CodeBlock, scratch_opnd: X86Opnd, dst_ptr: CodePtr) {
+pub fn call_ptr(cb: &mut CodeBlock, scratch_opnd: X86Opnd, dst_ptr: *const u8) {
     if let X86Opnd::Reg(scratch_reg) = scratch_opnd {
         // Pointer to the end of this call instruction
         let end_ptr = cb.get_ptr(cb.write_pos + 5);
 
         // Compute the jump offset
-        let rel64: i64 = dst_ptr.into_i64() - end_ptr.into_i64();
+        let rel64: i64 = dst_ptr as i64 - end_ptr.into_i64();
 
         // If the offset fits in 32-bit
         if rel64 >= i32::MIN.into() && rel64 <= i32::MAX.into() {
@@ -1022,7 +1022,7 @@ pub fn call_ptr(cb: &mut CodeBlock, scratch_opnd: X86Opnd, dst_ptr: CodePtr) {
         }
 
         // Move the pointer into the scratch register and call
-        mov(cb, scratch_opnd, const_ptr_opnd(dst_ptr.raw_ptr()));
+        mov(cb, scratch_opnd, const_ptr_opnd(dst_ptr));
         call(cb, scratch_opnd);
     } else {
         unreachable!();
