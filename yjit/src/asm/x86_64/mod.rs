@@ -114,7 +114,7 @@ impl CodeBlock
         self.write_pos = pos;
     }
 
-    // Align the current write position to a multiple of bytes
+    // Align the current write pointer to a multiple of bytes
     pub fn align_pos(&mut self, multiple: u32)
     {
         // Compute the alignment boundary that is lower or equal
