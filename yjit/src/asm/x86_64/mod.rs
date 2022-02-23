@@ -50,6 +50,10 @@ pub struct CodeBlock
     // Used for changing protection when writing to the JIT buffer
     current_aligned_write_pos: usize,
 
+    // Memory protection works at page granularity and this is the
+    // the size of each page. Used to implement W^X.
+    page_size: usize,
+
     // Set if the CodeBlock is unable to output some instructions,
     // for example, when there is not enough space or when a jump
     // target is too far away.
@@ -72,11 +76,12 @@ impl CodeBlock
             label_names: Vec::new(),
             label_refs: Vec::new(),
             current_aligned_write_pos: ALIGNED_WRITE_POSITION_NONE,
+            page_size: 4096,
             dropped_bytes: false
         }
     }
 
-    pub fn new(mem_block: *mut u8, mem_size: usize) -> Self {
+    pub fn new(mem_block: *mut u8, mem_size: usize, page_size: usize) -> Self {
         Self {
             dummy_block: vec![0; 0],
             mem_block: mem_block,
@@ -86,6 +91,7 @@ impl CodeBlock
             label_names: Vec::new(),
             label_refs: Vec::new(),
             current_aligned_write_pos: ALIGNED_WRITE_POSITION_NONE,
+            page_size,
             dropped_bytes: false
         }
     }
@@ -111,18 +117,20 @@ impl CodeBlock
     // Align the current write position to a multiple of bytes
     pub fn align_pos(&mut self, multiple: u32)
     {
-        todo!();
+        // Compute the alignment boundary that is lower or equal
+        // Do everything with usize
+        let multiple: usize = multiple.try_into().unwrap();
+        let pos = self.get_write_ptr().raw_ptr() as usize;
+        let remainder = pos % multiple;
+        let prev_aligned = pos - remainder;
 
-        /*
-        // Compute the pointer modulo the given alignment boundary
-        uint8_t *ptr = cb_get_write_ptr(cb);
-        uint8_t *aligned_ptr = align_ptr(ptr, multiple);
-        const uint32_t write_pos = cb->write_pos;
-
-        // Pad the pointer by the necessary amount to align it
-        ptrdiff_t pad = aligned_ptr - ptr;
-        cb_set_pos(cb, write_pos + (int32_t)pad);
-        */
+        if prev_aligned == pos {
+            // Already aligned so do nothing
+        } else {
+            // Align by advancing
+            let pad = multiple - remainder;
+            self.set_pos(self.get_write_pos() + pad);
+        }
     }
 
     /*
@@ -268,13 +276,19 @@ impl CodeBlock
     }
 
     pub fn mark_position_writable(&mut self, write_pos: usize) {
-        // let page_size = page_size();
-        // let aligned_position = (self.write_pos / page_size) * page_size;
+        let page_size = self.page_size;
+        let aligned_position = (self.write_pos / page_size) * page_size;
 
-        // if self.current_aligned_write_pos != aligned_position {
-            // self.current_aligned_write_pos = aligned_position;
-            // self.mem_block.mark_writable(aligned_position, page_size).unwrap();
-        // }
+        if self.current_aligned_write_pos != aligned_position {
+            self.current_aligned_write_pos = aligned_position;
+
+            #[cfg(not(test))]
+            unsafe {
+                use core::ffi::c_void;
+                let page_ptr = self.get_ptr(aligned_position).raw_ptr() as *mut c_void;
+                crate::cruby::rb_yjit_mark_writable(page_ptr, page_size.try_into().unwrap());
+            }
+        }
     }
 
     pub fn mark_all_writable(&mut self) {
@@ -288,7 +302,15 @@ impl CodeBlock
 
     pub fn mark_all_executable(&mut self) {
         self.current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
-        // self.mem_block.mark_executable(0, self.mem_size).unwrap();
+
+        #[cfg(not(test))]
+        unsafe {
+            use core::ffi::c_void;
+            // NOTE(alan): Right now we do allocate one big chunck and give the top half to the outlined codeblock
+            // The start of the top half of the region isn't necessarily a page boundary...
+            let cb_start = self.get_ptr(0).raw_ptr() as *mut c_void;
+            crate::cruby::rb_yjit_mark_executable(cb_start, self.mem_size.try_into().unwrap());
+        }
     }
 }
 

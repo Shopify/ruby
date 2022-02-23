@@ -64,20 +64,44 @@ static codeblock_t *ocb = NULL;
 // The "_yjit_" part is for trying to be informative. We might want different
 // suffixes for symbols meant for Rust and symbols meant for broader CRuby.
 
-/*
-void rb_yjit_mark_all_writable(uint8_t *mem_block, uint32_t mem_size) {
+void
+rb_yjit_mark_writable(void *mem_block, uint32_t mem_size)
+{
     if (mprotect(mem_block, mem_size, PROT_READ | PROT_WRITE)) {
-        fprintf(stderr, "Couldn't make JIT page (%p) writeable, errno: %s", (void *)mem_block, strerror(errno));
+        fprintf(stderr, "Couldn't make JIT page region (%p, %lu bytes) writeable, errno: %s",
+            mem_block, (unsigned long)mem_size, strerror(errno));
         abort();
     }
 }
 
-void rb_yjit_mark_all_executable(uint8_t *mem_block, uint32_t mem_size) {
+void
+rb_yjit_mark_executable(void *mem_block, uint32_t mem_size) {
     if (mprotect(mem_block, mem_size, PROT_READ | PROT_EXEC)) {
-        fprintf(stderr, "Couldn't make JIT page (%p) executable, errno: %s", (void *)mem_block, strerror(errno));
+        fprintf(stderr, "Couldn't make JIT page (%p, %lu bytes) executable, errno: %s",
+            mem_block, (unsigned long)mem_size, strerror(errno));
         abort();
     }
 }
+
+uint32_t
+rb_yjit_get_page_size(void)
+{
+#if defined(_SC_PAGESIZE)
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0) rb_bug("yjit: failed to get page size");
+
+    // 1 GiB limit. x86 CPUs with PDPE1GB can do this and anything larger is unexpected.
+    // Though our design sort of assume we have fine grained control over memory protection
+    // which require small page sizes.
+    if (page_size > 0x40000000l) rb_bug("yjit page size too large");
+
+    return (uint32_t)page_size;
+#else
+#error "YJIT supports POSIX only for now"
+#endif
+}
+
+/*
 
 #if defined(MAP_FIXED_NOREPLACE) && defined(_SC_PAGESIZE)
     // Align the current write position to a multiple of bytes

@@ -26,7 +26,7 @@ pub const REG1: X86Opnd = RCX;
 pub const REG1_32: X86Opnd = ECX;
 
 /// Status returned by code generation functions
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum CodegenStatus {
     EndBlock,
     KeepCompiling,
@@ -683,6 +683,19 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
         gen_pc_guard(cb, iseq);
     }
 
+    // FIXME(alan): For some reason the code for the iseq isn't generated after the prologue
+    // Removing this int3 reveals a crash with the following script:
+    // ```ruby
+    // def foo = nil
+    //
+    // i = 0
+    // while i < 10
+    //   foo
+    //   i += 1
+    // end
+    // ```
+    int3(cb);
+
     // Verify MAX_PROLOGUE_SIZE
     assert!(cb.get_write_pos() - old_write_pos <= MAX_PROLOGUE_SIZE);
 
@@ -807,6 +820,7 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
             // Call the code generation function
             status = gen_fn(&mut jit, &mut ctx, cb, ocb);
         }
+        dbg!(&status, opcode);
 
         // If we can't compile this instruction
         // exit to the interpreter and stop compiling
@@ -5369,11 +5383,14 @@ impl CodegenGlobals {
         let mem_size = get_option!(exec_mem_size) * 1024 * 1024;
 
         #[cfg(not(test))]
-        let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size.try_into().unwrap()) };
-        #[cfg(not(test))]
-        let mut cb = CodeBlock::new(mem_block, mem_size / 2);
-        #[cfg(not(test))]
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new(unsafe { mem_block.add(mem_size / 2) }, mem_size / 2));
+        let (mut cb, mut ocb) = {
+            let page_size = unsafe { rb_yjit_get_page_size().try_into().unwrap() };
+            let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size.try_into().unwrap()) };
+            let cb = CodeBlock::new(mem_block, mem_size / 2, page_size);
+            let ocb = OutlinedCb::wrap(CodeBlock::new(unsafe { mem_block.add(mem_size / 2) }, mem_size / 2, page_size));
+            (cb, ocb)
+        };
+
 
         // In test mode we're not linking with the C code
         // so we don't allocate executable memory
