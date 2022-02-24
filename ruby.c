@@ -1069,43 +1069,21 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
 static bool
 setup_yjit_options(const char *s, struct rb_yjit_options *yjit_opt)
 {
-    //printf("GOT YJIT OPTION: \"%s\"\n", s);
-    //bool rb_yjit_parse_option(const char* s);
-    //bool result = rb_yjit_parse_option(s);
+    // The option parsing is done in yjit/src/options.rs
+    bool rb_yjit_parse_option(const char* s);
+    bool result = rb_yjit_parse_option(s);
 
-    const char prefix[] = "yjit-";
-    if (strncmp(prefix, s, sizeof(prefix)-1) != 0) {
-        return false;
+    if (result) {
+        return true;
     }
-    s += sizeof(prefix)-1;
-    const size_t l = strlen(s);
-    if (l == 0) {
-        return false;
+    else
+    {
+        rb_raise(
+            rb_eRuntimeError,
+            "invalid yjit option `%s' (--help will show valid yjit options)",
+            s
+        );
     }
-
-    if (yjit_opt_match_arg(s, l, "exec-mem-size")) {
-        yjit_opt->exec_mem_size = atoi(s + 1);
-    }
-    else if (yjit_opt_match_arg(s, l, "call-threshold")) {
-        yjit_opt->call_threshold = atoi(s + 1);
-    }
-    else if (yjit_opt_match_arg(s, l, "max-versions")) {
-        yjit_opt->max_versions = atoi(s + 1);
-    }
-    else if (yjit_opt_match_noarg(s, l, "greedy-versioning")) {
-        yjit_opt->greedy_versioning = true;
-    }
-    else if (yjit_opt_match_noarg(s, l, "no-type-prop")) {
-        yjit_opt->no_type_prop = true;
-    }
-    else if (yjit_opt_match_noarg(s, l, "stats")) {
-        yjit_opt->gen_stats = true;
-    }
-    else {
-        rb_raise(rb_eRuntimeError,
-                 "invalid yjit option `%s' (--help will show valid yjit options)", s);
-    }
-    return true;
 }
 
 #if USE_MJIT
