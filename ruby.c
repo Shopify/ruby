@@ -1030,7 +1030,7 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
 
 #if YJIT_BUILD
 static bool
-setup_yjit_options(const char *s, struct rb_yjit_options *yjit_opt)
+setup_yjit_options(const char *s)
 {
     // The option parsing is done in yjit/src/options.rs
     bool rb_yjit_parse_option(const char* s);
@@ -1435,7 +1435,7 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
             else if (is_option_with_optarg("yjit", '-', true, false, false)) {
 #if YJIT_BUILD
                 FEATURE_SET(opt->features, FEATURE_BIT(yjit));
-                setup_yjit_options(s, &opt->yjit);
+                setup_yjit_options(s);
 #else
                 rb_warn("Ruby was built without YJIT support");
 #endif
@@ -1822,8 +1822,8 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
             exit(1);
         }
 #endif
-#if YJIT_SUPPORTED_P
-        rb_yjit_init(&opt->yjit);
+#if YJIT_BUILD
+        rb_yjit_init();
 #endif
     }
     if (opt->dump & (DUMP_BIT(version) | DUMP_BIT(version_v))) {
