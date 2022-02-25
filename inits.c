@@ -11,6 +11,7 @@
 
 #include "internal/inits.h"
 #include "ruby.h"
+#include "yjit.h"
 #include "builtin.h"
 static void Init_builtin_prelude(void);
 #include "prelude.rbinc"
