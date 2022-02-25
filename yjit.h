@@ -32,8 +32,8 @@
 # define YJIT_BUILD 0
 #endif
 
-// We generate x86 assembly
-#if (defined(__x86_64__) && !defined(_WIN32)) || (defined(_WIN32) && defined(_M_AMD64)) // x64 platforms without mingw/msys
+// We support x86-64 platforms without mingw/msys
+#if (defined(__x86_64__) && !defined(_WIN32)) || (defined(_WIN32) && defined(_M_AMD64))
 # define YJIT_SUPPORTED_P 1
 #else
 # define YJIT_SUPPORTED_P 0

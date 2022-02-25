@@ -1028,7 +1028,7 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
 #define yjit_opt_match_arg(s, l, name) \
     opt_match(s, l, name) && (*(s) && *(s+1) ? 1 : (rb_raise(rb_eRuntimeError, "--yjit-" name " needs an argument"), 0))
 
-#if YJIT_SUPPORTED_P
+#if YJIT_BUILD
 static bool
 setup_yjit_options(const char *s, struct rb_yjit_options *yjit_opt)
 {
@@ -1433,11 +1433,11 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 #endif
             }
             else if (is_option_with_optarg("yjit", '-', true, false, false)) {
-#if YJIT_SUPPORTED_P
+#if YJIT_BUILD
                 FEATURE_SET(opt->features, FEATURE_BIT(yjit));
                 setup_yjit_options(s, &opt->yjit);
 #else
-                rb_warn("Ruby was built without JIT support");
+                rb_warn("Ruby was built without YJIT support");
 #endif
             }
 	    else if (strcmp("yydebug", s) == 0) {

@@ -58,17 +58,13 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> bool
 {
     let c_str: &CStr = unsafe { CStr::from_ptr(str_ptr) };
     let str_slice: &str = c_str.to_str().unwrap();
-    let str_buf: String = str_slice.to_owned();
-
-    // The option string should always start with a yjit prefix,
-    // which we strip off here
-    assert_eq!(str_buf.find("yjit-"), Some(0));
-    let (_, opt_str) = str_buf.split_once("yjit-").unwrap();
+    let opt_str: String = str_slice.to_owned();
+    //println!("{}", opt_str);
 
     // Split the option name and value strings
     // Note that some options do not contain an assignment
     let parts = opt_str.split_once("=");
-    let opt_name = if parts.is_some() { parts.unwrap().0 } else { opt_str };
+    let opt_name = if parts.is_some() { parts.unwrap().0 } else { &opt_str };
     let opt_val = if parts.is_some() { parts.unwrap().1 } else { "" };
 
     // Match on the option name and value strings
