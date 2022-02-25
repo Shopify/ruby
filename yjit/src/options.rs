@@ -47,10 +47,14 @@ macro_rules! get_option {
 }
 pub(crate) use get_option;
 
+/// Expected to receive what comes after the third dash in "--yjit-*".
+/// Empty string means user passed only "--yjit". C code rejects when
+/// they pass exact "--yjit-".
 pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> bool
 {
     let c_str: &CStr = unsafe { CStr::from_ptr(str_ptr) };
     let str_slice: &str = c_str.to_str().unwrap();
+    if str_slice.is_empty() { return true; } // Just --yjit
     let opt_str: String = str_slice.to_owned();
     //println!("{}", opt_str);
 
