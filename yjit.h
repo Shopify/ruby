@@ -67,9 +67,6 @@ void rb_yjit_tracing_invalidate_all(void);
 
 static inline bool rb_yjit_enabled_p(void) { return false; }
 static inline unsigned rb_yjit_call_threshold(void) { return UINT_MAX; }
-static inline VALUE rb_yjit_stats_enabled_p(rb_execution_context_t *ec, VALUE self) {}
-static inline VALUE rb_yjit_get_stats(rb_execution_context_t *ec, VALUE self) {}
-static inline VALUE rb_yjit_reset_stats_bang(rb_execution_context_t *ec, VALUE self) {}
 static inline void rb_yjit_invalidate_all_method_lookup_assumptions(void) {}
 static inline void rb_yjit_method_lookup_change(VALUE klass, ID mid) {}
 static inline void rb_yjit_cme_invalidate(VALUE cme) {}
