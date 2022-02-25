@@ -69,18 +69,24 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()>
         ("", "") => (), // Simply --yjit
 
         ("exec-mem-size", _) => {
-            opt_val.parse::<usize>()
-                .map(|n| unsafe { OPTIONS.exec_mem_size = n }).ok()?
+            match opt_val.parse::<usize>() {
+                Ok(n) => unsafe { OPTIONS.exec_mem_size = n },
+                Err(_) => { return None; }
+            }
         },
 
         ("call-threshold", _) => {
-            opt_val.parse::<usize>()
-                .map(|n| unsafe { OPTIONS.call_threshold = n }).ok()?
+            match opt_val.parse::<usize>() {
+                Ok(n) => unsafe { OPTIONS.call_threshold = n },
+                Err(_) => { return None; }
+            }
         },
 
         ("max-versions", _) => {
-            opt_val.parse::<usize>()
-                .map(|n| unsafe { OPTIONS.max_versions = n }).ok()?
+            match opt_val.parse::<usize>() {
+                Ok(n) => unsafe { OPTIONS.max_versions = n },
+                Err(_) => { return None; }
+            }
         },
 
         ("greedy-versioning", "") => { unsafe { OPTIONS.greedy_versioning = true }},
