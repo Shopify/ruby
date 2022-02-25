@@ -50,41 +50,37 @@ pub(crate) use get_option;
 /// Expected to receive what comes after the third dash in "--yjit-*".
 /// Empty string means user passed only "--yjit". C code rejects when
 /// they pass exact "--yjit-".
-pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> bool
+pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()>
 {
     let c_str: &CStr = unsafe { CStr::from_ptr(str_ptr) };
-    let str_slice: &str = c_str.to_str().unwrap();
-    if str_slice.is_empty() { return true; } // Just --yjit
-    let opt_str: String = str_slice.to_owned();
+    let opt_str: &str = c_str.to_str().ok()?;
     //println!("{}", opt_str);
 
     // Split the option name and value strings
     // Note that some options do not contain an assignment
     let parts = opt_str.split_once("=");
-    let opt_name = if parts.is_some() { parts.unwrap().0 } else { &opt_str };
-    let opt_val = if parts.is_some() { parts.unwrap().1 } else { "" };
+    let (opt_name, opt_val) = match parts {
+        Some((before_eq, after_eq)) => (before_eq, after_eq),
+        None => (opt_str, "")
+    };
 
     // Match on the option name and value strings
     match (opt_name, opt_val) {
+        ("", "") => (), // Simply --yjit
+
         ("exec-mem-size", _) => {
-            match opt_val.parse::<usize>() {
-                Ok(n) => { unsafe { OPTIONS.exec_mem_size = n }}
-                Err(e) => { return false; }
-            }
+            opt_val.parse::<usize>()
+                .map(|n| unsafe { OPTIONS.exec_mem_size = n }).ok()?
         },
 
         ("call-threshold", _) => {
-            match opt_val.parse::<usize>() {
-                Ok(n) => { unsafe { OPTIONS.call_threshold = n }}
-                Err(e) => { return false; }
-            }
+            opt_val.parse::<usize>()
+                .map(|n| unsafe { OPTIONS.call_threshold = n }).ok()?
         },
 
         ("max-versions", _) => {
-            match opt_val.parse::<usize>() {
-                Ok(n) => { unsafe { OPTIONS.max_versions = n }}
-                Err(e) => { return false; }
-            }
+            opt_val.parse::<usize>()
+                .map(|n| unsafe { OPTIONS.max_versions = n }).ok()?
         },
 
         ("greedy-versioning", "") => { unsafe { OPTIONS.greedy_versioning = true }},
@@ -93,10 +89,12 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> bool
 
         // Option name not recognized
         _ => {
-            return false;
+            return None;
         }
     }
 
+    // dbg!(unsafe {OPTIONS});
+
     // Option successfully parsed
-    return true;
+    return Some(());
 }
