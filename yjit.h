@@ -65,7 +65,6 @@ void rb_yjit_tracing_invalidate_all(void);
 // !YJIT_BUILD
 // In these builds, YJIT could never be turned on. Provide dummy implementations.
 
-static inline void Init_builtin_yjit(void) {}
 static inline bool rb_yjit_enabled_p(void) { return false; }
 static inline unsigned rb_yjit_call_threshold(void) { return UINT_MAX; }
 static inline void rb_yjit_invalidate_all_method_lookup_assumptions(void) {}
