@@ -3718,7 +3718,7 @@ fn gen_return_branch(cb: &mut CodeBlock, target0: CodePtr, target1: Option<CodeP
 
 fn gen_send_iseq(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb, ci: * const rb_callinfo, cme: * const rb_callable_method_entry_t, block: Option<IseqPtr>, argc: i32) -> CodegenStatus
 {
-    let iseq = unsafe { def_iseq_ptr((*cme).def) };
+    let iseq = unsafe { get_def_iseq_ptr((*cme).def) };
 
     // When you have keyword arguments, there is an extra object that gets
     // placed on the stack the represents a bitmap of the keywords that were not
