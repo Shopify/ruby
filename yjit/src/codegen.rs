@@ -3338,7 +3338,7 @@ fn yjit_reg_method(klass: VALUE, mid_str: &str, gen_fn: MethodGenFn)
     let mid = unsafe { rb_intern(id_string.as_ptr()) };
     let me = unsafe { rb_method_entry_at(klass, mid )};
 
-    if me == (0 as *const rb_method_entry_t) {
+    if me.is_null() {
         panic!("undefined optimized method!");
     }
 
