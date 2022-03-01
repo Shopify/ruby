@@ -159,8 +159,8 @@ extern "C" {
     #[link_name = "rb_get_mct_func"]
     pub fn get_mct_func(mct: * const rb_method_cfunc_t) -> *const u8;
 
-    #[link_name = "rb_def_iseq_ptr"]
-    pub fn def_iseq_ptr(def: *const rb_method_definition_t) -> IseqPtr;
+    #[link_name = "rb_get_def_iseq_ptr"]
+    pub fn get_def_iseq_ptr(def: *const rb_method_definition_t) -> IseqPtr;
 
     #[link_name = "rb_iseq_encoded_size"]
     pub fn get_iseq_encoded_size(iseq: IseqPtr) -> c_uint;

@@ -324,7 +324,7 @@ rb_get_mct_func(rb_method_cfunc_t *mct)
 }
 
 const rb_iseq_t*
-rb_def_iseq_ptr(rb_method_definition_t *def)
+rb_get_def_iseq_ptr(rb_method_definition_t *def)
 {
     return def_iseq_ptr(def);
 }
