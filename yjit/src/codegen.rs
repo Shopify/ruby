@@ -3890,7 +3890,7 @@ fn gen_send_iseq(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     gen_check_ints(cb, side_exit);
 
     let leaf_builtin_raw = unsafe { rb_leaf_builtin_function(iseq) };
-    let leaf_builtin: Option<*const rb_builtin_function> = if leaf_builtin_raw == (0 as *const rb_builtin_function) { None } else { Some(leaf_builtin_raw) };
+    let leaf_builtin: Option<*const rb_builtin_function> = if leaf_builtin_raw.is_null() { None } else { Some(leaf_builtin_raw) };
     match (block, leaf_builtin) {
         (None, Some(builtin_info)) => {
             let builtin_argc = unsafe { (*builtin_info).argc };
@@ -4323,7 +4323,7 @@ fn gen_send_general(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
 
     // Do method lookup
     let mut cme = unsafe { rb_callable_method_entry(comptime_recv_klass, mid) };
-    if cme == (0 as *mut rb_callable_method_entry_t) {
+    if cme.is_null() {
         // TODO: counter
         return CantCompile;
     }
