@@ -496,7 +496,6 @@ rb_get_call_data_ci(struct rb_call_data* cd) {
     return cd->ci;
 }
 
-#include "yjit_core.c"
 #include "yjit_iface.c"
 #include "yjit_codegen.c"
 
