@@ -9,7 +9,6 @@
 #include "internal/class.h"
 #include "yjit.h"
 #include "yjit_iface.h"
-#include "yjit_codegen.h"
 #include "yjit_core.h"
 #include "darray.h"
 
