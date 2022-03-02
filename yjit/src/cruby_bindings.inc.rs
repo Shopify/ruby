@@ -556,6 +556,15 @@ extern "C" {
 extern "C" {
     pub fn rb_leaf_builtin_function(iseq: *const rb_iseq_t) -> *const rb_builtin_function;
 }
+extern "C" {
+    pub fn rb_set_cfp_pc(cfp: *mut rb_control_frame_struct, pc: *const VALUE);
+}
+extern "C" {
+    pub fn rb_set_cfp_sp(cfp: *mut rb_control_frame_struct, sp: *mut VALUE);
+}
+extern "C" {
+    pub fn rb_cfp_get_iseq(cfp: *mut rb_control_frame_struct) -> *mut rb_iseq_t;
+}
 #[repr(C)]
 pub struct rb_iv_index_tbl_entry {
     pub index: u32,
