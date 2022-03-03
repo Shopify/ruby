@@ -1256,7 +1256,7 @@ pub extern "C" fn rb_yjit_rust_branch_stub_hit(branch_ptr: *const c_void, target
         let original_interp_sp = get_cfp_sp(cfp);
 
         let reconned_pc = rb_iseq_pc_at_idx(rb_cfp_get_iseq(cfp), target.idx);
-        let reconned_sp = original_interp_sp.add(target_ctx.sp_offset as usize);
+        let reconned_sp = original_interp_sp.offset(target_ctx.sp_offset.into());
 
         // Update the PC in the current CFP, because it may be out of sync in JITted code
         rb_set_cfp_pc(cfp, reconned_pc);
