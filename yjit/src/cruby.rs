@@ -206,6 +206,9 @@ extern "C" {
     #[link_name = "rb_RB_TYPE_P"]
     pub fn RB_TYPE_P(obj: VALUE, t: ruby_value_type) -> bool;
 
+    #[link_name = "rb_BASIC_OP_UNREDEFINED_P"]
+    pub fn BASIC_OP_UNREDEFINED_P(bop: ruby_basic_operators, klass: u32) -> bool;
+
     // Ruby only defines these in vm_insnhelper.c, not in any header.
     // Parsing it would result in a lot of duplicate definitions.
     pub fn rb_vm_opt_mod(recv: VALUE, obj: VALUE) -> VALUE;

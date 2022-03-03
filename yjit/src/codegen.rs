@@ -492,12 +492,12 @@ fn get_side_exit(jit: &mut JITState, ocb: &mut OutlinedCb, ctx: &Context) -> Cod
     }
 }
 
-/*
 // Ensure that there is an exit for the start of the block being compiled.
 // Block invalidation uses this exit.
-static void
-jit_ensure_block_entry_exit(jitstate_t *jit)
-{
+pub fn jit_ensure_block_entry_exit(jit: &mut JITState) {
+    todo!();
+
+    /*
     block_t *block = jit->block;
     if (block->entry_exit) return;
 
@@ -511,8 +511,8 @@ jit_ensure_block_entry_exit(jitstate_t *jit)
         uint32_t pos = gen_exit(pc, &block->ctx, ocb);
         block->entry_exit = cb_get_ptr(ocb, pos);
     }
+    */
 }
-*/
 
 // Generate a runtime guard that ensures the PC is at the start of the iseq,
 // otherwise take a side exit.  This is to handle the situation of optional
