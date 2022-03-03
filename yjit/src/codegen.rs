@@ -1417,7 +1417,7 @@ fn gen_newarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     lea(cb, C_ARG_REGS[2], values_ptr);
     call_ptr(cb, REG0, rb_ec_ary_new_from_values as *const u8);
 
-    ctx.stack_pop(n.usize());
+    ctx.stack_pop(n.as_usize());
     let stack_ret = ctx.stack_push(Type::Array);
     mov(cb, stack_ret, RAX);
 
@@ -1630,7 +1630,7 @@ fn gen_getlocal_wc0(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
     mov(cb, REG0, mem_opnd(64, REG0, offs));
 
     // Write the local at SP
-    let stack_top = ctx.stack_push_local(local_idx.usize());
+    let stack_top = ctx.stack_push_local(local_idx.as_usize());
     mov(cb, stack_top, REG0);
 
     KeepCompiling
@@ -1723,7 +1723,7 @@ fn gen_setlocal_wc0(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
     */
 
     let slot_idx = jit_get_arg(jit, 0).as_i32();
-    let local_idx = slot_to_local_idx(jit.get_iseq(), slot_idx).usize();
+    let local_idx = slot_to_local_idx(jit.get_iseq(), slot_idx).as_usize();
 
     // Load environment pointer EP (level 0) from CFP
     gen_get_ep(cb, REG0, 0);
@@ -2044,7 +2044,7 @@ fn gen_get_ivar(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     // FIXME: Mapping the index could fail when there is too many ivar names. If we're
     // compiling for a branch stub that can cause the exception to be thrown from the
     // wrong PC.
-    let ivar_index:usize = unsafe { rb_obj_ensure_iv_index_mapping(comptime_receiver, ivar_name) }.usize();
+    let ivar_index:usize = unsafe { rb_obj_ensure_iv_index_mapping(comptime_receiver, ivar_name) }.as_usize();
 
     // Pop receiver if it's on the temp stack
     if reg0_opnd != InsnOpnd::SelfOpnd {
@@ -5232,7 +5232,7 @@ impl CodegenGlobals {
 
         #[cfg(not(test))]
         let (mut cb, mut ocb) = {
-            let page_size = unsafe { rb_yjit_get_page_size() }.usize();
+            let page_size = unsafe { rb_yjit_get_page_size() }.as_usize();
             let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size.try_into().unwrap()) };
             let cb = CodeBlock::new(mem_block, mem_size / 2, page_size);
             let ocb = OutlinedCb::wrap(CodeBlock::new(unsafe { mem_block.add(mem_size / 2) }, mem_size / 2, page_size));

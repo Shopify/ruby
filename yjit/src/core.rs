@@ -381,7 +381,7 @@ fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload
 fn get_version_list(blockid: BlockId) -> &'static mut VersionList
 {
     let payload = get_iseq_payload(blockid.iseq);
-    let insn_idx = blockid.idx.usize();
+    let insn_idx = blockid.idx.as_usize();
 
     // Expand the version map as necessary
     if insn_idx >= payload.version_map.len() {
@@ -394,7 +394,7 @@ fn get_version_list(blockid: BlockId) -> &'static mut VersionList
 // Count the number of block versions matching a given blockid
 fn get_num_versions(blockid: BlockId) -> usize
 {
-    let insn_idx = blockid.idx.usize();
+    let insn_idx = blockid.idx.as_usize();
     let payload = get_iseq_payload(blockid.iseq);
 
     payload.version_map.get(insn_idx).map(|versions| versions.len()).unwrap_or(0)
@@ -1232,7 +1232,7 @@ pub extern "C" fn rb_yjit_rust_branch_stub_hit(branch_ptr: *const c_void, target
 
     let branch_size_on_entry = branch.code_size();
 
-    let target_idx: usize = target_idx.usize();
+    let target_idx: usize = target_idx.as_usize();
     let target = branch.targets[target_idx];
     let target_ctx = branch.target_ctxs[target_idx];
 
@@ -1377,7 +1377,7 @@ fn get_branch_target(
         // Add an incoming branch for this version
         block.incoming.push(branchref.clone());
         let mut branch = branchref.borrow_mut();
-        branch.blocks[target_idx.usize()] = Some(blockref.clone());
+        branch.blocks[target_idx.as_usize()] = Some(blockref.clone());
 
         // Return a pointer to the compiled code for the block
         return block.start_addr.unwrap();
