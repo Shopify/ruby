@@ -14,10 +14,6 @@ use std::collections::HashMap;
 // assume_single_ractor_mode(jit)
 // assume_stable_global_constant_state(jit);
 
-/// A type alias for the redefinition flags coming from CRuby. These are just
-/// shifted 1s but not explicitly an enum.
-type RedefinitionFlag = u32;
-
 /// Used to track all of the various block references that contain assumptions
 /// about the state of the virtual machine.
 pub struct Invariants {
