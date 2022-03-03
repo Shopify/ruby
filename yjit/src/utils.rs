@@ -1,3 +1,53 @@
+/// Trait for casting [u32] and [u64] to [usize] that allows you to say `.usize()`.
+/// Implementation conditional on the the cast preserving the numeric value on
+/// all inputs, like on x86_64 and ARM64.
+///
+/// [usize] is only guaranteed to be more than 16-bit wide, so we can't use
+/// we can't use `.into()` to cast an `u32` or an `u64` to a `usize` even
+/// though in all the platforms YJIT supports these two casts are pretty much
+/// no-ops. We could say `as usize` or `try_convert().unwrap()` everywhere
+/// for those casts but they both have undesirable consequences if and when
+/// we decide to support 32-bit platforms. They are also more verbose than
+/// saying `.usize()`. Unfortunately we can't implement [::core::convert::From]
+/// for [usize] since both the trait and the type are external 😞. Naming
+/// the conversion method `into()` also runs into naming conflicts.
+pub(crate) trait IntoUsize {
+    /// Convert to usize. Implementation conditional on width of [usize].
+    fn usize(self) -> usize;
+}
+
+#[cfg(target_pointer_width = "64")]
+impl IntoUsize for u64 {
+    fn usize(self) -> usize {
+        self as usize
+    }
+}
+
+#[cfg(target_pointer_width = "64")]
+impl IntoUsize for u32 {
+    fn usize(self) -> usize {
+        self as usize
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn min_max_preserved_after_cast_to_usize() {
+        use crate::utils::IntoUsize;
+
+        let min:usize = u64::MIN.usize();
+        assert_eq!(min, u64::MIN.try_into().unwrap());
+        let max:usize = u64::MAX.usize();
+        assert_eq!(max, u64::MAX.try_into().unwrap());
+
+        let min:usize = u32::MIN.usize();
+        assert_eq!(min, u32::MIN.try_into().unwrap());
+        let max:usize = u32::MAX.usize();
+        assert_eq!(max, u32::MAX.try_into().unwrap());
+    }
+}
+
 // TODO: we may want to move this function into yjit.c, maybe add a convenient Rust-side wrapper
 /*
 // For debugging. Print the disassembly of an iseq.
