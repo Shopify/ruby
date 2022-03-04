@@ -734,7 +734,7 @@ fn jump_to_next_insn(jit: &mut JITState, current_context: &Context, cb: &mut Cod
 pub fn gen_single_block(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> Result<BlockRef, ()>
 {
     // Limit the number of specialized versions for this block
-    let mut ctx = crate::core::limit_block_versions(blockid, start_ctx);
+    let mut ctx = limit_block_versions(blockid, start_ctx);
 
     {
         //verify_blockid(blockid);
