@@ -736,10 +736,8 @@ pub fn gen_single_block(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &m
     // Limit the number of specialized versions for this block
     let mut ctx = limit_block_versions(blockid, start_ctx);
 
-    {
-        //verify_blockid(blockid);
-        assert!(!(blockid.idx == 0 && ctx.get_stack_size() > 0));
-    };
+    //verify_blockid(blockid);
+    assert!(!(blockid.idx == 0 && ctx.get_stack_size() > 0));
 
     // Instruction sequence to compile
     let iseq = blockid.iseq;
