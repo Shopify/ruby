@@ -28,7 +28,10 @@ pub struct Invariants {
     /// Tracks block assumptions about method lookup. Maps a class to a table of
     /// method ID points to a set of blocks. While a block `b` is in the table,
     /// b->callee_cme == rb_callable_method_entry(klass, mid).
-    method_lookup: HashMap<VALUE, HashMap<ID, Vec<(BlockRef, ID)>>>
+    method_lookup: HashMap<VALUE, HashMap<ID, Vec<(BlockRef, ID)>>>,
+
+    /// Tracks block assumptions about running in single ractor mode.
+    single_ractor: Vec<BlockRef>
 }
 
 /// Private singleton instance of the invariants global struct.
@@ -41,7 +44,8 @@ impl Invariants {
             INVARIANTS = Some(Invariants {
                 basic_operators: HashMap::new(),
                 cme_validity: HashMap::new(),
-                method_lookup: HashMap::new()
+                method_lookup: HashMap::new(),
+                single_ractor: Vec::new()
             });
         }
     }
@@ -91,6 +95,17 @@ pub fn assume_method_lookup_stable(jit: &mut JITState, ocb: &mut OutlinedCb, rec
         .push((block.clone(), mid));
 }
 
+/// Tracks that a block is assuming it is operating in single-ractor mode.
+pub fn assume_single_ractor_mode(jit: &mut JITState, ocb: &mut OutlinedCb) -> bool {
+    if unsafe { rb_yjit_multi_ractor_p() } {
+        false
+    } else {
+        jit_ensure_block_entry_exit(jit, ocb);
+        Invariants::get_instance().single_ractor.push(jit.get_block());
+        true
+    }
+}
+
 /// Called when a basic operation is redefined.
 #[no_mangle]
 pub extern "C" fn rb_yjit_bop_redefined(klass: RedefinitionFlag, bop: ruby_basic_operators) {
@@ -132,27 +147,14 @@ pub extern "C" fn rb_yjit_method_lookup_change(klass: VALUE, mid: ID) {
     });
 }
 
-
-
-
-
-
-
-//static st_table *blocks_assuming_single_ractor_mode;
-
-// Can raise NoMemoryError.
-//RBIMPL_ATTR_NODISCARD()
-pub fn assume_single_ractor_mode(jit: &JITState) -> bool
-{
-    todo!()
-    /*
-    if (rb_multi_ractor_p()) return false;
-
-    jit_ensure_block_entry_exit(jit);
-
-    //st_insert(blocks_assuming_single_ractor_mode, (st_data_t)jit->block, 1);
-    true
-    */
+/// Callback for then Ruby is about to spawn a ractor. In that case we need to
+/// invalidate every block that is assuming single ractor mode.
+#[no_mangle]
+pub extern "C" fn rb_yjit_before_ractor_spawn() {
+    for block in Invariants::get_instance().single_ractor.iter() {
+        invalidate_block_version(block);
+        incr_counter!(invalidate_ractor_spawn);
+    }
 }
 
 
@@ -190,34 +192,6 @@ yjit_block_assumptions_free(block_t *block)
     }
 }
 */
-
-
-
-
-/*
-// When a block is deleted, remove the assumptions associated with it
-static void
-yjit_block_assumptions_free(block_t *block)
-{
-    /*
-    st_data_t as_st_data = (st_data_t)block;
-    if (blocks_assuming_stable_global_constant_state) {
-        st_delete(blocks_assuming_stable_global_constant_state, &as_st_data, NULL);
-    }
-
-    if (blocks_assuming_single_ractor_mode) {
-        st_delete(blocks_assuming_single_ractor_mode, &as_st_data, NULL);
-    }
-
-    if (blocks_assuming_bops) {
-        st_delete(blocks_assuming_bops, &as_st_data, NULL);
-    }
-    */
-}
-*/
-
-
-
 
 /*
 // Free the yjit resources associated with an iseq
@@ -316,18 +290,6 @@ rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic)
         }
     }
     RB_VM_LOCK_LEAVE();
-}
-
-void
-rb_yjit_before_ractor_spawn(void)
-{
-    if (blocks_assuming_single_ractor_mode) {
-#if YJIT_STATS
-        yjit_runtime_counters.invalidate_ractor_spawn += blocks_assuming_single_ractor_mode->num_entries;
-#endif
-
-        st_foreach(blocks_assuming_single_ractor_mode, block_set_invalidate_i, 0);
-    }
 }
 */
 

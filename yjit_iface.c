@@ -222,20 +222,6 @@ rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic)
     */
 }
 
-void
-rb_yjit_before_ractor_spawn(void)
-{
-    /*
-    if (blocks_assuming_single_ractor_mode) {
-#if YJIT_STATS
-        yjit_runtime_counters.invalidate_ractor_spawn += blocks_assuming_single_ractor_mode->num_entries;
-#endif
-
-        st_foreach(blocks_assuming_single_ractor_mode, block_set_invalidate_i, 0);
-    }
-    */
-}
-
 // Primitive called in yjit.rb.
 // Export all YJIT statistics as a Ruby hash.
 VALUE
