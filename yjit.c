@@ -650,6 +650,12 @@ rb_yjit_multi_ractor_p(void) {
     return rb_multi_ractor_p();
 }
 
+rb_hook_list_t*
+rb_yarv_ec_ractor_hooks(const rb_execution_context_t *ec)
+{
+    return rb_ec_ractor_hooks(ec);
+}
+
 #include "yjit_iface.c"
 
 #endif // if JIT_ENABLED && PLATFORM_SUPPORTED_P

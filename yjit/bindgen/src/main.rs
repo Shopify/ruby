@@ -105,11 +105,6 @@ fn main() {
         .opaque_type("rb_callinfo_kwarg")
         .allowlist_type("rb_callinfo")
 
-        // From vm_core.h
-        .allowlist_var("VM_BLOCK_HANDLER_NONE")
-        .allowlist_var("VM_ENV_FLAG_.*")
-        .allowlist_type("rb_seq_param_keyword_struct")
-
         // From vm_insnhelper.h
         .allowlist_var("ruby_vm_global_constant_state")
         .allowlist_var("VM_ENV_DATA_INDEX_ME_CREF")
@@ -163,7 +158,14 @@ fn main() {
         .blocklist_type("rb_method_definition_.*") // Large struct with a bitfield and union of many types - don't import (yet?)
         .opaque_type("rb_method_definition_.*")
 
+        // From include/ruby/internal/event.h
+        .allowlist_var("RUBY_EVENT_.*")
+
         // From vm_core.h
+        .allowlist_var("VM_BLOCK_HANDLER_NONE")
+        .allowlist_var("VM_ENV_FLAG_.*")
+        .allowlist_var("ruby_vm_event_enabled_global_flags")
+        .allowlist_type("rb_seq_param_keyword_struct")
         .allowlist_type("ruby_basic_operators")
         .allowlist_var(".*_REDEFINED_OP_FLAG")
         .allowlist_type("rb_num_t")
@@ -196,6 +198,7 @@ fn main() {
         .allowlist_function("rb_set_cfp_(pc|sp)")
         .allowlist_function("rb_cfp_get_iseq")
         .allowlist_function("rb_yjit_multi_ractor_p")
+        .allowlist_function("rb_yarv_ec_ractor_hooks")
 
         // Not sure why it's picking these up, but don't.
         .blocklist_type("FILE")

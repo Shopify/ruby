@@ -340,6 +340,8 @@ pub struct rb_execution_context_struct {
     _marker:
         core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
+/// Alias for some CRuby functions exported via Bindgen
+pub type rb_execution_context_t = rb_execution_context_struct;
 
 /// Pointer to an execution context (rb_execution_context_struct)
 pub type EcPtr = *const rb_execution_context_struct;

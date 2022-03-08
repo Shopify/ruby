@@ -3466,21 +3466,15 @@ fn lookup_cfunc_codegen(def: *const rb_method_definition_t) -> Option<MethodGenF
 // Is anyone listening for :c_call and :c_return event currently?
 fn c_method_tracing_currently_enabled(jit: &JITState) -> bool
 {
-    todo!();
-    /*
-    rb_event_flag_t tracing_events;
-    if (rb_multi_ractor_p()) {
-        tracing_events = ruby_vm_event_enabled_global_flags;
-    }
-    else {
+    let tracing_events = if unsafe { rb_yjit_multi_ractor_p() } {
+        unsafe { ruby_vm_event_enabled_global_flags }
+    } else {
         // At the time of writing, events are never removed from
         // ruby_vm_event_enabled_global_flags so always checking using it would
         // mean we don't compile even after tracing is disabled.
-        tracing_events = rb_ec_ractor_hooks(jit->ec)->events;
-    }
-
-    return tracing_events & (RUBY_EVENT_C_CALL | RUBY_EVENT_C_RETURN);
-    */
+        unsafe { (*rb_yarv_ec_ractor_hooks(jit.ec.unwrap())).events }
+    };
+    tracing_events & (RUBY_EVENT_C_CALL | RUBY_EVENT_C_RETURN) != 0
 }
 
 fn gen_send_cfunc(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb, ci: * const rb_callinfo, cme: * const rb_callable_method_entry_t, block: Option<IseqPtr>, argc: i32, recv_known_klass: *const VALUE) -> CodegenStatus
