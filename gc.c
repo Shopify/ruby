@@ -9579,6 +9579,7 @@ gc_sort_heap_by_empty_slots(rb_objspace_t *objspace)
         struct heap_page *page = 0, **page_list = malloc(size);
         size_t i = 0;
 
+        SIZE_POOL_EDEN_HEAP(size_pool)->free_pages = NULL;
         list_for_each(&SIZE_POOL_EDEN_HEAP(size_pool)->pages, page, page_node) {
             page_list[i++] = page;
             GC_ASSERT(page);
