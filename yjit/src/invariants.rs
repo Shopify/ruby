@@ -30,7 +30,10 @@ pub struct Invariants {
     /// b->callee_cme == rb_callable_method_entry(klass, mid).
     method_lookup: HashMap<VALUE, HashMap<ID, Vec<(BlockRef, ID)>>>,
 
-    /// Tracks block assumptions about running in single ractor mode.
+    /// Tracks the set of blocks that are assuming the interpreter is running
+    /// with only one ractor. This is important for things like accessing
+    /// constants which can have different semantics when multiple ractors are
+    /// running.
     single_ractor: Vec<BlockRef>
 }
 
@@ -62,7 +65,15 @@ impl Invariants {
 pub fn assume_bop_not_redefined(jit: &mut JITState, ocb: &mut OutlinedCb, klass: RedefinitionFlag, bop: ruby_basic_operators) -> bool {
     if unsafe { BASIC_OP_UNREDEFINED_P(bop, klass) } {
         jit_ensure_block_entry_exit(jit, ocb);
-        Invariants::get_instance().basic_operators.entry((klass, bop)).or_insert(Vec::new()).push(jit.get_block());
+
+        // First, fetch the entry in the list of basic operators that
+        // corresponds to this class and basic operator tuple.
+        let entry = Invariants::get_instance().basic_operators.entry((klass, bop));
+
+        // Next, add the current block to the list of blocks that are assuming
+        // this basic operator is not redefined.
+        entry.or_insert(Vec::new()).push(jit.get_block());
+
         return true;
     } else {
         return false;
