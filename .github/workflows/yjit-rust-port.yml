@@ -41,3 +41,8 @@ jobs:
       - uses: actions/checkout@v2
       - run: ./autogen.sh
       - run: CC=clang ./configure --enable-yjit=dev
+      - run: make -j miniruby
+      - run: make -j yjit-bindgen
+      # Try booting miniruby
+      - run: RUST_BACKTRACE=1 ./miniruby -e0
+      - run: RUST_BACKTRACE=1 ruby --disable=gems bootstraptest/runner.rb --ruby="./miniruby -I./lib -I. -I.ext/common --disable-gems --yjit-call-threshold=1"  bootstraptest/test_fiber.rb bootstraptest/test_finalizer.rb bootstraptest/test_flip.rb bootstraptest/test_fork.rb bootstraptest/test_load.rb bootstraptest/test_marshal.rb bootstraptest/test_string.rb bootstraptest/test_struct.rb bootstraptest/test_autoload.rb bootstraptest/test_class.rb bootstraptest/test_env.rb bootstraptest/test_yjit_rust_port.rb
