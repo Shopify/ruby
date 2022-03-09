@@ -1,4 +1,4 @@
-name: YJIT Ubuntu
+name: YJIT Rust Port Temp Checks
 on:
   push:
     paths-ignore:
