@@ -8036,11 +8036,7 @@ gc_compact_move_optimal(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
     if (dheap->sweeping_page == dheap->compact_cursor) {
         return false;
     }
-
-    while(!try_move(objspace, dheap, dheap->free_pages, src)) {
-        if (dheap->sweeping_page == dheap->compact_cursor) {
-            return false;
-        }
+    if (dheap->sweeping_page->flags.before_sweep) {
         struct gc_sweep_context ctx = {
             .page = dheap->sweeping_page,
             .final_slots = 0,
@@ -8050,13 +8046,30 @@ gc_compact_move_optimal(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
         lock_page_body(objspace, GET_PAGE_BODY(src));
         gc_sweep_page(objspace, dheap, &ctx);
         unlock_page_body(objspace, GET_PAGE_BODY(src));
-
         if (ctx.page->free_slots > 0) {
             heap_add_freepage(dheap, dheap->sweeping_page);
         }
+    }
+
+    while(!try_move(objspace, dheap, dheap->free_pages, src)) {
         dheap->sweeping_page = list_next(&dheap->pages, dheap->sweeping_page, page_node);
         if (dheap->sweeping_page == dheap->compact_cursor) {
             return false;
+        }
+        if (dheap->sweeping_page->flags.before_sweep) {
+            struct gc_sweep_context ctx = {
+                .page = dheap->sweeping_page,
+                .final_slots = 0,
+                .freed_slots = 0,
+                .empty_slots = 0,
+            };
+            lock_page_body(objspace, GET_PAGE_BODY(src));
+            gc_sweep_page(objspace, dheap, &ctx);
+            unlock_page_body(objspace, GET_PAGE_BODY(src));
+        }
+
+        if (dheap->sweeping_page->free_slots > 0) {
+            heap_add_freepage(dheap, dheap->sweeping_page);
         }
     }
 
