@@ -5153,19 +5153,6 @@ fn get_method_gen_fn()
     }
 }
 
-// Long-term, we're planning to break up code generation into more blocks.
-// For now we'll simply return the two CodeBlocks we have.
-pub fn get_iseq_codeblock_list(iseq: IseqPtr) -> Vec<&'static mut CodeBlock> {
-    let mut cbs = Vec::new();
-
-    cbs.push(CodegenGlobals::get_inline_cb());
-
-    // For now we don't include comments from the outlined block
-    //cbs.push(CodegenGlobals::get_outlined_cb().unwrap());
-
-    cbs
-}
-
 /// Global state needed for code generation
 pub struct CodegenGlobals
 {

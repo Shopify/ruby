@@ -43,7 +43,7 @@ fn disasm_iseq(iseq: IseqPtr) -> String {
     let mut block_list = get_iseq_block_list(iseq);
 
     // Get a list of codeblocks relevant to this iseq
-    let codeblock_list = get_iseq_codeblock_list(iseq);
+    let global_cb = CodegenGlobals::get_inline_cb();
 
     // Sort the blocks by increasing start addresses
     block_list.sort_by(|a, b| {
@@ -110,11 +110,9 @@ fn disasm_iseq(iseq: IseqPtr) -> String {
         // For each instruction in this block
         for insn in insns.as_ref() {
             // Comments for this block
-            for cb_idx in 0..codeblock_list.len() {
-                if let Some(comment_list) = codeblock_list[cb_idx].comments_at(insn.address()) {
-                    for comment in comment_list {
-                        out.push_str(&format!("  // {}\n", comment));
-                    }
+            if let Some(comment_list) = global_cb.comments_at(insn.address()) {
+                for comment in comment_list {
+                    out.push_str(&format!("  // {}\n", comment));
                 }
             }
             out.push_str(&format!("  {}\n", insn));
