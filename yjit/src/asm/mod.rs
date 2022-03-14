@@ -162,11 +162,14 @@ impl CodeBlock
             let cur_ptr = self.get_write_ptr().into_u64();
             let this_line_comments = self.asm_comments.get(&cur_ptr);
 
+            // If there's no current list of comments for this line number, add one.
             if this_line_comments.is_none() {
                 let new_comments = Vec::new();
                 self.asm_comments.insert(cur_ptr, new_comments);
             }
             let this_line_comments = self.asm_comments.get_mut(&cur_ptr).unwrap();
+
+            // Unless this comment is the same as the last one at this same line, add it.
             let string_comment = String::from(comment);
             if this_line_comments.last() != Some(&string_comment) {
                 this_line_comments.push(string_comment);
