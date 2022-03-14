@@ -34,7 +34,7 @@ module RubyVM::YJIT
     # If a method or proc is passed in, get its iseq
     iseq = RubyVM::InstructionSequence.of(iseq)
 
-    if Primitive.cexpr! 'RBOOL(rb_yjit_enabled_p())'
+    if self.enabled?
       # Produce the disassembly string
       # Include the YARV iseq disasm in the string for additional context
       iseq.disasm + "\n" + Primitive.rb_yjit_disasm_iseq(iseq)
