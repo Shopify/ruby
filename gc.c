@@ -5223,10 +5223,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     }
 #endif
                     if (obj_free(objspace, vp)) {
-                        if (heap->compact_cursor) {
-                            /* We *want* to fill this slot */
-                            MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(vp), vp);
-                        }
                         // always add free slots back to the swept pages freelist,
                         // so that if we're comapacting, we can re-use the slots
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
@@ -5261,10 +5257,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     /* already counted */
                     break;
                 case T_NONE:
-                    if (heap->compact_cursor) {
-                        /* We *want* to fill this slot */
-                        MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(vp), vp);
-                    }
                     ctx->empty_slots++; /* already freed */
                     break;
             }
