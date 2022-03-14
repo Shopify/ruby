@@ -110,7 +110,7 @@ fn disasm_iseq(iseq: IseqPtr) -> String {
         // For each instruction in this block
         for insn in insns.as_ref() {
             // Comments for this block
-            if let Some(comment_list) = global_cb.comments_at(insn.address()) {
+            if let Some(comment_list) = global_cb.comments_at(insn.address() as usize) {
                 for comment in comment_list {
                     out.push_str(&format!("  // {}\n", comment));
                 }

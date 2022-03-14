@@ -21,9 +21,9 @@ impl CodePtr {
         *ptr as i64
     }
 
-    fn into_u64(&self) -> u64 {
+    fn into_usize(&self) -> usize {
         let CodePtr(ptr) = self;
-        *ptr as u64
+        *ptr as usize
     }
 }
 
@@ -94,7 +94,7 @@ pub struct CodeBlock
     label_refs: Vec<LabelRef>,
 
     // Comments for assembly instructions, if that feature is enabled
-    asm_comments: BTreeMap<u64, Vec<String>>,
+    asm_comments: BTreeMap<usize, Vec<String>>,
 
     // Keep track of the current aligned write position.
     // Used for changing protection when writing to the JIT buffer
@@ -159,7 +159,7 @@ impl CodeBlock
     pub fn add_comment(&mut self, comment: &str) {
         #[cfg(feature="asm_comments")]
         {
-            let cur_ptr = self.get_write_ptr().into_u64();
+            let cur_ptr = self.get_write_ptr().into_usize();
             let this_line_comments = self.asm_comments.get(&cur_ptr);
 
             // If there's no current list of comments for this line number, add one.
@@ -177,7 +177,7 @@ impl CodeBlock
         }
     }
 
-    pub fn comments_at(&self, pos: u64) -> Option<&Vec<String>> {
+    pub fn comments_at(&self, pos: usize) -> Option<&Vec<String>> {
         self.asm_comments.get(&pos)
     }
 
