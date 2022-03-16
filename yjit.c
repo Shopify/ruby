@@ -9,6 +9,7 @@
 #include "internal/variable.h"
 #include "internal/compile.h"
 #include "internal/class.h"
+#include "internal/struct.h"
 #include "gc.h"
 #include "vm_core.h"
 #include "vm_callinfo.h"
@@ -866,5 +867,7 @@ rb_yjit_init(void)
     VALUE yjit_root = TypedData_Make_Struct(0, struct yjit_root_struct, &yjit_root_type, root);
     rb_gc_register_mark_object(yjit_root);
 }
+
+#include "yjit_struct_offsets.c"
 
 #endif // if JIT_ENABLED && PLATFORM_SUPPORTED_P
