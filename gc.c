@@ -5278,12 +5278,6 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
 
     gc_report(2, objspace, "page_sweep: start.\n");
 
-#if RGENGC_CHECK_MODE
-    if (!objspace->flags.immediate_sweep || objspace->flags.during_compacting) {
-
-        GC_ASSERT(sweep_page->flags.before_sweep == TRUE);
-    }
-#endif
     sweep_page->flags.before_sweep = FALSE;
     sweep_page->free_slots = 0;
 
