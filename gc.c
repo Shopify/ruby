@@ -4948,29 +4948,36 @@ unlock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
 static bool
 try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, VALUE src)
 {
-    if (!gc_is_moveable_obj(objspace, src) || !free_page) {
-        return false;
-    }
-    GC_ASSERT(MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(src), src));
+    GC_ASSERT(free_page);
 
-    VALUE dest = (VALUE)free_page->freelist;
-    if (!dest) {
-        return false;
-    }
-    free_page->freelist = RANY(dest)->as.free.next;
+    /* We should return true if either src is sucessfully moved, or src is
+     * unmoveable. A false return will cause the sweeping cursor to be
+     * incremented to the next page, and src will attempt to move again */
+    if (gc_is_moveable_obj(objspace, src)) {
+        GC_ASSERT(MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(src), src));
 
-    GC_ASSERT(RB_BUILTIN_TYPE(dest) == T_NONE);
+        VALUE dest = (VALUE)free_page->freelist;
+        if (!dest) {
+            /* if we can't get something from the freelist then the page must be
+             * full */
+            GC_ASSERT(free_page->free_slots == 0);
+            return false;
+        }
+        free_page->freelist = RANY(dest)->as.free.next;
 
-    if (free_page->slot_size == GET_HEAP_PAGE(src)->slot_size) {
-        objspace->rcompactor.moved_count_table[BUILTIN_TYPE(src)]++;
-        objspace->rcompactor.total_moved++;
+        GC_ASSERT(RB_BUILTIN_TYPE(dest) == T_NONE);
 
-        gc_move(objspace, src, dest, free_page->slot_size);
-        gc_pin(objspace, src);
-        FL_SET(src, FL_FROM_FREELIST);
-        free_page->free_slots--;
-    } else {
-        rb_bug("here be dragons");
+        if (free_page->slot_size == GET_HEAP_PAGE(src)->slot_size) {
+            objspace->rcompactor.moved_count_table[BUILTIN_TYPE(src)]++;
+            objspace->rcompactor.total_moved++;
+
+            gc_move(objspace, src, dest, free_page->slot_size);
+            gc_pin(objspace, src);
+            FL_SET(src, FL_FROM_FREELIST);
+            free_page->free_slots--;
+        } else {
+            rb_bug("unreachable: Movement between heaps not yet supported");
+        }
     }
 
     return true;
@@ -8020,58 +8027,46 @@ gc_marks_step(rb_objspace_t *objspace, size_t slots)
 #endif
 
 static bool
+gc_compact_heap_cursors_met_p(rb_heap_t *heap)
+{
+    GC_ASSERT(heap->sweeping_page && heap->compact_cursor);
+    return heap->sweeping_page == heap->compact_cursor;
+}
+
+static void
+gc_compact_sweep_unswept_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
+{
+    if (page->flags.before_sweep) {
+        struct gc_sweep_context ctx = {
+            .page = page,
+            .final_slots = 0,
+            .freed_slots = 0,
+            .empty_slots = 0,
+        };
+        gc_sweep_page(objspace, heap, &ctx);
+    }
+}
+
+static bool
 gc_compact_move_optimal(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
 {
     GC_ASSERT(BUILTIN_TYPE(src) != T_MOVED);
     rb_heap_t *dheap = heap;
 
-    if (dheap->sweeping_page == dheap->compact_cursor) {
+    if (gc_compact_heap_cursors_met_p(dheap)) {
         return false;
     }
-    if (dheap->sweeping_page->flags.before_sweep) {
-        struct gc_sweep_context ctx = {
-            .page = dheap->sweeping_page,
-            .final_slots = 0,
-            .freed_slots = 0,
-            .empty_slots = 0,
-        };
-        lock_page_body(objspace, GET_PAGE_BODY(src));
-        gc_sweep_page(objspace, dheap, &ctx);
-        unlock_page_body(objspace, GET_PAGE_BODY(src));
-        if (ctx.page->free_slots > 0) {
-            heap_add_freepage(dheap, dheap->sweeping_page);
-        }
-    }
+    gc_compact_sweep_unswept_page(objspace, dheap, dheap->sweeping_page);
 
-    while(!try_move(objspace, dheap, dheap->free_pages, src)) {
+    while(!try_move(objspace, dheap, dheap->sweeping_page, src)) {
         dheap->sweeping_page = list_next(&dheap->pages, dheap->sweeping_page, page_node);
-        if (dheap->sweeping_page == dheap->compact_cursor) {
+        if (gc_compact_heap_cursors_met_p(dheap)) {
             return false;
         }
-        if (dheap->sweeping_page->flags.before_sweep) {
-            struct gc_sweep_context ctx = {
-                .page = dheap->sweeping_page,
-                .final_slots = 0,
-                .freed_slots = 0,
-                .empty_slots = 0,
-            };
-            lock_page_body(objspace, GET_PAGE_BODY(src));
-            gc_sweep_page(objspace, dheap, &ctx);
-            unlock_page_body(objspace, GET_PAGE_BODY(src));
-        }
-
-        if (dheap->sweeping_page->free_slots > 0) {
-            heap_add_freepage(dheap, dheap->sweeping_page);
-        }
+        gc_compact_sweep_unswept_page(objspace, dheap, dheap->sweeping_page);
     }
-
-    if (dheap->free_pages->free_slots == 0){
-        dheap->free_pages = dheap->free_pages->free_next;
-    }
-
     return true;
 }
-
 
 static bool
 gc_compact_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bitset, struct heap_page *page) {
@@ -8176,10 +8171,9 @@ gc_sweep_compact(rb_objspace_t *objspace)
                 continue;
             }
 
-            lock_page_body(objspace, GET_PAGE_BODY(start_page->start));
-
             // If we get here, we've finished moving all objects on the compact_cursor page
-            // So we can move the cursor on to the next one.
+            // So we can lock it and move the cursor on to the next one.
+            lock_page_body(objspace, GET_PAGE_BODY(start_page->start));
             struct heap_page *nc = list_prev(&heap->pages, heap->compact_cursor, page_node);
             if (nc) {
                 heap->compact_cursor = nc;
