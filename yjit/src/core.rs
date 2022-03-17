@@ -1226,6 +1226,14 @@ impl Context {
     }
 }
 
+impl BlockId {
+    /// Print Ruby source location for debugging
+    #[cfg(debug_assertions)]
+    fn dump_src_loc(&self) {
+        unsafe { rb_yjit_dump_iseq_loc(self.iseq, self.idx) }
+    }
+}
+
 /// See [gen_block_series_body]. This simply counts compilation failures.
 fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> Option<BlockRef>
 {
