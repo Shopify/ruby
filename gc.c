@@ -8034,9 +8034,7 @@ gc_compact_sweep_unswept_page(rb_objspace_t *objspace, rb_heap_t *heap, struct h
             .freed_slots = 0,
             .empty_slots = 0,
         };
-        lock_page_body(objspace, GET_PAGE_BODY(page->start));
         gc_sweep_page(objspace, heap, &ctx);
-        unlock_page_body(objspace, GET_PAGE_BODY(page->start));
     }
 }
 
