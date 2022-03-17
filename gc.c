@@ -8015,42 +8015,45 @@ gc_marks_step(rb_objspace_t *objspace, size_t slots)
 #endif
 
 static bool
+gc_compact_heap_cursors_met_p(rb_heap_t *heap)
+{
+    GC_ASSERT(heap->sweeping_page && heap->compact_cursor);
+    return heap->sweeping_page == heap->compact_cursor;
+}
+
+static void
+gc_compact_sweep_unswept_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
+{
+    if (page->flags.before_sweep) {
+        struct gc_sweep_context ctx = {
+            .page = page,
+            .final_slots = 0,
+            .freed_slots = 0,
+            .empty_slots = 0,
+        };
+        lock_page_body(objspace, GET_PAGE_BODY(page->start));
+        gc_sweep_page(objspace, heap, &ctx);
+        unlock_page_body(objspace, GET_PAGE_BODY(page->start));
+    }
+}
+
+static bool
 gc_compact_move_optimal(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
 {
     GC_ASSERT(BUILTIN_TYPE(src) != T_MOVED);
     rb_heap_t *dheap = heap;
 
-    if (dheap->sweeping_page->flags.before_sweep) {
-        struct gc_sweep_context ctx = {
-            .page = dheap->sweeping_page,
-            .final_slots = 0,
-            .freed_slots = 0,
-            .empty_slots = 0,
-        };
-        lock_page_body(objspace, GET_PAGE_BODY(src));
-        gc_sweep_page(objspace, dheap, &ctx);
-        unlock_page_body(objspace, GET_PAGE_BODY(src));
-        if (ctx.page->free_slots > 0) {
-            heap_add_freepage(dheap, dheap->sweeping_page);
-        }
+    if (gc_compact_heap_cursors_met_p(dheap)) {
+        return false;
     }
+    gc_compact_sweep_unswept_page(objspace, dheap, dheap->sweeping_page);
 
     while(!try_move(objspace, dheap, dheap->sweeping_page, src)) {
         dheap->sweeping_page = list_next(&dheap->pages, dheap->sweeping_page, page_node);
-        if (dheap->sweeping_page == dheap->compact_cursor) {
+        if (gc_compact_heap_cursors_met_p(dheap)) {
             return false;
         }
-        if (dheap->sweeping_page->flags.before_sweep) {
-            struct gc_sweep_context ctx = {
-                .page = dheap->sweeping_page,
-                .final_slots = 0,
-                .freed_slots = 0,
-                .empty_slots = 0,
-            };
-            lock_page_body(objspace, GET_PAGE_BODY(src));
-            gc_sweep_page(objspace, dheap, &ctx);
-            unlock_page_body(objspace, GET_PAGE_BODY(src));
-        }
+        gc_compact_sweep_unswept_page(objspace, dheap, dheap->sweeping_page);
     }
     return true;
 }
