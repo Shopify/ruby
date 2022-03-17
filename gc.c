@@ -4973,7 +4973,7 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
         FL_SET(src, FL_FROM_FREELIST);
         free_page->free_slots--;
     } else {
-        rb_bug("here be dragons");
+        rb_bug("unreachable: Movement between heaps not yet supported");
     }
 
     return true;
