@@ -4955,6 +4955,9 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
 
     VALUE dest = (VALUE)free_page->freelist;
     if (!dest) {
+        /* if we can't get something from the freelist then the page must be
+         * full */
+        GC_ASSERT(free_page->free_slots == 0);
         return false;
     }
     free_page->freelist = RANY(dest)->as.free.next;
