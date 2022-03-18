@@ -321,13 +321,6 @@ A,B,C
   end
 
   def test_to_csv_limit_positive
-    csv = <<-CSV
-A,B,C
-1,2,3
-4,5,6
-7,8,9
-    CSV
-
     assert_equal(<<-CSV, @table.to_csv(limit: 2))
 A,B,C
 1,2,3
@@ -336,13 +329,6 @@ A,B,C
   end
 
   def test_to_csv_limit_positive_over
-    csv = <<-CSV
-A,B,C
-1,2,3
-4,5,6
-7,8,9
-    CSV
-
     assert_equal(<<-CSV, @table.to_csv(limit: 5))
 A,B,C
 1,2,3
@@ -352,26 +338,12 @@ A,B,C
   end
 
   def test_to_csv_limit_zero
-    csv = <<-CSV
-A,B,C
-1,2,3
-4,5,6
-7,8,9
-    CSV
-
     assert_equal(<<-CSV, @table.to_csv(limit: 0))
 A,B,C
     CSV
   end
 
   def test_to_csv_limit_negative
-    csv = <<-CSV
-A,B,C
-1,2,3
-4,5,6
-7,8,9
-    CSV
-
     assert_equal(<<-CSV, @table.to_csv(limit: -2))
 A,B,C
 1,2,3
@@ -380,13 +352,6 @@ A,B,C
   end
 
   def test_to_csv_limit_negative_over
-    csv = <<-CSV
-A,B,C
-1,2,3
-4,5,6
-7,8,9
-    CSV
-
     assert_equal(<<-CSV, @table.to_csv(limit: -5))
 A,B,C
     CSV
