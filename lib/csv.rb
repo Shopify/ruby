@@ -346,7 +346,9 @@ using CSV::MatchP if CSV.const_defined?(:MatchP)
 # - +row_sep+: Specifies the row separator; used to delimit rows.
 # - +col_sep+: Specifies the column separator; used to delimit fields.
 # - +quote_char+: Specifies the quote character; used to quote fields.
-# - +field_size_limit+: Specifies the maximum field size allowed.
+# - +field_size_limit+: Specifies the maximum field size + 1 allowed.
+#   Deprecated since 3.2.3. Use +max_field_size+ instead.
+# - +max_field_size+: Specifies the maximum field size allowed.
 # - +converters+: Specifies the field converters to be used.
 # - +unconverted_fields+: Specifies whether unconverted fields are to be available.
 # - +headers+: Specifies whether data contains headers,
@@ -926,6 +928,7 @@ class CSV
     quote_char:         '"',
     # For parsing.
     field_size_limit:   nil,
+    max_field_size:     nil,
     converters:         nil,
     unconverted_fields: nil,
     headers:            false,
@@ -1746,6 +1749,7 @@ class CSV
                  row_sep: :auto,
                  quote_char: '"',
                  field_size_limit: nil,
+                 max_field_size: nil,
                  converters: nil,
                  unconverted_fields: nil,
                  headers: false,
@@ -1788,11 +1792,14 @@ class CSV
     @initial_header_converters = header_converters
     @initial_write_converters = write_converters
 
+    if max_field_size.nil? and field_size_limit
+      max_field_size = field_size_limit - 1
+    end
     @parser_options = {
       column_separator: col_sep,
       row_separator: row_sep,
       quote_character: quote_char,
-      field_size_limit: field_size_limit,
+      max_field_size: max_field_size,
       unconverted_fields: unconverted_fields,
       headers: headers,
       return_headers: return_headers,
@@ -1860,8 +1867,22 @@ class CSV
   # Returns the limit for field size; used for parsing;
   # see {Option +field_size_limit+}[#class-CSV-label-Option+field_size_limit]:
   #   CSV.new('').field_size_limit # => nil
+  #
+  # Deprecated since 3.2.3. Use +max_field_size+ instead.
   def field_size_limit
     parser.field_size_limit
+  end
+
+  # :call-seq:
+  #   csv.max_field_size -> integer or nil
+  #
+  # Returns the limit for field size; used for parsing;
+  # see {Option +max_field_size+}[#class-CSV-label-Option+max_field_size]:
+  #   CSV.new('').max_field_size # => nil
+  #
+  # Since 3.2.3.
+  def max_field_size
+    parser.max_field_size
   end
 
   # :call-seq:
