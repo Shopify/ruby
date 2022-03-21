@@ -279,9 +279,9 @@ impl Branch
 // In case this block is invalidated, these two pieces of info
 // help to remove all pointers to this block in the system.
 #[derive(Debug)]
-struct CmeDependency {
-    receiver_klass: VALUE,
-    callee_cme: *const rb_callable_method_entry_t,
+pub struct CmeDependency {
+    pub receiver_klass: VALUE,
+    pub callee_cme: *const rb_callable_method_entry_t,
 }
 
 /// Basic block version
@@ -769,6 +769,11 @@ impl Block {
 
     pub fn get_end_addr(&self) -> Option<CodePtr> {
         self.end_addr
+    }
+
+    /// Get an immutable iterator over cme dependencies
+    pub fn iter_cme_deps(&self) -> std::slice::Iter<'_, CmeDependency> {
+        self.cme_dependencies.iter()
     }
 
     /// Set the starting address in the generated code for the block
