@@ -4957,6 +4957,7 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
         GC_ASSERT(MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(src), src));
 
         VALUE dest = (VALUE)free_page->freelist;
+        asan_unpoison_object(dest, 0);
         if (!dest) {
             /* if we can't get something from the freelist then the page must be
              * full */
@@ -4966,18 +4967,15 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
         free_page->freelist = RANY(dest)->as.free.next;
 
         GC_ASSERT(RB_BUILTIN_TYPE(dest) == T_NONE);
+        GC_ASSERT(free_page->slot_size == GET_HEAP_PAGE(src)->slot_size);
 
-        if (free_page->slot_size == GET_HEAP_PAGE(src)->slot_size) {
-            objspace->rcompactor.moved_count_table[BUILTIN_TYPE(src)]++;
-            objspace->rcompactor.total_moved++;
+        objspace->rcompactor.moved_count_table[BUILTIN_TYPE(src)]++;
+        objspace->rcompactor.total_moved++;
 
-            gc_move(objspace, src, dest, free_page->slot_size);
-            gc_pin(objspace, src);
-            FL_SET(src, FL_FROM_FREELIST);
-            free_page->free_slots--;
-        } else {
-            rb_bug("unreachable: Movement between heaps not yet supported");
-        }
+        gc_move(objspace, src, dest, free_page->slot_size);
+        gc_pin(objspace, src);
+        FL_SET(src, FL_FROM_FREELIST);
+        free_page->free_slots--;
     }
 
     return true;
@@ -5436,6 +5434,13 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 #if GC_ENABLE_INCREMENTAL_MARK
     heap->pooled_pages = NULL;
 #endif
+    if (!objspace->flags.immediate_sweep) {
+        struct heap_page *page = NULL;
+
+        list_for_each(&heap->pages, page, page_node) {
+            page->flags.before_sweep = TRUE;
+        }
+    }
 }
 
 #if defined(__GNUC__) && __GNUC__ == 4 && __GNUC_MINOR__ == 4
@@ -5788,15 +5793,6 @@ gc_sweep(rb_objspace_t *objspace)
     gc_report(1, objspace, "gc_sweep: immediate: %d\n", immediate_sweep);
 
     gc_sweep_start(objspace);
-    if (!immediate_sweep) {
-	struct heap_page *page = NULL;
-
-        for (int i = 0; i < SIZE_POOL_COUNT; i++) {
-            list_for_each(&(SIZE_POOL_EDEN_HEAP(&size_pools[i])->pages), page, page_node) {
-                page->flags.before_sweep = TRUE;
-            }
-        }
-    }
     if (objspace->flags.during_compacting) {
         gc_sweep_compact(objspace);
     }
@@ -8048,7 +8044,7 @@ gc_compact_sweep_unswept_page(rb_objspace_t *objspace, rb_heap_t *heap, struct h
 }
 
 static bool
-gc_compact_move_optimal(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
+gc_compact_move(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
 {
     GC_ASSERT(BUILTIN_TYPE(src) != T_MOVED);
     rb_heap_t *dheap = heap;
@@ -8071,7 +8067,7 @@ gc_compact_move_optimal(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
 static bool
 gc_compact_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bitset, struct heap_page *page) {
     short slot_size = page->slot_size;
-    short slot_bits = slot_size / sizeof(RVALUE);
+    short slot_bits = slot_size / BASE_SLOT_SIZE;
     GC_ASSERT(slot_bits > 0);
 
     do {
@@ -8081,7 +8077,7 @@ gc_compact_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t b
         if (bitset & 1) {
             objspace->rcompactor.considered_count_table[BUILTIN_TYPE(vp)]++;
 
-            if (!gc_compact_move_optimal(objspace, heap, vp)) {
+            if (!gc_compact_move(objspace, heap, vp)) {
                 //the cursors met. bubble up
                 return false;
             }
@@ -8101,7 +8097,7 @@ gc_compact_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *h
 
     bits_t *mark_bits, *pin_bits;
     bits_t bitset;
-    RVALUE *p = (RVALUE *)page->start;
+    uintptr_t p = page->start;
 
     mark_bits = page->mark_bits;
     pin_bits = page->pinned_bits;
@@ -8113,7 +8109,7 @@ gc_compact_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *h
         if (!gc_compact_plane(objspace, heap, (uintptr_t)p, bitset, page))
             return false;
     }
-    p += (BITS_BITLENGTH - NUM_IN_PAGE(p));
+    p += (BITS_BITLENGTH - NUM_IN_PAGE(p)) * BASE_SLOT_SIZE;
 
     for (int j = 1; j < HEAP_PAGE_BITMAP_LIMIT; j++) {
         bitset = (mark_bits[j] & ~pin_bits[j]);
@@ -8121,7 +8117,7 @@ gc_compact_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *h
             if (!gc_compact_plane(objspace, heap, (uintptr_t)p, bitset, page))
                 return false;
         }
-        p += BITS_BITLENGTH;
+        p += BITS_BITLENGTH * BASE_SLOT_SIZE;
     }
 
     return true;
@@ -8133,7 +8129,7 @@ gc_compact_cursors_met(rb_objspace_t *objspace) {
         rb_size_pool_t *size_pool = &size_pools[i];
         rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
 
-        if ( heap->sweeping_page != heap->compact_cursor) {
+        if (heap->sweeping_page != heap->compact_cursor) {
             return false;
         }
     }
@@ -8149,7 +8145,7 @@ gc_sweep_compact(rb_objspace_t *objspace)
     gc_verify_internal_consistency(objspace);
 #endif
 
-    while(!gc_compact_cursors_met(objspace)) {
+    while (!gc_compact_cursors_met(objspace)) {
         for (int i = 0; i < SIZE_POOL_COUNT; i++) {
             rb_size_pool_t *size_pool = &size_pools[i];
             rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
@@ -8175,9 +8171,8 @@ gc_sweep_compact(rb_objspace_t *objspace)
             // So we can lock it and move the cursor on to the next one.
             lock_page_body(objspace, GET_PAGE_BODY(start_page->start));
             struct heap_page *nc = list_prev(&heap->pages, heap->compact_cursor, page_node);
-            if (nc) {
-                heap->compact_cursor = nc;
-            }
+            heap->compact_cursor = nc;
+
             // if the cursors have met, we should stop compacting
             // now. and clean up after ourselves.
             if (heap->sweeping_page == heap->compact_cursor) {
@@ -9594,7 +9589,6 @@ gc_sort_heap_by_empty_slots(rb_objspace_t *objspace)
         list_head_init(&SIZE_POOL_EDEN_HEAP(size_pool)->pages);
 
         for (i = 0; i < total_pages; i++) {
-            list_node_init(&page_list[i]->page_node);
             list_add(&SIZE_POOL_EDEN_HEAP(size_pool)->pages, &page_list[i]->page_node);
             if (page_list[i]->free_slots != 0) {
                 heap_add_freepage(SIZE_POOL_EDEN_HEAP(size_pool), page_list[i]);
