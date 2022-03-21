@@ -8129,7 +8129,7 @@ gc_compact_cursors_met(rb_objspace_t *objspace) {
         rb_size_pool_t *size_pool = &size_pools[i];
         rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
 
-        if (heap->sweeping_page != heap->compact_cursor) {
+        if (!gc_compact_heap_cursors_met_p(heap)) {
             return false;
         }
     }
