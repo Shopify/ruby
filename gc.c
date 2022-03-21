@@ -8042,7 +8042,7 @@ gc_compact_move(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
     }
     gc_compact_sweep_unswept_page(objspace, dheap, dheap->sweeping_page);
 
-    while(!try_move(objspace, dheap, dheap->sweeping_page, src)) {
+    while (!try_move(objspace, dheap, dheap->sweeping_page, src)) {
         dheap->sweeping_page = list_next(&dheap->pages, dheap->sweeping_page, page_node);
         if (gc_compact_heap_cursors_met_p(dheap)) {
             return false;
