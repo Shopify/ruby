@@ -1784,14 +1784,9 @@ pub fn defer_compilation(jit: &JITState, cur_ctx: &Context, cb: &mut CodeBlock, 
 // Remove all references to a block then free it.
 fn free_block(blockref: &BlockRef)
 {
-    /*
-    FIXME: waiting for https://github.com/Shopify/ruby/pull/237
-                       https://github.com/Shopify/ruby/pull/239
+    use crate::invariants::*;
 
-    yjit_unlink_method_lookup_dependency(block);
-    yjit_block_assumptions_free(block);
-    */
-
+    block_assumptions_free(blockref);
 
     let block = blockref.borrow();
 
