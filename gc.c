@@ -8158,8 +8158,7 @@ gc_sweep_compact(rb_objspace_t *objspace)
             // If we get here, we've finished moving all objects on the compact_cursor page
             // So we can lock it and move the cursor on to the next one.
             lock_page_body(objspace, GET_PAGE_BODY(start_page->start));
-            struct heap_page *nc = list_prev(&heap->pages, heap->compact_cursor, page_node);
-            heap->compact_cursor = nc;
+            heap->compact_cursor = list_prev(&heap->pages, heap->compact_cursor, page_node);
 
             // if the cursors have met, we should stop compacting
             // now. and clean up after ourselves.
