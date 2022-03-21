@@ -150,7 +150,7 @@ pub extern "C" fn rb_yjit_bop_redefined(klass: RedefinitionFlag, bop: ruby_basic
 
     // Loop through the blocks that are associated with this class and basic
     // operator and invalidate them.
-    Invariants::get_instance().basic_operator_blocks.get_mut(&(klass, bop)).map(|blocks| {
+    Invariants::get_instance().basic_operator_blocks.remove(&(klass, bop)).map(|blocks| {
         for block in blocks.iter() {
             invalidate_block_version(block);
             incr_counter!(invalidate_bop_redefined);
