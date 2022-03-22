@@ -1,6 +1,7 @@
 use std::rc::{Rc, Weak};
 use std::cell::*;
 use std::ptr;
+use std::mem;
 use std::mem::size_of;
 use std::hash::{Hash, Hasher};
 use crate::cruby::*;
@@ -340,7 +341,7 @@ type VersionList = Vec<BlockRef>;
 
 /// Map from iseq indices to lists of versions for that given blockid
 /// An instance of this is stored on each iseq
-type VersionMap = Vec<VersionList>;
+pub type VersionMap = Vec<VersionList>;
 
 impl BlockRef {
     /// Constructor
@@ -389,12 +390,27 @@ impl Eq for BlockRef { }
 /// C code should pass an &mut IseqPayload to us
 /// when calling into YJIT
 #[derive(Default)]
-struct IseqPayload
+pub struct IseqPayload
 {
     version_map: VersionMap
 }
 
-/// Get the payload object associated with an iseq
+impl IseqPayload {
+    // Empty the version map on the payload and return it
+    pub fn take_version_map(&mut self) -> VersionMap {
+        mem::take(&mut self.version_map)
+    }
+}
+
+/// Get the payload for an iseq. For safety it's up to the caller to ensure the returned `&mut`
+/// upholds aliasing rules and that the argument is a valid iseq.
+pub unsafe fn load_iseq_payload(iseq: IseqPtr) -> Option<&'static mut IseqPayload> {
+    let payload = rb_iseq_get_yjit_payload(iseq);
+    let payload: *mut IseqPayload = payload.cast();
+    payload.as_mut()
+}
+
+/// Get the payload object associated with an iseq. Create one if none exists.
 fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload
 {
     use core::ffi::c_void;

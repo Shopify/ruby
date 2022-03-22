@@ -196,6 +196,9 @@ impl CodeBlock
         // doing bad accesses with it.
         assert!(pos < self.mem_size);
         self.write_pos = pos;
+
+        // Clear the error flag to allow checking for new errors.
+        self.dropped_bytes = false;
     }
 
     // Align the current write pointer to a multiple of bytes
@@ -233,8 +236,7 @@ impl CodeBlock
 
     // Get a direct pointer to the current write position
     pub fn get_write_ptr(&mut self) -> CodePtr {
-         self.get_ptr(self.write_pos)
-
+        self.get_ptr(self.write_pos)
     }
 
     // Write a single byte at the current position
