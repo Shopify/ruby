@@ -724,6 +724,7 @@ for_each_iseq_i(void *vstart, void *vend, size_t stride, void *data)
 }
 
 // Iterate through the whole GC heap and invoke a callback for each iseq.
+// Used for global code invalidation.
 void
 rb_yjit_for_each_iseq(iseq_callback callback)
 {

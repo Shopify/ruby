@@ -416,11 +416,9 @@ pub extern "C" fn rb_yjit_tracing_invalidate_all()
                 //
                 // Empty all blocks on the iseq so we don't compile new blocks that jump to the
                 // invalidated region.
-                let version_map = payload.take_version_map();
-                for versions in &version_map {
-                    for blockref in versions {
-                        block_assumptions_free(&blockref);
-                    }
+                let blocks = payload.clear_all_blocks();
+                for blockref in blocks {
+                    block_assumptions_free(&blockref);
                 }
             }
 

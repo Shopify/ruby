@@ -341,7 +341,7 @@ type VersionList = Vec<BlockRef>;
 
 /// Map from iseq indices to lists of versions for that given blockid
 /// An instance of this is stored on each iseq
-pub type VersionMap = Vec<VersionList>;
+type VersionMap = Vec<VersionList>;
 
 impl BlockRef {
     /// Constructor
@@ -396,9 +396,13 @@ pub struct IseqPayload
 }
 
 impl IseqPayload {
-    // Empty the version map on the payload and return it
-    pub fn take_version_map(&mut self) -> VersionMap {
-        mem::take(&mut self.version_map)
+    /// Remove all block versions from the payload and then return them as an iterator
+    pub fn clear_all_blocks(&mut self) -> impl Iterator<Item = BlockRef> {
+        // Empty the blocks
+        let version_map = mem::take(&mut self.version_map);
+
+        // Turn it into an iterator that owns the blocks and return
+        version_map.into_iter().flat_map(|versions| versions)
     }
 }
 
