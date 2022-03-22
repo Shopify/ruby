@@ -397,7 +397,7 @@ pub struct IseqPayload
 
 impl IseqPayload {
     /// Remove all block versions from the payload and then return them as an iterator
-    pub fn clear_all_blocks(&mut self) -> impl Iterator<Item = BlockRef> {
+    pub fn take_all_blocks(&mut self) -> impl Iterator<Item = BlockRef> {
         // Empty the blocks
         let version_map = mem::take(&mut self.version_map);
 
