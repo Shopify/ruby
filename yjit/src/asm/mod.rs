@@ -196,9 +196,6 @@ impl CodeBlock
         // doing bad accesses with it.
         assert!(pos < self.mem_size);
         self.write_pos = pos;
-
-        // Clear the error flag to allow checking for new errors.
-        self.dropped_bytes = false;
     }
 
     // Align the current write pointer to a multiple of bytes

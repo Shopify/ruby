@@ -434,7 +434,9 @@ pub extern "C" fn rb_yjit_tracing_invalidate_all()
         for patch in &patches {
             cb.set_write_ptr(patch.inline_patch_pos);
             jmp_ptr(cb, patch.outlined_target_pos);
-            assert!(!cb.has_dropped_bytes(), "patches should have space and jump offsets should fit in JMP rel32");
+
+            // FIXME: Can't easily check we actually wrote out the JMP at the moment.
+            // assert!(!cb.has_dropped_bytes(), "patches should have space and jump offsets should fit in JMP rel32");
         }
         cb.set_pos(old_pos);
 
