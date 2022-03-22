@@ -201,5 +201,20 @@ void rb_native_cond_initialize(rb_nativethread_cond_t *cond);
  */
 void rb_native_cond_destroy(rb_nativethread_cond_t *cond);
 
+typedef struct gvl_hook_event_args {
+    unsigned long waiting;
+} gvl_hook_event_args_t;
+
+typedef void (*rb_gvl_callback)(uint32_t event, gvl_hook_event_args_t args);
+
+typedef struct gvl_hook {
+    rb_gvl_callback callback;
+    rb_event_flag_t event;
+
+    struct gvl_hook *next;
+} gvl_hook_t;
+
+gvl_hook_t * rb_gvl_event_new(rb_gvl_callback callback, rb_event_flag_t event);
+bool rb_gvl_event_delete(gvl_hook_t * hook);
 RBIMPL_SYMBOL_EXPORT_END()
 #endif

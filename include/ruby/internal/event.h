@@ -82,18 +82,22 @@
  *
  * @{
  */
-#define RUBY_INTERNAL_EVENT_SWITCH          0x040000 /**< Thread switched. */
-#define RUBY_EVENT_SWITCH                   0x040000 /**< @old{RUBY_INTERNAL_EVENT_SWITCH} */
-                                         /* 0x080000 */
-#define RUBY_INTERNAL_EVENT_NEWOBJ          0x100000 /**< Object allocated. */
-#define RUBY_INTERNAL_EVENT_FREEOBJ         0x200000 /**< Object swept. */
-#define RUBY_INTERNAL_EVENT_GC_START        0x400000 /**< GC started. */
-#define RUBY_INTERNAL_EVENT_GC_END_MARK     0x800000 /**< GC ended mark phase. */
-#define RUBY_INTERNAL_EVENT_GC_END_SWEEP   0x1000000 /**< GC ended sweep phase. */
-#define RUBY_INTERNAL_EVENT_GC_ENTER       0x2000000 /**< `gc_enter()` is called. */
-#define RUBY_INTERNAL_EVENT_GC_EXIT        0x4000000 /**< `gc_exit()` is called. */
-#define RUBY_INTERNAL_EVENT_OBJSPACE_MASK  0x7f00000 /**< Bitmask of GC events. */
-#define RUBY_INTERNAL_EVENT_MASK          0xffff0000 /**< Bitmask of internal events. */
+#define RUBY_INTERNAL_EVENT_SWITCH             0x00040000 /**< Thread switched. */
+#define RUBY_EVENT_SWITCH                      0x00040000 /**< @old{RUBY_INTERNAL_EVENT_SWITCH} */
+                                             /*0x00080000 */
+#define RUBY_INTERNAL_EVENT_NEWOBJ             0x00100000 /**< Object allocated. */
+#define RUBY_INTERNAL_EVENT_FREEOBJ            0x00200000 /**< Object swept. */
+#define RUBY_INTERNAL_EVENT_GC_START           0x00400000 /**< GC started. */
+#define RUBY_INTERNAL_EVENT_GC_END_MARK        0x00800000 /**< GC ended mark phase. */
+#define RUBY_INTERNAL_EVENT_GC_END_SWEEP       0x01000000 /**< GC ended sweep phase. */
+#define RUBY_INTERNAL_EVENT_GC_ENTER           0x02000000 /**< `gc_enter()` is called. */
+#define RUBY_INTERNAL_EVENT_GC_EXIT            0x04000000 /**< `gc_exit()` is called. */
+#define RUBY_INTERNAL_EVENT_OBJSPACE_MASK      0x07f00000 /**< Bitmask of GC events. */
+#define RUBY_INTERNAL_EVENT_GVL_ACQUIRE_ENTER  0x10000000 /** `gvl_acquire() is called */
+#define RUBY_INTERNAL_EVENT_GVL_ACQUIRE_EXIT   0x20000000 /** `gvl_acquire() is exiting successfully */
+#define RUBY_INTERNAL_EVENT_GVL_RELEASE        0x40000000 /** `gvl_release() is called */
+#define RUBY_INTERNAL_EVENT_GVL_MASK           0x70000000 /**< Bitmask of GVL events. */
+#define RUBY_INTERNAL_EVENT_MASK               0xffff0000 /**< Bitmask of internal events. */
 
 /** @} */
 

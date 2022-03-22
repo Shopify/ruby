@@ -59,6 +59,7 @@ typedef struct rb_global_vm_lock_struct {
      *   timer.
      */
     struct list_head waitq; /* <=> native_thread_data_t.node.ubf */
+    rb_atomic_t waiting;
     const struct rb_thread_struct *timer;
     int timer_err;
 

@@ -101,6 +101,83 @@
 #  endif
 #endif
 
+static gvl_hook_t * rb_gvl_hooks = NULL;
+static pthread_rwlock_t rb_gvl_hooks_rw_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+gvl_hook_t *
+rb_gvl_event_new(rb_gvl_callback callback, rb_event_flag_t event) {
+    gvl_hook_t *hook = ALLOC_N(gvl_hook_t, 1);
+    hook->callback = callback;
+    hook->event = event;
+
+    int r;
+    if ((r = pthread_rwlock_wrlock(&rb_gvl_hooks_rw_lock))) {
+        rb_bug_errno("pthread_rwlock_wrlock", r);
+    }
+
+    hook->next = rb_gvl_hooks;
+    ATOMIC_PTR_EXCHANGE(rb_gvl_hooks, hook);
+
+    if ((r = pthread_rwlock_unlock(&rb_gvl_hooks_rw_lock))) {
+        rb_bug_errno("pthread_rwlock_unlock", r);
+    }
+    return hook;
+}
+
+bool
+rb_gvl_event_delete(gvl_hook_t * hook) {
+    int r;
+    if ((r = pthread_rwlock_wrlock(&rb_gvl_hooks_rw_lock))) {
+        rb_bug_errno("pthread_rwlock_wrlock", r);
+    }
+
+    bool success = FALSE;
+
+    if (rb_gvl_hooks == hook) {
+        ATOMIC_PTR_EXCHANGE(rb_gvl_hooks, hook->next);
+        success = TRUE;
+    } else {
+        gvl_hook_t *h = rb_gvl_hooks;
+
+        do {
+            if (h->next == hook) {
+                h->next = hook->next;
+                success = TRUE;
+            }
+        } while ((h = h->next));
+    }
+
+    if ((r = pthread_rwlock_unlock(&rb_gvl_hooks_rw_lock))) {
+        rb_bug_errno("pthread_rwlock_unlock", r);
+    }
+
+    if (success) {
+        ruby_xfree(hook);
+    }
+    return success;
+}
+
+static void
+rb_gvl_execute_hooks(rb_event_flag_t event, rb_atomic_t waiting) {
+    int r;
+    if ((r = pthread_rwlock_rdlock(&rb_gvl_hooks_rw_lock))) {
+        rb_bug_errno("pthread_rwlock_rdlock", r);
+    }
+
+    if (rb_gvl_hooks) {
+        gvl_hook_t *h = rb_gvl_hooks;
+        gvl_hook_event_args_t args = { .waiting = waiting };
+        do {
+            if (h->event & event) {
+                (*h->callback)(event, args);
+            }
+        } while((h = h->next));
+    }
+    if ((r = pthread_rwlock_unlock(&rb_gvl_hooks_rw_lock))) {
+        rb_bug_errno("pthread_rwlock_unlock", r);
+    }
+}
+
 enum rtimer_state {
     /* alive, after timer_create: */
     RTIMER_DISARM,
@@ -290,6 +367,10 @@ gvl_acquire_common(rb_global_vm_lock_t *gvl, rb_thread_t *th)
 	          "we must not be in ubf_list and GVL waitq at the same time");
 
         list_add_tail(&gvl->waitq, &nd->node.gvl);
+        ATOMIC_INC(gvl->waiting);
+        if (rb_gvl_hooks) {
+            rb_gvl_execute_hooks(RUBY_INTERNAL_EVENT_GVL_ACQUIRE_ENTER, gvl->waiting);
+        }
 
         do {
             if (!gvl->timer) {
@@ -301,6 +382,7 @@ gvl_acquire_common(rb_global_vm_lock_t *gvl, rb_thread_t *th)
         } while (gvl->owner);
 
         list_del_init(&nd->node.gvl);
+        ATOMIC_DEC(gvl->waiting);
 
         if (gvl->need_yield) {
             gvl->need_yield = 0;
@@ -311,6 +393,11 @@ gvl_acquire_common(rb_global_vm_lock_t *gvl, rb_thread_t *th)
         gvl->timer_err = ETIMEDOUT;
     }
     gvl->owner = th;
+
+    if (rb_gvl_hooks) {
+        rb_gvl_execute_hooks(RUBY_INTERNAL_EVENT_GVL_ACQUIRE_EXIT, gvl->waiting);
+    }
+
     if (!gvl->timer) {
         if (!designate_timer_thread(gvl) && !ubf_threads_empty()) {
             rb_thread_wakeup_timer_thread(-1);
@@ -329,6 +416,10 @@ gvl_acquire(rb_global_vm_lock_t *gvl, rb_thread_t *th)
 static const native_thread_data_t *
 gvl_release_common(rb_global_vm_lock_t *gvl)
 {
+    if (rb_gvl_hooks) {
+        rb_gvl_execute_hooks(RUBY_INTERNAL_EVENT_GVL_RELEASE, gvl->waiting);
+    }
+
     native_thread_data_t *next;
     gvl->owner = 0;
     next = list_top(&gvl->waitq, native_thread_data_t, node.ubf);
@@ -390,6 +481,7 @@ rb_gvl_init(rb_global_vm_lock_t *gvl)
     rb_native_cond_initialize(&gvl->switch_wait_cond);
     list_head_init(&gvl->waitq);
     gvl->owner = 0;
+    gvl->waiting = 0;
     gvl->timer = 0;
     gvl->timer_err = ETIMEDOUT;
     gvl->need_yield = 0;
@@ -644,9 +736,14 @@ static void native_thread_init(rb_thread_t *th);
 void
 Init_native_thread(rb_thread_t *th)
 {
+    int r;
+    if ((r = pthread_rwlock_init(&rb_gvl_hooks_rw_lock, NULL))) {
+        rb_bug_errno("pthread_rwlock_init", r);
+    }
+
 #if defined(HAVE_PTHREAD_CONDATTR_SETCLOCK)
     if (condattr_monotonic) {
-        int r = pthread_condattr_init(condattr_monotonic);
+        r = pthread_condattr_init(condattr_monotonic);
         if (r == 0) {
             r = pthread_condattr_setclock(condattr_monotonic, CLOCK_MONOTONIC);
         }
