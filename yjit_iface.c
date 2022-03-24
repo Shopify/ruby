@@ -25,10 +25,10 @@ rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec)
     uint8_t *code_ptr = rb_yjit_iseq_gen_entry_point(iseq, ec);
 
     if (code_ptr) {
-        iseq->body->jit_func = (yjit_func_t)code_ptr;
+        ISEQ_BODY(iseq)->jit_func = (yjit_func_t)code_ptr;
     }
     else {
-        iseq->body->jit_func = 0;
+        ISEQ_BODY(iseq)->jit_func = 0;
         success = false;
     }
 
