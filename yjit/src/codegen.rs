@@ -12,7 +12,7 @@ use CodegenStatus::*;
 use std::cell::{RefMut};
 use std::mem;
 use std::mem::size_of;
-use std::os::raw::{c_uint};
+use std::os::raw::{c_uint, c_void};
 use std::collections::{HashMap};
 
 // Callee-saved registers
@@ -4808,6 +4808,37 @@ fn gen_setclassvariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBloc
     KeepCompiling
 }
 
+/// Walk through the ISEQ to go from the current opt_getinlinecache to the
+/// subsequent opt_setinlinecache and find all of the name components that are
+/// associated with this constant (which correspond to the getconstant
+/// arguments).
+fn assume_stable_constant_names(jit: &mut JITState, ocb: &mut OutlinedCb) {
+    struct AssumeStableConstantName<'a> {
+        jit: &'a mut JITState,
+        ocb: &'a mut OutlinedCb
+    }
+
+    extern "C" fn assume_stable_constant_names_callback(id: ID, argument: *const c_void) {
+        let arg = unsafe { &mut *(argument as *mut AssumeStableConstantName) };
+        assume_stable_constant_name(arg.jit, arg.ocb, id);
+    }
+
+    unsafe {
+        let iseq = jit.get_iseq();
+        let encoded = get_iseq_body_iseq_encoded(iseq);
+
+        let start_index = jit.get_pc().offset_from(encoded);
+        let argument = AssumeStableConstantName { jit, ocb };
+
+        rb_vm_iseq_each_getconstant_id(
+            iseq,
+            start_index.try_into().unwrap(),
+            assume_stable_constant_names_callback,
+            &argument as *const AssumeStableConstantName as *const c_void
+        );
+    };
+}
+
 fn gen_opt_getinlinecache(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     let jump_offset = jit_get_arg(jit, 0);
@@ -4816,8 +4847,7 @@ fn gen_opt_getinlinecache(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBl
 
     // See vm_ic_hit_p(). The same conditions are checked in yjit_constant_ic_update().
     let ice = unsafe { (*ic).entry };
-    if ice.is_null() || // cache not filled
-        unsafe { GET_IC_SERIAL(ice) != ruby_vm_global_constant_state } /* cache out of date */ {
+    if ice.is_null() {
         // In these cases, leave a block that unconditionally side exits
         // for the interpreter to invalidate.
         return CantCompile;
@@ -4854,10 +4884,7 @@ fn gen_opt_getinlinecache(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBl
             return CantCompile;
         }
 
-        // Invalidate output code on any and all constant writes
-        // FIXME: This leaks when st_insert raises NoMemoryError
-        assume_stable_global_constant_state(jit, ocb);
-
+        assume_stable_constant_names(jit, ocb);
         jit_putobject(jit, ctx, cb, unsafe { (*ice).value });
     }
 

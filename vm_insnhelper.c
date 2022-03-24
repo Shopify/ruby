@@ -4926,29 +4926,51 @@ vm_opt_newarray_min(rb_execution_context_t *ec, rb_num_t num, const VALUE *ptr)
 
 #define IMEMO_CONST_CACHE_SHAREABLE IMEMO_FL_USER0
 
+static void
+vm_ic_compile_i(ID id, void *ic)
+{
+    rb_vm_t *vm = GET_VM();
+    st_table *ics;
+
+    if (!rb_id_table_lookup(vm->constant_cache, id, (VALUE *) &ics)) {
+        ics = st_init_numtable();
+        rb_id_table_insert(vm->constant_cache, id, (VALUE) ics);
+    }
+
+    st_insert(ics, (st_data_t) ic, (st_data_t) Qtrue);
+}
+
+struct rb_vm_iseq_each_getconstant_id_data {
+    void (*callback)(ID, void*);
+    void *argument;
+};
+
 // For each getconstant, associate the ID that corresponds to the first operand
 // to that instruction with the inline cache.
 static bool
-vm_ic_compile_i(VALUE *code, VALUE insn, size_t index, void *ic)
+vm_iseq_each_getconstant_id_i(VALUE *code, VALUE insn, size_t index, void *data)
 {
     if (insn == BIN(opt_setinlinecache)) {
         return false;
     }
 
     if (insn == BIN(getconstant)) {
-        ID id = code[index + 1];
-        rb_vm_t *vm = GET_VM();
-
-        st_table *ics;
-        if (!rb_id_table_lookup(vm->constant_cache, id, (VALUE *) &ics)) {
-            ics = st_init_numtable();
-            rb_id_table_insert(vm->constant_cache, id, (VALUE) ics);
-        }
-
-        st_insert(ics, (st_data_t) ic, (st_data_t) Qtrue);
+        struct rb_vm_iseq_each_getconstant_id_data *d = data;
+        d->callback(code[index + 1], d->argument);
     }
 
     return true;
+}
+
+void
+rb_vm_iseq_each_getconstant_id(const rb_iseq_t* iseq, size_t start_index, void (*callback)(ID, void*), void *argument)
+{
+    struct rb_vm_iseq_each_getconstant_id_data data = {
+        .callback = callback,
+        .argument = argument,
+    };
+
+    rb_iseq_each(iseq, start_index, vm_iseq_each_getconstant_id_i, (void *) &data);
 }
 
 // Loop through the instruction sequences starting at the opt_getinlinecache
@@ -4959,7 +4981,7 @@ static void
 vm_ic_compile(rb_control_frame_t *cfp, IC ic)
 {
     const rb_iseq_t *iseq = cfp->iseq;
-    rb_iseq_each(iseq, cfp->pc - iseq->body->iseq_encoded, vm_ic_compile_i, (void *) ic);
+    rb_vm_iseq_each_getconstant_id(iseq, cfp->pc - iseq->body->iseq_encoded, vm_ic_compile_i, ic);
 }
 
 // For MJIT inlining

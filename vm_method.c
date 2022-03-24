@@ -148,7 +148,7 @@ rb_clear_constant_cache_for_id(ID id)
         st_foreach(ics, rb_clear_constant_cache_for_id_i, (st_data_t) NULL);
     }
 
-    rb_yjit_constant_state_changed();
+    rb_yjit_constant_state_changed(id);
 }
 
 static void

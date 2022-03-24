@@ -26,6 +26,9 @@ pub struct Options {
 
     /// Dump compiled and executed instructions for debugging
     pub dump_insns: bool,
+
+    /// Whether or not to assume global constants
+    pub global_constants: bool,
 }
 
 // Initialize the options to default values
@@ -37,6 +40,7 @@ pub static mut OPTIONS: Options = Options {
     max_versions : 4,
     gen_stats : false,
     dump_insns: false,
+    global_constants: false,
 };
 
 /// Macro to get an option value by name
@@ -97,6 +101,7 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()>
         ("no-type-prop", "") => { unsafe { OPTIONS.no_type_prop = true }},
         ("stats", "") => { unsafe { OPTIONS.gen_stats = true }},
         ("dump-insns", "") => { unsafe { OPTIONS.dump_insns = true }},
+        ("global-constants", "") => { unsafe { OPTIONS.global_constants = true }},
 
         // Option name not recognized
         _ => {

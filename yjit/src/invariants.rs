@@ -8,6 +8,7 @@ use crate::stats::*;
 use crate::asm::OutlinedCb;
 use crate::utils::IntoUsize;
 use crate::yjit::yjit_enabled_p;
+use crate::options::*;
 
 use std::collections::{HashMap, HashSet};
 use std::mem;
@@ -47,11 +48,15 @@ pub struct Invariants {
     /// running.
     single_ractor: HashSet<BlockRef>,
 
-    /// Tracks the set of blocks that are assuming that the global constant
-    /// state hasn't changed since the last time it was checked. This is
-    /// important for accessing constants and their fields which can change
-    /// between executions of a given block.
-    global_constant_state: HashSet<BlockRef>,
+    /// A map from an ID to the set of blocks that are assuming a constant with
+    /// that ID as part of its name has not been redefined. For example, if
+    /// a constant `A::B` is redefined, then all blocks that are assuming that
+    /// `A` and `B` have not be redefined must be invalidated.
+    constant_state_blocks: HashMap<ID, HashSet<BlockRef>>,
+
+    /// A map from a block to a set of IDs that it is assuming have not been
+    /// redefined.
+    block_constant_states: HashMap<BlockRef, HashSet<ID>>,
 }
 
 /// Private singleton instance of the invariants global struct.
@@ -67,7 +72,8 @@ impl Invariants {
                 basic_operator_blocks: HashMap::new(),
                 block_basic_operators: HashMap::new(),
                 single_ractor: HashSet::new(),
-                global_constant_state: HashSet::new(),
+                constant_state_blocks: HashMap::new(),
+                block_constant_states: HashMap::new(),
             });
         }
     }
@@ -132,11 +138,14 @@ pub fn assume_single_ractor_mode(jit: &mut JITState, ocb: &mut OutlinedCb) -> bo
     }
 }
 
-/// Tracks that a block is assuming that the global constant state has not
-/// changed since the last call to this function.
-pub fn assume_stable_global_constant_state(jit: &mut JITState, ocb: &mut OutlinedCb) {
+/// Tracks that a block is assuming that the name component of a constant has
+/// not changed since the last call to this function.
+pub fn assume_stable_constant_name(jit: &mut JITState, ocb: &mut OutlinedCb, id: ID) {
     jit_ensure_block_entry_exit(jit, ocb);
-    Invariants::get_instance().global_constant_state.insert(jit.get_block());
+
+    let invariants = Invariants::get_instance();
+    invariants.constant_state_blocks.entry(id).or_insert(HashSet::new()).insert(jit.get_block());
+    invariants.block_constant_states.entry(jit.get_block()).or_insert(HashSet::new()).insert(id);
 }
 
 /// Called when a basic operator is redefined. Note that all the blocks assuming
@@ -217,19 +226,28 @@ pub extern "C" fn rb_yjit_before_ractor_spawn() {
 
 /// Callback for when the global constant state changes.
 #[no_mangle]
-pub extern "C" fn rb_yjit_constant_state_changed() {
+pub extern "C" fn rb_yjit_constant_state_changed(id: ID) {
     // If YJIT isn't enabled, do nothing
     if !yjit_enabled_p() {
         return;
     }
 
-    // Clear the set of blocks inside Invariants
-    let blocks = mem::take(&mut Invariants::get_instance().global_constant_state);
+    if get_option!(global_constants) {
+        let constant_state = mem::take(&mut Invariants::get_instance().constant_state_blocks);
 
-    // Invalidate the blocks
-    for block in &blocks {
-        invalidate_block_version(block);
-        incr_counter!(invalidate_constant_state_bump);
+        for (_, blocks) in constant_state.iter() {
+            for block in blocks.iter() {
+                invalidate_block_version(block);
+                incr_counter!(invalidate_constant_state_bump);
+            }
+        }
+    } else {
+        if let Some(blocks) = Invariants::get_instance().constant_state_blocks.remove(&id) {
+            for block in &blocks {
+                invalidate_block_version(block);
+                incr_counter!(invalidate_constant_state_bump);
+            }
+        }
     }
 }
 
@@ -307,7 +325,15 @@ pub fn block_assumptions_free(blockref: &BlockRef) {
     }
 
     invariants.single_ractor.remove(&blockref);
-    invariants.global_constant_state.remove(&blockref);
+
+    // Remove tracking for constant state for a given ID.
+    if let Some(ids) = invariants.block_constant_states.remove(&blockref) {
+        for id in ids {
+            if let Some(blocks) = invariants.constant_state_blocks.get_mut(&id) {
+                blocks.remove(&blockref);
+            }
+        }
+    }
 }
 
 /// Callback from the opt_setinlinecache instruction in the interpreter.

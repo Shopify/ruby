@@ -101,6 +101,8 @@ include!("cruby_bindings.inc.rs");
 // TODO: For #defines that affect memory layout, we need to check for them
 // on build and fail if they're wrong. e.g. USE_FLONUM *must* be true.
 
+type rb_vm_iseq_each_getconstant_id_callback = extern "C" fn(id: ID, data: *const c_void);
+
 // TODO:
 // Temporary, these external bindings will likely be auto-generated
 // and textually included in this file
@@ -247,9 +249,6 @@ extern "C" {
     #[link_name = "rb_BASIC_OP_UNREDEFINED_P"]
     pub fn BASIC_OP_UNREDEFINED_P(bop: ruby_basic_operators, klass: RedefinitionFlag) -> bool;
 
-    #[link_name = "rb_GET_IC_SERIAL"]
-    pub fn GET_IC_SERIAL(ice: *const iseq_inline_constant_cache_entry) -> rb_serial_t;
-
     #[link_name = "rb_RSTRUCT_LEN"]
     pub fn RSTRUCT_LEN(st: VALUE) -> c_long;
 
@@ -269,6 +268,7 @@ extern "C" {
     pub fn rb_vm_getclassvariable(iseq: IseqPtr, cfp: CfpPtr, id: ID, ic: ICVARC) -> VALUE;
     pub fn rb_vm_setclassvariable(iseq: IseqPtr, cfp: CfpPtr, id: ID, val: VALUE, ic: ICVARC) -> VALUE;
     pub fn rb_vm_ic_hit_p(ic: IC, reg_ep: *const VALUE) -> bool;
+    pub fn rb_vm_iseq_each_getconstant_id(iseq: IseqPtr, start_index: usize, callback: rb_vm_iseq_each_getconstant_id_callback, argument: *const c_void);
 
     #[link_name = "rb_vm_ci_argc"]
     pub fn vm_ci_argc(ci: * const rb_callinfo) -> c_int;
