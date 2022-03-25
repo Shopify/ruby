@@ -14,6 +14,8 @@ use std::mem;
 use std::mem::size_of;
 use std::os::raw::{c_uint};
 use std::collections::{HashMap};
+use std::cmp;
+use std::ffi::{CStr};
 
 // Callee-saved registers
 pub const REG_CFP: X86Opnd = R13;
@@ -207,7 +209,6 @@ fn jit_peek_at_self(jit: &JITState, ctx: &Context) -> VALUE
     unsafe { get_cfp_self(get_ec_cfp(jit.ec.unwrap())) }
 }
 
-/*
 fn jit_peek_at_local(jit: &JITState, ctx: &Context, n: i32) -> VALUE
 {
     assert!(jit_at_current_insn(jit));
@@ -222,7 +223,6 @@ fn jit_peek_at_local(jit: &JITState, ctx: &Context, n: i32) -> VALUE
         * ep.offset(offs)
     }
 }
-*/
 
 // Add a comment at the current position in the code block
 fn add_comment(cb: &mut CodeBlock, comment_str: &str)
@@ -335,65 +335,71 @@ fn record_global_inval_patch(cb: &mut CodeBlock, outline_block_target_pos: CodeP
     CodegenGlobals::push_global_inval_patch(cb.get_write_ptr(), outline_block_target_pos);
 }
 
-/*
 // Verify the ctx's types and mappings against the compile-time stack, self,
 // and locals.
-static void
-verify_ctx(jitstate_t *jit, ctx_t *ctx)
+fn verify_ctx(jit: &JITState, ctx:&Context)
 {
-    // Only able to check types when at current insn
-    RUBY_ASSERT(jit_at_current_insn(jit));
+    if get_option!(verify_ctx) {
+        // Only able to check types when at current insn
+        assert!(jit_at_current_insn(jit));
 
-    VALUE self_val = jit_peek_at_self(jit, ctx);
-    if (type_diff(yjit_type_of_value(self_val), ctx->self_type) == INT_MAX) {
-        rb_bug("verify_ctx: ctx type (%s) incompatible with actual value of self: %s", yjit_type_name(ctx->self_type), rb_obj_info(self_val));
-    }
+        let self_val = jit_peek_at_self(jit, ctx);
+        let self_val_type = Type::from(self_val);
 
-    for (int i = 0; i < ctx->stack_size && i < MAX_TEMP_TYPES; i++) {
-        temp_type_mapping_t learned = ctx.get_opnd_mapping(StackOpnd(i));
-        VALUE val = jit_peek_at_stack(jit, ctx, i);
-        val_type_t detected = yjit_type_of_value(val);
-
-        if (learned.mapping.kind == TEMP_SELF) {
-            if (self_val != val) {
-                rb_bug("verify_ctx: stack value was mapped to self, but values did not match\n"
-                        "  stack: %s\n"
-                        "  self: %s",
-                        rb_obj_info(val),
-                        rb_obj_info(self_val));
-            }
+        if self_val_type.diff(ctx.get_self_type()) == usize::MAX {
+            // TODO: how to print ctx.get_self_type()
+            panic!("verify_ctx: ctx type ({:?}) incompatible with actual value of self {}",
+                    ctx.get_self_type(),
+                    unsafe { CStr::from_ptr(rb_obj_info(self_val)).to_str().unwrap() });
         }
 
-        if (learned.mapping.kind == TEMP_LOCAL) {
-            int local_idx = learned.mapping.idx;
-            VALUE local_val = jit_peek_at_local(jit, ctx, local_idx);
-            if (local_val != val) {
-                rb_bug("verify_ctx: stack value was mapped to local, but values did not match\n"
-                        "  stack: %s\n"
-                        "  local %i: %s",
-                        rb_obj_info(val),
+        let top_idx = cmp::min(ctx.get_stack_size(), MAX_TEMP_TYPES as u16);
+        for i in 0..top_idx {
+            let (learned_mapping, learned_type) = ctx.get_opnd_mapping(StackOpnd(i));
+            let val = jit_peek_at_stack(jit, ctx, i as isize);
+            let detected = Type::from(val);
+
+            if learned_mapping == TempMapping::MapToSelf && self_val != val {
+                panic!("verify_ctx: stack value was mapped to self, but values did not match!\n  stack: {}\n  self: {}",
+                        unsafe { CStr::from_ptr(rb_obj_info(val)).to_str().unwrap() },
+                        unsafe { CStr::from_ptr(rb_obj_info(self_val)).to_str().unwrap() } );
+            }
+
+            if let TempMapping::MapToLocal(local_idx) = learned_mapping {
+                let local_val = jit_peek_at_local(jit, ctx, local_idx as i32);
+                if local_val != val {
+                    panic!("verify_ctx: stack value was mapped to local, but values did not match\n  stack: {}\n  local {}: {}",
+                        unsafe { CStr::from_ptr(rb_obj_info(val)).to_str().unwrap() },
                         local_idx,
-                        rb_obj_info(local_val));
+                        unsafe { CStr::from_ptr(rb_obj_info(local_val)).to_str().unwrap() },
+                    );
+                }
+            }
+
+            if detected.diff(learned_type) == usize::MAX {
+                panic!("verify_ctx: ctx type ({:?}) incompatible with actual value on stack: {}",
+                    learned_type,
+                    unsafe { CStr::from_ptr(rb_obj_info(val)).to_str().unwrap() }
+                );
             }
         }
 
-        if (type_diff(detected, learned) == INT_MAX) {
-            rb_bug("verify_ctx: ctx type (%s) incompatible with actual value on stack: %s", yjit_type_name(learned), rb_obj_info(val));
-        }
-    }
+        let local_table_size = unsafe { get_iseq_body_local_table_size(jit.iseq) };
+        let top_idx:u8 = cmp::min(local_table_size.try_into().unwrap(), MAX_TEMP_TYPES.try_into().unwrap());
+        for i in 0..top_idx {
+            let learned = ctx.get_local_type(i);
+            let val = jit_peek_at_local(jit, ctx, i as i32);
+            let detected = Type::from(val);
 
-    int32_t local_table_size = jit->iseq->body->local_table_size;
-    for (int i = 0; i < local_table_size && i < MAX_TEMP_TYPES; i++) {
-        val_type_t learned = ctx->local_types[i];
-        VALUE val = jit_peek_at_local(jit, ctx, i);
-        val_type_t detected = yjit_type_of_value(val);
-
-        if (type_diff(detected, learned) == INT_MAX) {
-            rb_bug("verify_ctx: ctx type (%s) incompatible with actual value of local: %s", yjit_type_name(learned), rb_obj_info(val));
+            if detected.diff(learned) == usize::MAX {
+                panic!("verify_ctx: ctx type ({:?}) incompatible with actual value of local: {} (type {:?})",
+                    learned,
+                    unsafe { CStr::from_ptr(rb_obj_info(val)).to_str().unwrap() },
+                    detected);
+            }
         }
     }
 }
-*/
 
 // Generate an exit to return to the interpreter
 fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
@@ -685,7 +691,7 @@ pub fn gen_single_block(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &m
     // Limit the number of specialized versions for this block
     let mut ctx = limit_block_versions(blockid, start_ctx);
 
-    //verify_blockid(blockid);
+    verify_blockid(blockid);
     assert!(!(blockid.idx == 0 && ctx.get_stack_size() > 0));
 
     // Instruction sequence to compile
@@ -735,9 +741,10 @@ pub fn gen_single_block(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &m
         }
 
         // In debug mode, verify our existing assumption
-        //if (jit_at_current_insn(&jit)) {
-        //    verify_ctx(&jit, ctx);
-        //}
+        #[cfg(debug_assertions)]
+        if jit_at_current_insn(&jit) {
+            verify_ctx(&jit, &ctx);
+        }
 
         // Lookup the codegen function for this instruction
         let mut status = CantCompile;
