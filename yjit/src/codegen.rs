@@ -158,21 +158,6 @@ pub fn jit_mov_gc_ptr(jit:&mut JITState, cb: &mut CodeBlock, reg:X86Opnd, ptr: V
     }
 }
 
-/*
-// Print the current source location for debugging purposes
-RBIMPL_ATTR_MAYBE_UNUSED()
-
-// dump an object for debugging purposes
-RBIMPL_ATTR_MAYBE_UNUSED()
-static void
-jit_obj_info_dump(codeblock_t *cb, x86opnd_t opnd) {
-    push_regs(cb);
-    mov(cb, C_ARG_REGS[0], opnd);
-    call_ptr(cb, REG0, (void *)rb_obj_info_dump);
-    pop_regs(cb);
-}
-*/
-
 // Get the index of the next instruction
 fn jit_next_insn_idx(jit: &JITState) -> u32
 {
@@ -297,10 +282,10 @@ fn jit_save_pc(jit: &JITState, cb: &mut CodeBlock, scratch_reg: X86Opnd)
     mov(cb, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_PC), scratch_reg);
 }
 
-// Save the current SP on the CFP
-// This realigns the interpreter SP with the JIT SP
-// Note: this will change the current value of REG_SP,
-//       which could invalidate memory operands
+/// Save the current SP on the CFP
+/// This realigns the interpreter SP with the JIT SP
+/// Note: this will change the current value of REG_SP,
+///       which could invalidate memory operands
 fn gen_save_sp(cb: &mut CodeBlock, ctx: &mut Context)
 {
     if ctx.get_sp_offset() != 0 {
@@ -312,11 +297,11 @@ fn gen_save_sp(cb: &mut CodeBlock, ctx: &mut Context)
     }
 }
 
-// jit_save_pc() + gen_save_sp(). Should be used before calling a routine that
-// could:
-//  - Perform GC allocation
-//  - Take the VM lock through RB_VM_LOCK_ENTER()
-//  - Perform Ruby method call
+/// jit_save_pc() + gen_save_sp(). Should be used before calling a routine that
+/// could:
+///  - Perform GC allocation
+///  - Take the VM lock through RB_VM_LOCK_ENTER()
+///  - Perform Ruby method call
 fn jit_prepare_routine_call(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, scratch_reg: X86Opnd)
 {
     jit.record_boundary_patch_point = true;
@@ -328,80 +313,80 @@ fn jit_prepare_routine_call(jit: &mut JITState, ctx: &mut Context, cb: &mut Code
     ctx.clear_local_types();
 }
 
-// Record the current codeblock write position for rewriting into a jump into
-// the outlined block later. Used to implement global code invalidation.
+/// Record the current codeblock write position for rewriting into a jump into
+/// the outlined block later. Used to implement global code invalidation.
 fn record_global_inval_patch(cb: &mut CodeBlock, outline_block_target_pos: CodePtr)
 {
     CodegenGlobals::push_global_inval_patch(cb.get_write_ptr(), outline_block_target_pos);
 }
 
-// Verify the ctx's types and mappings against the compile-time stack, self,
-// and locals.
-fn verify_ctx(jit: &JITState, ctx:&Context)
+/// Verify the ctx's types and mappings against the compile-time stack, self,
+/// and locals.
+fn verify_ctx(jit: &JITState, ctx: &Context)
 {
-    if get_option!(verify_ctx) {
-        // Only able to check types when at current insn
-        assert!(jit_at_current_insn(jit));
+    fn obj_info_str<'a>(val: VALUE) -> &'a str {
+        unsafe { CStr::from_ptr(rb_obj_info(val)).to_str().unwrap() }
+    }
 
-        let self_val = jit_peek_at_self(jit, ctx);
-        let self_val_type = Type::from(self_val);
+    // Only able to check types when at current insn
+    assert!(jit_at_current_insn(jit));
 
-        if self_val_type.diff(ctx.get_self_type()) == usize::MAX {
-            // TODO: how to print ctx.get_self_type()
-            panic!("verify_ctx: ctx type ({:?}) incompatible with actual value of self {}",
-                    ctx.get_self_type(),
-                    unsafe { CStr::from_ptr(rb_obj_info(self_val)).to_str().unwrap() });
-        }
+    let self_val = jit_peek_at_self(jit, ctx);
+    let self_val_type = Type::from(self_val);
 
-        let top_idx = cmp::min(ctx.get_stack_size(), MAX_TEMP_TYPES as u16);
-        for i in 0..top_idx {
-            let (learned_mapping, learned_type) = ctx.get_opnd_mapping(StackOpnd(i));
-            let val = jit_peek_at_stack(jit, ctx, i as isize);
-            let detected = Type::from(val);
+    // Verify self operand type
+    if self_val_type.diff(ctx.get_opnd_type(SelfOpnd)) == usize::MAX {
+        panic!(
+            "verify_ctx: ctx self type ({:?}) incompatible with actual value of self {}",
+            ctx.get_opnd_type(SelfOpnd),
+            obj_info_str(self_val)
+        );
+    }
 
-            if learned_mapping == TempMapping::MapToSelf && self_val != val {
-                panic!("verify_ctx: stack value was mapped to self, but values did not match!\n  stack: {}\n  self: {}",
-                        unsafe { CStr::from_ptr(rb_obj_info(val)).to_str().unwrap() },
-                        unsafe { CStr::from_ptr(rb_obj_info(self_val)).to_str().unwrap() } );
-            }
+    // Verify stack operand types
+    let top_idx = cmp::min(ctx.get_stack_size(), MAX_TEMP_TYPES as u16);
+    for i in 0..top_idx {
+        let (learned_mapping, learned_type) = ctx.get_opnd_mapping(StackOpnd(i));
+        let stack_val = jit_peek_at_stack(jit, ctx, i as isize);
+        let val_type = Type::from(stack_val);
 
-            if let TempMapping::MapToLocal(local_idx) = learned_mapping {
-                let local_val = jit_peek_at_local(jit, ctx, local_idx as i32);
-                if local_val != val {
-                    panic!("verify_ctx: stack value was mapped to local, but values did not match\n  stack: {}\n  local {}: {}",
-                        unsafe { CStr::from_ptr(rb_obj_info(val)).to_str().unwrap() },
-                        local_idx,
-                        unsafe { CStr::from_ptr(rb_obj_info(local_val)).to_str().unwrap() },
+        match learned_mapping {
+            TempMapping::MapToSelf => {
+                if self_val != stack_val {
+                    panic!(
+                        "verify_ctx: stack value was mapped to self, but values did not match!\n  stack: {}\n  self: {}",
+                        obj_info_str(stack_val),
+                        obj_info_str(self_val)
                     );
                 }
-            }
-
-            if detected.diff(learned_type) == usize::MAX {
-                panic!("verify_ctx: ctx type ({:?}) incompatible with actual value on stack: {}",
-                    learned_type,
-                    unsafe { CStr::from_ptr(rb_obj_info(val)).to_str().unwrap() }
-                );
+            },
+            TempMapping::MapToLocal(local_idx) => {
+                let local_val = jit_peek_at_local(jit, ctx, local_idx as i32);
+                if local_val != stack_val {
+                    panic!(
+                        "verify_ctx: stack value was mapped to local, but values did not match\n  stack: {}\n  local {}: {}",
+                        obj_info_str(stack_val),
+                        local_idx,
+                        obj_info_str(local_val)
+                    );
+                }
+            },
+            TempMapping::MapToStack => {
             }
         }
 
-        let local_table_size = unsafe { get_iseq_body_local_table_size(jit.iseq) };
-        let top_idx:u8 = cmp::min(local_table_size.try_into().unwrap(), MAX_TEMP_TYPES.try_into().unwrap());
-        for i in 0..top_idx {
-            let learned = ctx.get_local_type(i);
-            let val = jit_peek_at_local(jit, ctx, i as i32);
-            let detected = Type::from(val);
-
-            if detected.diff(learned) == usize::MAX {
-                panic!("verify_ctx: ctx type ({:?}) incompatible with actual value of local: {} (type {:?})",
-                    learned,
-                    unsafe { CStr::from_ptr(rb_obj_info(val)).to_str().unwrap() },
-                    detected);
-            }
+        // If the actual type differs from the learned type
+        if val_type.diff(learned_type) == usize::MAX {
+            panic!(
+                "verify_ctx: ctx type ({:?}) incompatible with actual value on stack: {}",
+                learned_type,
+                obj_info_str(stack_val)
+            );
         }
     }
 }
 
-// Generate an exit to return to the interpreter
+/// Generate an exit to return to the interpreter
 fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
 {
     let code_ptr = cb.get_write_ptr();
@@ -742,7 +727,7 @@ pub fn gen_single_block(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &m
 
         // In debug mode, verify our existing assumption
         #[cfg(debug_assertions)]
-        if jit_at_current_insn(&jit) {
+        if get_option!(verify_ctx) && jit_at_current_insn(&jit) {
             verify_ctx(&jit, &ctx);
         }
 

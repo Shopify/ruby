@@ -996,18 +996,6 @@ impl Context {
         return opnd;
     }
 
-    /// Get the self type
-    pub fn get_self_type(&self) -> Type
-    {
-        self.self_type
-    }
-
-    /// Get a local type
-    pub fn get_local_type(&self, i:u8) -> Type
-    {
-        self.local_types[i as usize]
-    }
-
     /// Get the type of an instruction operand
     pub fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
     {
