@@ -1380,7 +1380,7 @@ fn gen_block_series_body(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &
 
 /// Generate a block version that is an entry point inserted into an iseq
 /// NOTE: this function assumes that the VM lock has been taken
-pub fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> Option<CodePtr>
+pub fn gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> Option<CodePtr>
 {
     /*
     // If we aren't at PC 0, don't generate code
@@ -1390,6 +1390,14 @@ pub fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> Option<CodePt
     }
     */
 
+    // Compute the current instruction index based on the current PC
+    let insn_idx: u32 = unsafe {
+        let pc_zero = rb_iseq_pc_at_idx(iseq, 0);
+        let ec_pc = get_cfp_pc(get_ec_cfp(ec));
+        let ptr_diff = (ec_pc as usize) - (pc_zero as usize);
+        (ptr_diff / SIZEOF_VALUE) as u32
+    };
+
     // The entry context makes no assumptions about types
     let blockid = BlockId { iseq, idx: insn_idx };
 
@@ -1398,7 +1406,7 @@ pub fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> Option<CodePt
     let ocb = CodegenGlobals::get_outlined_cb();
 
     // Write the interpreter entry prologue. Might be NULL when out of memory.
-    let code_ptr = gen_entry_prologue(cb, iseq);
+    let code_ptr = gen_entry_prologue(cb, iseq, insn_idx);
 
     // Try to generate code for the entry block
     let block = gen_block_series(blockid, &Context::default(), ec, cb, ocb);
