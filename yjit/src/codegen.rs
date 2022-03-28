@@ -519,7 +519,7 @@ fn gen_pc_guard(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: u32)
     //RUBY_ASSERT(cb != NULL);
 
     let pc_opnd = mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_PC);
-    let expected_pc = unsafe { rb_iseq_pc_at_idx(iseq, 0) };
+    let expected_pc = unsafe { rb_iseq_pc_at_idx(iseq, insn_idx) };
     let expected_pc_opnd = const_ptr_opnd(expected_pc as *const u8);
     mov(cb, REG0, pc_opnd);
     mov(cb, REG1, expected_pc_opnd);
