@@ -513,8 +513,7 @@ pub fn jit_ensure_block_entry_exit(jit: &mut JITState, ocb: &mut OutlinedCb)
 // instruction index in the iseq, otherwise takes a side-exit.
 // This is to handle the situation of optional parameters.
 // When a function with optional parameters is called, the entry
-// PC for the method isn't necessarily 0, but we always generated code that
-// assumes the entry point is 0.
+// PC for the method isn't necessarily 0.
 fn gen_pc_guard(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: u32)
 {
     //RUBY_ASSERT(cb != NULL);
