@@ -1394,8 +1394,7 @@ pub fn gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> Option<CodePtr>
     let insn_idx: u32 = unsafe {
         let pc_zero = rb_iseq_pc_at_idx(iseq, 0);
         let ec_pc = get_cfp_pc(get_ec_cfp(ec));
-        let ptr_diff = (ec_pc as usize) - (pc_zero as usize);
-        (ptr_diff / SIZEOF_VALUE) as u32
+        ec_pc.offset_from(pc_zero).try_into().ok()?
     };
 
     // The entry context makes no assumptions about types
