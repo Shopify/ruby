@@ -39,7 +39,8 @@ jobs:
         os:
           - ubuntu-20.04
         test_task: [
-          "test-all",
+          "btest",
+          "test-all TESTS=--repeat-count=2",
           #"check",
           #"test-bundled-gems",
           #"test-bundler-parallel",
@@ -51,7 +52,7 @@ jobs:
         configure: [
           "--enable-yjit=dev"
         ]
-        yjit_enable_env: RUBY_YJIT_ENABLE
+        yjit_enable_env: true
       fail-fast: false
     env:
       GITPULLOPTIONS: --no-tags origin ${{github.ref}}
