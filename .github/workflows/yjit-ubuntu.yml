@@ -36,24 +36,22 @@ jobs:
   make:
     strategy:
       matrix:
-        test_task: ["check"] # "test-bundler-parallel",
         os:
           - ubuntu-20.04
-#         - ubuntu-18.04
+        test_task: [
+          "test-all",
+          #"check",
+          #"test-bundled-gems",
+          #"test-bundler-parallel",
+        ]
         yjit_opts: [
           "--yjit",
           "--yjit --yjit-call-threshold=1",
         ]
-        configure: ["", "cppflags=-DRUBY_DEBUG"]
-        include:
-          - test_task: "test-all TESTS=--repeat-count=2"
-            os: ubuntu-20.04
-            configure: ""
-            yjit_enable_env: RUBY_YJIT_ENABLE
-          - test_task: "test-bundled-gems"
-            os: ubuntu-20.04
-            configure: "cppflags=-DRUBY_DEBUG"
-            yjit_enable_env: RUBY_YJIT_ENABLE
+        configure: [
+          "--enable-yjit=dev"
+        ]
+        yjit_enable_env: RUBY_YJIT_ENABLE
       fail-fast: false
     env:
       GITPULLOPTIONS: --no-tags origin ${{github.ref}}
