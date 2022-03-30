@@ -45,12 +45,12 @@ jobs:
           #"test-bundled-gems",
           #"test-bundler-parallel",
         ]
+        configure: [
+          "--enable-yjit=dev",
+        ]
         yjit_opts: [
           "--yjit",
           "--yjit --yjit-call-threshold=1",
-        ]
-        configure: [
-          "--enable-yjit=dev",
         ]
       fail-fast: false
     env:
