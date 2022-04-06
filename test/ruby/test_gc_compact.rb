@@ -208,4 +208,46 @@ class TestGCCompact < Test::Unit::TestCase
 
     assert_equal([:call, :line], results)
   end
+
+  def generate_strings_resized_up
+    list = []
+    725.times {
+      list << String.new(+"small string")
+      Object.new
+      Object.new
+    }
+    list.map { |s| s << "long string to push to a different size pool" }
+  end
+
+  def generate_strings_resized_down
+    list = []
+    1600.times {
+      list << String.new(+"abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+      Object.new
+      Object.new
+    }
+    list.map { |s| s.squeeze! }
+  end
+
+  def test_embedding_strings_that_moved_to_a_larger_size_pool
+    omit
+    require 'objspace'
+    require 'json'
+    list = generate_strings_resized_up
+
+    GC.compact
+    slot_sizes = list.map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }.uniq
+    assert(slot_sizes.include?(160), "Expected some of these objects to be moved to a larger size pool, where space allows")
+  end
+
+  def test_embedding_strings_that_moved_to_a_smaller_size_pool
+    omit
+    require 'objspace'
+    require 'json'
+    list = generate_strings_resized_down
+
+    GC.compact
+    slot_sizes = list.map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }.uniq
+    assert(slot_sizes.include?(40), "Expected some of these objects to be moved to a larger size pool, where space allows")
+  end
 end
