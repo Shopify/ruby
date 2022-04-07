@@ -5095,6 +5095,9 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
         objspace->rcompactor.total_moved++;
 
         gc_move(objspace, src, dest, src_page->slot_size, free_page->slot_size);
+        if (BUILTIN_TYPE(dest) == T_STRING) {
+            rb_str_make_embedded(src);
+        }
         gc_pin(objspace, src);
         free_page->free_slots--;
     }

@@ -257,6 +257,16 @@ str_make_independent(VALUE str)
 static inline int str_dependent_p(VALUE str);
 
 void
+rb_str_make_embedded(VALUE str)
+{
+    if (STR_EMBED_P(str)) {
+        return;
+    }
+
+    fprintf(stderr, "this is a non-embedded string that needs to move\n"); 
+}
+
+void
 rb_str_make_independent(VALUE str)
 {
     if (str_dependent_p(str)) {
@@ -10632,7 +10642,6 @@ rb_fs_setter(VALUE val, ID id, VALUE *var)
     }
     *var = val;
 }
-
 
 /*
  *  call-seq:
