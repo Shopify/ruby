@@ -2469,10 +2469,13 @@ size_pool_slot_size(unsigned char pool_id)
     return slot_size;
 }
 
+#define RVARGC_MAX_ALLOCATABLE_SLOT_MULTIPLE (1 << (SIZE_POOL_COUNT - 1))
+#define RVARGC_MAX_ALLOCATABLE_SIZE (RVARGC_MAX_ALLOCATABLE_SLOT_MULTIPLE * BASE_SLOT_SIZE)
+
 bool
 rb_gc_size_allocatable_p(size_t size)
 {
-    return size <= size_pool_slot_size(SIZE_POOL_COUNT - 1);
+    return size <= RVARGC_MAX_ALLOCATABLE_SIZE;
 }
 
 static inline VALUE
@@ -5434,13 +5437,19 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
     GC_ASSERT(bitmap_plane_count == HEAP_PAGE_BITMAP_LIMIT - 1 ||
                   bitmap_plane_count == HEAP_PAGE_BITMAP_LIMIT);
 
-    // Skip out of range slots at the head of the page
-    bitset = ~bits[0];
-    bitset >>= NUM_IN_PAGE(p);
-    if (bitset) {
-        gc_sweep_plane(objspace, heap, p, bitset, ctx);
+    /* NUM_IN_PAGE(p) >= BITS_BITLENGTH can only be true when
+     * RVARGC_MAX_ALLOCATABLE_SLOT_MULTIPLE == BITS_BITLENGTH. This happens
+     * when a size pool has slots the that occupy a whole bitmap plane. */
+    if (RVARGC_MAX_ALLOCATABLE_SLOT_MULTIPLE != BITS_BITLENGTH ||
+            NUM_IN_PAGE(p) < BITS_BITLENGTH) {
+        // Skip out of range slots at the head of the page
+        bitset = ~bits[0];
+        bitset >>= NUM_IN_PAGE(p);
+        if (bitset) {
+            gc_sweep_plane(objspace, heap, p, bitset, ctx);
+        }
+        p += (BITS_BITLENGTH - NUM_IN_PAGE(p)) * BASE_SLOT_SIZE;
     }
-    p += (BITS_BITLENGTH - NUM_IN_PAGE(p)) * BASE_SLOT_SIZE;
 
     for (int i = 1; i < bitmap_plane_count; i++) {
         bitset = ~bits[i];
