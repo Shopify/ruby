@@ -5399,7 +5399,15 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
             }
         }
         p += slot_size;
-        bitset >>= slot_bits;
+        /* Section 6.5.7p3 of the C11 standard states that we cannot shift by
+         * greater than or equal to the width of the data type. */
+        if (RVARGC_MAX_ALLOCATABLE_SLOT_MULTIPLE == BITS_BITLENGTH &&
+                slot_bits == BITS_BITLENGTH) {
+            bitset = 0;
+        }
+        else {
+            bitset >>= slot_bits;
+        }
     } while (bitset);
 }
 
