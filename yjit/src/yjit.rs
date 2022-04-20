@@ -1,11 +1,11 @@
-use crate::cruby::*;
 use crate::codegen::*;
 use crate::core::*;
+use crate::cruby::*;
 use crate::invariants::*;
 use crate::options::*;
 
-use std::sync::atomic::{AtomicBool,Ordering};
 use std::os::raw;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// For tracking whether the user enabled YJIT through command line arguments or environment
 /// variables. AtomicBool to avoid `unsafe`. On x86 it compiles to simple movs.
@@ -16,9 +16,8 @@ static YJIT_ENABLED: AtomicBool = AtomicBool::new(false);
 /// Parse one command-line option.
 /// This is called from ruby.c
 #[no_mangle]
-pub extern "C" fn rb_yjit_parse_option(str_ptr: *const raw::c_char) -> bool
-{
-    return parse_option(str_ptr).is_some();
+pub extern "C" fn rb_yjit_parse_option(str_ptr: *const raw::c_char) -> bool {
+    parse_option(str_ptr).is_some()
 }
 
 /// Is YJIT on? The interpreter uses this function to decide whether to increment
@@ -44,8 +43,7 @@ pub extern "C" fn rb_yjit_call_threshold() -> raw::c_uint {
 
 /// This function is called from C code
 #[no_mangle]
-pub extern "C" fn rb_yjit_init_rust()
-{
+pub extern "C" fn rb_yjit_init_rust() {
     // TODO: need to make sure that command-line options have been
     // initialized by CRuby
 
@@ -61,7 +59,7 @@ pub extern "C" fn rb_yjit_init_rust()
         YJIT_ENABLED.store(true, Ordering::Release);
     });
 
-    if let Err(_) = result {
+    if result.is_err() {
         println!("YJIT: rb_yjit_init_rust() panicked. Aborting.");
         std::process::abort();
     }
@@ -75,7 +73,7 @@ pub extern "C" fn rb_yjit_iseq_gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> *con
 
     match maybe_code_ptr {
         Some(ptr) => ptr.raw_ptr(),
-        None => std::ptr::null()
+        None => std::ptr::null(),
     }
 }
 
@@ -96,5 +94,5 @@ pub extern "C" fn rb_yjit_simulate_oom_bang(_ec: EcPtr, _ruby_self: VALUE) -> VA
         ocb.set_pos(ocb.get_mem_size() - 1);
     }
 
-    return Qnil;
+    Qnil
 }
