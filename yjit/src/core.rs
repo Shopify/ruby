@@ -78,24 +78,12 @@ impl Type {
 
     /// Check if the type is an immediate
     pub fn is_imm(&self) -> bool {
-        match self {
-            Type::UnknownImm => true,
-            Type::Nil => true,
-            Type::True => true,
-            Type::False => true,
-            Type::Fixnum => true,
-            Type::Flonum => true,
-            Type::ImmSymbol => true,
-            _ => false,
-        }
+        matches!(self, Type::UnknownImm | Type::Nil | Type::True | Type::False | Type::Fixnum | Type::Flonum | Type::ImmSymbol)
     }
 
     /// Returns true when the type is not specific.
     pub fn is_unknown(&self) -> bool {
-        match self {
-            Type::Unknown | Type::UnknownImm | Type::UnknownHeap => true,
-            _ => false,
-        }
+        matches!(self, Type::Unknown | Type::UnknownImm | Type::UnknownHeap)
     }
 
     /// Returns true when we know the VALUE is a specific handle type,
@@ -107,14 +95,7 @@ impl Type {
 
     /// Check if the type is a heap object
     pub fn is_heap(&self) -> bool {
-        match self {
-            Type::UnknownHeap => true,
-            Type::Array => true,
-            Type::Hash => true,
-            Type::HeapSymbol => true,
-            Type::String => true,
-            _ => false,
-        }
+        matches!(self, Type::UnknownHeap | Type::Array | Type::Hash | Type::HeapSymbol | Type::String)
     }
 
     /// Compute a difference between two value types
@@ -144,7 +125,7 @@ impl Type {
         }
 
         // Incompatible types
-        return usize::MAX;
+        usize::MAX
     }
 
     /// Upgrade this type into a more specific compatible type
@@ -418,7 +399,7 @@ impl IseqPayload {
         let version_map = mem::take(&mut self.version_map);
 
         // Turn it into an iterator that owns the blocks and return
-        version_map.into_iter().flat_map(|versions| versions)
+        version_map.into_iter().flatten()
     }
 }
 
@@ -485,7 +466,7 @@ pub extern "C" fn rb_yjit_iseq_free(payload: *mut c_void)
     // Remove all blocks in the payload from global invariants table.
     for versions in &payload.version_map {
         for block in versions {
-            invariants::block_assumptions_free(&block);
+            invariants::block_assumptions_free(block);
         }
     }
 }
@@ -679,7 +660,7 @@ pub fn get_iseq_block_list(iseq: IseqPtr) -> Vec<BlockRef> {
         }
     }
 
-    return blocks;
+    blocks
 }
 
 /// Retrieve a basic block version for an (iseq, idx) tuple
@@ -713,7 +694,7 @@ fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef>
         }
     }
 
-    return best_version;
+    best_version
 }
 
 /// Produce a generic context when the block version limit is hit for a blockid
@@ -729,15 +710,16 @@ pub fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
         // Produce a generic context that stores no type information,
         // but still respects the stack_size and sp_offset constraints.
         // This new context will then match all future requests.
-        let mut generic_ctx = Context::default();
-        generic_ctx.stack_size = ctx.stack_size;
-        generic_ctx.sp_offset = ctx.sp_offset;
-
+        let generic_ctx = Context {
+            stack_size: ctx.stack_size,
+            sp_offset: ctx.sp_offset,
+            ..Default::default()
+        };
         // Mutate the incoming context
         return generic_ctx;
     }
 
-    return *ctx;
+    *ctx
 }
 
 /// Keep track of a block version. Block should be fully constructed.
@@ -881,7 +863,7 @@ impl Block {
 
 impl Context {
     pub fn new_with_stack_size(size: i16) -> Self {
-        return Context {
+        Context {
             stack_size: size as u16,
             sp_offset: size,
             chain_depth: 0,
@@ -889,11 +871,11 @@ impl Context {
             temp_types: [Type::Unknown; MAX_TEMP_TYPES],
             self_type: Type::Unknown,
             temp_mapping: [MapToStack; MAX_TEMP_TYPES]
-        };
+        }
     }
 
     pub fn new() -> Self {
-        return Self::new_with_stack_size(0);
+        Self::new_with_stack_size(0)
     }
 
     pub fn get_stack_size(&self) -> u16 {
@@ -925,7 +907,7 @@ impl Context {
     {
         let offset = ((self.sp_offset as isize) * (SIZEOF_VALUE as isize)) + offset_bytes;
         let offset = offset as i32;
-        return mem_opnd(64, REG_SP, offset);
+        mem_opnd(64, REG_SP, offset)
     }
 
     /// Push one new value on the temp stack with an explicit mapping
@@ -954,20 +936,20 @@ impl Context {
 
         // SP points just above the topmost value
         let offset = ((self.sp_offset as i32) - 1) * (SIZEOF_VALUE as i32);
-        return mem_opnd(64, REG_SP, offset);
+        mem_opnd(64, REG_SP, offset)
     }
 
     /// Push one new value on the temp stack
     /// Return a pointer to the new stack top
     pub fn stack_push(&mut self, val_type: Type) -> X86Opnd
     {
-        return self.stack_push_mapping((MapToStack, val_type));
+        self.stack_push_mapping((MapToStack, val_type))
     }
 
     /// Push the self value on the stack
     pub fn stack_push_self(&mut self) -> X86Opnd
     {
-        return self.stack_push_mapping((MapToSelf, Type::Unknown));
+        self.stack_push_mapping((MapToSelf, Type::Unknown))
     }
 
     /// Push a local variable on the stack
@@ -977,9 +959,9 @@ impl Context {
             return self.stack_push(Type::Unknown);
         }
 
-        return self.stack_push_mapping(
+        self.stack_push_mapping(
             (MapToLocal(local_idx as u8), Type::Unknown)
-        );
+        )
     }
 
     // Pop N values off the stack
@@ -1005,7 +987,7 @@ impl Context {
         self.stack_size -= n as u16;
         self.sp_offset -= n as i16;
 
-        return top;
+        top
     }
 
     /// Get an operand pointing to a slot on the temp stack
@@ -1013,8 +995,8 @@ impl Context {
     {
         // SP points just above the topmost value
         let offset = ((self.sp_offset as i32) - 1 - idx) * (SIZEOF_VALUE as i32);
-        let opnd = mem_opnd(64, REG_SP, offset);
-        return opnd;
+        
+        mem_opnd(64, REG_SP, offset)
     }
 
     /// Get the type of an instruction operand
@@ -1045,7 +1027,7 @@ impl Context {
                     },
                     MapToLocal(idx) => {
                         assert!((idx as usize) < MAX_LOCAL_TYPES);
-                        return self.local_types[idx as usize]
+                        self.local_types[idx as usize]
                     },
                 }
             }
@@ -1058,7 +1040,7 @@ impl Context {
             return Type::Unknown
         }
 
-        return self.local_types[idx];
+        self.local_types[idx]
     }
 
     /// Upgrade (or "learn") the type of an instruction operand
@@ -1294,7 +1276,7 @@ impl Context {
             diff += temp_diff;
         }
 
-        return diff;
+        diff
     }
 }
 
@@ -1440,7 +1422,7 @@ pub fn gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> Option<CodePtr>
     }
 
     // Compilation successful and block not empty
-    return code_ptr;
+    code_ptr
 }
 
 /// Generate code for a branch, possibly rewriting and changing the size of it
@@ -1511,7 +1493,7 @@ fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) ->
         dst_addrs: [None, None],
 
         // Branch code generation function
-        gen_fn: gen_fn,
+        gen_fn,
 
         // Shape of the branch
         shape: BranchShape::Default,
@@ -1521,7 +1503,7 @@ fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) ->
     let branchref = Rc::new(RefCell::new(branch));
     block.borrow_mut().outgoing.push(branchref.clone());
 
-    return branchref;
+    branchref
 }
 
 /// Generated code calls this function with the SysV calling convention.
@@ -1567,7 +1549,7 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
 
     // If this branch has already been patched, return the dst address
     // Note: ractors can cause the same stub to be hit multiple times
-    if let Some(_) = branch.blocks[target_idx] {
+    if branch.blocks[target_idx].is_some() {
         return branch.dst_addrs[target_idx].unwrap().raw_ptr();
     }
 
@@ -1750,7 +1732,7 @@ pub fn gen_branch(
 
     // Get the branch targets or stubs
     let dst_addr0 = get_branch_target(target0, ctx0, &branchref, 0, ocb);
-    let dst_addr1 = if ctx1.is_some() { get_branch_target(target1.unwrap(), ctx1.unwrap(), &branchref, 1, ocb) } else { None };
+    let dst_addr1 = if let Some(ctx1) = ctx1 { get_branch_target(target1.unwrap(), ctx1, &branchref, 1, ocb) } else { None };
 
     let mut branch = branchref.borrow_mut();
 
@@ -1759,11 +1741,11 @@ pub fn gen_branch(
     branch.dst_addrs[1] = dst_addr1;
 
     branch.targets[0] = target0;
-    if target1.is_some() {
-        branch.targets[1] = target1.unwrap();
+    if let Some(target1) = target1 {
+        branch.targets[1] = target1;
     }
     branch.target_ctxs[0] = *ctx0;
-    branch.target_ctxs[1] = if ctx1.is_some() { *ctx1.unwrap() } else { Context::default() };
+    branch.target_ctxs[1] = if let Some(ctx1) = ctx1 { *ctx1 } else { Context::default() };
 
     // Call the branch generation function
     branch.start_addr = Some(cb.get_write_ptr());
@@ -1830,9 +1812,9 @@ pub fn defer_compilation(jit: &JITState, cur_ctx: &Context, cb: &mut CodeBlock, 
         panic!("Double defer!");
     }
 
-    let mut next_ctx = cur_ctx.clone();
+    let mut next_ctx = *cur_ctx;
 
-    if next_ctx.chain_depth >= u8::MAX {
+    if next_ctx.chain_depth == u8::MAX {
         panic!("max block version chain depth reached!");
     }
 
@@ -1882,12 +1864,10 @@ fn free_block(blockref: &BlockRef)
         let out_branch = out_branchref.borrow();
 
         // For each successor block
-        for succ in &out_branch.blocks {
-            if let Some(succ) = succ {
-                // Remove outgoing branch from the successor's incoming list
-                let mut succ_block = succ.borrow_mut();
-                succ_block.incoming.retain(|succ_incoming| !Rc::ptr_eq(succ_incoming, out_branchref));
-            }
+        for succ in out_branch.blocks.iter().flatten() {
+            // Remove outgoing branch from the successor's incoming list
+            let mut succ_block = succ.borrow_mut();
+            succ_block.incoming.retain(|succ_incoming| !Rc::ptr_eq(succ_incoming, out_branchref));
         }
     }
 

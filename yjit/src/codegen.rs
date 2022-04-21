@@ -182,7 +182,7 @@ fn jit_peek_at_stack(jit: &JITState, ctx: &Context, n: isize) -> VALUE
     // this is only available when hitting a stub, and while
     // hitting a stub, cfp->sp needs to be up to date in case
     // codegen functions trigger GC. See :stub-sp-flush:.
-    return unsafe {
+    unsafe {
         let sp:*mut VALUE = get_cfp_sp(get_ec_cfp(jit.ec.unwrap()));
 
         *(sp.offset(-1 - n))
@@ -439,7 +439,7 @@ fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
     mov(cb, RAX, uimm_opnd(Qundef.into()));
     ret(cb);
 
-    return code_ptr;
+    code_ptr
 }
 
 // Fill code_for_exit_from_stub. This is used by branch_stub_hit() to exit
@@ -460,7 +460,7 @@ fn gen_code_for_exit_from_stub(ocb: &mut OutlinedCb) -> CodePtr
     mov(ocb, RAX, uimm_opnd(Qundef.into()));
     ret(ocb);
 
-    return code_ptr;
+    code_ptr
 }
 
 // :side-exit:
@@ -570,7 +570,7 @@ fn gen_full_cfunc_return(ocb: &mut OutlinedCb) -> CodePtr
     mov(cb, RAX, uimm_opnd(Qundef.into()));
     ret(cb);
 
-    return code_ptr;
+    code_ptr
 }
 
 /// Generate a continuation for leave that exits to the interpreter at REG_CFP->pc.
@@ -592,7 +592,7 @@ fn gen_leave_exit(ocb: &mut OutlinedCb) -> CodePtr
 
     ret(ocb);
 
-    return code_ptr;
+    code_ptr
 }
 
 /// Compile an interpreter entry block to be inserted into an iseq
@@ -642,7 +642,7 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: u32) -> O
     // Verify MAX_PROLOGUE_SIZE
     assert!(cb.get_write_pos() - old_write_pos <= MAX_PROLOGUE_SIZE);
 
-    return Some(code_ptr);
+    Some(code_ptr)
 }
 
 // Generate code to check for interrupts and take a side-exit.
@@ -664,7 +664,7 @@ fn jump_to_next_insn(jit: &mut JITState, current_context: &Context, cb: &mut Cod
 {
     // Reset the depth since in current usages we only ever jump to to
     // chain_depth > 0 from the same instruction.
-    let mut reset_depth = current_context.clone();
+    let mut reset_depth = *current_context;
     reset_depth.reset_chain_depth();
 
     let jump_block = BlockId { iseq: jit.iseq, idx: jit_next_insn_idx(jit) };
@@ -1268,7 +1268,7 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
 
     // Conditionally move the length of the heap array into REG1.
     test(cb, flags_opnd, uimm_opnd(RARRAY_EMBED_FLAG as u64));
-    let array_len_opnd = mem_opnd((8 * size_of::<std::os::raw::c_long>()) as u8, REG0, RUBY_OFFSET_RARRAY_AS_HEAP_LEN);
+    let array_len_opnd = mem_opnd(std::os::raw::c_long::BITS as u8, REG0, RUBY_OFFSET_RARRAY_AS_HEAP_LEN);
     cmovz(cb, REG1, array_len_opnd);
 
     // Only handle the case where the number of values in the array is greater
@@ -1284,7 +1284,7 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
     // Conditionally load the address of the heap array into REG1.
     // (struct RArray *)(obj)->as.heap.ptr
     test(cb, flags_opnd, uimm_opnd(RARRAY_EMBED_FLAG as u64));
-    let heap_ptr_opnd = mem_opnd((8 * size_of::<usize>()) as u8, REG0, RUBY_OFFSET_RARRAY_AS_HEAP_PTR);
+    let heap_ptr_opnd = mem_opnd(usize::BITS as u8, REG0, RUBY_OFFSET_RARRAY_AS_HEAP_PTR);
     cmovz(cb, REG1, heap_ptr_opnd);
 
     // Loop backward through the array and push each element onto the stack.
@@ -1604,7 +1604,7 @@ fn jit_chain_guard(jcc:JCCKinds, jit: &JITState, ctx: &Context, cb: &mut CodeBlo
     };
 
     if (ctx.get_chain_depth() as i32) < depth_limit {
-        let mut deeper = ctx.clone();
+        let mut deeper = *ctx;
         deeper.increment_chain_depth();
         let bid = BlockId { iseq: jit.iseq, idx: jit.insn_idx };
 
@@ -1671,7 +1671,7 @@ fn gen_set_ivar(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, recv:
 fn gen_get_ivar(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb, max_chain_depth: i32, comptime_receiver: VALUE, ivar_name: ID, reg0_opnd: InsnOpnd, side_exit: CodePtr) -> CodegenStatus
 {
     let comptime_val_klass = comptime_receiver.class_of();
-    let starting_context = ctx.clone(); // make a copy for use with jit_chain_guard
+    let starting_context = *ctx; // make a copy for use with jit_chain_guard
 
     // Check if the comptime class uses a custom allocator
     let custom_allocator = unsafe { rb_get_alloc_func(comptime_val_klass) };
@@ -1782,7 +1782,7 @@ fn gen_get_ivar(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
         jit_chain_guard(JCC_JNZ, jit, &starting_context, cb, ocb, max_chain_depth, side_exit);
 
         // Check that the extended table is big enough
-        if ivar_index >= ROBJECT_EMBED_LEN_MAX + 1 {
+        if ivar_index > ROBJECT_EMBED_LEN_MAX {
             // Check that the slot is inside the extended table (num_slots > index)
             let num_slots = mem_opnd(32, REG0, RUBY_OFFSET_ROBJECT_AS_HEAP_NUMIV);
 
@@ -2205,7 +2205,7 @@ fn gen_opt_neq(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     // opt_neq is passed two rb_call_data as arguments:
     // first for ==, second for !=
     let cd = jit_get_arg(jit, 1).as_ptr();
-    return gen_send_general(jit, ctx, cb, ocb, cd, None);
+    gen_send_general(jit, ctx, cb, ocb, cd, None)
 }
 
 fn gen_opt_aref(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -2226,7 +2226,7 @@ fn gen_opt_aref(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     }
 
     // Remember the context on entry for adding guard chains
-    let starting_context = ctx.clone();
+    let starting_context = *ctx;
 
     // Specialize base on compile time values
     let comptime_idx = jit_peek_at_stack(jit, ctx, 0);
@@ -2281,7 +2281,7 @@ fn gen_opt_aref(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 
         // Jump to next instruction. This allows guard chains to share the same successor.
         jump_to_next_insn(jit, ctx, cb, ocb);
-        return EndBlock;
+        EndBlock
     }
     else if comptime_recv.class_of() == unsafe { rb_cHash } {
         if !assume_bop_not_redefined(jit, ocb, HASH_REDEFINED_OP_FLAG, BOP_AREF) {
@@ -2369,7 +2369,7 @@ fn gen_opt_aset(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
         mov(cb, stack_ret, REG0);
 
         jump_to_next_insn(jit, ctx, cb, ocb);
-        return EndBlock;
+        EndBlock
     }
     else if comptime_recv.class_of() == unsafe { rb_cHash } {
         let side_exit = get_side_exit(jit, ocb, ctx);
@@ -2624,22 +2624,22 @@ fn gen_opt_str_uminus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock,
 
 fn gen_opt_not(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    return gen_opt_send_without_block(jit, ctx, cb, ocb);
+    gen_opt_send_without_block(jit, ctx, cb, ocb)
 }
 
 fn gen_opt_size(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    return gen_opt_send_without_block(jit, ctx, cb, ocb);
+    gen_opt_send_without_block(jit, ctx, cb, ocb)
 }
 
 fn gen_opt_length(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    return gen_opt_send_without_block(jit, ctx, cb, ocb);
+    gen_opt_send_without_block(jit, ctx, cb, ocb)
 }
 
 fn gen_opt_regexpmatch2(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    return gen_opt_send_without_block(jit, ctx, cb, ocb);
+    gen_opt_send_without_block(jit, ctx, cb, ocb)
 }
 
 fn gen_opt_case_dispatch(_jit: &mut JITState, ctx: &mut Context, _cb: &mut CodeBlock, _ocb: &mut OutlinedCb) -> CodegenStatus
@@ -3184,8 +3184,7 @@ fn gen_send_cfunc(
     // Delegate to codegen for C methods if we have it.
     if kw_arg.is_null() {
         let codegen_p = lookup_cfunc_codegen(unsafe { (*cme).def });
-        if codegen_p.is_some() {
-            let known_cfunc_codegen = codegen_p.unwrap();
+        if let Some(known_cfunc_codegen) = codegen_p {
             if known_cfunc_codegen(jit, ctx, cb, ocb, ci, cme, block, argc, recv_known_klass) {
                 // cfunc codegen generated code. Terminate the block so
                 // there isn't multiple calls in the same block.
@@ -3252,7 +3251,7 @@ fn gen_send_cfunc(
     // sp[-1] = frame_type;
     let mut frame_type = VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL;
     if !kw_arg.is_null() { frame_type |= VM_FRAME_FLAG_CFRAME_KW }
-    mov(cb, mem_opnd(64, REG0, 8 * -1), uimm_opnd(frame_type.into()));
+    mov(cb, mem_opnd(64, REG0, -8), uimm_opnd(frame_type.into()));
 
     // Allocate a new CFP (ec->cfp--)
     let ec_cfp_opnd = mem_opnd(64, REG_EC, RUBY_OFFSET_EC_CFP);
@@ -3320,10 +3319,10 @@ fn gen_send_cfunc(
     if cfunc_argc >= 0 {
         // Copy the arguments from the stack to the C argument registers
         // self is the 0th argument and is at index argc from the stack top
-        for i in 0..=passed_argc as usize { // "as usize?" Yeah, you can't index an array by an i32.
+        for (i, c_arg_reg) in C_ARG_REGS.iter().enumerate().take(passed_argc as usize + 1){
+            // "as usize?" Yeah, you can't index an array by an i32.
             let stack_opnd = mem_opnd(64, RAX, -(argc + 1 - (i as i32)) * SIZEOF_VALUE_I32);
-            let c_arg_reg = C_ARG_REGS[i];
-            mov(cb, c_arg_reg, stack_opnd);
+            mov(cb, *c_arg_reg, stack_opnd);
         }
     }
 
@@ -3515,11 +3514,10 @@ fn gen_send_iseq(
             // we're going to need to generate some code to swap values around
             // on the stack.
             let kw_arg_keyword_len:usize = unsafe { get_cikw_keyword_len(kw_arg) }.try_into().unwrap();
-            let mut caller_kwargs: Vec<ID> = vec![0; kw_arg_keyword_len];
-            for kwarg_idx in 0..kw_arg_keyword_len {
+            let caller_kwargs: Vec<ID> = (0..kw_arg_keyword_len).map(|kwarg_idx|{
                 let sym = unsafe { get_cikw_keywords_idx(kw_arg, kwarg_idx.try_into().unwrap()) };
-                caller_kwargs[kwarg_idx] = unsafe { rb_sym2id(sym) };
-            }
+                unsafe { rb_sym2id(sym) }
+            }).collect();
 
             // First, we're going to be sure that the names of every
             // caller-specified keyword argument correspond to a name in the
@@ -3566,7 +3564,7 @@ fn gen_send_iseq(
     let leaf_builtin: Option<*const rb_builtin_function> = if leaf_builtin_raw.is_null() { None } else { Some(leaf_builtin_raw) };
     if let (None, Some(builtin_info)) = (block, leaf_builtin) {
         let builtin_argc = unsafe { (*builtin_info).argc };
-        if builtin_argc + 1 /* for self */ + 1 /* for ec */ <= (C_ARG_REGS.len() as i32) {
+        if builtin_argc + 1 < (C_ARG_REGS.len() as i32) {
             add_comment(cb, "inlined leaf builtin");
 
             // Call the builtin func (ec, recv, arg1, arg2, ...)
@@ -3636,12 +3634,15 @@ fn gen_send_iseq(
         // same order as the order specified in the callee declaration, then
         // we're going to need to generate some code to swap values around
         // on the stack.
-        let mut caller_kwargs: Vec<ID> = vec![0; total_kwargs];
-
-        for kwarg_idx in 0..caller_keyword_len {
-            let sym = unsafe { get_cikw_keywords_idx(ci_kwarg, kwarg_idx.try_into().unwrap()) };
-            caller_kwargs[kwarg_idx] = unsafe { rb_sym2id(sym) };
-        }
+        let mut caller_kwargs: Vec<ID> = (0..total_kwargs).map(|kwarg_idx|{
+            // args after this are set below default to 0 here
+            if kwarg_idx < caller_keyword_len {
+                let sym = unsafe { get_cikw_keywords_idx(ci_kwarg, kwarg_idx.try_into().unwrap()) };
+                unsafe { rb_sym2id(sym) }
+            }else{
+                0
+            }
+        }).collect();
         let mut kwarg_idx = caller_keyword_len;
 
         let mut unspecified_bits = 0;
@@ -3651,8 +3652,8 @@ fn gen_send_iseq(
             let mut already_passed = false;
             let callee_kwarg = unsafe { *(callee_kwargs.offset(callee_idx.try_into().unwrap())) };
 
-            for caller_idx in 0..caller_keyword_len {
-                if caller_kwargs[caller_idx] == callee_kwarg {
+            for caller_kwarg in caller_kwargs.iter().take(caller_keyword_len) {
+                if *caller_kwarg == callee_kwarg {
                     already_passed = true;
                     break;
                 }
@@ -3723,9 +3724,7 @@ fn gen_send_iseq(
                     // Next we're going to do some bookkeeping on our end so
                     // that we know the order that the arguments are
                     // actually in now.
-                    let tmp = caller_kwargs[kwarg_idx];
-                    caller_kwargs[kwarg_idx] = caller_kwargs[swap_idx];
-                    caller_kwargs[swap_idx] = tmp;
+                    caller_kwargs.swap(kwarg_idx, swap_idx);
 
                     break;
                 }
@@ -3794,7 +3793,7 @@ fn gen_send_iseq(
     // Write env flags at sp[-1]
     // sp[-1] = frame_type;
     let frame_type = VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL;
-    mov(cb, mem_opnd(64, REG0, 8 * -1), uimm_opnd(frame_type.into()));
+    mov(cb, mem_opnd(64, REG0, -8), uimm_opnd(frame_type.into()));
 
     add_comment(cb, "push callee CFP");
     // Allocate a new CFP (ec->cfp--)
@@ -3849,7 +3848,7 @@ fn gen_send_iseq(
     // Pop arguments and receiver in return context, push the return value
     // After the return, sp_offset will be 1. The codegen for leave writes
     // the return value in case of JIT-to-JIT return.
-    let mut return_ctx = ctx.clone();
+    let mut return_ctx = *ctx;
     return_ctx.stack_pop((argc + 1).try_into().unwrap());
     return_ctx.stack_push(Type::Unknown);
     return_ctx.set_sp_offset(1);
@@ -3875,7 +3874,7 @@ fn gen_send_iseq(
     gen_direct_jump(
         jit,
         &callee_ctx,
-        BlockId { iseq: iseq, idx: start_pc_offset },
+        BlockId { iseq, idx: start_pc_offset },
         cb
     );
 
@@ -4177,7 +4176,7 @@ fn gen_send(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
 {
     let cd = jit_get_arg(jit, 0).as_ptr();
     let block = jit_get_arg(jit, 1).as_optional_ptr();
-    return gen_send_general(jit, ctx, cb, ocb, cd, block);
+    gen_send_general(jit, ctx, cb, ocb, cd, block)
 }
 
 fn gen_invokesuper(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -4499,7 +4498,7 @@ fn gen_getspecial(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, _oc
 
     if rtype == 0 {
         // not yet implemented
-        return CantCompile;
+        CantCompile
     }
     else if rtype & 0x01 != 0 {
         // Fetch a "special" backref based on a char encoded by shifting by 1
@@ -4960,8 +4959,8 @@ impl CodegenGlobals {
         let mut codegen_globals = CodegenGlobals {
             inline_cb: cb,
             outlined_cb: ocb,
-            leave_exit_code: leave_exit_code,
-            stub_exit_code: stub_exit_code,
+            leave_exit_code,
+            stub_exit_code,
             outline_full_cfunc_return_pos: cfunc_exit_code,
             global_inval_patches: Vec::new(),
             inline_frozen_bytes: 0,
@@ -5081,10 +5080,7 @@ impl CodegenGlobals {
         let table = &CodegenGlobals::get_instance().method_codegen_table;
 
         let option_ref = table.get(&method_serial);
-        match option_ref {
-            None => None,
-            Some(&mgf) => Some(mgf), // Deref
-        }
+        option_ref.copied()
     }
 }
 
@@ -5095,12 +5091,12 @@ mod tests {
     fn setup_codegen() -> (JITState, Context, CodeBlock, OutlinedCb) {
         let block = Block::new(BLOCKID_NULL, &Context::default());
 
-        return (
+        (
             JITState::new(&block),
             Context::new(),
             CodeBlock::new_dummy(256 * 1024),
             OutlinedCb::wrap(CodeBlock::new_dummy(256 * 1024))
-        );
+        )
     }
 
     #[test]
@@ -5113,7 +5109,7 @@ mod tests {
     #[test]
     fn test_gen_exit() {
         let (_, ctx, mut cb, _) = setup_codegen();
-        gen_exit(0 as *mut VALUE, &ctx, &mut cb);
+        gen_exit(std::ptr::null_mut::<VALUE>(), &ctx, &mut cb);
         assert!(cb.get_write_pos() > 0);
     }
 

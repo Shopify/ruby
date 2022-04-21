@@ -18,7 +18,7 @@ static YJIT_ENABLED: AtomicBool = AtomicBool::new(false);
 #[no_mangle]
 pub extern "C" fn rb_yjit_parse_option(str_ptr: *const raw::c_char) -> bool
 {
-    return parse_option(str_ptr).is_some();
+    parse_option(str_ptr).is_some()
 }
 
 /// Is YJIT on? The interpreter uses this function to decide whether to increment
@@ -61,7 +61,7 @@ pub extern "C" fn rb_yjit_init_rust()
         YJIT_ENABLED.store(true, Ordering::Release);
     });
 
-    if let Err(_) = result {
+    if result.is_err() {
         println!("YJIT: rb_yjit_init_rust() panicked. Aborting.");
         std::process::abort();
     }
@@ -96,5 +96,5 @@ pub extern "C" fn rb_yjit_simulate_oom_bang(_ec: EcPtr, _ruby_self: VALUE) -> VA
         ocb.set_pos(ocb.get_mem_size() - 1);
     }
 
-    return Qnil;
+    Qnil
 }

@@ -93,12 +93,12 @@ pub fn assume_bop_not_redefined(jit: &mut JITState, ocb: &mut OutlinedCb, klass:
         jit_ensure_block_entry_exit(jit, ocb);
 
         let invariants = Invariants::get_instance();
-        invariants.basic_operator_blocks.entry((klass, bop)).or_insert(HashSet::new()).insert(jit.get_block());
-        invariants.block_basic_operators.entry(jit.get_block()).or_insert(HashSet::new()).insert((klass, bop));
+        invariants.basic_operator_blocks.entry((klass, bop)).or_insert_with(HashSet::new).insert(jit.get_block());
+        invariants.block_basic_operators.entry(jit.get_block()).or_insert_with(HashSet::new).insert((klass, bop));
 
-        return true;
+        true
     } else {
-        return false;
+        false
     }
 }
 
@@ -119,13 +119,13 @@ pub fn assume_method_lookup_stable(jit: &mut JITState, ocb: &mut OutlinedCb, rec
     let block = jit.get_block();
     block.borrow_mut().add_cme_dependency(receiver_klass, callee_cme);
 
-    Invariants::get_instance().cme_validity.entry(callee_cme).or_insert(HashSet::new()).insert(block.clone());
+    Invariants::get_instance().cme_validity.entry(callee_cme).or_insert_with(HashSet::new).insert(block.clone());
 
     let mid = unsafe { (*callee_cme).called_id };
     Invariants::get_instance().method_lookup
-        .entry(receiver_klass).or_insert(HashMap::new())
-        .entry(mid).or_insert(HashSet::new())
-        .insert(block.clone());
+        .entry(receiver_klass).or_insert_with(HashMap::new)
+        .entry(mid).or_insert_with(HashSet::new)
+        .insert(block);
 }
 
 /// Tracks that a block is assuming it is operating in single-ractor mode.
@@ -161,8 +161,8 @@ pub fn assume_stable_constant_names(jit: &mut JITState, ocb: &mut OutlinedCb) {
             let id = code.add(index.as_usize() + 1).read().as_u64() as ID;
 
             let invariants = Invariants::get_instance();
-            invariants.constant_state_blocks.entry(id).or_insert(HashSet::new()).insert(jit.get_block());
-            invariants.block_constant_states.entry(jit.get_block()).or_insert(HashSet::new()).insert(id);
+            invariants.constant_state_blocks.entry(id).or_insert_with(HashSet::new).insert(jit.get_block());
+            invariants.block_constant_states.entry(jit.get_block()).or_insert_with(HashSet::new).insert(id);
         }
 
         true
@@ -282,7 +282,7 @@ pub extern "C" fn rb_yjit_constant_state_changed(id: ID) {
             // invalidate every block that depends on any constant.
 
             Invariants::get_instance().constant_state_blocks.keys().for_each(|id| {
-                if let Some(blocks) = Invariants::get_instance().constant_state_blocks.remove(&id) {
+                if let Some(blocks) = Invariants::get_instance().constant_state_blocks.remove(id) {
                     for block in &blocks {
                         invalidate_block_version(block);
                         incr_counter!(invalidate_constant_state_bump);
@@ -358,7 +358,7 @@ pub fn block_assumptions_free(blockref: &BlockRef) {
             if let Some(id_to_block_set) = invariants.method_lookup.get_mut(&dep.receiver_klass) {
                 let mid = unsafe { (*dep.callee_cme).called_id };
                 if let Some(block_set) = id_to_block_set.get_mut(&mid) {
-                    block_set.remove(&blockref);
+                    block_set.remove(blockref);
                 }
             }
         }
@@ -366,23 +366,23 @@ pub fn block_assumptions_free(blockref: &BlockRef) {
 
     // Remove tracking for basic operators that the given block assumes have
     // not been redefined.
-    if let Some(bops) = invariants.block_basic_operators.remove(&blockref) {
+    if let Some(bops) = invariants.block_basic_operators.remove(blockref) {
         // Remove tracking for the given block from the list of blocks associated
         // with the given basic operator.
         for key in &bops {
             if let Some(blocks) = invariants.basic_operator_blocks.get_mut(key) {
-                blocks.remove(&blockref);
+                blocks.remove(blockref);
             }
         }
     }
 
-    invariants.single_ractor.remove(&blockref);
+    invariants.single_ractor.remove(blockref);
 
     // Remove tracking for constant state for a given ID.
-    if let Some(ids) = invariants.block_constant_states.remove(&blockref) {
+    if let Some(ids) = invariants.block_constant_states.remove(blockref) {
         for id in ids {
             if let Some(blocks) = invariants.constant_state_blocks.get_mut(&id) {
-                blocks.remove(&blockref);
+                blocks.remove(blockref);
             }
         }
     }

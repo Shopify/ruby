@@ -157,14 +157,14 @@ pub extern "C" fn rb_yjit_stats_enabled_p(_ec: EcPtr, _ruby_self: VALUE) -> VALU
         return Qtrue
     }
 
-    return Qfalse;
+    Qfalse
 }
 
 /// Primitive called in yjit.rb.
 /// Export all YJIT statistics as a Ruby hash.
 #[no_mangle]
 pub extern "C" fn rb_yjit_get_stats(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
-    with_vm_lock(src_loc!(), || rb_yjit_gen_stats_dict())
+    with_vm_lock(src_loc!(), rb_yjit_gen_stats_dict)
 }
 
 /// Export all YJIT statistics as a Ruby hash.
@@ -239,7 +239,7 @@ pub extern "C" fn rb_yjit_reset_stats_bang(_ec: EcPtr, _ruby_self: VALUE) -> VAL
         COUNTERS = Counters::default();
     }
 
-    return Qnil;
+    Qnil
 }
 
 /// Increment the number of instructions executed by the interpreter
@@ -271,5 +271,5 @@ pub extern "C" fn rb_yjit_count_side_exit_op(exit_pc: *const VALUE) -> *const VA
     };
 
     // This function must return exit_pc!
-    return exit_pc;
+    exit_pc
 }

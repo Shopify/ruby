@@ -247,7 +247,7 @@ pub fn sig_imm_size(imm: i64) -> u8
         return 32;
     }
 
-    return 64;
+    64
 }
 
 /// Compute the number of bits needed to encode an unsigned value
@@ -264,7 +264,7 @@ pub fn unsig_imm_size(imm: u64) -> u8
         return 32;
     }
 
-    return 64;
+    64
 }
 
 /// Shorthand for memory operand with base register and displacement
@@ -280,11 +280,11 @@ pub fn mem_opnd(num_bits: u8, base_reg: X86Opnd, disp: i32) -> X86Opnd
     } else {
         X86Opnd::Mem(
             X86Mem {
-                num_bits: num_bits,
+                num_bits,
                 base_reg_no: base_reg.reg_no,
                 idx_reg_no: None,
                 scale_exp: 0,
-                disp: disp,
+                disp,
             }
         )
     }
@@ -293,13 +293,11 @@ pub fn mem_opnd(num_bits: u8, base_reg: X86Opnd, disp: i32) -> X86Opnd
 /// Memory operand with SIB (Scale Index Base) indexing
 pub fn mem_opnd_sib(num_bits: u8, base_opnd: X86Opnd, index_opnd: X86Opnd, scale: i32, disp: i32) -> X86Opnd {
     if let (X86Opnd::Reg(base_reg), X86Opnd::Reg(index_reg)) = (base_opnd, index_opnd) {
-        let scale_exp: u8;
-
-        match scale {
-            8 => { scale_exp = 3; },
-            4 => { scale_exp = 2; },
-            2 => { scale_exp = 1; },
-            1 => { scale_exp = 0; },
+        let scale_exp: u8= match scale {
+            8 => { 3 },
+            4 => { 2 },
+            2 => { 1 },
+            1 => { 0 },
             _ => unreachable!()
         };
 
@@ -463,15 +461,14 @@ fn write_rm(cb: &mut CodeBlock, sz_pref: bool, rex_w: bool, r_opnd: X86Opnd, rm_
     };
 
     // Encode the reg field
-    let reg: u8;
-    if op_ext != 0xff {
-        reg = op_ext;
+    let reg: u8 = if op_ext != 0xff {
+        op_ext
     } else {
-        reg = match r_opnd {
+        match r_opnd {
             X86Opnd::Reg(reg) => reg.reg_no & 7,
             _ => 0
-        };
-    }
+        }
+    };
 
     // Encode the rm field
     let rm = match rm_opnd {
@@ -1295,12 +1292,12 @@ pub fn sub(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 fn resize_opnd(opnd: X86Opnd, num_bits: u8) -> X86Opnd {
     match opnd {
         X86Opnd::Reg(reg) => {
-            let mut cloned = reg.clone();
+            let mut cloned = reg;
             cloned.num_bits = num_bits;
             X86Opnd::Reg(cloned)
         },
         X86Opnd::Mem(mem) => {
-            let mut cloned = mem.clone();
+            let mut cloned = mem;
             cloned.num_bits = num_bits;
             X86Opnd::Mem(cloned)
         },

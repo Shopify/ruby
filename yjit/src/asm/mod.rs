@@ -13,7 +13,7 @@ pub struct CodePtr(*const u8);
 impl CodePtr {
     pub fn raw_ptr(&self) -> *const u8 {
         let CodePtr(ptr) = *self;
-        return ptr;
+        ptr
     }
 
     fn into_i64(&self) -> i64 {
@@ -30,7 +30,7 @@ impl CodePtr {
 impl From<*mut u8> for CodePtr {
     fn from(value: *mut u8) -> Self {
         assert!(value as usize != 0);
-        return CodePtr(value);
+        CodePtr(value)
     }
 }
 
@@ -118,9 +118,9 @@ impl CodeBlock
         let mem_ptr = dummy_block.as_mut_ptr();
 
         Self {
-            dummy_block: dummy_block,
+            dummy_block,
             mem_block: mem_ptr,
-            mem_size: mem_size,
+            mem_size,
             write_pos: 0,
             label_addrs: Vec::new(),
             label_names: Vec::new(),
@@ -135,8 +135,8 @@ impl CodeBlock
     pub fn new(mem_block: *mut u8, mem_size: usize, page_size: usize) -> Self {
         Self {
             dummy_block: vec![0; 0],
-            mem_block: mem_block,
-            mem_size: mem_size,
+            mem_block,
+            mem_size,
             write_pos: 0,
             label_addrs: Vec::new(),
             label_names: Vec::new(),
@@ -219,7 +219,7 @@ impl CodeBlock
     // Get a direct pointer into the executable memory block
     pub fn get_ptr(&self, offset: usize) -> CodePtr {
         unsafe {
-            let ptr = self.mem_block.offset(offset as isize);
+            let ptr = self.mem_block.add(offset);
             CodePtr(ptr)
         }
     }
@@ -294,7 +294,7 @@ impl CodeBlock
         self.label_addrs.push(0);
         self.label_names.push(name);
 
-        return self.label_addrs.len() - 1;
+        self.label_addrs.len() - 1
     }
 
     /// Write a label at the current address
@@ -384,7 +384,7 @@ impl OutlinedCb
 {
     pub fn wrap(cb: CodeBlock) -> Self {
         OutlinedCb {
-            cb: cb
+            cb
         }
     }
 
