@@ -5095,10 +5095,10 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
         objspace->rcompactor.total_moved++;
 
         gc_move(objspace, src, dest, src_page->slot_size, free_page->slot_size);
-        if (BUILTIN_TYPE(dest) == T_STRING) {
-            rb_str_make_embedded(src);
-        }
         gc_pin(objspace, src);
+        if (BUILTIN_TYPE(dest) == T_STRING) {
+            rb_str_make_embedded(dest);
+        }
         free_page->free_slots--;
     }
 
@@ -5846,6 +5846,7 @@ invalidate_moved_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_
 static void
 invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page)
 {
+    fprintf(stderr, "invalidating page: %p\n", page);
     int i;
     bits_t *mark_bits, *pin_bits;
     bits_t bitset;
@@ -8142,17 +8143,17 @@ static rb_size_pool_t *
 gc_compact_destination_pool(rb_objspace_t *objspace, rb_size_pool_t *src_pool, VALUE src)
 {
     size_t size_pool_idx;
+    size_t memsize;
     switch (BUILTIN_TYPE(src)) {
         case T_STRING:
-            size_pool_idx = size_pool_idx_for_size(obj_memsize_of(src, false));
+            memsize = obj_memsize_of(src, false);
+            size_pool_idx = size_pool_idx_for_size(memsize);
+
             if (size_pool_idx >= SIZE_POOL_COUNT) {
                 fprintf(stderr, "attempting to move from pool %i -> object too large\n", src_pool->slot_size);
                 return src_pool;
             }
             rb_size_pool_t *dest_pool = &size_pools[size_pool_idx];
-            if (dest_pool != src_pool) {
-                fprintf(stderr, "moving %p from pool %i -> %i\n", (void *)src, src_pool->slot_size, dest_pool->slot_size);
-            }
             return dest_pool;
         default:
             return src_pool;
@@ -10217,6 +10218,8 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
             VALUE orig_shared = any->as.string.as.heap.aux.shared;
 #endif
             UPDATE_IF_MOVED(objspace, any->as.string.as.heap.aux.shared);
+            // If shared moved, then point our internal buffer pointer
+            // to the new location
 #if USE_RVARGC
             VALUE shared = any->as.string.as.heap.aux.shared;
             if (STR_EMBED_P(shared)) {
