@@ -269,6 +269,11 @@ rb_str_make_embedded(VALUE str)
         fprintf(stderr, "strings is shared, refusing to move\n");
         return;
     }
+
+    // Strings that can't be freed are often pointing to C string literals, we shouldn't move these yet
+    if (FL_TEST_RAW(str, STR_NOFREE)) {
+        return;
+    }
     
     // shared roots are strings that other strings index into. We should not
     // move these yet, it's complicated.
