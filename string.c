@@ -259,41 +259,17 @@ static inline int str_dependent_p(VALUE str);
 void
 rb_str_make_embedded(VALUE str)
 {
-    // already embedded so we don't need to do anything
-    if (STR_EMBED_P(str)) {
+    // if the string is already embedded or shared, don't re-embed
+    if (STR_EMBED_P(str) || STR_SHARED_P(str) || FL_TEST_RAW(str, STR_NOFREE|STR_SHARED_ROOT)) {
         return;
     }
 
-    // we don't want to re-embed shared strings right now
-    if (STR_SHARED_P(str)) {
-        fprintf(stderr, "strings is shared, refusing to move\n");
-        return;
-    }
-
-    // Strings that can't be freed are often pointing to C string literals, we shouldn't move these yet
-    if (FL_TEST_RAW(str, STR_NOFREE)) {
-        return;
-    }
-    
-    // shared roots are strings that other strings index into. We should not
-    // move these yet, it's complicated.
-    if (FL_TEST_RAW(str, STR_SHARED_ROOT)) {
-        fprintf(stderr, "cowardly refusing to move shared roots\n");
-        return;
-    }
-    
-    fprintf(stderr, "embeddeding non embedded string %p\n", str); 
     char *buf = RSTRING_PTR(str);
     long len = RSTRING_LEN(str) + 1;
 
-    if (len >= str_embed_capa(str)) {
-        fprintf(stderr, "len %i greater than available space in slot %i\n",  len, str_embed_capa(str));
-    }
-    fprintf(stderr, "\tset_embed: %p\n", str);
     STR_SET_EMBED(str);
     RUBY_ASSERT(buf != RSTRING_PTR(str));
 
-    fprintf(stderr, "\tmemcpy: %i bytes from %p -> %p, embed_capa: %i\n", len, buf, RSTRING_PTR(str), str_embed_capa(str) );
     memcpy(RSTRING_PTR(str), buf, len);
 }
 

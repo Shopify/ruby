@@ -5097,7 +5097,10 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
         gc_move(objspace, src, dest, src_page->slot_size, free_page->slot_size);
         gc_pin(objspace, src);
         if (BUILTIN_TYPE(dest) == T_STRING) {
-            rb_str_make_embedded(dest);
+            // only attempt to re-embed strings that have moved between pools
+            if (src_page->slot_size != free_page->slot_size) {
+                rb_str_make_embedded(dest);
+            }
         }
         free_page->free_slots--;
     }
@@ -8150,9 +8153,9 @@ gc_compact_destination_pool(rb_objspace_t *objspace, rb_size_pool_t *src_pool, V
             size_pool_idx = size_pool_idx_for_size(memsize);
 
             if (size_pool_idx >= SIZE_POOL_COUNT) {
-                fprintf(stderr, "attempting to move from pool %i -> object too large\n", src_pool->slot_size);
                 return src_pool;
             }
+
             rb_size_pool_t *dest_pool = &size_pools[size_pool_idx];
             return dest_pool;
         default:
