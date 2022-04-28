@@ -43,6 +43,7 @@ char *rb_str_to_cstr(VALUE str);
 const char *ruby_escaped_char(int c);
 void rb_str_make_independent(VALUE str);
 void rb_str_make_embedded(VALUE str);
+void rb_str_evacuate_buffer(VALUE str);
 int rb_enc_str_coderange_scan(VALUE str, rb_encoding *enc);
 
 static inline bool STR_EMBED_P(VALUE str);

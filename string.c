@@ -257,6 +257,22 @@ str_make_independent(VALUE str)
 static inline int str_dependent_p(VALUE str);
 
 void
+rb_str_evacuate_buffer(VALUE str) {
+    RUBY_ASSERT(STR_EMBED_P(str));
+
+    char *buf = RSTRING_PTR(str);
+    size_t len = RSTRING_LEN(str);
+    int termlen = 1;
+
+    void *new_buf = ruby_xmalloc(sizeof(char *) * len);
+    memcpy(new_buf, buf, len + termlen);
+    RSTRING(str)->as.heap.ptr = new_buf;
+    STR_SET_NOEMBED(str);
+    STR_SET_LEN(str, len);
+    TERM_FILL(RSTRING_PTR(str) + len, termlen);
+}
+
+void
 rb_str_make_embedded(VALUE str)
 {
     // if the string is already embedded or shared, don't re-embed

@@ -5065,6 +5065,7 @@ unlock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
         gc_report(5, objspace, "Unprotecting page in move %p\n", (void *)body);
     }
 }
+static void invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page);
 
 static bool
 try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, VALUE src)
@@ -5096,10 +5097,15 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
 
         gc_move(objspace, src, dest, src_page->slot_size, free_page->slot_size);
         gc_pin(objspace, src);
+
         if (BUILTIN_TYPE(dest) == T_STRING) {
             // only attempt to re-embed strings that have moved between pools
             if (src_page->slot_size != free_page->slot_size) {
                 rb_str_make_embedded(dest);
+
+                // DEBUGGING ONLY
+                // Invalidate the page that contains the T_MOVED object so that we can force the object to be moved back
+                invalidate_moved_page(objspace, src_page);
             }
         }
         free_page->free_slots--;
@@ -5138,6 +5144,8 @@ read_barrier_handler(uintptr_t address)
     address -= address % BASE_SLOT_SIZE;
 
     obj = (VALUE)address;
+
+    fprintf(stderr, "read barrier triggered for object %s\n", obj_info(obj));
 
     RB_VM_LOCK_ENTER();
     {
@@ -5259,6 +5267,7 @@ revert_stack_objects(VALUE stack_obj, void *ctx)
         /* For now we'll revert the whole page if the object made it to the
          * stack.  I think we can change this to move just the one object
          * back though */
+        fprintf(stderr, "revert_stack_objects\n");
         invalidate_moved_page(objspace, GET_HEAP_PAGE(stack_obj));
     }
 }
@@ -5271,6 +5280,7 @@ revert_machine_stack_references(rb_objspace_t *objspace, VALUE v)
             /* For now we'll revert the whole page if the object made it to the
              * stack.  I think we can change this to move just the one object
              * back though */
+            fprintf(stderr, "revert_machine_stack_references\n");
             invalidate_moved_page(objspace, GET_HEAP_PAGE(v));
         }
     }
@@ -5828,6 +5838,12 @@ invalidate_moved_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_
 
                     object = rb_gc_location(forwarding_object);
 
+                    struct heap_page *original_page = GET_HEAP_PAGE(forwarding_object);
+                    struct heap_page *post_move_page = GET_HEAP_PAGE(object);
+
+                    if ((BUILTIN_TYPE(object) == T_STRING) && original_page->slot_size < post_move_page->slot_size) {
+                        rb_str_evacuate_buffer(object);
+                    }
                     gc_move(objspace, object, forwarding_object,GET_HEAP_PAGE(object)->slot_size, page->slot_size);
                     /* forwarding_object is now our actual object, and "object"
                      * is the free slot for the original page */
@@ -5849,7 +5865,6 @@ invalidate_moved_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_
 static void
 invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page)
 {
-    fprintf(stderr, "invalidating page: %p\n", page);
     int i;
     bits_t *mark_bits, *pin_bits;
     bits_t bitset;
