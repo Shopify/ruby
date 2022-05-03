@@ -5100,12 +5100,18 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
 
         if (BUILTIN_TYPE(dest) == T_STRING) {
             // only attempt to re-embed strings that have moved between pools
+            // in what circumstances can strings move?
+            //          1. String resized up. moved out of existing slot and NOEMBED set
+            //          2. String resized down. what happens when a string is made smaller?
+            //
+            // assumption: Any string that gets resized up gets evacuated to the heap. so any string that's been moved to a larger size pool here should be noembed
             if (src_page->slot_size != free_page->slot_size) {
+                fprintf(stderr, "moving string %p from slot %i to %i\n", src, src_page->slot_size, free_page->slot_size);
                 rb_str_make_embedded(dest);
 
-                // DEBUGGING ONLY
-                // Invalidate the page that contains the T_MOVED object so that we can force the object to be moved back
-                invalidate_moved_page(objspace, src_page);
+                // DEBUGGING
+                // move it back so it gets unembedded again
+                //invalidate_moved_page(objspace, GET_HEAP_PAGE(src));
             }
         }
         free_page->free_slots--;
@@ -5280,7 +5286,6 @@ revert_machine_stack_references(rb_objspace_t *objspace, VALUE v)
             /* For now we'll revert the whole page if the object made it to the
              * stack.  I think we can change this to move just the one object
              * back though */
-            fprintf(stderr, "revert_machine_stack_references\n");
             invalidate_moved_page(objspace, GET_HEAP_PAGE(v));
         }
     }
@@ -5842,9 +5847,11 @@ invalidate_moved_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_
                     struct heap_page *post_move_page = GET_HEAP_PAGE(object);
 
                     if ((BUILTIN_TYPE(object) == T_STRING) && original_page->slot_size < post_move_page->slot_size) {
+                        GC_ASSERT(original_page->slot_size == 40);
+                        // I think I should be using str_make_independant_expand here instead
                         rb_str_evacuate_buffer(object);
                     }
-                    gc_move(objspace, object, forwarding_object,GET_HEAP_PAGE(object)->slot_size, page->slot_size);
+                    gc_move(objspace, object, forwarding_object, GET_HEAP_PAGE(object)->slot_size, page->slot_size);
                     /* forwarding_object is now our actual object, and "object"
                      * is the free slot for the original page */
                     struct heap_page *orig_page = GET_HEAP_PAGE(object);

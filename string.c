@@ -258,6 +258,7 @@ static inline int str_dependent_p(VALUE str);
 
 void
 rb_str_evacuate_buffer(VALUE str) {
+    // Assert that the string is embedded already
     RUBY_ASSERT(STR_EMBED_P(str));
 
     char *buf = RSTRING_PTR(str);
@@ -275,17 +276,23 @@ rb_str_evacuate_buffer(VALUE str) {
 void
 rb_str_make_embedded(VALUE str)
 {
-    // if the string is already embedded or shared, don't re-embed
-    if (STR_EMBED_P(str) || STR_SHARED_P(str) || FL_TEST_RAW(str, STR_NOFREE|STR_SHARED_ROOT)) {
+    // Don't re-embed strings that are shared, are the root of shared strings,
+    // are based off C literal strings or are already embedded
+    if (STR_EMBED_P(str) || 
+        STR_SHARED_P(str) || 
+        FL_TEST_RAW(str, STR_NOFREE|STR_SHARED_ROOT)) {
         return;
     }
 
+    // get a pointer to the original buffer and the length
     char *buf = RSTRING_PTR(str);
-    long len = RSTRING_LEN(str) + 1;
+    long len = RSTRING_LEN(str);
 
+    // Set the embedded flag
     STR_SET_EMBED(str);
     RUBY_ASSERT(buf != RSTRING_PTR(str));
 
+    // copy the contents of the buffer into the new slot
     memcpy(RSTRING_PTR(str), buf, len);
 }
 
@@ -3038,19 +3045,31 @@ rb_str_resize(VALUE str, long len)
     ENC_CODERANGE_CLEAR(str);
     slen = RSTRING_LEN(str);
 
+    // 1. string is embedded and can remain embedded (size up, or down)
+    // 2. string is embedded and can no longer remain embedded (size up)
+    // 3. string is not embedded and can now be embedded (size down)
+    // 4. string is not embedded and cannot become embedded (size up, or down)
+
     {
 	long capa;
 	const int termlen = TERM_LEN(str);
+        // if the string is embedded
 	if (STR_EMBED_P(str)) {
 	    if (len == slen) return str;
+            // and the new len fits in an embedded slot
             if (str_embed_capa(str) >= len + termlen) {
+                // set the new len and return
 		STR_SET_EMBED_LEN(str, len);
                 TERM_FILL(RSTRING(str)->as.embed.ary + len, termlen);
 		return str;
 	    }
+            // if it doesn't fit in the slot
+            // evacuate the buffer to the heap and make the string not embedded
 	    str_make_independent_expand(str, slen, len - slen, termlen);
 	}
         else if (str_embed_capa(str) >= len + termlen) {
+            // if the string is not embedded, but the new len is embeddable
+            // embed it and free the buffer
 	    char *ptr = STR_HEAP_PTR(str);
 	    STR_SET_EMBED(str);
 	    if (slen > len) slen = len;
@@ -3061,11 +3080,16 @@ rb_str_resize(VALUE str, long len)
 	    return str;
 	}
 	else if (!independent) {
+            // if the string is not a shared or a nonfree
 	    if (len == slen) return str;
+
+            // then evacuate it to the heap
 	    str_make_independent_expand(str, slen, len - slen, termlen);
 	}
 	else if ((capa = RSTRING(str)->as.heap.aux.capa) < len ||
 		 (capa - len) > (len < 1024 ? len : 1024)) {
+            // so everything here must be shared strings, or C strings?
+            // this is kind of weird
 	    SIZED_REALLOC_N(RSTRING(str)->as.heap.ptr, char,
 	                    (size_t)len + termlen, STR_HEAP_SIZE(str));
 	    RSTRING(str)->as.heap.aux.capa = len;
