@@ -73,10 +73,13 @@ delete_unique_str(st_table *tbl, const char *str)
 static void
 newobj_i(VALUE tpval, void *data)
 {
+    puts("newobj_i");
     struct traceobj_arg *arg = (struct traceobj_arg *)data;
     rb_trace_arg_t *tparg = rb_tracearg_from_tracepoint(tpval);
     VALUE obj = rb_tracearg_object(tparg);
     VALUE path = rb_tracearg_path(tparg);
+
+    rb_funcall(rb_mKernel, rb_intern("p"), 1, path);
     VALUE line = rb_tracearg_lineno(tparg);
     VALUE mid = rb_tracearg_method_id(tparg);
     VALUE klass = rb_tracearg_defined_class(tparg);

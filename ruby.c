@@ -2377,6 +2377,8 @@ open_load_file(VALUE fname_v, int *xflag)
 static VALUE
 restore_load_file(VALUE arg)
 {
+    if (getenv("DEB")) { puts("pop"); }
+    rb_iseq_pop_top_stack();
     struct load_file_arg *argp = (struct load_file_arg *)arg;
     VALUE f = argp->f;
 
@@ -2395,6 +2397,12 @@ load_file(VALUE parser, VALUE fname, VALUE f, int script, ruby_cmdline_options_t
     arg.script = script;
     arg.opt = opt;
     arg.f = f;
+
+    const rb_iseq_t *iseq = rb_iseq_new_top(NULL, rb_fstring_lit("<top (parser)>"),
+                           fname, rb_realpath_internal(Qnil, fname, 1), NULL);
+    rb_iseq_set_top_stack(iseq);
+    if (getenv("DEB")) { puts("set_top <parser>"); }
+
     return (rb_ast_t *)rb_ensure(load_file_internal, (VALUE)&arg,
 			      restore_load_file, (VALUE)&arg);
 }
