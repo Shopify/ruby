@@ -2546,8 +2546,10 @@ rb_iseq_eval(const rb_iseq_t *iseq)
 {
     rb_execution_context_t *ec = GET_EC();
     VALUE val;
+    if (getenv("DEB")) { puts("rb_iseq_eval enter"); }
     vm_set_top_stack(ec, iseq);
     val = vm_exec(ec, true);
+    if (getenv("DEB")) { puts("rb_iseq_eval exit"); }
     return val;
 }
 

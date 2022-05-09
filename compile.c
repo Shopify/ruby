@@ -752,6 +752,7 @@ rb_iseq_compile_node(rb_iseq_t *iseq, const NODE *node)
     }
     /* assume node is T_NODE */
     else if (nd_type_p(node, NODE_SCOPE)) {
+        if (getenv("DEB")) { puts("nd_type_p(node, NODE_SCOPE)"); }
 	/* iseq type of top, method, class, block */
 	iseq_set_local_table(iseq, node->nd_tbl);
 	iseq_set_arguments(iseq, ret, node->nd_args);
@@ -759,6 +760,7 @@ rb_iseq_compile_node(rb_iseq_t *iseq, const NODE *node)
         switch (ISEQ_BODY(iseq)->type) {
 	  case ISEQ_TYPE_BLOCK:
 	    {
+                    if (getenv("DEB")) { puts("ISEQ_TYPE_BLOCK"); }
 		LABEL *start = ISEQ_COMPILE_DATA(iseq)->start_label = NEW_LABEL(0);
 		LABEL *end = ISEQ_COMPILE_DATA(iseq)->end_label = NEW_LABEL(0);
 
@@ -781,6 +783,7 @@ rb_iseq_compile_node(rb_iseq_t *iseq, const NODE *node)
 	    }
 	  case ISEQ_TYPE_CLASS:
 	    {
+                    if (getenv("DEB")) { puts("ISEQ_TYPE_CLASS"); }
 		ADD_TRACE(ret, RUBY_EVENT_CLASS);
 		CHECK(COMPILE(ret, "scoped node", node->nd_body));
 		ADD_TRACE(ret, RUBY_EVENT_END);
@@ -789,6 +792,8 @@ rb_iseq_compile_node(rb_iseq_t *iseq, const NODE *node)
 	    }
 	  case ISEQ_TYPE_METHOD:
 	    {
+                    if (getenv("DEB")) { puts("ISEQ_TYPE_METHOD"); }
+                    
                 ISEQ_COMPILE_DATA(iseq)->root_node = node->nd_body;
 		ADD_TRACE(ret, RUBY_EVENT_CALL);
 		CHECK(COMPILE(ret, "scoped node", node->nd_body));
@@ -798,12 +803,16 @@ rb_iseq_compile_node(rb_iseq_t *iseq, const NODE *node)
 		break;
 	    }
 	  default: {
+                  if (getenv("DEB")) { puts("default:"); }
+                  
 	    CHECK(COMPILE(ret, "scoped node", node->nd_body));
 	    break;
 	  }
 	}
     }
     else {
+            if (getenv("DEB")) { puts("else nd_type_p"); }
+            
 	const char *m;
 #define INVALID_ISEQ_TYPE(type) \
 	ISEQ_TYPE_##type: m = #type; goto invalid_iseq_type
@@ -9463,6 +9472,7 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 	break;
       }
       case NODE_STR:{
+              if (getenv("DEB")) { puts("NODE_STR"); }
 	debugp_param("nd_lit", node->nd_lit);
 	if (!popped) {
 	    VALUE lit = node->nd_lit;

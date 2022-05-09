@@ -683,10 +683,14 @@ load_iseq_eval(rb_execution_context_t *ec, VALUE fname)
     if (!iseq) {
         rb_ast_t *ast;
         VALUE parser = rb_parser_new();
+        if (getenv("DEB")) { puts("rb_parser_set_context"); }
         rb_parser_set_context(parser, NULL, FALSE);
+        if (getenv("DEB")) { puts("rb_parser_load_file"); }
         ast = (rb_ast_t *)rb_parser_load_file(parser, fname);
+        if (getenv("DEB")) { puts("rb_iseq_new_top"); }
         iseq = rb_iseq_new_top(&ast->body, rb_fstring_lit("<top (required)>"),
                                fname, rb_realpath_internal(Qnil, fname, 1), NULL);
+        if (getenv("DEB")) { puts("rb_ast_dispose"); }
         rb_ast_dispose(ast);
     }
     rb_exec_event_hook_script_compiled(ec, iseq, Qnil);

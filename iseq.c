@@ -1042,13 +1042,19 @@ rb_iseq_new_with_opt(const rb_ast_body_t *ast, VALUE name, VALUE path, VALUE rea
     else if (parent) {
         script_lines = ISEQ_BODY(parent)->variable.script_lines;
     }
+    rb_iseq_set_top_stack(iseq);
 
+        if (getenv("DEB")) { puts("prepare_iseq_build"); }
     prepare_iseq_build(iseq, name, path, realpath, first_lineno, node ? &node->nd_loc : NULL, node ? nd_node_id(node) : -1,
                        parent, isolated_depth, type, script_lines, &new_opt);
 
+                       if (getenv("DEB")) { puts("rb_iseq_compile_node"); }
     rb_iseq_compile_node(iseq, node);
+    rb_iseq_pop_top_stack();
+    if (getenv("DEB")) { puts("finish_iseq_build"); }
     finish_iseq_build(iseq);
 
+    if (getenv("DEB")) { puts("iseq_translate"); }
     return iseq_translate(iseq);
 }
 
