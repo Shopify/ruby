@@ -9475,11 +9475,17 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
               if (getenv("DEB")) { puts("NODE_STR"); }
 	debugp_param("nd_lit", node->nd_lit);
 	if (!popped) {
+                
 	    VALUE lit = node->nd_lit;
 	    if (!ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal) {
+
+                    if (getenv("DEB")) { puts("NODE_STR set_top"); }
+                rb_iseq_set_top_stack(rb_iseq_new_top(NULL, rb_fstring_lit("<top (required)>"), rb_iseq_path(iseq), rb_iseq_path(iseq), iseq));
 		lit = rb_fstring(lit);
 		ADD_INSN1(ret, node, putstring, lit);
                 RB_OBJ_WRITTEN(iseq, Qundef, lit);
+                if (getenv("DEB")) { puts("NODE_STR pop"); }
+                rb_iseq_pop_top_stack();
 	    }
 	    else {
 		if (ISEQ_COMPILE_DATA(iseq)->option->debug_frozen_string_literal || RTEST(ruby_debug)) {
