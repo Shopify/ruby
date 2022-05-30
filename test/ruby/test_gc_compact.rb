@@ -230,7 +230,6 @@ class TestGCCompact < Test::Unit::TestCase
   end
 
   def test_embedding_strings_that_moved_to_a_larger_size_pool
-    omit
     require 'objspace'
     require 'json'
     list = generate_strings_resized_up
@@ -241,7 +240,6 @@ class TestGCCompact < Test::Unit::TestCase
   end
 
   def test_embedding_strings_that_moved_to_a_smaller_size_pool
-    omit
     require 'objspace'
     require 'json'
     list = generate_strings_resized_down
