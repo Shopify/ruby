@@ -211,8 +211,11 @@ class TestGCCompact < Test::Unit::TestCase
 
   def generate_strings_resized_up
     list = []
-    725.times {
-      list << String.new(+"small string")
+    5000.times {
+      # strings are created as shared strings when initialized from literals
+      # use downcase to force the creation of an embedded string (it calls
+      # rb_str_new internally)
+      list << String.new(+"small string").downcase
       Object.new
       Object.new
     }
@@ -221,22 +224,38 @@ class TestGCCompact < Test::Unit::TestCase
 
   def generate_strings_resized_down
     list = []
-    1600.times {
-      list << String.new(+"abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+    5000.times {
+      # strings are created as shared strings when initialized from literals
+      # use downcase to force the creation of an embedded string (it calls
+      # rb_str_new internally)
+      list << String.new("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").downcase
       Object.new
       Object.new
     }
     list.map { |s| s.squeeze! }
   end
 
+  def count_uniques(list)
+    list
+      .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
+      .each_with_object(Hash.new(0)) { |elem, collector|
+        collector[elem] += 1
+    }
+  end
+
   def test_embedding_strings_that_moved_to_a_larger_size_pool
     require 'objspace'
     require 'json'
     list = generate_strings_resized_up
+    sizes_before = count_uniques(list)
 
     GC.compact
-    slot_sizes = list.map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }.uniq
-    assert(slot_sizes.include?(160), "Expected some of these objects to be moved to a larger size pool, where space allows")
+
+    sizes_after = count_uniques(list)
+
+    assert(sizes_after.values_at(sizes_after.keys.max).first >
+           sizes_before.values_at(sizes_after.keys.max).first)
+    list = nil
   end
 
   def test_embedding_strings_that_moved_to_a_smaller_size_pool
@@ -244,8 +263,12 @@ class TestGCCompact < Test::Unit::TestCase
     require 'json'
     list = generate_strings_resized_down
 
+    sizes_before = count_uniques(list)
     GC.compact
-    slot_sizes = list.map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }.uniq
-    assert(slot_sizes.include?(40), "Expected some of these objects to be moved to a larger size pool, where space allows")
+    sizes_after = count_uniques(list)
+
+    assert(sizes_after.values_at(sizes_after.keys.min).first >
+           sizes_before.values_at(sizes_after.keys.min).first)
+    list = nil
   end
 end
