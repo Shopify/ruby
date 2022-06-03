@@ -1,4 +1,3 @@
-use std::fmt;
 use std::mem;
 
 #[cfg(feature = "asm_comments")]
@@ -358,17 +357,6 @@ impl CodeBlock {
             let cb_start = self.get_ptr(0).raw_ptr() as *mut c_void;
             crate::cruby::rb_yjit_mark_executable(cb_start, self.mem_size.try_into().unwrap());
         }
-    }
-}
-
-/// Produce hex string output from the bytes in a code block
-impl<'a> fmt::LowerHex for CodeBlock {
-    fn fmt(&self, fmtr: &mut fmt::Formatter) -> fmt::Result {
-        for pos in 0..self.write_pos {
-            let byte = unsafe { self.mem_block.add(pos).read() };
-            fmtr.write_fmt(format_args!("{:02x}", byte))?;
-        }
-        Ok(())
     }
 }
 
