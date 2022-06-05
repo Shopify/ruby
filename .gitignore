@@ -236,3 +236,5 @@ lcov*.info
 
 # /wasm/
 /wasm/tests/*.wasm
+
+#test
