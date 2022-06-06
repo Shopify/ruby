@@ -487,10 +487,15 @@ dir_memsize(const void *ptr)
     return sizeof(struct dir_data);
 }
 
+static const size_t edges[] = {
+    offsetof(struct dir_data, path)
+};
+
 static const rb_data_type_t dir_data_type = {
     "dir",
-    {dir_mark, dir_free, dir_memsize,},
-    0, 0, RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY
+    {NULL, dir_free, dir_memsize,},
+    0, 0, RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY,
+    1, edges
 };
 
 static VALUE dir_close(VALUE);

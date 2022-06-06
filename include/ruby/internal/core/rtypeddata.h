@@ -297,6 +297,13 @@ struct rb_data_type_struct {
      * Why it has to be a ::VALUE?  @shyouhei doesn't understand the design.
      */
     VALUE flags;       /* RUBY_FL_WB_PROTECTED */
+
+    /**
+     * a pointer to an array that lists the edges, in an offset from the start
+     * of the struct, these are the values that need to be marked
+     */
+    size_t edges_count;
+    const size_t* edges;
 };
 
 /**

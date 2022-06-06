@@ -7202,10 +7202,31 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
 	{
 	    void *const ptr = DATA_PTR(obj);
 	    if (ptr) {
-		RUBY_DATA_FUNC mark_func = RTYPEDDATA_P(obj) ?
-		    any->as.typeddata.type->function.dmark :
-		    any->as.data.dmark;
-		if (mark_func) (*mark_func)(ptr);
+                RUBY_DATA_FUNC mark_func;
+                const size_t *edges = NULL;
+                size_t edges_count = 0;
+
+                if (RTYPEDDATA_P(obj)) {
+		    mark_func = any->as.typeddata.type->function.dmark;
+                    edges = any->as.typeddata.type->edges;
+                    edges_count = any->as.typeddata.type->edges_count;
+                } else {
+		    mark_func = any->as.data.dmark;
+                }
+
+                if (edges_count > 0) {
+                    // edges is a list of offsets from the start of the data
+                    // struct, but we don't know what the layout of the data
+                    // struct is, so we'll have to monkey around with some
+                    // casting
+                    for (size_t i = 0; i < edges_count; i++) {
+                        VALUE *edge = (VALUE *)(((uintptr_t)ptr) + edges[i]);
+                        gc_mark_ptr(objspace, *edge);
+                    }
+                } 
+                else if (mark_func) {
+                    (*mark_func)(ptr);
+                }
 	    }
 	}
 	break;
@@ -10407,8 +10428,18 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
             void *const ptr = DATA_PTR(obj);
             if (ptr) {
                 if (RTYPEDDATA_P(obj)) {
-                    RUBY_DATA_FUNC compact_func = any->as.typeddata.type->function.dcompact;
-                    if (compact_func) (*compact_func)(ptr);
+                    size_t  edges_count = any->as.typeddata.type->edges_count;
+                    const size_t *edges = any->as.typeddata.type->edges;
+
+                    if (edges_count > 0) {
+                        for (size_t i = 0; i < edges_count; i++) {
+                            VALUE *edge = (VALUE *)(((uintptr_t)ptr) + edges[i]);
+                            *edge = rb_gc_location(*edge);
+                        }
+                    } else {
+                        RUBY_DATA_FUNC compact_func = any->as.typeddata.type->function.dcompact;
+                        if (compact_func) (*compact_func)(ptr);
+                    }
                 }
             }
         }
