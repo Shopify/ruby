@@ -209,10 +209,6 @@ class TestGCCompact < Test::Unit::TestCase
     assert_equal([:call, :line], results)
   end
 
-
-  def count_uniques(list)
-  end
-
   def test_embedding_strings_that_moved_to_a_larger_size_pool
     assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
     begin;
@@ -220,44 +216,28 @@ class TestGCCompact < Test::Unit::TestCase
       require 'json'
       def generate_strings_resized_up
         list = []
-        6000.times {
+        500.times {
           # strings are created as shared strings when initialized from literals
           # use downcase to force the creation of an embedded string (it calls
           # rb_str_new internally)
           list << String.new(+"abcde").downcase
-          Object.new
+          String.new(+"abcdeabcdefghijklmnopqrstuvwxyz").downcase
+
+          list << String.new("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").downcase
+          String.new("ababcdefghijklmnopqrstuvwxyz")
+
+          # Allocate garbage in to the large size class so that we know there
+          # is a place to move in to.
           Object.new
         }
         list.map { |s| s << "abcdefghijklmnopqrstuvwxyz" }
+        list.map { |s| s.squeeze! }
       end
       generate_strings_resized_up
       stats = GC.compact
 
-      assert(stats[:moved_up].fetch(:T_STRING, 0) > 0)
-    end;
-  end
-
-  def test_embedding_strings_that_moved_to_a_smaller_size_pool
-    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
-    begin;
-      require 'objspace'
-      require 'json'
-      def generate_strings_resized_down
-        list = []
-        6000.times {
-          # strings are created as shared strings when initialized from literals
-          # use downcase to force the creation of an embedded string (it calls
-          # rb_str_new internally)
-          list << String.new("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").downcase
-          Object.new
-          Object.new
-        }
-        list.map { |s| s.squeeze! }
-      end
-      generate_strings_resized_down
-
-      stats =  GC.compact
-      assert(stats[:moved_down].fetch(:T_STRING, 0) > 0)
+      moved_strings = stats.dig(:moved_up, :T_STRING) + stats.dig(:moved_down, :T_STRING)
+      assert_operator(moved_strings, :>, 0)
     end;
   end
 end
