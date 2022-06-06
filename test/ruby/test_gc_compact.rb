@@ -209,66 +209,79 @@ class TestGCCompact < Test::Unit::TestCase
     assert_equal([:call, :line], results)
   end
 
-  def generate_strings_resized_up
-    list = []
-    5000.times {
-      # strings are created as shared strings when initialized from literals
-      # use downcase to force the creation of an embedded string (it calls
-      # rb_str_new internally)
-      list << String.new(+"small string").downcase
-      Object.new
-      Object.new
-    }
-    list.map { |s| s << "long string to push to a different size pool" }
-  end
-
-  def generate_strings_resized_down
-    list = []
-    5000.times {
-      # strings are created as shared strings when initialized from literals
-      # use downcase to force the creation of an embedded string (it calls
-      # rb_str_new internally)
-      list << String.new("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").downcase
-      Object.new
-      Object.new
-    }
-    list.map { |s| s.squeeze! }
-  end
 
   def count_uniques(list)
-    list
-      .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
-      .each_with_object(Hash.new(0)) { |elem, collector|
-        collector[elem] += 1
-    }
   end
 
   def test_embedding_strings_that_moved_to_a_larger_size_pool
-    require 'objspace'
-    require 'json'
-    list = generate_strings_resized_up
-    sizes_before = count_uniques(list)
+    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
+    begin;
+      require 'objspace'
+      require 'json'
+      def generate_strings_resized_up
+        list = []
+        6000.times {
+          # strings are created as shared strings when initialized from literals
+          # use downcase to force the creation of an embedded string (it calls
+          # rb_str_new internally)
+          list << String.new(+"abcde").downcase
+          Object.new
+          Class.new
+        }
+        list.map { |s| s << "abcdefghijklmnopqrstuvwxyz" }
+      end
+      list = generate_strings_resized_up
+      sizes_before = list
+        .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
+        .each_with_object(Hash.new(0)) { |elem, collector|
+          collector[elem] += 1
+      }
 
-    GC.compact
-
-    sizes_after = count_uniques(list)
-
-    assert(sizes_after.values_at(sizes_after.keys.max).first >
-           sizes_before.values_at(sizes_after.keys.max).first)
-    list = nil
+      GC.compact
+      sizes_after = list
+        .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
+        .each_with_object(Hash.new(0)) { |elem, collector|
+          collector[elem] += 1
+      }
+      assert(sizes_after.values_at(sizes_after.keys.max).first >
+             sizes_before.values_at(sizes_after.keys.max).first)
+    end;
   end
 
   def test_embedding_strings_that_moved_to_a_smaller_size_pool
-    require 'objspace'
-    require 'json'
-    list = generate_strings_resized_down
+    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
+    begin;
+      require 'objspace'
+      require 'json'
+      def generate_strings_resized_down
+        list = []
+        6000.times {
+          # strings are created as shared strings when initialized from literals
+          # use downcase to force the creation of an embedded string (it calls
+          # rb_str_new internally)
+          list << String.new("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").downcase
+          Object.new
+          Class.new
+        }
+        list.map { |s| s.squeeze! }
+      end
+      list = generate_strings_resized_down
 
-    sizes_before = count_uniques(list)
-    GC.compact
-    sizes_after = count_uniques(list)
+      sizes_before = list
+        .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
+        .each_with_object(Hash.new(0)) { |elem, collector|
+          collector[elem] += 1
+      }
 
-    assert(sizes_after.values_at(sizes_after.keys.min).first >
-           sizes_before.values_at(sizes_after.keys.min).first)
-    list = nil
+      GC.compact
+      sizes_after = list
+        .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
+        .each_with_object(Hash.new(0)) { |elem, collector|
+          collector[elem] += 1
+      }
+
+      assert(sizes_after.values_at(sizes_after.keys.min).first >
+             sizes_before.values_at(sizes_after.keys.min).first)
+    end;
   end
 end
