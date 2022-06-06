@@ -839,6 +839,8 @@ typedef struct rb_objspace {
     struct {
         size_t considered_count_table[T_MASK];
         size_t moved_count_table[T_MASK];
+        size_t moved_up_count_table[T_MASK];
+        size_t moved_down_count_table[T_MASK];
         size_t total_moved;
     } rcompactor;
 
@@ -5110,6 +5112,11 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
 
         GC_ASSERT(RB_BUILTIN_TYPE(dest) == T_NONE);
 
+        if (src_page->slot_size > free_page->slot_size) {
+            objspace->rcompactor.moved_down_count_table[BUILTIN_TYPE(src)]++;
+        } else if (free_page->slot_size > src_page->slot_size) {
+            objspace->rcompactor.moved_up_count_table[BUILTIN_TYPE(src)]++;
+        }
         objspace->rcompactor.moved_count_table[BUILTIN_TYPE(src)]++;
         objspace->rcompactor.total_moved++;
 
@@ -5932,6 +5939,8 @@ gc_compact_start(rb_objspace_t *objspace)
 
     memset(objspace->rcompactor.considered_count_table, 0, T_MASK * sizeof(size_t));
     memset(objspace->rcompactor.moved_count_table, 0, T_MASK * sizeof(size_t));
+    memset(objspace->rcompactor.moved_up_count_table, 0, T_MASK * sizeof(size_t));
+    memset(objspace->rcompactor.moved_down_count_table, 0, T_MASK * sizeof(size_t));
 
     /* Set up read barrier for pages containing MOVED objects */
     install_handlers();
@@ -10462,6 +10471,8 @@ gc_compact_stats(VALUE self)
     VALUE h = rb_hash_new();
     VALUE considered = rb_hash_new();
     VALUE moved = rb_hash_new();
+    VALUE moved_up = rb_hash_new();
+    VALUE moved_down = rb_hash_new();
 
     for (i=0; i<T_MASK; i++) {
         if (objspace->rcompactor.considered_count_table[i]) {
@@ -10471,10 +10482,20 @@ gc_compact_stats(VALUE self)
         if (objspace->rcompactor.moved_count_table[i]) {
             rb_hash_aset(moved, type_sym(i), SIZET2NUM(objspace->rcompactor.moved_count_table[i]));
         }
+
+        if (objspace->rcompactor.moved_up_count_table[i]) {
+            rb_hash_aset(moved_up, type_sym(i), SIZET2NUM(objspace->rcompactor.moved_up_count_table[i]));
+        }
+
+        if (objspace->rcompactor.moved_down_count_table[i]) {
+            rb_hash_aset(moved_down, type_sym(i), SIZET2NUM(objspace->rcompactor.moved_down_count_table[i]));
+        }
     }
 
     rb_hash_aset(h, ID2SYM(rb_intern("considered")), considered);
     rb_hash_aset(h, ID2SYM(rb_intern("moved")), moved);
+    rb_hash_aset(h, ID2SYM(rb_intern("moved_up")), moved_up);
+    rb_hash_aset(h, ID2SYM(rb_intern("moved_down")), moved_down);
 
     return h;
 }

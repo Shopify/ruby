@@ -226,25 +226,14 @@ class TestGCCompact < Test::Unit::TestCase
           # rb_str_new internally)
           list << String.new(+"abcde").downcase
           Object.new
-          Class.new
+          Object.new
         }
         list.map { |s| s << "abcdefghijklmnopqrstuvwxyz" }
       end
-      list = generate_strings_resized_up
-      sizes_before = list
-        .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
-        .each_with_object(Hash.new(0)) { |elem, collector|
-          collector[elem] += 1
-      }
+      generate_strings_resized_up
+      stats = GC.compact
 
-      GC.compact
-      sizes_after = list
-        .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
-        .each_with_object(Hash.new(0)) { |elem, collector|
-          collector[elem] += 1
-      }
-      assert(sizes_after.values_at(sizes_after.keys.max).first >
-             sizes_before.values_at(sizes_after.keys.max).first)
+      assert(stats[:moved_up].fetch(:T_STRING, 0) > 0)
     end;
   end
 
@@ -261,27 +250,14 @@ class TestGCCompact < Test::Unit::TestCase
           # rb_str_new internally)
           list << String.new("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").downcase
           Object.new
-          Class.new
+          Object.new
         }
         list.map { |s| s.squeeze! }
       end
-      list = generate_strings_resized_down
+      generate_strings_resized_down
 
-      sizes_before = list
-        .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
-        .each_with_object(Hash.new(0)) { |elem, collector|
-          collector[elem] += 1
-      }
-
-      GC.compact
-      sizes_after = list
-        .map { |s| JSON.parse(ObjectSpace.dump(s))["slot_size"] }
-        .each_with_object(Hash.new(0)) { |elem, collector|
-          collector[elem] += 1
-      }
-
-      assert(sizes_after.values_at(sizes_after.keys.min).first >
-             sizes_before.values_at(sizes_after.keys.min).first)
+      stats =  GC.compact
+      assert(stats[:moved_down].fetch(:T_STRING, 0) > 0)
     end;
   end
 end
