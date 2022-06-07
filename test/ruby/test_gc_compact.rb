@@ -212,8 +212,6 @@ class TestGCCompact < Test::Unit::TestCase
   def test_moving_strings_between_size_pools
     assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
     begin;
-      require 'objspace'
-      require 'json'
       moveables = []
       small_slots = []
       large_slots = []
