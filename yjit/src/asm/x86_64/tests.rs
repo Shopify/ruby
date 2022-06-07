@@ -4,7 +4,7 @@ use crate::asm::x86_64::*;
 use std::fmt;
 
 /// Produce hex string output from the bytes in a code block
-impl<'a> fmt::LowerHex for super::CodeBlock {
+impl<'a> fmt::LowerHex for CodeBlock {
     fn fmt(&self, fmtr: &mut fmt::Formatter) -> fmt::Result {
         for pos in 0..self.write_pos {
             let byte = unsafe { self.mem_block.add(pos).read() };

@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 #[rustfmt::skip]
 pub mod x86_64;
 
+pub mod arm64;
+
 /// Pointer to a piece of machine code
 /// We may later change this to wrap an u32
 /// Note: there is no NULL constant for CodePtr. You should use Option<CodePtr> instead.
@@ -372,5 +374,76 @@ impl OutlinedCb {
 
     pub fn unwrap(&mut self) -> &mut CodeBlock {
         &mut self.cb
+    }
+}
+
+/// Compute the number of bits needed to encode a signed value
+pub fn imm_num_bits(imm: i64) -> u8
+{
+    // Compute the smallest size this immediate fits in
+    if imm >= i8::MIN.into() && imm <= i8::MAX.into() {
+        return 8;
+    }
+    if imm >= i16::MIN.into() && imm <= i16::MAX.into() {
+        return 16;
+    }
+    if imm >= i32::MIN.into() && imm <= i32::MAX.into() {
+        return 32;
+    }
+
+    return 64;
+}
+
+/// Compute the number of bits needed to encode an unsigned value
+pub fn uimm_num_bits(uimm: u64) -> u8
+{
+    // Compute the smallest size this immediate fits in
+    if uimm <= u8::MAX.into() {
+        return 8;
+    }
+    else if uimm <= u16::MAX.into() {
+        return 16;
+    }
+    else if uimm <= u32::MAX.into() {
+        return 32;
+    }
+
+    return 64;
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn test_imm_num_bits()
+    {
+        assert_eq!(imm_num_bits(i8::MIN.into()), 8);
+        assert_eq!(imm_num_bits(i8::MAX.into()), 8);
+
+        assert_eq!(imm_num_bits(i16::MIN.into()), 16);
+        assert_eq!(imm_num_bits(i16::MAX.into()), 16);
+
+        assert_eq!(imm_num_bits(i32::MIN.into()), 32);
+        assert_eq!(imm_num_bits(i32::MAX.into()), 32);
+
+        assert_eq!(imm_num_bits(i64::MIN.into()), 64);
+        assert_eq!(imm_num_bits(i64::MAX.into()), 64);
+    }
+
+    #[test]
+    fn test_uimm_num_bits() {
+        assert_eq!(uimm_num_bits(u8::MIN.into()), 8);
+        assert_eq!(uimm_num_bits(u8::MAX.into()), 8);
+
+        assert_eq!(uimm_num_bits(((u8::MAX as u16) + 1).into()), 16);
+        assert_eq!(uimm_num_bits(u16::MAX.into()), 16);
+
+        assert_eq!(uimm_num_bits(((u16::MAX as u32) + 1).into()), 32);
+        assert_eq!(uimm_num_bits(u32::MAX.into()), 32);
+
+        assert_eq!(uimm_num_bits(((u32::MAX as u64) + 1).into()), 64);
+        assert_eq!(uimm_num_bits(u64::MAX.into()), 64);
     }
 }
