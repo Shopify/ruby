@@ -8202,7 +8202,7 @@ gc_compact_destination_pool(rb_objspace_t *objspace, rb_size_pool_t *src_pool, V
             }
             else {
                 GC_ASSERT(!STR_EMBED_P(src));
-                return src_pool;
+                return &size_pools[0];
             }
         default:
             return src_pool;
