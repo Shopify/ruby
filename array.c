@@ -212,6 +212,33 @@ ary_embeddable_p(long capa)
 #endif
 }
 
+bool
+rb_ary_pool_moveable_p(VALUE ary)
+{
+    // if the array is shared or a shared root then it's not moveable
+    return !(ARY_SHARED_P(ary) || ARY_SHARED_ROOT_P(ary));
+}
+
+void ary_verify(VALUE ary);
+
+size_t
+rb_ary_size_as_embedded(VALUE ary)
+{
+    size_t real_size;
+#if USE_RVARGC
+    if (ARY_EMBED_P(ary)) {
+        real_size = ary_embed_size(ARY_EMBED_LEN(ary));
+    } else if (rb_ary_pool_moveable_p(ary)) {
+        real_size = ary_embed_size(ARY_HEAP_CAPA(ary));
+    } else {
+#endif
+        real_size = sizeof(struct RString);
+#if USE_RVARGC
+    }
+#endif
+    return real_size;
+}
+
 
 #if ARRAY_DEBUG
 #define ary_verify(ary) ary_verify_(ary, __FILE__, __LINE__)
@@ -467,6 +494,23 @@ rb_ary_detransient(VALUE ary)
     /* do nothing */
 }
 #endif
+
+void
+rb_ary_make_embedded(VALUE ary)
+{
+    assert(rb_ary_pool_moveable_p(ary));
+    if (!ARY_EMBED_P(ary) && !OBJ_FROZEN(ary))
+    {
+        VALUE *buf = RARRAY_PTR(ary);
+        long len = RARRAY_LEN(ary);
+
+        FL_SET_EMBED(ary);
+        ARY_SET_EMBED_LEN(ary, len);;
+
+        memmove(RARRAY_PTR(ary), buf, len * sizeof(VALUE));
+        ary_heap_free_ptr(ary, buf, len * sizeof(VALUE));
+    }
+}
 
 static void
 ary_resize_capa(VALUE ary, long capacity)

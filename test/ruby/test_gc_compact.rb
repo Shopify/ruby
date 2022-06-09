@@ -209,7 +209,46 @@ class TestGCCompact < Test::Unit::TestCase
     assert_equal([:call, :line], results)
   end
 
-  def test_moving_strings_up_size_pools
+  def test_moving_arrays_between_size_pools
+    omit if !GC.using_rvargc?
+    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
+    begin;
+      @list = []
+
+      def setup_heap
+        10000.times do
+          # create some arrays in a large size pool. We assign them to a
+          # local here otherwise they'll get optimised out of the bytecode, but
+          # they'll get collected and leave us some empty space to move into
+          arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+
+          # do something with arr to stop assert_separately failing our test due
+          # to an unused variable
+          arr.length
+          # create some arrays in a small pool. these will get moved up
+          @list <<  [1, 2, 3]
+        end
+      end
+
+      setup_heap
+
+      # mutate the arrays we want to move to make them larger
+      @list.each do |arr|
+        arr << 4
+        arr << 5
+      end
+
+      stats = GC.compact
+
+      moved_arrays = (stats.dig(:moved_up, :T_ARRAY) || 0) +
+        (stats.dig(:moved_down, :T_ARRAY) || 0)
+
+      assert_operator(moved_arrays, :>, 0)
+    end;
+  end
+
+  def test_moving_strings_between_size_pools
+    omit if !GC.using_rvargc?
     assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
     begin;
       STR_COUNT = 500
