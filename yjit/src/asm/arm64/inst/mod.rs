@@ -1,3 +1,4 @@
+mod atomic;
 mod branch;
 mod data_imm;
 mod data_reg;
@@ -5,6 +6,7 @@ mod load;
 mod mov;
 mod sf;
 
+use atomic::Atomic;
 use branch::Branch;
 use data_imm::DataImm;
 use data_reg::DataReg;
@@ -65,6 +67,23 @@ pub fn br(cb: &mut CodeBlock, rn: A64Opnd) {
     let bytes: [u8; 4] = match rn {
         A64Opnd::Reg(rn) => Branch::br(rn.reg_no).into(),
         _ => panic!("Invalid operand to br instruction."),
+    };
+
+    cb.write_bytes(&bytes);
+}
+
+/// LDADDAL - atomic add with acquire and release semantics
+pub fn ldaddal(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd, rs: A64Opnd) {
+    let bytes: [u8; 4] = match (rt, rn, rs) {
+        (A64Opnd::Reg(rt), A64Opnd::Reg(rn), A64Opnd::Reg(rs)) => {
+            assert!(
+                rt.num_bits == rn.num_bits && rn.num_bits == rs.num_bits,
+                "All operands must be of the same size."
+            );
+
+            Atomic::ldaddal(rt.reg_no, rn.reg_no, rs.reg_no, rt.num_bits).into()
+        },
+        _ => panic!("Invalid operand combination to ldaddal instruction."),
     };
 
     cb.write_bytes(&bytes);
@@ -204,6 +223,11 @@ mod tests {
     #[test]
     fn test_br() {
         check_bytes("80021fd6", |cb| br(cb, X20));
+    }
+
+    #[test]
+    fn test_ldaddal() {
+        check_bytes("8b01eaf8", |cb| ldaddal(cb, X11, X12, X10));
     }
 
     #[test]
