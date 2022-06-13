@@ -24,12 +24,17 @@ use super::opnd::*;
 
 /// Checks that a signed value fits within the specified number of bits.
 const fn imm_fits_bits(imm: i64, num_bits: u8) -> bool {
-    imm >= -2_i64.pow((num_bits as u32) - 1) && imm < 2_i64.pow((num_bits as u32) - 1)
+    let minimum = if num_bits == 64 { i64::MIN } else { -2_i64.pow((num_bits as u32) - 1) };
+    let maximum = if num_bits == 64 { i64::MAX } else { 2_i64.pow((num_bits as u32) - 1) - 1 };
+
+    imm >= minimum && imm <= maximum
 }
 
 /// Checks that an unsigned value fits within the specified number of bits.
 const fn uimm_fits_bits(uimm: u64, num_bits: u8) -> bool {
-    uimm < 2_u64.pow((num_bits as u32))
+    let maximum = if num_bits == 64 { u64::MAX } else { 2_u64.pow(num_bits as u32) - 1 };
+
+    uimm <= maximum
 }
 
 /// ADD - add rn and rm, put the result in rd, don't update flags
@@ -243,6 +248,29 @@ mod tests {
         let mut cb = super::CodeBlock::new_dummy(128);
         run(&mut cb);
         assert_eq!(format!("{:x}", cb), bytes);
+    }
+
+    #[test]
+    fn test_imm_fits_bits() {
+        assert!(imm_fits_bits(i8::MAX.into(), 8));
+        assert!(imm_fits_bits(i8::MIN.into(), 8));
+
+        assert!(imm_fits_bits(i16::MAX.into(), 16));
+        assert!(imm_fits_bits(i16::MIN.into(), 16));
+
+        assert!(imm_fits_bits(i32::MAX.into(), 32));
+        assert!(imm_fits_bits(i32::MIN.into(), 32));
+
+        assert!(imm_fits_bits(i64::MAX.into(), 64));
+        assert!(imm_fits_bits(i64::MIN.into(), 64));
+    }
+
+    #[test]
+    fn test_uimm_fits_bits() {
+        assert!(uimm_fits_bits(u8::MAX.into(), 8));
+        assert!(uimm_fits_bits(u16::MAX.into(), 16));
+        assert!(uimm_fits_bits(u32::MAX.into(), 32));
+        assert!(uimm_fits_bits(u64::MAX.into(), 64));
     }
 
     #[test]
