@@ -5,6 +5,7 @@ mod data_reg;
 mod load;
 mod mov;
 mod sf;
+mod store;
 
 use atomic::Atomic;
 use branch::Branch;
@@ -12,8 +13,9 @@ use data_imm::DataImm;
 use data_reg::DataReg;
 use load::Load;
 use mov::Mov;
+use store::Store;
 
-use crate::asm::{CodeBlock, imm_num_bits};
+use crate::asm::CodeBlock;
 use super::opnd::*;
 
 /// ADD - add rn and rm, put the result in rd, don't update flags
@@ -94,7 +96,7 @@ pub fn ldur(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd) {
     let bytes: [u8; 4] = match (rt, rn) {
         (A64Opnd::Reg(rt), A64Opnd::Mem(rn)) => {
             assert!(rt.num_bits == rn.num_bits, "Expected registers to be the same size");
-            assert!(imm_num_bits(rn.disp.into()) <= 9, "Expected displacement to be 9 bits or less");
+            assert!((-256..=255).contains(&rn.disp), "Expected displacement to be 9 bits or less");
 
             Load::ldur(rt.reg_no, rn.base_reg_no, rn.disp.try_into().unwrap(), rt.num_bits).into()
         },
@@ -127,6 +129,21 @@ pub fn movz(cb: &mut CodeBlock, rd: A64Opnd, imm16: A64Opnd, shift: u8) {
             Mov::movz(rd.reg_no, imm16.value as u16, shift, rd.num_bits).into()
         },
         _ => panic!("Invalid operand combination to movz instruction.")
+    };
+
+    cb.write_bytes(&bytes);
+}
+
+/// STUR - store a value in a register at a memory address
+pub fn stur(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd) {
+    let bytes: [u8; 4] = match (rt, rn) {
+        (A64Opnd::Reg(rt), A64Opnd::Mem(rn)) => {
+            assert!(rt.num_bits == rn.num_bits, "Expected registers to be the same size");
+            assert!((-256..=255).contains(&rn.disp), "Expected displacement to be 9 bits or less");
+
+            Store::stur(rt.reg_no, rn.base_reg_no, rn.disp.try_into().unwrap(), rt.num_bits).into()
+        },
+        _ => panic!("Invalid operand combination to stur instruction.")
     };
 
     cb.write_bytes(&bytes);
@@ -253,6 +270,11 @@ mod tests {
     #[test]
     fn test_ret_register() {
         check_bytes("80025fd6", |cb| ret(cb, X20));
+    }
+
+    #[test]
+    fn test_stur() {
+        check_bytes("6a0108f8", |cb| stur(cb, X10, A64Opnd::new_mem(X11, 128)));
     }
 
     #[test]
