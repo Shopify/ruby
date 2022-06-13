@@ -127,7 +127,11 @@ rb_thread_local_storage(VALUE thread)
         rb_ivar_set(thread, idLocals, rb_hash_new());
         RB_FL_SET_RAW(thread, THREAD_LOCAL_STORAGE_INITIALISED);
     }
-    return rb_ivar_get(thread, idLocals);
+    VALUE locals = rb_ivar_get(thread, idLocals);
+    if (NIL_P(locals)) {
+        rb_bug("locals should be a hash");
+    }
+    return locals;
 }
 
 static int sleep_hrtime(rb_thread_t *, rb_hrtime_t, unsigned int fl);
