@@ -60,9 +60,6 @@
 /* Also,  we  keep  the  following  macros  here.   They  are  expected  to  be
  * overridden in each headers. */
 
-/* internal/array.h */
-#define rb_ary_new_from_args(...) rb_nonexistent_symbol(__VA_ARGS__)
-
 /* internal/io.h */
 #define rb_io_fptr_finalize(...) rb_nonexistent_symbol(__VA_ARGS__)
 

@@ -85,20 +85,6 @@ RARY_TRANSIENT_UNSET(VALUE ary)
 #endif
 }
 
-#undef rb_ary_new_from_args
-#if RBIMPL_HAS_WARNING("-Wgnu-zero-variadic-macro-arguments")
-# /* Skip it; clang -pedantic doesn't like the following */
-#elif defined(__GNUC__) && defined(HAVE_VA_ARGS_MACRO)
-#define rb_ary_new_from_args(n, ...) \
-    __extension__ ({ \
-        const VALUE args_to_new_ary[] = {__VA_ARGS__}; \
-        if (__builtin_constant_p(n)) { \
-            STATIC_ASSERT(rb_ary_new_from_args, numberof(args_to_new_ary) == (n)); \
-        } \
-        rb_ary_new_from_values(numberof(args_to_new_ary), args_to_new_ary); \
-    })
-#endif
-
 #undef RARRAY_AREF
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()
 RBIMPL_ATTR_ARTIFICIAL()
