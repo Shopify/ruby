@@ -42,9 +42,9 @@ pub struct Atomic {
 }
 
 impl Atomic {
-    /// LDADD
+    /// LDADDAL
     /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/LDADD--LDADDA--LDADDAL--LDADDL--Atomic-add-on-word-or-doubleword-in-memory-?lang=en
-    pub fn ldaddal(rt: u8, rn: u8, rs: u8, num_bits: u8) -> Self {
+    pub fn ldaddal(rs: u8, rt: u8, rn: u8, num_bits: u8) -> Self {
         Self { rt, rn, rs, size: num_bits.into() }
     }
 }
@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn test_ldaddal() {
-        let result: u32 = Atomic::ldaddal(21, 22, 20, 64).into();
+        let result: u32 = Atomic::ldaddal(20, 21, 22, 64).into();
         assert_eq!(0xf8f402d5, result);
     }
 }

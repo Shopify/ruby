@@ -108,15 +108,15 @@ pub fn br(cb: &mut CodeBlock, rn: A64Opnd) {
 }
 
 /// LDADDAL - atomic add with acquire and release semantics
-pub fn ldaddal(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd, rs: A64Opnd) {
-    let bytes: [u8; 4] = match (rt, rn, rs) {
-        (A64Opnd::Reg(rt), A64Opnd::Reg(rn), A64Opnd::Reg(rs)) => {
+pub fn ldaddal(cb: &mut CodeBlock, rs: A64Opnd, rt: A64Opnd, rn: A64Opnd) {
+    let bytes: [u8; 4] = match (rs, rt, rn) {
+        (A64Opnd::Reg(rs), A64Opnd::Reg(rt), A64Opnd::Reg(rn)) => {
             assert!(
-                rt.num_bits == rn.num_bits && rn.num_bits == rs.num_bits,
+                rs.num_bits == rt.num_bits && rt.num_bits == rn.num_bits,
                 "All operands must be of the same size."
             );
 
-            Atomic::ldaddal(rt.reg_no, rn.reg_no, rs.reg_no, rt.num_bits).into()
+            Atomic::ldaddal(rs.reg_no, rt.reg_no, rn.reg_no, rs.num_bits).into()
         },
         _ => panic!("Invalid operand combination to ldaddal instruction."),
     };
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_ldaddal() {
-        check_bytes("8b01eaf8", |cb| ldaddal(cb, X11, X12, X10));
+        check_bytes("8b01eaf8", |cb| ldaddal(cb, X10, X11, X12));
     }
 
     #[test]
