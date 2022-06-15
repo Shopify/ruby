@@ -177,7 +177,7 @@ rb_thread_execute_hooks(rb_thread_t *th, rb_event_flag_t event)
     if (rb_internal_thread_event_hooks) {
         rb_internal_thread_event_hook_t *h = rb_internal_thread_event_hooks;
         rb_internal_thread_event_data_t event_data = {
-            .thread_id = rb_th_serial(th)
+            .thread = th->self
         };
         do {
             if (h->event & event) {
