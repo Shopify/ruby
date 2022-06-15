@@ -167,7 +167,7 @@ rb_internal_thread_remove_event_hook(rb_internal_thread_event_hook_t * hook)
 }
 
 static void
-rb_thread_execute_hooks(rb_event_flag_t event)
+rb_thread_execute_hooks(rb_thread_t *th, rb_event_flag_t event)
 {
     int r;
     if ((r = pthread_rwlock_rdlock(&rb_internal_thread_event_hooks_rw_lock))) {
@@ -176,9 +176,12 @@ rb_thread_execute_hooks(rb_event_flag_t event)
 
     if (rb_internal_thread_event_hooks) {
         rb_internal_thread_event_hook_t *h = rb_internal_thread_event_hooks;
+        rb_internal_thread_event_data_t event_data = {
+            .thread_id = rb_th_serial(th)
+        };
         do {
             if (h->event & event) {
-                (*h->callback)(event, NULL, h->user_data);
+                (*h->callback)(event, &event_data, h->user_data);
             }
         } while((h = h->next));
     }
@@ -378,7 +381,7 @@ static void
 thread_sched_to_running_common(struct rb_thread_sched *sched, rb_thread_t *th)
 {
     if (rb_internal_thread_event_hooks) {
-        rb_thread_execute_hooks(RUBY_INTERNAL_THREAD_EVENT_READY);
+        rb_thread_execute_hooks(th, RUBY_INTERNAL_THREAD_EVENT_READY);
     }
 
     if (sched->running) {
@@ -413,7 +416,7 @@ thread_sched_to_running_common(struct rb_thread_sched *sched, rb_thread_t *th)
     sched->running = th;
 
     if (rb_internal_thread_event_hooks) {
-        rb_thread_execute_hooks(RUBY_INTERNAL_THREAD_EVENT_RESUMED);
+        rb_thread_execute_hooks(th, RUBY_INTERNAL_THREAD_EVENT_RESUMED);
     }
 
     if (!sched->timer) {
@@ -432,10 +435,10 @@ thread_sched_to_running(struct rb_thread_sched *sched, rb_thread_t *th)
 }
 
 static rb_thread_t *
-thread_sched_to_waiting_common(struct rb_thread_sched *sched)
+thread_sched_to_waiting_common(struct rb_thread_sched *sched, rb_thread_t *th)
 {
     if (rb_internal_thread_event_hooks) {
-        rb_thread_execute_hooks(RUBY_INTERNAL_THREAD_EVENT_SUSPENDED);
+        rb_thread_execute_hooks(th, RUBY_INTERNAL_THREAD_EVENT_SUSPENDED);
     }
 
     rb_thread_t *next;
@@ -447,10 +450,10 @@ thread_sched_to_waiting_common(struct rb_thread_sched *sched)
 }
 
 static void
-thread_sched_to_waiting(struct rb_thread_sched *sched)
+thread_sched_to_waiting(struct rb_thread_sched *sched, rb_thread_t *th)
 {
     rb_native_mutex_lock(&sched->lock);
-    thread_sched_to_waiting_common(sched);
+    thread_sched_to_waiting_common(sched, th);
     rb_native_mutex_unlock(&sched->lock);
 }
 
@@ -465,7 +468,7 @@ thread_sched_yield(struct rb_thread_sched *sched, rb_thread_t *th)
      */
     ubf_wakeup_all_threads();
     rb_native_mutex_lock(&sched->lock);
-    next = thread_sched_to_waiting_common(sched);
+    next = thread_sched_to_waiting_common(sched, th);
 
     /* An another thread is processing GVL yield. */
     if (UNLIKELY(sched->wait_yield)) {
@@ -2319,7 +2322,7 @@ ubf_ppoll_sleep(void *ignore)
     struct rb_thread_sched *sched = TH_SCHED(th); \
     RB_GC_SAVE_MACHINE_CONTEXT(th); \
     rb_native_mutex_lock(&sched->lock); \
-    next = thread_sched_to_waiting_common(sched); \
+    next = thread_sched_to_waiting_common(sched, th); \
     rb_native_mutex_unlock(&sched->lock); \
     if (!next && rb_ractor_living_thread_num(th->ractor) > 1) { \
         native_thread_yield(); \
