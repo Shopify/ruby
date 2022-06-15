@@ -995,7 +995,7 @@ typedef struct rb_thread_struct {
     rb_execution_context_t *ec;
 
     struct rb_thread_sched_item sched;
-    rb_atomic_t serial; // only for RUBY_DEBUG_LOG()
+    rb_atomic_t serial; // used by RUBY_DEBUG_LOG() and RB_INTERNAL_THREAD_HOOK()
 
     VALUE last_status; /* $? */
 
@@ -1075,8 +1075,12 @@ typedef struct rb_thread_struct {
 } rb_thread_t;
 
 static inline unsigned int
-rb_th_serial(const rb_thread_t *th)
+rb_th_serial(rb_thread_t *th)
 {
+    static rb_atomic_t thread_serial = 1;
+    if (RB_UNLIKELY(!th->serial)) {
+        RUBY_ATOMIC_CAS(th->serial, 0, RUBY_ATOMIC_FETCH_ADD(thread_serial, 1));
+    }
     return (unsigned int)th->serial;
 }
 
