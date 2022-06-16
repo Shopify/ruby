@@ -200,7 +200,9 @@ rb_iseq_free(const rb_iseq_t *iseq)
 	}
 	compile_data_free(ISEQ_COMPILE_DATA(iseq));
         if (body->outer_variables) rb_id_table_free(body->outer_variables);
+#if !USE_RVARGC
 	ruby_xfree(body);
+#endif
     }
 
     if (iseq && ISEQ_EXECUTABLE_P(iseq) && iseq->aux.exec.local_hooks) {
@@ -621,8 +623,19 @@ rb_iseq_memsize(const rb_iseq_t *iseq)
 rb_iseq_t *
 iseq_alloc(void)
 {
-    rb_iseq_t *iseq = (rb_iseq_t *)rb_imemo_new(imemo_iseq, 0, 0, 0, 0);
+    size_t size;
+#if USE_RVARGC
+    size = sizeof(rb_iseq_t) + sizeof(struct rb_iseq_constant_body);
+#else
+    size = sizeof(rb_iseq_t);
+#endif
+
+    rb_iseq_t *iseq = (rb_iseq_t *)rb_imemo_new(imemo_iseq, 0, 0, 0, 0, size);
+#if USE_RVARGC
+    memset(ISEQ_BODY(iseq), 0, sizeof(struct rb_iseq_constant_body));
+#else
     ISEQ_BODY(iseq) = ZALLOC(struct rb_iseq_constant_body);
+#endif
     return iseq;
 }
 

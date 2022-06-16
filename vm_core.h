@@ -492,7 +492,9 @@ struct rb_iseq_struct {
     VALUE flags; /* 1 */
     VALUE wrapper; /* 2 */
 
+#if !USE_RVARGC
     struct rb_iseq_constant_body *body;  /* 3 */
+#endif
 
     union { /* 4, 5 words */
 	struct iseq_compile_data *compile_data; /* used at compile time */
@@ -509,7 +511,11 @@ struct rb_iseq_struct {
     } aux;
 };
 
-#define ISEQ_BODY(iseq) ((iseq)->body)
+#if USE_RVARGC
+# define ISEQ_BODY(iseq) ((struct rb_iseq_constant_body *)((uintptr_t)iseq + sizeof(struct rb_iseq_struct)))
+#else
+# define ISEQ_BODY(iseq) ((iseq)->body)
+#endif
 
 #ifndef USE_LAZY_LOAD
 #define USE_LAZY_LOAD 0
