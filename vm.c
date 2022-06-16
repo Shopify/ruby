@@ -3057,7 +3057,13 @@ rb_execution_context_mark(const rb_execution_context_t *ec)
 	    const VALUE *ep = cfp->ep;
 	    VM_ASSERT(!!VM_ENV_FLAGS(ep, VM_ENV_FLAG_ESCAPED) == vm_ep_in_heap_p_(ec, ep));
             rb_gc_mark_movable(cfp->self);
-            rb_gc_mark_movable((VALUE)cfp->iseq);
+            if (ISEQ_EMBEDDED_P(iseq)) {
+                /* Embedded iseq cannot move */
+                rb_gc_mark((VALUE)cfp->iseq);
+            }
+            else {
+                rb_gc_mark_movable((VALUE)cfp->iseq);
+            }
             rb_gc_mark_movable((VALUE)cfp->block_code);
 
             if (!VM_ENV_LOCAL_P(ep)) {

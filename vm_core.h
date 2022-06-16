@@ -517,6 +517,12 @@ struct rb_iseq_struct {
 # define ISEQ_BODY(iseq) ((iseq)->body)
 #endif
 
+#if USE_RVARGC
+# define ISEQ_EMBEDDED_P(iseq) ((uintptr_t)ISEQ_BODY(iseq) + sizeof(struct rb_iseq_constant_body) == (uintptr_t)ISEQ_BODY(iseq)->iseq_encoded)
+#else
+# define ISEQ_EMBEDDED_P(iseq) 0
+#endif
+
 #ifndef USE_LAZY_LOAD
 #define USE_LAZY_LOAD 0
 #endif

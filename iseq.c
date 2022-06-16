@@ -178,7 +178,9 @@ rb_iseq_free(const rb_iseq_t *iseq)
 #if YJIT_BUILD
         rb_yjit_iseq_free(body->yjit_payload);
 #endif
-	ruby_xfree((void *)body->iseq_encoded);
+        if (!ISEQ_EMBEDDED_P(iseq)) {
+            ruby_xfree((void *)body->iseq_encoded);
+        }
 	ruby_xfree((void *)body->insns_info.body);
 	if (body->insns_info.positions) ruby_xfree((void *)body->insns_info.positions);
 #if VM_INSN_INFO_TABLE_IMPL == 2

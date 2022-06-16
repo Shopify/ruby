@@ -2235,6 +2235,35 @@ add_adjust_info(struct iseq_insn_info_entry *insns_info, unsigned int *positions
     return FALSE;
 }
 
+#if USE_RVARGC
+static bool
+iseq_embeddable_p(rb_iseq_t *iseq, int iseq_size)
+{
+    size_t size = sizeof(rb_iseq_t) + sizeof(struct rb_iseq_constant_body) + (sizeof(VALUE) * iseq_size);
+
+    return rb_gc_obj_slot_size((VALUE)iseq) >= size;
+}
+#endif
+
+static VALUE *
+iseq_alloc_iseq_encoded(rb_iseq_t *iseq, int iseq_size)
+{
+    VALUE *buffer;
+
+#if USE_RVARGC
+    if (iseq_embeddable_p(iseq, iseq_size)) {
+        buffer = (VALUE *)((uintptr_t)iseq + sizeof(rb_iseq_t) + sizeof(struct rb_iseq_constant_body));
+    }
+    else {
+        buffer = ALLOC_N(VALUE, iseq_size);
+    }
+#else
+    buffer = ALLOC_N(VALUE, iseq_size);
+#endif
+
+    return buffer;
+}
+
 /**
   ruby insn object list -> raw instruction sequence
  */
@@ -2324,7 +2353,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     }
 
     /* make instruction sequence */
-    generated_iseq = ALLOC_N(VALUE, code_index);
+    generated_iseq = iseq_alloc_iseq_encoded(iseq, code_index);
     insns_info = ALLOC_N(struct iseq_insn_info_entry, insn_num);
     positions = ALLOC_N(unsigned int, insn_num);
     body->is_entries = ZALLOC_N(union iseq_inline_storage_entry, body->is_size);
