@@ -171,7 +171,7 @@ rb_iseq_free(const rb_iseq_t *iseq)
 {
     RUBY_FREE_ENTER("iseq");
 
-    if (iseq && ISEQ_BODY(iseq)) {
+    if (iseq) {
         iseq_clear_ic_references(iseq);
         struct rb_iseq_constant_body *const body = ISEQ_BODY(iseq);
 	mjit_free_iseq(iseq); /* Notify MJIT */
@@ -618,19 +618,11 @@ rb_iseq_memsize(const rb_iseq_t *iseq)
     return size;
 }
 
-struct rb_iseq_constant_body *
-rb_iseq_constant_body_alloc(void)
-{
-    struct rb_iseq_constant_body *iseq_body;
-    iseq_body = ZALLOC(struct rb_iseq_constant_body);
-    return iseq_body;
-}
-
-static rb_iseq_t *
+rb_iseq_t *
 iseq_alloc(void)
 {
-    rb_iseq_t *iseq = iseq_imemo_alloc();
-    ISEQ_BODY(iseq) = rb_iseq_constant_body_alloc();
+    rb_iseq_t *iseq = (rb_iseq_t *)rb_imemo_new(imemo_iseq, 0, 0, 0, 0);
+    ISEQ_BODY(iseq) = ZALLOC(struct rb_iseq_constant_body);
     return iseq;
 }
 
@@ -1578,8 +1570,8 @@ iseqw_check(VALUE iseqw)
 {
     rb_iseq_t *iseq = DATA_PTR(iseqw);
 
-    if (!ISEQ_BODY(iseq)) {
-	rb_ibf_load_iseq_complete(iseq);
+    if (FL_TEST((VALUE)iseq, ISEQ_NOT_LOADED_YET)) {
+        rb_ibf_load_iseq_complete(iseq);
     }
 
     if (!ISEQ_BODY(iseq)->location.label) {

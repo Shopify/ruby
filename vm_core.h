@@ -523,7 +523,7 @@ static inline const rb_iseq_t *
 rb_iseq_check(const rb_iseq_t *iseq)
 {
 #if USE_LAZY_LOAD
-    if (ISEQ_BODY(iseq) == NULL) {
+    if (FL_TEST(iseq, ISEQ_NOT_LOADED_YET)) {
 	rb_iseq_complete((rb_iseq_t *)iseq);
     }
 #endif

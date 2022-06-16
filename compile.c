@@ -10702,8 +10702,6 @@ struct ibf_dump {
     struct ibf_dump_buffer *current_buffer;
 };
 
-rb_iseq_t * iseq_alloc(void);
-
 struct ibf_load_buffer {
     const char *buff;
     ibf_offset_t size;
@@ -11785,7 +11783,7 @@ ibf_load_location_str(const struct ibf_load *load, VALUE str_index)
 static void
 ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
 {
-    struct rb_iseq_constant_body *load_body = ISEQ_BODY(iseq) = rb_iseq_constant_body_alloc();
+    struct rb_iseq_constant_body *load_body = ISEQ_BODY(iseq);
 
     ibf_offset_t reading_pos = offset;
 
@@ -12830,7 +12828,7 @@ ibf_load_iseq(const struct ibf_load *load, const rb_iseq_t *index_iseq)
 	    return (rb_iseq_t *)iseqv;
 	}
 	else {
-	    rb_iseq_t *iseq = iseq_imemo_alloc();
+	    rb_iseq_t *iseq = iseq_alloc();
 #if IBF_ISEQ_DEBUG
 	    fprintf(stderr, "ibf_load_iseq: new iseq=%p\n", (void *)iseq);
 #endif
