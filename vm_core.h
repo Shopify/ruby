@@ -1117,7 +1117,8 @@ static inline struct rb_iseq_new_with_callback_callback_func *
 rb_iseq_new_with_callback_new_callback(
     void (*func)(rb_iseq_t *, struct iseq_link_anchor *, const void *), const void *ptr)
 {
-    VALUE memo = rb_imemo_new(imemo_ifunc, (VALUE)func, (VALUE)ptr, Qundef, Qfalse);
+    VALUE memo = rb_imemo_new(imemo_ifunc, (VALUE)func, (VALUE)ptr, Qundef, Qfalse,
+                              sizeof(struct rb_iseq_new_with_callback_callback_func));
     return (struct rb_iseq_new_with_callback_callback_func *)memo;
 }
 rb_iseq_t *rb_iseq_new_with_callback(const struct rb_iseq_new_with_callback_callback_func * ifunc,
@@ -1414,7 +1415,8 @@ VM_ENV_ENVVAL_PTR(const VALUE *ep)
 static inline const rb_env_t *
 vm_env_new(VALUE *env_ep, VALUE *env_body, unsigned int env_size, const rb_iseq_t *iseq)
 {
-    rb_env_t *env = (rb_env_t *)rb_imemo_new(imemo_env, (VALUE)env_ep, (VALUE)env_body, 0, (VALUE)iseq);
+    rb_env_t *env = (rb_env_t *)rb_imemo_new(imemo_env, (VALUE)env_ep, (VALUE)env_body, 0, (VALUE)iseq,
+                                             sizeof(rb_env_t));
     env->env_size = env_size;
     env_ep[VM_ENV_DATA_INDEX_ENV] = (VALUE)env;
     return env;

@@ -2880,9 +2880,8 @@ rb_imemo_name(enum imemo_type type)
 #undef rb_imemo_new
 
 VALUE
-rb_imemo_new(enum imemo_type type, VALUE v1, VALUE v2, VALUE v3, VALUE v0)
+rb_imemo_new(enum imemo_type type, VALUE v1, VALUE v2, VALUE v3, VALUE v0, size_t size)
 {
-    size_t size = sizeof(RVALUE);
     VALUE flags = T_IMEMO | (type << FL_USHIFT);
     return newobj_of(v0, flags, v1, v2, v3, TRUE, size);
 }
@@ -2943,9 +2942,9 @@ imemo_memsize(VALUE obj)
 
 #if IMEMO_DEBUG
 VALUE
-rb_imemo_new_debug(enum imemo_type type, VALUE v1, VALUE v2, VALUE v3, VALUE v0, const char *file, int line)
+rb_imemo_new_debug(enum imemo_type type, VALUE v1, VALUE v2, VALUE v3, VALUE v0, size_t size, const char *file, int line)
 {
-    VALUE memo = rb_imemo_new(type, v1, v2, v3, v0);
+    VALUE memo = rb_imemo_new(type, v1, v2, v3, v0, size);
     fprintf(stderr, "memo %p (type: %d) @ %s:%d\n", (void *)memo, imemo_type(memo), file, line);
     return memo;
 }

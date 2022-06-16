@@ -151,7 +151,7 @@ ISEQ_COMPILE_DATA_CLEAR(rb_iseq_t *iseq)
 static inline rb_iseq_t *
 iseq_imemo_alloc(void)
 {
-    return (rb_iseq_t *)rb_imemo_new(imemo_iseq, 0, 0, 0, 0);
+    return (rb_iseq_t *)rb_imemo_new(imemo_iseq, 0, 0, 0, 0, sizeof(rb_iseq_t));
 }
 
 VALUE rb_iseq_ibf_dump(const rb_iseq_t *iseq, VALUE opt);

@@ -212,7 +212,8 @@ vm_ci_new_(ID mid, unsigned int flag, unsigned int argc, const struct rb_callinf
                    (VALUE)mid,
                    (VALUE)flag,
                    (VALUE)argc,
-                   (VALUE)kwarg);
+                   (VALUE)kwarg,
+                   sizeof(struct rb_callinfo));
     if (debug) rp(ci);
     if (kwarg) {
         RB_DEBUG_COUNTER_INC(ci_kw);
@@ -297,7 +298,9 @@ vm_cc_new(VALUE klass,
           const struct rb_callable_method_entry_struct *cme,
           vm_call_handler call)
 {
-    const struct rb_callcache *cc = (const struct rb_callcache *)rb_imemo_new(imemo_callcache, (VALUE)cme, (VALUE)call, 0, klass);
+    const struct rb_callcache *cc =
+        (const struct rb_callcache *)rb_imemo_new(imemo_callcache, (VALUE)cme, (VALUE)call, 0, klass,
+                                                  sizeof(struct rb_callcache));
     RB_DEBUG_COUNTER_INC(cc_new);
     return cc;
 }

@@ -7341,7 +7341,7 @@ tokadd_string(struct parser_params *p,
 static inline rb_strterm_t *
 new_strterm(VALUE v1, VALUE v2, VALUE v3, VALUE v0)
 {
-    return (rb_strterm_t*)rb_imemo_new(imemo_parser_strterm, v1, v2, v3, v0);
+    return (rb_strterm_t *)rb_imemo_new(imemo_parser_strterm, v1, v2, v3, v0, sizeof(rb_strterm_t));
 }
 
 /* imemo_parser_strterm for literal */

@@ -254,7 +254,12 @@ vm_cref_new0(VALUE klass, rb_method_visibility_t visi, int module_func, rb_cref_
 
     VM_ASSERT(singleton || klass);
 
-    cref = (rb_cref_t *)rb_imemo_new(imemo_cref, klass, (VALUE)(use_prev_prev ? CREF_NEXT(prev_cref) : prev_cref), scope_visi.value, refinements);
+    cref = (rb_cref_t *)rb_imemo_new(imemo_cref,
+                                     klass,
+                                     (VALUE)(use_prev_prev ? CREF_NEXT(prev_cref) : prev_cref),
+                                     scope_visi.value,
+                                     refinements,
+                                     sizeof(rb_cref_t));
 
     if (pushed_by_eval) CREF_PUSHED_BY_EVAL_SET(cref);
     if (omod_shared) CREF_OMOD_SHARED_SET(cref);
