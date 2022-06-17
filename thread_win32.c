@@ -29,16 +29,20 @@ static volatile DWORD ruby_native_thread_key = TLS_OUT_OF_INDEXES;
 
 static int w32_wait_events(HANDLE *events, int count, DWORD timeout, rb_thread_t *th);
 
+#define RB_INTERNAL_THREAD_HOOK(event) // noop
+
 rb_internal_thread_event_hook_t *
 rb_internal_thread_add_event_hook(rb_internal_thread_event_callback callback, rb_event_flag_t internal_event, void *user_data)
 {
     // not implemented
+    return NULL;
 }
 
 bool
 rb_internal_thread_remove_event_hook(rb_internal_thread_event_hook_t * hook)
 {
     // not implemented
+    return false;
 }
 
 RBIMPL_ATTR_NORETURN()
@@ -134,8 +138,6 @@ thread_sched_to_waiting(struct rb_thread_sched *sched)
 {
     ReleaseMutex(sched->lock);
 }
-
-#define thread_sched_to_dead thread_sched_to_waiting
 
 static void
 thread_sched_yield(struct rb_thread_sched *sched, rb_thread_t *th)

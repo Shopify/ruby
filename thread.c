@@ -142,6 +142,7 @@ NORETURN(static void async_bug_fd(const char *mesg, int errno_arg, int fd));
 static int consume_communication_pipe(int fd);
 static int check_signals_nogvl(rb_thread_t *, int sigwait_fd);
 void rb_sigwait_fd_migrate(rb_vm_t *); /* process.c */
+static void rb_thread_storage_clear(rb_thread_t *th);
 
 #define eKillSignal INT2FIX(0)
 #define eTerminateSignal INT2FIX(1)
@@ -632,6 +633,14 @@ thread_do_start(rb_thread_t *th)
 
 void rb_ec_clear_current_thread_trace_func(const rb_execution_context_t *ec);
 
+static void
+thread_sched_to_dead(struct rb_thread_sched *sched, rb_thread_t *th)
+{
+    thread_sched_to_waiting(sched);
+    RB_INTERNAL_THREAD_HOOK(RUBY_INTERNAL_THREAD_EVENT_EXITED);
+    rb_thread_storage_clear(th);
+}
+
 static int
 thread_start_func_2(rb_thread_t *th, VALUE *stack_start)
 {
@@ -646,8 +655,10 @@ thread_start_func_2(rb_thread_t *th, VALUE *stack_start)
     RUBY_DEBUG_LOG("th:%u", rb_th_serial(th));
 
     // setup native thread
-    thread_sched_to_running(TH_SCHED(th), th);
     ruby_thread_set_native(th);
+    RB_INTERNAL_THREAD_HOOK(RUBY_INTERNAL_THREAD_EVENT_STARTED);
+
+    thread_sched_to_running(TH_SCHED(th), th);
 
     RUBY_DEBUG_LOG("got lock. th:%u", rb_th_serial(th));
 
@@ -771,12 +782,12 @@ thread_start_func_2(rb_thread_t *th, VALUE *stack_start)
         // after rb_ractor_living_threads_remove()
         // GC will happen anytime and this ractor can be collected (and destroy GVL).
         // So gvl_release() should be before it.
-        thread_sched_to_dead(TH_SCHED(th));
+        thread_sched_to_dead(TH_SCHED(th), th);
         rb_ractor_living_threads_remove(th->ractor, th);
     }
     else {
         rb_ractor_living_threads_remove(th->ractor, th);
-        thread_sched_to_dead(TH_SCHED(th));
+        thread_sched_to_dead(TH_SCHED(th), th);
     }
 
     return 0;
@@ -5712,4 +5723,76 @@ rb_uninterruptible(VALUE (*b_proc)(VALUE), VALUE data)
 
     RUBY_VM_CHECK_INTS(cur_th->ec);
     return ret;
+}
+
+static rb_atomic_t rb_thread_storage_slots = 0;
+static rb_thread_storage_destructor *rb_thread_storage_destructors = NULL;
+
+rb_thread_storage_key_t
+rb_thread_storage_create_key(rb_thread_storage_destructor func)
+{
+    rb_thread_storage_key_t new_key = (rb_thread_storage_key_t)rb_thread_storage_slots;
+    rb_thread_storage_destructor *old_destructors = rb_thread_storage_destructors;
+    rb_thread_storage_destructor *destructors = ALLOC_N(rb_thread_storage_destructor, rb_thread_storage_slots + 1);
+    if (old_destructors) {
+        MEMCPY(destructors, old_destructors, rb_thread_storage_destructor, rb_thread_storage_slots);
+    }
+    destructors[new_key] = func;
+
+    ATOMIC_PTR_EXCHANGE(rb_thread_storage_destructors, destructors);
+    ATOMIC_INC(rb_thread_storage_slots);
+
+    if (old_destructors) {
+        // TODO: do we have an race condition here?
+        // e.g. is `rb_thread_storage_destructors[key]` atomic? I don't think so because it is `laod(rb_thread_storage_destructors + key)`
+        // The solution might be to not have key destructors and use thread EXIT hook instead.
+        xfree(old_destructors);
+    }
+    return new_key;
+}
+
+static void
+rb_thread_storage_clear(rb_thread_t *th) {
+    for (unsigned int index = 0; index < th->store_size; index++) {
+        if (rb_thread_storage_destructors[index] && th->store[index]) {
+            rb_thread_storage_destructors[index](th->store[index]);
+        }
+        th->store[index] = NULL;
+    }
+}
+
+void *
+rb_thread_storage_get(rb_thread_storage_key_t key)
+{
+    rb_thread_t *cur_th = GET_THREAD();
+    if (cur_th->store_size > key) {
+        return cur_th->store[key];
+    }
+    return NULL;
+}
+
+bool
+rb_thread_storage_set(rb_thread_storage_key_t key, void *data)
+{
+    rb_thread_t *cur_th = GET_THREAD();
+
+    if (rb_thread_storage_slots < key) {
+        return false;
+    }
+
+    if (cur_th->store_size <= key) {
+        volatile unsigned int total_slots = rb_thread_storage_slots;
+        VM_ASSERT(total_slots > cur_th->store_size);
+
+        void **new_store = ZALLOC_N(void *, total_slots);
+        if (cur_th->store) {
+            MEMCPY(new_store, cur_th->store, rb_thread_storage_destructor, cur_th->store_size);
+            xfree(cur_th->store);
+        }
+        cur_th->store = new_store;
+        cur_th->store_size = total_slots;
+    }
+
+    cur_th->store[key] = data;
+    return true;
 }

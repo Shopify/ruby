@@ -230,6 +230,20 @@ rb_internal_thread_event_hook_t *rb_internal_thread_add_event_hook(
 bool rb_internal_thread_remove_event_hook(
         rb_internal_thread_event_hook_t * hook);
 
+
+typedef unsigned int rb_thread_storage_key_t; // TODO: make opaque? how?
+
+typedef void (*rb_thread_storage_destructor)(void *data);
+
+// TODO: doc. MUST be called from GVL area, but to do during `init`
+rb_thread_storage_key_t rb_thread_storage_create_key(rb_thread_storage_destructor func);
+
+// TODO: doc
+void *rb_thread_storage_get(rb_thread_storage_key_t key);
+
+// TODO: doc
+bool rb_thread_storage_set(rb_thread_storage_key_t key, void *data);
+
 RBIMPL_SYMBOL_EXPORT_END()
 
 #endif /* RUBY_THREAD_H */
