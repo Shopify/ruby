@@ -156,6 +156,28 @@ pub fn br(cb: &mut CodeBlock, rn: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
+/// CMP - compare rn and rm, update flags
+pub fn cmp(cb: &mut CodeBlock, rn: A64Opnd, rm: A64Opnd) {
+    let bytes: [u8; 4] = match (rn, rm) {
+        (A64Opnd::Reg(rn), A64Opnd::Reg(rm)) => {
+            assert!(
+                rn.num_bits == rm.num_bits,
+                "All operands must be of the same size."
+            );
+
+            DataReg::cmp(rn.reg_no, rm.reg_no, rn.num_bits).into()
+        },
+        (A64Opnd::Reg(rn), A64Opnd::UImm(imm12)) => {
+            assert!(uimm_fits_bits(imm12, 12), "The immediate operand must be 12 bits or less.");
+
+            DataImm::cmp(rn.reg_no, imm12 as u16, rn.num_bits).into()
+        },
+        _ => panic!("Invalid operand combination to cmp instruction."),
+    };
+
+    cb.write_bytes(&bytes);
+}
+
 /// LDADDAL - atomic add with acquire and release semantics
 pub fn ldaddal(cb: &mut CodeBlock, rs: A64Opnd, rt: A64Opnd, rn: A64Opnd) {
     let bytes: [u8; 4] = match (rs, rt, rn) {
@@ -387,6 +409,16 @@ mod tests {
     #[test]
     fn test_br() {
         check_bytes("80021fd6", |cb| br(cb, X20));
+    }
+
+    #[test]
+    fn test_cmp_register() {
+        check_bytes("5f010beb", |cb| cmp(cb, X10, X11));
+    }
+
+    #[test]
+    fn test_cmp_immediate() {
+        check_bytes("5f3900f1", |cb| cmp(cb, X10, A64Opnd::new_uimm(14)));
     }
 
     #[test]
