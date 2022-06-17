@@ -6,6 +6,7 @@ mod data_imm;
 mod data_reg;
 mod load;
 mod logical_imm;
+mod logical_reg;
 mod mov;
 mod sf;
 mod store;
@@ -19,6 +20,7 @@ use data_imm::DataImm;
 use data_reg::DataReg;
 use load::Load;
 use logical_imm::LogicalImm;
+use logical_reg::LogicalReg;
 use mov::Mov;
 use store::Store;
 
@@ -89,6 +91,14 @@ pub fn adds(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
 /// AND - and rn and rm, put the result in rd, don't update flags
 pub fn and(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
     let bytes: [u8; 4] = match (rd, rn, rm) {
+        (A64Opnd::Reg(rd), A64Opnd::Reg(rn), A64Opnd::Reg(rm)) => {
+            assert!(
+                rd.num_bits == rn.num_bits && rn.num_bits == rm.num_bits,
+                "All operands must be of the same size."
+            );
+
+            LogicalReg::and(rd.reg_no, rn.reg_no, rm.reg_no, rd.num_bits).into()
+        },
         (A64Opnd::Reg(rd), A64Opnd::Reg(rn), A64Opnd::UImm(imm)) => {
             assert!(rd.num_bits == rn.num_bits, "rd and rn must be of the same size.");
 
@@ -103,6 +113,14 @@ pub fn and(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
 /// ANDS - and rn and rm, put the result in rd, update flags
 pub fn ands(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
     let bytes: [u8; 4] = match (rd, rn, rm) {
+        (A64Opnd::Reg(rd), A64Opnd::Reg(rn), A64Opnd::Reg(rm)) => {
+            assert!(
+                rd.num_bits == rn.num_bits && rn.num_bits == rm.num_bits,
+                "All operands must be of the same size."
+            );
+
+            LogicalReg::ands(rd.reg_no, rn.reg_no, rm.reg_no, rd.num_bits).into()
+        },
         (A64Opnd::Reg(rd), A64Opnd::Reg(rn), A64Opnd::UImm(imm)) => {
             assert!(rd.num_bits == rn.num_bits, "rd and rn must be of the same size.");
 
@@ -273,6 +291,11 @@ pub fn ret(cb: &mut CodeBlock, rn: A64Opnd) {
 /// TST - test the bits of a register against a mask, then update flags
 pub fn tst(cb: &mut CodeBlock, rn: A64Opnd, rm: A64Opnd) {
     let bytes: [u8; 4] = match (rn, rm) {
+        (A64Opnd::Reg(rn), A64Opnd::Reg(rm)) => {
+            assert!(rn.num_bits == rm.num_bits, "All operands must be of the same size.");
+
+            LogicalReg::tst(rn.reg_no, rm.reg_no, rn.num_bits).into()
+        },
         (A64Opnd::Reg(rn), A64Opnd::UImm(imm)) => {
             LogicalImm::tst(rn.reg_no, imm.try_into().unwrap(), rn.num_bits).into()
         },
@@ -337,8 +360,18 @@ mod tests {
     }
 
     #[test]
+    fn test_and_register() {
+        check_bytes("2000028a", |cb| and(cb, X0, X1, X2));
+    }
+
+    #[test]
     fn test_and_immediate() {
         check_bytes("20084092", |cb| and(cb, X0, X1, A64Opnd::new_uimm(7)));
+    }
+
+    #[test]
+    fn test_ands_register() {
+        check_bytes("200002ea", |cb| ands(cb, X0, X1, X2));
     }
 
     #[test]
@@ -409,6 +442,11 @@ mod tests {
     #[test]
     fn test_subs_immediate() {
         check_bytes("201c00f1", |cb| subs(cb, X0, X1, A64Opnd::new_uimm(7)));
+    }
+
+    #[test]
+    fn test_tst_register() {
+        check_bytes("1f0001ea", |cb| tst(cb, X0, X1));
     }
 
     #[test]
