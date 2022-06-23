@@ -312,7 +312,9 @@ fn jit_prepare_routine_call(
 
     // In case the routine calls Ruby methods, it can set local variables
     // through Kernel#binding and other means.
-    ctx.clear_local_types();
+    if ! get_option!(optimistic_type_prop) {
+        ctx.clear_local_types();
+    }
 }
 
 /// Record the current codeblock write position for rewriting into a jump into
@@ -1801,7 +1803,7 @@ fn gen_jbe_to_target0(
 }
 
 // Generate a jump to a stub that recompiles the current YARV instruction on failure.
-// When depth_limitk is exceeded, generate a jump to a side exit.
+// When depth_limit is exceeded, generate a jump to a side exit.
 fn jit_chain_guard(
     jcc: JCCKinds,
     jit: &JITState,
@@ -4078,7 +4080,9 @@ fn gen_send_cfunc(
     add(cb, ec_cfp_opnd, uimm_opnd(RUBY_SIZEOF_CONTROL_FRAME as u64));
 
     // cfunc calls may corrupt types
-    ctx.clear_local_types();
+    if ! get_option!(optimistic_type_prop) {
+        ctx.clear_local_types();
+    }
 
     // Note: the return block of gen_send_iseq() has ctx->sp_offset == 1
     // which allows for sharing the same successor.
@@ -4598,7 +4602,9 @@ fn gen_send_iseq(
     callee_ctx.upgrade_opnd_type(SelfOpnd, recv_type);
 
     // The callee might change locals through Kernel#binding and other means.
-    ctx.clear_local_types();
+    if ! get_option!(optimistic_type_prop) {
+        ctx.clear_local_types();
+    }
 
     // Pop arguments and receiver in return context, push the return value
     // After the return, sp_offset will be 1. The codegen for leave writes
@@ -5158,7 +5164,9 @@ fn gen_invokesuper(
     assume_method_lookup_stable(jit, ocb, comptime_superclass, cme);
 
     // Method calls may corrupt types
-    ctx.clear_local_types();
+    if ! get_option!(optimistic_type_prop) {
+        ctx.clear_local_types();
+    }
 
     match cme_def_type {
         VM_METHOD_TYPE_ISEQ => gen_send_iseq(jit, ctx, cb, ocb, ci, cme, block, argc),

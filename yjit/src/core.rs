@@ -707,9 +707,14 @@ pub fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context {
         // Produce a generic context that stores no type information,
         // but still respects the stack_size and sp_offset constraints.
         // This new context will then match all future requests.
-        let mut generic_ctx = Context::default();
-        generic_ctx.stack_size = ctx.stack_size;
-        generic_ctx.sp_offset = ctx.sp_offset;
+        let generic_ctx = if get_option!(optimistic_type_prop) {
+            *ctx
+        } else {
+            let mut new_ctx = Context::default();
+            new_ctx.stack_size = ctx.stack_size;
+            new_ctx.sp_offset = ctx.sp_offset;
+            new_ctx
+        };
 
         // Mutate the incoming context
         return generic_ctx;

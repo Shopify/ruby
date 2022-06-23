@@ -17,6 +17,12 @@ pub struct Options {
     // Disable the propagation of type information
     pub no_type_prop: bool,
 
+    // Propagate type information optimistically, assuming no variable
+    // will change type due to writes through a closure, binding or
+    // C extension. If writes like that happen, this optimisation can create
+    // incorrect generated code.
+    pub optimistic_type_prop: bool,
+
     // Maximum number of versions per block
     // 1 means always create generic versions
     pub max_versions: usize,
@@ -46,6 +52,7 @@ pub static mut OPTIONS: Options = Options {
     call_threshold: 10,
     greedy_versioning: false,
     no_type_prop: false,
+    optimistic_type_prop: false,
     max_versions: 4,
     gen_stats: false,
     gen_trace_exits: false,
@@ -112,6 +119,7 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
         ("dump-insns", "") => unsafe { OPTIONS.dump_insns = true },
         ("verify-ctx", "") => unsafe { OPTIONS.verify_ctx = true },
         ("global-constant-state", "") => unsafe { OPTIONS.global_constant_state = true },
+        ("optimistic-type-prop", "") => unsafe { OPTIONS.optimistic_type_prop = true },
 
         // Option name not recognized
         _ => {
