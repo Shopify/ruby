@@ -96,6 +96,10 @@ MJIT_SYMBOL_EXPORT_BEGIN
 int rb_ec_obj_respond_to(struct rb_execution_context_struct *ec, VALUE obj, ID id, int priv);
 MJIT_SYMBOL_EXPORT_END
 
+/* vm_trace.c */
+void *rb_tracepoint_override_path(VALUE path, VALUE (*func)(VALUE), VALUE argument);
+void rb_tracepoint_override_line(int lineno);
+
 /* vm_dump.c */
 void rb_print_backtrace(void);
 
