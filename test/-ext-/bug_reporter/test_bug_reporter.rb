@@ -20,6 +20,8 @@ class TestBugReporter < Test::Unit::TestCase
     no_core = "Process.setrlimit(Process::RLIMIT_CORE, 0); " if defined?(Process.setrlimit) && defined?(Process::RLIMIT_CORE)
     args = ["--disable-gems", "-r-test-/bug_reporter",
             "-C", tmpdir]
+    args << "--mjit" if defined?(RubyVM::MJIT.enabled?) && RubyVM::MJIT.enabled?
+    args << "--yjit" if defined?(RubyVM::YJIT.enabled?) && RubyVM::YJIT.enabled?
     stdin = "#{no_core}register_sample_bug_reporter(12345); Process.kill :SEGV, $$"
     assert_in_out_err(args, stdin, [], expected_stderr, encoding: "ASCII-8BIT")
   ensure
