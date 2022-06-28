@@ -435,6 +435,10 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_interrupt_in_finalizer
+    if defined?(RubyVM::MJIT.enabled?) && RubyVM::MJIT.enabled?
+      omit "This test fails when the child process is started with --mjit"
+    end
+
     bug10595 = '[ruby-core:66825] [Bug #10595]'
     src = <<-'end;'
       Signal.trap(:INT, 'DEFAULT')

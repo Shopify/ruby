@@ -159,6 +159,14 @@ module EnvUtil
     }
 
     args = [args] if args.kind_of?(String)
+    args.prepend case RUBY_DESCRIPTION
+    when /\+MJIT/
+      "--mjit"
+    when /\+YJIT/
+      "--yjit"
+    else
+      ""
+    end
     pid = spawn(child_env, *precommand, rubybin, *args, opt)
     in_c.close
     out_c&.close
