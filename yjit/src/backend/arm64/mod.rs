@@ -128,36 +128,26 @@ impl Assembler
                         cb.add_comment(&insn.text.as_ref().unwrap());
                     }
                 },
-
-                // Write the label at the current position
                 Op::Label => {
                     cb.write_label(insn.target.unwrap().unwrap_label_idx());
                 },
-
                 Op::Add => {
-                    add(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
+                    add(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
                 },
-
                 Op::Sub => {
-                    sub(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
+                    sub(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
                 },
-
                 Op::And => {
-                    and(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
+                    and(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
                 },
-
                 Op::Not => {
-                    // not(cb, insn.opnds[0].into())
-                    todo!();
+                    mvn(cb, insn.out.into(), insn.opnds[0].into());
                 },
-
                 Op::Store => {
-                    // mov(cb, insn.opnds[0].into(), insn.opnds[1].into())
-                    todo!();
+                    stur(cb, insn.opnds[0].into(), insn.opnds[1].into());
                 },
-
-                // This assumes only load instructions can contain references to GC'd Value operands
                 Op::Load => {
+                    // This assumes only load instructions can contain references to GC'd Value operands
                     // mov(cb, insn.out.into(), insn.opnds[0].into());
 
                     // // If the value being loaded is a heap object
@@ -170,29 +160,20 @@ impl Assembler
                     // }
                     todo!();
                 },
-
                 Op::Mov => {
-                    mov(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    mov(cb, insn.opnds[0].into(), insn.opnds[1].into());
                 },
-
-                // Load effective address
                 Op::Lea => {
-                    // lea(cb, insn.out.into(), insn.opnds[0].into())
-                    todo!();
+                    ldur(cb, insn.out.into(), insn.opnds[0].into());
                 },
-
-                // Push and pop to the C stack
                 Op::CPush => {
                     add(cb, X31, X31, A64Opnd::new_uimm(16));
                     mov(cb, A64Opnd::new_mem(64, X31, 0), insn.opnds[0].into());
                 },
-
                 Op::CPop => {
                     mov(cb, insn.out.into(), A64Opnd::new_mem(64, X31, 0));
                     sub(cb, X31, X31, A64Opnd::new_uimm(16));
                 },
-
-                // C function call
                 Op::CCall => {
                     // Temporary
                     assert!(insn.opnds.len() < C_ARG_REGS.len());
@@ -218,31 +199,23 @@ impl Assembler
                         br(cb, X29);
                     }
                 },
-
                 Op::CRet => {
                     // TODO: bias allocation towards return register
                     if insn.opnds[0] != Opnd::Reg(C_RET_REG) {
                         mov(cb, C_RET_OPND.into(), insn.opnds[0].into());
                     }
 
-                    ret(cb, A64Opnd::None)
-                }
-
-                // Compare
+                    ret(cb, A64Opnd::None);
+                },
                 Op::Cmp => {
-                    cmp(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    cmp(cb, insn.opnds[0].into(), insn.opnds[1].into());
                 },
-
-                // Test and set flags
                 Op::Test => {
-                    tst(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    tst(cb, insn.opnds[0].into(), insn.opnds[1].into());
                 },
-
                 Op::JmpOpnd => {
                     br(cb, insn.opnds[0].into())
                 },
-
-                // Conditional jump to a label
                 Op::Jmp => {
                     // match insn.target.unwrap() {
                     //     Target::CodePtr(code_ptr) => jmp_ptr(cb, code_ptr),
@@ -250,8 +223,7 @@ impl Assembler
                     //     _ => unreachable!()
                     // }
                     todo!();
-                }
-
+                },
                 Op::Je => {
                     // match insn.target.unwrap() {
                     //     Target::CodePtr(code_ptr) => je_ptr(cb, code_ptr),
@@ -259,8 +231,10 @@ impl Assembler
                     //     _ => unreachable!()
                     // }
                     todo!();
-                }
-
+                },
+                Op::Jbe => {
+                    todo!();
+                },
                 Op::Jz => {
                     // match insn.target.unwrap() {
                     //     Target::CodePtr(code_ptr) => jz_ptr(cb, code_ptr),
@@ -268,8 +242,7 @@ impl Assembler
                     //     _ => unreachable!()
                     // }
                     todo!();
-                }
-
+                },
                 Op::Jnz => {
                     // match insn.target.unwrap() {
                     //     Target::CodePtr(code_ptr) => jnz_ptr(cb, code_ptr),
@@ -277,8 +250,7 @@ impl Assembler
                     //     _ => unreachable!()
                     // }
                     todo!();
-                }
-
+                },
                 Op::Jo => {
                     // match insn.target.unwrap() {
                     //     Target::CodePtr(code_ptr) => jo_ptr(cb, code_ptr),
@@ -286,18 +258,13 @@ impl Assembler
                     //     _ => unreachable!()
                     // }
                     todo!();
-                }
-
-                // Atomically increment a counter at a given memory location
+                },
                 Op::IncrCounter => {
                     ldaddal(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
                 },
-
                 Op::Breakpoint => {
                     brk(cb, A64Opnd::None)
-                },
-
-                _ => panic!("unsupported instruction passed to arm64 backend: {:?}", insn.op)
+                }
             };
         }
 
