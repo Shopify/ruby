@@ -34,14 +34,10 @@ pub struct A64Mem
 }
 
 impl A64Mem {
-    pub fn new(reg: A64Opnd, disp: i32) -> Self {
+    pub fn new(num_bits: u8, reg: A64Opnd, disp: i32) -> Self {
         match reg {
             A64Opnd::Reg(reg) => {
-                Self {
-                    num_bits: reg.num_bits,
-                    base_reg_no: reg.reg_no,
-                    disp
-                }
+                Self { num_bits, base_reg_no: reg.reg_no, disp }
             },
             _ => panic!("Expected register operand")
         }
@@ -79,8 +75,8 @@ impl A64Opnd {
     }
 
     /// Creates a new memory operand.
-    pub fn new_mem(reg: A64Opnd, disp: i32) -> Self {
-        A64Opnd::Mem(A64Mem::new(reg, disp))
+    pub fn new_mem(num_bits: u8, reg: A64Opnd, disp: i32) -> Self {
+        A64Opnd::Mem(A64Mem::new(num_bits, reg, disp))
     }
 
     /// Convenience function to check if this operand is a register.
@@ -137,6 +133,7 @@ pub const X27: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 27 });
 pub const X28: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 28 });
 pub const X29: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 29 });
 pub const X30: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 30 });
+pub const X31: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 31 });
 
 // 32-bit registers
 pub const W0: A64Reg = A64Reg { num_bits: 32, reg_no: 0 };
@@ -170,6 +167,7 @@ pub const W27: A64Reg = A64Reg { num_bits: 32, reg_no: 27 };
 pub const W28: A64Reg = A64Reg { num_bits: 32, reg_no: 28 };
 pub const W29: A64Reg = A64Reg { num_bits: 32, reg_no: 29 };
 pub const W30: A64Reg = A64Reg { num_bits: 32, reg_no: 30 };
+pub const W31: A64Reg = A64Reg { num_bits: 32, reg_no: 31 };
 
 // C argument registers
 pub const C_ARG_REGS: [A64Opnd; 4] = [X0, X1, X2, X3];

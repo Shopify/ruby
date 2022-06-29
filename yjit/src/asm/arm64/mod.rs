@@ -555,7 +555,7 @@ mod tests {
 
     #[test]
     fn test_ldur() {
-        check_bytes("20b047f8", |cb| ldur(cb, X0, A64Opnd::new_mem(X1, 123)));
+        check_bytes("20b047f8", |cb| ldur(cb, X0, A64Opnd::new_mem(64, X1, 123)));
     }
 
     #[test]
@@ -620,7 +620,7 @@ mod tests {
 
     #[test]
     fn test_stur() {
-        check_bytes("6a0108f8", |cb| stur(cb, X10, A64Opnd::new_mem(X11, 128)));
+        check_bytes("6a0108f8", |cb| stur(cb, X10, A64Opnd::new_mem(64, X11, 128)));
     }
 
     #[test]

@@ -183,13 +183,13 @@ impl Assembler
 
                 // Push and pop to the C stack
                 Op::CPush => {
-                    // push(cb, insn.opnds[0].into())
-                    todo!();
+                    add(cb, X31, X31, A64Opnd::new_uimm(16));
+                    mov(cb, A64Opnd::new_mem(64, X31, 0), insn.opnds[0].into());
                 },
 
                 Op::CPop => {
-                    // pop(cb, insn.opnds[0].into())
-                    todo!();
+                    mov(cb, insn.out.into(), A64Opnd::new_mem(64, X31, 0));
+                    sub(cb, X31, X31, A64Opnd::new_uimm(16));
                 },
 
                 // C function call
@@ -202,7 +202,21 @@ impl Assembler
                         mov(cb, C_ARG_REGS[idx], insn.opnds[idx].into());
                     }
 
-                    todo!();
+                    // Calculate how far we're jumping in # of bytes
+                    let src_addr = cb.get_write_ptr().into_i64() + 4;
+                    let dst_addr = insn.target.unwrap().unwrap_fun_ptr();
+                    let delta = (dst_addr as i64) - src_addr;
+
+                    if delta < 128 * 1024 * 1024 && delta >= -128 * 1024 * 1024 {
+                        // Encode how far we're jumping in # of instructions
+                        bl(cb, A64Opnd::new_imm(delta / 4));
+                    } else {
+                        // Since this is too far to jump directly, we'll load
+                        // the value into a register and jump to it
+                        mov(cb, X30, A64Opnd::new_uimm(src_addr as u64));
+                        mov(cb, X29, A64Opnd::new_uimm(dst_addr as u64));
+                        br(cb, X29);
+                    }
                 },
 
                 Op::CRet => {
