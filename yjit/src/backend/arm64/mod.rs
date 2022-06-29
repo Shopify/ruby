@@ -195,25 +195,23 @@ impl Assembler
                 // C function call
                 Op::CCall => {
                     // Temporary
-                    // assert!(insn.opnds.len() < C_ARG_REGS.len());
+                    assert!(insn.opnds.len() < C_ARG_REGS.len());
 
                     // For each operand
-                    // for (idx, opnd) in insn.opnds.iter().enumerate() {
-                    //     mov(cb, C_ARG_REGS[idx], insn.opnds[idx].into());
-                    // }
+                    for (idx, opnd) in insn.opnds.iter().enumerate() {
+                        mov(cb, C_ARG_REGS[idx], insn.opnds[idx].into());
+                    }
 
                     todo!();
                 },
 
                 Op::CRet => {
                     // TODO: bias allocation towards return register
-                    // if insn.opnds[0] != Opnd::Reg(C_RET_REG) {
-                    //     mov(cb, RAX, insn.opnds[0].into());
-                    // }
+                    if insn.opnds[0] != Opnd::Reg(C_RET_REG) {
+                        mov(cb, C_RET_OPND.into(), insn.opnds[0].into());
+                    }
 
-                    // ret(cb);
-
-                    todo!();
+                    ret(cb, A64Opnd::None)
                 }
 
                 // Compare
@@ -227,8 +225,7 @@ impl Assembler
                 },
 
                 Op::JmpOpnd => {
-                    // jmp_rm(cb, insn.opnds[0].into())
-                    todo!();
+                    br(cb, insn.opnds[0].into())
                 },
 
                 // Conditional jump to a label
