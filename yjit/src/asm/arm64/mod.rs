@@ -157,6 +157,20 @@ pub fn br(cb: &mut CodeBlock, rn: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
+/// BRK - create a breakpoint
+pub fn brk(cb: &mut CodeBlock, imm16: A64Opnd) {
+    let bytes: [u8; 4] = match imm16 {
+        A64Opnd::None => Breakpoint::brk(0).into(),
+        A64Opnd::UImm(imm16) => {
+            assert!(uimm_fits_bits(imm16, 16), "The immediate operand must be 16 bits or less.");
+            Breakpoint::brk(imm16 as u16).into()
+        },
+        _ => panic!("Invalid operand combination to brk instruction.")
+    };
+
+    cb.write_bytes(&bytes);
+}
+
 /// CMP - compare rn and rm, update flags
 pub fn cmp(cb: &mut CodeBlock, rn: A64Opnd, rm: A64Opnd) {
     let bytes: [u8; 4] = match (rn, rm) {
@@ -445,6 +459,16 @@ mod tests {
     #[test]
     fn test_br() {
         check_bytes("80021fd6", |cb| br(cb, X20));
+    }
+
+    #[test]
+    fn test_brk_none() {
+        check_bytes("000020d4", |cb| brk(cb, A64Opnd::None));
+    }
+
+    #[test]
+    fn test_brk_uimm() {
+        check_bytes("c00120d4", |cb| brk(cb, A64Opnd::new_uimm(14)));
     }
 
     #[test]

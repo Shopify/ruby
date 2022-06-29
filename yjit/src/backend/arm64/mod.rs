@@ -262,8 +262,7 @@ impl Assembler
                 },
 
                 Op::Breakpoint => {
-                    // int3(cb)
-                    todo!();
+                    brk(cb, A64Opnd::None)
                 },
 
                 _ => panic!("unsupported instruction passed to arm64 backend: {:?}", insn.op)
