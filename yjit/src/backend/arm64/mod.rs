@@ -54,46 +54,29 @@ impl Assembler
     }
 
     /// Split platform-specific instructions
+    /// The transformations done here are meant to make our lives simpler in later
+    /// stages of the compilation pipeline.
+    /// Here we may want to make sure that all instructions (except load and store)
+    /// have no memory operands.
     fn arm64_split(mut self) -> Assembler
     {
-        // The transformations done here are meant to make our lives simpler in later
-        // stages of the compilation pipeline.
-        // Here we may want to make sure that all instructions (except load and store)
-        // have no memory operands.
-
-        let live_ranges: Vec<usize> = std::mem::take(&mut self.live_ranges);
-
         self.forward_pass(|asm, index, op, opnds, target| {
             match op {
-                Op::Add | Op::Sub | Op::And | Op::Not => {
-                    match opnds[0] {
-                        // Instruction output whose live range spans beyond this instruction
-                        Opnd::InsnOut{idx, ..} => {
-                            if live_ranges[idx] > index {
-                                let opnd0 = asm.load(opnds[0]);
-                                let mut new_opnds = vec![opnd0];
-                                new_opnds.extend_from_slice(&opnds[1..]);
-                                asm.push_insn(op, new_opnds, None);
-                                return;
-                            }
-                        },
+                Op::IncrCounter => {
+                    let new_opnds: Vec<Opnd> = opnds.into_iter().map(|opnd| {
+                        match opnd {
+                            Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
+                            Opnd::Mem(_) | Opnd::Imm(_) | Opnd::UImm(_) => asm.load(opnd),
+                            _ => panic!("Unsupported operand type")
+                        }
+                    }).collect();
 
-                        // We have to load memory and register operands to avoid corrupting them
-                        Opnd::Mem(_) | Opnd::Reg(_) => {
-                            let opnd0 = asm.load(opnds[0]);
-                            let mut new_opnds = vec![opnd0];
-                            new_opnds.extend_from_slice(&opnds[1..]);
-                            asm.push_insn(op, new_opnds, None);
-                            return;
-                        },
-
-                        _ => {}
-                    }
+                    asm.push_insn(op, new_opnds, target);
                 },
-                _ => {}
+                _ => {
+                    asm.push_insn(op, opnds, target);
+                }
             };
-
-            asm.push_insn(op, opnds, target);
         })
     }
 
@@ -130,18 +113,15 @@ impl Assembler
                 },
 
                 Op::Add => {
-                    // add(cb, insn.opnds[0].into(), insn.opnds[1].into())
-                    todo!();
+                    add(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
                 },
 
                 Op::Sub => {
-                    // sub(cb, insn.opnds[0].into(), insn.opnds[1].into())
-                    todo!();
+                    sub(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
                 },
 
                 Op::And => {
-                    // and(cb, insn.opnds[0].into(), insn.opnds[1].into())
-                    todo!();
+                    and(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
                 },
 
                 Op::Not => {
@@ -217,14 +197,12 @@ impl Assembler
 
                 // Compare
                 Op::Cmp => {
-                    // test(cb, insn.opnds[0].into(), insn.opnds[1].into())
-                    todo!();
+                    cmp(cb, insn.opnds[0].into(), insn.opnds[1].into())
                 },
 
                 // Test and set flags
                 Op::Test => {
-                    // test(cb, insn.opnds[0].into(), insn.opnds[1].into())
-                    todo!();
+                    tst(cb, insn.opnds[0].into(), insn.opnds[1].into())
                 },
 
                 Op::JmpOpnd => {
@@ -280,11 +258,7 @@ impl Assembler
 
                 // Atomically increment a counter at a given memory location
                 Op::IncrCounter => {
-                    // assert!(matches!(insn.opnds[0], Opnd::Mem(_)));
-                    // assert!(matches!(insn.opnds[1], Opnd::UImm(_) | Opnd::Imm(_) ) );
-                    // write_lock_prefix(cb);
-                    // add(cb, insn.opnds[0].into(), insn.opnds[1].into());
-                    todo!();
+                    ldaddal(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
                 },
 
                 Op::Breakpoint => {
