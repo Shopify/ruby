@@ -6,11 +6,11 @@ mod arg;
 mod inst;
 mod opnd;
 
-use arg::*;
 use inst::*;
 
-// We're going to make this public to make using these things easier in the
+// We're going to make these public to make using these things easier in the
 // backend (so they don't have to have knowledge about the submodule).
+pub use arg::*;
 pub use opnd::*;
 
 /// Checks that a signed value fits within the specified number of bits.
@@ -250,6 +250,23 @@ pub fn lsr(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, shift: A64Opnd) {
             ShiftImm::lsr(rd.reg_no, rn.reg_no, uimm as u8, rd.num_bits).into()
         },
         _ => panic!("Invalid operands combination to lsr instruction")
+    };
+
+    cb.write_bytes(&bytes);
+}
+
+/// MOV - move a value in a register to another register
+pub fn mov(cb: &mut CodeBlock, rd: A64Opnd, rm: A64Opnd) {
+    let bytes: [u8; 4] = match (rd, rm) {
+        (A64Opnd::Reg(rd), A64Opnd::Reg(rm)) => {
+            assert!(rd.num_bits == rm.num_bits, "Expected registers to be the same size");
+
+            LogicalReg::mov(rd.reg_no, rm.reg_no, rd.num_bits).into()
+        },
+        (A64Opnd::Reg(rd), A64Opnd::UImm(imm)) => {
+            LogicalImm::mov(rd.reg_no, imm.try_into().unwrap(), rd.num_bits).into()
+        },
+        _ => panic!("Invalid operand combination to mov instruction")
     };
 
     cb.write_bytes(&bytes);
@@ -521,6 +538,16 @@ mod tests {
     #[test]
     fn test_lsr() {
         check_bytes("6afd4ed3", |cb| lsr(cb, X10, X11, A64Opnd::new_uimm(14)));
+    }
+
+    #[test]
+    fn test_mov_registers() {
+        check_bytes("ea030baa", |cb| mov(cb, X10, X11));
+    }
+
+    #[test]
+    fn test_mov_immediate() {
+        check_bytes("eaf300b2", |cb| mov(cb, X10, A64Opnd::new_uimm(0x5555555555555555)));
     }
 
     #[test]

@@ -66,6 +66,12 @@ impl LogicalReg {
         Self { rd, rn, imm6: 0, rm, shift: Shift::LSL, opc: Opc::Ands, sf: num_bits.into() }
     }
 
+    /// MOV (register)
+    /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/MOV--register---Move--register---an-alias-of-ORR--shifted-register--?lang=en
+    pub fn mov(rd: u8, rm: u8, num_bits: u8) -> Self {
+        Self { rd, rn: 0b11111, imm6: 0, rm, shift: Shift::LSL, opc: Opc::Orr, sf: num_bits.into() }
+    }
+
     /// ORR (shifted register)
     /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/ORR--shifted-register---Bitwise-OR--shifted-register--
     pub fn orr(rd: u8, rn: u8, rm: u8, num_bits: u8) -> Self {
@@ -123,6 +129,13 @@ mod tests {
         let inst = LogicalReg::ands(0, 1, 2, 64);
         let result: u32 = inst.into();
         assert_eq!(0xea020020, result);
+    }
+
+    #[test]
+    fn test_mov() {
+        let inst = LogicalReg::mov(0, 1, 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xaa0103e0, result);
     }
 
     #[test]

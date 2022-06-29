@@ -63,15 +63,37 @@ impl Assembler
         self.forward_pass(|asm, index, op, opnds, target| {
             match op {
                 Op::IncrCounter => {
+                    // Every operand to the IncrCounter instruction need to be a
+                    // register once it gets there. So here we're going to load
+                    // anything that isn't a register first.
                     let new_opnds: Vec<Opnd> = opnds.into_iter().map(|opnd| {
                         match opnd {
-                            Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
                             Opnd::Mem(_) | Opnd::Imm(_) | Opnd::UImm(_) => asm.load(opnd),
-                            _ => panic!("Unsupported operand type")
+                            _ => opnd,
                         }
                     }).collect();
 
                     asm.push_insn(op, new_opnds, target);
+                },
+                Op::Mov => {
+                    // The value that is being moved must be either a register
+                    // or an immediate that can be encoded as a bitmask
+                    // immediate. Otherwise, we'll need to split the move into
+                    // multiple instructions.
+                    let value = match opnds[1] {
+                        Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[1],
+                        Opnd::Mem(_) | Opnd::Imm(_) => asm.load(opnds[1]),
+                        Opnd::UImm(uimm) => {
+                            if let Ok(encoded) = BitmaskImmediate::try_from(uimm) {
+                                opnds[1]
+                            } else {
+                                asm.load(opnds[1])
+                            }
+                        },
+                        _ => panic!("Unsupported operand type")
+                    };
+
+                    asm.push_insn(op, vec![opnds[0], value], target);
                 },
                 _ => {
                     asm.push_insn(op, opnds, target);
@@ -150,8 +172,7 @@ impl Assembler
                 },
 
                 Op::Mov => {
-                    // mov(cb, insn.opnds[0].into(), insn.opnds[1].into())
-                    todo!();
+                    mov(cb, insn.opnds[0].into(), insn.opnds[1].into())
                 },
 
                 // Load effective address

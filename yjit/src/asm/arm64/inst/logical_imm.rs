@@ -40,25 +40,31 @@ pub struct LogicalImm {
 }
 
 impl LogicalImm {
-    /// AND (immediate)
+    /// AND (bitmask immediate)
     /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/AND--immediate---Bitwise-AND--immediate--?lang=en
     pub fn and(rd: u8, rn: u8, imm: BitmaskImmediate, num_bits: u8) -> Self {
         Self { rd, rn, imm, opc: Opc::And, sf: num_bits.into() }
     }
 
-    /// ANDS (immediate)
+    /// ANDS (bitmask immediate)
     /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/ANDS--immediate---Bitwise-AND--immediate---setting-flags-?lang=en
     pub fn ands(rd: u8, rn: u8, imm: BitmaskImmediate, num_bits: u8) -> Self {
         Self { rd, rn, imm, opc: Opc::Ands, sf: num_bits.into() }
     }
 
-    /// ORR (immediate)
+    /// MOV (bitmask immediate)
+    /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/MOV--bitmask-immediate---Move--bitmask-immediate---an-alias-of-ORR--immediate--?lang=en
+    pub fn mov(rd: u8, imm: BitmaskImmediate, num_bits: u8) -> Self {
+        Self { rd, rn: 0b11111, imm, opc: Opc::Orr, sf: num_bits.into() }
+    }
+
+    /// ORR (bitmask immediate)
     /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/ORR--immediate---Bitwise-OR--immediate--
     pub fn orr(rd: u8, rn: u8, imm: BitmaskImmediate, num_bits: u8) -> Self {
         Self { rd, rn, imm, opc: Opc::Orr, sf: num_bits.into() }
     }
 
-    /// TST (immediate)
+    /// TST (bitmask immediate)
     /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/TST--immediate---Test-bits--immediate---an-alias-of-ANDS--immediate--?lang=en
     pub fn tst(rn: u8, imm: BitmaskImmediate, num_bits: u8) -> Self {
         Self::ands(31, rn, imm, num_bits)
@@ -107,6 +113,13 @@ mod tests {
         let inst = LogicalImm::ands(0, 1, 7.try_into().unwrap(), 64);
         let result: u32 = inst.into();
         assert_eq!(0xf2400820, result);
+    }
+
+    #[test]
+    fn test_mov() {
+        let inst = LogicalImm::mov(0, 0x5555555555555555.try_into().unwrap(), 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xb200f3e0, result);
     }
 
     #[test]
