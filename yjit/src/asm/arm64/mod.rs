@@ -283,6 +283,28 @@ pub fn movz(cb: &mut CodeBlock, rd: A64Opnd, imm16: A64Opnd, shift: u8) {
     cb.write_bytes(&bytes);
 }
 
+/// ORR - perform a bitwise OR of rn and rm, put the result in rd, don't update flags
+pub fn orr(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
+    let bytes: [u8; 4] = match (rd, rn, rm) {
+        (A64Opnd::Reg(rd), A64Opnd::Reg(rn), A64Opnd::Reg(rm)) => {
+            assert!(
+                rd.num_bits == rn.num_bits && rn.num_bits == rm.num_bits,
+                "All operands must be of the same size."
+            );
+
+            LogicalReg::orr(rd.reg_no, rn.reg_no, rm.reg_no, rd.num_bits).into()
+        },
+        (A64Opnd::Reg(rd), A64Opnd::Reg(rn), A64Opnd::UImm(imm)) => {
+            assert!(rd.num_bits == rn.num_bits, "rd and rn must be of the same size.");
+
+            LogicalImm::orr(rd.reg_no, rn.reg_no, imm.try_into().unwrap(), rd.num_bits).into()
+        },
+        _ => panic!("Invalid operand combination to orr instruction."),
+    };
+
+    cb.write_bytes(&bytes);
+}
+
 /// STUR - store a value in a register at a memory address
 pub fn stur(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd) {
     let bytes: [u8; 4] = match (rt, rn) {
@@ -509,6 +531,16 @@ mod tests {
     #[test]
     fn test_movz() {
         check_bytes("600fa0d2", |cb| movz(cb, X0, A64Opnd::new_uimm(123), 16));
+    }
+
+    #[test]
+    fn test_orr_register() {
+        check_bytes("6a010caa", |cb| orr(cb, X10, X11, X12));
+    }
+
+    #[test]
+    fn test_orr_immediate() {
+        check_bytes("6a0940b2", |cb| orr(cb, X10, X11, A64Opnd::new_uimm(7)));
     }
 
     #[test]
