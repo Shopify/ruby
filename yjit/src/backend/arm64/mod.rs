@@ -12,19 +12,30 @@ use crate::backend::ir::*;
 pub type Reg = A64Reg;
 
 // Callee-saved registers
-pub const _CFP: Opnd = Opnd::Reg(X9);
-pub const _EC: Opnd = Opnd::Reg(X10);
-pub const _SP: Opnd = Opnd::Reg(X11);
+pub const _CFP: Opnd = Opnd::Reg(X9_REG);
+pub const _EC: Opnd = Opnd::Reg(X10_REG);
+pub const _SP: Opnd = Opnd::Reg(X11_REG);
+
+// C argument registers on this platform
+pub const _C_ARG_OPNDS: [Opnd; 6] = [
+    Opnd::Reg(X0_REG),
+    Opnd::Reg(X1_REG),
+    Opnd::Reg(X2_REG),
+    Opnd::Reg(X3_REG),
+    Opnd::Reg(X4_REG),
+    Opnd::Reg(X5_REG)
+];
 
 // C return value register on this platform
-pub const RET_REG: Reg = X0;
+pub const C_RET_REG: Reg = X0_REG;
+pub const _C_RET_OPND: Opnd = Opnd::Reg(X0_REG);
 
 /// Map Opnd to A64Opnd
 impl From<Opnd> for A64Opnd {
     fn from(opnd: Opnd) -> Self {
         match opnd {
-            Opnd::UImm(val) => uimm_opnd(val),
-            Opnd::Imm(val) => imm_opnd(val),
+            Opnd::UImm(value) => A64Opnd::new_uimm(value),
+            Opnd::Imm(value) => A64Opnd::new_imm(value),
             Opnd::Reg(reg) => A64Opnd::Reg(reg),
             _ => panic!("unsupported arm64 operand type")
         }
@@ -50,7 +61,40 @@ impl Assembler
         // Here we may want to make sure that all instructions (except load and store)
         // have no memory operands.
 
-        todo!();
+        let live_ranges: Vec<usize> = std::mem::take(&mut self.live_ranges);
+
+        self.forward_pass(|asm, index, op, opnds, target| {
+            match op {
+                Op::Add | Op::Sub | Op::And | Op::Not => {
+                    match opnds[0] {
+                        // Instruction output whose live range spans beyond this instruction
+                        Opnd::InsnOut{idx, ..} => {
+                            if live_ranges[idx] > index {
+                                let opnd0 = asm.load(opnds[0]);
+                                let mut new_opnds = vec![opnd0];
+                                new_opnds.extend_from_slice(&opnds[1..]);
+                                asm.push_insn(op, new_opnds, None);
+                                return;
+                            }
+                        },
+
+                        // We have to load memory and register operands to avoid corrupting them
+                        Opnd::Mem(_) | Opnd::Reg(_) => {
+                            let opnd0 = asm.load(opnds[0]);
+                            let mut new_opnds = vec![opnd0];
+                            new_opnds.extend_from_slice(&opnds[1..]);
+                            asm.push_insn(op, new_opnds, None);
+                            return;
+                        },
+
+                        _ => {}
+                    }
+                },
+                _ => {}
+            };
+
+            asm.push_insn(op, opnds, target);
+        })
     }
 
     /// Emit platform-specific machine code
@@ -66,16 +110,209 @@ impl Assembler
         // For example, if you want to jump far away, you may want to store
         // the jump target address in a register first.
 
-        todo!();
+        //dbg!(&self.insns);
+
+        // List of GC offsets
+        let mut gc_offsets: Vec<u32> = Vec::new();
+
+        // For each instruction
+        for insn in &self.insns {
+            match insn.op {
+                Op::Comment => {
+                    if cfg!(feature = "asm_comments") {
+                        cb.add_comment(&insn.text.as_ref().unwrap());
+                    }
+                },
+
+                // Write the label at the current position
+                Op::Label => {
+                    cb.write_label(insn.target.unwrap().unwrap_label_idx());
+                },
+
+                Op::Add => {
+                    // add(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    todo!();
+                },
+
+                Op::Sub => {
+                    // sub(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    todo!();
+                },
+
+                Op::And => {
+                    // and(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    todo!();
+                },
+
+                Op::Not => {
+                    // not(cb, insn.opnds[0].into())
+                    todo!();
+                },
+
+                Op::Store => {
+                    // mov(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    todo!();
+                },
+
+                // This assumes only load instructions can contain references to GC'd Value operands
+                Op::Load => {
+                    // mov(cb, insn.out.into(), insn.opnds[0].into());
+
+                    // // If the value being loaded is a heap object
+                    // if let Opnd::Value(val) = insn.opnds[0] {
+                    //     if !val.special_const_p() {
+                    //         // The pointer immediate is encoded as the last part of the mov written out
+                    //         let ptr_offset: u32 = (cb.get_write_pos() as u32) - (SIZEOF_VALUE as u32);
+                    //         gc_offsets.push(ptr_offset);
+                    //     }
+                    // }
+                    todo!();
+                },
+
+                Op::Mov => {
+                    // mov(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    todo!();
+                },
+
+                // Load effective address
+                Op::Lea => {
+                    // lea(cb, insn.out.into(), insn.opnds[0].into())
+                    todo!();
+                },
+
+                // Push and pop to the C stack
+                Op::CPush => {
+                    // push(cb, insn.opnds[0].into())
+                    todo!();
+                },
+
+                Op::CPop => {
+                    // pop(cb, insn.opnds[0].into())
+                    todo!();
+                },
+
+                // C function call
+                Op::CCall => {
+                    // Temporary
+                    // assert!(insn.opnds.len() < C_ARG_REGS.len());
+
+                    // For each operand
+                    // for (idx, opnd) in insn.opnds.iter().enumerate() {
+                    //     mov(cb, C_ARG_REGS[idx], insn.opnds[idx].into());
+                    // }
+
+                    todo!();
+                },
+
+                Op::CRet => {
+                    // TODO: bias allocation towards return register
+                    // if insn.opnds[0] != Opnd::Reg(C_RET_REG) {
+                    //     mov(cb, RAX, insn.opnds[0].into());
+                    // }
+
+                    // ret(cb);
+
+                    todo!();
+                }
+
+                // Compare
+                Op::Cmp => {
+                    // test(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    todo!();
+                },
+
+                // Test and set flags
+                Op::Test => {
+                    // test(cb, insn.opnds[0].into(), insn.opnds[1].into())
+                    todo!();
+                },
+
+                Op::JmpOpnd => {
+                    // jmp_rm(cb, insn.opnds[0].into())
+                    todo!();
+                },
+
+                // Conditional jump to a label
+                Op::Jmp => {
+                    // match insn.target.unwrap() {
+                    //     Target::CodePtr(code_ptr) => jmp_ptr(cb, code_ptr),
+                    //     Target::Label(label_idx) => jmp_label(cb, label_idx),
+                    //     _ => unreachable!()
+                    // }
+                    todo!();
+                }
+
+                Op::Je => {
+                    // match insn.target.unwrap() {
+                    //     Target::CodePtr(code_ptr) => je_ptr(cb, code_ptr),
+                    //     Target::Label(label_idx) => je_label(cb, label_idx),
+                    //     _ => unreachable!()
+                    // }
+                    todo!();
+                }
+
+                Op::Jz => {
+                    // match insn.target.unwrap() {
+                    //     Target::CodePtr(code_ptr) => jz_ptr(cb, code_ptr),
+                    //     Target::Label(label_idx) => jz_label(cb, label_idx),
+                    //     _ => unreachable!()
+                    // }
+                    todo!();
+                }
+
+                Op::Jnz => {
+                    // match insn.target.unwrap() {
+                    //     Target::CodePtr(code_ptr) => jnz_ptr(cb, code_ptr),
+                    //     Target::Label(label_idx) => jnz_label(cb, label_idx),
+                    //     _ => unreachable!()
+                    // }
+                    todo!();
+                }
+
+                Op::Jo => {
+                    // match insn.target.unwrap() {
+                    //     Target::CodePtr(code_ptr) => jo_ptr(cb, code_ptr),
+                    //     Target::Label(label_idx) => jo_label(cb, label_idx),
+                    //     _ => unreachable!()
+                    // }
+                    todo!();
+                }
+
+                // Atomically increment a counter at a given memory location
+                Op::IncrCounter => {
+                    // assert!(matches!(insn.opnds[0], Opnd::Mem(_)));
+                    // assert!(matches!(insn.opnds[1], Opnd::UImm(_) | Opnd::Imm(_) ) );
+                    // write_lock_prefix(cb);
+                    // add(cb, insn.opnds[0].into(), insn.opnds[1].into());
+                    todo!();
+                },
+
+                Op::Breakpoint => {
+                    // int3(cb)
+                    todo!();
+                },
+
+                _ => panic!("unsupported instruction passed to arm64 backend: {:?}", insn.op)
+            };
+        }
+
+        gc_offsets
     }
 
     /// Optimize and compile the stored instructions
-    pub fn compile_with_regs(self, cb: &mut CodeBlock, regs: Vec<Reg>)
+    pub fn compile_with_regs(self, cb: &mut CodeBlock, regs: Vec<Reg>) -> Vec<u32>
     {
-        self
-            .arm64_split()
-            .split_loads()
-            .alloc_regs(regs)
-            .arm64_emit(jit, cb)
+        let mut asm = self.arm64_split().split_loads().alloc_regs(regs);
+
+        // Create label instances in the code block
+        for (idx, name) in asm.label_names.iter().enumerate() {
+            let label_idx = cb.new_label(name.to_string());
+            assert!(label_idx == idx);
+        }
+
+        let gc_offsets = asm.arm64_emit(cb);
+        cb.link_labels();
+
+        gc_offsets
     }
 }

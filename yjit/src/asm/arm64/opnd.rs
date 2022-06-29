@@ -11,6 +11,15 @@ pub struct A64Reg
     pub reg_no: u8,
 }
 
+impl A64Reg {
+    pub fn sub_reg(&self, num_bits: u8) -> Self {
+        assert!(num_bits == 32 || num_bits == 64);
+        assert!(num_bits <= self.num_bits);
+
+        Self { num_bits, reg_no: self.reg_no }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct A64Mem
 {
@@ -87,7 +96,12 @@ pub const X0_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 0 };
 pub const X1_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 1 };
 pub const X2_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 2 };
 pub const X3_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 3 };
+pub const X4_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 4 };
+pub const X5_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 5 };
 
+pub const X9_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 9 };
+pub const X10_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 10 };
+pub const X11_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 11 };
 pub const X12_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 12 };
 pub const X13_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 13 };
 
@@ -96,14 +110,14 @@ pub const X0: A64Opnd = A64Opnd::Reg(X0_REG);
 pub const X1: A64Opnd = A64Opnd::Reg(X1_REG);
 pub const X2: A64Opnd = A64Opnd::Reg(X2_REG);
 pub const X3: A64Opnd = A64Opnd::Reg(X3_REG);
-pub const X4: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 4 });
-pub const X5: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 5 });
+pub const X4: A64Opnd = A64Opnd::Reg(X4_REG);
+pub const X5: A64Opnd = A64Opnd::Reg(X5_REG);
 pub const X6: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 6 });
 pub const X7: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 7 });
 pub const X8: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 8 });
-pub const X9: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 9 });
-pub const X10: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 10 });
-pub const X11: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 11 });
+pub const X9: A64Opnd = A64Opnd::Reg(X9_REG);
+pub const X10: A64Opnd = A64Opnd::Reg(X10_REG);
+pub const X11: A64Opnd = A64Opnd::Reg(X11_REG);
 pub const X12: A64Opnd = A64Opnd::Reg(X12_REG);
 pub const X13: A64Opnd = A64Opnd::Reg(X13_REG);
 pub const X14: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 14 });

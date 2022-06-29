@@ -8,7 +8,10 @@ mod opnd;
 
 use arg::*;
 use inst::*;
-use opnd::*;
+
+// We're going to make this public to make using these things easier in the
+// backend (so they don't have to have knowledge about the submodule).
+pub use opnd::*;
 
 /// Checks that a signed value fits within the specified number of bits.
 const fn imm_fits_bits(imm: i64, num_bits: u8) -> bool {
