@@ -84,6 +84,12 @@ impl LogicalReg {
         Self { rd, rn: 0b11111, imm6: 0, rm, n: N::No, shift: Shift::LSL, opc: Opc::Orr, sf: num_bits.into() }
     }
 
+    /// MVN (shifted register)
+    /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/MVN--Bitwise-NOT--an-alias-of-ORN--shifted-register--?lang=en
+    pub fn mvn(rd: u8, rm: u8, num_bits: u8) -> Self {
+        Self { rd, rn: 0b11111, imm6: 0, rm, n: N::Yes, shift: Shift::LSL, opc: Opc::Orr, sf: num_bits.into() }
+    }
+
     /// ORN (shifted register)
     /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/ORN--shifted-register---Bitwise-OR-NOT--shifted-register--
     pub fn orn(rd: u8, rn: u8, rm: u8, num_bits: u8) -> Self {
@@ -155,6 +161,13 @@ mod tests {
         let inst = LogicalReg::mov(0, 1, 64);
         let result: u32 = inst.into();
         assert_eq!(0xaa0103e0, result);
+    }
+
+    #[test]
+    fn test_mvn() {
+        let inst = LogicalReg::mvn(0, 1, 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xaa2103e0, result);
     }
 
     #[test]

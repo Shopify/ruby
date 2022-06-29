@@ -300,6 +300,20 @@ pub fn movz(cb: &mut CodeBlock, rd: A64Opnd, imm16: A64Opnd, shift: u8) {
     cb.write_bytes(&bytes);
 }
 
+/// MVN - move a value in a register to another register, negating it
+pub fn mvn(cb: &mut CodeBlock, rd: A64Opnd, rm: A64Opnd) {
+    let bytes: [u8; 4] = match (rd, rm) {
+        (A64Opnd::Reg(rd), A64Opnd::Reg(rm)) => {
+            assert!(rd.num_bits == rm.num_bits, "Expected registers to be the same size");
+
+            LogicalReg::mvn(rd.reg_no, rm.reg_no, rd.num_bits).into()
+        },
+        _ => panic!("Invalid operand combination to mvn instruction")
+    };
+
+    cb.write_bytes(&bytes);
+}
+
 /// ORN - perform a bitwise OR of rn and NOT rm, put the result in rd, don't update flags
 pub fn orn(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
     let bytes: [u8; 4] = match (rd, rn, rm) {
@@ -572,6 +586,11 @@ mod tests {
     #[test]
     fn test_movz() {
         check_bytes("600fa0d2", |cb| movz(cb, X0, A64Opnd::new_uimm(123), 16));
+    }
+
+    #[test]
+    fn test_mvn() {
+        check_bytes("ea032baa", |cb| mvn(cb, X10, X11));
     }
 
     #[test]
