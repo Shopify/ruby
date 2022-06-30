@@ -22,10 +22,7 @@ struct LabelRef {
     pos: usize,
 
     // Label which this refers to
-    label_idx: usize,
-
-    // An optional shift for the offset.
-    shift: Option<u8>
+    label_idx: usize
 }
 
 /// Block of memory into which instructions can be assembled
@@ -173,55 +170,26 @@ impl CodeBlock {
         self.get_ptr(self.write_pos)
     }
 
-    /// Write a single byte at the current position. The strategy determines if
-    /// we're keeping the other bits in place or zero-ing them out.
-    fn write_byte_with_strategy(&mut self, byte: u8, strategy: ByteWriteStrategy) {
+    /// Write a single byte at the current position.
+    pub fn write_byte(&mut self, byte: u8) {
         let write_ptr = self.get_write_ptr();
-        let result = match strategy {
-            ByteWriteStrategy::ZeroBits => self.mem_block.write_byte(write_ptr, byte),
-            ByteWriteStrategy::KeepBits => self.mem_block.or_byte(write_ptr, byte),
-        };
 
-        if result.is_ok() {
+        if self.mem_block.write_byte(write_ptr, byte).is_ok() {
             self.write_pos += 1;
         } else {
             self.dropped_bytes = true;
         }
     }
 
-    /// Write a single byte at the current position.
-    pub fn write_byte(&mut self, byte: u8) {
-        self.write_byte_with_strategy(byte, ByteWriteStrategy::ZeroBits)
-    }
-
-    /// Bitwise OR a single byte at the current position.
-    pub fn or_byte(&mut self, byte: u8) {
-        self.write_byte_with_strategy(byte, ByteWriteStrategy::KeepBits);
-    }
-
-    /// Write multiple bytes starting from the current position. The strategy
-    /// determines if we're keeping the other bits in place or zero-ing them
-    /// out.
-    fn write_bytes_with_strategy(&mut self, bytes: &[u8], strategy: ByteWriteStrategy) {
+    /// Write multiple bytes starting from the current position.
+    fn write_bytes(&mut self, bytes: &[u8]) {
         for byte in bytes {
-            self.write_byte_with_strategy(*byte, strategy);
+            self.write_byte(*byte);
         }
     }
 
-    /// Write multiple bytes starting from the current position.
-    pub fn write_bytes(&mut self, bytes: &[u8]) {
-        self.write_bytes_with_strategy(bytes, ByteWriteStrategy::ZeroBits);
-    }
-
-    /// Bitwise OR multiple bytes starting from the current position.
-    pub fn or_bytes(&mut self, bytes: &[u8]) {
-        self.write_bytes_with_strategy(bytes, ByteWriteStrategy::KeepBits);
-    }
-
     /// Write an integer over the given number of bits at the current position.
-    /// The strategy determines if we're keeping the other bits in place or
-    /// zero-ing them out.
-    fn write_int_with_strategy(&mut self, val: u64, num_bits: u32, strategy: ByteWriteStrategy) {
+    fn write_int(&mut self, val: u64, num_bits: u32) {
         assert!(num_bits > 0);
         assert!(num_bits % 8 == 0);
 
@@ -247,17 +215,6 @@ impl CodeBlock {
         }
     }
 
-    // Write a signed integer over a given number of bits at the current position
-    pub fn write_int(&mut self, val: u64, num_bits: u32) {
-        self.write_int_with_strategy(val, num_bits, ByteWriteStrategy::ZeroBits)
-    }
-
-    // Bitwise OR a signed integer over a given number of bits at the current
-    // position
-    pub fn or_int(&mut self, val: u64, num_bits: u32) {
-        self.write_int_with_strategy(val, num_bits, ByteWriteStrategy::KeepBits)
-    }
-
     /// Check if bytes have been dropped (unwritten because of insufficient space)
     pub fn has_dropped_bytes(&self) -> bool {
         self.dropped_bytes
@@ -279,15 +236,10 @@ impl CodeBlock {
 
     // Add a label reference at the current write position
     pub fn label_ref(&mut self, label_idx: usize) {
-        self.label_ref_with_shift(label_idx, None);
-    }
-
-    // Add a label reference at the current write position with a shift
-    pub fn label_ref_with_shift(&mut self, label_idx: usize, shift: Option<u8>) {
         assert!(label_idx < self.label_addrs.len());
 
         // Keep track of the reference
-        self.label_refs.push(LabelRef { pos: self.write_pos, label_idx, shift });
+        self.label_refs.push(LabelRef { pos: self.write_pos, label_idx });
     }
 
     // Link internal label references
@@ -307,12 +259,7 @@ impl CodeBlock {
             let offset = (label_addr as i64) - ((ref_pos + 4) as i64);
 
             self.set_pos(ref_pos);
-
-            if let Some(shift) = label_ref.shift {
-                self.or_int((offset as u64) >> shift, 32);
-            } else {
-                self.write_int(offset as u64, 32);
-            }
+            self.write_int(offset as u64, 32);
         }
 
         self.write_pos = orig_pos;
