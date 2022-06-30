@@ -135,6 +135,14 @@ impl Assembler
             }
         }
 
+        /// Emit a conditional jump instruction from the current address to a
+        /// target address.
+        fn emit_conditional_jump(cb: &mut CodeBlock, condition: Condition, dst_ptr: CodePtr) {
+            let src_addr = cb.get_write_ptr().into_i64() + 4;
+            let dst_addr = dst_ptr.into_i64();
+            bcond(cb, condition, A64Opnd::new_imm(dst_addr - src_addr));
+        }
+
         // NOTE: dear Kevin,
         // for arm, you may want to reserve 1 or 2 caller-save registers
         // to use as scracth registers (during the last phase of the codegen)
@@ -261,39 +269,43 @@ impl Assembler
                     };
                 },
                 Op::Je => {
-                    // match insn.target.unwrap() {
-                    //     Target::CodePtr(code_ptr) => je_ptr(cb, code_ptr),
-                    //     Target::Label(label_idx) => je_label(cb, label_idx),
-                    //     _ => unreachable!()
-                    // }
-                    todo!();
+                    match insn.target.unwrap() {
+                        Target::CodePtr(dst_ptr) => {
+                            emit_conditional_jump(cb, Condition::EQ, dst_ptr);
+                        },
+                        Target::Label(_) => todo!(),
+                        _ => unreachable!()
+                    };
                 },
                 Op::Jbe => {
-                    todo!();
+                    match insn.target.unwrap() {
+                        Target::CodePtr(_) => todo!(),
+                        Target::Label(_) => todo!(),
+                        _ => unreachable!()
+                    };
                 },
                 Op::Jz => {
-                    // match insn.target.unwrap() {
-                    //     Target::CodePtr(code_ptr) => jz_ptr(cb, code_ptr),
-                    //     Target::Label(label_idx) => jz_label(cb, label_idx),
-                    //     _ => unreachable!()
-                    // }
-                    todo!();
+                    match insn.target.unwrap() {
+                        Target::CodePtr(_) => todo!(),
+                        Target::Label(_) => todo!(),
+                        _ => unreachable!()
+                    };
                 },
                 Op::Jnz => {
-                    // match insn.target.unwrap() {
-                    //     Target::CodePtr(code_ptr) => jnz_ptr(cb, code_ptr),
-                    //     Target::Label(label_idx) => jnz_label(cb, label_idx),
-                    //     _ => unreachable!()
-                    // }
-                    todo!();
+                    match insn.target.unwrap() {
+                        Target::CodePtr(_) => todo!(),
+                        Target::Label(_) => todo!(),
+                        _ => unreachable!()
+                    };
                 },
                 Op::Jo => {
-                    // match insn.target.unwrap() {
-                    //     Target::CodePtr(code_ptr) => jo_ptr(cb, code_ptr),
-                    //     Target::Label(label_idx) => jo_label(cb, label_idx),
-                    //     _ => unreachable!()
-                    // }
-                    todo!();
+                    match insn.target.unwrap() {
+                        Target::CodePtr(dst_ptr) => {
+                            emit_conditional_jump(cb, Condition::VS, dst_ptr);
+                        },
+                        Target::Label(_) => todo!(),
+                        _ => unreachable!()
+                    };
                 },
                 Op::IncrCounter => {
                     ldaddal(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
