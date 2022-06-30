@@ -11,10 +11,10 @@ use crate::asm::x86_64::{X86Opnd, X86Imm, X86UImm, X86Reg, X86Mem, RegType};
 use crate::core::{Context, Type, TempMapping};
 use crate::codegen::{JITState};
 
-// #[cfg(target_arch = "x86_64")]
-// use crate::backend::x86_64::*;
+#[cfg(target_arch = "x86_64")]
+use crate::backend::x86_64::*;
 
-// #[cfg(target_arch = "aarch64")]
+#[cfg(target_arch = "aarch64")]
 use crate::backend::arm64::*;
 
 pub const EC: Opnd = _EC;
