@@ -253,10 +253,7 @@ impl Assembler
                             let dst_addr = dst_ptr.into_i64();
                             emit_jump(cb, src_addr, dst_addr);
                         },
-                        Target::Label(label_idx) => {
-                            cb.label_ref_with_shift(label_idx, Some(32 - 26));
-                            bl(cb, A64Opnd::new_uimm(0));
-                        },
+                        Target::Label(label_idx) => todo!(),
                         Target::FunPtr(_) => unreachable!()
                     };
                 },

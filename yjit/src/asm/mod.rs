@@ -55,22 +55,6 @@ pub struct CodeBlock {
     dropped_bytes: bool,
 }
 
-/// When you're writing bytes into the memory block, most of the time you want
-/// to completely overwrite the existing bits. Sometimes however, we are
-/// patching code we've already written (like when going back and writing jump
-/// offsets). In that case you may want to keep the bits already written in
-/// place.
-#[derive(Clone, Copy)]
-enum ByteWriteStrategy {
-    /// Zero out the other bits at the write position. This corresponds to
-    /// calling write_byte on the virtual memory.
-    ZeroBits,
-
-    /// Keep the other bits in place at the write position. This corresponds to
-    /// calling or_byte on the virtual memory.
-    KeepBits
-}
-
 impl CodeBlock {
     /// Make a new CodeBlock
     pub fn new(mem_block: VirtualMem) -> Self {
