@@ -30,6 +30,11 @@ pub const _C_ARG_OPNDS: [Opnd; 6] = [
 pub const C_RET_REG: Reg = X0_REG;
 pub const _C_RET_OPND: Opnd = Opnd::Reg(X0_REG);
 
+// These constants define the way we work with Arm64's stack pointer. The stack
+// pointer always needs to be aligned to a 16-byte boundary.
+pub const SP_REG: A64Opnd = X31;
+pub const SP_STEP: A64Opnd = A64Opnd::UImm(16);
+
 /// Map Opnd to A64Opnd
 impl From<Opnd> for A64Opnd {
     fn from(opnd: Opnd) -> Self {
@@ -167,12 +172,12 @@ impl Assembler
                     ldur(cb, insn.out.into(), insn.opnds[0].into());
                 },
                 Op::CPush => {
-                    add(cb, X31, X31, A64Opnd::new_uimm(16));
-                    mov(cb, A64Opnd::new_mem(64, X31, 0), insn.opnds[0].into());
+                    add(cb, SP_REG, SP_REG, SP_STEP);
+                    mov(cb, A64Opnd::new_mem(64, SP_REG, 0), insn.opnds[0].into());
                 },
                 Op::CPop => {
-                    mov(cb, insn.out.into(), A64Opnd::new_mem(64, X31, 0));
-                    sub(cb, X31, X31, A64Opnd::new_uimm(16));
+                    mov(cb, insn.out.into(), A64Opnd::new_mem(64, SP_REG, 0));
+                    sub(cb, SP_REG, SP_REG, SP_STEP);
                 },
                 Op::CCall => {
                     // Temporary
