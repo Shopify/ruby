@@ -98,7 +98,7 @@ impl<A: Allocator> VirtualMemory<A> {
 
     /// Retrieve a specific position for writing and validate that it is okay to
     /// write to that position.
-    pub fn get_position_for_writing(&mut self, write_ptr: CodePtr) -> Result<*mut u8, WriteError> {
+    fn as_mut_ptr(&mut self, write_ptr: CodePtr) -> Result<*mut u8, WriteError> {
         let page_size = self.page_size_bytes;
         let raw: *mut u8 = write_ptr.raw_ptr() as *mut u8;
         let page_addr = (raw as usize / page_size) * page_size;
@@ -160,14 +160,14 @@ impl<A: Allocator> VirtualMemory<A> {
 
     /// Write a single byte. The first write to a page makes it readable.
     pub fn write_byte(&mut self, write_ptr: CodePtr, byte: u8) -> Result<(), WriteError> {
-        let raw = self.get_position_for_writing(write_ptr)?;
+        let raw = self.as_mut_ptr(write_ptr)?;
         unsafe { raw.write(byte) };
         Ok(())
     }
 
     /// Bitwise OR a single byte. The first write to a page makes it readable.
     pub fn or_byte(&mut self, write_ptr: CodePtr, byte: u8) -> Result<(), WriteError> {
-        let raw = self.get_position_for_writing(write_ptr)?;
+        let raw = self.as_mut_ptr(write_ptr)?;
         unsafe { raw.write(byte | *raw) };
         Ok(())
     }

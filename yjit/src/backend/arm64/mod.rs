@@ -39,9 +39,13 @@ pub const SP_STEP: A64Opnd = A64Opnd::UImm(16);
 impl From<Opnd> for A64Opnd {
     fn from(opnd: Opnd) -> Self {
         match opnd {
+            Opnd::InsnOut { .. } => panic!("InsnOut operand made it past register allocation"),
             Opnd::UImm(value) => A64Opnd::new_uimm(value),
             Opnd::Imm(value) => A64Opnd::new_imm(value),
             Opnd::Reg(reg) => A64Opnd::Reg(reg),
+            Opnd::Mem(Mem { base: MemBase::Reg(reg_no), num_bits, disp }) => {
+                A64Opnd::new_mem(num_bits, A64Opnd::Reg(A64Reg { num_bits, reg_no }), disp)
+            }
             _ => panic!("unsupported arm64 operand type")
         }
     }
@@ -149,7 +153,11 @@ impl Assembler
                     mvn(cb, insn.out.into(), insn.opnds[0].into());
                 },
                 Op::Store => {
-                    stur(cb, insn.opnds[0].into(), insn.opnds[1].into());
+                    // This order may be surprising but it is correct. The way
+                    // the Arm64 assembler works, the register that is going to
+                    // be stored is first and the address is second. However in
+                    // our IR we have the address first and the register second.
+                    stur(cb, insn.opnds[1].into(), insn.opnds[0].into());
                 },
                 Op::Load => {
                     // This assumes only load instructions can contain references to GC'd Value operands
@@ -301,5 +309,26 @@ impl Assembler
         cb.link_labels();
 
         gc_offsets
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_asm() -> (Assembler, CodeBlock) {
+        (Assembler::new(), CodeBlock::new_dummy(1024))
+    }
+
+    #[test]
+    fn test_emit_add() {
+        let (mut asm, mut cb) = setup_asm();
+
+        let opnd = asm.add(Opnd::Reg(X0_REG), Opnd::Reg(X1_REG));
+        asm.store(Opnd::mem(64, Opnd::Reg(X2_REG), 0), opnd);
+        asm.compile_with_regs(&mut cb, vec![X3_REG]);
+
+        let insns = cb.get_ptr(0).raw_ptr() as *const u32;
+        assert_eq!(0x8b010003, unsafe { *insns });
     }
 }
