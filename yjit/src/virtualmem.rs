@@ -96,8 +96,9 @@ impl<A: Allocator> VirtualMemory<A> {
         self.region_size_bytes
     }
 
-    /// Write a single byte. The first write to a page makes it readable.
-    pub fn write_byte(&mut self, write_ptr: CodePtr, byte: u8) -> Result<(), WriteError> {
+    /// Retrieve a specific position for writing and validate that it is okay to
+    /// write to that position.
+    pub fn get_position_for_writing(&mut self, write_ptr: CodePtr) -> Result<*mut u8, WriteError> {
         let page_size = self.page_size_bytes;
         let raw: *mut u8 = write_ptr.raw_ptr() as *mut u8;
         let page_addr = (raw as usize / page_size) * page_size;
@@ -154,9 +155,20 @@ impl<A: Allocator> VirtualMemory<A> {
             }
         }
 
-        // We have permission to write if we get here
-        unsafe { raw.write(byte) };
+        Ok(raw)
+    }
 
+    /// Write a single byte. The first write to a page makes it readable.
+    pub fn write_byte(&mut self, write_ptr: CodePtr, byte: u8) -> Result<(), WriteError> {
+        let raw = self.get_position_for_writing(write_ptr)?;
+        unsafe { raw.write(byte) };
+        Ok(())
+    }
+
+    /// Bitwise OR a single byte. The first write to a page makes it readable.
+    pub fn or_byte(&mut self, write_ptr: CodePtr, byte: u8) -> Result<(), WriteError> {
+        let raw = self.get_position_for_writing(write_ptr)?;
+        unsafe { raw.write(byte | *raw) };
         Ok(())
     }
 
@@ -372,5 +384,15 @@ pub mod tests {
                 ]
             ),
         );
+    }
+
+    #[test]
+    fn or_byte_leaves_other_bits_in_place() {
+        let mut memory = new_dummy_virt_mem();
+
+        memory.write_byte(memory.start_ptr(), 0b10010010).unwrap();
+        memory.or_byte(memory.start_ptr(), 0b00100110).unwrap();
+
+        assert_eq!(memory.allocator.memory[0], 0b10110110);
     }
 }

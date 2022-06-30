@@ -219,15 +219,25 @@ impl Assembler
                     tst(cb, insn.opnds[0].into(), insn.opnds[1].into());
                 },
                 Op::JmpOpnd => {
-                    br(cb, insn.opnds[0].into())
+                    br(cb, insn.opnds[0].into());
                 },
                 Op::Jmp => {
-                    // match insn.target.unwrap() {
-                    //     Target::CodePtr(code_ptr) => jmp_ptr(cb, code_ptr),
-                    //     Target::Label(label_idx) => jmp_label(cb, label_idx),
-                    //     _ => unreachable!()
-                    // }
-                    todo!();
+                    match insn.target.unwrap() {
+                        Target::CodePtr(_) => todo!(),
+                        Target::FunPtr(_) => unreachable!(),
+                        Target::Label(label_idx) => {
+                            // We're going to write a label reference that knows
+                            // when it writes the actual offset it needs to
+                            // shift itself a couple of bits in to maintain the
+                            // correct encoding.
+                            cb.label_ref_with_shift(label_idx, Some(32 - 26));
+
+                            // Here we're going to write a branch instruction
+                            // with a 0 offset so that later it can be patched
+                            // when we link all of the labels together.
+                            bl(cb, A64Opnd::new_uimm(0));
+                        }
+                    };
                 },
                 Op::Je => {
                     // match insn.target.unwrap() {
