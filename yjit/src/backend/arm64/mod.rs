@@ -7,6 +7,7 @@ use crate::asm::arm64::*;
 use crate::codegen::{JITState};
 use crate::cruby::*;
 use crate::backend::ir::*;
+use crate::virtualmem::CodePtr;
 
 // Use the arm64 register type for this platform
 pub type Reg = A64Reg;
@@ -115,6 +116,25 @@ impl Assembler
     /// Returns a list of GC offsets
     pub fn arm64_emit(&mut self, cb: &mut CodeBlock) -> Vec<u32>
     {
+        /// Emit a jump instruction to the given target address. If it's within
+        /// the range where we can use the branch link instruction, then we'll
+        /// use that. Otherwise, we'll load the address into a register and use
+        /// the branch register instruction.
+        fn emit_jump(cb: &mut CodeBlock, src_addr: i64, dst_addr: i64) {
+            let offset = dst_addr - src_addr;
+
+            if offset < 128 * 1024 * 1024 && offset >= -128 * 1024 * 1024 {
+                // Encode how far we're jumping in # of instructions
+                bl(cb, A64Opnd::new_imm(offset / 4));
+            } else {
+                // Since this is too far to jump directly, we'll load
+                // the value into a register and jump to it
+                mov(cb, X30, A64Opnd::new_uimm(src_addr as u64));
+                mov(cb, X29, A64Opnd::new_uimm(dst_addr as u64));
+                br(cb, X29);
+            }
+        }
+
         // NOTE: dear Kevin,
         // for arm, you may want to reserve 1 or 2 caller-save registers
         // to use as scracth registers (during the last phase of the codegen)
@@ -198,19 +218,8 @@ impl Assembler
 
                     // Calculate how far we're jumping in # of bytes
                     let src_addr = cb.get_write_ptr().into_i64() + 4;
-                    let dst_addr = insn.target.unwrap().unwrap_fun_ptr();
-                    let delta = (dst_addr as i64) - src_addr;
-
-                    if delta < 128 * 1024 * 1024 && delta >= -128 * 1024 * 1024 {
-                        // Encode how far we're jumping in # of instructions
-                        bl(cb, A64Opnd::new_imm(delta / 4));
-                    } else {
-                        // Since this is too far to jump directly, we'll load
-                        // the value into a register and jump to it
-                        mov(cb, X30, A64Opnd::new_uimm(src_addr as u64));
-                        mov(cb, X29, A64Opnd::new_uimm(dst_addr as u64));
-                        br(cb, X29);
-                    }
+                    let dst_addr = insn.target.unwrap().unwrap_fun_ptr() as i64;
+                    emit_jump(cb, src_addr, dst_addr);
                 },
                 Op::CRet => {
                     // TODO: bias allocation towards return register
@@ -231,8 +240,11 @@ impl Assembler
                 },
                 Op::Jmp => {
                     match insn.target.unwrap() {
-                        Target::CodePtr(_) => todo!(),
-                        Target::FunPtr(_) => unreachable!(),
+                        Target::CodePtr(dst_ptr) => {
+                            let src_addr = cb.get_write_ptr().into_i64() + 4;
+                            let dst_addr = dst_ptr.into_i64();
+                            emit_jump(cb, src_addr, dst_addr);
+                        },
                         Target::Label(label_idx) => {
                             // We're going to write a label reference that knows
                             // when it writes the actual offset it needs to
@@ -244,7 +256,8 @@ impl Assembler
                             // with a 0 offset so that later it can be patched
                             // when we link all of the labels together.
                             bl(cb, A64Opnd::new_uimm(0));
-                        }
+                        },
+                        Target::FunPtr(_) => unreachable!()
                     };
                 },
                 Op::Je => {
