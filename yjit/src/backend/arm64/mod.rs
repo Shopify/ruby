@@ -126,6 +126,15 @@ impl Assembler
             if offset < 128 * 1024 * 1024 && offset >= -128 * 1024 * 1024 {
                 // Encode how far we're jumping in # of instructions
                 bl(cb, A64Opnd::new_imm(offset / 4));
+
+                // We want instructions that are using registers and
+                // instructions that are using immediates to be the size in
+                // memory so that we can come back and patch without having to
+                // shift stuff around. So here we'll add enough nop instructions
+                // to make that happen. It works out well for us here since the
+                // code would have jumped away already anyway.
+                nop(cb);
+                nop(cb);
             } else {
                 // Since this is too far to jump directly, we'll load
                 // the value into a register and jump to it
