@@ -277,7 +277,9 @@ impl Assembler
                 },
                 Op::Jbe => {
                     match insn.target.unwrap() {
-                        Target::CodePtr(_) => todo!(),
+                        Target::CodePtr(dst_ptr) => {
+                            emit_conditional_jump(cb, Condition::LE, dst_ptr);
+                        },
                         Target::Label(_) => todo!(),
                         _ => unreachable!()
                     };
