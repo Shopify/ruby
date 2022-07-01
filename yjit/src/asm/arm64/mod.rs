@@ -118,12 +118,18 @@ pub fn ands(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
+/// Whether or not the offset between two instructions fits into the b.cond
+/// instruction. If it doesn't, then we have to load the value into a register
+/// first, then use the b.cond instruction to skip past a direct jump.
+pub const fn bcond_offset_fits_bits(offset: i64) -> bool {
+    imm_fits_bits(offset, 21) && (offset & 0b11 == 0)
+}
+
 /// B.cond - branch to target if condition is true
 pub fn bcond(cb: &mut CodeBlock, cond: Condition, byte_offset: A64Opnd) {
     let bytes: [u8; 4] = match byte_offset {
         A64Opnd::Imm(imm) => {
-            assert!(imm_fits_bits(imm, 21), "The immediate operand must be 21 bits or less.");
-            assert!(imm & 0b11 == 0, "The immediate operand must be aligned to a 2-bit boundary.");
+            assert!(bcond_offset_fits_bits(imm), "The immediate operand must be 21 bits or less and be aligned to a 2-bit boundary.");
 
             BranchCond::bcond(cond, imm as i32).into()
         },
@@ -133,11 +139,18 @@ pub fn bcond(cb: &mut CodeBlock, cond: Condition, byte_offset: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
+/// Whether or not the offset between two instructions fits into the branch link
+/// instruction. If it doesn't, then we have to load the value into a register
+/// first.
+pub const fn bl_offset_fits_bits(offset: i64) -> bool {
+    imm_fits_bits(offset, 26)
+}
+
 /// BL - branch with link (offset is number of instructions to jump)
 pub fn bl(cb: &mut CodeBlock, imm26: A64Opnd) {
     let bytes: [u8; 4] = match imm26 {
         A64Opnd::Imm(imm26) => {
-            assert!(imm_fits_bits(imm26, 26), "The immediate operand must be 26 bits or less.");
+            assert!(bl_offset_fits_bits(imm26), "The immediate operand must be 26 bits or less.");
 
             Call::bl(imm26 as i32).into()
         },

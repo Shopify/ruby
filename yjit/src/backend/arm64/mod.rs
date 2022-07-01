@@ -52,6 +52,36 @@ impl From<Opnd> for A64Opnd {
     }
 }
 
+/// When we're writing out jumps to labels, first we skip past a certain number
+/// of bytes. Then, when the offset between the label reference and the label
+/// itself can be calculated (after we've emitted the rest of the code), we go
+/// back in and patch the jump by reencoding the instruction.
+///
+/// On Arm64, if the jump is short enough we can use just one instruction and
+/// use the offset as an immediate. If the jump is too long, we need to first
+/// load it into a register, then use the branch register instruction. Similarly
+/// with conditional jumps, if it's short enough we can use a b.cond
+/// instruction, otherwise we need to load the destination into a register and
+/// then do some conditional jumping around to get the jump to happen.
+///
+/// Because of this branching logic, you don't necessarily know how many
+/// instructions are going to be encoded for any given jump. However, we _have_
+/// to know this information if we're jumping to a label because we need to
+/// write out a consistent number of instructions. In this case, we can write
+/// however many nop instructions we need to pad the shorter clauses such that
+/// the total number of instructions is consistent.
+///
+/// In cases where we're jumping to a known destination, we don't need to bother
+/// padding anything. However, if we're jumping to a label, we will. This enum
+/// represents those different cases.
+enum ClausePadding {
+    /// We're jumping to a label, so pad with necessary nop instructions.
+    Padding,
+
+    /// We're jumping to a known destination, so don't bother padding.
+    NoPadding,
+}
+
 impl Assembler
 {
     /// Get the list of registers from which we can allocate on this platform
@@ -120,21 +150,23 @@ impl Assembler
         /// the range where we can use the branch link instruction, then we'll
         /// use that. Otherwise, we'll load the address into a register and use
         /// the branch register instruction.
-        fn emit_jump(cb: &mut CodeBlock, src_addr: i64, dst_addr: i64) {
+        fn emit_jump(cb: &mut CodeBlock, src_addr: i64, dst_addr: i64, padding: ClausePadding) {
             let offset = dst_addr - src_addr;
 
-            if imm_fits_bits(offset, 26) {
+            if bl_offset_fits_bits(offset) {
                 // Encode how far we're jumping in # of instructions
                 bl(cb, A64Opnd::new_imm(offset / 4));
 
                 // We want instructions that are using registers and
-                // instructions that are using immediates to be the size in
+                // instructions that are using immediates to be the same size in
                 // memory so that we can come back and patch without having to
                 // shift stuff around. So here we'll add enough nop instructions
                 // to make that happen. It works out well for us here since the
                 // code would have jumped away already anyway.
-                nop(cb);
-                nop(cb);
+                if matches!(padding, ClausePadding::Padding) {
+                    nop(cb);
+                    nop(cb);
+                }
             } else {
                 // Since this is too far to jump directly, we'll load
                 // the value into a register and jump to it
@@ -144,66 +176,113 @@ impl Assembler
             }
         }
 
-        /// Emit a conditional jump instruction. If this is given a pointer to a
-        /// point in code, then it will calculate the offset to the target and
-        /// emit the instruction immediately. Otherwise, it will encode a label
-        /// reference that will later come back and patch in a conditional jump.
-        fn emit_conditional_jump(cb: &mut CodeBlock, condition: Condition, target: Target) {
+        /// Emit a conditional jump instruction to a specific target. This is
+        /// called when lowering a direct jump instruction or when lowering a
+        /// ccall instruction. It delegates appropriate work to the emit_jump
+        /// function depending on the kind of target given.
+        fn emit_target_jump(cb: &mut CodeBlock, target: Target) {
             match target {
                 Target::CodePtr(dst_ptr) => {
                     let src_addr = cb.get_write_ptr().into_i64() + 4;
-                    let dst_addr = dst_ptr.into_i64();
-                    bcond(cb, condition, A64Opnd::new_imm(dst_addr - src_addr));
+                    emit_jump(cb, src_addr, dst_ptr.into_i64(), ClausePadding::NoPadding);
+                },
+                Target::Label(label_idx) => {
+                    cb.label_ref(label_idx, 12, |cb, src_addr, dst_addr| {
+                        emit_jump(cb, src_addr, dst_addr, ClausePadding::Padding);
+                    });
+                },
+                Target::FunPtr(fun_ptr) => {
+                    let src_addr = cb.get_write_ptr().into_i64() + 4;
+                    emit_jump(cb, src_addr, fun_ptr as i64, ClausePadding::NoPadding);
+                }
+            };
+        }
+
+        /// Emit a conditional jump instruction. If the offset between the
+        /// instructions fits into the b.cond instruction, we'll use that.
+        /// Otherwise, we'll use a combination of a b.cond, a direct jump
+        /// forward, and loading the destination into a register and branching
+        /// to it.
+        fn emit_conditional_jump(cb: &mut CodeBlock, condition: Condition, src_addr: i64, dst_addr: i64, padding: ClausePadding) {
+            let offset = dst_addr - src_addr;
+            let fits_direct = bl_offset_fits_bits(offset);
+
+            // If the jump offset fits into the conditional jump as an immediate
+            // value and it's properly aligned, then we can use the b.cond
+            // instruction directly. Otherwise, we need to load the address into
+            // a register and use the branch register instruction.
+            if bcond_offset_fits_bits(offset) {
+                bcond(cb, condition, A64Opnd::new_imm(dst_addr - src_addr));
+
+                // Sometimes we need to align both clauses of this conditional
+                // because we're going to come back and patch the memory later.
+                // In that case we'll add enough nop instructions that both
+                // clauses are the same size in memory.
+                if matches!(padding, ClausePadding::Padding) {
+                    nop(cb);
+                    nop(cb);
+                    nop(cb);
+                    nop(cb);
+                }
+            } else {
+                // If the condition is met, then we'll skip past the next
+                // instruction, put the address in a register, and jump to it.
+                bcond(cb, condition, A64Opnd::new_imm(4));
+
+                // If the offset fits into a direct jump, then we'll use that
+                // and the number of instructions will be shorter. Otherwise
+                // we'll use the branch register instruction.
+                if fits_direct {
+                    if matches!(padding, ClausePadding::Padding) {
+                        // If we get to this instruction, then the condition
+                        // wasn't met, in which case we'll jump past the next
+                        // instruction that performs the direct jump.
+                        bl(cb, A64Opnd::new_imm(12));
+
+                        // Here we'll perform the direct jump to the target,
+                        // then encode some nops to keep it aligned.
+                        bl(cb, A64Opnd::new_imm(offset / 4));
+                        nop(cb);
+                        nop(cb);
+                    } else {
+                        // If we get to this instruction, then the condition
+                        // wasn't met, in which case we'll jump past the next
+                        // instruction that performs the direct jump.
+                        bl(cb, A64Opnd::new_imm(4));
+
+                        // Here we'll perform the direct jump to the target.
+                        bl(cb, A64Opnd::new_imm(offset / 4));
+                    }
+                } else {
+                    // If we get to this instruction, then the condition wasn't
+                    // met, in which case we'll jump past the next instruction
+                    // that perform the direct jump.
+                    bl(cb, A64Opnd::new_imm(12));
+                    mov(cb, X30, A64Opnd::new_uimm(src_addr as u64));
+                    mov(cb, X29, A64Opnd::new_uimm(dst_addr as u64));
+                    br(cb, X29);
+                }
+            }
+        }
+
+        /// Emit a conditional jump instruction to a specific target. This is
+        /// called when lowering any of the conditional jump instructions. It
+        /// delegates appropriate work to the emit_conditional_jump function
+        /// depending on the kind of target given.
+        fn emit_target_conditional_jump(cb: &mut CodeBlock, condition: Condition, target: Target) {
+            match target {
+                Target::CodePtr(dst_ptr) => {
+                    let src_addr = cb.get_write_ptr().into_i64() + 4;
+                    emit_conditional_jump(cb, condition, src_addr, dst_ptr.into_i64(), ClausePadding::NoPadding);
                 },
                 Target::Label(label_idx) => {
                     cb.label_ref(label_idx, 20, |cb, src_addr, dst_addr| {
-                        let offset = dst_addr - src_addr;
-
-                        // If the jump offset fits into the conditional jump as
-                        // an immediate value and it's properly aligned, then we
-                        // can use the bcond instruction directly. Otherwise, we
-                        // need to load the address into a register and use the
-                        // branch register instruction.
-                        if imm_fits_bits(offset, 21) && (offset & 0b11 == 0) {
-                            bcond(cb, condition, A64Opnd::new_imm(dst_addr - src_addr));
-
-                            // Here we're going to pad the memory with nops to
-                            // make it so that we're aligned with the else
-                            // clause so that when we're writing in the initial
-                            // memory we're able to keep the same alignment.
-                            nop(cb);
-                            nop(cb);
-                            nop(cb);
-                            nop(cb);
-                        } else {
-                            // If the condition is met, then we'll skip past the
-                            // next instruction, put the address in a register,
-                            // and jump to it.
-                            bcond(cb, condition, A64Opnd::new_imm(4));
-
-                            // If we get to this instruction, then the condition
-                            // wasn't met, in which case we'll jump past the
-                            // next 3 instructions that perform the direct jump.
-                            bl(cb, A64Opnd::new_imm(12));
-
-                            // If we get here, then the condition was met, so
-                            // we're going to emit a direct jump.
-                            emit_jump(cb, src_addr, dst_addr);
-                        }
+                        emit_conditional_jump(cb, condition, src_addr, dst_addr, ClausePadding::Padding);
                     });
                 },
                 Target::FunPtr(_) => unreachable!()
             };
         }
-
-        // NOTE: dear Kevin,
-        // for arm, you may want to reserve 1 or 2 caller-save registers
-        // to use as scracth registers (during the last phase of the codegen)
-        // These registers will not be allocated to anything by the register
-        // allocator, they're just useful because arm is slightly trickier
-        // than x86 to generate code for.
-        // For example, if you want to jump far away, you may want to store
-        // the jump target address in a register first.
 
         //dbg!(&self.insns);
 
@@ -277,10 +356,7 @@ impl Assembler
                         mov(cb, C_ARG_REGS[idx], insn.opnds[idx].into());
                     }
 
-                    // Calculate how far we're jumping in # of bytes
-                    let src_addr = cb.get_write_ptr().into_i64() + 4;
-                    let dst_addr = insn.target.unwrap().unwrap_fun_ptr() as i64;
-                    emit_jump(cb, src_addr, dst_addr);
+                    emit_target_jump(cb, insn.target.unwrap());
                 },
                 Op::CRet => {
                     // TODO: bias allocation towards return register
@@ -300,38 +376,28 @@ impl Assembler
                     br(cb, insn.opnds[0].into());
                 },
                 Op::Jmp => {
-                    match insn.target.unwrap() {
-                        Target::CodePtr(dst_ptr) => {
-                            let src_addr = cb.get_write_ptr().into_i64() + 4;
-                            let dst_addr = dst_ptr.into_i64();
-                            emit_jump(cb, src_addr, dst_addr);
-                        },
-                        Target::Label(label_idx) => {
-                            cb.label_ref(label_idx, 12, emit_jump);
-                        },
-                        Target::FunPtr(_) => unreachable!()
-                    };
+                    emit_target_jump(cb, insn.target.unwrap());
                 },
                 Op::Je => {
-                    emit_conditional_jump(cb, Condition::EQ, insn.target.unwrap());
+                    emit_target_conditional_jump(cb, Condition::EQ, insn.target.unwrap());
                 },
                 Op::Jbe => {
-                    emit_conditional_jump(cb, Condition::LE, insn.target.unwrap());
+                    emit_target_conditional_jump(cb, Condition::LS, insn.target.unwrap());
                 },
                 Op::Jz => {
-                    todo!();
+                    emit_target_conditional_jump(cb, Condition::EQ, insn.target.unwrap());
                 },
                 Op::Jnz => {
-                    todo!();
+                    emit_target_conditional_jump(cb, Condition::NE, insn.target.unwrap());
                 },
                 Op::Jo => {
-                    emit_conditional_jump(cb, Condition::VS, insn.target.unwrap());
+                    emit_target_conditional_jump(cb, Condition::VS, insn.target.unwrap());
                 },
                 Op::IncrCounter => {
-                    ldaddal(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())
+                    ldaddal(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into());
                 },
                 Op::Breakpoint => {
-                    brk(cb, A64Opnd::None)
+                    brk(cb, A64Opnd::None);
                 }
             };
         }
