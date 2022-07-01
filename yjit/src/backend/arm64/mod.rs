@@ -102,6 +102,25 @@ impl Assembler
     {
         self.forward_pass(|asm, index, op, opnds, target| {
             match op {
+                Op::Add | Op::Sub => {
+                    // Check if one of the operands is a register. If it is,
+                    // then we'll make that the first operand.
+                    match (opnds[0], opnds[1]) {
+                        (Opnd::Mem(_), Opnd::Mem(_)) => {
+                            let opnd0 = asm.load(opnds[0]);
+                            let opnd1 = asm.load(opnds[1]);
+                            asm.push_insn(op, vec![opnd0, opnd1], target);
+                        },
+                        (mem_opnd @ Opnd::Mem(_), other_opnd) |
+                        (other_opnd, mem_opnd @ Opnd::Mem(_)) => {
+                            let opnd0 = asm.load(mem_opnd);
+                            asm.push_insn(op, vec![opnd0, other_opnd], target);
+                        },
+                        _ => {
+                            asm.push_insn(op, opnds, target);
+                        }
+                    }
+                },
                 Op::IncrCounter => {
                     // Every operand to the IncrCounter instruction need to be a
                     // register once it gets there. So here we're going to load
@@ -134,6 +153,16 @@ impl Assembler
                     };
 
                     asm.push_insn(op, vec![opnds[0], value], target);
+                },
+                Op::Not => {
+                    // The value that is being negated must be in a register, so
+                    // if we get anything else we need to load it first.
+                    let opnd = match opnds[0] {
+                        Opnd::Mem(_) => asm.load(opnds[0]),
+                        _ => opnds[0]
+                    };
+
+                    asm.push_insn(op, vec![opnd], target);
                 },
                 _ => {
                     asm.push_insn(op, opnds, target);
