@@ -123,7 +123,7 @@ impl Assembler
         fn emit_jump(cb: &mut CodeBlock, src_addr: i64, dst_addr: i64) {
             let offset = dst_addr - src_addr;
 
-            if offset < 128 * 1024 * 1024 && offset >= -128 * 1024 * 1024 {
+            if imm_fits_bits(offset, 26) {
                 // Encode how far we're jumping in # of instructions
                 bl(cb, A64Opnd::new_imm(offset / 4));
 
@@ -144,12 +144,56 @@ impl Assembler
             }
         }
 
-        /// Emit a conditional jump instruction from the current address to a
-        /// target address.
-        fn emit_conditional_jump(cb: &mut CodeBlock, condition: Condition, dst_ptr: CodePtr) {
-            let src_addr = cb.get_write_ptr().into_i64() + 4;
-            let dst_addr = dst_ptr.into_i64();
-            bcond(cb, condition, A64Opnd::new_imm(dst_addr - src_addr));
+        /// Emit a conditional jump instruction. If this is given a pointer to a
+        /// point in code, then it will calculate the offset to the target and
+        /// emit the instruction immediately. Otherwise, it will encode a label
+        /// reference that will later come back and patch in a conditional jump.
+        fn emit_conditional_jump(cb: &mut CodeBlock, condition: Condition, target: Target) {
+            match target {
+                Target::CodePtr(dst_ptr) => {
+                    let src_addr = cb.get_write_ptr().into_i64() + 4;
+                    let dst_addr = dst_ptr.into_i64();
+                    bcond(cb, condition, A64Opnd::new_imm(dst_addr - src_addr));
+                },
+                Target::Label(label_idx) => {
+                    cb.label_ref(label_idx, 20, |cb, src_addr, dst_addr| {
+                        let offset = dst_addr - src_addr;
+
+                        // If the jump offset fits into the conditional jump as
+                        // an immediate value and it's properly aligned, then we
+                        // can use the bcond instruction directly. Otherwise, we
+                        // need to load the address into a register and use the
+                        // branch register instruction.
+                        if imm_fits_bits(offset, 21) && (offset & 0b11 == 0) {
+                            bcond(cb, condition, A64Opnd::new_imm(dst_addr - src_addr));
+
+                            // Here we're going to pad the memory with nops to
+                            // make it so that we're aligned with the else
+                            // clause so that when we're writing in the initial
+                            // memory we're able to keep the same alignment.
+                            nop(cb);
+                            nop(cb);
+                            nop(cb);
+                            nop(cb);
+                        } else {
+                            // If the condition is met, then we'll skip past the
+                            // next instruction, put the address in a register,
+                            // and jump to it.
+                            bcond(cb, condition, A64Opnd::new_imm(4));
+
+                            // If we get to this instruction, then the condition
+                            // wasn't met, in which case we'll jump past the
+                            // next 3 instructions that perform the direct jump.
+                            bl(cb, A64Opnd::new_imm(12));
+
+                            // If we get here, then the condition was met, so
+                            // we're going to emit a direct jump.
+                            emit_jump(cb, src_addr, dst_addr);
+                        }
+                    });
+                },
+                Target::FunPtr(_) => unreachable!()
+            };
         }
 
         // NOTE: dear Kevin,
@@ -262,50 +306,26 @@ impl Assembler
                             let dst_addr = dst_ptr.into_i64();
                             emit_jump(cb, src_addr, dst_addr);
                         },
-                        Target::Label(label_idx) => todo!(),
+                        Target::Label(label_idx) => {
+                            cb.label_ref(label_idx, 12, emit_jump);
+                        },
                         Target::FunPtr(_) => unreachable!()
                     };
                 },
                 Op::Je => {
-                    match insn.target.unwrap() {
-                        Target::CodePtr(dst_ptr) => {
-                            emit_conditional_jump(cb, Condition::EQ, dst_ptr);
-                        },
-                        Target::Label(_) => todo!(),
-                        _ => unreachable!()
-                    };
+                    emit_conditional_jump(cb, Condition::EQ, insn.target.unwrap());
                 },
                 Op::Jbe => {
-                    match insn.target.unwrap() {
-                        Target::CodePtr(dst_ptr) => {
-                            emit_conditional_jump(cb, Condition::LE, dst_ptr);
-                        },
-                        Target::Label(_) => todo!(),
-                        _ => unreachable!()
-                    };
+                    emit_conditional_jump(cb, Condition::LE, insn.target.unwrap());
                 },
                 Op::Jz => {
-                    match insn.target.unwrap() {
-                        Target::CodePtr(_) => todo!(),
-                        Target::Label(_) => todo!(),
-                        _ => unreachable!()
-                    };
+                    todo!();
                 },
                 Op::Jnz => {
-                    match insn.target.unwrap() {
-                        Target::CodePtr(_) => todo!(),
-                        Target::Label(_) => todo!(),
-                        _ => unreachable!()
-                    };
+                    todo!();
                 },
                 Op::Jo => {
-                    match insn.target.unwrap() {
-                        Target::CodePtr(dst_ptr) => {
-                            emit_conditional_jump(cb, Condition::VS, dst_ptr);
-                        },
-                        Target::Label(_) => todo!(),
-                        _ => unreachable!()
-                    };
+                    emit_conditional_jump(cb, Condition::VS, insn.target.unwrap());
                 },
                 Op::IncrCounter => {
                     ldaddal(cb, insn.opnds[0].into(), insn.opnds[0].into(), insn.opnds[1].into())

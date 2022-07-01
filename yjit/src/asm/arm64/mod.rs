@@ -14,7 +14,7 @@ pub use arg::*;
 pub use opnd::*;
 
 /// Checks that a signed value fits within the specified number of bits.
-const fn imm_fits_bits(imm: i64, num_bits: u8) -> bool {
+pub const fn imm_fits_bits(imm: i64, num_bits: u8) -> bool {
     let minimum = if num_bits == 64 { i64::MIN } else { -2_i64.pow((num_bits as u32) - 1) };
     let maximum = if num_bits == 64 { i64::MAX } else { 2_i64.pow((num_bits as u32) - 1) - 1 };
 
@@ -22,7 +22,7 @@ const fn imm_fits_bits(imm: i64, num_bits: u8) -> bool {
 }
 
 /// Checks that an unsigned value fits within the specified number of bits.
-const fn uimm_fits_bits(uimm: u64, num_bits: u8) -> bool {
+pub const fn uimm_fits_bits(uimm: u64, num_bits: u8) -> bool {
     let maximum = if num_bits == 64 { u64::MAX } else { 2_u64.pow(num_bits as u32) - 1 };
 
     uimm <= maximum
