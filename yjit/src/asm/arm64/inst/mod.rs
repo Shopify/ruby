@@ -12,6 +12,7 @@ mod load;
 mod logical_imm;
 mod logical_reg;
 mod mov;
+mod nop;
 mod shift_imm;
 mod store;
 
@@ -26,5 +27,6 @@ pub use load::Load;
 pub use logical_imm::LogicalImm;
 pub use logical_reg::LogicalReg;
 pub use mov::Mov;
+pub use nop::Nop;
 pub use shift_imm::ShiftImm;
 pub use store::Store;

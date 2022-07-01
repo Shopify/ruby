@@ -314,6 +314,13 @@ pub fn mvn(cb: &mut CodeBlock, rd: A64Opnd, rm: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
+/// NOP - no-operation, used for alignment purposes
+pub fn nop(cb: &mut CodeBlock) {
+    let bytes: [u8; 4] = Nop::nop().into();
+
+    cb.write_bytes(&bytes);
+}
+
 /// ORN - perform a bitwise OR of rn and NOT rm, put the result in rd, don't update flags
 pub fn orn(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
     let bytes: [u8; 4] = match (rd, rn, rm) {
@@ -591,6 +598,11 @@ mod tests {
     #[test]
     fn test_mvn() {
         check_bytes("ea032baa", |cb| mvn(cb, X10, X11));
+    }
+
+    #[test]
+    fn test_nop() {
+        check_bytes("1f2003d5", |cb| nop(cb));
     }
 
     #[test]
