@@ -703,9 +703,9 @@ pub fn call_ptr(cb: &mut CodeBlock, scratch_opnd: X86Opnd, dst_ptr: *const u8) {
 
 /// call - Call to label with 32-bit offset
 pub fn call_label(cb: &mut CodeBlock, label_idx: usize) {
-    cb.label_ref(label_idx, 5, |cb, offset| {
+    cb.label_ref(label_idx, 5, |cb, src_addr, dst_addr| {
         cb.write_byte(0xE8);
-        cb.write_int(offset as u64, 32);
+        cb.write_int((dst_addr - src_addr) as u64, 32);
     });
 }
 
@@ -800,10 +800,10 @@ pub fn int3(cb: &mut CodeBlock) {
 // Encode a conditional relative jump to a label
 // Note: this always encodes a 32-bit offset
 fn write_jcc(cb: &mut CodeBlock, op: u8, label_idx: usize) {
-    cb.label_ref(label_idx, 6, move |cb, offset| {
+    cb.label_ref(label_idx, 6, move |cb, src_addr, dst_addr| {
         cb.write_byte(0x0F);
         cb.write_byte(op);
-        cb.write_int(offset as u64, 32);
+        cb.write_int((dst_addr - src_addr) as u64, 32);
     });
 }
 
@@ -840,9 +840,9 @@ pub fn js_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x88, la
 pub fn jz_label  (cb: &mut CodeBlock, label_idx: usize) { write_jcc(cb, 0x84, label_idx); }
 
 pub fn jmp_label(cb: &mut CodeBlock, label_idx: usize) {
-    cb.label_ref(label_idx, 5, |cb, offset| {
+    cb.label_ref(label_idx, 5, |cb, src_addr, dst_addr| {
         cb.write_byte(0xE9);
-        cb.write_int(offset as u64, 32);
+        cb.write_int((dst_addr - src_addr) as u64, 32);
     });
 }
 

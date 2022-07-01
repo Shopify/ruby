@@ -28,7 +28,7 @@ struct LabelRef {
     width: usize,
 
     /// The object that knows how to encode the instruction.
-    encode: Box<dyn FnOnce(&mut CodeBlock, i64)>
+    encode: Box<dyn FnOnce(&mut CodeBlock, i64, i64)>
 }
 
 /// Block of memory into which instructions can be assembled
@@ -225,7 +225,7 @@ impl CodeBlock {
     }
 
     // Add a label reference at the current write position
-    pub fn label_ref<E: 'static>(&mut self, label_idx: usize, width: usize, encode: E) where E: FnOnce(&mut CodeBlock, i64) {
+    pub fn label_ref<E: 'static>(&mut self, label_idx: usize, width: usize, encode: E) where E: FnOnce(&mut CodeBlock, i64, i64) {
         assert!(label_idx < self.label_addrs.len());
 
         // Keep track of the reference
@@ -248,11 +248,8 @@ impl CodeBlock {
             let label_addr = self.label_addrs[label_idx];
             assert!(label_addr < self.mem_size);
 
-            // Compute the offset from the reference's end to the label
-            let offset = (label_addr as i64) - ((ref_pos + label_ref.width) as i64);
-
             self.set_pos(ref_pos);
-            (label_ref.encode)(self, offset);
+            (label_ref.encode)(self, (ref_pos + label_ref.width) as i64, label_addr as i64);
         }
 
         self.write_pos = orig_pos;
