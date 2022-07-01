@@ -40,14 +40,18 @@ pub const SP_STEP: A64Opnd = A64Opnd::UImm(16);
 impl From<Opnd> for A64Opnd {
     fn from(opnd: Opnd) -> Self {
         match opnd {
-            Opnd::InsnOut { .. } => panic!("InsnOut operand made it past register allocation"),
             Opnd::UImm(value) => A64Opnd::new_uimm(value),
             Opnd::Imm(value) => A64Opnd::new_imm(value),
             Opnd::Reg(reg) => A64Opnd::Reg(reg),
             Opnd::Mem(Mem { base: MemBase::Reg(reg_no), num_bits, disp }) => {
                 A64Opnd::new_mem(num_bits, A64Opnd::Reg(A64Reg { num_bits, reg_no }), disp)
-            }
-            _ => panic!("unsupported arm64 operand type")
+            },
+            Opnd::Mem(Mem { base: MemBase::InsnOut(_), .. }) => {
+                panic!("attempted to lower an Opnd::Mem with a MemBase::InsnOut base")
+            },
+            Opnd::InsnOut { .. } => panic!("attempted to lower an Opnd::InsnOut"),
+            Opnd::None => panic!("attempted to lower an Opnd::None"),
+            Opnd::Value(_) => panic!("attempted to lower an Opnd::Value"),
         }
     }
 }
@@ -132,7 +136,7 @@ impl Assembler
                         }
                     }).collect();
 
-                    asm.push_insn(op, new_opnds, target);
+                    asm.incr_counter(new_opnds[0], new_opnds[1]);
                 },
                 Op::Mov => {
                     // The value that is being moved must be either a register
@@ -149,20 +153,36 @@ impl Assembler
                                 asm.load(opnds[1])
                             }
                         },
-                        _ => panic!("Unsupported operand type")
+                        _ => unreachable!()
                     };
 
-                    asm.push_insn(op, vec![opnds[0], value], target);
+                    /// If we're attempting to load into a memory operand, then
+                    /// we'll switch over to the store instruction. Otherwise
+                    /// we'll use the normal mov instruction.
+                    match opnds[0] {
+                        Opnd::Mem(_) => asm.store(opnds[0], value),
+                        _ => asm.mov(opnds[0], value)
+                    };
                 },
                 Op::Not => {
                     // The value that is being negated must be in a register, so
                     // if we get anything else we need to load it first.
-                    let opnd = match opnds[0] {
+                    let opnd0 = match opnds[0] {
                         Opnd::Mem(_) => asm.load(opnds[0]),
                         _ => opnds[0]
                     };
 
-                    asm.push_insn(op, vec![opnd], target);
+                    asm.not(opnd0);
+                },
+                Op::Store => {
+                    // The value being stored must be in a register, so if it's
+                    // not already one we'll load it first.
+                    let opnd1 = match opnds[1] {
+                        Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[1],
+                        _ => asm.load(opnds[1])
+                    };
+
+                    asm.store(opnds[0], opnd1);
                 },
                 _ => {
                     asm.push_insn(op, opnds, target);
@@ -313,7 +333,7 @@ impl Assembler
             };
         }
 
-        //dbg!(&self.insns);
+        // dbg!(&self.insns);
 
         // List of GC offsets
         let mut gc_offsets: Vec<u32> = Vec::new();
@@ -349,18 +369,19 @@ impl Assembler
                     stur(cb, insn.opnds[1].into(), insn.opnds[0].into());
                 },
                 Op::Load => {
-                    // This assumes only load instructions can contain references to GC'd Value operands
-                    // mov(cb, insn.out.into(), insn.opnds[0].into());
+                    mov(cb, insn.out.into(), insn.opnds[0].into());
 
-                    // // If the value being loaded is a heap object
-                    // if let Opnd::Value(val) = insn.opnds[0] {
-                    //     if !val.special_const_p() {
-                    //         // The pointer immediate is encoded as the last part of the mov written out
-                    //         let ptr_offset: u32 = (cb.get_write_pos() as u32) - (SIZEOF_VALUE as u32);
-                    //         gc_offsets.push(ptr_offset);
-                    //     }
-                    // }
-                    todo!();
+                    // This assumes only load instructions can contain
+                    // references to GC'd Value operands. If the value being
+                    // loaded is a heap object, we'll report that back out to
+                    // the gc_offsets list.
+                    if let Opnd::Value(val) = insn.opnds[0] {
+                        if !val.special_const_p() {
+                            // The pointer immediate is encoded as the last part of the mov written out
+                            let ptr_offset: u32 = (cb.get_write_pos() as u32) - (SIZEOF_VALUE as u32);
+                            gc_offsets.push(ptr_offset);
+                        }
+                    }
                 },
                 Op::Mov => {
                     mov(cb, insn.opnds[0].into(), insn.opnds[1].into());

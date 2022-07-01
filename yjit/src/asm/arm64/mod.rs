@@ -226,6 +226,11 @@ pub fn ldaddal(cb: &mut CodeBlock, rs: A64Opnd, rt: A64Opnd, rn: A64Opnd) {
 /// LDUR - load a memory address into a register
 pub fn ldur(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd) {
     let bytes: [u8; 4] = match (rt, rn) {
+        (A64Opnd::Reg(rt), A64Opnd::Reg(rn)) => {
+            assert!(rt.num_bits == rn.num_bits, "All operands must be of the same size.");
+
+            Load::ldur(rt.reg_no, rn.reg_no, 0, rt.num_bits).into()
+        },
         (A64Opnd::Reg(rt), A64Opnd::Mem(rn)) => {
             assert!(rt.num_bits == rn.num_bits, "Expected registers to be the same size");
             assert!(imm_fits_bits(rn.disp.into(), 9), "Expected displacement to be 9 bits or less");
@@ -574,8 +579,13 @@ mod tests {
     }
 
     #[test]
-    fn test_ldur() {
+    fn test_ldur_memory() {
         check_bytes("20b047f8", |cb| ldur(cb, X0, A64Opnd::new_mem(64, X1, 123)));
+    }
+
+    #[test]
+    fn test_ldur_register() {
+        check_bytes("200040f8", |cb| ldur(cb, X0, X1));
     }
 
     #[test]
