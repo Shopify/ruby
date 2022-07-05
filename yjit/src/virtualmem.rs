@@ -154,7 +154,9 @@ impl<A: Allocator> VirtualMemory<A> {
             }
         }
 
+        // We have permission to write if we get here
         unsafe { raw.write(byte) };
+
         Ok(())
     }
 

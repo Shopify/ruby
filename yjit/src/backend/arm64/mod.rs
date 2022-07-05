@@ -33,8 +33,8 @@ pub const _C_RET_OPND: Opnd = Opnd::Reg(X0_REG);
 
 // These constants define the way we work with Arm64's stack pointer. The stack
 // pointer always needs to be aligned to a 16-byte boundary.
-pub const SP_REG: A64Opnd = X31;
-pub const SP_STEP: A64Opnd = A64Opnd::UImm(16);
+pub const C_SP_REG: A64Opnd = X31;
+pub const C_SP_STEP: A64Opnd = A64Opnd::UImm(16);
 
 /// Map Opnd to A64Opnd
 impl From<Opnd> for A64Opnd {
@@ -78,7 +78,7 @@ impl From<Opnd> for A64Opnd {
 /// In cases where we're jumping to a known destination, we don't need to bother
 /// padding anything. However, if we're jumping to a label, we will. This enum
 /// represents those different cases.
-enum ClausePadding {
+enum BranchPadding {
     /// We're jumping to a label, so pad with necessary nop instructions.
     Padding,
 
@@ -199,7 +199,7 @@ impl Assembler
         /// the range where we can use the branch link instruction, then we'll
         /// use that. Otherwise, we'll load the address into a register and use
         /// the branch register instruction.
-        fn emit_jump(cb: &mut CodeBlock, src_addr: i64, dst_addr: i64, padding: ClausePadding) {
+        fn emit_jump(cb: &mut CodeBlock, src_addr: i64, dst_addr: i64, padding: BranchPadding) {
             let offset = dst_addr - src_addr;
 
             if bl_offset_fits_bits(offset) {
@@ -212,7 +212,7 @@ impl Assembler
                 // shift stuff around. So here we'll add enough nop instructions
                 // to make that happen. It works out well for us here since the
                 // code would have jumped away already anyway.
-                if matches!(padding, ClausePadding::Padding) {
+                if matches!(padding, BranchPadding::Padding) {
                     nop(cb);
                     nop(cb);
                 }
@@ -233,16 +233,16 @@ impl Assembler
             match target {
                 Target::CodePtr(dst_ptr) => {
                     let src_addr = cb.get_write_ptr().into_i64() + 4;
-                    emit_jump(cb, src_addr, dst_ptr.into_i64(), ClausePadding::NoPadding);
+                    emit_jump(cb, src_addr, dst_ptr.into_i64(), BranchPadding::NoPadding);
                 },
                 Target::Label(label_idx) => {
                     cb.label_ref(label_idx, 12, |cb, src_addr, dst_addr| {
-                        emit_jump(cb, src_addr, dst_addr, ClausePadding::Padding);
+                        emit_jump(cb, src_addr, dst_addr, BranchPadding::Padding);
                     });
                 },
                 Target::FunPtr(fun_ptr) => {
                     let src_addr = cb.get_write_ptr().into_i64() + 4;
-                    emit_jump(cb, src_addr, fun_ptr as i64, ClausePadding::NoPadding);
+                    emit_jump(cb, src_addr, fun_ptr as i64, BranchPadding::NoPadding);
                 }
             };
         }
@@ -252,7 +252,7 @@ impl Assembler
         /// Otherwise, we'll use a combination of a b.cond, a direct jump
         /// forward, and loading the destination into a register and branching
         /// to it.
-        fn emit_conditional_jump(cb: &mut CodeBlock, condition: Condition, src_addr: i64, dst_addr: i64, padding: ClausePadding) {
+        fn emit_conditional_jump(cb: &mut CodeBlock, condition: Condition, src_addr: i64, dst_addr: i64, padding: BranchPadding) {
             let offset = dst_addr - src_addr;
             let fits_direct = bl_offset_fits_bits(offset);
 
@@ -267,7 +267,7 @@ impl Assembler
                 // because we're going to come back and patch the memory later.
                 // In that case we'll add enough nop instructions that both
                 // clauses are the same size in memory.
-                if matches!(padding, ClausePadding::Padding) {
+                if matches!(padding, BranchPadding::Padding) {
                     nop(cb);
                     nop(cb);
                     nop(cb);
@@ -282,7 +282,7 @@ impl Assembler
                 // and the number of instructions will be shorter. Otherwise
                 // we'll use the branch register instruction.
                 if fits_direct {
-                    if matches!(padding, ClausePadding::Padding) {
+                    if matches!(padding, BranchPadding::Padding) {
                         // If we get to this instruction, then the condition
                         // wasn't met, in which case we'll jump past the next
                         // instruction that performs the direct jump.
@@ -322,11 +322,11 @@ impl Assembler
             match target {
                 Target::CodePtr(dst_ptr) => {
                     let src_addr = cb.get_write_ptr().into_i64() + 4;
-                    emit_conditional_jump(cb, condition, src_addr, dst_ptr.into_i64(), ClausePadding::NoPadding);
+                    emit_conditional_jump(cb, condition, src_addr, dst_ptr.into_i64(), BranchPadding::NoPadding);
                 },
                 Target::Label(label_idx) => {
                     cb.label_ref(label_idx, 20, |cb, src_addr, dst_addr| {
-                        emit_conditional_jump(cb, condition, src_addr, dst_addr, ClausePadding::Padding);
+                        emit_conditional_jump(cb, condition, src_addr, dst_addr, BranchPadding::Padding);
                     });
                 },
                 Target::FunPtr(_) => unreachable!()
@@ -390,12 +390,12 @@ impl Assembler
                     ldur(cb, insn.out.into(), insn.opnds[0].into());
                 },
                 Op::CPush => {
-                    add(cb, SP_REG, SP_REG, SP_STEP);
-                    mov(cb, A64Opnd::new_mem(64, SP_REG, 0), insn.opnds[0].into());
+                    add(cb, C_SP_REG, C_SP_REG, C_SP_STEP);
+                    mov(cb, A64Opnd::new_mem(64, C_SP_REG, 0), insn.opnds[0].into());
                 },
                 Op::CPop => {
-                    mov(cb, insn.out.into(), A64Opnd::new_mem(64, SP_REG, 0));
-                    sub(cb, SP_REG, SP_REG, SP_STEP);
+                    mov(cb, insn.out.into(), A64Opnd::new_mem(64, C_SP_REG, 0));
+                    sub(cb, C_SP_REG, C_SP_REG, C_SP_STEP);
                 },
                 Op::CCall => {
                     // Temporary
