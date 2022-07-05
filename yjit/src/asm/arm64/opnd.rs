@@ -101,6 +101,10 @@ pub const X11_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 11 };
 pub const X12_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 12 };
 pub const X13_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 13 };
 
+pub const X24_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 24 };
+pub const X25_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 25 };
+pub const X26_REG: A64Reg = A64Reg { num_bits: 64, reg_no: 26 };
+
 // 64-bit registers
 pub const X0: A64Opnd = A64Opnd::Reg(X0_REG);
 pub const X1: A64Opnd = A64Opnd::Reg(X1_REG);
@@ -126,9 +130,9 @@ pub const X20: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 20 });
 pub const X21: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 21 });
 pub const X22: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 22 });
 pub const X23: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 23 });
-pub const X24: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 24 });
-pub const X25: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 25 });
-pub const X26: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 26 });
+pub const X24: A64Opnd = A64Opnd::Reg(X24_REG);
+pub const X25: A64Opnd = A64Opnd::Reg(X25_REG);
+pub const X26: A64Opnd = A64Opnd::Reg(X26_REG);
 pub const X27: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 27 });
 pub const X28: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 28 });
 pub const X29: A64Opnd = A64Opnd::Reg(A64Reg { num_bits: 64, reg_no: 29 });

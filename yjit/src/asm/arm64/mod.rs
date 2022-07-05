@@ -118,6 +118,27 @@ pub fn ands(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
+/// Whether or not the offset between two instructions fits into the branch with
+/// or without link instruction. If it doesn't, then we have to load the value
+/// into a register first.
+pub const fn b_offset_fits_bits(offset: i64) -> bool {
+    imm_fits_bits(offset, 26)
+}
+
+/// B - branch without link (offset is number of instructions to jump)
+pub fn b(cb: &mut CodeBlock, imm26: A64Opnd) {
+    let bytes: [u8; 4] = match imm26 {
+        A64Opnd::Imm(imm26) => {
+            assert!(b_offset_fits_bits(imm26), "The immediate operand must be 26 bits or less.");
+
+            Call::b(imm26 as i32).into()
+        },
+        _ => panic!("Invalid operand combination to b instruction.")
+    };
+
+    cb.write_bytes(&bytes);
+}
+
 /// Whether or not the offset between two instructions fits into the b.cond
 /// instruction. If it doesn't, then we have to load the value into a register
 /// first, then use the b.cond instruction to skip past a direct jump.
@@ -139,18 +160,11 @@ pub fn bcond(cb: &mut CodeBlock, cond: Condition, byte_offset: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
-/// Whether or not the offset between two instructions fits into the branch link
-/// instruction. If it doesn't, then we have to load the value into a register
-/// first.
-pub const fn bl_offset_fits_bits(offset: i64) -> bool {
-    imm_fits_bits(offset, 26)
-}
-
 /// BL - branch with link (offset is number of instructions to jump)
 pub fn bl(cb: &mut CodeBlock, imm26: A64Opnd) {
     let bytes: [u8; 4] = match imm26 {
         A64Opnd::Imm(imm26) => {
-            assert!(bl_offset_fits_bits(imm26), "The immediate operand must be 26 bits or less.");
+            assert!(b_offset_fits_bits(imm26), "The immediate operand must be 26 bits or less.");
 
             Call::bl(imm26 as i32).into()
         },
@@ -541,6 +555,11 @@ mod tests {
     #[test]
     fn test_bcond() {
         check_bytes("01200054", |cb| bcond(cb, Condition::NE, A64Opnd::new_imm(0x400)));
+    }
+
+    #[test]
+    fn test_b() {
+        check_bytes("00040014", |cb| b(cb, A64Opnd::new_imm(1024)));
     }
 
     #[test]
