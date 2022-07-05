@@ -148,13 +148,7 @@ class TestRubyOptions < Test::Unit::TestCase
   def test_verbose
     assert_in_out_err([{'RUBY_YJIT_ENABLE' => nil}, "-vve", ""]) do |r, e|
       assert_match(VERSION_PATTERN, r[0])
-      if defined?(RubyVM::MJIT) && RubyVM::MJIT.enabled? && !mjit_force_enabled? # checking -DMJIT_FORCE_ENABLE
-        assert_equal(NO_JIT_DESCRIPTION, r[0])
-      elsif self.class.yjit_enabled? && !yjit_force_enabled? # checking -DYJIT_FORCE_ENABLE
-        assert_equal(NO_JIT_DESCRIPTION, r[0])
-      else
-        assert_equal(RUBY_DESCRIPTION, r[0])
-      end
+      assert_equal(RUBY_DESCRIPTION, r[0])
       assert_equal([], e)
     end
 
@@ -216,8 +210,6 @@ class TestRubyOptions < Test::Unit::TestCase
       assert_match(VERSION_PATTERN, r[0])
       if ENV['RUBY_YJIT_ENABLE'] == '1'
         assert_equal(NO_JIT_DESCRIPTION, r[0])
-      elsif defined?(RubyVM::MJIT) && RubyVM::MJIT.enabled? || self.class.yjit_enabled? # checking -D(M|Y)JIT_FORCE_ENABLE
-        assert_equal(EnvUtil.invoke_ruby(['-e', 'print RUBY_DESCRIPTION'], '', true).first, r[0])
       else
         assert_equal(RUBY_DESCRIPTION, r[0])
       end

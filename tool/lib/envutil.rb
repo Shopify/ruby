@@ -165,8 +165,9 @@ module EnvUtil
     when /\+YJIT/
       "--yjit"
     else
-      ""
+      nil
     end
+    args.compact!
     pid = spawn(child_env, *precommand, rubybin, *args, opt)
     in_c.close
     out_c&.close
