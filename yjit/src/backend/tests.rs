@@ -44,22 +44,6 @@ fn test_add() {
 }
 
 #[test]
-fn test_split_loads() {
-    let mut asm = Assembler::new();
-
-    let regs = Assembler::get_alloc_regs();
-
-    asm.add(
-        Opnd::mem(64, Opnd::Reg(regs[0]), 0),
-        Opnd::mem(64, Opnd::Reg(regs[1]), 0)
-    );
-
-    let result = asm.split_loads();
-    assert_eq!(result.insns.len(), 2);
-    assert_eq!(result.insns[0].op, Op::Load);
-}
-
-#[test]
 fn test_alloc_regs() {
     let mut asm = Assembler::new();
 

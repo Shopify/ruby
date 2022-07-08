@@ -72,8 +72,21 @@ impl Assembler
     fn arm64_split(mut self) -> Assembler
     {
         self.forward_pass(|asm, index, op, opnds, target| {
+            // Load all Value operands into registers that aren't already a part
+            // of Load instructions.
+            let opnds = match op {
+                Op::Load => opnds,
+                _ => opnds.into_iter().map(|opnd| {
+                    if let Opnd::Value(_) = opnd {
+                        asm.load(opnd)
+                    } else {
+                        opnd
+                    }
+                }).collect()
+            };
+
             match op {
-                Op::Add | Op::Sub => {
+                Op::Add | Op::And | Op::Sub => {
                     // Check if one of the operands is a register. If it is,
                     // then we'll make that the first operand.
                     match (opnds[0], opnds[1]) {
@@ -485,7 +498,7 @@ impl Assembler
     /// Optimize and compile the stored instructions
     pub fn compile_with_regs(self, cb: &mut CodeBlock, regs: Vec<Reg>) -> Vec<u32>
     {
-        let mut asm = self.arm64_split().split_loads().alloc_regs(regs);
+        let mut asm = self.arm64_split().alloc_regs(regs);
 
         // Create label instances in the code block
         for (idx, name) in asm.label_names.iter().enumerate() {
