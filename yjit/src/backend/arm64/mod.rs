@@ -140,6 +140,14 @@ impl Assembler
 
                     asm.incr_counter(new_opnds[0], new_opnds[1]);
                 },
+                Op::JmpOpnd => {
+                    if let Opnd::Mem(_) = opnds[0] {
+                        let opnd0 = asm.load(opnds[0]);
+                        asm.jmp_opnd(opnd0);
+                    } else {
+                        asm.jmp_opnd(opnds[0]);
+                    }
+                },
                 Op::Mov => {
                     // The value that is being moved must be either a register
                     // or an immediate that can be encoded as a bitmask
@@ -150,7 +158,15 @@ impl Assembler
                         Opnd::Mem(_) | Opnd::Imm(_) => asm.load(opnds[1]),
                         Opnd::UImm(uimm) => {
                             if let Ok(encoded) = BitmaskImmediate::try_from(uimm) {
-                                opnds[1]
+                                if let Opnd::Mem(_) = opnds[0] {
+                                    // If the first operand is a memory operand,
+                                    // we're going to transform this into a
+                                    // store instruction, so we'll need to load
+                                    // this anyway.
+                                    asm.load(opnds[1])
+                                } else {
+                                    opnds[1]
+                                }
                             } else {
                                 asm.load(opnds[1])
                             }
@@ -158,9 +174,9 @@ impl Assembler
                         _ => unreachable!()
                     };
 
-                    /// If we're attempting to load into a memory operand, then
-                    /// we'll switch over to the store instruction. Otherwise
-                    /// we'll use the normal mov instruction.
+                    // If we're attempting to load into a memory operand, then
+                    // we'll switch over to the store instruction. Otherwise
+                    // we'll use the normal mov instruction.
                     match opnds[0] {
                         Opnd::Mem(_) => asm.store(opnds[0], value),
                         _ => asm.mov(opnds[0], value)
@@ -414,10 +430,10 @@ impl Assembler
                 },
                 Op::CPush => {
                     add(cb, C_SP_REG, C_SP_REG, C_SP_STEP);
-                    mov(cb, A64Opnd::new_mem(64, C_SP_REG, 0), insn.opnds[0].into());
+                    stur(cb, insn.opnds[0].into(), A64Opnd::new_mem(64, C_SP_REG, 0));
                 },
                 Op::CPop => {
-                    mov(cb, insn.out.into(), A64Opnd::new_mem(64, C_SP_REG, 0));
+                    ldur(cb, insn.opnds[0].into(), A64Opnd::new_mem(64, C_SP_REG, 0));
                     sub(cb, C_SP_REG, C_SP_REG, C_SP_STEP);
                 },
                 Op::CCall => {
