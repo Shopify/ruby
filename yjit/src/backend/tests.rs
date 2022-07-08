@@ -109,7 +109,8 @@ fn test_compile()
     let regs = Assembler::get_alloc_regs();
 
     let out = asm.add(Opnd::Reg(regs[0]), Opnd::UImm(2));
-    asm.add(out, Opnd::UImm(2));
+    let out2 = asm.add(out, Opnd::UImm(2));
+    asm.store(Opnd::mem(64, SP, 0), out2);
 
     asm.compile_with_num_regs(&mut cb, 1);
 }
@@ -187,7 +188,7 @@ fn test_base_insn_out()
     // Increment and store the updated value
     asm.incr_counter(counter_opnd, 1.into());
 
-    asm.compile_with_num_regs(&mut cb, 1);
+    asm.compile_with_num_regs(&mut cb, 2);
 }
 
 #[test]
@@ -247,7 +248,7 @@ fn test_jcc_ptr()
     );
     asm.jnz(side_exit);
 
-    asm.compile_with_num_regs(&mut cb, 1);
+    asm.compile_with_num_regs(&mut cb, 2);
 }
 
 /// Direct jump to a stub e.g. for deferred compilation
@@ -278,5 +279,5 @@ fn test_jo()
 
     asm.mov(Opnd::mem(64, SP, 0), out_val);
 
-    asm.compile_with_num_regs(&mut cb, 1);
+    asm.compile_with_num_regs(&mut cb, 2);
 }
