@@ -42,13 +42,13 @@ jobs:
       - run: make -j yjit-bindgen
 
       # Try booting miniruby
-      - run: RUST_BACKTRACE=1 ./miniruby -e0
+      - run: RUST_BACKTRACE=1 ./miniruby --yjit-call-threshold=1 -e0
 
       # Try outputting stats (should be available in dev config)
-      #- run: RUST_BACKTRACE=1 ./miniruby -e0 --yjit-call-threshold=1 --yjit-stats
+      #- run: RUST_BACKTRACE=1 ./miniruby --yjit-call-threshold=1 --yjit-stats -e0
 
       # Run bootstrap tests with --verify-ctx enabled
-      #- run: RUST_BACKTRACE=1 ruby --disable=gems bootstraptest/runner.rb --ruby="./miniruby -I./lib -I. -I.ext/common --disable-gems --yjit-call-threshold=1 --yjit-verify-ctx"
+      - run: RUST_BACKTRACE=1 ruby --disable=gems bootstraptest/runner.rb --ruby="./miniruby -I./lib -I. -I.ext/common --disable-gems --yjit-call-threshold=1 --yjit-verify-ctx" bootstraptest/test_yjit_new_backend.rb
 
       # Check that we can do a full build
       #- run: make -j
