@@ -207,6 +207,26 @@ impl Assembler
     /// Returns a list of GC offsets
     pub fn arm64_emit(&mut self, cb: &mut CodeBlock) -> Vec<u32>
     {
+        /// Determine how many instructions it will take to represent moving
+        /// this value into a register. Note that the return value of this
+        /// function must correspond to how many instructions are used to
+        /// represent this load in the emit_load_value function.
+        fn emit_load_size(value: u64) -> u8 {
+            if BitmaskImmediate::try_from(value).is_ok() {
+                return 1;
+            }
+
+            if value < (1 << 16) {
+                1
+            } else if value < (1 << 32) {
+                2
+            } else if value < (1 << 48) {
+                3
+            } else {
+                4
+            }
+        }
+
         /// Emit the required instructions to load the given value into the
         /// given register. Our goal here is to use as few instructions as
         /// possible to get this value into the register.
@@ -275,7 +295,7 @@ impl Assembler
                             // If we get to this instruction, then the condition
                             // wasn't met, in which case we'll jump past the
                             // next instruction that performs the direct jump.
-                            b(cb, A64Opnd::new_imm(4));
+                            b(cb, A64Opnd::new_imm(1));
 
                             // Here we'll perform the direct jump to the target.
                             b(cb, A64Opnd::new_imm(offset / 4));
@@ -283,8 +303,10 @@ impl Assembler
                             // If we get to this instruction, then the condition
                             // wasn't met, in which case we'll jump past the
                             // next instruction that perform the direct jump.
-                            b(cb, A64Opnd::new_imm(8));
-                            emit_load_value(cb, X29, dst_addr as u64);
+                            let value = dst_addr as u64;
+
+                            b(cb, A64Opnd::new_imm(emit_load_size(value).into()));
+                            emit_load_value(cb, X29, value);
                             br(cb, X29);
                         }
                     }
