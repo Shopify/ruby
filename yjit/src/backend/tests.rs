@@ -147,7 +147,7 @@ fn test_reuse_reg()
     let v0 = asm.add(Opnd::mem(64, SP, 0), Opnd::UImm(1));
     let v1 = asm.add(Opnd::mem(64, SP, 8), Opnd::UImm(1));
 
-    let v2 = asm.add(v0, Opnd::UImm(1)); // Reuse v1 register
+    let v2 = asm.add(v1, Opnd::UImm(1)); // Reuse v1 register
     let v3 = asm.add(v0, v2);
 
     asm.store(Opnd::mem(64, SP, 0), v2);
