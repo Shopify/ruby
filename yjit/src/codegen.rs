@@ -4124,6 +4124,79 @@ fn gen_send_cfunc(
     EndBlock
 }
 
+fn gen_send_call(
+    jit: &mut JITState,
+    ctx: &mut Context,
+    cb: &mut CodeBlock,
+    ocb: &mut OutlinedCb,
+    ci: *const rb_callinfo,
+    argc: i32,
+    block: Option<IseqPtr>,
+) -> CodegenStatus {
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
+
+    // Copy SP into RAX because REG_SP will get overwritten
+    lea(cb, RAX, ctx.sp_opnd(0));
+
+    // GetProcPtr(calling->recv, proc) -> GetCoreDataFromValue((calling->recv), rb_proc_t, (proc))
+    //      -> (proc) = CoreDataFromValue(calling->recv, rb_proc_t))
+    //      -> (proc) = (rb_proc_t*)DATA_PTR(calling->recv);
+    //      -> (proc) = (rb_proc_t*)(RDATA(calling->recv)->data);
+    //      -> (proc) = (rb_proc_t*)(RBIMPL_CAST((struct RData *)(calling->recv))->data);
+
+    let kw_arg = unsafe { vm_ci_kwarg(ci) };
+    let kw_arg_num = if kw_arg.is_null() {
+        0
+    } else {
+        unsafe { get_cikw_keyword_len(kw_arg) }
+    };
+
+    let recv = ctx.stack_opnd(argc);
+
+    // rb_vm_invoke_proc(ec, proc, argc, argv, kw_splat, block_handler)
+    mov(cb, C_ARG_REGS[0], REG_EC);
+    // C_ARG_REGS[1] = (rb_proc_t*)(((struct RData *)recv)->data); This is the expansion of GetProcPtr().
+    mov(cb, REG1, recv);
+    lea(cb, C_ARG_REGS[1], mem_opnd(64, REG1, RUBY_OFFSET_RDATA_DATA));
+    mov(cb, C_ARG_REGS[2], imm_opnd(argc.into()));
+    lea(
+        cb,
+        C_ARG_REGS[3],
+        mem_opnd(64, RAX, -(argc) * SIZEOF_VALUE_I32),
+    );
+    mov(cb, C_ARG_REGS[4], uimm_opnd(if kw_arg_num != 0 { 1 } else { 0 }));
+
+    if let Some(_block_iseq) = block {
+        // C_ARG_REGS[5] = VM_BH_FROM_ISEQ_BLOCK(VM_CFP_TO_CAPTURED_BLOCK(reg_cfp));
+        let cfp_self = mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SELF);
+        lea(cb, REG1, cfp_self);
+        or(cb, REG1, imm_opnd(1));
+        mov(cb, C_ARG_REGS[5], REG1);
+    } else {
+        mov(cb, C_ARG_REGS[5], uimm_opnd(VM_BLOCK_HANDLER_NONE.into()));
+    }
+
+    // Call the C function
+    // VALUE ret = (cfunc->func)(recv, argv[0], argv[1]);
+    add_comment(cb, "call a proc");
+    call_ptr(cb, REG0, rb_vm_invoke_proc as *const u8);
+
+    // Record code position for TracePoint patching. See full_cfunc_return(). Needed?
+    record_global_inval_patch(cb, CodegenGlobals::get_outline_full_cfunc_return_pos());
+
+    // Pop the 'call' method arguments from the stack (in the caller)
+    ctx.stack_pop((argc + 1).try_into().unwrap());
+
+    // Push the return value on the Ruby stack
+    let stack_ret = ctx.stack_push(Type::Unknown);
+    mov(cb, stack_ret, RAX);
+
+    // Jump (fall through) to the call continuation block
+    // We do this to end the current block after the call
+    jump_to_next_insn(jit, ctx, cb, ocb);
+    EndBlock
+}
+
 fn gen_return_branch(
     cb: &mut CodeBlock,
     target0: CodePtr,
@@ -4980,8 +5053,7 @@ fn gen_send_general(
                         return CantCompile;
                     }
                     OPTIMIZED_METHOD_TYPE_CALL => {
-                        gen_counter_incr!(cb, send_optimized_method_call);
-                        return CantCompile;
+                        return gen_send_call(jit, ctx, cb, ocb, ci, argc, block);
                     }
                     OPTIMIZED_METHOD_TYPE_BLOCK_CALL => {
                         gen_counter_incr!(cb, send_optimized_method_block_call);

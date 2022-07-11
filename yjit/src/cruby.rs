@@ -739,6 +739,7 @@ mod manual_defs {
     // redeclare all the Ruby C structs and write our own offsetof macro. For now, we use constants.
     pub const RUBY_OFFSET_RBASIC_FLAGS: i32 = 0; // struct RBasic, field "flags"
     pub const RUBY_OFFSET_RBASIC_KLASS: i32 = 8; // struct RBasic, field "klass"
+
     pub const RUBY_OFFSET_RARRAY_AS_HEAP_LEN: i32 = 16; // struct RArray, subfield "as.heap.len"
     pub const RUBY_OFFSET_RARRAY_AS_HEAP_PTR: i32 = 32; // struct RArray, subfield "as.heap.ptr"
     pub const RUBY_OFFSET_RARRAY_AS_ARY: i32 = 16; // struct RArray, subfield "as.ary"
@@ -749,6 +750,8 @@ mod manual_defs {
     pub const RUBY_OFFSET_ROBJECT_AS_ARY: i32 = 16; // struct RObject, subfield "as.ary"
     pub const RUBY_OFFSET_ROBJECT_AS_HEAP_NUMIV: i32 = 16; // struct RObject, subfield "as.heap.numiv"
     pub const RUBY_OFFSET_ROBJECT_AS_HEAP_IVPTR: i32 = 24; // struct RObject, subfield "as.heap.ivptr"
+
+    pub const RUBY_OFFSET_RDATA_DATA: i32 = 0; // struct RData, field "data"
 
     // Constants from rb_control_frame_t vm_core.h
     pub const RUBY_OFFSET_CFP_PC: i32 = 0;
