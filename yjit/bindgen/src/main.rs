@@ -236,6 +236,12 @@ fn main() {
         .allowlist_var("VM_ENV_DATA_INDEX_SPECVAL")
         .allowlist_var("VM_ENV_DATA_INDEX_FLAGS")
         .allowlist_var("VM_ENV_DATA_SIZE")
+        .blocklist_type("rb_proc_t")
+        .opaque_type("rb_proc_t")
+        .allowlist_function("rb_vm_invoke_proc")
+
+        // From ruby/internal/core/rdata.h
+        .allowlist_type("RData")
 
         // From yjit.c
         .allowlist_function("rb_iseq_(get|set)_yjit_payload")

@@ -108,6 +108,15 @@ pub type ruby_rmodule_flags = u32;
 extern "C" {
     pub fn rb_class_get_superclass(klass: VALUE) -> VALUE;
 }
+pub type RUBY_DATA_FUNC =
+    ::std::option::Option<unsafe extern "C" fn(arg1: *mut ::std::os::raw::c_void)>;
+#[repr(C)]
+pub struct RData {
+    pub basic: RBasic,
+    pub dmark: RUBY_DATA_FUNC,
+    pub dfree: RUBY_DATA_FUNC,
+    pub data: *mut ::std::os::raw::c_void,
+}
 pub const ROBJECT_EMBED: ruby_robject_flags = 8192;
 pub type ruby_robject_flags = u32;
 pub const ROBJECT_EMBED_LEN_MAX: ruby_robject_consts = 3;
@@ -646,6 +655,16 @@ pub const VM_ENV_FLAG_ESCAPED: vm_frame_env_flags = 4;
 pub const VM_ENV_FLAG_WB_REQUIRED: vm_frame_env_flags = 8;
 pub const VM_ENV_FLAG_ISOLATED: vm_frame_env_flags = 16;
 pub type vm_frame_env_flags = u32;
+extern "C" {
+    pub fn rb_vm_invoke_proc(
+        ec: *mut rb_execution_context_t,
+        proc_: *mut rb_proc_t,
+        argc: ::std::os::raw::c_int,
+        argv: *const VALUE,
+        kw_splat: ::std::os::raw::c_int,
+        block_handler: VALUE,
+    ) -> VALUE;
+}
 extern "C" {
     pub fn rb_vm_bh_to_procval(ec: *const rb_execution_context_t, block_handler: VALUE) -> VALUE;
 }

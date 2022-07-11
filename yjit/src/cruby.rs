@@ -357,6 +357,13 @@ pub struct rb_execution_context_struct {
 /// Alias for rb_execution_context_struct used by CRuby sometimes
 pub type rb_execution_context_t = rb_execution_context_struct;
 
+/// Opaque proc type from vm_core.h
+#[repr(C)]
+pub struct rb_proc_t {
+    _data: [u8; 0],
+    _marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+}
+
 /// Pointer to an execution context (rb_execution_context_struct)
 pub type EcPtr = *const rb_execution_context_struct;
 
