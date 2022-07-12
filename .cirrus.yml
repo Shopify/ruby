@@ -8,8 +8,66 @@ env:
   CIRRUS_VOLUME: /cirrus-ci-volume
   LANG: C.UTF-8
 
-task:
-  name: Arm64 Graviton2 / $CC
+# task:
+#   name: Arm64 Graviton2 / $CC
+#   skip: "changesIncludeOnly('doc/**', '**.{md,rdoc}')"
+#   arm_container:
+#     # We use the arm64 images at https://github.com/ruby/ruby-ci-image/pkgs/container/ruby-ci-image .
+#     image: ghcr.io/ruby/ruby-ci-image:$CC
+#     # Define the used cpu core in each matrix task. We can use total 16 cpu
+#     # cores in entire matrix. [cpu] = [total cpu: 16] / [number of tasks]
+#     cpu: 8
+#     # We can request maximum 4 GB per cpu.
+#     # [memory per task] = [memory per cpu: 4 GB] * [cpu]
+#     memory: 32G
+#   env:
+#     CIRRUS_CLONE_DEPTH: 50
+#     optflags: '-O1'
+#     debugflags: '-ggdb3'
+#     RUBY_PREFIX: /tmp/ruby-prefix
+#     RUBY_DEBUG: ci rgengc
+#     RUBY_TESTOPTS: >-
+#       -q
+#       --color=always
+#       --tty=no
+#     matrix:
+#       CC: clang-12
+#       CC: gcc-11
+#   id_script: id
+#   set_env_script:
+#     # Set `GNUMAKEFLAGS`, because the flags are GNU make specific. Note using
+#     # the `make` environment variable used in compilers.yml causes some rubygems
+#     # tests to fail.
+#     # https://github.com/rubygems/rubygems/issues/4921
+#     - echo "GNUMAKEFLAGS=-s -j$((1 + $CIRRUS_CPU))" >> $CIRRUS_ENV
+#   print_env_script:
+#     - echo "GNUMAKEFLAGS=$GNUMAKEFLAGS"
+#   # Arm containers are executed in AWS's EKS, and it's not yet supporting IPv6
+#   # See https://github.com/aws/containers-roadmap/issues/835
+#   disable_ipv6_script: sudo ./tool/disable_ipv6.sh
+#   autogen_script: ./autogen.sh
+#   configure_script: >-
+#     ./configure -C
+#     --enable-debug-env
+#     --disable-install-doc
+#     --with-ext=-test-/cxxanyargs,+
+#     --prefix="$RUBY_PREFIX"
+#   make_extract-extlibs_script: make extract-extlibs
+#   make_incs_script: make incs
+#   make_script: make
+#   make_leaked-globals_script: make leaked-globals
+#   make_test_script: make test
+#   make_install_script: make install
+#   install_gems_for_test_script: $RUBY_PREFIX/bin/gem install --no-doc timezone tzinfo
+#   make_test-tool_script: make test-tool
+#   make_test-all_script: make test-all
+#   make_test-spec_script: make test-spec
+
+
+# The following is specific to Shopify/ruby and should be submitted upstream
+yjit_task:
+  name: Arm64 Graviton2 / $CC YJIT New Backend Temp Checks
+  auto_cancellation: $CIRRUS_BRANCH != 'master'
   skip: "changesIncludeOnly('doc/**', '**.{md,rdoc}')"
   arm_container:
     # We use the arm64 images at https://github.com/ruby/ruby-ci-image/pkgs/container/ruby-ci-image .
@@ -33,15 +91,16 @@ task:
     matrix:
       CC: clang-12
       CC: gcc-11
-  id_script: id
-  set_env_script:
+  setup:
+    - id
     # Set `GNUMAKEFLAGS`, because the flags are GNU make specific. Note using
     # the `make` environment variable used in compilers.yml causes some rubygems
     # tests to fail.
     # https://github.com/rubygems/rubygems/issues/4921
     - echo "GNUMAKEFLAGS=-s -j$((1 + $CIRRUS_CPU))" >> $CIRRUS_ENV
-  print_env_script:
     - echo "GNUMAKEFLAGS=$GNUMAKEFLAGS"
+  install_rust:
+    - "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
   # Arm containers are executed in AWS's EKS, and it's not yet supporting IPv6
   # See https://github.com/aws/containers-roadmap/issues/835
   disable_ipv6_script: sudo ./tool/disable_ipv6.sh
@@ -52,13 +111,10 @@ task:
     --disable-install-doc
     --with-ext=-test-/cxxanyargs,+
     --prefix="$RUBY_PREFIX"
-  make_extract-extlibs_script: make extract-extlibs
-  make_incs_script: make incs
-  make_script: make
-  make_leaked-globals_script: make leaked-globals
-  make_test_script: make test
-  make_install_script: make install
-  install_gems_for_test_script: $RUBY_PREFIX/bin/gem install --no-doc timezone tzinfo
-  make_test-tool_script: make test-tool
-  make_test-all_script: make test-all
-  make_test-spec_script: make test-spec
+    --enable-yjit=dev
+  make_miniruby: make -j miniruby
+  make_bindgen: make -j yjit-bindgen
+  boot_miniruby: RUST_BACKTRACE=1 ./miniruby --yjit-call-threshold=1 -e0
+  # output_stats: RUST_BACKTRACE=1 ./miniruby --yjit-call-threshold=1 --yjit-stats -e0
+  bootstrap_tests: RUST_BACKTRACE=1 ruby --disable=gems bootstraptest/runner.rb --ruby="./miniruby -I./lib -I. -I.ext/common --disable-gems --yjit-call-threshold=1 --yjit-verify-ctx" bootstraptest/test_yjit_new_backend.rb
+  # full_build: make -j
