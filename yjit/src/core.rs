@@ -1,5 +1,6 @@
-use crate::asm::x86_64::*;
+//use crate::asm::x86_64::*;
 use crate::asm::*;
+use crate::backend::ir::*;
 use crate::codegen::*;
 use crate::virtualmem::CodePtr;
 use crate::cruby::*;
@@ -198,7 +199,7 @@ pub enum InsnOpnd {
 /// Code generation context
 /// Contains information we can use to specialize/optimize code
 /// There are a lot of context objects so we try to keep the size small.
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Debug)]
 pub struct Context {
     // Number of values currently on the temporary stack
     stack_size: u16,
@@ -244,7 +245,7 @@ pub enum BranchShape {
 
 // Branch code generation function signature
 type BranchGenFn =
-    fn(cb: &mut CodeBlock, target0: CodePtr, target1: Option<CodePtr>, shape: BranchShape) -> ();
+    fn(cb: &mut Assembler, target0: CodePtr, target1: Option<CodePtr>, shape: BranchShape) -> ();
 
 /// Store info about an outgoing branch in a code segment
 /// Note: care must be taken to minimize the size of branch objects
@@ -334,7 +335,7 @@ pub struct Block {
 
     // FIXME: should these be code pointers instead?
     // Offsets for GC managed objects in the mainline code block
-    gc_object_offsets: Vec<u32>,
+    gc_obj_offsets: Vec<u32>,
 
     // CME dependencies of this block, to help to remove all pointers to this
     // block in the system.
@@ -526,7 +527,7 @@ pub extern "C" fn rb_yjit_iseq_mark(payload: *mut c_void) {
             }
 
             // Walk over references to objects in generated code.
-            for offset in &block.gc_object_offsets {
+            for offset in &block.gc_obj_offsets {
                 let value_address: *const u8 = cb.get_ptr(offset.as_usize()).raw_ptr();
                 // Creating an unaligned pointer is well defined unlike in C.
                 let value_address = value_address as *const VALUE;
@@ -584,7 +585,7 @@ pub extern "C" fn rb_yjit_iseq_update_references(payload: *mut c_void) {
             }
 
             // Walk over references to objects in generated code.
-            for offset in &block.gc_object_offsets {
+            for offset in &block.gc_obj_offsets {
                 let offset_to_value = offset.as_usize();
                 let value_code_ptr = cb.get_ptr(offset_to_value);
                 let value_ptr: *const u8 = value_code_ptr.raw_ptr();
@@ -752,7 +753,7 @@ fn add_block_version(blockref: &BlockRef, cb: &CodeBlock) {
     }
 
     // Run write barriers for all objects in generated code.
-    for offset in &block.gc_object_offsets {
+    for offset in &block.gc_obj_offsets {
         let value_address: *const u8 = cb.get_ptr(offset.as_usize()).raw_ptr();
         // Creating an unaligned pointer is well defined unlike in C.
         let value_address: *const VALUE = value_address.cast();
@@ -788,7 +789,7 @@ impl Block {
             end_addr: None,
             incoming: Vec::new(),
             outgoing: Vec::new(),
-            gc_object_offsets: Vec::new(),
+            gc_obj_offsets: Vec::new(),
             cme_dependencies: Vec::new(),
             entry_exit: None,
         };
@@ -849,8 +850,8 @@ impl Block {
         self.end_idx = end_idx;
     }
 
-    pub fn add_gc_object_offset(self: &mut Block, ptr_offset: u32) {
-        self.gc_object_offsets.push(ptr_offset);
+    pub fn add_gc_obj_offset(self: &mut Block, ptr_offset: u32) {
+        self.gc_obj_offsets.push(ptr_offset);
     }
 
     /// Instantiate a new CmeDependency struct and add it to the list of
@@ -914,15 +915,15 @@ impl Context {
     }
 
     /// Get an operand for the adjusted stack pointer address
-    pub fn sp_opnd(&self, offset_bytes: isize) -> X86Opnd {
+    pub fn sp_opnd(&self, offset_bytes: isize) -> Opnd {
         let offset = ((self.sp_offset as isize) * (SIZEOF_VALUE as isize)) + offset_bytes;
         let offset = offset as i32;
-        return mem_opnd(64, REG_SP, offset);
+        return Opnd::mem(64, SP, offset);
     }
 
     /// Push one new value on the temp stack with an explicit mapping
     /// Return a pointer to the new stack top
-    pub fn stack_push_mapping(&mut self, (mapping, temp_type): (TempMapping, Type)) -> X86Opnd {
+    pub fn stack_push_mapping(&mut self, (mapping, temp_type): (TempMapping, Type)) -> Opnd {
         // If type propagation is disabled, store no types
         if get_option!(no_type_prop) {
             return self.stack_push_mapping((mapping, Type::Unknown));
@@ -945,22 +946,22 @@ impl Context {
 
         // SP points just above the topmost value
         let offset = ((self.sp_offset as i32) - 1) * (SIZEOF_VALUE as i32);
-        return mem_opnd(64, REG_SP, offset);
+        return Opnd::mem(64, SP, offset);
     }
 
     /// Push one new value on the temp stack
     /// Return a pointer to the new stack top
-    pub fn stack_push(&mut self, val_type: Type) -> X86Opnd {
+    pub fn stack_push(&mut self, val_type: Type) -> Opnd {
         return self.stack_push_mapping((MapToStack, val_type));
     }
 
     /// Push the self value on the stack
-    pub fn stack_push_self(&mut self) -> X86Opnd {
+    pub fn stack_push_self(&mut self) -> Opnd {
         return self.stack_push_mapping((MapToSelf, Type::Unknown));
     }
 
     /// Push a local variable on the stack
-    pub fn stack_push_local(&mut self, local_idx: usize) -> X86Opnd {
+    pub fn stack_push_local(&mut self, local_idx: usize) -> Opnd {
         if local_idx >= MAX_LOCAL_TYPES {
             return self.stack_push(Type::Unknown);
         }
@@ -970,12 +971,12 @@ impl Context {
 
     // Pop N values off the stack
     // Return a pointer to the stack top before the pop operation
-    pub fn stack_pop(&mut self, n: usize) -> X86Opnd {
+    pub fn stack_pop(&mut self, n: usize) -> Opnd {
         assert!(n <= self.stack_size.into());
 
         // SP points just above the topmost value
         let offset = ((self.sp_offset as i32) - 1) * (SIZEOF_VALUE as i32);
-        let top = mem_opnd(64, REG_SP, offset);
+        let top = Opnd::mem(64, SP, offset);
 
         // Clear the types of the popped values
         for i in 0..n {
@@ -994,10 +995,10 @@ impl Context {
     }
 
     /// Get an operand pointing to a slot on the temp stack
-    pub fn stack_opnd(&self, idx: i32) -> X86Opnd {
+    pub fn stack_opnd(&self, idx: i32) -> Opnd {
         // SP points just above the topmost value
         let offset = ((self.sp_offset as i32) - 1 - idx) * (SIZEOF_VALUE as i32);
-        let opnd = mem_opnd(64, REG_SP, offset);
+        let opnd = Opnd::mem(64, SP, offset);
         return opnd;
     }
 
@@ -1439,12 +1440,18 @@ fn regenerate_branch(cb: &mut CodeBlock, branch: &mut Branch) {
     // Rewrite the branch
     assert!(branch.dst_addrs[0].is_some());
     cb.set_write_ptr(branch.start_addr.unwrap());
+
+    let mut asm = Assembler::new();
+
     (branch.gen_fn)(
-        cb,
+        &mut asm,
         branch.dst_addrs[0].unwrap(),
         branch.dst_addrs[1],
         branch.shape,
     );
+
+    asm.compile(cb);
+
     branch.end_addr = Some(cb.get_write_ptr());
 
     // The block may have shrunk after the branch is rewritten
@@ -1470,7 +1477,7 @@ fn regenerate_branch(cb: &mut CodeBlock, branch: &mut Branch) {
 }
 
 /// Create a new outgoing branch entry for a block
-fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) -> BranchRef {
+fn make_branch_entry(block: &BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) -> BranchRef {
     let branch = Branch {
         // Block this is attached to
         block: block.clone(),
@@ -1519,6 +1526,10 @@ extern "sysv64" fn branch_stub_hit(
 /// Called by the generated code when a branch stub is executed
 /// Triggers compilation of branches and code patching
 fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -> *const u8 {
+    if get_option!(dump_insns) {
+        println!("branch_stub_hit");
+    }
+
     assert!(!branch_ptr.is_null());
 
     //branch_ptr is actually:
@@ -1696,15 +1707,23 @@ fn get_branch_target(
     // This means the branch stub owns its own reference to the branch
     let branch_ptr: *const RefCell<Branch> = BranchRef::into_raw(branchref.clone());
 
-    // Call branch_stub_hit(branch_idx, target_idx, ec)
-    mov(ocb, C_ARG_REGS[2], REG_EC);
-    mov(ocb, C_ARG_REGS[1], uimm_opnd(target_idx as u64));
-    mov(ocb, C_ARG_REGS[0], const_ptr_opnd(branch_ptr as *const u8));
-    call_ptr(ocb, REG0, branch_stub_hit as *mut u8);
+    let mut asm = Assembler::new();
+
+    // Call branch_stub_hit(branch_ptr, target_idx, ec)
+    let jump_addr = asm.ccall(
+        branch_stub_hit as *mut u8,
+        vec![
+            Opnd::const_ptr(branch_ptr as *const u8),
+            Opnd::UImm(target_idx as u64),
+            EC,
+        ]
+    );
 
     // Jump to the address returned by the
     // branch_stub_hit call
-    jmp_rm(ocb, RAX);
+    asm.jmp_opnd(jump_addr);
+
+    asm.compile(ocb);
 
     if ocb.has_dropped_bytes() {
         None // No space
@@ -1724,7 +1743,7 @@ pub fn gen_branch(
     ctx1: Option<&Context>,
     gen_fn: BranchGenFn,
 ) {
-    let branchref = make_branch_entry(jit.get_block(), src_ctx, gen_fn);
+    let branchref = make_branch_entry(&jit.get_block(), src_ctx, gen_fn);
 
     // Get the branch targets or stubs
     let dst_addr0 = get_branch_target(target0, ctx0, &branchref, 0, ocb);
@@ -1755,7 +1774,7 @@ pub fn gen_branch(
 }
 
 fn gen_jump_branch(
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     target0: CodePtr,
     _target1: Option<CodePtr>,
     shape: BranchShape,
@@ -1765,12 +1784,12 @@ fn gen_jump_branch(
     }
 
     if shape == BranchShape::Default {
-        jmp_ptr(cb, target0);
+        asm.jmp(target0.into());
     }
 }
 
 pub fn gen_direct_jump(jit: &JITState, ctx: &Context, target0: BlockId, cb: &mut CodeBlock) {
-    let branchref = make_branch_entry(jit.get_block(), ctx, gen_jump_branch);
+    let branchref = make_branch_entry(&jit.get_block(), ctx, gen_jump_branch);
     let mut branch = branchref.borrow_mut();
 
     branch.targets[0] = Some(target0);
@@ -1788,10 +1807,25 @@ pub fn gen_direct_jump(jit: &JITState, ctx: &Context, target0: BlockId, cb: &mut
         branch.blocks[0] = Some(blockref.clone());
         branch.shape = BranchShape::Default;
 
+
+
+        todo!("convert gen_direct_jump to using new asm");
+
+
+        // TODO: could we use regenerate_branch logic here?
+
+        /*
         // Call the branch generation function
         branch.start_addr = Some(cb.get_write_ptr());
         gen_jump_branch(cb, branch.dst_addrs[0].unwrap(), None, BranchShape::Default);
         branch.end_addr = Some(cb.get_write_ptr());
+        */
+
+
+
+
+
+
     } else {
         // This None target address signals gen_block_series() to compile the
         // target block right after this one (fallthrough).
@@ -1804,7 +1838,8 @@ pub fn gen_direct_jump(jit: &JITState, ctx: &Context, target0: BlockId, cb: &mut
 
 /// Create a stub to force the code up to this point to be executed
 pub fn defer_compilation(
-    jit: &JITState,
+    block: &BlockRef,
+    insn_idx: u32,
     cur_ctx: &Context,
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
@@ -1820,14 +1855,12 @@ pub fn defer_compilation(
     }
     next_ctx.chain_depth += 1;
 
-    let block_rc = jit.get_block();
-    let branch_rc = make_branch_entry(jit.get_block(), cur_ctx, gen_jump_branch);
+    let branch_rc = make_branch_entry(block, cur_ctx, gen_jump_branch);
     let mut branch = branch_rc.borrow_mut();
-    let block = block_rc.borrow();
 
     let blockid = BlockId {
-        iseq: block.blockid.iseq,
-        idx: jit.get_insn_idx(),
+        iseq: block.borrow().blockid.iseq,
+        idx: insn_idx,
     };
     branch.target_ctxs[0] = next_ctx;
     branch.targets[0] = Some(blockid);
@@ -1835,7 +1868,9 @@ pub fn defer_compilation(
 
     // Call the branch generation function
     branch.start_addr = Some(cb.get_write_ptr());
-    gen_jump_branch(cb, branch.dst_addrs[0].unwrap(), None, BranchShape::Default);
+    let mut asm = Assembler::new();
+    gen_jump_branch(&mut asm, branch.dst_addrs[0].unwrap(), None, BranchShape::Default);
+    asm.compile(cb);
     branch.end_addr = Some(cb.get_write_ptr());
 }
 
@@ -1936,7 +1971,10 @@ pub fn invalidate_block_version(blockref: &BlockRef) {
             // Patch in a jump to block.entry_exit.
             let cur_pos = cb.get_write_ptr();
             cb.set_write_ptr(block_start);
-            jmp_ptr(cb, block_entry_exit);
+
+            //jmp_ptr(cb, block_entry_exit);
+            todo!("jmp_ptr with new assembler");
+
             assert!(
                 cb.get_write_ptr() < block_end,
                 "invalidation wrote past end of block"
