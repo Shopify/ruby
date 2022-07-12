@@ -99,12 +99,12 @@ yjit_task:
     # https://github.com/rubygems/rubygems/issues/4921
     - echo "GNUMAKEFLAGS=-s -j$((1 + $CIRRUS_CPU))" >> $CIRRUS_ENV
     - echo "GNUMAKEFLAGS=$GNUMAKEFLAGS"
-    - "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
   # Arm containers are executed in AWS's EKS, and it's not yet supporting IPv6
   # See https://github.com/aws/containers-roadmap/issues/835
   disable_ipv6_script: sudo ./tool/disable_ipv6.sh
   autogen_script: ./autogen.sh
   configure_script: >-
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     ./configure -C
     --enable-debug-env
     --disable-install-doc
