@@ -15,7 +15,7 @@
 # define YJIT_STATS RUBY_DEBUG
 #endif
 
-// We generate x86 assembly
+// YJIT is supported on Mac/Linux platforms with x86-64 or ARM64 CPUs
 #if (defined(__x86_64__) && !defined(_WIN32)) || (defined(__ARM_ARCH_ISA_A64) && !defined(_WIN32)) || (defined(_WIN32) && defined(_M_AMD64)) // x64 platforms without mingw/msys
 # define YJIT_SUPPORTED_P 1
 #else
