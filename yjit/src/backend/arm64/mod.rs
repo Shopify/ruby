@@ -58,6 +58,9 @@ impl From<Opnd> for A64Opnd {
 
 impl Assembler
 {
+    // A special scratch register for intermediate processing.
+    const SCRATCH0: A64Opnd = A64Opnd::Reg(X22_REG);
+
     /// Get the list of registers from which we will allocate on this platform
     /// These are caller-saved registers
     /// Note: we intentionally exclude C_RET_REG (X0) from this list
@@ -366,9 +369,6 @@ impl Assembler
         // List of GC offsets
         let mut gc_offsets: Vec<u32> = Vec::new();
 
-        // A special scratch register for loading/storing system registers.
-        let mut sys_scratch = A64Opnd::Reg(X22_REG);
-
         // For each instruction
         for insn in &self.insns {
             match insn.op {
@@ -464,14 +464,14 @@ impl Assembler
                         }
                     };
                 },
-                Op::LeaPC => {
-                    let opnd = insn.opnds[0];
-                    assert!(
-                        matches!(opnd, Opnd::Imm(_)),
-                        "Op::LeaPC must have a signed immediate operand"
-                    );
+                Op::LeaLabel => {
+                    let label_idx = insn.target.unwrap().unwrap_label_idx();
 
-                    adr(cb, insn.out.into(), opnd.into());
+                    cb.label_ref(label_idx, 4, |cb, src_addr, dst_addr| {
+                        adr(cb, Self::SCRATCH0, A64Opnd::new_imm(dst_addr - src_addr));
+                    });
+
+                    mov(cb, insn.out.into(), Self::SCRATCH0);
                 },
                 Op::CPush => {
                     emit_push(cb, insn.opnds[0].into());
@@ -483,8 +483,8 @@ impl Assembler
                         emit_push(cb, A64Opnd::Reg(reg));
                     }
 
-                    mrs(cb, sys_scratch, SystemRegister::NZCV);
-                    emit_push(cb, sys_scratch);
+                    mrs(cb, Self::SCRATCH0, SystemRegister::NZCV);
+                    emit_push(cb, Self::SCRATCH0);
                 },
                 Op::CPop => {
                     emit_pop(cb, insn.out.into());
@@ -495,8 +495,8 @@ impl Assembler
                 Op::CPopAll => {
                     let regs = Assembler::get_caller_save_regs();
 
-                    msr(cb, SystemRegister::NZCV, sys_scratch);
-                    emit_pop(cb, sys_scratch);
+                    msr(cb, SystemRegister::NZCV, Self::SCRATCH0);
+                    emit_pop(cb, Self::SCRATCH0);
 
                     for reg in regs.into_iter().rev() {
                         emit_pop(cb, A64Opnd::Reg(reg));
@@ -666,11 +666,16 @@ mod tests {
     }
 
     #[test]
-    fn test_emit_lea_pc() {
+    fn test_emit_lea_label() {
         let (mut asm, mut cb) = setup_asm();
 
-        let opnd = asm.lea_pc(Opnd::Imm(8));
-        asm.store(Opnd::mem(64, C_RET_OPND, 0), opnd);
+        let label = asm.new_label("label");
+        let opnd = asm.lea_label(label);
+
+        asm.write_label(label);
+        asm.bake_string("Hello, world!");
+        asm.store(Opnd::mem(64, SP, 0), opnd);
+
         asm.compile_with_num_regs(&mut cb, 1);
     }
 }

@@ -76,7 +76,7 @@ pub enum Op
 
     // Load effective address relative to the current instruction pointer. It
     // accepts a single signed immediate operand.
-    LeaPC,
+    LeaLabel,
 
     // A low-level mov instruction. It accepts two operands.
     Mov,
@@ -491,6 +491,12 @@ impl Assembler
         self.live_ranges.push(self.insns.len());
     }
 
+    /// Load an address relative to the given label.
+    #[must_use]
+    pub fn lea_label(&mut self, target: Target) -> Opnd {
+        self.push_insn(Op::LeaLabel, vec![], Some(target), None)
+    }
+
     /// Create a new label instance that we can jump to
     pub fn new_label(&mut self, name: &str) -> Target
     {
@@ -860,7 +866,6 @@ def_push_0_opnd_no_out!(cpop_all, Op::CPopAll);
 def_push_1_opnd_no_out!(cret, Op::CRet);
 def_push_1_opnd!(load, Op::Load);
 def_push_1_opnd!(lea, Op::Lea);
-def_push_1_opnd!(lea_pc, Op::LeaPC);
 def_push_2_opnd_no_out!(store, Op::Store);
 def_push_2_opnd_no_out!(mov, Op::Mov);
 def_push_2_opnd_no_out!(cmp, Op::Cmp);

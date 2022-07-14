@@ -67,6 +67,11 @@ impl From<Opnd> for X86Opnd {
 
 impl Assembler
 {
+    // A special scratch register for intermediate processing.
+    // Note: right now this is only used by LeaLabel because label_ref accepts
+    // a closure and we don't want it to have to capture anything.
+    const SCRATCH0: X86Opnd = X86Opnd::Reg(R11_REG);
+
     /// Get the list of registers from which we can allocate on this platform
     pub fn get_alloc_regs() -> Vec<Reg>
     {
@@ -79,10 +84,10 @@ impl Assembler
     /// Get a list of all of the caller-save registers
     pub fn get_caller_save_regs() -> Vec<Reg> {
         vec![RAX_REG, RCX_REG, RDX_REG, RSI_REG, RDI_REG, R8_REG, R9_REG, R10_REG, R11_REG]
-
-        // Technically these are also caller-save: R12_REG, R13_REG, R14_REG,
-        // and R15_REG, but we don't use them so we don't include them here.
     }
+
+    // These are the callee-saved registers in the x86-64 SysV ABI
+    // RBX, RSP, RBP, and R12–R15
 
     /// Split IR instructions for the x86 platform
     fn x86_split(mut self) -> Assembler
@@ -250,13 +255,15 @@ impl Assembler
                 Op::Lea => lea(cb, insn.out.into(), insn.opnds[0].into()),
 
                 // Load relative address
-                Op::LeaPC => {
-                    let disp = match insn.opnds[0] {
-                        Opnd::Imm(value) => value as i32,
-                        _ => panic!("Op::LeaPC must have a signed immediate operand")
-                    };
+                Op::LeaLabel => {
+                    let label_idx = insn.target.unwrap().unwrap_label_idx();
 
-                    lea(cb, insn.out.into(), mem_opnd(8, RIP, disp));
+                    cb.label_ref(label_idx, 4, |cb, src_addr, dst_addr| {
+                        let disp = dst_addr - src_addr;
+                        lea(cb, Self::SCRATCH0, mem_opnd(8, RIP, disp.try_into().unwrap()));
+                    });
+
+                    mov(cb, insn.out.into(), Self::SCRATCH0);
                 },
 
                 // Push and pop to the C stack
