@@ -128,36 +128,31 @@ macro_rules! c_callable {
 }
 pub(crate) use c_callable;
 
-/*
-pub fn print_int(cb: &mut CodeBlock, opnd: X86Opnd) {
+pub fn print_int(asm: &mut Assembler, opnd: Opnd) {
     c_callable!{
         fn print_int_fn(val: i64) {
             println!("{}", val);
         }
     }
 
-    push_regs(cb);
+    asm.cpush_all();
 
-    match opnd {
-        X86Opnd::Mem(_) | X86Opnd::Reg(_) => {
+    let argument = match opnd {
+        Opnd::Mem(_) | Opnd::Reg(_) | Opnd::InsnOut { .. } => {
             // Sign-extend the value if necessary
-            if opnd.num_bits() < 64 {
-                movsx(cb, C_ARG_REGS[0], opnd);
+            if opnd.rm_num_bits() < 64 {
+                asm.load_sext(opnd)
             } else {
-                mov(cb, C_ARG_REGS[0], opnd);
+                opnd
             }
-        }
-        X86Opnd::Imm(_) | X86Opnd::UImm(_) => {
-            mov(cb, C_ARG_REGS[0], opnd);
-        }
+        },
+        Opnd::Imm(_) | Opnd::UImm(_) => opnd,
         _ => unreachable!(),
-    }
+    };
 
-    mov(cb, RAX, const_ptr_opnd(print_int_fn as *const u8));
-    call(cb, RAX);
-    pop_regs(cb);
+    asm.ccall(print_int_fn as *const u8, vec![argument]);
+    asm.cpop_all();
 }
-*/
 
 /// Generate code to print a pointer
 pub fn print_ptr(asm: &mut Assembler, opnd: Opnd) {
