@@ -452,6 +452,15 @@ impl Assembler
                         }
                     };
                 },
+                Op::LeaPC => {
+                    let opnd = insn.opnds[0];
+                    assert!(
+                        matches!(opnd, Opnd::Imm(_)),
+                        "Op::LeaPC must have a signed immediate operand"
+                    );
+
+                    adr(cb, insn.out.into(), opnd.into());
+                },
                 Op::CPush => {
                     emit_push(cb, insn.opnds[0].into());
                 },
@@ -630,5 +639,14 @@ mod tests {
 
         asm.cpop_all();
         asm.compile_with_num_regs(&mut cb, 0);
+    }
+
+    #[test]
+    fn test_emit_lea_pc() {
+        let (mut asm, mut cb) = setup_asm();
+
+        let opnd = asm.lea_pc(Opnd::Imm(8));
+        asm.store(Opnd::mem(64, C_RET_OPND, 0), opnd);
+        asm.compile_with_num_regs(&mut cb, 1);
     }
 }

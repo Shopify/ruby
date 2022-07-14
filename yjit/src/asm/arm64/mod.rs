@@ -109,7 +109,9 @@ pub fn adr(cb: &mut CodeBlock, rd: A64Opnd, imm: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
-/// ADRP - form a PC-relative address to a 4KB page and load it into a register
+/// ADRP - form a PC-relative address to a 4KB page and load it into a register.
+/// This is effectively the same as ADR except that the immediate must be a
+/// multiple of 4KB.
 pub fn adrp(cb: &mut CodeBlock, rd: A64Opnd, imm: A64Opnd) {
     let bytes: [u8; 4] = match (rd, imm) {
         (A64Opnd::Reg(rd), A64Opnd::Imm(imm)) => {

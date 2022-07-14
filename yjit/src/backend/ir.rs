@@ -71,6 +71,10 @@ pub enum Op
     // Load effective address
     Lea,
 
+    // Load effective address relative to the current instruction pointer. It
+    // accepts a single signed immediate operand.
+    LeaPC,
+
     // A low-level mov instruction. It accepts two operands.
     Mov,
 
@@ -838,6 +842,7 @@ def_push_0_opnd_no_out!(cpop_all, Op::CPopAll);
 def_push_1_opnd_no_out!(cret, Op::CRet);
 def_push_1_opnd!(load, Op::Load);
 def_push_1_opnd!(lea, Op::Lea);
+def_push_1_opnd!(lea_pc, Op::LeaPC);
 def_push_2_opnd_no_out!(store, Op::Store);
 def_push_2_opnd_no_out!(mov, Op::Mov);
 def_push_2_opnd_no_out!(cmp, Op::Cmp);

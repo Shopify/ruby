@@ -243,7 +243,17 @@ impl Assembler
                 // Load effective address
                 Op::Lea => lea(cb, insn.out.into(), insn.opnds[0].into()),
 
-                // Push and pop to/from the C stack
+                // Load relative address
+                Op::LeaPC => {
+                    let disp = match insn.opnds[0] {
+                        Opnd::Imm(value) => value as i32,
+                        _ => panic!("Op::LeaPC must have a signed immediate operand")
+                    };
+
+                    lea(cb, insn.out.into(), mem_opnd(8, RIP, disp));
+                },
+
+                // Push and pop to the C stack
                 Op::CPush => push(cb, insn.opnds[0].into()),
                 Op::CPop => pop(cb, insn.out.into()),
                 Op::CPopInto => pop(cb, insn.opnds[0].into()),
