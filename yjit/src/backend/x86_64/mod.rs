@@ -89,7 +89,7 @@ impl Assembler
     {
         let live_ranges: Vec<usize> = std::mem::take(&mut self.live_ranges);
 
-        self.forward_pass(|asm, index, op, opnds, target| {
+        self.forward_pass(|asm, index, op, opnds, target, text| {
             // Load heap object operands into registers because most
             // instructions can't directly work with 64-bit constants
             let opnds = match op {
@@ -135,7 +135,7 @@ impl Assembler
                         _ => (opnds[0], opnds[1])
                     };
 
-                    asm.push_insn(op, vec![opnd0, opnd1], target);
+                    asm.push_insn(op, vec![opnd0, opnd1], target, text);
                 },
                 Op::Mov => {
                     match (opnds[0], opnds[1]) {
@@ -178,7 +178,7 @@ impl Assembler
                     asm.not(opnd0);
                 },
                 _ => {
-                    asm.push_insn(op, opnds, target);
+                    asm.push_insn(op, opnds, target, text);
                 }
             };
         })
@@ -204,6 +204,12 @@ impl Assembler
                 // Write the label at the current position
                 Op::Label => {
                     cb.write_label(insn.target.unwrap().unwrap_label_idx());
+                },
+
+                Op::BakeString => {
+                    for byte in insn.text.as_ref().unwrap().as_bytes() {
+                        cb.write_byte(*byte);
+                    }
                 },
 
                 Op::Add => {

@@ -78,7 +78,7 @@ impl Assembler
     /// have no memory operands.
     fn arm64_split(mut self) -> Assembler
     {
-        self.forward_pass(|asm, index, op, opnds, target| {
+        self.forward_pass(|asm, index, op, opnds, target, text| {
             // Load all Value operands into registers that aren't already a part
             // of Load instructions.
             let opnds = match op {
@@ -100,15 +100,15 @@ impl Assembler
                         (Opnd::Mem(_), Opnd::Mem(_)) => {
                             let opnd0 = asm.load(opnds[0]);
                             let opnd1 = asm.load(opnds[1]);
-                            asm.push_insn(op, vec![opnd0, opnd1], target);
+                            asm.push_insn(op, vec![opnd0, opnd1], target, text);
                         },
                         (mem_opnd @ Opnd::Mem(_), other_opnd) |
                         (other_opnd, mem_opnd @ Opnd::Mem(_)) => {
                             let opnd0 = asm.load(mem_opnd);
-                            asm.push_insn(op, vec![opnd0, other_opnd], target);
+                            asm.push_insn(op, vec![opnd0, other_opnd], target, text);
                         },
                         _ => {
-                            asm.push_insn(op, opnds, target);
+                            asm.push_insn(op, opnds, target, text);
                         }
                     }
                 },
@@ -220,7 +220,7 @@ impl Assembler
                     asm.test(opnd0, opnds[1]);
                 },
                 _ => {
-                    asm.push_insn(op, opnds, target);
+                    asm.push_insn(op, opnds, target, text);
                 }
             };
         })
@@ -379,6 +379,18 @@ impl Assembler
                 },
                 Op::Label => {
                     cb.write_label(insn.target.unwrap().unwrap_label_idx());
+                },
+                Op::BakeString => {
+                    let str = insn.text.as_ref().unwrap();
+                    for byte in str.as_bytes() {
+                        cb.write_byte(*byte);
+                    }
+
+                    // Pad out the string to the next 4-byte boundary so that
+                    // it's easy to jump past.
+                    for _ in 0..(4 - (str.len() % 4)) {
+                        cb.write_byte(0);
+                    }
                 },
                 Op::Add => {
                     add(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
@@ -623,6 +635,18 @@ mod tests {
 
         let insns = cb.get_ptr(0).raw_ptr() as *const u32;
         assert_eq!(0x8b010003, unsafe { *insns });
+    }
+
+    #[test]
+    fn test_emit_bake_string() {
+        let (mut asm, mut cb) = setup_asm();
+
+        asm.bake_string("Hello, world!");
+        asm.compile_with_num_regs(&mut cb, 0);
+
+        // Testing that we pad the string to the nearest 4-byte boundary to make
+        // it easier to jump over.
+        assert_eq!(16, cb.get_write_pos());
     }
 
     #[test]
