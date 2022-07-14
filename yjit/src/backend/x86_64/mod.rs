@@ -315,6 +315,14 @@ impl Assembler
                     }
                 }
 
+                Op::Jbe => {
+                    match insn.target.unwrap() {
+                        Target::CodePtr(code_ptr) => jbe_ptr(cb, code_ptr),
+                        Target::Label(label_idx) => jbe_label(cb, label_idx),
+                        _ => unreachable!()
+                    }
+                },
+
                 Op::Jz => {
                     match insn.target.unwrap() {
                         Target::CodePtr(code_ptr) => jz_ptr(cb, code_ptr),
@@ -347,9 +355,7 @@ impl Assembler
                     add(cb, insn.opnds[0].into(), insn.opnds[1].into());
                 },
 
-                Op::Breakpoint => int3(cb),
-
-                _ => panic!("unsupported instruction passed to x86 backend: {:?}", insn.op)
+                Op::Breakpoint => int3(cb)
             };
         }
 
