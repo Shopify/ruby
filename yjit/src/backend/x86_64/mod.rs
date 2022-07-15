@@ -262,7 +262,7 @@ impl Assembler
                 Op::LeaLabel => {
                     let label_idx = insn.target.unwrap().unwrap_label_idx();
 
-                    cb.label_ref(label_idx, 4, |cb, src_addr, dst_addr| {
+                    cb.label_ref(label_idx, 7, |cb, src_addr, dst_addr| {
                         let disp = dst_addr - src_addr;
                         lea(cb, Self::SCRATCH0, mem_opnd(8, RIP, disp.try_into().unwrap()));
                     });
