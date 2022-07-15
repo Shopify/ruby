@@ -159,24 +159,20 @@ pub fn print_int(cb: &mut CodeBlock, opnd: X86Opnd) {
 }
 */
 
-/*
 /// Generate code to print a pointer
-pub fn print_ptr(cb: &mut CodeBlock, opnd: X86Opnd) {
+pub fn print_ptr(asm: &mut Assembler, opnd: Opnd) {
     c_callable!{
         fn print_ptr_fn(ptr: *const u8) {
             println!("{:p}", ptr);
         }
     }
 
-    assert!(opnd.num_bits() == 64);
+    assert!(opnd.rm_num_bits() == 64);
 
-    push_regs(cb);
-    mov(cb, C_ARG_REGS[0], opnd);
-    mov(cb, RAX, const_ptr_opnd(print_ptr_fn as *const u8));
-    call(cb, RAX);
-    pop_regs(cb);
+    asm.cpush_all();
+    asm.ccall(print_ptr_fn as *const u8, vec![opnd]);
+    asm.cpop_all();
 }
-*/
 
 /// Generate code to print a value
 pub fn print_value(asm: &mut Assembler, opnd: Opnd) {
