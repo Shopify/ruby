@@ -779,7 +779,7 @@ macro_rules! def_push_0_opnd {
             #[must_use]
             pub fn $op_name(&mut self) -> Opnd
             {
-                self.push_insn($opcode, vec![], None)
+                self.push_insn($opcode, vec![], None, None)
             }
         }
     };
