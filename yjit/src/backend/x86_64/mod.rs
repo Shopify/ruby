@@ -215,6 +215,10 @@ impl Assembler
                     for byte in insn.text.as_ref().unwrap().as_bytes() {
                         cb.write_byte(*byte);
                     }
+
+                    // Add a null-terminator byte for safety (in case we pass
+                    // this to C code)
+                    cb.write_byte(0);
                 },
 
                 Op::Add => {

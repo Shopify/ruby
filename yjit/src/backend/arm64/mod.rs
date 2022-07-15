@@ -386,9 +386,13 @@ impl Assembler
                         cb.write_byte(*byte);
                     }
 
+                    // Add a null-terminator byte for safety (in case we pass
+                    // this to C code)
+                    cb.write_byte(0);
+
                     // Pad out the string to the next 4-byte boundary so that
                     // it's easy to jump past.
-                    for _ in 0..(4 - (str.len() % 4)) {
+                    for _ in 0..(4 - ((str.len() + 1) % 4)) {
                         cb.write_byte(0);
                     }
                 },
