@@ -382,7 +382,13 @@ impl Assembler
                     add(cb, insn.opnds[0].into(), insn.opnds[1].into());
                 },
 
-                Op::Breakpoint => int3(cb)
+                Op::Breakpoint => int3(cb),
+
+                // We want to keep the panic here because some instructions that
+                // we feed to the backend could get lowered into other
+                // instructions. So it's possible that some of our backend
+                // instructions can never make it to the emit stage.
+                _ => panic!("unsupported instruction passed to x86 backend: {:?}", insn.op)
             };
         }
 
