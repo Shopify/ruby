@@ -70,36 +70,6 @@ macro_rules! offset_of {
 #[allow(unused)]
 pub(crate) use offset_of;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn min_max_preserved_after_cast_to_usize() {
-        use crate::utils::IntoUsize;
-
-        let min: usize = u64::MIN.as_usize();
-        assert_eq!(min, u64::MIN.try_into().unwrap());
-        let max: usize = u64::MAX.as_usize();
-        assert_eq!(max, u64::MAX.try_into().unwrap());
-
-        let min: usize = u32::MIN.as_usize();
-        assert_eq!(min, u32::MIN.try_into().unwrap());
-        let max: usize = u32::MAX.as_usize();
-        assert_eq!(max, u32::MAX.try_into().unwrap());
-    }
-
-    #[test]
-    fn test_offset_of() {
-        #[repr(C)]
-        struct Foo {
-            a: u8,
-            b: u64,
-        }
-
-        assert_eq!(0, offset_of!(Foo, a), "C99 6.7.2.1p13 says no padding at the front");
-        assert_eq!(8, offset_of!(Foo, b), "ABI dependent, but should hold");
-    }
-}
-
 // TODO: we may want to move this function into yjit.c, maybe add a convenient Rust-side wrapper
 /*
 // For debugging. Print the bytecode for an iseq.
@@ -210,4 +180,55 @@ pub fn print_str(asm: &mut Assembler, str: &str) {
     asm.ccall(print_str_cfun as *const u8, vec![opnd, Opnd::UImm(str.len() as u64)]);
 
     asm.cpop_all();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::asm::CodeBlock;
+
+    #[test]
+    fn min_max_preserved_after_cast_to_usize() {
+        use crate::utils::IntoUsize;
+
+        let min: usize = u64::MIN.as_usize();
+        assert_eq!(min, u64::MIN.try_into().unwrap());
+        let max: usize = u64::MAX.as_usize();
+        assert_eq!(max, u64::MAX.try_into().unwrap());
+
+        let min: usize = u32::MIN.as_usize();
+        assert_eq!(min, u32::MIN.try_into().unwrap());
+        let max: usize = u32::MAX.as_usize();
+        assert_eq!(max, u32::MAX.try_into().unwrap());
+    }
+
+    #[test]
+    fn test_offset_of() {
+        #[repr(C)]
+        struct Foo {
+            a: u8,
+            b: u64,
+        }
+
+        assert_eq!(0, offset_of!(Foo, a), "C99 6.7.2.1p13 says no padding at the front");
+        assert_eq!(8, offset_of!(Foo, b), "ABI dependent, but should hold");
+    }
+
+    #[test]
+    fn test_print_int() {
+        let mut asm = Assembler::new();
+        let mut cb = CodeBlock::new_dummy(1024);
+
+        print_int(&mut asm, Opnd::Imm(42));
+        asm.compile(&mut cb);
+    }
+
+    #[test]
+    fn test_print_str() {
+        let mut asm = Assembler::new();
+        let mut cb = CodeBlock::new_dummy(1024);
+
+        print_str(&mut asm, "Hello, world!");
+        asm.compile(&mut cb);
+    }
 }
