@@ -178,26 +178,20 @@ pub fn print_ptr(cb: &mut CodeBlock, opnd: X86Opnd) {
 }
 */
 
-/*
 /// Generate code to print a value
-pub fn print_value(cb: &mut CodeBlock, opnd: X86Opnd) {
+pub fn print_value(asm: &mut Assembler, opnd: Opnd) {
     c_callable!{
         fn print_value_fn(val: VALUE) {
             unsafe { rb_obj_info_dump(val) }
         }
     }
 
-    assert!(opnd.num_bits() == 64);
+    assert!(matches!(opnd, Opnd::Value(_)));
 
-    push_regs(cb);
-
-    mov(cb, RDI, opnd);
-    mov(cb, RAX, const_ptr_opnd(print_value_fn as *const u8));
-    call(cb, RAX);
-
-    pop_regs(cb);
+    asm.cpush_all();
+    asm.ccall(print_value_fn as *const u8, vec![opnd]);
+    asm.cpop_all();
 }
-*/
 
 /// Generate code to print constant string to stdout
 pub fn print_str(asm: &mut Assembler, str: &str) {
