@@ -897,10 +897,20 @@ rb_alias_variable(ID name1, ID name2)
     entry1->var = entry2->var;
 }
 
+static int
+frozen_shape_p(rb_shape_t* shape)
+{
+    return RB_OBJ_FROZEN((VALUE)shape);
+}
+
 struct rb_id_table *
 rb_shape_generate_iv_table(rb_shape_t* shape) {
+    if (frozen_shape_p(shape)) {
+        return rb_shape_generate_iv_table(shape->parent);
+    }
+
     struct rb_id_table *iv_table = rb_id_table_create(0);
-    uint32_t depth = rb_shape_depth(shape);
+    uint32_t depth = rb_shape_iv_depth(shape);
     uint32_t index = 0;
     while (shape->parent) {
         rb_id_table_insert(iv_table, shape->edge_name, depth - (VALUE)index - 1);
@@ -1814,12 +1824,6 @@ get_no_cache_shape(void) {
 bool
 rb_shape_root_shape_p(rb_shape_t* shape) {
     return shape == rb_vm_get_root_shape();
-}
-
-static int
-frozen_shape_p(rb_shape_t* shape)
-{
-    return RB_OBJ_FROZEN((VALUE)shape);
 }
 
 static rb_shape_t *
