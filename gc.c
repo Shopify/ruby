@@ -2942,9 +2942,10 @@ imemo_memsize(VALUE obj)
         break;
       case imemo_shape:
         {
-            rb_shape_t * shape = (rb_shape_t *) obj;
-            if (shape->edges)
-                size += rb_id_table_memsize(shape->edges); // this node's edges
+            struct rb_id_table* edges= ((rb_shape_t *) obj)->edges;
+            if (edges) {
+                size += rb_id_table_memsize(edges);
+            }
             break;
         }
       case imemo_env:
@@ -2986,7 +2987,7 @@ rb_class_allocate_instance(VALUE klass)
     VALUE flags = T_OBJECT | ROBJECT_EMBED;
 
     VALUE obj = newobj_of(klass, flags, Qundef, Qundef, Qundef, RGENGC_WB_PROTECTED_OBJECT, sizeof(RVALUE));
-    if (RCLASS_EXT(klass)->max_iv_count > 3) {
+    if (RCLASS_EXT(klass)->max_iv_count > ROBJECT_EMBED_LEN_MAX) {
         rb_ensure_iv_list_size(obj, 0, (uint32_t)RCLASS_EXT(klass)->max_iv_count);
     }
 
@@ -3378,7 +3379,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(ROBJECT_SHAPE_ID(obj));
             if (shape) {
                 VALUE klass = RBASIC_CLASS(obj);
-                uint32_t num_of_ivs = rb_shape_depth(shape);
+                uint32_t num_of_ivs = rb_shape_iv_depth(shape);
                 if (RCLASS_EXT(klass)->max_iv_count < num_of_ivs) {
                     RCLASS_EXT(klass)->max_iv_count = num_of_ivs;
                 }
@@ -3684,7 +3685,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                 if (parent) {
                     RUBY_ASSERT(IMEMO_TYPE_P(parent, imemo_shape));
                     RUBY_ASSERT(parent->edges);
-                    VALUE res;
+                    VALUE res; // Only used to temporarily store lookup value
                     if (rb_id_table_lookup(parent->edges, shape->edge_name, &res)) {
                         if ((rb_shape_t *)res == shape) {
                             rb_id_table_delete(parent->edges, shape->edge_name);
@@ -5826,7 +5827,7 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
     }
     asan_lock_freelist(sweep_page);
     if (freelist_len != sweep_page->free_slots) {
-        rb_bug("5759 inconsistent freelist length: expected %d but was %d", sweep_page->free_slots, freelist_len);
+        rb_bug("inconsistent freelist length: expected %d but was %d", sweep_page->free_slots, freelist_len);
     }
 #endif
 

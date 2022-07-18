@@ -1662,8 +1662,9 @@ shape_id_t rb_shape_get_shape_id(VALUE obj)
 {
     shape_id_t shape_id = ROOT_SHAPE_ID;
 
-    if (RB_SPECIAL_CONST_P(obj))
+    if (RB_SPECIAL_CONST_P(obj)) {
         return SHAPE_ID(get_frozen_root_shape());
+    }
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
@@ -1998,13 +1999,15 @@ transition_shape_frozen(VALUE obj)
 {
     rb_shape_t* shape = rb_shape_get_shape(obj);
     RUBY_ASSERT(shape);
-    if(rb_objspace_garbage_object_p((VALUE)shape))
+    if(rb_objspace_garbage_object_p((VALUE)shape)) {
         rb_bug("shape is garbage object\n");
+    }
 
     rb_shape_t* next_shape;
 
-    if (shape == get_frozen_root_shape())
+    if (shape == get_frozen_root_shape()) {
         return;
+    }
 
     if (shape == rb_vm_get_root_shape()) {
         switch(BUILTIN_TYPE(obj)) {
@@ -2238,7 +2241,6 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     if (!iv_index_tbl) return;
     if (!gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    // JEM: Instead of depth here we need a just IV depth
     iterate_over_shapes(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)rb_shape_iv_depth(shape), func, arg);
 }
 

@@ -1397,10 +1397,10 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
             {
-                // If object's shape id is the same as the source, then just do the
-                // transition and write the ivar
-                // If object's shape id is the same as the dest, then just write the
-                // ivar
+                // If object's shape id is the same as the source
+                // then do the shape transition and write the ivar
+                // If object's shape id is the same as the dest
+                // then write the ivar
                 shape_id_t shape_id = ROBJECT_SHAPE_ID(obj);
 
                 if (shape_id != NO_CACHE_SHAPE_ID) {
@@ -1429,7 +1429,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
 
                         RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 
-                        return val; /* inline cache hit */
+                        return val;
                     }
                 }
             }

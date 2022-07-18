@@ -327,13 +327,14 @@ rb_id_table_foreach_values_with_replace(struct rb_id_table *tbl, rb_id_table_for
 MJIT_FUNC_EXPORTED struct rb_id_table *
 rb_id_table_copy(struct rb_id_table *old_table)
 {
-    if (old_table->capa == 0)
+    if (old_table->capa == 0) {
         return rb_id_table_create(0);
+    }
     struct rb_id_table *new_table = ALLOC(struct rb_id_table);
     MEMZERO(new_table, struct rb_id_table, 1);
 
-	new_table->capa = old_table->capa;
-	new_table->items = ZALLOC_N(item_t, new_table->capa);
+    new_table->capa = old_table->capa;
+    new_table->items = ZALLOC_N(item_t, new_table->capa);
     new_table->num = (int) rb_id_table_size(old_table);
     new_table->used = old_table->used;
 
