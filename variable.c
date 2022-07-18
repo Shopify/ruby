@@ -997,7 +997,7 @@ gen_ivtbl_get_unlocked(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
 }
 
 int
-gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
+rb_gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
 {
     st_data_t data;
     int r = 0;
@@ -1017,7 +1017,7 @@ gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
 MJIT_FUNC_EXPORTED int
 rb_ivar_generic_ivtbl_lookup(VALUE obj, struct gen_ivtbl **ivtbl)
 {
-    return gen_ivtbl_get(obj, 0, ivtbl);
+    return rb_gen_ivtbl_get(obj, 0, ivtbl);
 }
 
 MJIT_FUNC_EXPORTED VALUE
@@ -1025,7 +1025,7 @@ rb_ivar_generic_lookup_with_index(VALUE obj, ID id, uint32_t index)
 {
     struct gen_ivtbl *ivtbl;
 
-    if (gen_ivtbl_get(obj, id, &ivtbl)) {
+    if (rb_gen_ivtbl_get(obj, id, &ivtbl)) {
         if (LIKELY(index < ivtbl->numiv)) {
             VALUE val = ivtbl->ivptr[index];
             return val;
@@ -1040,7 +1040,7 @@ generic_ivar_delete(VALUE obj, ID id, VALUE undef)
 {
     struct gen_ivtbl *ivtbl;
 
-    if (gen_ivtbl_get(obj, id, &ivtbl)) {
+    if (rb_gen_ivtbl_get(obj, id, &ivtbl)) {
         uint32_t index;
 
         if (iv_index_tbl_lookup(obj, id, &index)) {
@@ -1060,7 +1060,7 @@ generic_ivar_get(VALUE obj, ID id, VALUE undef)
 {
     struct gen_ivtbl *ivtbl;
 
-    if (gen_ivtbl_get(obj, id, &ivtbl)) {
+    if (rb_gen_ivtbl_get(obj, id, &ivtbl)) {
         uint32_t index;
 
 	if (iv_index_tbl_lookup(obj, id, &index)) {
@@ -1080,7 +1080,7 @@ gen_ivtbl_bytes(size_t n)
     return offsetof(struct gen_ivtbl, ivptr) + n * sizeof(VALUE);
 }
 
-struct gen_ivtbl *
+static struct gen_ivtbl *
 gen_ivtbl_resize(struct gen_ivtbl *old, uint32_t n)
 {
     RUBY_ASSERT(n > 0);
@@ -1153,7 +1153,7 @@ generic_ivar_defined(VALUE obj, ID id)
     uint32_t index;
 
     if (!iv_index_tbl_lookup(obj, id, &index)) return Qfalse;
-    if (!gen_ivtbl_get(obj, id, &ivtbl)) return Qfalse;
+    if (!rb_gen_ivtbl_get(obj, id, &ivtbl)) return Qfalse;
 
     return RBOOL((index < ivtbl->numiv) && (ivtbl->ivptr[index] != Qundef));
 }
@@ -1165,7 +1165,7 @@ generic_ivar_remove(VALUE obj, ID id, VALUE *valp)
     uint32_t index;
 
     if (!iv_index_tbl_lookup(obj, id, &index)) return 0;
-    if (!gen_ivtbl_get(obj, id, &ivtbl)) return 0;
+    if (!rb_gen_ivtbl_get(obj, id, &ivtbl)) return 0;
 
     if (index < ivtbl->numiv) {
 	if (ivtbl->ivptr[index] != Qundef) {
@@ -1192,7 +1192,7 @@ rb_mark_generic_ivar(VALUE obj)
 {
     struct gen_ivtbl *ivtbl;
 
-    if (gen_ivtbl_get(obj, 0, &ivtbl)) {
+    if (rb_gen_ivtbl_get(obj, 0, &ivtbl)) {
         rb_gc_mark((VALUE)rb_shape_get_shape_by_id(ivtbl->shape_id));
 	gen_ivtbl_mark(ivtbl);
     }
@@ -1222,7 +1222,7 @@ rb_generic_ivar_memsize(VALUE obj)
 {
     struct gen_ivtbl *ivtbl;
 
-    if (gen_ivtbl_get(obj, 0, &ivtbl))
+    if (rb_gen_ivtbl_get(obj, 0, &ivtbl))
 	return gen_ivtbl_bytes(ivtbl->numiv);
     return 0;
 }
@@ -2229,7 +2229,7 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     rb_shape_t *shape = rb_shape_get_shape(obj);
     struct rb_id_table *iv_index_tbl = rb_shape_generate_iv_table(shape);
     if (!iv_index_tbl) return;
-    if (!gen_ivtbl_get(obj, 0, &ivtbl)) return;
+    if (!rb_gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
     iterate_over_shapes(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)rb_shape_iv_depth(shape), func, arg);
 }
@@ -2246,7 +2246,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
         goto clear;
     }
 
-    if (gen_ivtbl_get(obj, 0, &obj_ivtbl)) {
+    if (rb_gen_ivtbl_get(obj, 0, &obj_ivtbl)) {
         if (gen_ivtbl_count(obj_ivtbl) == 0)
             goto clear;
 
@@ -2358,7 +2358,7 @@ rb_ivar_count(VALUE obj)
 	if (FL_TEST(obj, FL_EXIVAR)) {
 	    struct gen_ivtbl *ivtbl;
 
-	    if (gen_ivtbl_get(obj, 0, &ivtbl)) {
+	    if (rb_gen_ivtbl_get(obj, 0, &ivtbl)) {
 		return gen_ivtbl_count(ivtbl);
 	    }
 	}

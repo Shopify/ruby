@@ -1458,7 +1458,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
                     else {
                         // Just get the IV table
                         RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);
-                        gen_ivtbl_get(obj, 0, &ivtbl);
+                        rb_gen_ivtbl_get(obj, 0, &ivtbl);
                     }
 
                     VALUE *ptr = ivtbl->ivptr;
