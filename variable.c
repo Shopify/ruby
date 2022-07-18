@@ -987,14 +987,13 @@ static int
 gen_ivtbl_get_unlocked(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
 {
     st_data_t data;
-    int r = 0;
 
     if (st_lookup(generic_ivtbl(obj, id, false), (st_data_t)obj, &data)) {
         *ivtbl = (struct gen_ivtbl *)data;
-        r = 1;
+        return 1;
     }
 
-    return r;
+    return 0;
 }
 
 int
@@ -1125,8 +1124,6 @@ iv_index_tbl_newsize(struct ivar_update *ivup)
 static int
 generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
 {
-    // k == string
-    // u == ivup
     ASSERT_vm_locking();
 
     struct ivar_update *ivup = (struct ivar_update *)u;
@@ -1415,6 +1412,7 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
             iv_table = rb_id_table_create(0);
             ROBJECT(obj)->as.heap.iv_index_tbl = iv_table;
         }
+
         uint32_t index = (uint32_t)rb_id_table_size(iv_table);
         rb_id_table_insert(iv_table, id, (VALUE)index);
         ivup->u.iv_index_tbl_size = rb_id_table_size(iv_table);
@@ -1430,17 +1428,14 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
         ivup->index = (uint32_t) ent_data;
         ivup->iv_extended = 1;
     }
-    else {
-        fprintf(stderr, "miss on %s\n", rb_id2name(id));
-    }
 }
 
 static void
 generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
     struct ivar_update ivup;
-    // The returned shape should have `id` in its iv_table
-    rb_shape_t * shape = rb_shape_get_next(rb_shape_get_shape(obj), id); // takes a VM lock
+    // The returned shape will have `id` in its iv_table
+    rb_shape_t * shape = rb_shape_get_next(rb_shape_get_shape(obj), id);
     ivup.shape = shape;
     ivup.iv_extended = 0;
 
@@ -1455,6 +1450,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     RB_VM_LOCK_LEAVE();
 
     ivup.u.ivtbl->ivptr[ivup.index] = val;
+
     rb_shape_set_shape(obj, shape);
     RB_OBJ_WRITTEN(obj, Qundef, val);
 }
@@ -1612,10 +1608,6 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
 
     len = ROBJECT_NUMIV(obj);
-    // if (obj is now "not cachable" && len <= EMBED_LEN)
-    //    rb_ensure_iv_list_size(obj, len, EMBED_LEN + 1);
-    //    len = EMBED_LEN + 1;
-    // }
     if (len <= (ivup.index)) {
         uint32_t newsize = iv_index_tbl_newsize(&ivup);
         rb_ensure_iv_list_size(obj, len, newsize);
@@ -1625,12 +1617,10 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     return val;
 }
 
-#define SHAPE_UNMARKABLE IMEMO_FL_USER0
-
 bool
 rb_no_cache_shape_p(rb_shape_t * shape)
 {
-    // JEM TODO: Could likely save time by comparing IDs
+    // TODO JEM: Could likely save time by comparing IDs
     rb_vm_t *vm = GET_VM();
     return shape == vm->no_cache_shape;
 }
@@ -1692,20 +1682,16 @@ shape_id_t rb_shape_get_shape_id(VALUE obj)
           return rb_generic_shape_id(obj);
     }
 
-    // The shape id must be smaller than the tree size
-    // The shape id must not be INVALID_SHAPE_ID
-
-#if RUBY_DEBUG
-    assert(shape_id < MAX_SHAPE_ID);
-#endif
+    RUBY_ASSERT(shape_id < MAX_SHAPE_ID);
     return shape_id;
 }
 
 static bool
 rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
 {
-    if (rb_shape_get_shape_id(obj) == shape_id)
+    if (rb_shape_get_shape_id(obj) == shape_id) {
         return false;
+    }
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
