@@ -1648,15 +1648,6 @@ rb_generic_shape_id(VALUE obj)
 
         if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
             shape_id = ivtbl->shape_id;
-            /*
-             * Bad path to this assertion -- rb_copy_generic_ivar has
-             * rb_shape_set_shape(clone, rb_shape_get_shape(obj))
-             * setting the shape checks if the shape is already the same
-             if (rb_shape_get_shape_id(obj) == shape_id)
-             return;
-             * this assertion asserts that there's already a shape, which there isn't in the clone case
-             */
-            // RUBY_ASSERT(rb_shape_get_shape_by_id(shape_id));
         }
         else if (OBJ_FROZEN(obj)) {
             shape_id = FROZEN_ROOT_SHAPE_ID;

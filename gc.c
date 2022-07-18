@@ -5274,10 +5274,11 @@ static VALUE shape_transition_tree(VALUE self) {
 }
 
 static VALUE shape_count(VALUE self) {
-    // Might want to extract this into a rb_vm_get_root_shape
     int shape_count = 0;
     for(int i=0; i<MAX_SHAPE_ID; i++) {
-        if(rb_shape_get_shape_by_id_without_assertion(i)) shape_count++;
+        if(rb_shape_get_shape_by_id_without_assertion(i)) {
+            shape_count++;
+        }
     }
     return INT2NUM(shape_count);
 }
@@ -7283,10 +7284,8 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
             gc_mark(objspace, (VALUE)vm_cc_cme(cc));
 
             // Check it's an attr_(reader|writer)
-            if (cc->cme_ && (
-                        cc->cme_->def->type == VM_METHOD_TYPE_ATTRSET ||
-                        cc->cme_->def->type == VM_METHOD_TYPE_IVAR
-                        )) {
+            if (cc->cme_ && (cc->cme_->def->type == VM_METHOD_TYPE_ATTRSET ||
+                        cc->cme_->def->type == VM_METHOD_TYPE_IVAR)) {
                 shape_id_t shape_source_id = vm_cc_attr_index_shape_source_id(cc);
                 shape_id_t shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
                 if (shape_source_id != INVALID_SHAPE_ID) {
@@ -8026,21 +8025,6 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride,
 		GC_ASSERT((RBASIC(obj)->flags & ~FL_SEEN_OBJ_ID) == T_ZOMBIE);
 		data->zombie_object_count++;
 	    }
-            /*
-	    if (BUILTIN_TYPE(obj) == T_NONE) {
-                RVALUE *freeobj = page->freelist;
-                bool found = false;
-                while(freeobj && !found) {
-                    if (freeobj == (RVALUE *)obj) {
-                        found = true;
-                        break;
-                    }
-                    freeobj = freeobj->as.free.next;
-                }
-                if (!found)
-                    rb_bug("didn't find obj %p in page %p\n", obj, page);
-            }
-            */
 	}
         if (poisoned) {
             GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE);
