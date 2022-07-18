@@ -112,6 +112,7 @@ pub const ROBJECT_EMBED: ruby_robject_flags = 8192;
 pub type ruby_robject_flags = u32;
 pub const ROBJECT_EMBED_LEN_MAX: ruby_robject_consts = 3;
 pub type ruby_robject_consts = u32;
+pub type shape_id_t = u16;
 extern "C" {
     pub static mut rb_mKernel: VALUE;
 }
@@ -474,6 +475,15 @@ extern "C" {
 }
 pub type rb_serial_t = ::std::os::raw::c_ulonglong;
 extern "C" {
+    pub fn rb_obj_ensure_iv_index_mapping(obj: VALUE, id: ID) -> u32;
+}
+extern "C" {
+    pub fn rb_gvar_get(arg1: ID) -> VALUE;
+}
+extern "C" {
+    pub fn rb_gvar_set(arg1: ID, arg2: VALUE) -> VALUE;
+}
+extern "C" {
     pub fn rb_class_allocate_instance(klass: VALUE) -> VALUE;
 }
 extern "C" {
@@ -493,6 +503,7 @@ pub const imemo_parser_strterm: imemo_type = 10;
 pub const imemo_callinfo: imemo_type = 11;
 pub const imemo_callcache: imemo_type = 12;
 pub const imemo_constcache: imemo_type = 13;
+pub const imemo_shape: imemo_type = 14;
 pub type imemo_type = u32;
 pub const METHOD_VISI_UNDEF: rb_method_visibility_t = 0;
 pub const METHOD_VISI_PUBLIC: rb_method_visibility_t = 1;
@@ -560,9 +571,10 @@ pub struct iseq_inline_constant_cache {
     pub get_insn_idx: ::std::os::raw::c_uint,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
 pub struct iseq_inline_iv_cache_entry {
-    pub entry: *mut rb_iv_index_tbl_entry,
+    pub source_shape_id: shape_id_t,
+    pub dest_shape_id: shape_id_t,
+    pub attr_index: u32,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -699,22 +711,7 @@ extern "C" {
     pub fn rb_hash_resurrect(hash: VALUE) -> VALUE;
 }
 extern "C" {
-    pub fn rb_obj_ensure_iv_index_mapping(obj: VALUE, id: ID) -> u32;
-}
-extern "C" {
-    pub fn rb_gvar_get(arg1: ID) -> VALUE;
-}
-extern "C" {
-    pub fn rb_gvar_set(arg1: ID, arg2: VALUE) -> VALUE;
-}
-extern "C" {
     pub fn rb_vm_insn_decode(encoded: VALUE) -> ::std::os::raw::c_int;
-}
-#[repr(C)]
-pub struct rb_iv_index_tbl_entry {
-    pub index: u32,
-    pub class_serial: rb_serial_t,
-    pub class_value: VALUE,
 }
 #[repr(C)]
 pub struct rb_cvar_class_tbl_entry {
