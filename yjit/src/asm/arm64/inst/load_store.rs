@@ -19,18 +19,25 @@ impl From<u8> for Size {
 /// The operation to perform for this instruction.
 enum Opc {
     STUR = 0b00,
-    LDUR = 0b01,
+    LDR = 0b01,
     LDURSW = 0b10
 }
 
-/// The struct that represents an A64 data processing -- immediate instruction
-/// that can be encoded.
+/// What kind of indexing to perform for this instruction.
+enum Index {
+    None = 0b00,
+    PostIndex = 0b01,
+    PreIndex = 0b11
+}
+
+/// The struct that represents an A64 load or store instruction that can be
+/// encoded.
 ///
-/// LDUR/LDURSW/STUR
+/// LDR/LDUR/LDURSW/STUR
 /// +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+
 /// | 31 30 29 28 | 27 26 25 24 | 23 22 21 20 | 19 18 17 16 | 15 14 13 12 | 11 10 09 08 | 07 06 05 04 | 03 02 01 00 |
-/// |        1  1    1  0  0  0          0                                   0  0                                   |
-/// | size.                       opc..    imm9..........................         rn.............. rt.............. |
+/// |        1  1    1  0  0  0          0                                                                          |
+/// | size.                       opc..    imm9..........................   idx.. rn.............. rt.............. |
 /// +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+
 ///
 pub struct LoadStore {
@@ -39,6 +46,9 @@ pub struct LoadStore {
 
     /// The base register with which to form the address.
     rn: u8,
+
+    /// What kind of indexing to perform for this instruction.
+    idx: Index,
 
     /// The optional signed immediate byte offset from the base register.
     imm9: i16,
@@ -51,22 +61,34 @@ pub struct LoadStore {
 }
 
 impl LoadStore {
+    /// LDR (immediate, post-index)
+    /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/LDR--immediate---Load-Register--immediate--
+    pub fn ldr_post(rt: u8, rn: u8, imm9: i16, num_bits: u8) -> Self {
+        Self { rt, rn, idx: Index::PostIndex, imm9, opc: Opc::LDR, size: num_bits.into() }
+    }
+
+    /// LDR (immediate, pre-index)
+    /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/LDR--immediate---Load-Register--immediate--
+    pub fn ldr_pre(rt: u8, rn: u8, imm9: i16, num_bits: u8) -> Self {
+        Self { rt, rn, idx: Index::PreIndex, imm9, opc: Opc::LDR, size: num_bits.into() }
+    }
+
     /// LDUR (load register, unscaled)
     /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/LDUR--Load-Register--unscaled--?lang=en
     pub fn ldur(rt: u8, rn: u8, imm9: i16, num_bits: u8) -> Self {
-        Self { rt, rn, imm9, opc: Opc::LDUR, size: num_bits.into() }
+        Self { rt, rn, idx: Index::None, imm9, opc: Opc::LDR, size: num_bits.into() }
     }
 
     /// LDURSW (load register, unscaled, signed)
     /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/LDURSW--Load-Register-Signed-Word--unscaled--?lang=en
     pub fn ldursw(rt: u8, rn: u8, imm9: i16) -> Self {
-        Self { rt, rn, imm9, opc: Opc::LDURSW, size: Size::Size32 }
+        Self { rt, rn, idx: Index::None, imm9, opc: Opc::LDURSW, size: Size::Size32 }
     }
 
     /// STUR (store register, unscaled)
     /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/STUR--Store-Register--unscaled--?lang=en
     pub fn stur(rt: u8, rn: u8, imm9: i16, num_bits: u8) -> Self {
-        Self { rt, rn, imm9, opc: Opc::STUR, size: num_bits.into() }
+        Self { rt, rn, idx: Index::None, imm9, opc: Opc::STUR, size: num_bits.into() }
     }
 }
 
@@ -84,6 +106,7 @@ impl From<LoadStore> for u32 {
         | (FAMILY << 25)
         | ((inst.opc as u32) << 22)
         | (imm9 << 12)
+        | ((inst.idx as u32) << 10)
         | ((inst.rn as u32) << 5)
         | (inst.rt as u32)
     }
@@ -100,6 +123,20 @@ impl From<LoadStore> for [u8; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ldr_post() {
+        let inst = LoadStore::ldr_post(0, 1, 16, 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xf8410420, result);
+    }
+
+    #[test]
+    fn test_ldr_pre() {
+        let inst = LoadStore::ldr_pre(0, 1, 16, 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xf8410c20, result);
+    }
 
     #[test]
     fn test_ldur() {
