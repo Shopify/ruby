@@ -428,11 +428,11 @@ impl Assembler
                     stp_pre(cb, X29, X30, A64Opnd::new_mem(128, C_SP_REG, -16));
 
                     // X29 (frame_pointer) = SP
-                    add(cb, X29, C_SP_REG, A64Opnd::new_uimm(0));
+                    mov(cb, X29, C_SP_REG);
                 },
                 Op::FrameTeardown => {
                     // SP = X29 (frame pointer)
-                    add(cb, C_SP_REG, X29, A64Opnd::new_uimm(0));
+                    mov(cb, C_SP_REG, X29);
 
                     ldp_post(cb, X29, X30, A64Opnd::new_mem(128, C_SP_REG, 16));
                 },
