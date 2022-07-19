@@ -121,7 +121,7 @@ yjit_task:
       source $HOME/.cargo/env && make -j yjit-bindgen;
     else;
       echo "only running bindgen on clang image";
-    fi;
+    fi
   boot_miniruby_script: RUST_BACKTRACE=1 ./miniruby --yjit-call-threshold=1 -e0
   test_dump_insns_script: RUST_BACKTRACE=1 ./miniruby --yjit-call-threshold=1 --yjit-dump-insns -e0
   # output_stats_script: RUST_BACKTRACE=1 ./miniruby --yjit-call-threshold=1 --yjit-stats -e0
