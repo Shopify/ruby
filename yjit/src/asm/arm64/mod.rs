@@ -444,6 +444,16 @@ pub fn lsr(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, shift: A64Opnd) {
 /// MOV - move a value in a register to another register
 pub fn mov(cb: &mut CodeBlock, rd: A64Opnd, rm: A64Opnd) {
     let bytes: [u8; 4] = match (rd, rm) {
+        (A64Opnd::Reg(A64Reg { reg_no: 31, num_bits: 64 }), A64Opnd::Reg(rm)) => {
+            assert!(rm.num_bits == 64, "Expected rm to be 64 bits");
+
+            DataImm::add(31, rm.reg_no, 0, 64).into()
+        },
+        (A64Opnd::Reg(rd), A64Opnd::Reg(A64Reg { reg_no: 31, num_bits: 64 })) => {
+            assert!(rd.num_bits == 64, "Expected rd to be 64 bits");
+
+            DataImm::add(rd.reg_no, 31, 0, 64).into()
+        },
         (A64Opnd::Reg(rd), A64Opnd::Reg(rm)) => {
             assert!(rd.num_bits == rm.num_bits, "Expected registers to be the same size");
 
@@ -951,6 +961,16 @@ mod tests {
     #[test]
     fn test_mov_immediate() {
         check_bytes("eaf300b2", |cb| mov(cb, X10, A64Opnd::new_uimm(0x5555555555555555)));
+    }
+
+    #[test]
+    fn test_mov_into_sp() {
+        check_bytes("1f000091", |cb| mov(cb, X31, X0));
+    }
+
+    #[test]
+    fn test_mov_from_sp() {
+        check_bytes("e0030091", |cb| mov(cb, X0, X31));
     }
 
     #[test]
