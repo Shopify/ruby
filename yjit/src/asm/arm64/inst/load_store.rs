@@ -18,7 +18,7 @@ impl From<u8> for Size {
 
 /// The operation to perform for this instruction.
 enum Opc {
-    STUR = 0b00,
+    STR = 0b00,
     LDR = 0b01,
     LDURSW = 0b10
 }
@@ -33,7 +33,7 @@ enum Index {
 /// The struct that represents an A64 load or store instruction that can be
 /// encoded.
 ///
-/// LDR/LDUR/LDURSW/STUR
+/// LDR/LDUR/LDURSW/STR/STUR
 /// +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+
 /// | 31 30 29 28 | 27 26 25 24 | 23 22 21 20 | 19 18 17 16 | 15 14 13 12 | 11 10 09 08 | 07 06 05 04 | 03 02 01 00 |
 /// |        1  1    1  0  0  0          0                                                                          |
@@ -85,10 +85,22 @@ impl LoadStore {
         Self { rt, rn, idx: Index::None, imm9, opc: Opc::LDURSW, size: Size::Size32 }
     }
 
+    /// STR (immediate, post-index)
+    /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/STR--immediate---Store-Register--immediate--
+    pub fn str_post(rt: u8, rn: u8, imm9: i16, num_bits: u8) -> Self {
+        Self { rt, rn, idx: Index::PostIndex, imm9, opc: Opc::STR, size: num_bits.into() }
+    }
+
+    /// STR (immediate, pre-index)
+    /// https://developer.arm.com/documentation/ddi0596/2020-12/Base-Instructions/STR--immediate---Store-Register--immediate--
+    pub fn str_pre(rt: u8, rn: u8, imm9: i16, num_bits: u8) -> Self {
+        Self { rt, rn, idx: Index::PreIndex, imm9, opc: Opc::STR, size: num_bits.into() }
+    }
+
     /// STUR (store register, unscaled)
     /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/STUR--Store-Register--unscaled--?lang=en
     pub fn stur(rt: u8, rn: u8, imm9: i16, num_bits: u8) -> Self {
-        Self { rt, rn, idx: Index::None, imm9, opc: Opc::STUR, size: num_bits.into() }
+        Self { rt, rn, idx: Index::None, imm9, opc: Opc::STR, size: num_bits.into() }
     }
 }
 
@@ -164,6 +176,20 @@ mod tests {
         let inst = LoadStore::ldursw(0, 1, 123);
         let result: u32 = inst.into();
         assert_eq!(0xb887b020, result);
+    }
+
+    #[test]
+    fn test_str_post() {
+        let inst = LoadStore::str_post(0, 1, -16, 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xf81f0420, result);
+    }
+
+    #[test]
+    fn test_str_pre() {
+        let inst = LoadStore::str_pre(0, 1, -16, 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xf81f0c20, result);
     }
 
     #[test]
