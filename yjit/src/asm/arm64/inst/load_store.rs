@@ -4,12 +4,6 @@ enum Size {
     Size64 = 0b11,
 }
 
-/// The operation to perform for this instruction.
-enum Opc {
-    LDUR = 0b01,
-    LDURSW = 0b10
-}
-
 /// A convenience function so that we can convert the number of bits of an
 /// register operand directly into an Sf enum variant.
 impl From<u8> for Size {
@@ -22,17 +16,24 @@ impl From<u8> for Size {
     }
 }
 
+/// The operation to perform for this instruction.
+enum Opc {
+    STUR = 0b00,
+    LDUR = 0b01,
+    LDURSW = 0b10
+}
+
 /// The struct that represents an A64 data processing -- immediate instruction
 /// that can be encoded.
 ///
-/// LDUR
+/// LDUR/LDURSW/STUR
 /// +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+
 /// | 31 30 29 28 | 27 26 25 24 | 23 22 21 20 | 19 18 17 16 | 15 14 13 12 | 11 10 09 08 | 07 06 05 04 | 03 02 01 00 |
 /// |        1  1    1  0  0  0          0                                   0  0                                   |
-/// | size.                       opc..       imm9..........................         rn.............. rt.............. |
+/// | size.                       opc..    imm9..........................         rn.............. rt.............. |
 /// +-------------+-------------+-------------+-------------+-------------+-------------+-------------+-------------+
 ///
-pub struct Load {
+pub struct LoadStore {
     /// The number of the register to load the value into.
     rt: u8,
 
@@ -49,7 +50,7 @@ pub struct Load {
     size: Size
 }
 
-impl Load {
+impl LoadStore {
     /// LDUR (load register, unscaled)
     /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/LDUR--Load-Register--unscaled--?lang=en
     pub fn ldur(rt: u8, rn: u8, imm9: i16, num_bits: u8) -> Self {
@@ -61,14 +62,20 @@ impl Load {
     pub fn ldursw(rt: u8, rn: u8, imm9: i16) -> Self {
         Self { rt, rn, imm9, opc: Opc::LDURSW, size: Size::Size32 }
     }
+
+    /// STUR (store register, unscaled)
+    /// https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/STUR--Store-Register--unscaled--?lang=en
+    pub fn stur(rt: u8, rn: u8, imm9: i16, num_bits: u8) -> Self {
+        Self { rt, rn, imm9, opc: Opc::STUR, size: num_bits.into() }
+    }
 }
 
 /// https://developer.arm.com/documentation/ddi0602/2022-03/Index-by-Encoding/Loads-and-Stores?lang=en
 const FAMILY: u32 = 0b0100;
 
-impl From<Load> for u32 {
+impl From<LoadStore> for u32 {
     /// Convert an instruction into a 32-bit value.
-    fn from(inst: Load) -> Self {
+    fn from(inst: LoadStore) -> Self {
         let imm9 = (inst.imm9 as u32) & ((1 << 9) - 1);
 
         0
@@ -82,9 +89,9 @@ impl From<Load> for u32 {
     }
 }
 
-impl From<Load> for [u8; 4] {
+impl From<LoadStore> for [u8; 4] {
     /// Convert an instruction into a 4 byte array.
-    fn from(inst: Load) -> [u8; 4] {
+    fn from(inst: LoadStore) -> [u8; 4] {
         let result: u32 = inst.into();
         result.to_le_bytes()
     }
@@ -96,29 +103,50 @@ mod tests {
 
     #[test]
     fn test_ldur() {
-        let inst = Load::ldur(0, 1, 0, 64);
+        let inst = LoadStore::ldur(0, 1, 0, 64);
         let result: u32 = inst.into();
         assert_eq!(0xf8400020, result);
     }
 
     #[test]
     fn test_ldur_with_imm() {
-        let inst = Load::ldur(0, 1, 123, 64);
+        let inst = LoadStore::ldur(0, 1, 123, 64);
         let result: u32 = inst.into();
         assert_eq!(0xf847b020, result);
     }
 
     #[test]
     fn test_ldursw() {
-        let inst = Load::ldursw(0, 1, 0);
+        let inst = LoadStore::ldursw(0, 1, 0);
         let result: u32 = inst.into();
         assert_eq!(0xb8800020, result);
     }
 
     #[test]
     fn test_ldursw_with_imm() {
-        let inst = Load::ldursw(0, 1, 123);
+        let inst = LoadStore::ldursw(0, 1, 123);
         let result: u32 = inst.into();
         assert_eq!(0xb887b020, result);
+    }
+
+    #[test]
+    fn test_stur() {
+        let inst = LoadStore::stur(0, 1, 0, 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xf8000020, result);
+    }
+
+    #[test]
+    fn test_stur_negative_offset() {
+        let inst = LoadStore::stur(0, 1, -1, 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xf81ff020, result);
+    }
+
+    #[test]
+    fn test_stur_positive_offset() {
+        let inst = LoadStore::stur(0, 1, 255, 64);
+        let result: u32 = inst.into();
+        assert_eq!(0xf80ff020, result);
     }
 }

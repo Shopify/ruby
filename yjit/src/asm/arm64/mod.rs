@@ -382,13 +382,13 @@ pub fn ldur(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd) {
         (A64Opnd::Reg(rt), A64Opnd::Reg(rn)) => {
             assert!(rt.num_bits == rn.num_bits, "All operands must be of the same size.");
 
-            Load::ldur(rt.reg_no, rn.reg_no, 0, rt.num_bits).into()
+            LoadStore::ldur(rt.reg_no, rn.reg_no, 0, rt.num_bits).into()
         },
         (A64Opnd::Reg(rt), A64Opnd::Mem(rn)) => {
             assert!(rt.num_bits == rn.num_bits, "Expected registers to be the same size");
             assert!(imm_fits_bits(rn.disp.into(), 9), "Expected displacement to be 9 bits or less");
 
-            Load::ldur(rt.reg_no, rn.base_reg_no, rn.disp as i16, rt.num_bits).into()
+            LoadStore::ldur(rt.reg_no, rn.base_reg_no, rn.disp as i16, rt.num_bits).into()
         },
         _ => panic!("Invalid operands for LDUR")
     };
@@ -403,7 +403,7 @@ pub fn ldursw(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd) {
             assert!(rt.num_bits == rn.num_bits, "Expected registers to be the same size");
             assert!(imm_fits_bits(rn.disp.into(), 9), "Expected displacement to be 9 bits or less");
 
-            Load::ldursw(rt.reg_no, rn.base_reg_no, rn.disp as i16).into()
+            LoadStore::ldursw(rt.reg_no, rn.base_reg_no, rn.disp as i16).into()
         },
         _ => panic!("Invalid operand combination to ldursw instruction.")
     };
@@ -632,7 +632,7 @@ pub fn stur(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd) {
             assert!(rt.num_bits == rn.num_bits, "Expected registers to be the same size");
             assert!(imm_fits_bits(rn.disp.into(), 9), "Expected displacement to be 9 bits or less");
 
-            Store::stur(rt.reg_no, rn.base_reg_no, rn.disp as i16, rt.num_bits).into()
+            LoadStore::stur(rt.reg_no, rn.base_reg_no, rn.disp as i16, rt.num_bits).into()
         },
         _ => panic!("Invalid operand combination to stur instruction.")
     };
