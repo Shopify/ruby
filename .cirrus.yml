@@ -120,7 +120,7 @@ yjit_task:
     if [[ "$CC" == "clang-12" ]]; then
       source $HOME/.cargo/env && make -j yjit-bindgen;
     else;
-      echo "only running bindgen on clang image"
+      echo "only running bindgen on clang image";
     fi;
   boot_miniruby_script: RUST_BACKTRACE=1 ./miniruby --yjit-call-threshold=1 -e0
   test_dump_insns_script: RUST_BACKTRACE=1 ./miniruby --yjit-call-threshold=1 --yjit-dump-insns -e0
