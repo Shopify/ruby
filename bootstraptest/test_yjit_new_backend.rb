@@ -126,3 +126,11 @@ assert_equal '333', %q{
     end
     foo()
 }
+
+# newrange
+assert_equal '0..3', %q{
+    def foo(n)
+        (0..n)
+    end
+    foo(3)
+}
