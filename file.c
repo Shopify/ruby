@@ -182,7 +182,7 @@ file_path_convert(VALUE name)
     int fname_encidx = ENCODING_GET(name);
     int fs_encidx;
     if (ENCINDEX_US_ASCII != fname_encidx &&
-	ENCINDEX_ASCII != fname_encidx &&
+	ENCINDEX_ASCII_8BIT != fname_encidx &&
 	(fs_encidx = rb_filesystem_encindex()) != fname_encidx &&
 	rb_default_internal_encoding() &&
 	!rb_enc_str_asciionly_p(name)) {
@@ -253,11 +253,11 @@ rb_str_encode_ospath(VALUE path)
 #if USE_OSPATH
     int encidx = ENCODING_GET(path);
 #if 0 && defined _WIN32
-    if (encidx == ENCINDEX_ASCII) {
+    if (encidx == ENCINDEX_ASCII_8BIT) {
 	encidx = rb_filesystem_encindex();
     }
 #endif
-    if (encidx != ENCINDEX_ASCII && encidx != ENCINDEX_UTF_8) {
+    if (encidx != ENCINDEX_ASCII_8BIT && encidx != ENCINDEX_UTF_8) {
 	rb_encoding *enc = rb_enc_from_index(encidx);
 	rb_encoding *utf8 = rb_utf8_encoding();
 	path = rb_str_conv_enc(path, enc, utf8);
@@ -2833,6 +2833,31 @@ utime_failed(struct apply_arg *aa)
 
 #if defined(HAVE_UTIMES)
 
+# if defined(__APPLE__) && \
+    (!defined(MAC_OS_X_VERSION_13_0) || (MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_13_0))
+
+#   if defined(__has_attribute) && __has_attribute(availability)
+typedef int utimensat_func(int, const char *, const struct timespec [2], int);
+
+RBIMPL_WARNING_PUSH();
+RBIMPL_WARNING_IGNORED(-Wunguarded-availability-new);
+static inline utimensat_func *
+rb_utimensat(void)
+{
+    return &utimensat;
+}
+RBIMPL_WARNING_POP();
+
+#   define utimensat rb_utimensat()
+#   else /* __API_AVAILABLE macro does nothing on gcc */
+__attribute__((weak)) int utimensat(int, const char *, const struct timespec [2], int);
+#   endif
+
+#   define utimensat_available_p() (utimensat != NULL)
+# else
+#   define utimensat_available_p() 1
+# endif
+
 static int
 utime_internal(const char *path, void *arg)
 {
@@ -2841,11 +2866,17 @@ utime_internal(const char *path, void *arg)
     struct timeval tvbuf[2], *tvp = NULL;
 
 #if defined(HAVE_UTIMENSAT)
+# if defined(__APPLE__)
+    const int try_utimensat = utimensat != NULL;
+    const int try_utimensat_follow = utimensat != NULL;
+# else
+#   define TRY_UTIMENSAT 1
     static int try_utimensat = 1;
 # ifdef AT_SYMLINK_NOFOLLOW
     static int try_utimensat_follow = 1;
 # else
     const int try_utimensat_follow = 0;
+# endif
 # endif
     int flags = 0;
 
@@ -2856,20 +2887,19 @@ utime_internal(const char *path, void *arg)
 	}
 # endif
 
-	if (utimensat(AT_FDCWD, path, tsp, flags) < 0) {
-            if (errno == ENOSYS) {
+	int result = utimensat(AT_FDCWD, path, tsp, flags);
+# ifdef TRY_UTIMENSAT
+	if (result < 0 && errno == ENOSYS) {
 # ifdef AT_SYMLINK_NOFOLLOW
-		try_utimensat_follow = 0;
+            try_utimensat_follow = 0;
 # endif
-		if (!v->follow)
-		    try_utimensat = 0;
-                goto no_utimensat;
-            }
-            return -1; /* calls utime_failed */
+            if (!v->follow)
+                try_utimensat = 0;
         }
-        return 0;
+        else
+# endif
+            return result;
     }
-no_utimensat:
 #endif
 
     if (tsp) {
@@ -4366,7 +4396,7 @@ rb_check_realpath_emulate(VALUE basedir, VALUE path, rb_encoding *origenc, enum 
 #endif
 
     switch (rb_enc_to_index(enc)) {
-      case ENCINDEX_ASCII:
+      case ENCINDEX_ASCII_8BIT:
       case ENCINDEX_US_ASCII:
 	rb_enc_associate_index(resolved, rb_filesystem_encindex());
     }
@@ -6395,7 +6425,7 @@ static VALUE
 copy_path_class(VALUE path, VALUE orig)
 {
     int encidx = rb_enc_get_index(orig);
-    if (encidx == ENCINDEX_ASCII || encidx == ENCINDEX_US_ASCII)
+    if (encidx == ENCINDEX_ASCII_8BIT || encidx == ENCINDEX_US_ASCII)
         encidx = rb_filesystem_encindex();
     rb_enc_associate_index(path, encidx);
     str_shrink(path);

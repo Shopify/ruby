@@ -883,6 +883,30 @@ class Gem::Specification < Gem::BasicSpecification
   end
 
   ##
+  # Adds +spec+ to the known specifications, keeping the collection
+  # properly sorted.
+
+  def self.add_spec(spec)
+    return if _all.include? spec
+
+    _all << spec
+    stubs << spec
+    (@@stubs_by_name[spec.name] ||= []) << spec
+
+    _resort!(@@stubs_by_name[spec.name])
+    _resort!(stubs)
+  end
+
+  ##
+  # Removes +spec+ from the known specs.
+
+  def self.remove_spec(spec)
+    _all.delete spec.to_spec
+    stubs.delete spec
+    (@@stubs_by_name[spec.name] || []).delete spec
+  end
+
+  ##
   # Returns all specifications. This method is discouraged from use.
   # You probably want to use one of the Enumerable methods instead.
 
@@ -1272,10 +1296,26 @@ class Gem::Specification < Gem::BasicSpecification
     array = begin
       Marshal.load str
     rescue ArgumentError => e
-      raise unless e.message.include?("YAML")
+      #
+      # Some very old marshaled specs included references to `YAML::PrivateType`
+      # and `YAML::Syck::DefaultKey` constants due to bugs in the old emitter
+      # that generated them. Workaround the issue by defining the necessary
+      # constants and retrying.
+      #
+      message = e.message
+      raise unless message.include?("YAML::")
 
-      Object.const_set "YAML", Psych
-      Marshal.load str
+      Object.const_set "YAML", Psych unless Object.const_defined?(:YAML)
+
+      if message.include?("YAML::Syck::")
+        YAML.const_set "Syck", YAML unless YAML.const_defined?(:Syck)
+
+        YAML::Syck.const_set "DefaultKey", Class.new if message.include?("YAML::Syck::DefaultKey")
+      elsif message.include?("YAML::PrivateType")
+        YAML.const_set "PrivateType", Class.new
+      end
+
+      retry
     end
 
     spec = Gem::Specification.new
@@ -2478,25 +2518,14 @@ class Gem::Specification < Gem::BasicSpecification
 
     unless dependencies.empty?
       result << nil
-      result << "  if s.respond_to? :specification_version then"
-      result << "    s.specification_version = #{specification_version}"
-      result << "  end"
+      result << "  s.specification_version = #{specification_version}"
       result << nil
-
-      result << "  if s.respond_to? :add_runtime_dependency then"
 
       dependencies.each do |dep|
         req = dep.requirements_list.inspect
         dep.instance_variable_set :@type, :runtime if dep.type.nil? # HACK
-        result << "    s.add_#{dep.type}_dependency(%q<#{dep.name}>.freeze, #{req})"
+        result << "  s.add_#{dep.type}_dependency(%q<#{dep.name}>.freeze, #{req})"
       end
-
-      result << "  else"
-      dependencies.each do |dep|
-        version_reqs_param = dep.requirements_list.inspect
-        result << "    s.add_dependency(%q<#{dep.name}>.freeze, #{version_reqs_param})"
-      end
-      result << "  end"
     end
 
     result << "end"

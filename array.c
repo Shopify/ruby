@@ -107,7 +107,6 @@ should_not_be_shared_and_embedded(VALUE ary)
 #define ARY_SET_EMBED_LEN(ary, n) do { \
     long tmp_n = (n); \
     assert(ARY_EMBED_P(ary)); \
-    assert(!OBJ_FROZEN(ary)); \
     RBASIC(ary)->flags &= ~RARRAY_EMBED_LEN_MASK; \
     RBASIC(ary)->flags |= (tmp_n) << RARRAY_EMBED_LEN_SHIFT; \
 } while (0)
@@ -210,6 +209,30 @@ ary_embeddable_p(long capa)
 #else
     return capa <= RARRAY_EMBED_LEN_MAX;
 #endif
+}
+
+bool
+rb_ary_embeddable_p(VALUE ary)
+{
+    // if the array is shared or a shared root then it's not moveable
+    return !(ARY_SHARED_P(ary) || ARY_SHARED_ROOT_P(ary));
+}
+
+size_t
+rb_ary_size_as_embedded(VALUE ary)
+{
+    size_t real_size;
+
+    if (ARY_EMBED_P(ary)) {
+        real_size = ary_embed_size(ARY_EMBED_LEN(ary));
+    }
+    else if (rb_ary_embeddable_p(ary)) {
+        real_size = ary_embed_size(ARY_HEAP_CAPA(ary));
+    }
+    else {
+        real_size = sizeof(struct RString);
+    }
+    return real_size;
 }
 
 
@@ -467,6 +490,23 @@ rb_ary_detransient(VALUE ary)
     /* do nothing */
 }
 #endif
+
+void
+rb_ary_make_embedded(VALUE ary)
+{
+    assert(rb_ary_embeddable_p(ary));
+    if (!ARY_EMBED_P(ary)) {
+        VALUE *buf = RARRAY_PTR(ary);
+        long len = RARRAY_LEN(ary);
+
+        FL_SET_EMBED(ary);
+        ARY_SET_EMBED_LEN(ary, len);
+        RARY_TRANSIENT_UNSET(ary);
+
+        memmove(RARRAY_PTR(ary), buf, len * sizeof(VALUE));
+        ary_heap_free_ptr(ary, buf, len * sizeof(VALUE));
+    }
+}
 
 static void
 ary_resize_capa(VALUE ary, long capacity)
@@ -1003,26 +1043,25 @@ ary_make_shared(VALUE ary)
 	long capa = ARY_CAPA(ary), len = RARRAY_LEN(ary);
         const VALUE *ptr;
         VALUE shared = ary_alloc_heap(0);
-        VALUE vshared = (VALUE)shared;
 
         rb_ary_transient_heap_evacuate(ary, TRUE);
         ptr = ARY_HEAP_PTR(ary);
 
-        FL_UNSET_EMBED(vshared);
-        ARY_SET_LEN(vshared, capa);
-        ARY_SET_PTR(vshared, ptr);
-        ary_mem_clear(vshared, len, capa - len);
-        FL_SET_SHARED_ROOT(vshared);
-        ARY_SET_SHARED_ROOT_REFCNT(vshared, 1);
-	FL_SET_SHARED(ary);
+        FL_UNSET_EMBED(shared);
+        ARY_SET_LEN(shared, capa);
+        ARY_SET_PTR(shared, ptr);
+        ary_mem_clear(shared, len, capa - len);
+        FL_SET_SHARED_ROOT(shared);
+        ARY_SET_SHARED_ROOT_REFCNT(shared, 1);
+        FL_SET_SHARED(ary);
         RB_DEBUG_COUNTER_INC(obj_ary_shared_create);
-        ARY_SET_SHARED(ary, vshared);
-        OBJ_FREEZE(vshared);
+        ARY_SET_SHARED(ary, shared);
+        OBJ_FREEZE(shared);
 
-        ary_verify(vshared);
+        ary_verify(shared);
         ary_verify(ary);
 
-        return vshared;
+        return shared;
     }
 }
 

@@ -27,6 +27,9 @@ fn main() {
         SRC_ROOT_ENV
     );
 
+    // We want Bindgen warnings printed to console
+    env_logger::init();
+
     // Remove this flag so rust-bindgen generates bindings
     // that are internal functions not public in libruby
     let filtered_clang_args = env::args().filter(|arg| arg != "-fvisibility=hidden");
@@ -59,9 +62,12 @@ fn main() {
         // Import YARV bytecode instruction constants
         .allowlist_type("ruby_vminsn_type")
 
+        // From include/ruby/internal/config.h
+        .allowlist_var("USE_RVARGC")
+
         // From include/ruby/internal/intern/string.h
         .allowlist_function("rb_utf8_str_new")
-        .allowlist_function("rb_str_append")
+        .allowlist_function("rb_str_buf_append")
         .allowlist_function("rb_str_dup")
 
         // This struct is public to Ruby C extensions
@@ -132,7 +138,8 @@ fn main() {
 
         // From include/ruby/internal/core/robject.h
         .allowlist_type("ruby_robject_flags")
-        .allowlist_type("ruby_robject_consts")
+        // .allowlist_type("ruby_robject_consts") // Removed when USE_RVARGC
+        .allowlist_var("ROBJECT_OFFSET_.*")
 
         // From include/ruby/internal/core/rarray.h
         .allowlist_type("ruby_rarray_flags")
@@ -145,8 +152,7 @@ fn main() {
         .allowlist_var("rb_mKernel")
 
         // From vm_callinfo.h
-        .allowlist_type("VM_CALL.*")         // This doesn't work, possibly due to the odd structure of the #defines
-        .allowlist_type("vm_call_flag_bits") // So instead we include the other enum and do the bit-shift ourselves.
+        .allowlist_type("vm_call_flag_bits")
         .allowlist_type("rb_call_data")
         .blocklist_type("rb_callcache.*")      // Not used yet - opaque to make it easy to import rb_call_data
         .opaque_type("rb_callcache.*")

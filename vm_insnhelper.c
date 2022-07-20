@@ -2113,7 +2113,7 @@ vm_search_method_slowpath0(VALUE cd_owner, struct rb_call_data *cd, VALUE klass)
     if (cd_owner && cc != empty_cc) RB_OBJ_WRITTEN(cd_owner, Qundef, cc);
 
 #if USE_DEBUG_COUNTER
-    if (old_cc == &empty_cc) {
+    if (old_cc == empty_cc) {
         // empty
         RB_DEBUG_COUNTER_INC(mc_inline_miss_empty);
     }
@@ -5478,12 +5478,6 @@ vm_opt_mod(VALUE recv, VALUE obj)
     }
 }
 
-VALUE
-rb_vm_opt_mod(VALUE recv, VALUE obj)
-{
-    return vm_opt_mod(recv, obj);
-}
-
 static VALUE
 vm_opt_neq(const rb_iseq_t *iseq, CALL_DATA cd, CALL_DATA cd_eq, VALUE recv, VALUE obj)
 {
@@ -5607,7 +5601,11 @@ vm_opt_ltlt(VALUE recv, VALUE obj)
     }
     else if (RBASIC_CLASS(recv) == rb_cString &&
 	     BASIC_OP_UNREDEFINED_P(BOP_LTLT, STRING_REDEFINED_OP_FLAG)) {
-	return rb_str_concat(recv, obj);
+	if (LIKELY(RB_TYPE_P(obj, T_STRING))) {
+	    return rb_str_buf_append(recv, obj);
+	} else {
+	    return rb_str_concat(recv, obj);
+	}
     }
     else if (RBASIC_CLASS(recv) == rb_cArray &&
 	     BASIC_OP_UNREDEFINED_P(BOP_LTLT, ARRAY_REDEFINED_OP_FLAG)) {

@@ -111,15 +111,19 @@ void rb_warning_category_update(unsigned int mask, unsigned int bits);
 enum feature_flag_bits {
     EACH_FEATURES(DEFINE_FEATURE, COMMA),
     feature_debug_flag_first,
-#if defined(MJIT_FORCE_ENABLE) || !YJIT_SUPPORTED_P
+#if defined(MJIT_FORCE_ENABLE) || !YJIT_BUILD
     DEFINE_FEATURE(jit) = feature_mjit,
 #else
     DEFINE_FEATURE(jit) = feature_yjit,
 #endif
+    feature_jit_mask = FEATURE_BIT(mjit) | FEATURE_BIT(yjit),
+
     feature_debug_flag_begin = feature_debug_flag_first - 1,
     EACH_DEBUG_FEATURES(DEFINE_DEBUG_FEATURE, COMMA),
     feature_flag_count
 };
+
+#define MULTI_BITS_P(bits) ((bits) & ((bits) - 1))
 
 #define DEBUG_BIT(bit) (1U << feature_debug_##bit)
 
@@ -165,7 +169,9 @@ rb_feature_set_to(ruby_features_t *feat, unsigned int bit_mask, unsigned int bit
     rb_feature_set_to(&(feat), bit_mask, bit_set)
 #define FEATURE_SET(feat, bits) FEATURE_SET_TO(feat, bits, bits)
 #define FEATURE_SET_RESTORE(feat, save) FEATURE_SET_TO(feat, (save).mask, (save).set & (save).mask)
-#define FEATURE_SET_P(feat, bits) ((feat).set & (bits))
+#define FEATURE_SET_P(feat, bits) ((feat).set & FEATURE_BIT(bits))
+#define FEATURE_USED_P(feat, bits) ((feat).mask & FEATURE_BIT(bits))
+#define FEATURE_SET_BITS(feat) ((feat).set & (feat).mask)
 
 static void init_ids(ruby_cmdline_options_t *);
 
@@ -183,8 +189,7 @@ enum {
 	& ~FEATURE_BIT(gems)
 #endif
 	& ~FEATURE_BIT(frozen_string_literal)
-        & ~FEATURE_BIT(mjit)
-        & ~FEATURE_BIT(yjit)
+        & ~feature_jit_mask
 	)
 };
 
@@ -202,10 +207,6 @@ cmdline_options_init(ruby_cmdline_options_t *opt)
 #elif defined(YJIT_FORCE_ENABLE)
     opt->features.set |= FEATURE_BIT(yjit);
 #endif
-
-    if (getenv("RUBY_YJIT_ENABLE")) {
-        opt->features.set |= FEATURE_BIT(yjit);
-    }
 
     return opt;
 }
@@ -247,7 +248,7 @@ usage(const char *name, int help, int highlight, int columns)
 
 #define M(shortopt, longopt, desc) RUBY_OPT_MESSAGE(shortopt, longopt, desc)
 
-#if YJIT_SUPPORTED_P
+#if YJIT_BUILD
 # define PLATFORM_JIT_OPTION "--yjit"
 #else
 # define PLATFORM_JIT_OPTION "--mjit"
@@ -277,7 +278,7 @@ usage(const char *name, int help, int highlight, int columns)
 #if USE_MJIT
         M("--mjit",        "",                     "enable C compiler-based JIT compiler (experimental)"),
 #endif
-#if YJIT_SUPPORTED_P
+#if YJIT_BUILD
         M("--yjit",        "",                     "enable in-process JIT compiler (experimental)"),
 #endif
 	M("-h",		   "",			   "show this message, --help for more info"),
@@ -311,7 +312,7 @@ usage(const char *name, int help, int highlight, int columns)
 #if USE_MJIT
         M("mjit", "",           "C compiler-based JIT compiler (default: disabled)"),
 #endif
-#if YJIT_SUPPORTED_P
+#if YJIT_BUILD
         M("yjit", "",           "in-process JIT compiler (default: disabled)"),
 #endif
     };
@@ -322,7 +323,7 @@ usage(const char *name, int help, int highlight, int columns)
 #if USE_MJIT
     extern const struct ruby_opt_message mjit_option_messages[];
 #endif
-#if YJIT_SUPPORTED_P
+#if YJIT_BUILD
     static const struct ruby_opt_message yjit_options[] = {
 #if YJIT_STATS
         M("--yjit-stats",              "", "Enable collecting YJIT statistics"),
@@ -364,7 +365,7 @@ usage(const char *name, int help, int highlight, int columns)
     for (i = 0; mjit_option_messages[i].str; ++i)
 	SHOW(mjit_option_messages[i]);
 #endif
-#if YJIT_SUPPORTED_P
+#if YJIT_BUILD
     printf("%s""YJIT options (experimental):%s\n", sb, se);
     for (i = 0; i < numberof(yjit_options); ++i)
         SHOW(yjit_options[i]);
@@ -927,7 +928,7 @@ feature_option(const char *str, int len, void *arg, const unsigned int enable)
     }
     if (NAME_MATCH_P("all", str, len)) {
         // YJIT and MJIT cannot be enabled at the same time. We enable only one for --enable=all.
-        mask &= ~(FEATURE_BIT(yjit) | FEATURE_BIT(mjit)) | FEATURE_BIT(jit);
+        mask &= ~feature_jit_mask | FEATURE_BIT(jit);
         goto found;
     }
 #if AMBIGUOUS_FEATURE_NAMES
@@ -1525,7 +1526,7 @@ ruby_opt_init(ruby_cmdline_options_t *opt)
 {
     if (opt->dump & dump_exit_bits) return;
 
-    if (opt->features.set & FEATURE_BIT(gems)) {
+    if (FEATURE_SET_P(opt->features, gems)) {
         rb_define_module("Gem");
         if (opt->features.set & FEATURE_BIT(error_highlight)) {
             rb_define_module("ErrorHighlight");
@@ -1785,7 +1786,7 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     argc -= i;
     argv += i;
 
-    if ((opt->features.set & FEATURE_BIT(rubyopt)) && (s = getenv("RUBYOPT"))) {
+    if (FEATURE_SET_P(opt->features, rubyopt) && (s = getenv("RUBYOPT"))) {
 	VALUE src_enc_name = opt->src.enc.name;
 	VALUE ext_enc_name = opt->ext.enc.name;
 	VALUE int_enc_name = opt->intern.enc.name;
@@ -1810,22 +1811,28 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
          */
         rb_warning("-K is specified; it is for 1.8 compatibility and may cause odd behavior");
 
+    if (!(FEATURE_SET_BITS(opt->features) & feature_jit_mask)) {
+#if YJIT_BUILD
+        if (!FEATURE_USED_P(opt->features, yjit) && getenv("RUBY_YJIT_ENABLE")) {
+            FEATURE_SET(opt->features, FEATURE_BIT(yjit));
+        }
+#endif
+    }
+    if (MULTI_BITS_P(FEATURE_SET_BITS(opt->features) & feature_jit_mask)) {
+        rb_warn("MJIT and YJIT cannot both be enabled at the same time. Exiting");
+        return Qfalse;
+    }
+
 #if USE_MJIT
-    if (opt->features.set & FEATURE_BIT(mjit)) {
+    if (FEATURE_SET_P(opt->features, mjit)) {
         opt->mjit.on = TRUE; /* set mjit.on for ruby_show_version() API and check to call mjit_init() */
     }
 #endif
-    if (opt->features.set & FEATURE_BIT(yjit)) {
-#if USE_MJIT
-        if (opt->mjit.on) {
-            rb_warn("MJIT and YJIT cannot both be enabled at the same time. Exiting");
-            exit(1);
-        }
-#endif
 #if YJIT_BUILD
+    if (FEATURE_SET_P(opt->features, yjit)) {
         rb_yjit_init();
-#endif
     }
+#endif
 #if USE_MJIT
     mjit_opts.on = opt->mjit.on; /* used by Init_ruby_description(). mjit_init() still can't be called here. */
 #endif
@@ -1979,8 +1986,8 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     if (opt->features.mask & COMPILATION_FEATURES) {
 	VALUE option = rb_hash_new();
 #define SET_COMPILE_OPTION(h, o, name) \
-	rb_hash_aset((h), ID2SYM(rb_intern_const(#name)),		\
-                     RBOOL(FEATURE_SET_P(o->features, FEATURE_BIT(name))));
+	rb_hash_aset((h), ID2SYM(rb_intern_const(#name)), \
+                     RBOOL(FEATURE_SET_P(o->features, name)))
 	SET_COMPILE_OPTION(option, opt, frozen_string_literal);
 	SET_COMPILE_OPTION(option, opt, debug_frozen_string_literal);
 	rb_funcallv(rb_cISeq, rb_intern_const("compile_option="), 1, &option);
@@ -2144,6 +2151,8 @@ warn_cr_in_shebang(const char *str, long len)
 #define warn_cr_in_shebang(str, len) (void)0
 #endif
 
+void rb_reset_argf_lineno(long n);
+
 struct load_file_arg {
     VALUE parser;
     VALUE fname;
@@ -2240,6 +2249,7 @@ load_file_internal(VALUE argp_v)
         if (NIL_P(c)) {
 	    argp->f = f = Qnil;
 	}
+        rb_reset_argf_lineno(0);
         ruby_opt_init(opt);
     }
     if (opt->src.enc.index >= 0) {

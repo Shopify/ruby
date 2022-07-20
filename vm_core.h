@@ -344,6 +344,9 @@ struct rb_shape;
 typedef struct rb_shape rb_shape_t;
 #define rb_shape_t rb_shape_t
 #endif
+typedef uintptr_t iseq_bits_t;
+
+#define ISEQ_IS_SIZE(body) (body->ic_size + body->ivc_size + body->ise_size + body->icvarc_size)
 
 struct rb_iseq_constant_body {
     enum iseq_type {
@@ -454,7 +457,7 @@ struct rb_iseq_constant_body {
     const struct rb_iseq_struct *parent_iseq;
     struct rb_iseq_struct *local_iseq; /* local_iseq->flip_cnt can be modified */
 
-    union iseq_inline_storage_entry *is_entries;
+    union iseq_inline_storage_entry *is_entries; /* [ TS_IVC | TS_ICVARC | TS_ISE | TS_IC ] */
     struct rb_call_data *call_data; //struct rb_call_data calls[ci_size];
 
     struct {
@@ -466,9 +469,16 @@ struct rb_iseq_constant_body {
     } variable;
 
     unsigned int local_table_size;
-    unsigned int is_size;
+    unsigned int ic_size;     // Number of IC caches
+    unsigned int ise_size;    // Number of ISE caches
+    unsigned int ivc_size;    // Number of IVC caches
+    unsigned int icvarc_size; // Number of ICVARC caches
     unsigned int ci_size;
     unsigned int stack_max; /* for stack overflow check */
+    union {
+        iseq_bits_t * list; /* Find references for GC */
+        iseq_bits_t single;
+    } mark_bits;
 
     char catch_except_p; /* If a frame of this ISeq may catch exception, set TRUE */
     // If true, this ISeq is leaf *and* backtraces are not used, for example,
@@ -1240,10 +1250,10 @@ typedef rb_control_frame_t *
 
 enum vm_frame_env_flags {
     /* Frame/Environment flag bits:
-     *   MMMM MMMM MMMM MMMM ____ _FFF FFFF EEEX (LSB)
+     *   MMMM MMMM MMMM MMMM ____ FFFF FFFE EEEX (LSB)
      *
      * X   : tag for GC marking (It seems as Fixnum)
-     * EEE : 3 bits Env flags
+     * EEE : 4 bits Env flags
      * FF..: 7 bits Frame flags
      * MM..: 15 bits frame magic (to check frame corruption)
      */

@@ -3110,8 +3110,16 @@ rb_str_resize(VALUE str, long len)
 }
 
 static VALUE
-str_buf_cat(VALUE str, const char *ptr, long len)
+str_buf_cat4(VALUE str, const char *ptr, long len, bool keep_cr)
 {
+    if (keep_cr) {
+        str_modify_keep_cr(str);
+    }
+    else {
+        rb_str_modify(str);
+    }
+    if (len == 0) return 0;
+
     long capa, total, olen, off = -1;
     char *sptr;
     const int termlen = TERM_LEN(str);
@@ -3123,12 +3131,11 @@ str_buf_cat(VALUE str, const char *ptr, long len)
     if (ptr >= sptr && ptr <= sptr + olen) {
         off = ptr - sptr;
     }
-    rb_str_modify(str);
-    if (len == 0) return 0;
+
     if (STR_EMBED_P(str)) {
         capa = str_embed_capa(str) - termlen;
         sptr = RSTRING(str)->as.embed.ary;
-	olen = RSTRING_EMBED_LEN(str);
+        olen = RSTRING_EMBED_LEN(str);
     }
     else {
 	capa = RSTRING(str)->as.heap.aux.capa;
@@ -3159,7 +3166,8 @@ str_buf_cat(VALUE str, const char *ptr, long len)
     return str;
 }
 
-#define str_buf_cat2(str, ptr) str_buf_cat((str), (ptr), rb_strlen_lit(ptr))
+#define str_buf_cat(str, ptr, len) str_buf_cat4((str), (ptr), len, false)
+#define str_buf_cat2(str, ptr) str_buf_cat4((str), (ptr), rb_strlen_lit(ptr), false)
 
 VALUE
 rb_str_cat(VALUE str, const char *ptr, long len)
@@ -3303,12 +3311,28 @@ rb_str_buf_cat_ascii(VALUE str, const char *ptr)
     }
 }
 
+static inline bool
+str_enc_fastpath(VALUE str)
+{
+    // The overwhelming majority of strings are in one of these 3 encodings.
+    switch (ENCODING_GET_INLINED(str)) {
+      case ENCINDEX_ASCII_8BIT:
+      case ENCINDEX_UTF_8:
+      case ENCINDEX_US_ASCII:
+        return true;
+      default:
+        return false;
+    }
+}
+
 VALUE
 rb_str_buf_append(VALUE str, VALUE str2)
 {
-    int str2_cr;
-
-    str2_cr = ENC_CODERANGE(str2);
+    int str2_cr = rb_enc_str_coderange(str2);
+    if (str2_cr == ENC_CODERANGE_7BIT && str_enc_fastpath(str)) {
+        str_buf_cat4(str, RSTRING_PTR(str2), RSTRING_LEN(str2), true);
+        return str;
+    }
 
     rb_enc_cr_str_buf_cat(str, RSTRING_PTR(str2), RSTRING_LEN(str2),
         ENCODING_GET(str2), str2_cr, &str2_cr);
@@ -3441,7 +3465,7 @@ rb_str_concat(VALUE str1, VALUE str2)
     }
 
     encidx = rb_enc_to_index(enc);
-    if (encidx == ENCINDEX_ASCII || encidx == ENCINDEX_US_ASCII) {
+    if (encidx == ENCINDEX_ASCII_8BIT || encidx == ENCINDEX_US_ASCII) {
 	/* US-ASCII automatically extended to ASCII-8BIT */
 	char buf[1];
 	buf[0] = (char)code;
@@ -3450,7 +3474,7 @@ rb_str_concat(VALUE str1, VALUE str2)
 	}
 	rb_str_cat(str1, buf, 1);
 	if (encidx == ENCINDEX_US_ASCII && code > 127) {
-	    rb_enc_associate_index(str1, ENCINDEX_ASCII);
+	    rb_enc_associate_index(str1, ENCINDEX_ASCII_8BIT);
 	    ENC_CODERANGE_SET(str1, ENC_CODERANGE_VALID);
 	}
     }
@@ -8613,7 +8637,7 @@ literal_split_pattern(VALUE spat, split_type_t default_type)
 }
 
 /*
- *  :call-seq:
+ *  call-seq:
  *    split(field_sep = $;, limit = nil) -> array
  *    split(field_sep = $;, limit = nil) {|substring| ... } -> self
  *

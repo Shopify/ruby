@@ -2914,6 +2914,8 @@ io_enc_str(VALUE str, rb_io_t *fptr)
     return str;
 }
 
+static rb_encoding *io_read_encoding(rb_io_t *fptr);
+
 static void
 make_readconv(rb_io_t *fptr, int size)
 {
@@ -2925,7 +2927,7 @@ make_readconv(rb_io_t *fptr, int size)
         ecopts = fptr->encs.ecopts;
         if (fptr->encs.enc2) {
             sname = rb_enc_name(fptr->encs.enc2);
-            dname = rb_enc_name(fptr->encs.enc);
+            dname = rb_enc_name(io_read_encoding(fptr));
         }
         else {
             sname = dname = "";
@@ -4205,7 +4207,7 @@ static VALUE io_readlines(const struct getline_arg *arg, VALUE io);
  *
  *  With only integer argument +limit+ given,
  *  limits the number of bytes in each line;
- *  see {Line Limit}}[rdoc-ref:IO@Line+Limit]:
+ *  see {Line Limit}[rdoc-ref:IO@Line+Limit]:
  *
  *    f = File.new('t.txt')
  *    f.readlines(8)
@@ -9287,6 +9289,217 @@ rb_io_set_autoclose(VALUE io, VALUE autoclose)
     return autoclose;
 }
 
+static VALUE
+io_wait_event(VALUE io, int event, VALUE timeout, int return_io)
+{
+    VALUE result = rb_io_wait(io, RB_INT2NUM(event), timeout);
+
+    if (!RB_TEST(result)) {
+        return Qnil;
+    }
+
+    int mask = RB_NUM2INT(result);
+
+    if (mask & event) {
+        if (return_io)
+            return io;
+        else
+            return result;
+    }
+    else {
+        return Qfalse;
+    }
+}
+
+/*
+ * call-seq:
+ *   io.wait_readable          -> truthy or falsy
+ *   io.wait_readable(timeout) -> truthy or falsy
+ *
+ * Waits until IO is readable and returns a truthy value, or a falsy
+ * value when times out.  Returns a truthy value immediately when
+ * buffered data is available.
+ */
+
+static VALUE
+io_wait_readable(int argc, VALUE *argv, VALUE io)
+{
+    rb_io_t *fptr;
+
+    RB_IO_POINTER(io, fptr);
+    rb_io_check_readable(fptr);
+
+    if (rb_io_read_pending(fptr)) return Qtrue;
+
+    rb_check_arity(argc, 0, 1);
+    VALUE timeout = (argc == 1 ? argv[0] : Qnil);
+
+    return io_wait_event(io, RUBY_IO_READABLE, timeout, 1);
+}
+
+/*
+ * call-seq:
+ *   io.wait_writable          -> truthy or falsy
+ *   io.wait_writable(timeout) -> truthy or falsy
+ *
+ * Waits until IO is writable and returns a truthy value or a falsy
+ * value when times out.
+ */
+static VALUE
+io_wait_writable(int argc, VALUE *argv, VALUE io)
+{
+    rb_io_t *fptr;
+
+    RB_IO_POINTER(io, fptr);
+    rb_io_check_writable(fptr);
+
+    rb_check_arity(argc, 0, 1);
+    VALUE timeout = (argc == 1 ? argv[0] : Qnil);
+
+    return io_wait_event(io, RUBY_IO_WRITABLE, timeout, 1);
+}
+
+/*
+ * call-seq:
+ *   io.wait_priority          -> truthy or falsy
+ *   io.wait_priority(timeout) -> truthy or falsy
+ *
+ * Waits until IO is priority and returns a truthy value or a falsy
+ * value when times out. Priority data is sent and received using
+ * the Socket::MSG_OOB flag and is typically limited to streams.
+ */
+static VALUE
+io_wait_priority(int argc, VALUE *argv, VALUE io)
+{
+    rb_io_t *fptr = NULL;
+
+    RB_IO_POINTER(io, fptr);
+    rb_io_check_readable(fptr);
+
+    if (rb_io_read_pending(fptr)) return Qtrue;
+
+    rb_check_arity(argc, 0, 1);
+    VALUE timeout = argc == 1 ? argv[0] : Qnil;
+
+    return io_wait_event(io, RUBY_IO_PRIORITY, timeout, 1);
+}
+
+static int
+wait_mode_sym(VALUE mode)
+{
+    if (mode == ID2SYM(rb_intern("r"))) {
+        return RB_WAITFD_IN;
+    }
+    if (mode == ID2SYM(rb_intern("read"))) {
+        return RB_WAITFD_IN;
+    }
+    if (mode == ID2SYM(rb_intern("readable"))) {
+        return RB_WAITFD_IN;
+    }
+    if (mode == ID2SYM(rb_intern("w"))) {
+        return RB_WAITFD_OUT;
+    }
+    if (mode == ID2SYM(rb_intern("write"))) {
+        return RB_WAITFD_OUT;
+    }
+    if (mode == ID2SYM(rb_intern("writable"))) {
+        return RB_WAITFD_OUT;
+    }
+    if (mode == ID2SYM(rb_intern("rw"))) {
+        return RB_WAITFD_IN|RB_WAITFD_OUT;
+    }
+    if (mode == ID2SYM(rb_intern("read_write"))) {
+        return RB_WAITFD_IN|RB_WAITFD_OUT;
+    }
+    if (mode == ID2SYM(rb_intern("readable_writable"))) {
+        return RB_WAITFD_IN|RB_WAITFD_OUT;
+    }
+
+    rb_raise(rb_eArgError, "unsupported mode: %"PRIsVALUE, mode);
+}
+
+static inline rb_io_event_t
+io_event_from_value(VALUE value)
+{
+    int events = RB_NUM2INT(value);
+
+    if (events <= 0) rb_raise(rb_eArgError, "Events must be positive integer!");
+
+    return events;
+}
+
+/*
+ * call-seq:
+ *   io.wait(events, timeout) -> event mask, false or nil
+ *   io.wait(timeout = nil, mode = :read) -> self, true, or false
+ *
+ * Waits until the IO becomes ready for the specified events and returns the
+ * subset of events that become ready, or a falsy value when times out.
+ *
+ * The events can be a bit mask of +IO::READABLE+, +IO::WRITABLE+ or
+ * +IO::PRIORITY+.
+ *
+ * Returns an event mask (truthy value) immediately when buffered data is available.
+ *
+ * Optional parameter +mode+ is one of +:read+, +:write+, or
+ * +:read_write+.
+ */
+
+static VALUE
+io_wait(int argc, VALUE *argv, VALUE io)
+{
+    VALUE timeout = Qundef;
+    rb_io_event_t events = 0;
+    int return_io = 0;
+
+    // The documented signature for this method is actually incorrect.
+    // A single timeout is allowed in any position, and multiple symbols can be given.
+    // Whether this is intentional or not, I don't know, and as such I consider this to
+    // be a legacy/slow path.
+    if (argc != 2 || (RB_SYMBOL_P(argv[0]) || RB_SYMBOL_P(argv[1]))) {
+        // We'd prefer to return the actual mask, but this form would return the io itself:
+        return_io = 1;
+
+        // Slow/messy path:
+        for (int i = 0; i < argc; i += 1) {
+            if (RB_SYMBOL_P(argv[i])) {
+                events |= wait_mode_sym(argv[i]);
+            }
+            else if (timeout == Qundef) {
+                rb_time_interval(timeout = argv[i]);
+            }
+            else {
+                rb_raise(rb_eArgError, "timeout given more than once");
+            }
+        }
+
+        if (timeout == Qundef) timeout = Qnil;
+
+        if (events == 0) {
+            events = RUBY_IO_READABLE;
+        }
+    }
+    else /* argc == 2 and neither are symbols */ {
+        // This is the fast path:
+        events = io_event_from_value(argv[0]);
+        timeout = argv[1];
+    }
+
+    if (events & RUBY_IO_READABLE) {
+        rb_io_t *fptr = NULL;
+        RB_IO_POINTER(io, fptr);
+
+        if (rb_io_read_pending(fptr)) {
+            // This was the original behaviour:
+            if (return_io) return Qtrue;
+            // New behaviour always returns an event mask:
+            else return RB_INT2NUM(RUBY_IO_READABLE);
+        }
+    }
+
+    return io_wait_event(io, events, timeout, return_io);
+}
+
 static void
 argf_mark(void *ptr)
 {
@@ -9653,6 +9866,12 @@ argf_lineno_setter(VALUE val, ID id, VALUE *var)
     ARGF.last_lineno = ARGF.lineno = n;
 }
 
+void
+rb_reset_argf_lineno(long n)
+{
+    ARGF.last_lineno = ARGF.lineno = n;
+}
+
 static VALUE argf_gets(int, VALUE *, VALUE);
 
 /*
@@ -9883,16 +10102,16 @@ rb_f_readlines(int argc, VALUE *argv, VALUE recv)
 
 /*
  *  call-seq:
- *     ARGF.readlines(sep=$/)     -> array
+ *     ARGF.readlines(sep = $/)     -> array
  *     ARGF.readlines(limit)      -> array
  *     ARGF.readlines(sep, limit) -> array
  *
- *     ARGF.to_a(sep=$/)     -> array
+ *     ARGF.to_a(sep = $/)     -> array
  *     ARGF.to_a(limit)      -> array
  *     ARGF.to_a(sep, limit) -> array
  *
- *  Reads +ARGF+'s current file in its entirety, returning an +Array+ of its
- *  lines, one line per element. Lines are assumed to be separated by _sep_.
+ *  Reads each file in +ARGF+ in its entirety, returning an +Array+ containing
+ *  lines from the files. Lines are assumed to be separated by _sep_.
  *
  *     lines = ARGF.readlines
  *     lines[0]                #=> "This is line one\n"
@@ -14892,6 +15111,12 @@ Init_IO(void)
 
     rb_define_method(rb_cIO, "autoclose?", rb_io_autoclose_p, 0);
     rb_define_method(rb_cIO, "autoclose=", rb_io_set_autoclose, 1);
+
+    rb_define_method(rb_cIO, "wait", io_wait, -1);
+
+    rb_define_method(rb_cIO, "wait_readable", io_wait_readable, -1);
+    rb_define_method(rb_cIO, "wait_writable", io_wait_writable, -1);
+    rb_define_method(rb_cIO, "wait_priority", io_wait_priority, -1);
 
     rb_define_virtual_variable("$stdin",  stdin_getter,  stdin_setter);
     rb_define_virtual_variable("$stdout", stdout_getter, stdout_setter);

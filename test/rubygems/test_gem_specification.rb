@@ -1068,7 +1068,15 @@ dependencies: []
   end
 
   def test_handles_private_null_type
-    path = File.expand_path 'data/null-type.gemspec.rz', __dir__
+    path = File.expand_path 'data/pry-0.4.7.gemspec.rz', __dir__
+
+    data = Marshal.load Gem::Util.inflate(Gem.read_binary(path))
+
+    assert_instance_of Gem::Specification, data
+  end
+
+  def test_handles_dependencies_with_syck_requirements_bug
+    path = File.expand_path 'data/excon-0.7.7.gemspec.rz', __dir__
 
     data = Marshal.load Gem::Util.inflate(Gem.read_binary(path))
 
@@ -2259,15 +2267,9 @@ Gem::Specification.new do |s|
   s.rubygems_version = "#{Gem::VERSION}".freeze
   s.summary = "this is a summary".freeze
 
-  if s.respond_to? :specification_version then
-    s.specification_version = #{Gem::Specification::CURRENT_SPECIFICATION_VERSION}
-  end
+  s.specification_version = #{Gem::Specification::CURRENT_SPECIFICATION_VERSION}
 
-  if s.respond_to? :add_runtime_dependency then
-    s.add_runtime_dependency(%q<b>.freeze, [\"= 1\"])
-  else
-    s.add_dependency(%q<b>.freeze, [\"= 1\"])
-  end
+  s.add_runtime_dependency(%q<b>.freeze, [\"= 1\"])
 end
     SPEC
 
@@ -2339,15 +2341,9 @@ Gem::Specification.new do |s|
 
   s.installed_by_version = "#{Gem::VERSION}" if s.respond_to? :installed_by_version
 
-  if s.respond_to? :specification_version then
-    s.specification_version = #{Gem::Specification::CURRENT_SPECIFICATION_VERSION}
-  end
+  s.specification_version = #{Gem::Specification::CURRENT_SPECIFICATION_VERSION}
 
-  if s.respond_to? :add_runtime_dependency then
-    s.add_runtime_dependency(%q<b>.freeze, [\"= 1\"])
-  else
-    s.add_dependency(%q<b>.freeze, [\"= 1\"])
-  end
+  s.add_runtime_dependency(%q<b>.freeze, [\"= 1\"])
 end
     SPEC
 
@@ -2398,19 +2394,11 @@ Gem::Specification.new do |s|
   s.summary = "this is a summary".freeze
   s.test_files = ["test/suite.rb".freeze]
 
-  if s.respond_to? :specification_version then
-    s.specification_version = 4
-  end
+  s.specification_version = 4
 
-  if s.respond_to? :add_runtime_dependency then
-    s.add_runtime_dependency(%q<rake>.freeze, [\"> 0.4\"])
-    s.add_runtime_dependency(%q<jabber4r>.freeze, [\"> 0.0.0\"])
-    s.add_runtime_dependency(%q<pqa>.freeze, [\"> 0.4\", \"<= 0.6\"])
-  else
-    s.add_dependency(%q<rake>.freeze, [\"> 0.4\"])
-    s.add_dependency(%q<jabber4r>.freeze, [\"> 0.0.0\"])
-    s.add_dependency(%q<pqa>.freeze, [\"> 0.4\", \"<= 0.6\"])
-  end
+  s.add_runtime_dependency(%q<rake>.freeze, [\"> 0.4\"])
+  s.add_runtime_dependency(%q<jabber4r>.freeze, [\"> 0.0.0\"])
+  s.add_runtime_dependency(%q<pqa>.freeze, [\"> 0.4\", \"<= 0.6\"])
 end
     SPEC
 
@@ -3006,7 +2994,6 @@ Please report a bug if this causes problems.
 
       @a1.homepage = 'https://rubygems.org'
       assert_equal true, @a1.validate
-
     end
   end
 
@@ -3668,6 +3655,8 @@ end
     b.activate
 
     install_specs b
+
+    Gem::Specification.reset
 
     assert Gem::Specification.find_by_name "b"
 

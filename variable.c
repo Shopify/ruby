@@ -1499,6 +1499,8 @@ void
 rb_obj_transient_heap_evacuate(VALUE obj, int promote)
 {
     if (ROBJ_TRANSIENT_P(obj)) {
+        assert(!RB_FL_TEST_RAW(obj, ROBJECT_EMBED));
+
         uint32_t len = ROBJECT_NUMIV(obj);
         const VALUE *old_ptr = ROBJECT_IVPTR(obj);
         VALUE *new_ptr;
@@ -1525,7 +1527,7 @@ rb_ensure_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize)
     if (RBASIC(obj)->flags & ROBJECT_EMBED) {
         newptr = obj_ivar_heap_alloc(obj, newsize);
         MEMCPY(newptr, ptr, VALUE, len);
-        RBASIC(obj)->flags &= ~ROBJECT_EMBED;
+        RB_FL_UNSET_RAW(obj, ROBJECT_EMBED);
         ROBJECT(obj)->as.heap.ivptr = newptr;
     }
     else {
@@ -1535,7 +1537,11 @@ rb_ensure_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize)
     for (; len < newsize; len++) {
         newptr[len] = Qundef;
     }
+#if USE_RVARGC
+    ROBJECT(obj)->numiv = newsize;
+#else
     ROBJECT(obj)->as.heap.numiv = newsize;
+#endif
 }
 
 struct gen_ivtbl *
@@ -3115,7 +3121,7 @@ autoload_apply_constants(VALUE _arguments)
 
     struct autoload_load_arguments *arguments = (struct autoload_load_arguments*)_arguments;
 
-    struct autoload_const *autoload_const;
+    struct autoload_const *autoload_const = 0; // for ccan_container_off_var()
     struct autoload_const *next;
 
     // We use safe iteration here because `autoload_const_set` will eventually invoke

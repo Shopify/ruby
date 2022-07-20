@@ -158,7 +158,7 @@ Note: We're only listing outstanding class updates.
     * etc 1.4.0
     * io-console 0.5.11
     * io-nonblock 0.1.1
-    * io-wait 0.2.3
+    * io-wait 0.3.0.pre
     * ipaddr 1.2.4
     * json 2.6.2
     * logger 1.5.1
@@ -171,11 +171,11 @@ Note: We're only listing outstanding class updates.
     * stringio 3.0.3
     * timeout 0.3.0
 *   The following bundled gems are updated.
-    * minitest 5.16.1
+    * minitest 5.16.2
     * net-imap 0.2.3
-    * rbs 2.5.1
-    * typeprof 0.21.2
-    * debug 1.5.0
+    * rbs 2.6.0
+    * typeprof 0.21.3
+    * debug 1.6.1
 *   The following default gems are now bundled gems.
 
 ## Compatibility issues
