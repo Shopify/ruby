@@ -37,7 +37,6 @@ enum CodegenStatus {
     KeepCompiling,
     CantCompile,
     EndBlock,
-    DeferCompilation,
 }
 
 /// Code generation function signature
@@ -743,9 +742,6 @@ pub fn gen_single_block(
     // Create a backend assembler instance
     let mut asm = Assembler::new();
 
-    // Codegen status for the last instruction compiled
-    let mut status = CantCompile;
-
     // For each instruction to compile
     // NOTE: could rewrite this loop with a std::iter::Iterator
     while insn_idx < iseq_size {
@@ -783,7 +779,7 @@ pub fn gen_single_block(
         }
 
         // Lookup the codegen function for this instruction
-        status = CantCompile;
+        let mut status = CantCompile;
         if let Some(gen_fn) = get_gen_fn(VALUE(opcode)) {
             // :count-placement:
             // Count bytecode instructions that execute in generated code.
@@ -826,11 +822,6 @@ pub fn gen_single_block(
             break;
         }
 
-        // If we are deferring compilation for this instruction
-        if status == DeferCompilation {
-            break;
-        }
-
         // For now, reset the chain depth after each instruction as only the
         // first instruction in the block can concern itself with the depth.
         ctx.reset_chain_depth();
@@ -861,24 +852,9 @@ pub fn gen_single_block(
         block.set_end_idx(insn_idx);
     }
 
-    // If we are deferring compilation for the current instruction
-    if status == DeferCompilation {
-        defer_compilation(&jit.block, insn_idx, &ctx, cb, ocb);
-
-        // Mark the end position of the block
-        let mut block = jit.block.borrow_mut();
-        block.set_end_addr(cb.get_write_ptr());
-    }
-
-
-
     // We currently can't handle cases where the request is for a block that
     // doesn't go to the next instruction.
-    //assert!(!jit.record_boundary_patch_point);
-
-
-
-
+    assert!(!jit.record_boundary_patch_point);
 
     // If code for the block doesn't fit, fail
     if cb.has_dropped_bytes() || ocb.unwrap().has_dropped_bytes() {
@@ -1131,7 +1107,8 @@ fn gen_opt_plus(
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     if !jit_at_current_insn(jit) {
-        return DeferCompilation;
+        defer_compilation(jit, ctx, asm, ocb);
+        return EndBlock;
     }
 
     let comptime_a = jit_peek_at_stack(jit, ctx, 1);

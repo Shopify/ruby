@@ -1735,6 +1735,35 @@ fn get_branch_target(
     }
 }
 
+impl Assembler
+{
+    // Mark the start position of a patchable branch in the machine code
+    fn mark_branch_start(&mut self, branchref: &BranchRef)
+    {
+        // We need to create our own branch rc object
+        // so that we can move the closure below
+        let branchref = branchref.clone();
+
+        self.pos_marker(Box::new(move |code_ptr| {
+            let mut branch = branchref.borrow_mut();
+            branch.start_addr = Some(code_ptr);
+        }));
+    }
+
+    // Mark the end position of a patchable branch in the machine code
+    fn mark_branch_end(&mut self, branchref: &BranchRef)
+    {
+        // We need to create our own branch rc object
+        // so that we can move the closure below
+        let branchref = branchref.clone();
+
+        self.pos_marker(Box::new(move |code_ptr| {
+            let mut branch = branchref.borrow_mut();
+            branch.end_addr = Some(code_ptr);
+        }));
+    }
+}
+
 pub fn gen_branch(
     jit: &JITState,
     src_ctx: &Context,
@@ -1855,10 +1884,9 @@ pub fn gen_direct_jump(jit: &JITState, ctx: &Context, target0: BlockId, asm: &mu
 
 /// Create a stub to force the code up to this point to be executed
 pub fn defer_compilation(
-    block: &BlockRef,
-    insn_idx: u32,
+    jit: &JITState,
     cur_ctx: &Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
 ) {
     if cur_ctx.chain_depth != 0 {
@@ -1872,23 +1900,23 @@ pub fn defer_compilation(
     }
     next_ctx.chain_depth += 1;
 
-    let branch_rc = make_branch_entry(block, cur_ctx, gen_jump_branch);
+    let block_rc = jit.get_block();
+    let branch_rc = make_branch_entry(&jit.get_block(), cur_ctx, gen_jump_branch);
     let mut branch = branch_rc.borrow_mut();
+    let block = block_rc.borrow();
 
     let blockid = BlockId {
-        iseq: block.borrow().blockid.iseq,
-        idx: insn_idx,
+        iseq: block.blockid.iseq,
+        idx: jit.get_insn_idx(),
     };
     branch.target_ctxs[0] = next_ctx;
     branch.targets[0] = Some(blockid);
     branch.dst_addrs[0] = get_branch_target(blockid, &next_ctx, &branch_rc, 0, ocb);
 
     // Call the branch generation function
-    branch.start_addr = Some(cb.get_write_ptr());
-    let mut asm = Assembler::new();
-    gen_jump_branch(&mut asm, branch.dst_addrs[0].unwrap(), None, BranchShape::Default);
-    asm.compile(cb);
-    branch.end_addr = Some(cb.get_write_ptr());
+    asm.mark_branch_start(&branch_rc);
+    gen_jump_branch(asm, branch.dst_addrs[0].unwrap(), None, BranchShape::Default);
+    asm.mark_branch_end(&branch_rc);
 }
 
 // Remove all references to a block then free it.
