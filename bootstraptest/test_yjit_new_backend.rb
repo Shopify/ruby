@@ -1,5 +1,8 @@
 # Run can run this test file directly with:
 # make -j miniruby && RUST_BACKTRACE=1 ruby --disable=gems bootstraptest/runner.rb --ruby="./miniruby -I./lib -I. -I.ext/common --disable-gems --yjit-call-threshold=1 --yjit-verify-ctx" bootstraptest/test_yjit_new_backend.rb
+#
+# To look up Ruby snippets using specific instructions, see:
+# https://kddnewton.com/yarv/
 
 assert_equal '1', %q{
     def foo()
@@ -111,6 +114,15 @@ assert_equal 'true', %q{
     def foo()
         x = true
         x ||= "foo"
+    end
+    foo()
+}
+
+# getglobal
+assert_equal '333', %q{
+    $bar = 333
+    def foo()
+        $bar
     end
     foo()
 }
