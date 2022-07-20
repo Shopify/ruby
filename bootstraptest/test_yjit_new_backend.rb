@@ -71,12 +71,37 @@ assert_equal '{:a=>777}', %q{
     foo(777)
 }
 
-# TODO: progress towards getting branches and calls working
-=begin
-def foo(n)
-    if n
-        n
+# branchunless
+assert_equal '7', %q{
+    def foo(n)
+        if n
+            7
+        else
+            10
+        end
     end
-end
-puts foo(0)
-=end
+    foo(true)
+}
+assert_equal '10', %q{
+    def foo(n)
+        if n
+            7
+        else
+            10
+        end
+    end
+    foo(false)
+}
+
+# branchunless, jump
+assert_equal '1', %q{
+    def foo(n)
+        if n
+            v = 0
+        else
+            v = 1
+        end
+        return 1 + v
+    end
+    foo(true)
+}
