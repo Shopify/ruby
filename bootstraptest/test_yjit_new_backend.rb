@@ -105,3 +105,12 @@ assert_equal '1', %q{
     end
     foo(true)
 }
+
+# branchif
+assert_equal 'true', %q{
+    def foo()
+        x = true
+        x ||= "foo"
+    end
+    foo()
+}
