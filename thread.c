@@ -131,6 +131,7 @@ rb_thread_local_storage(VALUE thread)
     }
     VALUE locals = rb_ivar_get(thread, idLocals);
     if (NIL_P(locals)) {
+        rb_obj_info_dump(thread);
         rb_bug("locals should be a hash");
     }
     return locals;
