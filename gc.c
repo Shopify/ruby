@@ -5884,7 +5884,7 @@ gc_sweep(rb_objspace_t *objspace)
 	struct heap_page *page = NULL;
 	gc_sweep_start(objspace);
 
-        if (ruby_enable_autocompact && is_full_marking(objspace)) {
+        if (objspace->flags.during_compacting && is_full_marking(objspace)) {
             gc_compact_start(objspace);
         }
 
@@ -7825,9 +7825,6 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
                        objspace->marked_slots, objspace->rincgc.pooled_slots, objspace->rincgc.step_slots);
 #endif
 	objspace->flags.during_minor_gc = FALSE;
-        if (ruby_enable_autocompact) {
-            objspace->flags.during_compacting |= TRUE;
-        }
 	objspace->profile.major_gc_count++;
 	objspace->rgengc.uncollectible_wb_unprotected_objects = 0;
 	objspace->rgengc.old_objects = 0;
@@ -8964,6 +8961,9 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
 
     gc_prof_timer_start(objspace);
     {
+        if (ruby_enable_autocompact && do_full_mark && reason & GPR_FLAG_NEWOBJ) {
+            objspace->flags.during_compacting |= TRUE;
+        }
 	gc_marks(objspace, do_full_mark);
     }
     gc_prof_timer_stop(objspace);
