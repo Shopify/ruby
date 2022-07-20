@@ -1839,46 +1839,19 @@ pub fn gen_direct_jump(jit: &JITState, ctx: &Context, target0: BlockId, asm: &mu
         branch.blocks[0] = Some(blockref.clone());
         branch.shape = BranchShape::Default;
 
-
-
-        todo!("convert gen_direct_jump to using new asm");
-
-
-        // TODO: could we use regenerate_branch logic here?
-
-        /*
         // Call the branch generation function
-        branch.start_addr = Some(cb.get_write_ptr());
-        gen_jump_branch(cb, branch.dst_addrs[0].unwrap(), None, BranchShape::Default);
-        branch.end_addr = Some(cb.get_write_ptr());
-        */
-
-
-
-
-        asm.pos_marker(Box::new(move |code_ptr| {
-            let mut branch = branchref.borrow_mut();
-            branch.start_addr = Some(code_ptr);
-        }));
-
-
-
-
-
-
-
-
-
+        asm.mark_branch_start(&branchref);
+        gen_jump_branch(asm, branch.dst_addrs[0].unwrap(), None, BranchShape::Default);
+        asm.mark_branch_end(&branchref);
     } else {
         // This None target address signals gen_block_series() to compile the
         // target block right after this one (fallthrough).
         branch.dst_addrs[0] = None;
         branch.shape = BranchShape::Next0;
 
-        todo!();
-
-        //branch.start_addr = Some(cb.get_write_ptr());
-        //branch.end_addr = Some(cb.get_write_ptr());
+        // The branch is effectively empty (a noop)
+        asm.mark_branch_start(&branchref);
+        asm.mark_branch_end(&branchref);
     }
 }
 
