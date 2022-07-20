@@ -3138,9 +3138,10 @@ fn gen_opt_case_dispatch(
 
     KeepCompiling // continue with the next instruction
 }
+*/
 
 fn gen_branchif_branch(
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     target0: CodePtr,
     target1: Option<CodePtr>,
     shape: BranchShape,
@@ -3148,14 +3149,14 @@ fn gen_branchif_branch(
     assert!(target1 != None);
     match shape {
         BranchShape::Next0 => {
-            jz_ptr(cb, target1.unwrap());
+            asm.jz(target1.unwrap().into());
         }
         BranchShape::Next1 => {
-            jnz_ptr(cb, target0);
+            asm.jnz(target0.into());
         }
         BranchShape::Default => {
-            jnz_ptr(cb, target0);
-            jmp_ptr(cb, target1.unwrap());
+            asm.jnz(target0.into());
+            asm.jmp(target1.unwrap().into());
         }
     }
 }
@@ -3163,7 +3164,7 @@ fn gen_branchif_branch(
 fn gen_branchif(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let jump_offset = jit_get_arg(jit, 0).as_i32();
@@ -3171,14 +3172,14 @@ fn gen_branchif(
     // Check for interrupts, but only on backward branches that may create loops
     if jump_offset < 0 {
         let side_exit = get_side_exit(jit, ocb, ctx);
-        gen_check_ints(cb, side_exit);
+        gen_check_ints(asm, side_exit);
     }
 
     // Test if any bit (outside of the Qnil bit) is on
     // RUBY_Qfalse  /* ...0000 0000 */
     // RUBY_Qnil    /* ...0000 1000 */
     let val_opnd = ctx.stack_pop(1);
-    test(cb, val_opnd, imm_opnd(!Qnil.as_i64()));
+    asm.test(val_opnd, Opnd::Imm(!Qnil.as_i64()));
 
     // Get the branch target instruction offsets
     let next_idx = jit_next_insn_idx(jit);
@@ -3196,7 +3197,7 @@ fn gen_branchif(
     gen_branch(
         jit,
         ctx,
-        cb,
+        asm,
         ocb,
         jump_block,
         ctx,
@@ -3207,7 +3208,6 @@ fn gen_branchif(
 
     EndBlock
 }
-*/
 
 fn gen_branchunless_branch(
     asm: &mut Assembler,
@@ -3274,19 +3274,18 @@ fn gen_branchunless(
     EndBlock
 }
 
-/*
 fn gen_branchnil_branch(
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     target0: CodePtr,
     target1: Option<CodePtr>,
     shape: BranchShape,
 ) {
     match shape {
-        BranchShape::Next0 => jne_ptr(cb, target1.unwrap()),
-        BranchShape::Next1 => je_ptr(cb, target0),
+        BranchShape::Next0 => asm.jne(target1.unwrap().into()),
+        BranchShape::Next1 => asm.je(target0.into()),
         BranchShape::Default => {
-            je_ptr(cb, target0);
-            jmp_ptr(cb, target1.unwrap());
+            asm.je(target0.into());
+            asm.jmp(target1.unwrap().into());
         }
     }
 }
@@ -3294,7 +3293,7 @@ fn gen_branchnil_branch(
 fn gen_branchnil(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let jump_offset = jit_get_arg(jit, 0).as_i32();
@@ -3302,13 +3301,13 @@ fn gen_branchnil(
     // Check for interrupts, but only on backward branches that may create loops
     if jump_offset < 0 {
         let side_exit = get_side_exit(jit, ocb, ctx);
-        gen_check_ints(cb, side_exit);
+        gen_check_ints(asm, side_exit);
     }
 
     // Test if the value is Qnil
     // RUBY_Qnil    /* ...0000 1000 */
     let val_opnd = ctx.stack_pop(1);
-    cmp(cb, val_opnd, uimm_opnd(Qnil.into()));
+    asm.cmp(val_opnd, Opnd::UImm(Qnil.into()));
 
     // Get the branch target instruction offsets
     let next_idx = jit_next_insn_idx(jit) as i32;
@@ -3326,7 +3325,7 @@ fn gen_branchnil(
     gen_branch(
         jit,
         ctx,
-        cb,
+        asm,
         ocb,
         jump_block,
         ctx,
@@ -3337,7 +3336,6 @@ fn gen_branchnil(
 
     EndBlock
 }
-*/
 
 fn gen_jump(
     jit: &mut JITState,
@@ -5953,10 +5951,10 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_opt_invokebuiltin_delegate => Some(gen_opt_invokebuiltin_delegate),
         YARVINSN_opt_invokebuiltin_delegate_leave => Some(gen_opt_invokebuiltin_delegate),
         YARVINSN_opt_case_dispatch => Some(gen_opt_case_dispatch),
-        YARVINSN_branchif => Some(gen_branchif),
         */
+        YARVINSN_branchif => Some(gen_branchif),
         YARVINSN_branchunless => Some(gen_branchunless),
-        //YARVINSN_branchnil => Some(gen_branchnil),
+        YARVINSN_branchnil => Some(gen_branchnil),
         YARVINSN_jump => Some(gen_jump),
 
         //YARVINSN_getblockparamproxy => Some(gen_getblockparamproxy),
