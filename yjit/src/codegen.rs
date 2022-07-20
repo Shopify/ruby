@@ -688,17 +688,10 @@ fn jump_to_next_insn(
 
     // We are at the end of the current instruction. Record the boundary.
     if jit.record_boundary_patch_point {
-        todo!();
-
-        /*
-        let next_insn = unsafe { jit.pc.offset(insn_len(jit.opcode).try_into().unwrap()) };
-        let exit_pos = gen_exit(next_insn, &reset_depth, ocb.unwrap());
-        record_global_inval_patch(cb, exit_pos);
+        let exit_pc = unsafe { jit.pc.offset(insn_len(jit.opcode).try_into().unwrap()) };
+        let exit_pos = gen_outlined_exit(exit_pc, &reset_depth, ocb);
+        record_global_inval_patch(asm, exit_pos);
         jit.record_boundary_patch_point = false;
-        */
-
-
-
     }
 
     // Generate the jump instruction
