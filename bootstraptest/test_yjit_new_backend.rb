@@ -92,3 +92,16 @@ assert_equal '10', %q{
     end
     foo(false)
 }
+
+# branchunless, jump
+assert_equal '1', %q{
+    def foo(n)
+        if n
+            v = 0
+        else
+            v = 1
+        end
+        return 1 + v
+    end
+    foo(true)
+}

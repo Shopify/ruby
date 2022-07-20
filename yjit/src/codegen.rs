@@ -3337,11 +3337,12 @@ fn gen_branchnil(
 
     EndBlock
 }
+*/
 
 fn gen_jump(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let jump_offset = jit_get_arg(jit, 0).as_i32();
@@ -3349,7 +3350,7 @@ fn gen_jump(
     // Check for interrupts, but only on backward branches that may create loops
     if jump_offset < 0 {
         let side_exit = get_side_exit(jit, ocb, ctx);
-        gen_check_ints(cb, side_exit);
+        gen_check_ints(asm, side_exit);
     }
 
     // Get the branch target instruction offsets
@@ -3360,11 +3361,12 @@ fn gen_jump(
     };
 
     // Generate the jump instruction
-    gen_direct_jump(jit, ctx, jump_block, cb);
+    gen_direct_jump(jit, ctx, jump_block, asm);
 
     EndBlock
 }
 
+/*
 /// Guard that self or a stack operand has the same class as `known_klass`, using
 /// `sample_instance` to speculate about the shape of the runtime value.
 /// FIXNUM and on-heap integers are treated as if they have distinct classes, and
@@ -5955,7 +5957,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         */
         YARVINSN_branchunless => Some(gen_branchunless),
         //YARVINSN_branchnil => Some(gen_branchnil),
-        //YARVINSN_jump => Some(gen_jump),
+        YARVINSN_jump => Some(gen_jump),
 
         //YARVINSN_getblockparamproxy => Some(gen_getblockparamproxy),
         //YARVINSN_getblockparam => Some(gen_getblockparam),
