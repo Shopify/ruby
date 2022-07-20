@@ -934,8 +934,6 @@ fn gen_dupn(
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
 
-    let mut asm = Assembler::new();
-
     let nval: VALUE = jit_get_arg(jit, 0);
     let VALUE(n) = nval;
 
@@ -6337,7 +6335,6 @@ mod tests {
         assert!(ocb.unwrap().get_write_pos() > 0);
     }
 
-    /*
     #[test]
     fn test_gen_exit() {
         let (_, ctx, mut asm, mut cb, _) = setup_codegen();
@@ -6352,7 +6349,6 @@ mod tests {
          get_side_exit(&mut jit, &mut ocb, &ctx);
         assert!(ocb.unwrap().get_write_pos() > 0);
     }
-    */
 
     #[test]
     fn test_gen_check_ints() {
@@ -6398,7 +6394,6 @@ mod tests {
         assert!(cb.get_write_pos() > 0); // Write some movs
     }
 
-    /*
     #[test]
     fn test_gen_dupn() {
         let (mut jit, mut context, mut asm, mut cb, mut ocb) = setup_codegen();
@@ -6422,7 +6417,6 @@ mod tests {
         asm.compile(&mut cb);
         assert!(cb.get_write_pos() > 0); // Write some movs
     }
-    */
 
     #[test]
     fn test_gen_swap() {
