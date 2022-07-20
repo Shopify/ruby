@@ -1767,7 +1767,7 @@ impl Assembler
 pub fn gen_branch(
     jit: &JITState,
     src_ctx: &Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
     target0: BlockId,
     ctx0: &Context,
@@ -1801,8 +1801,9 @@ pub fn gen_branch(
     };
 
     // Call the branch generation function
-    branch.start_addr = Some(cb.get_write_ptr());
-    regenerate_branch(cb, &mut branch);
+    asm.mark_branch_start(&branchref);
+    gen_fn(asm, branch.dst_addrs[0].unwrap(), branch.dst_addrs[1], BranchShape::Default);
+    asm.mark_branch_end(&branchref);
 }
 
 fn gen_jump_branch(

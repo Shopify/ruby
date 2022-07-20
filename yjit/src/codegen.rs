@@ -3258,18 +3258,11 @@ fn gen_branchunless(
         idx: jump_idx.try_into().unwrap(),
     };
 
-
-
-
-    // TODO: port gen_branch logic
-    todo!("complete branchunless implementation");
-
-    /*
     // Generate the branch instructions
     gen_branch(
         jit,
         ctx,
-        cb,
+        asm,
         ocb,
         jump_block,
         ctx,
@@ -3279,9 +3272,6 @@ fn gen_branchunless(
     );
 
     EndBlock
-    */
-
-
 }
 
 /*
@@ -5962,10 +5952,10 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_opt_invokebuiltin_delegate_leave => Some(gen_opt_invokebuiltin_delegate),
         YARVINSN_opt_case_dispatch => Some(gen_opt_case_dispatch),
         YARVINSN_branchif => Some(gen_branchif),
-        YARVINSN_branchunless => Some(gen_branchunless),
-        YARVINSN_branchnil => Some(gen_branchnil),
-        YARVINSN_jump => Some(gen_jump),
         */
+        YARVINSN_branchunless => Some(gen_branchunless),
+        //YARVINSN_branchnil => Some(gen_branchnil),
+        //YARVINSN_jump => Some(gen_jump),
 
         //YARVINSN_getblockparamproxy => Some(gen_getblockparamproxy),
         //YARVINSN_getblockparam => Some(gen_getblockparam),
