@@ -67,10 +67,19 @@ fn disasm_iseq(iseq: IseqPtr) -> String {
 
     // Initialize capstone
     use capstone::prelude::*;
+
+    #[cfg(target_arch = "x86_64")]
     let cs = Capstone::new()
         .x86()
         .mode(arch::x86::ArchMode::Mode64)
         .syntax(arch::x86::ArchSyntax::Intel)
+        .build()
+        .unwrap();
+
+    #[cfg(target_arch = "aarch64")]
+    let cs = Capstone::new()
+        .arm64()
+        .mode(arch::arm64::ArchMode::Arm)
         .build()
         .unwrap();
 
