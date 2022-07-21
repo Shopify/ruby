@@ -1435,7 +1435,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
     struct ivar_update ivup;
     // The returned shape will have `id` in its iv_table
-    rb_shape_t * shape = rb_shape_get_next(rb_shape_get_shape(obj), id);
+    rb_shape_t * shape = rb_shape_get_next(rb_shape_get_shape(obj), obj, id);
     ivup.shape = shape;
     ivup.iv_extended = 0;
 
@@ -1904,7 +1904,7 @@ rb_shape_lookup_id(rb_shape_t* shape, ID id) {
 
 
 static rb_shape_t*
-get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
+get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_type tt)
 {
     rb_shape_t *res = NULL;
     RB_VM_LOCK_ENTER();
@@ -1939,6 +1939,15 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                             id,
                             shape);
 
+                    if (BUILTIN_TYPE(obj) == T_OBJECT) {
+                        VALUE klass = rb_obj_class(obj);
+                        uint32_t cur_iv_count = RCLASS_EXT(klass)->max_iv_count;
+                        uint32_t new_depth = rb_shape_iv_depth(new_shape);
+                        if (new_depth > cur_iv_count) {
+                            RCLASS_EXT(klass)->max_iv_count = new_depth;
+                        }
+                    }
+
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
                     RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
 
@@ -1958,9 +1967,9 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
 }
 
 rb_shape_t*
-rb_shape_get_next(rb_shape_t* shape, ID id)
+rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id)
 {
-    return get_next_shape_internal(shape, id, SHAPE_IVAR);
+    return get_next_shape_internal(shape, id, obj, SHAPE_IVAR);
 }
 
 int
@@ -2018,7 +2027,7 @@ transition_shape_frozen(VALUE obj)
             static ID id_frozen;
             if (!id_frozen) id_frozen = rb_make_internal_id();
 
-            next_shape = get_next_shape_internal(shape, (ID)id_frozen, SHAPE_FROZEN);
+            next_shape = get_next_shape_internal(shape, (ID)id_frozen, obj, SHAPE_FROZEN);
         }
     }
 
@@ -2036,7 +2045,7 @@ transition_shape_frozen(VALUE obj)
 static void
 transition_shape(VALUE obj, ID id, rb_shape_t *shape)
 {
-    rb_shape_t* next_shape = rb_shape_get_next(shape, id);
+    rb_shape_t* next_shape = rb_shape_get_next(shape, obj, id);
     if (shape == next_shape) {
         return;
     }
