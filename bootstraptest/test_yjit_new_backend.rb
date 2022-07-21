@@ -134,3 +134,41 @@ assert_equal '0..3', %q{
     end
     foo(3)
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Microbenchmark with a loop, opt_lt
+assert_equal '55', %q{
+    def foo(n)
+        i = 0
+        s = 0
+        while i < n do
+            i += 1
+            s += i
+        end
+        s
+    end
+    foo(10)
+}
+
+# Small recursive microbenchmark
+assert_equal '21', %q{
+    def fib(n)
+        if n < 2
+            return n
+        end
+        return fib(n-1) + fib(n-2)
+    end
+    fib(8)
+}
