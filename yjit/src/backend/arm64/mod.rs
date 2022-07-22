@@ -791,6 +791,7 @@ impl Assembler
                 Op::CSelGE => {
                     csel(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into(), Condition::GE);
                 }
+                Op::LiveReg => (), // just a reg alloc signal, no code
             };
         }
 
