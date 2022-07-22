@@ -1172,29 +1172,29 @@ fn gen_newarray(
     KeepCompiling
 }
 
-/*
 // dup array
 fn gen_duparray(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let ary = jit_get_arg(jit, 0);
 
     // Save the PC and SP because we are allocating
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     // call rb_ary_resurrect(VALUE ary);
-    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], ary);
-    call_ptr(cb, REG0, rb_ary_resurrect as *const u8);
+    let new_ary = asm.ccall(
+        rb_ary_resurrect as *const u8,
+        vec![ary.into()],
+    );
 
     let stack_ret = ctx.stack_push(Type::Array);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, new_ary);
 
     KeepCompiling
 }
-*/
 
 // dup hash
 fn gen_duphash(
@@ -5924,7 +5924,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_newhash => Some(gen_newhash),
         YARVINSN_duphash => Some(gen_duphash),
         YARVINSN_newarray => Some(gen_newarray),
-        //YARVINSN_duparray => Some(gen_duparray),
+        YARVINSN_duparray => Some(gen_duparray),
         //YARVINSN_checktype => Some(gen_checktype),
         //YARVINSN_opt_lt => Some(gen_opt_lt),
         /*
