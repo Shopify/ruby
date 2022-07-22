@@ -74,6 +74,15 @@ assert_equal '[111]', %q{
     foo()
 }
 
+# splatarray
+assert_equal 'true', %q{
+    def foo()
+        x, = *(y = true), false
+        x
+    end
+    foo()
+}
+
 # putobject, getlocal, newhash
 assert_equal '{:a=>777}', %q{
     def foo(n)

@@ -1217,34 +1217,30 @@ fn gen_duphash(
     KeepCompiling
 }
 
-/*
 // call to_a on the array on the stack
 fn gen_splatarray(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let flag = jit_get_arg(jit, 0);
 
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     // Get the operands from the stack
     let ary_opnd = ctx.stack_pop(1);
 
     // Call rb_vm_splat_array(flag, ary)
-    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], flag);
-    mov(cb, C_ARG_REGS[1], ary_opnd);
-    call_ptr(cb, REG1, rb_vm_splat_array as *const u8);
+    let ary = asm.ccall(rb_vm_splat_array as *const u8, vec![flag.into(), ary_opnd]);
 
     let stack_ret = ctx.stack_push(Type::Array);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, ary);
 
     KeepCompiling
 }
-*/
 
 // new range initialized from top 2 values
 fn gen_newrange(
@@ -5934,8 +5930,8 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_opt_mod => Some(gen_opt_mod),
         YARVINSN_opt_str_freeze => Some(gen_opt_str_freeze),
         YARVINSN_opt_str_uminus => Some(gen_opt_str_uminus),
-        YARVINSN_splatarray => Some(gen_splatarray),
         */
+        YARVINSN_splatarray => Some(gen_splatarray),
         YARVINSN_newrange => Some(gen_newrange),
         YARVINSN_putstring => Some(gen_putstring),
         /*
