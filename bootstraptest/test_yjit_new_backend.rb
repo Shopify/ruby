@@ -83,6 +83,15 @@ assert_equal 'true', %q{
     foo()
 }
 
+# checkkeyword
+assert_equal '[2, 5]', %q{
+    def foo(foo: 1+1)
+        foo
+    end
+
+    [foo, foo(foo: 5)]
+}
+
 # putobject, getlocal, newhash
 assert_equal '{:a=>777}', %q{
     def foo(n)
