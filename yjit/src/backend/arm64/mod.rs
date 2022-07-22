@@ -295,9 +295,10 @@ impl Assembler
                             let opnd0 = split_store(asm, opnds[0]);
                             asm.store(opnd0, value);
                         },
-                        _ => {
+                        Opnd::Reg(_) => {
                             asm.mov(opnds[0], value);
-                        }
+                        },
+                        _ => unreachable!()
                     };
                 },
                 Op::Not => {
@@ -595,8 +596,8 @@ impl Assembler
                             // references to GC'd Value operands. If the value
                             // being loaded is a heap object, we'll report that
                             // back out to the gc_offsets list.
-                            ldr(cb, insn.out.into(), 1);
-                            b(cb, A64Opnd::new_imm((SIZEOF_VALUE as i64) / 4));
+                            ldr(cb, insn.out.into(), 2);
+                            b(cb, A64Opnd::new_imm(1 + (SIZEOF_VALUE as i64) / 4));
                             cb.write_bytes(&value.as_u64().to_le_bytes());
 
                             if !value.special_const_p() {
