@@ -488,7 +488,7 @@ impl Assembler
                     // offset. We're going to assume we can fit into a single
                     // b.cond instruction. It will panic otherwise.
                     cb.label_ref(label_idx, 4, |cb, src_addr, dst_addr| {
-                        bcond(cb, CONDITION, A64Opnd::new_imm(dst_addr - src_addr));
+                        bcond(cb, CONDITION, A64Opnd::new_imm(dst_addr - (src_addr - 4)));
                     });
                 },
                 Target::FunPtr(_) => unreachable!()
@@ -743,7 +743,7 @@ impl Assembler
                             // to assume we can fit into a single b instruction.
                             // It will panic otherwise.
                             cb.label_ref(label_idx, 4, |cb, src_addr, dst_addr| {
-                                b(cb, A64Opnd::new_imm((dst_addr - src_addr) / 4 + 1));
+                                b(cb, A64Opnd::new_imm((dst_addr - (src_addr - 4)) / 4));
                             });
                         },
                         _ => unreachable!()
