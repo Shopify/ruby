@@ -81,6 +81,9 @@ impl Assembler
     /// have no memory operands.
     fn arm64_split(mut self) -> Assembler
     {
+        /// Operands that take the place of bitmask immediates must follow a
+        /// certain encoding. In this function we ensure that those operands
+        /// do follow that encoding, and if they don't then we load them first.
         fn load_bitmask_immediate(asm: &mut Assembler, opnd: Opnd) -> Opnd {
             match opnd {
                 Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
@@ -102,6 +105,24 @@ impl Assembler
                     }
                 },
                 Opnd::None | Opnd::Value(_) => unreachable!()
+            }
+        }
+
+        /// When you're storing a register into a memory location, the
+        /// displacement from the base register of the memory location must fit
+        /// into 9 bits. If it doesn't, then we need to load that memory address
+        /// into a register first.
+        fn split_store(asm: &mut Assembler, opnd: Opnd) -> Opnd {
+            match opnd {
+                Opnd::Mem(mem) => {
+                    if imm_fits_bits(mem.disp.into(), 9) {
+                        opnd
+                    } else {
+                        let base = asm.lea(opnd);
+                        Opnd::mem(64, base, 0)
+                    }
+                },
+                _ => unreachable!("Can only store memory addresses.")
             }
         }
 
@@ -256,8 +277,13 @@ impl Assembler
                     // we'll switch over to the store instruction. Otherwise
                     // we'll use the normal mov instruction.
                     match opnds[0] {
-                        Opnd::Mem(_) => asm.store(opnds[0], value),
-                        _ => asm.mov(opnds[0], value)
+                        Opnd::Mem(_) => {
+                            let opnd0 = split_store(asm, opnds[0]);
+                            asm.store(opnd0, value);
+                        },
+                        _ => {
+                            asm.mov(opnds[0], value);
+                        }
                     };
                 },
                 Op::Not => {
@@ -271,6 +297,11 @@ impl Assembler
                     asm.not(opnd0);
                 },
                 Op::Store => {
+                    // The displacement for the STUR instruction can't be more
+                    // than 9 bits long. If it's longer, we need to load the
+                    // memory address into a register first.
+                    let opnd0 = split_store(asm, opnds[0]);
+
                     // The value being stored must be in a register, so if it's
                     // not already one we'll load it first.
                     let opnd1 = match opnds[1] {
@@ -278,7 +309,7 @@ impl Assembler
                         _ => asm.load(opnds[1])
                     };
 
-                    asm.store(opnds[0], opnd1);
+                    asm.store(opnd0, opnd1);
                 },
                 Op::Test => {
                     // The value being tested must be in a register, so if it's
