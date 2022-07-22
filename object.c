@@ -271,9 +271,31 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
     VALUE *src_buf = ROBJECT_IVPTR(obj);
     uint32_t dest_len = ROBJECT_NUMIV(dest);
     uint32_t src_len = ROBJECT_NUMIV(obj);
-    uint32_t len = dest_len < src_len ? dest_len : src_len;
+    uint32_t max_len = dest_len < src_len ? src_len : dest_len;
+    uint32_t min_len = dest_len > src_len ? src_len : dest_len;
 
-    MEMCPY(dest_buf, src_buf, VALUE, len);
+    rb_ensure_iv_list_size(dest, dest_len, max_len);
+
+    if (RBASIC(obj)->flags & ROBJECT_EMBED) {
+        src_buf = ROBJECT(obj)->as.ary;
+
+        // embedded -> embedded
+        if (RBASIC(dest)->flags & ROBJECT_EMBED) {
+            dest_buf = ROBJECT(dest)->as.ary;
+        }
+        // embedded -> extended
+        else {
+            dest_buf = ROBJECT(dest)->as.heap.ivptr;
+        }
+    }
+    // extended -> extended
+    else {
+        RUBY_ASSERT(!(RBASIC(dest)->flags & ROBJECT_EMBED));
+        dest_buf = ROBJECT(dest)->as.heap.ivptr;
+        src_buf = ROBJECT(obj)->as.heap.ivptr;
+    }
+
+    MEMCPY(dest_buf, src_buf, VALUE, min_len);
 }
 
 static void
