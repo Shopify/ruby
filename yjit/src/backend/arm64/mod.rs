@@ -120,22 +120,20 @@ impl Assembler
             };
 
             match op {
-                Op::Add | Op::Sub => {
-                    // Check if one of the operands is a register. If it is,
-                    // then we'll make that the first operand.
+                Op::Add => {
                     match (opnds[0], opnds[1]) {
-                        (Opnd::Mem(_), Opnd::Mem(_)) => {
-                            let opnd0 = asm.load(opnds[0]);
-                            let opnd1 = asm.load(opnds[1]);
-                            asm.push_insn(op, vec![opnd0, opnd1], target, text, pos_marker);
+                        (Opnd::Reg(_), Opnd::Reg(_)) => {
+                            asm.add(opnds[0], opnds[1]);
                         },
-                        (mem_opnd @ Opnd::Mem(_), other_opnd) |
-                        (other_opnd, mem_opnd @ Opnd::Mem(_)) => {
-                            let opnd0 = asm.load(mem_opnd);
-                            asm.push_insn(op, vec![opnd0, other_opnd], target, text, pos_marker);
+                        (reg_opnd @ Opnd::Reg(_), other_opnd) |
+                        (other_opnd, reg_opnd @ Opnd::Reg(_)) => {
+                            let opnd1 = asm.load(other_opnd);
+                            asm.add(reg_opnd, opnd1);
                         },
                         _ => {
-                            asm.push_insn(op, opnds, target, text, pos_marker);
+                            let opnd0 = asm.load(opnds[0]);
+                            let opnd1 = asm.load(opnds[1]);
+                            asm.add(opnd0, opnd1);
                         }
                     }
                 },
@@ -172,6 +170,19 @@ impl Assembler
                     // Now we push the CCall without any arguments so that it
                     // just performs the call.
                     asm.ccall(target.unwrap().unwrap_fun_ptr(), vec![]);
+                },
+                Op::Cmp | Op::Sub => {
+                    let opnd0 = match opnds[0] {
+                        Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[0],
+                        _ => asm.load(opnds[0])
+                    };
+
+                    let opnd1 = match opnds[1] {
+                        Opnd::Reg(_) | Opnd::InsnOut { .. } | Opnd::UImm(_) | Opnd::Imm(_) => opnds[1],
+                        _ => asm.load(opnds[1])
+                    };
+
+                    asm.push_insn(op, vec![opnd0, opnd1], target, text, pos_marker);
                 },
                 Op::CRet => {
                     if opnds[0] != Opnd::Reg(C_RET_REG) {
@@ -454,18 +465,15 @@ impl Assembler
                         cb.add_comment(&insn.text.as_ref().unwrap());
                     }
                 },
-
                 Op::Label => {
                     cb.write_label(insn.target.unwrap().unwrap_label_idx());
                 },
-
                 // Report back the current position in the generated code
                 Op::PosMarker => {
                     let pos = cb.get_write_ptr();
                     let pos_marker_fn = insn.pos_marker.as_ref().unwrap();
                     pos_marker_fn(pos);
                 }
-
                 Op::BakeString => {
                     let str = insn.text.as_ref().unwrap();
                     for byte in str.as_bytes() {
