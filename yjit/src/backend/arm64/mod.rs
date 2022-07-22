@@ -84,7 +84,7 @@ impl Assembler
         /// Operands that take the place of bitmask immediates must follow a
         /// certain encoding. In this function we ensure that those operands
         /// do follow that encoding, and if they don't then we load them first.
-        fn load_bitmask_immediate(asm: &mut Assembler, opnd: Opnd) -> Opnd {
+        fn split_bitmask_immediate(asm: &mut Assembler, opnd: Opnd) -> Opnd {
             match opnd {
                 Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
                 Opnd::Mem(_) => asm.load(opnd),
@@ -99,6 +99,23 @@ impl Assembler
                 },
                 Opnd::UImm(uimm) => {
                     if BitmaskImmediate::try_from(uimm).is_ok() {
+                        opnd
+                    } else {
+                        asm.load(opnd)
+                    }
+                },
+                Opnd::None | Opnd::Value(_) => unreachable!()
+            }
+        }
+
+        /// Operands that take the place of a shifted immediate must fit within
+        /// a certain size. If they don't then we need to load them first.
+        fn split_shifted_immediate(asm: &mut Assembler, opnd: Opnd) -> Opnd {
+            match opnd {
+                Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
+                Opnd::Mem(_) | Opnd::Imm(_) => asm.load(opnd),
+                Opnd::UImm(uimm) => {
+                    if ShiftedImmediate::try_from(uimm).is_ok() {
                         opnd
                     } else {
                         asm.load(opnd)
@@ -143,17 +160,17 @@ impl Assembler
             match op {
                 Op::Add => {
                     match (opnds[0], opnds[1]) {
-                        (Opnd::Reg(_), Opnd::Reg(_)) => {
+                        (Opnd::Reg(_) | Opnd::InsnOut { .. }, Opnd::Reg(_) | Opnd::InsnOut { .. }) => {
                             asm.add(opnds[0], opnds[1]);
                         },
-                        (reg_opnd @ Opnd::Reg(_), other_opnd) |
-                        (other_opnd, reg_opnd @ Opnd::Reg(_)) => {
-                            let opnd1 = asm.load(other_opnd);
+                        (reg_opnd @ (Opnd::Reg(_) | Opnd::InsnOut { .. }), other_opnd) |
+                        (other_opnd, reg_opnd @ (Opnd::Reg(_) | Opnd::InsnOut { .. })) => {
+                            let opnd1 = split_shifted_immediate(asm, other_opnd);
                             asm.add(reg_opnd, opnd1);
                         },
                         _ => {
                             let opnd0 = asm.load(opnds[0]);
-                            let opnd1 = asm.load(opnds[1]);
+                            let opnd1 = split_shifted_immediate(asm, opnds[1]);
                             asm.add(opnd0, opnd1);
                         }
                     }
@@ -165,12 +182,12 @@ impl Assembler
                         },
                         (reg_opnd @ Opnd::Reg(_), other_opnd) |
                         (other_opnd, reg_opnd @ Opnd::Reg(_)) => {
-                            let opnd1 = load_bitmask_immediate(asm, other_opnd);
+                            let opnd1 = split_bitmask_immediate(asm, other_opnd);
                             asm.and(reg_opnd, opnd1);
                         },
                         _ => {
                             let opnd0 = asm.load(opnds[0]);
-                            let opnd1 = load_bitmask_immediate(asm, opnds[1]);
+                            let opnd1 = split_bitmask_immediate(asm, opnds[1]);
                             asm.and(opnd0, opnd1);
                         }
                     }
@@ -192,16 +209,13 @@ impl Assembler
                     // just performs the call.
                     asm.ccall(target.unwrap().unwrap_fun_ptr(), vec![]);
                 },
-                Op::Cmp | Op::Sub => {
+                Op::Cmp => {
                     let opnd0 = match opnds[0] {
                         Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[0],
                         _ => asm.load(opnds[0])
                     };
 
-                    let opnd1 = match opnds[1] {
-                        Opnd::Reg(_) | Opnd::InsnOut { .. } | Opnd::UImm(_) | Opnd::Imm(_) => opnds[1],
-                        _ => asm.load(opnds[1])
-                    };
+                    let opnd1 = split_shifted_immediate(asm, opnds[1]);
 
                     asm.push_insn(op, vec![opnd0, opnd1], target, text, pos_marker);
                 },
@@ -270,7 +284,7 @@ impl Assembler
                         // register or an immediate that can be encoded as a
                         // bitmask immediate. Otherwise, we'll need to split the
                         // move into multiple instructions.
-                        _ => load_bitmask_immediate(asm, opnds[1])
+                        _ => split_bitmask_immediate(asm, opnds[1])
                     };
 
                     // If we're attempting to load into a memory operand, then
@@ -311,6 +325,16 @@ impl Assembler
 
                     asm.store(opnd0, opnd1);
                 },
+                Op::Sub => {
+                    let opnd0 = match opnds[0] {
+                        Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[0],
+                        _ => asm.load(opnds[0])
+                    };
+
+                    let opnd1 = split_shifted_immediate(asm, opnds[1]);
+
+                    asm.push_insn(op, vec![opnd0, opnd1], target, text, pos_marker);
+                },
                 Op::Test => {
                     // The value being tested must be in a register, so if it's
                     // not already one we'll load it first.
@@ -323,7 +347,7 @@ impl Assembler
                     // unsigned immediate that can be encoded as a bitmask
                     // immediate. If it's not one of those, we'll need to load
                     // it first.
-                    let opnd1 = load_bitmask_immediate(asm, opnds[1]);
+                    let opnd1 = split_bitmask_immediate(asm, opnds[1]);
 
                     asm.test(opnd0, opnd1);
                 },
