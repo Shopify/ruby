@@ -161,7 +161,13 @@ assert_equal '0..3', %q{
     foo(3)
 }
 
-
+# defined
+assert_equal '[nil, "method"]', %q{
+    def foo()
+        [defined?(a), defined?(foo)]
+    end
+    foo()
+}
 
 
 
