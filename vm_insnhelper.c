@@ -1294,7 +1294,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
                 uint32_t num_iv = ROBJECT_NUMIV(obj);
                 rb_shape_t* shape = rb_shape_get_shape(obj);
-                rb_shape_t* next_shape = rb_shape_get_next(shape, id);
+                rb_shape_t* next_shape = rb_shape_get_next(shape, obj, id);
                 if (shape != next_shape) {
                     rb_shape_set_shape(obj, next_shape);
                 }
@@ -1308,9 +1308,8 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 // both caches
                 if (!rb_no_cache_shape_p(shape) && !rb_no_cache_shape_p(next_shape)) {
                     // Ensure the object is *not* embedded
-                    if (num_iv < (ROBJECT_EMBED_LEN_MAX + 1)) {
-                        rb_ensure_iv_list_size(obj, num_iv, ROBJECT_EMBED_LEN_MAX + 1);
-                    }
+                    rb_ensure_iv_list_size(obj, num_iv, num_iv + 1);
+                    RUBY_ASSERT(!(RBASIC(obj)->flags & ROBJECT_EMBED));
 
                     // Save the IV index table on the instance
                     ROBJECT(obj)->as.heap.iv_index_tbl = rb_shape_generate_iv_table(shape);
@@ -1440,8 +1439,6 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
         break;
       default:
         {
-            VM_ASSERT(!rb_ractor_shareable_p(obj));
-
             shape_id_t shape_id = rb_generic_shape_id(obj);
 
             if (shape_id != NO_CACHE_SHAPE_ID) {

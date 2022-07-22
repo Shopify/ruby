@@ -1435,7 +1435,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
     struct ivar_update ivup;
     // The returned shape will have `id` in its iv_table
-    rb_shape_t * shape = rb_shape_get_next(rb_shape_get_shape(obj), id);
+    rb_shape_t * shape = rb_shape_get_next(rb_shape_get_shape(obj), obj, id);
     ivup.shape = shape;
     ivup.iv_extended = 0;
 
@@ -1567,7 +1567,7 @@ rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize)
 void
 rb_init_iv_list(VALUE obj)
 {
-    uint32_t newsize = rb_shape_depth(rb_shape_get_shape(obj)) * 2.0;
+    uint32_t newsize = rb_shape_iv_depth(rb_shape_get_shape(obj)) * 2.0;
     uint32_t len = ROBJECT_NUMIV(obj);
     rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
 }
@@ -1910,7 +1910,7 @@ rb_shape_lookup_id(rb_shape_t* shape, ID id) {
 
 
 static rb_shape_t*
-get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
+get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_type tt)
 {
     rb_shape_t *res = NULL;
     RB_VM_LOCK_ENTER();
@@ -1945,6 +1945,15 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                             id,
                             shape);
 
+                    if (BUILTIN_TYPE(obj) == T_OBJECT) {
+                        VALUE klass = rb_obj_class(obj);
+                        uint32_t cur_iv_count = RCLASS_EXT(klass)->max_iv_count;
+                        uint32_t new_depth = rb_shape_iv_depth(new_shape);
+                        if (new_depth > cur_iv_count) {
+                            RCLASS_EXT(klass)->max_iv_count = new_depth;
+                        }
+                    }
+
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
                     RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
 
@@ -1964,9 +1973,9 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
 }
 
 rb_shape_t*
-rb_shape_get_next(rb_shape_t* shape, ID id)
+rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id)
 {
-    return get_next_shape_internal(shape, id, SHAPE_IVAR);
+    return get_next_shape_internal(shape, id, obj, SHAPE_IVAR);
 }
 
 int
@@ -2024,7 +2033,7 @@ transition_shape_frozen(VALUE obj)
             static ID id_frozen;
             if (!id_frozen) id_frozen = rb_make_internal_id();
 
-            next_shape = get_next_shape_internal(shape, (ID)id_frozen, SHAPE_FROZEN);
+            next_shape = get_next_shape_internal(shape, (ID)id_frozen, obj, SHAPE_FROZEN);
         }
     }
 
@@ -2042,7 +2051,7 @@ transition_shape_frozen(VALUE obj)
 static void
 transition_shape(VALUE obj, ID id, rb_shape_t *shape)
 {
-    rb_shape_t* next_shape = rb_shape_get_next(shape, id);
+    rb_shape_t* next_shape = rb_shape_get_next(shape, obj, id);
     if (shape == next_shape) {
         return;
     }
@@ -2055,11 +2064,11 @@ transition_shape(VALUE obj, ID id, rb_shape_t *shape)
         // Therefore we need to store the iv index table on the object itself.
         // Embedded objects don't have the room for an iv index table, so
         // we'll force it to be extended
-        if (ROBJECT_NUMIV(obj) <= ROBJECT_EMBED_LEN_MAX) {
-            // Make the object extended
-            rb_ensure_iv_list_size(obj, ROBJECT_EMBED_LEN_MAX, ROBJECT_EMBED_LEN_MAX + 1);
-            ROBJECT(obj)->as.heap.iv_index_tbl = rb_id_table_copy(rb_shape_generate_iv_table(shape));
-        }
+        uint32_t num_iv = ROBJECT_NUMIV(obj);
+        // Make the object extended
+        rb_ensure_iv_list_size(obj, num_iv, num_iv + 1);
+        RUBY_ASSERT(!(RBASIC(obj)->flags & ROBJECT_EMBED));
+        ROBJECT(obj)->as.heap.iv_index_tbl = rb_id_table_copy(rb_shape_generate_iv_table(shape));
     }
     RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));
     rb_shape_set_shape(obj, next_shape);

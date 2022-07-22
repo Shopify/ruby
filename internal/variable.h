@@ -88,7 +88,7 @@ RUBY_SYMBOL_EXPORT_END
 MJIT_SYMBOL_EXPORT_BEGIN
 bool rb_no_cache_shape_p(rb_shape_t * shape);
 int rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE * value);
-rb_shape_t* rb_shape_get_next(rb_shape_t* obj, ID id);
+rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
 rb_shape_t* rb_shape_get_shape(VALUE obj);
 rb_shape_t* rb_shape_get_shape_by_id(shape_id_t shape_id);
 shape_id_t rb_shape_get_shape_id(VALUE obj);
