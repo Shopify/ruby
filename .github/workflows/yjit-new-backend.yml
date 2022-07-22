@@ -66,6 +66,7 @@ jobs:
         bootstraptest/test_flow.rb \
         bootstraptest/test_fork.rb \
         bootstraptest/test_gc.rb \
+        bootstraptest/test_io.rb \
         bootstraptest/test_jump.rb \
         bootstraptest/test_literal_suffix.rb \
         bootstraptest/test_load.rb \
@@ -76,6 +77,9 @@ jobs:
         bootstraptest/test_string.rb \
         bootstraptest/test_struct.rb \
         bootstraptest/test_yjit_new_backend.rb
+
+      #bootstraptest/test_proc.rb
+      #bootstraptest/test_yjit_rust_port.rb
 
       # Check that we can do a full build
       #- run: make -j
