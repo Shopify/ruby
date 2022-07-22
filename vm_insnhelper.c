@@ -1397,7 +1397,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
             {
-                VM_ASSERT(!rb_ractor_shareable_p(obj));
+                VM_ASSERT(!rb_ractor_shareable_p(obj) || rb_obj_frozen_p(obj));
                 // If object's shape id is the same as the source
                 // then do the shape transition and write the ivar
                 // If object's shape id is the same as the dest
