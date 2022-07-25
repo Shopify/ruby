@@ -235,6 +235,9 @@ extern "C" {
     #[link_name = "rb_yarv_ary_entry_internal"]
     pub fn rb_ary_entry_internal(ary: VALUE, offset: c_long) -> VALUE;
 
+    #[link_name = "rb_yarv_fix_mod_fix"]
+    pub fn rb_fix_mod_fix(recv: VALUE, obj: VALUE) -> VALUE;
+
     #[link_name = "rb_FL_TEST"]
     pub fn FL_TEST(obj: VALUE, flags: VALUE) -> VALUE;
 
@@ -255,7 +258,6 @@ extern "C" {
 
     // Ruby only defines these in vm_insnhelper.c, not in any header.
     // Parsing it would result in a lot of duplicate definitions.
-    pub fn rb_vm_opt_mod(recv: VALUE, obj: VALUE) -> VALUE;
     pub fn rb_vm_splat_array(flag: VALUE, ary: VALUE) -> VALUE;
     pub fn rb_vm_defined(
         ec: EcPtr,
@@ -736,10 +738,6 @@ mod manual_defs {
 
     pub const RUBY_OFFSET_RSTRUCT_AS_HEAP_PTR: i32 = 24; // struct RStruct, subfield "as.heap.ptr"
     pub const RUBY_OFFSET_RSTRUCT_AS_ARY: i32 = 16; // struct RStruct, subfield "as.ary"
-
-    pub const RUBY_OFFSET_ROBJECT_AS_ARY: i32 = 16; // struct RObject, subfield "as.ary"
-    pub const RUBY_OFFSET_ROBJECT_AS_HEAP_NUMIV: i32 = 16; // struct RObject, subfield "as.heap.numiv"
-    pub const RUBY_OFFSET_ROBJECT_AS_HEAP_IVPTR: i32 = 24; // struct RObject, subfield "as.heap.ivptr"
 
     // Constants from rb_control_frame_t vm_core.h
     pub const RUBY_OFFSET_CFP_PC: i32 = 0;

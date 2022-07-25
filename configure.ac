@@ -32,6 +32,7 @@ m4_include([tool/m4/ruby_func_attribute.m4])dnl
 m4_include([tool/m4/ruby_mingw32.m4])dnl
 m4_include([tool/m4/ruby_prepend_option.m4])dnl
 m4_include([tool/m4/ruby_prog_gnu_ld.m4])dnl
+m4_include([tool/m4/ruby_prog_makedirs.m4])dnl
 m4_include([tool/m4/ruby_replace_funcs.m4])dnl
 m4_include([tool/m4/ruby_replace_type.m4])dnl
 m4_include([tool/m4/ruby_require_funcs.m4])dnl
@@ -491,17 +492,12 @@ AS_CASE(["$target_os"],
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
 AC_PROG_INSTALL
-AC_PROG_MKDIR_P
-AS_IF([test "x$MKDIR_P" = "x -d"], [
-  AS_IF([test x"$as_mkdir_p" != xfalse], [
-    MKDIR_P='mkdir -p'
-    echo "use 'mkdir -p' as MKDIR_P"
-  ], [
-    AC_MSG_ERROR([mkdir -p is required])
-  ])
+
+AS_CASE(["$target_os"],[openbsd*],[
+    ac_cv_path_mkdir="mkdir"
 ])
-MAKEDIRS="$MKDIR_P"
-AC_SUBST(MAKEDIRS)
+
+RUBY_PROG_MAKEDIRS
 
 AC_CHECK_PROG([DTRACE], [${ac_tool_prefix}dtrace], [${ac_tool_prefix}dtrace])
 AS_IF([test "$cross_compiling:$ac_cv_prog_DTRACE" = no: -a -n "$ac_tool_prefix"], [
@@ -3808,13 +3804,26 @@ AS_CASE(["$target_os"],
 	],
     [darwin*], [
 	RUBY_APPEND_OPTION(CFLAGS, -pipe)
+        AC_MSG_CHECKING([whether Security framework is needed])
 	AC_COMPILE_IFELSE([
-	    AC_LANG_BOOL_COMPILE_TRY([@%:@include <AvailabilityMacros.h>],
-		[MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7 &&
-		 MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_10])],
+	    AC_LANG_BOOL_COMPILE_TRY([
+@%:@include <AvailabilityMacros.h>
+enum {
+    least = MAC_OS_X_VERSION_10_7, /* just fail if undefined */
+    required = MAC_OS_X_VERSION_MIN_REQUIRED,
+    upper /* bigger than MIN_REQUIRED, or */
+@%:@ifdef MAC_OS_X_VERSION_10_10
+        = MAC_OS_X_VERSION_10_10
+@%:@endif
+};],
+	    [required >= least && required < upper])],
 	    [dnl
+		AC_MSG_RESULT(yes)
 		RUBY_APPEND_OPTION(XLDFLAGS, [-framework Security])
 		RUBY_APPEND_OPTION(LIBRUBYARG_STATIC, [-framework Security])
+	    ],dnl
+	    [dnl
+		AC_MSG_RESULT(no)
 	    ]dnl
 	)
 	RUBY_APPEND_OPTION(XLDFLAGS, [-framework CoreFoundation])

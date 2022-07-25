@@ -166,7 +166,7 @@ class TestGCCompact < Test::Unit::TestCase
     hash = list_of_objects.hash
     GC.verify_compaction_references(toward: :empty)
     assert_equal hash, list_of_objects.hash
-    GC.verify_compaction_references(double_heap: false)
+    GC.verify_compaction_references(expand_heap: false)
     assert_equal hash, list_of_objects.hash
   end
 
@@ -209,42 +209,102 @@ class TestGCCompact < Test::Unit::TestCase
     assert_equal([:call, :line], results)
   end
 
-  def test_moving_strings_between_size_pools
+  def test_moving_arrays_down_size_pools
+    omit if !GC.using_rvargc?
     assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
     begin;
-      moveables = []
-      small_slots = []
-      large_slots = []
+      ARY_COUNT = 500
 
-      # Ensure fragmentation in the large heap
-      base_slot_size = GC.stat_heap[0].fetch(:slot_size)
-      500.times {
-        String.new(+"a" * base_slot_size).downcase
-        large_slots << String.new(+"a" * base_slot_size).downcase
-      }
+      GC.verify_compaction_references(expand_heap: true, toward: :empty)
 
-      # Ensure fragmentation in the smaller heap
-      500.times {
-        small_slots << Object.new
-        Object.new
-      }
+      arys = ARY_COUNT.times.map do
+        ary = "abbbbbbbbbb".chars
+        ary.uniq!
+      end
 
-      500.times {
-        # strings are created as shared strings when initialized from literals
-        # use downcase to force the creation of an embedded string (it calls
-        # rb_str_new internally)
-        moveables << String.new(+"a" * base_slot_size).downcase
+      stats = GC.verify_compaction_references(expand_heap: true, toward: :empty)
+      assert_operator(stats.dig(:moved_down, :T_ARRAY), :>=, ARY_COUNT)
+      assert(arys) # warning: assigned but unused variable - arys
+    end;
+  end
 
-        moveables << String.new("a").downcase
-      }
-      moveables.map { |s| s << ("bc" * base_slot_size) }
-      moveables.map { |s| s.squeeze! }
-      stats = GC.compact
+  def test_moving_arrays_up_size_pools
+    omit if !GC.using_rvargc?
+    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
+    begin;
+      ARY_COUNT = 500
 
-      moved_strings = (stats.dig(:moved_up, :T_STRING) || 0) +
-        (stats.dig(:moved_down, :T_STRING) || 0)
+      GC.verify_compaction_references(expand_heap: true, toward: :empty)
 
-      assert_operator(moved_strings, :>, 0)
+      ary = "hello".chars
+      arys = ARY_COUNT.times.map do
+        x = []
+        ary.each { |e| x << e }
+        x
+      end
+
+      stats = GC.verify_compaction_references(expand_heap: true, toward: :empty)
+      assert_operator(stats.dig(:moved_up, :T_ARRAY), :>=, ARY_COUNT)
+      assert(arys) # warning: assigned but unused variable - arys
+    end;
+  end
+
+  def test_moving_objects_between_size_pools
+    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
+    begin;
+      class Foo
+        def add_ivars
+          10.times do |i|
+            instance_variable_set("@foo" + i.to_s, 0)
+          end
+        end
+      end
+
+      OBJ_COUNT = 500
+
+      GC.verify_compaction_references(expand_heap: true, toward: :empty)
+
+      ary = OBJ_COUNT.times.map { Foo.new }
+      ary.each(&:add_ivars)
+
+      stats = GC.verify_compaction_references(expand_heap: true, toward: :empty)
+
+      assert_operator(stats[:moved_up][:T_OBJECT], :>=, OBJ_COUNT)
+    end;
+  end
+
+  def test_moving_strings_up_size_pools
+    omit if !GC.using_rvargc?
+    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
+    begin;
+      STR_COUNT = 500
+
+      GC.verify_compaction_references(expand_heap: true, toward: :empty)
+
+      str = "a" * GC::INTERNAL_CONSTANTS[:BASE_SLOT_SIZE]
+      ary = STR_COUNT.times.map { "" << str }
+
+      stats = GC.verify_compaction_references(expand_heap: true, toward: :empty)
+
+      assert_operator(stats[:moved_up][:T_STRING], :>=, STR_COUNT)
+      assert(ary) # warning: assigned but unused variable - ary
+    end;
+  end
+
+  def test_moving_strings_down_size_pools
+    omit if !GC.using_rvargc?
+    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
+    begin;
+      STR_COUNT = 500
+
+      GC.verify_compaction_references(expand_heap: true, toward: :empty)
+
+      ary = STR_COUNT.times.map { ("a" * GC::INTERNAL_CONSTANTS[:BASE_SLOT_SIZE]).squeeze! }
+
+      stats = GC.verify_compaction_references(expand_heap: true, toward: :empty)
+
+      assert_operator(stats[:moved_down][:T_STRING], :>=, STR_COUNT)
+      assert(ary) # warning: assigned but unused variable - ary
     end;
   end
 end

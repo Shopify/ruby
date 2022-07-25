@@ -493,6 +493,16 @@ class TestObjSpace < Test::Unit::TestCase
     end
   end
 
+  def test_dump_string_coderange
+    assert_includes ObjectSpace.dump("TEST STRING"), '"coderange":"7bit"'
+    unknown = "TEST STRING".dup.force_encoding(Encoding::BINARY)
+    2.times do # ensure that dumping the string doesn't mutate it
+      assert_includes ObjectSpace.dump(unknown), '"coderange":"unknown"'
+    end
+    assert_includes ObjectSpace.dump("Fée"), '"coderange":"valid"'
+    assert_includes ObjectSpace.dump("\xFF"), '"coderange":"broken"'
+  end
+
   def test_dump_escapes_method_name
     method_name = "foo\"bar"
     klass = Class.new do
@@ -721,5 +731,20 @@ class TestObjSpace < Test::Unit::TestCase
       assert_equal '"bar" @ -:3', out[1]
       assert_equal '42', out[2]
     end
+  end
+
+  def test_utf8_method_names
+    name = "utf8_❨╯°□°❩╯︵┻━┻"
+    obj = ObjectSpace.trace_object_allocations do
+      __send__(name)
+    end
+    dump = ObjectSpace.dump(obj)
+    assert_equal name, JSON.parse(dump)["method"], dump
+  end
+
+  private
+
+  def utf8_❨╯°□°❩╯︵┻━┻
+    "1#{2}"
   end
 end

@@ -1,0 +1,22 @@
+# for cleaning up branch
+
+- merge master again
+- [pairing] clean up shapes ruby wrappers, maybe move into objspace
+
+Nice to have:
+- Could we pull shapes APIs into their own .h?
+
+Note:
+- ROBJECT_SET_SHAPE_ID doesn't work on 32 bit machines
+
+# Refactor issues
+
+If we make shape_id check disappear in w_ivar_each, then test/ruby/test_marshal.rb:786 fails
+
+# overall plan
+- perf measurements again
+- and speed measurements including memory profiling to figure out what's happening with vm_list
+- write an update to upstream explaining progress, [if we're comfortable] asking if we can merge to avoid incurring additional tech debt, while we still work on perf more
+- clean up diff
+- improve perf
+- improve memory etc etc

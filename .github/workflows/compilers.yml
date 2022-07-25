@@ -83,7 +83,7 @@ jobs:
             env:
               # Minimal flags to pass the check.
               default_cc: 'gcc-11 -O2 -fcf-protection -Wa,--generate-missing-build-notes=yes'
-              append_configure: 'LDFLAGS=-Wl,-z,now'
+              LDFLAGS: '-Wl,-z,now'
               # FIXME: Drop skipping options
               # https://bugs.ruby-lang.org/issues/18061
               # https://sourceware.org/annobin/annobin.html/Test-pie.html
@@ -180,6 +180,7 @@ jobs:
 #         - { name: USE_RUBY_DEBUG_LOG=1,           env: { cppflags: '-DUSE_RUBY_DEBUG_LOG=1' } }
           - { name: USE_RVARGC=0,                   env: { cppflags: '-DUSE_RVARGC=0' } }
 #         - { name: USE_RVARGC=1,                   env: { cppflags: '-DUSE_RVARGC=1' } }
+#         - { name: USE_DEBUG_COUNTER,              env: { cppflags: '-DUSE_DEBUG_COUNTER=1', RUBY_DEBUG_COUNTER_DISABLE: '1' } }
 
           - { name: DEBUG_FIND_TIME_NUMGUESS,       env: { cppflags: '-DDEBUG_FIND_TIME_NUMGUESS' } }
           - { name: DEBUG_INTEGER_PACK,             env: { cppflags: '-DDEBUG_INTEGER_PACK' } }
@@ -242,12 +243,11 @@ jobs:
           --${{ matrix.entry.shared || 'enable' }}-shared
       - run: make extract-extlibs
       - run: make incs
+      - run: make showflags
       - run: make
       - run: make leaked-globals
       - run: make test
       - run: make install
-        if: ${{ matrix.entry.check }}
-      - run: make prepare-gems
         if: ${{ matrix.entry.check }}
       - run: make test-tool
         if: ${{ matrix.entry.check }}

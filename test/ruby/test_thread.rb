@@ -29,13 +29,19 @@ class TestThread < Test::Unit::TestCase
   end
 
   def test_inspect
+    m = Thread::Mutex.new
+    m.lock
     line = __LINE__+1
-    th = Module.new {break module_eval("class C\u{30b9 30ec 30c3 30c9} < Thread; self; end")}.start{}
+    th = Module.new {break module_eval("class C\u{30b9 30ec 30c3 30c9} < Thread; self; end")}.start do
+      m.synchronize {}
+    end
+    Thread.pass until th.stop?
     s = th.inspect
     assert_include(s, "::C\u{30b9 30ec 30c3 30c9}:")
     assert_include(s, " #{__FILE__}:#{line} ")
     assert_equal(s, th.to_s)
   ensure
+    m.unlock
     th.join
   end
 
@@ -1242,6 +1248,20 @@ q.pop
     f.close
     assert_not_predicate(status, :signaled?, FailDesc[status, bug9751, output])
     assert_predicate(status, :success?, bug9751)
+  end if Process.respond_to?(:fork)
+
+  def test_fork_value
+    bug18902 = "[Bug #18902]"
+    th = Thread.start { sleep 2 }
+    begin
+      pid = fork do
+        th.value
+      end
+      _, status = Process.wait2(pid)
+      assert_predicate(status, :success?, bug18902)
+    ensure
+      th.kill
+    end
   end if Process.respond_to?(:fork)
 
   def test_fork_while_locked

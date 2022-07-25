@@ -1359,6 +1359,52 @@ x = __ENCODING__
     end;
   end
 
+  def test_if_after_class
+    assert_valid_syntax('module if true; Object end::Kernel; end')
+    assert_valid_syntax('module while true; break Object end::Kernel; end')
+    assert_valid_syntax('class if true; Object end::Kernel; end')
+    assert_valid_syntax('class while true; break Object end::Kernel; end')
+  end
+
+  def test_escaped_space
+    assert_syntax_error('x = \ 42', /escaped space/)
+  end
+
+  def test_label
+    expected = {:foo => 1}
+
+    code = '{"foo": 1}'
+    assert_valid_syntax(code)
+    assert_equal(expected, eval(code))
+
+    code = '{foo: 1}'
+    assert_valid_syntax(code)
+    assert_equal(expected, eval(code))
+
+    class << (obj = Object.new)
+      attr_reader :arg
+      def set(arg)
+        @arg = arg
+      end
+    end
+
+    assert_valid_syntax(code = "#{<<~"do;"}\n#{<<~'end;'}")
+    do;
+      obj.set foo:
+                1
+    end;
+    assert_equal(expected, eval(code))
+    assert_equal(expected, obj.arg)
+
+    assert_valid_syntax(code = "#{<<~"do;"}\n#{<<~'end;'}")
+    do;
+      obj.set "foo":
+                  1
+    end;
+    assert_equal(expected, eval(code))
+    assert_equal(expected, obj.arg)
+  end
+
 =begin
   def test_past_scope_variable
     assert_warning(/past scope/) {catch {|tag| eval("BEGIN{throw tag}; tap {a = 1}; a")}}

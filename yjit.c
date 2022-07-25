@@ -13,6 +13,7 @@
 #include "internal/variable.h"
 #include "internal/compile.h"
 #include "internal/class.h"
+#include "internal/fixnum.h"
 #include "gc.h"
 #include "vm_core.h"
 #include "vm_callinfo.h"
@@ -106,6 +107,10 @@ rb_yjit_add_frame(VALUE hash, VALUE frame)
 
         rb_hash_aset(frame_info, ID2SYM(rb_intern("name")), name);
         rb_hash_aset(frame_info, ID2SYM(rb_intern("file")), file);
+        rb_hash_aset(frame_info, ID2SYM(rb_intern("samples")), INT2NUM(0));
+        rb_hash_aset(frame_info, ID2SYM(rb_intern("total_samples")), INT2NUM(0));
+        rb_hash_aset(frame_info, ID2SYM(rb_intern("edges")), rb_hash_new());
+        rb_hash_aset(frame_info, ID2SYM(rb_intern("lines")), rb_hash_new());
 
         if (line != INT2FIX(0)) {
             rb_hash_aset(frame_info, ID2SYM(rb_intern("line")), line);
@@ -712,6 +717,12 @@ VALUE
 rb_yarv_ary_entry_internal(VALUE ary, long offset)
 {
     return rb_ary_entry_internal(ary, offset);
+}
+
+VALUE
+rb_yarv_fix_mod_fix(VALUE recv, VALUE obj)
+{
+    return rb_fix_mod_fix(recv, obj);
 }
 
 // Print the Ruby source location of some ISEQ for debugging purposes

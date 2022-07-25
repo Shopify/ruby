@@ -11,8 +11,11 @@ override ACTIONS_GROUP = @echo "\#\#[group]$(patsubst yes-%,%,$@)"
 override ACTIONS_ENDGROUP = @echo "\#\#[endgroup]"
 endif
 
-ifneq ($(filter %darwin%,$(arch)),)
-INSTRUBY_ENV += SDKROOT=/
+ifneq ($(filter darwin%,$(target_os)),)
+# Remove debug option not to generate thousands of .dSYM
+MJIT_DEBUGFLAGS := $(filter-out -g%,$(MJIT_DEBUGFLAGS))
+
+INSTRUBY_ENV += SDKROOT=
 endif
 INSTRUBY_ARGS += --gnumake
 
@@ -295,8 +298,7 @@ extract-gems: | $(patsubst %,.bundle/gems/%,$(bundled-gems))
 	$(ECHO) Extracting bundle gem $*...
 	$(Q) $(BASERUBY) -C "$(srcdir)" \
 	    -Itool -rgem-unpack \
-	    -e 'Gem.unpack("gems/$(@F).gem", ".bundle/gems", ".bundle/specifications")'
-	$(RMALL) "$(srcdir)/$(@:.gem=)/".git*
+	    -e 'Gem.unpack("gems/$(@F).gem", ".bundle")'
 
 $(srcdir)/.bundle/gems:
 	$(MAKEDIRS) $@

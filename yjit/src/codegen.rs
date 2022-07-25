@@ -121,6 +121,8 @@ impl JITState {
     pub fn add_gc_object_offset(self: &mut JITState, ptr_offset: u32) {
         let mut gc_obj_vec: RefMut<_> = self.block.borrow_mut();
         gc_obj_vec.add_gc_object_offset(ptr_offset);
+
+        incr_counter!(num_gc_obj_refs);
     }
 
     pub fn get_pc(self: &JITState) -> *mut VALUE {
@@ -1563,27 +1565,32 @@ fn gen_setlocal_wc0(
 
     let slot_idx = jit_get_arg(jit, 0).as_i32();
     let local_idx = slot_to_local_idx(jit.get_iseq(), slot_idx).as_usize();
+    let value_type = ctx.get_opnd_type(StackOpnd(0));
 
     // Load environment pointer EP (level 0) from CFP
     gen_get_ep(cb, REG0, 0);
 
-    // flags & VM_ENV_FLAG_WB_REQUIRED
-    let flags_opnd = mem_opnd(
-        64,
-        REG0,
-        SIZEOF_VALUE as i32 * VM_ENV_DATA_INDEX_FLAGS as i32,
-    );
-    test(cb, flags_opnd, imm_opnd(VM_ENV_FLAG_WB_REQUIRED as i64));
+    // Write barriers may be required when VM_ENV_FLAG_WB_REQUIRED is set, however write barriers
+    // only affect heap objects being written. If we know an immediate value is being written we
+    // can skip this check.
+    if !value_type.is_imm() {
+        // flags & VM_ENV_FLAG_WB_REQUIRED
+        let flags_opnd = mem_opnd(
+            64,
+            REG0,
+            SIZEOF_VALUE as i32 * VM_ENV_DATA_INDEX_FLAGS as i32,
+        );
+        test(cb, flags_opnd, imm_opnd(VM_ENV_FLAG_WB_REQUIRED as i64));
 
-    // Create a side-exit to fall back to the interpreter
-    let side_exit = get_side_exit(jit, ocb, ctx);
+        // Create a side-exit to fall back to the interpreter
+        let side_exit = get_side_exit(jit, ocb, ctx);
 
-    // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
-    jnz_ptr(cb, side_exit);
+        // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
+        jnz_ptr(cb, side_exit);
+    }
 
     // Set the type of the local variable in the context
-    let temp_type = ctx.get_opnd_type(StackOpnd(0));
-    ctx.set_local_type(local_idx, temp_type);
+    ctx.set_local_type(local_idx, value_type);
 
     // Pop the value to write from the stack
     let stack_top = ctx.stack_pop(1);
@@ -1604,22 +1611,29 @@ fn gen_setlocal_generic(
     local_idx: i32,
     level: u32,
 ) -> CodegenStatus {
+    let value_type = ctx.get_opnd_type(StackOpnd(0));
+
     // Load environment pointer EP at level
     gen_get_ep(cb, REG0, level);
 
-    // flags & VM_ENV_FLAG_WB_REQUIRED
-    let flags_opnd = mem_opnd(
-        64,
-        REG0,
-        SIZEOF_VALUE as i32 * VM_ENV_DATA_INDEX_FLAGS as i32,
-    );
-    test(cb, flags_opnd, uimm_opnd(VM_ENV_FLAG_WB_REQUIRED.into()));
+    // Write barriers may be required when VM_ENV_FLAG_WB_REQUIRED is set, however write barriers
+    // only affect heap objects being written. If we know an immediate value is being written we
+    // can skip this check.
+    if !value_type.is_imm() {
+        // flags & VM_ENV_FLAG_WB_REQUIRED
+        let flags_opnd = mem_opnd(
+            64,
+            REG0,
+            SIZEOF_VALUE as i32 * VM_ENV_DATA_INDEX_FLAGS as i32,
+        );
+        test(cb, flags_opnd, uimm_opnd(VM_ENV_FLAG_WB_REQUIRED.into()));
 
-    // Create a side-exit to fall back to the interpreter
-    let side_exit = get_side_exit(jit, ocb, ctx);
+        // Create a side-exit to fall back to the interpreter
+        let side_exit = get_side_exit(jit, ocb, ctx);
 
-    // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
-    jnz_ptr(cb, side_exit);
+        // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
+        jnz_ptr(cb, side_exit);
+    }
 
     // Pop the value to write from the stack
     let stack_top = ctx.stack_pop(1);
@@ -1716,7 +1730,7 @@ fn gen_putstring(
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[1], put_val);
     call_ptr(cb, REG0, rb_ec_str_resurrect as *const u8);
 
-    let stack_top = ctx.stack_push(Type::String);
+    let stack_top = ctx.stack_push(Type::CString);
     mov(cb, stack_top, RAX);
 
     KeepCompiling
@@ -1964,9 +1978,17 @@ fn gen_get_ivar(
         ctx.stack_pop(1);
     }
 
+    if USE_RVARGC != 0 {
+        // Check that the ivar table is big enough
+        // Check that the slot is inside the ivar table (num_slots > index)
+        let num_slots = mem_opnd(32, REG0, ROBJECT_OFFSET_NUMIV);
+        cmp(cb, num_slots, uimm_opnd(ivar_index as u64));
+        jle_ptr(cb, counted_exit!(ocb, side_exit, getivar_idx_out_of_range));
+    }
+
     // Compile time self is embedded and the ivar index lands within the object
     let test_result = unsafe { FL_TEST_RAW(comptime_receiver, VALUE(ROBJECT_EMBED.as_usize())) != VALUE(0) };
-    if test_result && ivar_index < (ROBJECT_EMBED_LEN_MAX.as_usize()) {
+    if test_result {
         // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
 
         // Guard that self is embedded
@@ -1986,7 +2008,7 @@ fn gen_get_ivar(
         );
 
         // Load the variable
-        let offs = RUBY_OFFSET_ROBJECT_AS_ARY + (ivar_index * SIZEOF_VALUE) as i32;
+        let offs = ROBJECT_OFFSET_AS_ARY + (ivar_index * SIZEOF_VALUE) as i32;
         let ivar_opnd = mem_opnd(64, REG0, offs);
         mov(cb, REG1, ivar_opnd);
 
@@ -2017,17 +2039,16 @@ fn gen_get_ivar(
             side_exit,
         );
 
-        // Check that the extended table is big enough
-        if ivar_index > (ROBJECT_EMBED_LEN_MAX.as_usize()) {
+        if USE_RVARGC == 0 {
+            // Check that the extended table is big enough
             // Check that the slot is inside the extended table (num_slots > index)
-            let num_slots = mem_opnd(32, REG0, RUBY_OFFSET_ROBJECT_AS_HEAP_NUMIV);
-
+            let num_slots = mem_opnd(32, REG0, ROBJECT_OFFSET_NUMIV);
             cmp(cb, num_slots, uimm_opnd(ivar_index as u64));
             jle_ptr(cb, counted_exit!(ocb, side_exit, getivar_idx_out_of_range));
         }
 
         // Get a pointer to the extended table
-        let tbl_opnd = mem_opnd(64, REG0, RUBY_OFFSET_ROBJECT_AS_HEAP_IVPTR);
+        let tbl_opnd = mem_opnd(64, REG0, ROBJECT_OFFSET_AS_HEAP_IVPTR);
         mov(cb, REG0, tbl_opnd);
 
         // Read the ivar from the extended table
@@ -2189,7 +2210,8 @@ fn gen_checktype(
 
         // Check if we know from type information
         match (type_val, val_type) {
-            (RUBY_T_STRING, Type::String)
+            (RUBY_T_STRING, Type::TString)
+            | (RUBY_T_STRING, Type::CString)
             | (RUBY_T_ARRAY, Type::Array)
             | (RUBY_T_HASH, Type::Hash) => {
                 // guaranteed type match
@@ -2258,7 +2280,7 @@ fn gen_concatstrings(
     call_ptr(cb, REG0, rb_str_concat_literals as *const u8);
 
     ctx.stack_pop(n.as_usize());
-    let stack_ret = ctx.stack_push(Type::String);
+    let stack_ret = ctx.stack_push(Type::CString);
     mov(cb, stack_ret, RAX);
 
     KeepCompiling
@@ -2470,7 +2492,8 @@ fn gen_equality_specialized(
         je_label(cb, ret);
 
         // Otherwise guard that b is a T_STRING (from type info) or String (from runtime guard)
-        if ctx.get_opnd_type(StackOpnd(0)) != Type::String {
+        let btype = ctx.get_opnd_type(StackOpnd(0));
+        if btype != Type::TString && btype != Type::CString {
             mov(cb, REG0, C_ARG_REGS[1]);
             // Note: any T_STRING is valid here, but we check for a ::String for simplicity
             // To pass a mutable static variable (rb_cString) requires an unsafe block
@@ -2949,30 +2972,50 @@ fn gen_opt_mod(
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
-    // Save the PC and SP because the callee may allocate bignums
-    // Note that this modifies REG_SP, which is why we do it first
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    // Defer compilation so we can specialize on a runtime `self`
+    if !jit_at_current_insn(jit) {
+        defer_compilation(jit, ctx, cb, ocb);
+        return EndBlock;
+    }
 
-    let side_exit = get_side_exit(jit, ocb, ctx);
+    let comptime_a = jit_peek_at_stack(jit, ctx, 1);
+    let comptime_b = jit_peek_at_stack(jit, ctx, 0);
 
-    // Get the operands from the stack
-    let arg1 = ctx.stack_pop(1);
-    let arg0 = ctx.stack_pop(1);
+    if comptime_a.fixnum_p() && comptime_b.fixnum_p() {
+        // Create a side-exit to fall back to the interpreter
+        // Note: we generate the side-exit before popping operands from the stack
+        let side_exit = get_side_exit(jit, ocb, ctx);
 
-    // Call rb_vm_opt_mod(VALUE recv, VALUE obj)
-    mov(cb, C_ARG_REGS[0], arg0);
-    mov(cb, C_ARG_REGS[1], arg1);
-    call_ptr(cb, REG0, rb_vm_opt_mod as *const u8);
+        if !assume_bop_not_redefined(jit, ocb, INTEGER_REDEFINED_OP_FLAG, BOP_MOD) {
+            return CantCompile;
+        }
 
-    // If val == Qundef, bail to do a method call
-    cmp(cb, RAX, imm_opnd(Qundef.as_i64()));
-    je_ptr(cb, side_exit);
+        // Check that both operands are fixnums
+        guard_two_fixnums(ctx, cb, side_exit);
 
-    // Push the return value onto the stack
-    let stack_ret = ctx.stack_push(Type::Unknown);
-    mov(cb, stack_ret, RAX);
+        // Get the operands and destination from the stack
+        let arg1 = ctx.stack_pop(1);
+        let arg0 = ctx.stack_pop(1);
 
-    KeepCompiling
+        mov(cb, C_ARG_REGS[0], arg0);
+        mov(cb, C_ARG_REGS[1], arg1);
+
+        // Check for arg0 % 0
+        cmp(cb, C_ARG_REGS[1], imm_opnd(VALUE::fixnum_from_usize(0).as_i64()));
+        je_ptr(cb, side_exit);
+
+        // Call rb_fix_mod_fix(VALUE recv, VALUE obj)
+        call_ptr(cb, REG0, rb_fix_mod_fix as *const u8);
+
+        // Push the return value onto the stack
+        let stack_ret = ctx.stack_push(Type::Unknown);
+        mov(cb, stack_ret, RAX);
+
+        KeepCompiling
+    } else {
+        // Delegate to send, call the method on the recv
+        gen_opt_send_without_block(jit, ctx, cb, ocb)
+    }
 }
 
 fn gen_opt_ltlt(
@@ -3029,7 +3072,7 @@ fn gen_opt_str_freeze(
     jit_mov_gc_ptr(jit, cb, REG0, str);
 
     // Push the return value onto the stack
-    let stack_ret = ctx.stack_push(Type::String);
+    let stack_ret = ctx.stack_push(Type::CString);
     mov(cb, stack_ret, REG0);
 
     KeepCompiling
@@ -3049,7 +3092,7 @@ fn gen_opt_str_uminus(
     jit_mov_gc_ptr(jit, cb, REG0, str);
 
     // Push the return value onto the stack
-    let stack_ret = ctx.stack_push(Type::String);
+    let stack_ret = ctx.stack_push(Type::CString);
     mov(cb, stack_ret, REG0);
 
     KeepCompiling
@@ -3444,6 +3487,11 @@ fn jit_guard_known_klass(
         jit_mov_gc_ptr(jit, cb, REG1, sample_instance);
         cmp(cb, REG0, REG1);
         jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
+    } else if val_type == Type::CString && unsafe { known_klass == rb_cString } {
+        // guard elided because the context says we've already checked
+        unsafe {
+            assert_eq!(sample_instance.class_of(), rb_cString, "context says class is exactly ::String")
+        };
     } else {
         assert!(!val_type.is_imm());
 
@@ -3468,6 +3516,10 @@ fn jit_guard_known_klass(
         jit_mov_gc_ptr(jit, cb, REG1, known_klass);
         cmp(cb, klass_opnd, REG1);
         jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
+
+        if known_klass == unsafe { rb_cString } {
+            ctx.upgrade_opnd_type(insn_opnd, Type::CString);
+        }
     }
 }
 
@@ -3631,7 +3683,8 @@ fn jit_rb_str_uplus(
     // Return value is in REG0, drop through and return it.
 
     cb.write_label(ret_label);
-    let stack_ret = ctx.stack_push(Type::String);
+    // We guard for an exact-class match on the receiver of rb_cString
+    let stack_ret = ctx.stack_push(Type::CString);
     mov(cb, stack_ret, REG0);
 
     cb.link_labels();
@@ -3705,7 +3758,8 @@ fn jit_rb_str_concat(
     // String#<< can take an integer codepoint as an argument, but we don't optimise that.
     // Also, a non-string argument would have to call .to_str on itself before being treated
     // as a string, and that would require saving pc/sp, which we don't do here.
-    if comptime_arg_type != Type::String {
+    // TODO: figure out how we should optimise a string-subtype argument here
+    if comptime_arg_type != Type::CString && comptime_arg.class_of() != unsafe { rb_cString } {
         return false;
     }
 
@@ -3757,11 +3811,11 @@ fn jit_rb_str_concat(
 
     // If encodings are different, use a slower encoding-aware concatenate
     cb.write_label(enc_mismatch);
-    call_ptr(cb, REG0, rb_str_append as *const u8);
+    call_ptr(cb, REG0, rb_str_buf_append as *const u8);
     // Drop through to return
 
     cb.write_label(ret_label);
-    let stack_ret = ctx.stack_push(Type::String);
+    let stack_ret = ctx.stack_push(Type::CString);
     mov(cb, stack_ret, RAX);
 
     cb.link_labels();
@@ -5260,8 +5314,7 @@ fn gen_anytostring(
     cb: &mut CodeBlock,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
-    // Save the PC and SP because we might make a Ruby call for
-    // Kernel#set_trace_var
+    // Save the PC and SP since we might call #to_s
     jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     let str = ctx.stack_pop(1);
@@ -5273,7 +5326,7 @@ fn gen_anytostring(
     call_ptr(cb, REG0, rb_obj_as_string_result as *const u8);
 
     // Push the return value
-    let stack_ret = ctx.stack_push(Type::String);
+    let stack_ret = ctx.stack_push(Type::TString);
     mov(cb, stack_ret, RAX);
 
     KeepCompiling
@@ -6393,7 +6446,7 @@ mod tests {
         let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         context.stack_push(Type::Fixnum);
         context.stack_push(Type::Flonum);
-        context.stack_push(Type::String);
+        context.stack_push(Type::CString);
 
         let mut value_array: [u64; 2] = [0, 2];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
@@ -6403,9 +6456,9 @@ mod tests {
 
         assert_eq!(status, KeepCompiling);
 
-        assert_eq!(Type::String, context.get_opnd_type(StackOpnd(2)));
+        assert_eq!(Type::CString, context.get_opnd_type(StackOpnd(2)));
         assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(1)));
-        assert_eq!(Type::String, context.get_opnd_type(StackOpnd(0)));
+        assert_eq!(Type::CString, context.get_opnd_type(StackOpnd(0)));
 
         assert!(cb.get_write_pos() > 0);
     }
@@ -6414,7 +6467,7 @@ mod tests {
     fn test_gen_topn() {
         let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         context.stack_push(Type::Flonum);
-        context.stack_push(Type::String);
+        context.stack_push(Type::CString);
 
         let mut value_array: [u64; 2] = [0, 1];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
@@ -6425,7 +6478,7 @@ mod tests {
         assert_eq!(status, KeepCompiling);
 
         assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(2)));
-        assert_eq!(Type::String, context.get_opnd_type(StackOpnd(1)));
+        assert_eq!(Type::CString, context.get_opnd_type(StackOpnd(1)));
         assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(0)));
 
         assert!(cb.get_write_pos() > 0); // Write some movs
@@ -6435,7 +6488,7 @@ mod tests {
     fn test_gen_adjuststack() {
         let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         context.stack_push(Type::Flonum);
-        context.stack_push(Type::String);
+        context.stack_push(Type::CString);
         context.stack_push(Type::Fixnum);
 
         let mut value_array: [u64; 3] = [0, 2, 0];

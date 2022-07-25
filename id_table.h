@@ -23,7 +23,6 @@ size_t rb_id_table_memsize(const struct rb_id_table *tbl);
 int rb_id_table_insert(struct rb_id_table *tbl, ID id, VALUE val);
 int rb_id_table_lookup(struct rb_id_table *tbl, ID id, VALUE *valp);
 int rb_id_table_delete(struct rb_id_table *tbl, ID id);
-struct rb_id_table * rb_id_table_copy(struct rb_id_table *old_table);
 
 typedef enum rb_id_table_iterator_result rb_id_table_update_value_callback_func_t(VALUE *val, void *data, int existing);
 typedef enum rb_id_table_iterator_result rb_id_table_foreach_func_t(ID id, VALUE val, void *data);
