@@ -130,7 +130,6 @@ RB_DEBUG_COUNTER(frame_C2R)
 /* instance variable counts
  *
  * * ivar_get_ic_hit/miss: ivar_get inline cache (ic) hit/miss counts (VM insn)
- * * ivar_get_ic_miss_serial: ivar_get ic miss reason by serial (VM insn)
  * * ivar_get_ic_miss_unset:                      ... by unset (VM insn)
  * * ivar_get_ic_miss_noobject:                   ... by "not T_OBJECT" (VM insn)
  * * ivar_set_...: same counts with ivar_set (VM insn)
@@ -140,19 +139,9 @@ RB_DEBUG_COUNTER(frame_C2R)
  */
 RB_DEBUG_COUNTER(ivar_get_ic_hit)
 RB_DEBUG_COUNTER(ivar_get_ic_miss)
-RB_DEBUG_COUNTER(ivar_get_ic_miss_serial)
 RB_DEBUG_COUNTER(ivar_get_ic_miss_noobject)
 RB_DEBUG_COUNTER(ivar_set_ic_hit)
-RB_DEBUG_COUNTER(ivar_set_ic_hit_is_attr)
-RB_DEBUG_COUNTER(ivar_set_ic_hit_not_attr)
-// TODO JEM: These are unused, are they okay to just remove, or should
-// we refactor the setters to use is_attr and then these debug counters?
 RB_DEBUG_COUNTER(ivar_set_ic_miss)
-RB_DEBUG_COUNTER(ivar_set_ic_miss_serial)
-RB_DEBUG_COUNTER(ivar_set_ic_miss_set)
-RB_DEBUG_COUNTER(ivar_set_cc_miss_set)
-RB_DEBUG_COUNTER(ivar_set_ic_miss_unset)
-RB_DEBUG_COUNTER(ivar_set_cc_miss_unset)
 RB_DEBUG_COUNTER(ivar_set_ic_miss_iv_hit)
 RB_DEBUG_COUNTER(ivar_set_ic_miss_noobject)
 RB_DEBUG_COUNTER(ivar_get_base)
