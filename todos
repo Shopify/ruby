@@ -1,0 +1,26 @@
+# for cleaning up branch
+
+- remove debug counters from debug_counter.h
+- clean up poison patch and resubmit to merge
+- obj_memsize_of check the diff - indentation issue
+- merge master again
+- change struct gen_ivtbl to use ifndef trick maybe ?? in internal/variable.h
+- in w_ivar_each - make it an if RUBY_DEBUG not an rb_raise
+- check out mjit_instruction ?? what's happening in there?
+- put back test_objspace tests that were accidentally removed
+- rename vm_call_attrset2 to vm_call_attrset_direct
+- [pairing] clean up shapes ruby wrappers, maybe move into objspace
+
+Nice to have:
+- Could we pull shapes APIs into their own .h?
+
+Note:
+- ROBJECT_SET_SHAPE_ID doesn't work on 32 bit machines
+
+# overall plan
+- perf measurements again
+- and speed measurements including memory profiling to figure out what's happening with vm_list
+- write an update to upstream explaining progress, [if we're comfortable] asking if we can merge to avoid incurring additional tech debt, while we still work on perf more
+- clean up diff
+- improve perf
+- improve memory etc etc
