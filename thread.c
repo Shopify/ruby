@@ -128,9 +128,12 @@ rb_thread_local_storage(VALUE thread)
     size_t compact_count = rb_gc_compact_count();
     int if_hit = 0;
 
+    rb_thread_t *th = (rb_thread_t *)DATA_PTR(thread);
+
     if (LIKELY(!THREAD_LOCAL_STORAGE_INITIALISED_P(thread))) {
         rb_ivar_set(thread, idLocals, rb_hash_new());
         RB_FL_SET_RAW(thread, THREAD_LOCAL_STORAGE_INITIALISED);
+        fprintf(stderr, "Setting local storage on thread %p\n", (void *)th);
         if_hit = 1;
     }
     compact_count = rb_gc_compact_count() - compact_count;
@@ -142,7 +145,7 @@ rb_thread_local_storage(VALUE thread)
     VALUE locals = rb_ivar_get(thread, idLocals);
     if (NIL_P(locals)) {
         rb_obj_info_dump(thread);
-        rb_bug("locals should be a hash, if statement run? %d", if_hit);
+        rb_bug("locals should be a hash, if statement run? %d thread: %p\n", if_hit, (void *)th);
     }
     return locals;
 }
