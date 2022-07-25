@@ -6293,6 +6293,14 @@ mark_finalizer_tbl(rb_objspace_t *objspace, st_table *tbl)
     st_foreach(tbl, pin_value, (st_data_t)objspace);
 }
 
+size_t
+rb_gc_compact_count()
+{
+    rb_objspace_t *objspace = &rb_objspace;
+
+    return objspace->profile.compact_count;
+}
+
 void
 rb_mark_set(st_table *tbl)
 {

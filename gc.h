@@ -31,6 +31,8 @@ NOINLINE(void rb_gc_set_stack_end(VALUE **stack_end_p));
 #define RUBY_MARK_FREE_DEBUG 0
 #endif
 
+size_t rb_gc_compact_count();
+
 #if RUBY_MARK_FREE_DEBUG
 extern int ruby_gc_debug_indent;
 

@@ -125,10 +125,18 @@ enum SLEEP_FLAGS {
 static inline VALUE
 rb_thread_local_storage(VALUE thread)
 {
+    size_t compact_count = rb_gc_compact_count();
+
     if (LIKELY(!THREAD_LOCAL_STORAGE_INITIALISED_P(thread))) {
         rb_ivar_set(thread, idLocals, rb_hash_new());
         RB_FL_SET_RAW(thread, THREAD_LOCAL_STORAGE_INITIALISED);
     }
+    compact_count = rb_gc_compact_count() - compact_count;
+
+    if (compact_count > 0) {
+        rb_bug("we should not have compacted!");
+    }
+
     VALUE locals = rb_ivar_get(thread, idLocals);
     if (NIL_P(locals)) {
         rb_obj_info_dump(thread);
