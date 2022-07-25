@@ -2190,11 +2190,12 @@ fn gen_defined(
 
     KeepCompiling
 }
+*/
 
 fn gen_checktype(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let type_val = jit_get_arg(jit, 0).as_u32();
@@ -2212,44 +2213,40 @@ fn gen_checktype(
             | (RUBY_T_HASH, Type::Hash) => {
                 // guaranteed type match
                 let stack_ret = ctx.stack_push(Type::True);
-                mov(cb, stack_ret, uimm_opnd(Qtrue.as_u64()));
+                asm.mov(stack_ret, Opnd::UImm(Qtrue.as_u64()));
                 return KeepCompiling;
             }
             _ if val_type.is_imm() || val_type.is_specific() => {
                 // guaranteed not to match T_STRING/T_ARRAY/T_HASH
                 let stack_ret = ctx.stack_push(Type::False);
-                mov(cb, stack_ret, uimm_opnd(Qfalse.as_u64()));
+                asm.mov(stack_ret, Opnd::UImm(Qfalse.as_u64()));
                 return KeepCompiling;
             }
             _ => (),
         }
 
-        mov(cb, REG0, val);
-        mov(cb, REG1, uimm_opnd(Qfalse.as_u64()));
-
-        let ret = cb.new_label("ret".to_string());
+        let ret = asm.new_label("ret");
+        let ret_opnd = Opnd::UImm(Qfalse.as_u64());
 
         if !val_type.is_heap() {
             // if (SPECIAL_CONST_P(val)) {
             // Return Qfalse via REG1 if not on heap
-            test(cb, REG0, uimm_opnd(RUBY_IMMEDIATE_MASK as u64));
-            jnz_label(cb, ret);
-            cmp(cb, REG0, uimm_opnd(Qnil.as_u64()));
-            jbe_label(cb, ret);
+            asm.test(val, Opnd::UImm(RUBY_IMMEDIATE_MASK as u64));
+            asm.jnz(ret);
+            asm.cmp(val, Opnd::UImm(Qnil.as_u64()));
+            asm.jbe(ret);
         }
 
         // Check type on object
-        mov(cb, REG0, mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS));
-        and(cb, REG0, uimm_opnd(RUBY_T_MASK as u64));
-        cmp(cb, REG0, uimm_opnd(type_val as u64));
-        mov(cb, REG0, uimm_opnd(Qtrue.as_u64()));
-        // REG1 contains Qfalse from above
-        cmove(cb, REG1, REG0);
+        let object_type = asm.and(
+            Opnd::mem(64, val, RUBY_OFFSET_RBASIC_FLAGS),
+            Opnd::UImm(RUBY_T_MASK as u64));
+        asm.cmp(object_type, Opnd::UImm(type_val as u64));
+        asm.csel_e(ret_opnd, Opnd::UImm(Qtrue.as_u64()));
 
-        cb.write_label(ret);
+        asm.write_label(ret);
         let stack_ret = ctx.stack_push(Type::UnknownImm);
-        mov(cb, stack_ret, REG1);
-        cb.link_labels();
+        asm.mov(stack_ret, ret_opnd);
 
         KeepCompiling
     } else {
@@ -2257,6 +2254,7 @@ fn gen_checktype(
     }
 }
 
+/*
 fn gen_concatstrings(
     jit: &mut JITState,
     ctx: &mut Context,
@@ -5922,7 +5920,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_duphash => Some(gen_duphash),
         YARVINSN_newarray => Some(gen_newarray),
         YARVINSN_duparray => Some(gen_duparray),
-        //YARVINSN_checktype => Some(gen_checktype),
+        YARVINSN_checktype => Some(gen_checktype),
         YARVINSN_opt_lt => Some(gen_opt_lt),
         /*
         YARVINSN_opt_le => Some(gen_opt_le),
