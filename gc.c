@@ -4908,9 +4908,9 @@ obj_memsize_of(VALUE obj, int use_all_types)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-	if (!(RBASIC(obj)->flags & ROBJECT_EMBED)) {
-	    size += ROBJECT_NUMIV(obj) * sizeof(VALUE);
-	}
+        if (!(RBASIC(obj)->flags & ROBJECT_EMBED)) {
+            size += ROBJECT_NUMIV(obj) * sizeof(VALUE);
+        }
         else {
             // We can't look up the shape here because `obj_memsize_of` is used during
             // the sweep phase when RGENGC_CHECK_MODE is enabled.  The shape may have been

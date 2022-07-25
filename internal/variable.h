@@ -37,7 +37,6 @@ static inline void ROBJ_TRANSIENT_SET(VALUE obj);
 static inline void ROBJ_TRANSIENT_UNSET(VALUE obj);
 uint32_t rb_obj_ensure_iv_index_mapping(VALUE obj, ID id);
 
-// TODO JEM: How can I remove this struct defn and use the one already in variable.h
 struct gen_ivtbl;
 int rb_gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl);
 

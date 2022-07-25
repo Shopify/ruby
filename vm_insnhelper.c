@@ -3252,7 +3252,7 @@ vm_call_ivar(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_call
 }
 
 static VALUE
-vm_call_attrset2(rb_execution_context_t *ec, rb_control_frame_t *cfp, const struct rb_callcache *cc, VALUE obj)
+vm_call_attrset_direct(rb_execution_context_t *ec, rb_control_frame_t *cfp, const struct rb_callcache *cc, VALUE obj)
 {
     RB_DEBUG_COUNTER_INC(ccf_attrset);
     VALUE val = *(cfp->sp - 1);
@@ -3269,7 +3269,7 @@ vm_call_attrset2(rb_execution_context_t *ec, rb_control_frame_t *cfp, const stru
 static VALUE
 vm_call_attrset(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling)
 {
-    return vm_call_attrset2(ec, cfp, calling->cc, calling->recv);
+    return vm_call_attrset_direct(ec, cfp, calling->cc, calling->recv);
 }
 
 bool
@@ -3844,7 +3844,7 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         if (vm_cc_markable(cc)) {
             vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
             VM_CALL_METHOD_ATTR(v,
-                                vm_call_attrset2(ec, cfp, cc, calling->recv),
+                                vm_call_attrset_direct(ec, cfp, cc, calling->recv),
                                 CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
         } else {
             cc = &VM_CC_ON_STACK(cc->klass,
@@ -3852,7 +3852,7 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
                     { .attr_index = ((uint64_t)INVALID_SHAPE_ID << 48 | (uint64_t)INVALID_SHAPE_ID << 32) },
                     cc->cme_);
             VM_CALL_METHOD_ATTR(v,
-                                vm_call_attrset2(ec, cfp, cc, calling->recv),
+                                vm_call_attrset_direct(ec, cfp, cc, calling->recv),
                                 CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
         }
         return v;
