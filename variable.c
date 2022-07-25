@@ -2068,7 +2068,7 @@ transition_shape(VALUE obj, ID id, rb_shape_t *shape)
         // Make the object extended
         rb_ensure_iv_list_size(obj, num_iv, num_iv + 1);
         RUBY_ASSERT(!(RBASIC(obj)->flags & ROBJECT_EMBED));
-        ROBJECT(obj)->as.heap.iv_index_tbl = rb_id_table_copy(rb_shape_generate_iv_table(shape));
+        ROBJECT(obj)->as.heap.iv_index_tbl = rb_shape_generate_iv_table(shape);
     }
     RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));
     rb_shape_set_shape(obj, next_shape);
