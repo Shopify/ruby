@@ -4722,7 +4722,7 @@ id2ref(VALUE objid)
         if ((ptr % sizeof(RVALUE)) == (4 << 2)) {
             ID symid = ptr / sizeof(RVALUE);
             p0 = (void *)ptr;
-            if (rb_id2str(symid) == 0)
+            if (!rb_static_id_valid_p(symid))
                 rb_raise(rb_eRangeError, "%p is not symbol id value", p0);
             return ID2SYM(symid);
         }
@@ -5510,7 +5510,7 @@ read_barrier_handler(uintptr_t original_address)
     /* If the page_body is NULL, then mprotect cannot handle it and will crash
      * with "Cannot allocate memory". */
     if (page_body == NULL) {
-        rb_bug("read_barrier_handler: segmentation fault at 0x%lx", original_address);
+        rb_bug("read_barrier_handler: segmentation fault at %p", (void *)original_address);
     }
 
     RB_VM_LOCK_ENTER();
@@ -6040,6 +6040,19 @@ gc_sweep_finish_size_pool(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
      * should still have allocatable pages. */
     if (min_free_slots < gc_params.heap_init_slots) {
         min_free_slots = gc_params.heap_init_slots;
+    }
+
+    /* If we don't have enough slots and we have pages on the tomb heap, move
+     * pages from the tomb heap to the eden heap. This may prevent page
+     * creation thrashing (frequently allocating and deallocting pages) and
+     * GC thrashing (running GC more frequently than required). */
+    struct heap_page *resurrected_page;
+    while (swept_slots < min_free_slots &&
+            (resurrected_page = heap_page_resurrect(objspace, size_pool))) {
+        swept_slots += resurrected_page->free_slots;
+
+        heap_add_page(objspace, size_pool, heap, resurrected_page);
+        heap_add_freepage(heap, resurrected_page);
     }
 
     if (swept_slots < min_free_slots) {
@@ -7461,8 +7474,8 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
         break;
 
       case T_ARRAY:
-        if (FL_TEST(obj, ELTS_SHARED)) {
-            VALUE root = any->as.array.as.heap.aux.shared_root;
+        if (ARY_SHARED_P(obj)) {
+            VALUE root = ARY_SHARED_ROOT(obj);
             gc_mark(objspace, root);
         }
         else {
@@ -7473,8 +7486,7 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
             }
 
             if (LIKELY(during_gc)) {
-                if (!FL_TEST_RAW(obj, RARRAY_EMBED_FLAG) &&
-                    RARRAY_TRANSIENT_P(obj)) {
+                if (!ARY_EMBED_P(obj) && RARRAY_TRANSIENT_P(obj)) {
                     rb_transient_heap_mark(obj, ptr);
                 }
             }
@@ -10186,8 +10198,7 @@ gc_ref_update_array(rb_objspace_t * objspace, VALUE v)
 {
     long i, len;
 
-    if (FL_TEST(v, ELTS_SHARED))
-        return;
+    if (ARY_SHARED_P(v)) return;
 
     len = RARRAY_LEN(v);
     if (len > 0) {
@@ -10689,7 +10700,7 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
         return;
 
       case T_ARRAY:
-        if (FL_TEST(obj, ELTS_SHARED)) {
+        if (ARY_SHARED_P(obj)) {
             UPDATE_IF_MOVED(objspace, any->as.array.as.heap.aux.shared_root);
         }
         else {
@@ -12961,20 +12972,21 @@ static int
 wmap_live_p(rb_objspace_t *objspace, VALUE obj)
 {
     if (SPECIAL_CONST_P(obj)) return TRUE;
-    if (is_pointer_to_heap(objspace, (void *)obj)) {
-        void *poisoned = asan_unpoison_object_temporary(obj);
+    /* If is_pointer_to_heap returns false, the page could be in the tomb heap
+     * or have already been freed. */
+    if (!is_pointer_to_heap(objspace, (void *)obj)) return FALSE;
 
-        enum ruby_value_type t = BUILTIN_TYPE(obj);
-        int ret = (!(t == T_NONE || t >= T_FIXNUM || t == T_ICLASS) &&
-                   is_live_object(objspace, obj));
+    void *poisoned = asan_unpoison_object_temporary(obj);
 
-        if (poisoned) {
-            asan_poison_object(obj);
-        }
+    enum ruby_value_type t = BUILTIN_TYPE(obj);
+    int ret = (!(t == T_NONE || t >= T_FIXNUM || t == T_ICLASS) &&
+                is_live_object(objspace, obj));
 
-        return ret;
+    if (poisoned) {
+        asan_poison_object(obj);
     }
-    return TRUE;
+
+    return ret;
 }
 
 static int
@@ -14004,14 +14016,6 @@ rb_method_type_name(rb_method_type_t type)
     rb_bug("rb_method_type_name: unreachable (type: %d)", type);
 }
 
-/* from array.c */
-# define ARY_SHARED_P(ary) \
-    (GC_ASSERT(!FL_TEST((ary), ELTS_SHARED) || !FL_TEST((ary), RARRAY_EMBED_FLAG)), \
-     FL_TEST((ary),ELTS_SHARED)!=0)
-# define ARY_EMBED_P(ary) \
-    (GC_ASSERT(!FL_TEST((ary), ELTS_SHARED) || !FL_TEST((ary), RARRAY_EMBED_FLAG)), \
-     FL_TEST((ary), RARRAY_EMBED_FLAG)!=0)
-
 static void
 rb_raw_iseq_info(char *const buff, const size_t buff_size, const rb_iseq_t *iseq)
 {
@@ -14118,9 +14122,9 @@ rb_raw_obj_info_buitin_type(char *const buff, const size_t buff_size, const VALU
           case T_ARRAY:
             if (ARY_SHARED_P(obj)) {
                 APPEND_S("shared -> ");
-                rb_raw_obj_info(BUFF_ARGS, RARRAY(obj)->as.heap.aux.shared_root);
+                rb_raw_obj_info(BUFF_ARGS, ARY_SHARED_ROOT(obj));
             }
-            else if (FL_TEST(obj, RARRAY_EMBED_FLAG)) {
+            else if (ARY_EMBED_P(obj)) {
                 APPEND_F("[%s%s] len: %ld (embed)",
                          C(ARY_EMBED_P(obj),  "E"),
                          C(ARY_SHARED_P(obj), "S"),

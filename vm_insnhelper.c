@@ -1066,22 +1066,7 @@ vm_get_cvar_base(const rb_cref_t *cref, const rb_control_frame_t *cfp, int top_l
     return klass;
 }
 
-static VALUE
-vm_search_const_defined_class(const VALUE cbase, ID id)
-{
-    if (rb_const_defined_at(cbase, id)) return cbase;
-    if (cbase == rb_cObject) {
-	VALUE tmp = RCLASS_SUPER(cbase);
-	while (tmp) {
-	    if (rb_const_defined_at(tmp, id)) return tmp;
-	    tmp = RCLASS_SUPER(tmp);
-	}
-    }
-    return 0;
-}
-
 ALWAYS_INLINE(static void fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, uint32_t index, shape_id_t shape_id));
-
 static inline void
 fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, uint32_t index, shape_id_t shape_id)
 {
@@ -3853,6 +3838,7 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         CALLER_REMOVE_EMPTY_KW_SPLAT(cfp, calling, ci);
 
 	rb_check_arity(calling->argc, 1, 1);
+
         const unsigned int aset_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG);
 
         if (vm_cc_markable(cc)) {
@@ -3875,8 +3861,9 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         CALLER_SETUP_ARG(cfp, calling, ci);
         CALLER_REMOVE_EMPTY_KW_SPLAT(cfp, calling, ci);
 	rb_check_arity(calling->argc, 0, 0);
-        if (vm_cc_markable(cc))
+        if (vm_cc_markable(cc)) {
             vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
+        }
         const unsigned int ivar_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT);
         VM_CALL_METHOD_ATTR(v,
                             vm_call_ivar(ec, cfp, calling),
@@ -4686,16 +4673,14 @@ vm_dtrace(rb_event_flag_t flag, rb_execution_context_t *ec)
 static VALUE
 vm_const_get_under(ID id, rb_num_t flags, VALUE cbase)
 {
-    VALUE ns;
-
-    if ((ns = vm_search_const_defined_class(cbase, id)) == 0) {
-	return ns;
+    if (!rb_const_defined_at(cbase, id)) {
+        return 0;
     }
     else if (VM_DEFINECLASS_SCOPED_P(flags)) {
-	return rb_public_const_get_at(ns, id);
+        return rb_public_const_get_at(cbase, id);
     }
     else {
-	return rb_const_get_at(ns, id);
+        return rb_const_get_at(cbase, id);
     }
 }
 

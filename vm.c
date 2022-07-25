@@ -2436,7 +2436,7 @@ vm_exec_handle_exception(rb_execution_context_t *ec, enum ruby_tag_type state,
         else if ((state == TAG_BREAK && !escape_cfp) ||
                  (state == TAG_REDO) ||
                  (state == TAG_NEXT)) {
-            type = (const enum catch_type[TAG_MASK]) {
+            type = (const enum rb_catch_type[TAG_MASK]) {
                 [TAG_BREAK]  = CATCH_TYPE_BREAK,
                 [TAG_NEXT]   = CATCH_TYPE_NEXT,
                 [TAG_REDO]   = CATCH_TYPE_REDO,
@@ -3148,8 +3148,7 @@ thread_mark(void *ptr)
     RUBY_MARK_UNLESS_NULL(th->top_wrapper);
     if (th->root_fiber) rb_fiber_mark_self(th->root_fiber);
 
-    /* Ensure EC stack objects are pinned */
-    rb_execution_context_mark(th->ec);
+    RUBY_ASSERT(th->ec == rb_fiberptr_get_ec(th->ec->fiber_ptr));
     RUBY_MARK_UNLESS_NULL(th->stat_insn_usage);
     RUBY_MARK_UNLESS_NULL(th->last_status);
     RUBY_MARK_UNLESS_NULL(th->locking_mutex);

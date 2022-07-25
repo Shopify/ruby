@@ -1323,6 +1323,7 @@ up::
 yes::
 no::
 
+after-update:: common-srcs
 after-update:: $(REVISION_H)
 after-update:: extract-extlibs
 after-update:: extract-gems
@@ -1406,7 +1407,7 @@ no-test-bundled-gems:
 
 BUNDLED_GEMS =
 test-bundled-gems-run: $(PREPARE_BUNDLED_GEMS)
-	$(Q) $(XRUBY) $(tooldir)/test-bundled-gems.rb $(BUNDLED_GEMS)
+	$(gnumake_recursive)$(Q) $(XRUBY) $(tooldir)/test-bundled-gems.rb $(BUNDLED_GEMS)
 
 test-bundler-precheck: $(TEST_RUNNABLE)-test-bundler-precheck
 no-test-bundler-precheck:
@@ -15855,6 +15856,7 @@ transcode.$(OBJEXT): {$(VPATH)}subst.h
 transcode.$(OBJEXT): {$(VPATH)}transcode.c
 transcode.$(OBJEXT): {$(VPATH)}transcode_data.h
 transient_heap.$(OBJEXT): $(hdrdir)/ruby/ruby.h
+transient_heap.$(OBJEXT): $(top_srcdir)/internal/array.h
 transient_heap.$(OBJEXT): $(top_srcdir)/internal/compilers.h
 transient_heap.$(OBJEXT): $(top_srcdir)/internal/gc.h
 transient_heap.$(OBJEXT): $(top_srcdir)/internal/hash.h

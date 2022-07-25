@@ -150,7 +150,21 @@ VALUE rb_cSymbol;
     }\
 } while (0)
 
-#define TERM_LEN(str) rb_enc_mbminlen(rb_enc_get(str))
+static inline bool
+str_enc_fastpath(VALUE str)
+{
+    // The overwhelming majority of strings are in one of these 3 encodings.
+    switch (ENCODING_GET_INLINED(str)) {
+      case ENCINDEX_ASCII_8BIT:
+      case ENCINDEX_UTF_8:
+      case ENCINDEX_US_ASCII:
+        return true;
+      default:
+        return false;
+    }
+}
+
+#define TERM_LEN(str) (str_enc_fastpath(str) ? 1 : rb_enc_mbminlen(rb_enc_from_index(ENCODING_GET(str))))
 #define TERM_FILL(ptr, termlen) do {\
     char *const term_fill_ptr = (ptr);\
     const int term_fill_len = (termlen);\
@@ -3311,27 +3325,28 @@ rb_str_buf_cat_ascii(VALUE str, const char *ptr)
     }
 }
 
-static inline bool
-str_enc_fastpath(VALUE str)
-{
-    // The overwhelming majority of strings are in one of these 3 encodings.
-    switch (ENCODING_GET_INLINED(str)) {
-      case ENCINDEX_ASCII_8BIT:
-      case ENCINDEX_UTF_8:
-      case ENCINDEX_US_ASCII:
-        return true;
-      default:
-        return false;
-    }
-}
-
 VALUE
 rb_str_buf_append(VALUE str, VALUE str2)
 {
     int str2_cr = rb_enc_str_coderange(str2);
-    if (str2_cr == ENC_CODERANGE_7BIT && str_enc_fastpath(str)) {
-        str_buf_cat4(str, RSTRING_PTR(str2), RSTRING_LEN(str2), true);
-        return str;
+
+    if (str_enc_fastpath(str)) {
+        switch (str2_cr) {
+          case ENC_CODERANGE_7BIT:
+            // If RHS is 7bit we can do simple concatenation
+            str_buf_cat4(str, RSTRING_PTR(str2), RSTRING_LEN(str2), true);
+            return str;
+          case ENC_CODERANGE_VALID:
+            // If RHS is valid, we can do simple concatenation if encodings are the same
+            if (ENCODING_GET_INLINED(str) == ENCODING_GET_INLINED(str2)) {
+                str_buf_cat4(str, RSTRING_PTR(str2), RSTRING_LEN(str2), true);
+                int str_cr = ENC_CODERANGE(str);
+                if (UNLIKELY(str_cr != ENC_CODERANGE_VALID)) {
+                    ENC_CODERANGE_SET(str, RB_ENC_CODERANGE_AND(str_cr, str2_cr));
+                }
+                return str;
+            }
+        }
     }
 
     rb_enc_cr_str_buf_cat(str, RSTRING_PTR(str2), RSTRING_LEN(str2),

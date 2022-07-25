@@ -272,9 +272,11 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
     uint32_t dest_len = ROBJECT_NUMIV(dest);
     uint32_t src_len = ROBJECT_NUMIV(obj);
     uint32_t max_len = dest_len < src_len ? src_len : dest_len;
-    uint32_t min_len = dest_len > src_len ? src_len : dest_len;
 
     rb_ensure_iv_list_size(dest, dest_len, max_len);
+
+    dest_len = ROBJECT_NUMIV(dest);
+    uint32_t min_len = dest_len > src_len ? src_len : dest_len;
 
     if (RBASIC(obj)->flags & ROBJECT_EMBED) {
         src_buf = ROBJECT(obj)->as.ary;
