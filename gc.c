@@ -9337,6 +9337,8 @@ gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj)
     return FALSE;
 }
 
+void rb_replace_generic_ivar(VALUE clone, VALUE obj); // variable.c
+
 static VALUE
 gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free, size_t slot_size)
 {
@@ -9368,7 +9370,7 @@ gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free, size_t slot_size)
         /* Same deal as below. Generic ivars are held in st tables.
          * Resizing the table could cause a GC to happen and we can't allow it */
         VALUE already_disabled = rb_gc_disable_no_rest();
-        rb_mv_generic_ivar((VALUE)src, (VALUE)dest);
+        rb_replace_generic_ivar((VALUE)dest, (VALUE)src);
         if (already_disabled == Qfalse) rb_objspace_gc_enable(objspace);
     }
 
