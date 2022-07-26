@@ -1291,7 +1291,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 // no cache -> no cache
                 //
                 // both caches
-                if (!rb_no_cache_shape_p(shape) && !rb_no_cache_shape_p(next_shape)) {
+                if (!rb_no_cache_shape_p(shape) && rb_no_cache_shape_p(next_shape)) {
                     // Ensure the object is *not* embedded
                     rb_ensure_iv_list_size(obj, num_iv, num_iv + 1);
                     RUBY_ASSERT(!(RBASIC(obj)->flags & ROBJECT_EMBED));
