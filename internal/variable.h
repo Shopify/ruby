@@ -50,6 +50,7 @@ struct rb_shape {
     struct rb_shape * parent; // Pointer to the parent
     struct rb_id_table * edges; // id_table from ID (ivar) to next shape
     ID edge_name; // ID (ivar) for transition from parent to rb_shape
+    uint32_t iv_count;
 };
 
 #define SHAPE_ID(shape) rb_shape_get_shape_id((VALUE)shape)
@@ -64,7 +65,6 @@ rb_shape_t* rb_vm_get_root_shape();
 bool rb_shape_root_shape_p(rb_shape_t* shape);
 void rb_shape_set_shape_by_id(shape_id_t, rb_shape_t *);
 rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent);
-uint32_t rb_shape_iv_depth(rb_shape_t* shape);
 struct rb_id_table * rb_shape_generate_iv_table(rb_shape_t* shape);
 shape_id_t rb_generic_shape_id(VALUE obj);
 

@@ -910,10 +910,9 @@ rb_shape_generate_iv_table(rb_shape_t* shape) {
     }
 
     struct rb_id_table *iv_table = rb_id_table_create(0);
-    uint32_t depth = rb_shape_iv_depth(shape);
     uint32_t index = 0;
     while (shape->parent) {
-        rb_id_table_insert(iv_table, shape->edge_name, depth - (VALUE)index - 1);
+        rb_id_table_insert(iv_table, shape->edge_name, shape->iv_count - (VALUE)index - 1);
         index++;
         shape = shape->parent;
     }
@@ -1420,7 +1419,7 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
     }
     else {
         // This sets the iv table in the ivup struct
-        ivup->u.iv_index_tbl_size = rb_shape_iv_depth(ivup->shape);
+        ivup->u.iv_index_tbl_size = ivup->shape->iv_count;
         r = rb_shape_get_iv_index(ivup->shape, id, &ent_data);
     }
 
@@ -1567,7 +1566,7 @@ rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize)
 void
 rb_init_iv_list(VALUE obj)
 {
-    uint32_t newsize = rb_shape_iv_depth(rb_shape_get_shape(obj)) * 2.0;
+    uint32_t newsize = rb_shape_get_shape(obj)->iv_count * 2.0;
     uint32_t len = ROBJECT_NUMIV(obj);
     rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
 }
@@ -1832,37 +1831,10 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
     rb_shape_t * shape = shape_alloc();
     rb_shape_set_shape_id((VALUE)shape, shape_id);
     shape->edge_name = edge_name;
+    shape->iv_count = parent ? parent->iv_count + 1 : 0;
     RB_OBJ_WRITE(shape, &shape->parent, parent);
     RUBY_ASSERT(!parent || IMEMO_TYPE_P(parent, imemo_shape));
     return shape;
-}
-
-uint32_t
-rb_shape_depth(rb_shape_t* shape) {
-    uint32_t depth = 0;
-    while (shape->parent) {
-        depth++;
-        shape = shape->parent;
-    }
-    return depth;
-}
-
-/*
- * This function calculates iv depth based on checking
- * if the shape is frozen or not.
- *
- * If or when we add more attributes to shapes beyond
- * only frozen status, we will need to refactor this
- * method to count the transitions based on attributes
- */
-uint32_t
-rb_shape_iv_depth(rb_shape_t* shape) {
-    if (frozen_shape_p(shape)) {
-        return rb_shape_depth(shape->parent);
-    }
-    else {
-        return rb_shape_depth(shape);
-    }
 }
 
 enum transition_type {
@@ -1948,9 +1920,9 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                     if (BUILTIN_TYPE(obj) == T_OBJECT) {
                         VALUE klass = rb_obj_class(obj);
                         uint32_t cur_iv_count = RCLASS_EXT(klass)->max_iv_count;
-                        uint32_t new_depth = rb_shape_iv_depth(new_shape);
-                        if (new_depth > cur_iv_count) {
-                            RCLASS_EXT(klass)->max_iv_count = new_depth;
+                        uint32_t new_iv_count = new_shape->iv_count;
+                        if (new_iv_count > cur_iv_count) {
+                            RCLASS_EXT(klass)->max_iv_count = new_iv_count;
                         }
                     }
 
@@ -1960,6 +1932,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                     rb_shape_set_shape_by_id(next_shape_id, new_shape);
 
                     if (tt == SHAPE_FROZEN) {
+                        new_shape->iv_count--;
                         RB_OBJ_FREEZE_RAW((VALUE)new_shape);
                     }
 
@@ -2233,7 +2206,7 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
             return;
         }
         rb_shape_t * shape = rb_shape_get_shape(obj);
-        iterate_over_shapes(obj, shape, ROBJECT_IVPTR(obj), (int)rb_shape_iv_depth(shape), func, arg);
+        iterate_over_shapes(obj, shape, ROBJECT_IVPTR(obj), (int)shape->iv_count, func, arg);
     }
 }
 
@@ -2246,7 +2219,7 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     if (!iv_index_tbl) return;
     if (!rb_gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    iterate_over_shapes(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)rb_shape_iv_depth(shape), func, arg);
+    iterate_over_shapes(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)shape->iv_count, func, arg);
 }
 
 void
@@ -2352,7 +2325,7 @@ rb_ivar_count(VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-	if (rb_shape_iv_depth(rb_shape_get_shape(obj)) > 0) {
+	if (rb_shape_get_shape(obj)->iv_count > 0) {
 	    st_index_t i, count, num = ROBJECT_NUMIV(obj);
 	    const VALUE *const ivptr = ROBJECT_IVPTR(obj);
 	    for (i = count = 0; i < num; ++i) {

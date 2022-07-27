@@ -3450,7 +3450,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(ROBJECT_SHAPE_ID(obj));
             if (shape) {
                 VALUE klass = RBASIC_CLASS(obj);
-                uint32_t num_of_ivs = rb_shape_iv_depth(shape);
+                uint32_t num_of_ivs = shape->iv_count;
                 if (RCLASS_EXT(klass)->max_iv_count < num_of_ivs) {
                     RCLASS_EXT(klass)->max_iv_count = num_of_ivs;
                 }
