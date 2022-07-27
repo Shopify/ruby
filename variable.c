@@ -1420,7 +1420,7 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
     }
     else {
         // This sets the iv table in the ivup struct
-        ivup->u.iv_index_tbl_size = rb_shape_depth(ivup->shape);
+        ivup->u.iv_index_tbl_size = rb_shape_iv_depth(ivup->shape);
         r = rb_shape_get_iv_index(ivup->shape, id, &ent_data);
     }
 
@@ -1837,6 +1837,16 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
     return shape;
 }
 
+uint32_t
+rb_shape_depth(rb_shape_t* shape) {
+    uint32_t depth = 0;
+    while (shape->parent) {
+        depth++;
+        shape = shape->parent;
+    }
+    return depth;
+}
+
 /*
  * This function calculates iv depth based on checking
  * if the shape is frozen or not.
@@ -1853,16 +1863,6 @@ rb_shape_iv_depth(rb_shape_t* shape) {
     else {
         return rb_shape_depth(shape);
     }
-}
-
-uint32_t
-rb_shape_depth(rb_shape_t* shape) {
-    uint32_t depth = 0;
-    while (shape->parent) {
-        depth++;
-        shape = shape->parent;
-    }
-    return depth;
 }
 
 enum transition_type {
@@ -2352,7 +2352,7 @@ rb_ivar_count(VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-	if (rb_shape_depth(rb_shape_get_shape(obj)) > 0) {
+	if (rb_shape_iv_depth(rb_shape_get_shape(obj)) > 0) {
 	    st_index_t i, count, num = ROBJECT_NUMIV(obj);
 	    const VALUE *const ivptr = ROBJECT_IVPTR(obj);
 	    for (i = count = 0; i < num; ++i) {
