@@ -277,14 +277,14 @@ rb_iseq_each_value(const rb_iseq_t *iseq, iseq_value_itr_t * func, void *data)
         // IVC entries
         for (unsigned int i = 0; i < body->ivc_size; i++, is_entries++) {
             IVC ivc = (IVC)is_entries;
-            shape_id_t shape_source_id = vm_ic_attr_index_shape_source_id(ivc);
-            shape_id_t shape_dest_id = vm_ic_attr_index_shape_dest_id(ivc);
-            if (shape_source_id != INVALID_SHAPE_ID) {
-                rb_shape_t *shape = rb_shape_get_shape_by_id(shape_source_id);
+            shape_id_t source_shape_id = vm_ic_attr_index_source_shape_id(ivc);
+            shape_id_t dest_shape_id = vm_ic_attr_index_dest_shape_id(ivc);
+            if (source_shape_id != INVALID_SHAPE_ID) {
+                rb_shape_t *shape = rb_shape_get_shape_by_id(source_shape_id);
                 func(data, (VALUE)shape);
             }
-            if (shape_dest_id != INVALID_SHAPE_ID) {
-                rb_shape_t *shape = rb_shape_get_shape_by_id(shape_dest_id);
+            if (dest_shape_id != INVALID_SHAPE_ID) {
+                rb_shape_t *shape = rb_shape_get_shape_by_id(dest_shape_id);
                 func(data, (VALUE)shape);
             }
         }

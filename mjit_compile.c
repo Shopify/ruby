@@ -475,9 +475,9 @@ init_ivar_compile_status(const struct rb_iseq_constant_body *body, struct compil
                 }
 
                 if (status->ivar_serial == 0) {
-                    status->ivar_serial = vm_ic_attr_index_shape_source_id(ic_copy);
+                    status->ivar_serial = vm_ic_attr_index_source_shape_id(ic_copy);
                 }
-                else if (status->ivar_serial != vm_ic_attr_index_shape_source_id(ic_copy)) {
+                else if (status->ivar_serial != vm_ic_attr_index_source_shape_id(ic_copy)) {
                     // Multiple classes have used this ISeq. Give up assuming one serial.
                     status->merge_ivar_guards_p = false;
                     return;

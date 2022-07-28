@@ -27,8 +27,8 @@ struct rb_subclass_entry {
 
 struct rb_iv_index_tbl_entry {
     uint32_t idx;
-    uint16_t shape_source_id;
-    uint16_t shape_dest_id;
+    uint16_t source_shape_id;
+    uint16_t dest_shape_id;
 };
 
 struct rb_cvar_class_tbl_entry {

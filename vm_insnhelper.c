@@ -1374,26 +1374,26 @@ vm_setivar_slowpath_attr(VALUE obj, ID id, VALUE val, const struct rb_callcache 
     return vm_setivar_slowpath(obj, id, val, NULL, NULL, cc, true);
 }
 
-NOINLINE(static VALUE vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t shape_source_id, shape_id_t shape_dest_id, uint32_t index));
+NOINLINE(static VALUE vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, uint32_t index));
 static VALUE
-vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t shape_source_id, shape_id_t shape_dest_id, uint32_t index)
+vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, uint32_t index)
 {
     shape_id_t shape_id = rb_generic_shape_id(obj);
 
     if (shape_id != NO_CACHE_SHAPE_ID) {
         // Do we have a cache hit *and* is the CC intitialized
-        if (shape_id == shape_source_id) {
-            RUBY_ASSERT(shape_dest_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
+        if (shape_id == source_shape_id) {
+            RUBY_ASSERT(dest_shape_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
 
             struct gen_ivtbl *ivtbl = 0;
-            if (shape_dest_id != shape_id) {
+            if (dest_shape_id != shape_id) {
                 ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
-                ivtbl->shape_id = shape_dest_id;
-                RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(shape_dest_id));
+                ivtbl->shape_id = dest_shape_id;
+                RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
             }
             else {
                 // Just get the IV table
-                RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);
+                RUBY_ASSERT(GET_VM()->shape_list[dest_shape_id]);
                 rb_gen_ivtbl_get(obj, 0, &ivtbl);
             }
 
@@ -1412,7 +1412,7 @@ vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t shape_source_id, shap
 }
 
 static inline VALUE
-vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t shape_source_id, shape_id_t shape_dest_id, uint32_t index)
+vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, uint32_t index)
 {
 #if OPT_IC_FOR_IVAR
     switch (BUILTIN_TYPE(obj)) {
@@ -1427,20 +1427,20 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t shape_source_id, shape_id_t s
 
                 if (shape_id != NO_CACHE_SHAPE_ID) {
                     // Do we have a cache hit *and* is the CC intitialized
-                    if (shape_id == shape_source_id) {
-                        RUBY_ASSERT(shape_dest_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
+                    if (shape_id == source_shape_id) {
+                        RUBY_ASSERT(dest_shape_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
 
                         VM_ASSERT(!rb_ractor_shareable_p(obj));
 
-                        if (shape_dest_id != shape_id) {
+                        if (dest_shape_id != shape_id) {
                             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                                 rb_init_iv_list(obj);
                             }
-                            ROBJECT_SET_SHAPE_ID(obj, shape_dest_id);
-                            RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(shape_dest_id));
+                            ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);
+                            RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
                         }
                         else {
-                            RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);
+                            RUBY_ASSERT(GET_VM()->shape_list[dest_shape_id]);
                         }
 
                         RUBY_ASSERT(index < ROBJECT_NUMIV(obj));
@@ -1559,17 +1559,17 @@ vm_getinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, IVC ic)
 static inline void
 vm_setinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, VALUE val, IVC ic)
 {
-    shape_id_t shape_source_id = vm_ic_attr_index_shape_source_id(ic);
+    shape_id_t source_shape_id = vm_ic_attr_index_source_shape_id(ic);
     uint32_t index = vm_ic_attr_index(ic);
-    shape_id_t shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
-    if (vm_setivar(obj, id, val, shape_source_id, shape_dest_id, index) == Qundef) {
+    shape_id_t dest_shape_id = vm_ic_attr_index_dest_shape_id(ic);
+    if (vm_setivar(obj, id, val, source_shape_id, dest_shape_id, index) == Qundef) {
         switch (BUILTIN_TYPE(obj)) {
             case T_OBJECT:
             case T_CLASS:
             case T_MODULE:
                 break;
             default:
-                if (vm_setivar_default(obj, id, val, shape_source_id, shape_dest_id, index) != Qundef) {
+                if (vm_setivar_default(obj, id, val, source_shape_id, dest_shape_id, index) != Qundef) {
                     return;
                 }
         }
@@ -3274,11 +3274,11 @@ vm_call_attrset_direct(rb_execution_context_t *ec, rb_control_frame_t *cfp, cons
     RB_DEBUG_COUNTER_INC(ccf_attrset);
     VALUE val = *(cfp->sp - 1);
     cfp->sp -= 2;
-    shape_id_t shape_source_id = vm_cc_attr_index_shape_source_id(cc);
+    shape_id_t source_shape_id = vm_cc_attr_index_source_shape_id(cc);
     uint32_t index = vm_cc_attr_index(cc);
-    shape_id_t shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
+    shape_id_t dest_shape_id = vm_cc_attr_index_dest_shape_id(cc);
     ID id = vm_cc_cme(cc)->def->body.attr.id;
-    VALUE res = vm_setivar(obj, id, val, shape_source_id, shape_dest_id, index);
+    VALUE res = vm_setivar(obj, id, val, source_shape_id, dest_shape_id, index);
     if (res == Qundef) {
         switch (BUILTIN_TYPE(obj)) {
             case T_OBJECT:
@@ -3287,7 +3287,7 @@ vm_call_attrset_direct(rb_execution_context_t *ec, rb_control_frame_t *cfp, cons
                 break;
             default:
                 {
-                    res = vm_setivar_default(obj, id, val, shape_source_id, shape_dest_id, index);
+                    res = vm_setivar_default(obj, id, val, source_shape_id, dest_shape_id, index);
                     if (res != Qundef) {
                         return res;
                     }

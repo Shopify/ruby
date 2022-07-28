@@ -286,11 +286,11 @@ struct rb_callcache {
 
     union {
         /*
-         * attr_index is also storing shape_source_id and shape_dest_id in the
+         * attr_index is also storing source_shape_id and dest_shape_id in the
          * following way:
          *
          * ---16 bits-------|---16 bits-----|-----32 bits-----
-         * shape_source_id  | shape_dest_id | attr_index
+         * source_shape_id  | dest_shape_id | attr_index
          */
         const uint64_t attr_index;
         const enum method_missing_reason method_missing_reason; /* used by method_missing */
@@ -394,14 +394,14 @@ vm_cc_attr_shape_id(const struct rb_callcache *cc)
 }
 
 static inline uint16_t
-vm_cc_attr_index_shape_source_id(const struct rb_callcache *cc)
+vm_cc_attr_index_source_shape_id(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     return cc->aux_.attr_index >> 48;
 }
 
 static inline uint16_t
-vm_cc_attr_index_shape_dest_id(const struct rb_callcache *cc)
+vm_cc_attr_index_dest_shape_id(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     return (cc->aux_.attr_index >> 32) & 0xFFFF;
@@ -429,14 +429,14 @@ vm_ic_attr_shape_id(const struct iseq_inline_iv_cache_entry *ic)
 }
 
 static inline uint16_t
-vm_ic_attr_index_shape_source_id(const struct iseq_inline_iv_cache_entry *ic)
+vm_ic_attr_index_source_shape_id(const struct iseq_inline_iv_cache_entry *ic)
 {
     // VM_ASSERT(IMEMO_TYPE_P(ic, imemo_callcache));
     return ic->source_shape_id;
 }
 
 static inline uint16_t
-vm_ic_attr_index_shape_dest_id(const struct iseq_inline_iv_cache_entry *ic)
+vm_ic_attr_index_dest_shape_id(const struct iseq_inline_iv_cache_entry *ic)
 {
     // VM_ASSERT(IMEMO_TYPE_P(ic, imemo_callcache));
     return ic->dest_shape_id;

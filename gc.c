@@ -7371,14 +7371,14 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
             // Check it's an attr_(reader|writer)
             if (cc->cme_ && (cc->cme_->def->type == VM_METHOD_TYPE_ATTRSET ||
                         cc->cme_->def->type == VM_METHOD_TYPE_IVAR)) {
-                shape_id_t shape_source_id = vm_cc_attr_index_shape_source_id(cc);
-                shape_id_t shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
-                if (shape_source_id != INVALID_SHAPE_ID) {
-                    rb_shape_t *shape = rb_shape_get_shape_by_id(shape_source_id);
+                shape_id_t source_shape_id = vm_cc_attr_index_source_shape_id(cc);
+                shape_id_t dest_shape_id = vm_cc_attr_index_dest_shape_id(cc);
+                if (source_shape_id != INVALID_SHAPE_ID) {
+                    rb_shape_t *shape = rb_shape_get_shape_by_id(source_shape_id);
                     rb_gc_mark((VALUE)shape);
                 }
-                if (shape_dest_id != INVALID_SHAPE_ID) {
-                    rb_shape_t *shape = rb_shape_get_shape_by_id(shape_dest_id);
+                if (dest_shape_id != INVALID_SHAPE_ID) {
+                    rb_shape_t *shape = rb_shape_get_shape_by_id(dest_shape_id);
                     rb_gc_mark((VALUE)shape);
                 }
             }
