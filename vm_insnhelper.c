@@ -1374,8 +1374,45 @@ vm_setivar_slowpath_attr(VALUE obj, ID id, VALUE val, const struct rb_callcache 
     return vm_setivar_slowpath(obj, id, val, NULL, NULL, cc, true);
 }
 
+NOINLINE(static VALUE vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t shape_source_id, shape_id_t shape_dest_id, uint32_t index));
+static VALUE
+vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t shape_source_id, shape_id_t shape_dest_id, uint32_t index)
+{
+    shape_id_t shape_id = rb_generic_shape_id(obj);
+
+    if (shape_id != NO_CACHE_SHAPE_ID) {
+        // Do we have a cache hit *and* is the CC intitialized
+        if (shape_id == shape_source_id) {
+            RUBY_ASSERT(shape_dest_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
+
+            struct gen_ivtbl *ivtbl = 0;
+            if (shape_dest_id != shape_id) {
+                ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
+                ivtbl->shape_id = shape_dest_id;
+                RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(shape_dest_id));
+            }
+            else {
+                // Just get the IV table
+                RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);
+                rb_gen_ivtbl_get(obj, 0, &ivtbl);
+            }
+
+            VALUE *ptr = ivtbl->ivptr;
+
+            // Ensuring we have a place to store the IV value
+            RB_OBJ_WRITE(obj, &ptr[index], val);
+
+            RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
+
+            return val; /* inline cache hit */
+        }
+    }
+
+    return Qundef;
+}
+
 static inline VALUE
-vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_source_id, shape_id_t shape_dest_id, uint32_t index)
+vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t shape_source_id, shape_id_t shape_dest_id, uint32_t index)
 {
 #if OPT_IC_FOR_IVAR
     switch (BUILTIN_TYPE(obj)) {
@@ -1422,39 +1459,8 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
       case T_CLASS:
       case T_MODULE:
         RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_noobject);
-        break;
       default:
-        {
-            shape_id_t shape_id = rb_generic_shape_id(obj);
-
-            if (shape_id != NO_CACHE_SHAPE_ID) {
-                // Do we have a cache hit *and* is the CC intitialized
-                if (shape_id == shape_source_id) {
-                    RUBY_ASSERT(shape_dest_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
-
-                    struct gen_ivtbl *ivtbl = 0;
-                    if (shape_dest_id != shape_id) {
-                        ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
-                        ivtbl->shape_id = shape_dest_id;
-                        RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(shape_dest_id));
-                    }
-                    else {
-                        // Just get the IV table
-                        RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);
-                        rb_gen_ivtbl_get(obj, 0, &ivtbl);
-                    }
-
-                    VALUE *ptr = ivtbl->ivptr;
-
-                    // Ensuring we have a place to store the IV value
-                    RB_OBJ_WRITE(obj, &ptr[index], val);
-
-                    RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
-
-                    return val; /* inline cache hit */
-                }
-            }
-        }
+        break;
     }
 
     return Qundef;
@@ -1556,7 +1562,17 @@ vm_setinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, VALUE val, IVC i
     shape_id_t shape_source_id = vm_ic_attr_index_shape_source_id(ic);
     uint32_t index = vm_ic_attr_index(ic);
     shape_id_t shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
-    if (vm_setivar(obj, id, val, iseq, shape_source_id, shape_dest_id, index) == Qundef) {
+    if (vm_setivar(obj, id, val, shape_source_id, shape_dest_id, index) == Qundef) {
+        switch (BUILTIN_TYPE(obj)) {
+            case T_OBJECT:
+            case T_CLASS:
+            case T_MODULE:
+                break;
+            default:
+                if (vm_setivar_default(obj, id, val, shape_source_id, shape_dest_id, index) != Qundef) {
+                    return;
+                }
+        }
         vm_setivar_slowpath_ivar(obj, id, val, iseq, ic);
     }
 }
@@ -3262,8 +3278,23 @@ vm_call_attrset_direct(rb_execution_context_t *ec, rb_control_frame_t *cfp, cons
     uint32_t index = vm_cc_attr_index(cc);
     shape_id_t shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
     ID id = vm_cc_cme(cc)->def->body.attr.id;
-    VALUE res = vm_setivar(obj, id, val, NULL, shape_source_id, shape_dest_id, index);
-    if (res == Qundef) res = vm_setivar_slowpath_attr(obj, id, val, cc);
+    VALUE res = vm_setivar(obj, id, val, shape_source_id, shape_dest_id, index);
+    if (res == Qundef) {
+        switch (BUILTIN_TYPE(obj)) {
+            case T_OBJECT:
+            case T_CLASS:
+            case T_MODULE:
+                break;
+            default:
+                {
+                    res = vm_setivar_default(obj, id, val, shape_source_id, shape_dest_id, index);
+                    if (res != Qundef) {
+                        return res;
+                    }
+                }
+        }
+        res = vm_setivar_slowpath_attr(obj, id, val, cc);
+    }
     return res;
 }
 
