@@ -9,16 +9,28 @@ require 'rdoc'
 #
 # = \RDoc Markup Reference
 #
-# [Note]
+# Notes:
 #
-#   Examples in this reference are Ruby code and comments.
-#   Certain differences among the sources are noted.
+# - Examples in this reference are Ruby code and comments;
+#   certain differences from other sources
+#   (such as C code and comments) are noted.
+# - An example that shows rendered HTML output
+#   displays that output in a blockquote:
+#
+#   Rendered HTML:
+#   >>>
+#     Some stuff
 #
 # \RDoc-generated documentation is derived from and controlled by:
 #
-# - Single-line or multi-line comments that precede certain definitions.
-# - \RDoc directives in trailing comments (on the same line as code).
-# - The Ruby code itself.
+# - Single-line or multi-line comments that precede certain definitions;
+#   see {Markup in Comments}[rdoc-ref:RDoc::MarkupReference@Markup+in+Comments].
+# - \RDoc directives in trailing comments (on the same line as code);
+#   see <tt>:nodoc:</tt>, <tt>:doc:</tt>, and <tt>:notnew</tt>.
+# - \RDoc directives in single-line comments;
+#   see other {Directives}[rdoc-ref:RDoc::MarkupReference@Directives].
+# - The Ruby code itself;
+#   see {Documentation Derived from Ruby Code}[rdoc-ref:RDoc::MarkupReference@Documentation+Derived+from+Ruby+Code]
 #
 # == Markup in Comments
 #
@@ -76,12 +88,12 @@ require 'rdoc'
 #   # You'll love it.
 #
 # Rendered HTML:
+# >>>
+#   \RDoc produces HTML and command-line documentation for Ruby projects.
+#   \RDoc includes the rdoc and ri tools for generating and displaying
+#   documentation from the command-line.
 #
-# \RDoc produces HTML and command-line documentation for Ruby projects.
-# \RDoc includes the rdoc and ri tools for generating and displaying
-# documentation from the command-line.
-#
-# You'll love it.
+#   You'll love it.
 #
 # A paragraph may contain nested blocks, including:
 #
@@ -113,16 +125,17 @@ require 'rdoc'
 #   # This is not verbatim text.
 #
 # Rendered HTML:
+# >>>
+#   This is not verbatim text.
 #
-# This is not verbatim text.
-#
-#   This is verbatim text.
-#     Whitespace is honored.     # See?
+#     This is verbatim text.
 #       Whitespace is honored.     # See?
+#         Whitespace is honored.     # See?
 #
-#   This is still the same verbatim text block.
+#     This is still the same verbatim text block.
 #
-# This is not verbatim text.
+#   This is not verbatim text.
+#
 # ==== Code Blocks
 #
 # A special case of verbatim text is the <em>code block</em>,
@@ -134,12 +147,24 @@ require 'rdoc'
 # - Has a contrasting background color.
 # - Has syntax highlighting.
 #
-# Example:
+# Example input:
 #
-#   def foo(name = '', value = 0)
-#     @name = name      # Whitespace is still honored.
-#     @value = value
-#   end
+#   Consider this method:
+#
+#     def foo(name = '', value = 0)
+#       @name = name      # Whitespace is still honored.
+#       @value = value
+#     end
+#
+#
+# Rendered HTML:
+# >>>
+#   Consider this method:
+#
+#     def foo(name = '', value = 0)
+#       @name = name      # Whitespace is still honored.
+#       @value = value
+#     end
 #
 # Pro tip:  If your indented Ruby code does not get highlighted,
 # it may contain a syntax error.
@@ -180,14 +205,14 @@ require 'rdoc'
 #   # - Last one.
 #
 # Rendered HTML:
+# >>>
+#   - An item.
+#   - Another.
+#   - An item spanning
+#     multiple lines.
 #
-# - An item.
-# - Another.
-# - An item spanning
-#   multiple lines.
-#
-# * Yet another.
-# - Last one.
+#   * Yet another.
+#   - Last one.
 #
 # ===== Numbered Lists
 #
@@ -206,14 +231,14 @@ require 'rdoc'
 #   # 1000. Last one.
 #
 # Rendered HTML:
+# >>>
+#   100. An item.
+#   10. Another.
+#   1. An item spanning
+#      multiple lines.
 #
-# 100. An item.
-# 10. Another.
-# 1. An item spanning
-#    multiple lines.
-#
-# 1. Yet another.
-# 1000. Last one.
+#   1. Yet another.
+#   1000. Last one.
 #
 # ===== Lettered Lists
 #
@@ -232,12 +257,12 @@ require 'rdoc'
 #   # a. Last one.
 #
 # Rendered HTML:
+# >>>
+#   z. An item.
+#   y. Another.
 #
-# z. An item.
-# y. Another.
-#
-# x. Yet another.
-# a. Last one.
+#   x. Yet another.
+#   a. Last one.
 #
 # ===== Labeled Lists
 #
@@ -257,14 +282,14 @@ require 'rdoc'
 #   # bam:: Last one.
 #
 # Rendered HTML:
+# >>>
+#   [foo] An item.
+#   bat:: Another.
+#   [bag] An item spanning
+#         multiple lines.
 #
-# [foo] An item.
-# bat:: Another.
-# [bag] An item spanning
-#       multiple lines.
-#
-# [bar baz] Yet another.
-# bam:: Last one.
+#   [bar baz] Yet another.
+#   bam:: Last one.
 #
 # ===== Blocks Nested in Lists
 #
@@ -313,33 +338,69 @@ require 'rdoc'
 #   # ---
 #
 # Rendered HTML:
+# >>>
+#   ------
+#   Stuff between.
 #
-# ------
-# Stuff between.
+#   \--- Not a horizontal rule.
 #
-# \--- Not a horizontal rule.
+#   -- Also not a horizontal rule.
 #
-# -- Also not a horizontal rule.
-#
-# ---
+#   ---
 #
 # ==== Directives
 #
 # ===== Directives for Allowing or Suppressing Documentation
 #
-# Each directive described in this section must appear on a line by itself.
+# - <tt># :stopdoc:</tt>:
 #
-# - [<tt>:stopdoc:</tt>]
-# Specifies that \RDoc should ignore markup
-# until next <tt>:startdoc:</tt> directive or end-of-file.
-# - [<tt>:startdoc:</tt>]
-#   Specifies that \RDoc should resume parsing markup.
-# - [<tt>:enddoc:</tt>]
-#   Specifies that \RDoc should ignore markup to end-of-file
-#   regardless of other directives.
+#   - Appears on a line by itself.
+#   - Specifies that \RDoc should ignore markup
+#     until next <tt>:startdoc:</tt> directive or end-of-file.
+#
+# - <tt># :startdoc:</tt>:
+#
+#   - Appears on a line by itself.
+#   - Specifies that \RDoc should resume parsing markup.
+#
+# - <tt># :enddoc:</tt>:
+#
+#   - Appears on a line by itself.
+#   - Specifies that \RDoc should ignore markup to end-of-file
+#     regardless of other directives.
+#
+# - <tt># :nodoc:</tt>:
+#
+#   - Appended to a line of code
+#     that defines a class, module, method, alias, constant, or attribute.
+#   - Specifies that the defined object should not be documented.
+#
+# - <tt># :nodoc: all</tt>:
+#
+#   - Appended to a line of code
+#     that defines a class or module.
+#   - Specifies that the class or module should not be documented.
+#     By default, however, a nested class or module _will_ be documented.
+#
+# - <tt># :doc:</tt>:
+#
+#   - Appended to a line of code
+#     that defines a class, module, method, alias, constant, or attribute.
+#   - Specifies the defined object should be documented, even if otherwise
+#     would not be documented.
+#
+# - <tt># :notnew:</tt> (aliased as <tt>:not_new:</tt> and <tt>:not-new:</tt>):
+#
+#   - Appended to a line of code
+#     that defines instance method +initialize+.
+#   - Specifies that singleton method +new+ should not be documented.
+#     By default, Ruby fakes a corresponding singleton method +new+,
+#     which \RDoc includes in the documentation.
+#     Note that instance method +initialize+ is private, and so by default
+#     is not documented.
 #
 # For Ruby code, but not for other \RDoc sources,
-# there is a shorthand for [<tt>:stopdoc:</tt>] and [<tt>:startdoc:</tt>]:
+# there is a shorthand for <tt>:stopdoc:</tt> and <tt>:startdoc:</tt>:
 #
 #   # Documented.
 #   #--
@@ -347,45 +408,64 @@ require 'rdoc'
 #   #++
 #   # Documented.
 #
+# For C code, any of directives <tt>:startdoc:</tt>, <tt>:enddoc:</tt>,
+# and <tt>:nodoc:</tt> may appear in a stand-alone comment:
+#
+#   /* :startdoc: */
+#   /* :stopdoc: */
+#   /* :enddoc: */
+#
 # ===== Directive for Specifying \RDoc Source Format
 #
-# This directive described must appear on a line by itself.
+# - <tt># :markup: _type_</tt>:
 #
-# - [<tt>:markup: _type_</tt>]
-#   Specifies the format for the \RDoc input.
-#   Parameter +type+ is one of +markdown+, +rd+, +rdoc+, +tomdoc+.
+#   - Appears on a line by itself.
+#   - Specifies the format for the \RDoc input;
+#     parameter +type+ is one of +markdown+, +rd+, +rdoc+, +tomdoc+.
 #
 # ===== Directives for HTML Output
 #
-# Each directive described in this section must appear on a line by itself.
+# - <tt># :title: _text_</tt>:
 #
-# - [<tt>:title: _text_</tt>]
-#   Specifies the title for the HTML output.
-# - [<tt>:main: _file_name_</tt>]
-#   Specifies the HTML file to be displayed first.
+#   - Appears on a line by itself.
+#   - Specifies the title for the HTML output.
+#
+# - <tt># :main: _filename_</tt>:
+#   - Appears on a line by itself.
+#   - Specifies the HTML file to be displayed first.
 #
 # ===== Directives for Method Documentation
 #
-# - [<tt>:call-seq:</tt>]
-#   For the given method, specifies the calling sequence to be reported in the HTML,
-#   overriding the actual calling sequence in the Ruby code.
-#   See method #call_seq_directive.
-# - [<tt>:args: _arg_names_</tt> (aliased as <tt>:arg</tt>)]
-#   For the given method, specifies the arguments to be reported in the HTML,
-#   overriding the actual arguments in the Ruby code.
-#   See method #args_directive.
-# - [<tt>:yields: _arg_names_</tt> (aliased as <tt>:yield:</tt>)]
-#   For the given method, specifies the yield arguments to be reported in the HTML,
-#   overriding the actual yield in the Ruby code.
-#   See method #yields_directive.
+# - <tt># :call-seq:</tt>:
 #
-# Note that \RDoc can build the calling sequence for a Ruby-coded method,
-# but not for other languages.
-# You may want to override that by explicitly giving a <tt>:call-seq:</tt>
-# directive if you want to include:
+#   - Appears on a line by itself.
+#   - Specifies the calling sequence to be reported in the HTML,
+#     overriding the actual calling sequence in the code.
+#     See method #call_seq_directive.
 #
-# - A return type, which is not automatically inferred.
-# - Multiple calling sequences.
+#   Note that \RDoc can build the calling sequence for a Ruby-coded method,
+#   but not for other languages.
+#   You may want to override that by explicitly giving a <tt>:call-seq:</tt>
+#   directive if you want to include:
+#
+#   - A return type, which is not automatically inferred.
+#   - Multiple calling sequences.
+#
+#   For C code, the directive may appear in a stand-alone comment.
+#
+# - <tt># :args: _arg_names_</tt> (aliased as <tt>:arg:</tt>):
+#
+#   - Appears on a line by itself.
+#   - Specifies the arguments to be reported in the HTML,
+#     overriding the actual arguments in the code.
+#     See method #args_directive.
+#
+# - <tt># :yields: _arg_names_</tt> (aliased as <tt>:yield:</tt>):
+#
+#   - Appears on a line by itself.
+#   - Specifies the yield arguments to be reported in the HTML,
+#     overriding the actual yield in the code.
+#     See method #yields_directive.
 #
 # ===== Directives for Organizing Documentation
 #
@@ -397,16 +477,15 @@ require 'rdoc'
 #
 # You can use directives to modify those behaviors.
 #
-# - [<tt>:section: _section_title_</tt>]
+# - <tt># :section: _section_title_</tt>:
 #
-#   Directive <tt>:section: <em>section_title</em></tt> specifies that
-#   following methods are to be grouped into a section
-#   with the given <em>section_title</em> as its heading.
-#   This directive remains in effect until another such directive is given,
-#   but may be temporarily overridden by directive <tt>:category:</tt>.
-#   See below.
-#
-#   Directive <tt>:section:</tt> with no title reverts to the default section.
+#   - Appears on a line by itself.
+#   - Specifies that following methods are to be grouped into the section
+#     with the given <em>section_title</em>,
+#     or into the default section if no title is given.
+#     The directive remains in effect until another such directive is given,
+#     but may be temporarily overridden by directive <tt>:category:</tt>.
+#     See below.
 #
 #   The comment block containing this directive:
 #
@@ -434,56 +513,28 @@ require 'rdoc'
 #   You can use directive <tt>:category:</tt> to temporarily
 #   override the current section.
 #
-# - [<tt>:category: _section_title_</tt>]
+# - <tt># :category: _section_title_</tt>:
 #
-#   Directive <tt>:category: <em>section_title</em></tt> specifies that
-#   just one following method is to be included in the given section.
-#   Subsequent methods are to be grouped into the current section.
-#
-#   Directive <tt>:category:</tt> with no title specifies that just one
-#   following method is to be included in the default section.
+#   - Appears on a line by itself.
+#   - Specifies that just one following method is to be included
+#     in the given section, or in the default section if no title is given.
+#     Subsequent methods are to be grouped into the current section.
 #
 # ===== Directive for Including a File
 #
-# - [<tt>:include: _filename_</tt>]
+# - <tt># :include: _filepath_</tt>:
 #
-#   Include the contents of the named file at this point.
-#   This directive must appear alone on one line, possibly preceded by spaces.
-#   In this position, it can be escaped with a backslash in front of the first colon.
+#   - Appears on a line by itself.
+#   - Specifies that the contents of the given file
+#     are to be included at this point.
+#     The file content is shifted to have the same indentation as the colon
+#     at the start of the directive.
 #
-#   The file is searched for in the directories
-#   given with the <tt>--include</tt> command-line option,
-#   or in the current directory by default.
-#   The file content is shifted to have the same indentation as the colon
-#   at the start of the directive.
+#     The file is searched for in the directories
+#     given with the <tt>--include</tt> command-line option,
+#     or by default in the current directory.
 #
-# ===== Directives in Trailing Comments
-#
-# Each \RDoc directive in this section appears in a trailing
-# comment in a line of code.
-#
-# - [<tt>:nodoc:</tt>]
-#   - Appears in a trailing comment on a line of code
-#     that defines a class, module, method, alias, constant, or attribute.
-#   - Specifies that the defined object should not be documented.
-# - [<tt>:nodoc: all</tt>]
-#   - Appears in a trailing comment on a line of code
-#     that defines a class or module.
-#   - Specifies that the class or module should not be documented.
-#     By default, however, a nested class or module _will_ be documented
-# - [<tt>:doc:</tt>]
-#   - Appears in a trailing comment on a line of code
-#     that defines a class, module, method, alias, constant, or attribute.
-#   - Specifies the defined object should be documented, even if otherwise
-#     would not be documented.
-# - [<tt>:notnew:</tt> (aliased as <tt>:not_new</tt> and <tt>:not-new:</tt>)]
-#   - Appears in a trailing comment on a line of code
-#     that defines instance method +initialize+.
-#   - Specifies that singleton method +new+ should not be documented.
-#     By default, Ruby fakes a corresponding singleton method +new+,
-#     which \RDoc includes in the documentaton.
-#     Note that instance method +initialize+ is private, and so by default
-#     is not documented.
+#   For C code, the directive may appear in a stand-alone comment
 #
 # === Text Markup
 #

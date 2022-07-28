@@ -8690,7 +8690,8 @@ gc_compact_move(rb_objspace_t *objspace, rb_heap_t *heap, rb_size_pool_t *size_p
 }
 
 static bool
-gc_compact_plane(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap, uintptr_t p, bits_t bitset, struct heap_page *page) {
+gc_compact_plane(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap, uintptr_t p, bits_t bitset, struct heap_page *page)
+{
     short slot_size = page->slot_size;
     short slot_bits = slot_size / BASE_SLOT_SIZE;
     GC_ASSERT(slot_bits > 0);
@@ -8749,7 +8750,8 @@ gc_compact_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *h
 }
 
 static bool
-gc_compact_all_compacted_p(rb_objspace_t *objspace) {
+gc_compact_all_compacted_p(rb_objspace_t *objspace)
+{
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
         rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
@@ -9200,25 +9202,29 @@ rb_gc_writebarrier_unprotect(VALUE obj)
         gc_report(2, objspace, "rb_gc_writebarrier_unprotect: %s %s\n", obj_info(obj),
                   rgengc_remembered(objspace, obj) ? " (already remembered)" : "");
 
-        if (RVALUE_OLD_P(obj)) {
-            gc_report(1, objspace, "rb_gc_writebarrier_unprotect: %s\n", obj_info(obj));
-            RVALUE_DEMOTE(objspace, obj);
-            gc_mark_set(objspace, obj);
-            gc_remember_unprotected(objspace, obj);
+        RB_VM_LOCK_ENTER_NO_BARRIER();
+        {
+            if (RVALUE_OLD_P(obj)) {
+                gc_report(1, objspace, "rb_gc_writebarrier_unprotect: %s\n", obj_info(obj));
+                RVALUE_DEMOTE(objspace, obj);
+                gc_mark_set(objspace, obj);
+                gc_remember_unprotected(objspace, obj);
 
 #if RGENGC_PROFILE
-            objspace->profile.total_shade_operation_count++;
+                objspace->profile.total_shade_operation_count++;
 #if RGENGC_PROFILE >= 2
-            objspace->profile.shade_operation_count_types[BUILTIN_TYPE(obj)]++;
+                objspace->profile.shade_operation_count_types[BUILTIN_TYPE(obj)]++;
 #endif /* RGENGC_PROFILE >= 2 */
 #endif /* RGENGC_PROFILE */
-        }
-        else {
-            RVALUE_AGE_RESET(obj);
-        }
+            }
+            else {
+                RVALUE_AGE_RESET(obj);
+            }
 
-        RB_DEBUG_COUNTER_INC(obj_wb_unprotect);
-        MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
+            RB_DEBUG_COUNTER_INC(obj_wb_unprotect);
+            MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
+        }
+        RB_VM_LOCK_LEAVE_NO_BARRIER();
     }
 }
 
@@ -10196,16 +10202,40 @@ gc_sort_heap_by_empty_slots(rb_objspace_t *objspace)
 static void
 gc_ref_update_array(rb_objspace_t * objspace, VALUE v)
 {
-    long i, len;
+    if (ARY_SHARED_P(v)) {
+#if USE_RVARGC
+        VALUE old_root = RARRAY(v)->as.heap.aux.shared_root;
+#endif
 
-    if (ARY_SHARED_P(v)) return;
+        UPDATE_IF_MOVED(objspace, RARRAY(v)->as.heap.aux.shared_root);
 
-    len = RARRAY_LEN(v);
-    if (len > 0) {
-        VALUE *ptr = (VALUE *)RARRAY_CONST_PTR_TRANSIENT(v);
-        for (i = 0; i < len; i++) {
-            UPDATE_IF_MOVED(objspace, ptr[i]);
+#if USE_RVARGC
+        VALUE new_root = RARRAY(v)->as.heap.aux.shared_root;
+        // If the root is embedded and its location has changed
+        if (ARY_EMBED_P(new_root) && new_root != old_root) {
+            size_t offset = (size_t)(RARRAY(v)->as.heap.ptr - RARRAY(old_root)->as.ary);
+            GC_ASSERT(RARRAY(v)->as.heap.ptr >= RARRAY(old_root)->as.ary);
+            RARRAY(v)->as.heap.ptr = RARRAY(new_root)->as.ary + offset;
         }
+#endif
+    }
+    else {
+        long len = RARRAY_LEN(v);
+
+        if (len > 0) {
+            VALUE *ptr = (VALUE *)RARRAY_CONST_PTR_TRANSIENT(v);
+            for (long i = 0; i < len; i++) {
+                UPDATE_IF_MOVED(objspace, ptr[i]);
+            }
+        }
+
+#if USE_RVARGC
+        if ((size_t)GET_HEAP_PAGE(v)->slot_size >= rb_ary_size_as_embedded(v)) {
+            if (rb_ary_embeddable_p(v)) {
+                rb_ary_make_embedded(v);
+            }
+        }
+#endif
     }
 }
 
@@ -10700,19 +10730,7 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
         return;
 
       case T_ARRAY:
-        if (ARY_SHARED_P(obj)) {
-            UPDATE_IF_MOVED(objspace, any->as.array.as.heap.aux.shared_root);
-        }
-        else {
-            gc_ref_update_array(objspace, obj);
-        }
-#if USE_RVARGC
-        if ((size_t)GET_HEAP_PAGE(obj)->slot_size >= rb_ary_size_as_embedded(obj)) {
-            if (rb_ary_embeddable_p(obj)) {
-                rb_ary_make_embedded(obj);
-            }
-        }
-#endif
+        gc_ref_update_array(objspace, obj);
         break;
 
       case T_HASH:
@@ -12603,6 +12621,7 @@ objspace_xfree(rb_objspace_t *objspace, void *ptr, size_t old_size)
 
     objspace_malloc_increase(objspace, ptr, 0, old_size, MEMOP_TYPE_FREE) {
         free(ptr);
+        ptr = NULL;
         RB_DEBUG_COUNTER_INC(heap_xfree);
     }
 }
