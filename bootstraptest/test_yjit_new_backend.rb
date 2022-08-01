@@ -177,6 +177,14 @@ assert_equal 'false', %q{
     function()
 }
 
+# setglobal
+assert_equal 'foo', %q{
+    def foo()
+      $foo = "foo"
+    end
+    foo()
+    $foo
+}
 
 
 
