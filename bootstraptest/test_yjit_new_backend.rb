@@ -186,7 +186,29 @@ assert_equal 'foo', %q{
     $foo
 }
 
+# getclassvariable
+assert_equal 'foo', %q{
+    class Foo
+      @@foo = "foo"
 
+      def self.foo
+        @@foo
+      end
+    end
+
+    Foo.foo
+}
+
+# setclassvariable
+assert_equal 'foo', %q{
+    class Foo
+      def self.foo
+        @@foo = "foo"
+      end
+    end
+
+    Foo.foo
+}
 
 
 
