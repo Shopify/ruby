@@ -144,6 +144,19 @@ assert_equal 'true', %q{
     foo()
 }
 
+# opt_send_without_block (VM_METHOD_TYPE_ATTRSET)
+assert_equal 'foo', %q{
+    class Foo
+      attr_writer :foo
+
+      def foo()
+        self.foo = "foo"
+      end
+    end
+    foo = Foo.new
+    foo.foo
+}
+
 # getglobal
 assert_equal '333', %q{
     $bar = 333
