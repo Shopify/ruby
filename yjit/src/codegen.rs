@@ -5300,31 +5300,28 @@ fn gen_setglobal(
     KeepCompiling
 }
 
-/*
 fn gen_anytostring(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     // Save the PC and SP since we might call #to_s
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     let str = ctx.stack_pop(1);
     let val = ctx.stack_pop(1);
 
-    mov(cb, C_ARG_REGS[0], str);
-    mov(cb, C_ARG_REGS[1], val);
-
-    call_ptr(cb, REG0, rb_obj_as_string_result as *const u8);
+    let val = asm.ccall(rb_obj_as_string_result as *const u8, vec![str, val]);
 
     // Push the return value
     let stack_ret = ctx.stack_push(Type::TString);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, val);
 
     KeepCompiling
 }
 
+/*
 fn gen_objtostring(
     jit: &mut JITState,
     ctx: &mut Context,
@@ -5361,25 +5358,23 @@ fn gen_objtostring(
         gen_send_general(jit, ctx, cb, ocb, cd, None)
     }
 }
+*/
 
 fn gen_intern(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     // Save the PC and SP because we might allocate
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     let str = ctx.stack_pop(1);
-
-    mov(cb, C_ARG_REGS[0], str);
-
-    call_ptr(cb, REG0, rb_str_intern as *const u8);
+    let sym = asm.ccall(rb_str_intern as *const u8, vec![str]);
 
     // Push the return value
     let stack_ret = ctx.stack_push(Type::Unknown);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, sym);
 
     KeepCompiling
 }
@@ -5387,7 +5382,7 @@ fn gen_intern(
 fn gen_toregexp(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let opt = jit_get_arg(jit, 0).as_i64();
@@ -5395,38 +5390,48 @@ fn gen_toregexp(
 
     // Save the PC and SP because this allocates an object and could
     // raise an exception.
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     let values_ptr = ctx.sp_opnd(-((SIZEOF_VALUE as isize) * (cnt as isize)));
     ctx.stack_pop(cnt);
 
-    mov(cb, C_ARG_REGS[0], imm_opnd(0));
-    mov(cb, C_ARG_REGS[1], imm_opnd(cnt.try_into().unwrap()));
-    lea(cb, C_ARG_REGS[2], values_ptr);
-    call_ptr(cb, REG0, rb_ary_tmp_new_from_values as *const u8);
+    let ary = asm.ccall(
+        rb_ary_tmp_new_from_values as *const u8,
+        vec![
+            Opnd::Imm(0),
+            Opnd::UImm(jit_get_arg(jit, 1).as_u64()),
+            values_ptr,
+        ]
+    );
 
     // Save the array so we can clear it later
-    push(cb, RAX);
-    push(cb, RAX); // Alignment
-    mov(cb, C_ARG_REGS[0], RAX);
-    mov(cb, C_ARG_REGS[1], imm_opnd(opt));
-    call_ptr(cb, REG0, rb_reg_new_ary as *const u8);
+    asm.cpush(ary);
+    asm.cpush(ary); // Alignment
+
+    let val = asm.ccall(
+        rb_reg_new_ary as *const u8,
+        vec![
+            ary,
+            Opnd::Imm(opt),
+        ]
+    );
 
     // The actual regex is in RAX now.  Pop the temp array from
     // rb_ary_tmp_new_from_values into C arg regs so we can clear it
-    pop(cb, REG1); // Alignment
-    pop(cb, C_ARG_REGS[0]);
+    let ary = asm.cpop(); // Alignment
+    asm.cpop_into(ary);
 
     // The value we want to push on the stack is in RAX right now
     let stack_ret = ctx.stack_push(Type::Unknown);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, val);
 
     // Clear the temp array.
-    call_ptr(cb, REG0, rb_ary_clear as *const u8);
+    asm.ccall(rb_ary_clear as *const u8, vec![ary]);
 
     KeepCompiling
 }
 
+/*
 fn gen_getspecial(
     jit: &mut JITState,
     ctx: &mut Context,
@@ -5971,13 +5976,11 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
 
         YARVINSN_getglobal => Some(gen_getglobal),
         YARVINSN_setglobal => Some(gen_setglobal),
-        /*
         YARVINSN_anytostring => Some(gen_anytostring),
-        YARVINSN_objtostring => Some(gen_objtostring),
+        //YARVINSN_objtostring => Some(gen_objtostring),
         YARVINSN_intern => Some(gen_intern),
         YARVINSN_toregexp => Some(gen_toregexp),
-        YARVINSN_getspecial => Some(gen_getspecial),
-        */
+        //YARVINSN_getspecial => Some(gen_getspecial),
         YARVINSN_getclassvariable => Some(gen_getclassvariable),
         YARVINSN_setclassvariable => Some(gen_setclassvariable),
 
