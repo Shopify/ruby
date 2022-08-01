@@ -201,6 +201,14 @@ assert_equal 'foo', %q{
     Foo.foo
 }
 
+# getspecial
+assert_equal 'nil', %q{
+    def foo()
+      $1
+    end
+    foo().inspect
+}
+
 # setglobal
 assert_equal 'foo', %q{
     def foo()
