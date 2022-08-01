@@ -231,6 +231,7 @@ assert_equal 'foo', %q{
     $foo
 }
 
+<<<<<<< HEAD
 # anytostring, intern
 assert_equal 'true', %q{
     def foo()
@@ -247,6 +248,13 @@ assert_equal '/true/', %q{
     foo().inspect
 }
 
+# concatstrings
+assert_equal '9001', %q{
+    def foo()
+      "#{9001}"
+    end
+    foo()
+}
 
 
 
