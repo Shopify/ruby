@@ -574,7 +574,6 @@ pub struct iseq_inline_constant_cache {
     pub get_insn_idx: ::std::os::raw::c_uint,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
 pub struct iseq_inline_iv_cache_entry {
     pub source_shape_id: shape_id_t,
     pub dest_shape_id: shape_id_t,
