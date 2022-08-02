@@ -111,13 +111,11 @@ extern "C" {
 }
 pub const ROBJECT_EMBED: ruby_robject_flags = 8192;
 pub type ruby_robject_flags = u32;
-pub const ROBJECT_EMBED_LEN_MAX: ruby_robject_consts = 3;
-pub type ruby_robject_consts = u32;
-pub type shape_id_t = u16;
 pub const ROBJECT_OFFSET_NUMIV: i32 = 16;
 pub const ROBJECT_OFFSET_AS_HEAP_IVPTR: i32 = 24;
 pub const ROBJECT_OFFSET_AS_HEAP_IV_INDEX_TBL: i32 = 32;
 pub const ROBJECT_OFFSET_AS_ARY: i32 = 24;
+pub type shape_id_t = u16;
 extern "C" {
     pub static mut rb_mKernel: VALUE;
 }
@@ -576,6 +574,7 @@ pub struct iseq_inline_constant_cache {
     pub get_insn_idx: ::std::os::raw::c_uint,
 }
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct iseq_inline_iv_cache_entry {
     pub source_shape_id: shape_id_t,
     pub dest_shape_id: shape_id_t,
@@ -672,12 +671,6 @@ extern "C" {
     ) -> *const rb_callable_method_entry_t;
 }
 #[repr(C)]
-pub struct rb_iv_index_tbl_entry {
-    pub index: u32,
-    pub class_serial: rb_serial_t,
-    pub class_value: VALUE,
-}
-#[repr(C)]
 pub struct rb_cvar_class_tbl_entry {
     pub index: u32,
     pub global_cvar_state: rb_serial_t,
@@ -729,12 +722,6 @@ extern "C" {
 }
 extern "C" {
     pub fn rb_vm_insn_decode(encoded: VALUE) -> ::std::os::raw::c_int;
-}
-#[repr(C)]
-pub struct rb_cvar_class_tbl_entry {
-    pub index: u32,
-    pub global_cvar_state: rb_serial_t,
-    pub class_value: VALUE,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
