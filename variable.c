@@ -2084,7 +2084,8 @@ ivar_set(VALUE obj, ID id, VALUE val)
       }
       case T_CLASS:
       case T_MODULE:
-        transition_shape(obj, id, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
+        // TODO: Transition shapes on classes
+        //transition_shape(obj, id, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         rb_class_ivar_set(obj, id, val);
         break;
