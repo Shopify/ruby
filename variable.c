@@ -1784,7 +1784,7 @@ rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id)
     return shape;
 }
 
-inline rb_shape_t*
+rb_shape_t*
 rb_shape_get_shape_by_id(shape_id_t shape_id)
 {
     RUBY_ASSERT(shape_id != INVALID_SHAPE_ID);
