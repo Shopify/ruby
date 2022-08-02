@@ -66,7 +66,7 @@ impl Assembler
     /// Note: we intentionally exclude C_RET_REG (X0) from this list
     /// because of the way it's used in gen_leave() and gen_leave_exit()
     pub fn get_alloc_regs() -> Vec<Reg> {
-        vec![X11_REG, X12_REG]
+        vec![X11_REG, X12_REG, X13_REG]
     }
 
     /// Get a list of all of the caller-saved registers
@@ -193,7 +193,7 @@ impl Assembler
                     }
                 },
                 Op::CCall => {
-                    assert!(opnds.len() < C_ARG_REGS.len());
+                    assert!(opnds.len() < C_ARG_OPNDS.len());
 
                     // For each of the operands we're going to first load them
                     // into a register and then move them into the correct
@@ -202,7 +202,7 @@ impl Assembler
                     // which is both the return value and first argument register
                     for (idx, opnd) in opnds.into_iter().enumerate().rev() {
                         let value = asm.load(opnd);
-                        asm.mov(Opnd::Reg(C_ARG_REGREGS[idx]), value);
+                        asm.mov(C_ARG_OPNDS[idx], value);
                     }
 
                     // Now we push the CCall without any arguments so that it

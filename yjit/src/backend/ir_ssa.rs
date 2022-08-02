@@ -9,11 +9,13 @@ use crate::virtualmem::{CodePtr};
 use crate::asm::{CodeBlock, uimm_num_bits, imm_num_bits};
 use crate::core::{Context, Type, TempMapping};
 
+/*
 #[cfg(target_arch = "x86_64")]
 use crate::backend::x86_64::*;
 
 #[cfg(target_arch = "aarch64")]
 use crate::backend::arm64::*;
+
 
 pub const EC: Opnd = _EC;
 pub const CFP: Opnd = _CFP;
@@ -21,6 +23,23 @@ pub const SP: Opnd = _SP;
 
 pub const C_ARG_OPNDS: [Opnd; 6] = _C_ARG_OPNDS;
 pub const C_RET_OPND: Opnd = _C_RET_OPND;
+*/
+
+
+
+// Dummy reg struct
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub struct Reg
+{
+    reg_no: u8,
+    num_bits: u8,
+}
+
+
+
+
+
+
 
 /// Instruction opcodes
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -150,12 +169,19 @@ pub enum Op
     LiveReg,
 }
 
+/// Instruction idx in an assembler
+/// This is used like a pointer
+type InsnIdx = u32;
+
+/// Instruction operand index
+type OpndIdx = u32;
+
 // Memory operand base
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MemBase
 {
     Reg(u8),
-    InsnOut(usize),
+    InsnOut(InsnIdx),
 }
 
 // Memory location
@@ -194,7 +220,7 @@ pub enum Opnd
     Value(VALUE),
 
     // Output of a preceding instruction in this block
-    InsnOut{ idx: usize, num_bits: u8 },
+    InsnOut{ idx: InsnIdx, num_bits: u8 },
 
     // Low-level operands, for lowering
     Imm(i64),           // Raw signed immediate
@@ -336,14 +362,7 @@ impl Target
     pub fn unwrap_label_idx(&self) -> usize {
         match self {
             Target::Label(idx) => *idx,
-            _ => unreachable!("trying to unwrap {:?} into label", self)
-        }
-    }
-
-    pub fn unwrap_code_ptr(&self) -> CodePtr {
-        match self {
-            Target::CodePtr(ptr) => *ptr,
-            _ => unreachable!("trying to unwrap {:?} into code ptr", self)
+            _ => unreachable!()
         }
     }
 }
@@ -359,6 +378,9 @@ type PosMarkerFn = Box<dyn Fn(CodePtr)>;
 /// YJIT IR instruction
 pub struct Insn
 {
+    /// Other instructions using this instruction's output
+    pub(super) uses: Vec<(InsnIdx, OpndIdx)>,
+
     // Opcode for the instruction
     pub(super) op: Op,
 
@@ -379,6 +401,129 @@ pub struct Insn
     pub(super) pos_marker: Option<PosMarkerFn>,
 }
 
+impl Insn {
+    fn new(op: Op, out: Opnd) -> Self {
+        Self {
+            uses: Vec::new(),
+            op,
+            text: None,
+            opnds: Vec::default(),
+            out,
+            target: None,
+            pos_marker: None,
+        }
+    }
+}
+
+/// A container for an instruction within a doubly-linked list.
+struct InsnNode {
+    insn: Insn,
+    prev_idx: Option<InsnIdx>,
+    next_idx: Option<InsnIdx>
+}
+
+impl InsnNode {
+    fn new(insn: Insn, prev_idx: Option<InsnIdx>) -> Self {
+        Self { insn, prev_idx, next_idx: None }
+    }
+}
+
+/// A doubly-linked list containing instructions.
+pub(super) struct InsnList {
+    insns: Vec<InsnNode>,
+    first_idx: Option<InsnIdx>,
+    last_idx: Option<InsnIdx>
+}
+
+impl InsnList {
+    fn new() -> Self {
+        Self { insns: Vec::default(), first_idx: None, last_idx: None }
+    }
+
+    /// Returns the next instruction index that will be generated
+    fn next_idx(&self) -> InsnIdx {
+        self.insns.len() as InsnIdx
+    }
+
+    /// Return a mutable reference to the instruction for the given index
+    fn get_ref_mut(&mut self, idx: InsnIdx) -> &mut Insn {
+        &mut self.insns[idx as usize].insn
+    }
+
+    /// Push a new instruction onto the end of the list
+    fn push(&mut self, insn: Insn) -> InsnIdx {
+        let insn_idx = self.next_idx();
+
+        // Push the new node onto the list
+        self.insns.push(InsnNode::new(insn, self.last_idx));
+
+        // Update the first index if it's not already set
+        self.first_idx = self.first_idx.or(Some(insn_idx));
+
+        // Update the last node's next_idx field if necessary
+        if let Some(last_idx) = self.last_idx {
+            self.insns[last_idx as usize].next_idx = Some(insn_idx);
+        }
+
+        // Update the last index
+        self.last_idx = Some(insn_idx);
+
+        insn_idx
+    }
+
+    /// Remove an instruction from the list at a given index
+    fn remove(&mut self, insn_idx: InsnIdx) {
+        let prev_idx = self.insns[insn_idx as usize].prev_idx;
+        let next_idx = self.insns[insn_idx as usize].next_idx;
+
+        // Update the previous node's next_idx field if necessary
+        if let Some(prev_idx) = prev_idx {
+            self.insns[prev_idx as usize].next_idx = next_idx;
+        } else {
+            assert_eq!(self.first_idx, Some(insn_idx));
+            self.first_idx = next_idx;
+        }
+
+        // Update the next node's prev_idx field if necessary
+        if let Some(next_idx) = next_idx {
+            self.insns[next_idx as usize].prev_idx = prev_idx;
+        } else {
+            assert_eq!(self.last_idx, Some(insn_idx));
+            self.last_idx = prev_idx;
+        }
+    }
+}
+
+/// An iterator that will walk through the list of instructions in order
+/// according to the linked list.
+pub(super) struct InsnListIterator<'a> {
+    insn_list: &'a InsnList,
+    insn_idx: Option<InsnIdx>
+}
+
+impl<'a> Iterator for InsnListIterator<'a> {
+    type Item = &'a Insn;
+
+    /// Return an option containing the next instruction in the list.
+    fn next(&mut self) -> Option<Self::Item> {
+        self.insn_idx.map(|idx| {
+            let node = &self.insn_list.insns[idx as usize];
+            self.insn_idx = node.next_idx;
+            &node.insn
+        })
+    }
+}
+
+impl<'a> IntoIterator for &'a InsnList {
+    type Item = &'a Insn;
+    type IntoIter = InsnListIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        InsnListIterator { insn_list: self, insn_idx: self.first_idx }
+    }
+}
+
+/*
 impl fmt::Debug for Insn {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "{:?}(", self.op)?;
@@ -404,29 +549,42 @@ impl fmt::Debug for Insn {
         write!(fmt, " -> {:?}", self.out)
     }
 }
+*/
+
+
+
+
+
 
 /// Object into which we assemble instructions to be
 /// optimized and lowered
 pub struct Assembler
 {
-    pub(super) insns: Vec<Insn>,
-
-    /// Parallel vec with insns
-    /// Index of the last insn using the output of this insn
-    pub(super) live_ranges: Vec<usize>,
+    /// The list of instructions created by this assembler
+    pub(super) insn_list: InsnList,
 
     /// Names of labels
     pub(super) label_names: Vec<String>,
+
+    /*
+    /// FIXME: only compute the live ranges when doing register allocation?
+    ///
+    /// Parallel vec with insns
+    /// Index of the last insn using the output of this insn
+    //pub(super) live_ranges: Vec<usize>,
+    */
 }
+
+
+
+
+
+
 
 impl Assembler
 {
-    pub fn new() -> Assembler {
-        Assembler {
-            insns: Vec::default(),
-            live_ranges: Vec::default(),
-            label_names: Vec::default(),
-        }
+    pub fn new() -> Self {
+        Self { insn_list: InsnList::new(), label_names: Vec::default() }
     }
 
     /// Append an instruction to the list
@@ -439,27 +597,10 @@ impl Assembler
         pos_marker: Option<PosMarkerFn>
     ) -> Opnd
     {
-        // Index of this instruction
-        let insn_idx = self.insns.len();
-
-        // If we find any InsnOut from previous instructions, we're going to
-        // update the live range of the previous instruction to point to this
-        // one.
-        for opnd in &opnds {
-            match opnd {
-                Opnd::InsnOut{ idx, .. } => {
-                    self.live_ranges[*idx] = insn_idx;
-                }
-                Opnd::Mem(Mem { base: MemBase::InsnOut(idx), .. }) => {
-                    self.live_ranges[*idx] = insn_idx;
-                }
-                _ => {}
-            }
-        }
-
+        let insn_idx = self.insn_list.next_idx();
         let mut out_num_bits: u8 = 0;
 
-        for opnd in &opnds {
+        for (opnd_idx, opnd) in opnds.iter().enumerate() {
             match *opnd {
                 Opnd::InsnOut{ num_bits, .. } |
                 Opnd::Mem(Mem { num_bits, .. }) |
@@ -473,6 +614,11 @@ impl Assembler
                 }
                 _ => {}
             }
+
+            // Track which instructions this insn is using as operands
+            if let Opnd::InsnOut { idx, .. } = *opnd {
+                self.insn_list.get_ref_mut(idx).uses.push((insn_idx, opnd_idx as OpndIdx));
+            }
         }
 
         if out_num_bits == 0 {
@@ -482,22 +628,72 @@ impl Assembler
         // Operand for the output of this instruction
         let out_opnd = Opnd::InsnOut{ idx: insn_idx, num_bits: out_num_bits };
 
-        let insn = Insn {
+        self.insn_list.push(Insn {
+            uses: Vec::default(),
             op,
             text,
             opnds,
             out: out_opnd,
             target,
             pos_marker,
-        };
-
-        self.insns.push(insn);
-        self.live_ranges.push(insn_idx);
+        });
 
         // Return an operand for the output of this instruction
         out_opnd
     }
 
+    /// Replace uses of this instruction by another operand
+    pub(super) fn replace_uses(&mut self, insn_idx: InsnIdx, replace_with: Opnd)
+    {
+        // We're going to clear the vector of uses
+        let uses = std::mem::take(&mut self.insn_list.get_ref_mut(insn_idx).uses);
+
+        // For each use of this instruction
+        for (use_idx, opnd_idx) in uses {
+
+            // TODO: assert that this is indeed a use of this insn (sanity check)
+
+            let use_insn = self.insn_list.get_ref_mut(use_idx);
+            use_insn.opnds[opnd_idx as usize] = replace_with;
+
+            // If replace_with is an insn, update its uses
+            if let Opnd::InsnOut { idx, .. } = replace_with {
+                let repl_insn = &mut self.insn_list.insns[idx as usize];
+                assert!(repl_insn.prev_idx.is_some() || repl_insn.next_idx.is_some());
+                repl_insn.insn.uses.push((use_idx, opnd_idx));
+            }
+        }
+    }
+
+    /// Remove a specific insn from the assembler
+    pub(super) fn remove_insn(&mut self, insn_idx: InsnIdx)
+    {
+        // Note: we don't remove it from the vec because we do that
+        // only when we're done with the assembler
+        self.insn_list.remove(insn_idx);
+    }
+
+
+
+    // TODO: we need an insert_before()
+    // To insert an instruction before another instruction
+
+
+
+
+
+
+    // TODO: can we implement some kind of insn_iter()?
+    // could be useful for the emit passes
+
+
+
+
+
+
+
+    // TODO: use push_insn for comment?
+    /*
     /// Add a comment at the current position
     pub fn comment(&mut self, text: &str)
     {
@@ -527,6 +723,12 @@ impl Assembler
         self.insns.push(insn);
         self.live_ranges.push(self.insns.len());
     }
+    */
+
+
+
+
+
 
     /// Load an address relative to the given label.
     #[must_use]
@@ -544,6 +746,11 @@ impl Assembler
         Target::Label(label_idx)
     }
 
+
+
+
+    // TODO: use push_insn for this?
+    /*
     /// Add a label at the current position
     pub fn write_label(&mut self, label: Target)
     {
@@ -560,7 +767,12 @@ impl Assembler
         self.insns.push(insn);
         self.live_ranges.push(self.insns.len());
     }
+    */
 
+
+
+
+    /*
     /// Transform input instructions, consumes the input assembler
     pub(super) fn forward_pass<F>(mut self, mut map_insn: F) -> Assembler
         where F: FnMut(&mut Assembler, usize, Op, Vec<Opnd>, Option<Target>, Option<String>, Option<PosMarkerFn>)
@@ -611,7 +823,10 @@ impl Assembler
 
         asm
     }
+    */
 
+
+    /*
     /// Sets the out field on the various instructions that require allocated
     /// registers because their output is used as the operand on a subsequent
     /// instruction. This is our implementation of the linear scan algorithm.
@@ -640,7 +855,7 @@ impl Assembler
             let reg_index = regs.iter().position(|elem| elem.reg_no == reg.reg_no);
 
             if let Some(reg_index) = reg_index {
-                assert_eq!(*pool & (1 << reg_index), 0, "register already allocated");
+                assert_eq!(*pool & (1 << reg_index), 0);
                 *pool |= 1 << reg_index;
             }
 
@@ -709,7 +924,7 @@ impl Assembler
                 // We do this to improve register allocation on x86
                 // e.g. out  = add(reg0, reg1)
                 //      reg0 = add(reg0, reg1)
-                else if opnds.len() > 0 {
+                if opnds.len() > 0 {
                     if let Opnd::InsnOut{idx, ..} = opnds[0] {
                         if live_ranges[idx] == index {
                             if let Opnd::Reg(reg) = asm.insns[idx].out {
@@ -762,7 +977,11 @@ impl Assembler
         assert_eq!(pool, 0, "Expected all registers to be returned to the pool");
         asm
     }
+    */
 
+
+
+    /*
     /// Compile the instructions down to machine code
     /// NOTE: should compile return a list of block labels to enable
     ///       compiling multiple blocks at a time?
@@ -779,8 +998,22 @@ impl Assembler
         let alloc_regs = alloc_regs.drain(0..num_regs).collect();
         self.compile_with_regs(cb, alloc_regs)
     }
+    */
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+/*
 impl fmt::Debug for Assembler {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "Assembler\n")?;
@@ -792,6 +1025,7 @@ impl fmt::Debug for Assembler {
         Ok(())
     }
 }
+*/
 
 impl Assembler
 {
@@ -802,9 +1036,9 @@ impl Assembler
     }
 
     //pub fn pos_marker<F: FnMut(CodePtr)>(&mut self, marker_fn: F)
-    pub fn pos_marker(&mut self, marker_fn: impl Fn(CodePtr) + 'static)
+    pub fn pos_marker(&mut self, marker_fn: PosMarkerFn)
     {
-        self.push_insn(Op::PosMarker, vec![], None, None, Some(Box::new(marker_fn)));
+        self.push_insn(Op::PosMarker, vec![], None, None, Some(marker_fn));
     }
 }
 
@@ -933,3 +1167,95 @@ def_push_2_opnd!(csel_g, Op::CSelG);
 def_push_2_opnd!(csel_ge, Op::CSelGE);
 def_push_0_opnd_no_out!(frame_setup, Op::FrameSetup);
 def_push_0_opnd_no_out!(frame_teardown, Op::FrameTeardown);
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn test_push_insn()
+    {
+        let mut asm = Assembler::new();
+        let v0 = asm.add(1.into(), 2.into());
+        let v1 = asm.add(v0, 3.into());
+    }
+
+    #[test]
+    fn test_replace_insn()
+    {
+        let mut asm = Assembler::new();
+        let v0 = asm.add(1_u64.into(), 2_u64.into());
+        let v1 = asm.add(v0, 3_u64.into());
+
+        if let Opnd::InsnOut{ idx, ..} = v0 {
+            asm.replace_uses(idx, 3_u64.into());
+            asm.remove_insn(idx);
+        }
+        else
+        {
+            panic!();
+        }
+
+        // Nobody is using v1, but we should still be able to "replace" and remove it
+        if let Opnd::InsnOut{ idx, ..} = v1 {
+            asm.replace_uses(idx, 6_u64.into());
+            asm.remove_insn(idx);
+        }
+        else
+        {
+            panic!();
+        }
+
+        assert!(asm.insn_list.first_idx.is_none());
+        assert!(asm.insn_list.last_idx.is_none());
+    }
+
+    #[test]
+    fn test_replace_insn_with_insn()
+    {
+        let mut asm = Assembler::new();
+        let v0 = asm.add(1.into(), 2.into());
+        let v1 = asm.add(v0, 3.into());
+        let v2 = asm.add(v0, 4.into());
+
+        if let Opnd::InsnOut{ idx, ..} = v0 {
+            let v3 = asm.load(4.into());
+            asm.replace_uses(idx, v3);
+            asm.remove_insn(idx);
+        }
+        else
+        {
+            panic!();
+        }
+    }
+
+    #[test]
+    fn test_insn_list_push_and_remove() {
+        let mut insn_list = InsnList::new();
+
+        let insn_idx = insn_list.push(Insn::new(Op::Load, Opnd::None));
+        insn_list.remove(insn_idx);
+
+        assert_eq!(insn_list.first_idx, None);
+        assert_eq!(insn_list.last_idx, None);
+    }
+
+    #[test]
+    fn test_insn_list_iterator() {
+        let mut insn_list = InsnList::new();
+
+        let first_insn_idx = insn_list.push(Insn::new(Op::Add, Opnd::None));
+        let second_insn_idx = insn_list.push(Insn::new(Op::Sub, Opnd::None));
+        let third_insn_idx = insn_list.push(Insn::new(Op::Load, Opnd::None));
+
+        for (insn_idx, insn) in insn_list.into_iter().enumerate() {
+            match insn_idx {
+                0 => assert_eq!(insn.op, Op::Add),
+                1 => assert_eq!(insn.op, Op::Sub),
+                2 => assert_eq!(insn.op, Op::Load),
+                _ => panic!("Unexpected instruction index")
+            };
+        }
+    }
+}

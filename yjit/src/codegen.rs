@@ -291,9 +291,9 @@ fn jit_prepare_routine_call(
 /// Record the current codeblock write position for rewriting into a jump into
 /// the outlined block later. Used to implement global code invalidation.
 fn record_global_inval_patch(asm: &mut Assembler, outline_block_target_pos: CodePtr) {
-    asm.pos_marker(Box::new(move |code_ptr| {
+    asm.pos_marker(move |code_ptr| {
         CodegenGlobals::push_global_inval_patch(code_ptr, outline_block_target_pos);
-    }));
+    });
 }
 
 /// Verify the ctx's types and mappings against the compile-time stack, self,
@@ -1850,6 +1850,7 @@ pub const OPT_AREF_MAX_CHAIN_DEPTH: i32 = 2;
 
 // up to 5 different classes
 pub const SEND_MAX_DEPTH: i32 = 5;
+*/
 
 // Codegen for setting an instance variable.
 // Preconditions:
@@ -1859,13 +1860,13 @@ pub const SEND_MAX_DEPTH: i32 = 5;
 fn gen_set_ivar(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     recv: VALUE,
     ivar_name: ID,
 ) -> CodegenStatus {
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     // Get the operands from the stack
     let val_opnd = ctx.stack_pop(1);
@@ -1874,17 +1875,22 @@ fn gen_set_ivar(
     let ivar_index: u32 = unsafe { rb_obj_ensure_iv_index_mapping(recv, ivar_name) };
 
     // Call rb_vm_set_ivar_idx with the receiver, the index of the ivar, and the value
-    mov(cb, C_ARG_REGS[0], recv_opnd);
-    mov(cb, C_ARG_REGS[1], imm_opnd(ivar_index.into()));
-    mov(cb, C_ARG_REGS[2], val_opnd);
-    call_ptr(cb, REG0, rb_vm_set_ivar_idx as *const u8);
+    let val = asm.ccall(
+        rb_vm_set_ivar_idx as *const u8,
+        vec![
+            recv_opnd,
+            Opnd::Imm(ivar_index.into()),
+            val_opnd,
+        ],
+    );
 
     let out_opnd = ctx.stack_push(Type::Unknown);
-    mov(cb, out_opnd, RAX);
+    asm.mov(out_opnd, val);
 
     KeepCompiling
 }
-*/
+
+
 
 // Codegen for getting an instance variable.
 // Preconditions:
@@ -2130,11 +2136,12 @@ fn gen_setinstancevariable(
 
     KeepCompiling
 }
+*/
 
 fn gen_defined(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let op_type = jit_get_arg(jit, 0);
@@ -2143,26 +2150,19 @@ fn gen_defined(
 
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     // Get the operands from the stack
     let v_opnd = ctx.stack_pop(1);
 
     // Call vm_defined(ec, reg_cfp, op_type, obj, v)
-    mov(cb, C_ARG_REGS[0], REG_EC);
-    mov(cb, C_ARG_REGS[1], REG_CFP);
-    mov(cb, C_ARG_REGS[2], uimm_opnd(op_type.into()));
-    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[3], obj);
-    mov(cb, C_ARG_REGS[4], v_opnd);
-    call_ptr(cb, REG0, rb_vm_defined as *const u8);
+    let def_result = asm.ccall(rb_vm_defined as *const u8, vec![EC, CFP, op_type.into(), obj.into(), v_opnd]);
 
     // if (vm_defined(ec, GET_CFP(), op_type, obj, v)) {
     //  val = pushval;
     // }
-    jit_mov_gc_ptr(jit, cb, REG1, pushval);
-    cmp(cb, AL, imm_opnd(0));
-    mov(cb, RAX, uimm_opnd(Qnil.into()));
-    cmovnz(cb, RAX, REG1);
+    asm.test(def_result, Opnd::UImm(255));
+    let out_value = asm.csel_nz(pushval.into(), Qnil.into());
 
     // Push the return value onto the stack
     let out_type = if pushval.special_const_p() {
@@ -2171,7 +2171,7 @@ fn gen_defined(
         Type::Unknown
     };
     let stack_ret = ctx.stack_push(out_type);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, out_value);
 
     KeepCompiling
 }
@@ -2179,7 +2179,7 @@ fn gen_defined(
 fn gen_checktype(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let type_val = jit_get_arg(jit, 0).as_u32();
@@ -2197,44 +2197,39 @@ fn gen_checktype(
             | (RUBY_T_HASH, Type::Hash) => {
                 // guaranteed type match
                 let stack_ret = ctx.stack_push(Type::True);
-                mov(cb, stack_ret, uimm_opnd(Qtrue.as_u64()));
+                asm.mov(stack_ret, Opnd::UImm(Qtrue.into()));
                 return KeepCompiling;
             }
             _ if val_type.is_imm() || val_type.is_specific() => {
                 // guaranteed not to match T_STRING/T_ARRAY/T_HASH
                 let stack_ret = ctx.stack_push(Type::False);
-                mov(cb, stack_ret, uimm_opnd(Qfalse.as_u64()));
+                asm.mov(stack_ret, Opnd::UImm(Qfalse.into()));
                 return KeepCompiling;
             }
             _ => (),
         }
 
-        mov(cb, REG0, val);
-        mov(cb, REG1, uimm_opnd(Qfalse.as_u64()));
-
-        let ret = cb.new_label("ret".to_string());
+        let ret = asm.new_label("ret");
 
         if !val_type.is_heap() {
             // if (SPECIAL_CONST_P(val)) {
             // Return Qfalse via REG1 if not on heap
-            test(cb, REG0, uimm_opnd(RUBY_IMMEDIATE_MASK as u64));
-            jnz_label(cb, ret);
-            cmp(cb, REG0, uimm_opnd(Qnil.as_u64()));
-            jbe_label(cb, ret);
+            asm.test(val, Opnd::UImm(RUBY_IMMEDIATE_MASK as u64));
+            asm.jnz(ret);
+            asm.cmp(val, Opnd::UImm(Qnil.into()));
+            asm.jbe(ret);
         }
 
         // Check type on object
-        mov(cb, REG0, mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS));
-        and(cb, REG0, uimm_opnd(RUBY_T_MASK as u64));
-        cmp(cb, REG0, uimm_opnd(type_val as u64));
-        mov(cb, REG0, uimm_opnd(Qtrue.as_u64()));
-        // REG1 contains Qfalse from above
-        cmove(cb, REG1, REG0);
+        let object_type = asm.and(
+            Opnd::mem(64, val, RUBY_OFFSET_RBASIC_FLAGS),
+            Opnd::UImm(RUBY_T_MASK.into()));
+        asm.cmp(object_type, Opnd::UImm(type_val.into()));
+        let ret_opnd = asm.csel_e(Opnd::UImm(Qfalse.into()), Opnd::UImm(Qtrue.into()));
 
-        cb.write_label(ret);
+        asm.write_label(ret);
         let stack_ret = ctx.stack_push(Type::UnknownImm);
-        mov(cb, stack_ret, REG1);
-        cb.link_labels();
+        asm.mov(stack_ret, ret_opnd);
 
         KeepCompiling
     } else {
@@ -2245,28 +2240,28 @@ fn gen_checktype(
 fn gen_concatstrings(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let n = jit_get_arg(jit, 0);
 
     // Save the PC and SP because we are allocating
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     let values_ptr = ctx.sp_opnd(-((SIZEOF_VALUE as isize) * n.as_isize()));
 
     // call rb_str_concat_literals(long n, const VALUE *strings);
-    mov(cb, C_ARG_REGS[0], imm_opnd(n.into()));
-    lea(cb, C_ARG_REGS[1], values_ptr);
-    call_ptr(cb, REG0, rb_str_concat_literals as *const u8);
+    let return_value = asm.ccall(
+        rb_str_concat_literals as *const u8,
+        vec![Opnd::UImm(n.into()), values_ptr]
+    );
 
     ctx.stack_pop(n.as_usize());
     let stack_ret = ctx.stack_push(Type::CString);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, return_value);
 
     KeepCompiling
 }
-*/
 
 fn guard_two_fixnums(ctx: &mut Context, asm: &mut Assembler, side_exit: CodePtr) {
     // Get the stack operand types
@@ -3834,6 +3829,7 @@ fn lookup_cfunc_codegen(def: *const rb_method_definition_t) -> Option<MethodGenF
 
     CodegenGlobals::look_up_codegen_method(method_serial)
 }
+*/
 
 // Is anyone listening for :c_call and :c_return event currently?
 fn c_method_tracing_currently_enabled(jit: &JITState) -> bool {
@@ -3843,6 +3839,7 @@ fn c_method_tracing_currently_enabled(jit: &JITState) -> bool {
     }
 }
 
+/*
 // Similar to args_kw_argv_to_hash. It is called at runtime from within the
 // generated assembly to build a Ruby hash of the passed keyword arguments. The
 // keys are the Symbol objects associated with the keywords and the values are
@@ -4769,11 +4766,12 @@ fn gen_struct_aset(
     jump_to_next_insn(jit, ctx, cb, ocb);
     EndBlock
 }
+*/
 
 fn gen_send_general(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
     cd: *const rb_call_data,
     block: Option<IseqPtr>,
@@ -4795,24 +4793,24 @@ fn gen_send_general(
 
     // Don't JIT calls with keyword splat
     if flags & VM_CALL_KW_SPLAT != 0 {
-        gen_counter_incr!(cb, send_kw_splat);
+        gen_counter_incr!(asm, send_kw_splat);
         return CantCompile;
     }
 
     // Don't JIT calls that aren't simple
     // Note, not using VM_CALL_ARGS_SIMPLE because sometimes we pass a block.
     if flags & VM_CALL_ARGS_SPLAT != 0 {
-        gen_counter_incr!(cb, send_args_splat);
+        gen_counter_incr!(asm, send_args_splat);
         return CantCompile;
     }
     if flags & VM_CALL_ARGS_BLOCKARG != 0 {
-        gen_counter_incr!(cb, send_block_arg);
+        gen_counter_incr!(asm, send_block_arg);
         return CantCompile;
     }
 
     // Defer compilation so we can specialize on class of receiver
     if !jit_at_current_insn(jit) {
-        defer_compilation(jit, ctx, cb, ocb);
+        defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
 
@@ -4825,6 +4823,8 @@ fn gen_send_general(
     // Points to the receiver operand on the stack
     let recv = ctx.stack_opnd(argc);
     let recv_opnd = StackOpnd(argc.try_into().unwrap());
+    // TODO: Resurrect this once jit_guard_known_klass is implemented for getivar
+    /*
     jit_guard_known_klass(
         jit,
         ctx,
@@ -4836,7 +4836,7 @@ fn gen_send_general(
         comptime_recv,
         SEND_MAX_DEPTH,
         side_exit,
-    );
+    ); */
 
     // Do method lookup
     let mut cme = unsafe { rb_callable_method_entry(comptime_recv_klass, mid) };
@@ -4862,7 +4862,7 @@ fn gen_send_general(
             if flags & VM_CALL_FCALL == 0 {
                 // otherwise we need an ancestry check to ensure the receiver is vaild to be called
                 // as protected
-                jit_protected_callee_ancestry_guard(jit, cb, ocb, cme, side_exit);
+                return CantCompile; // jit_protected_callee_ancestry_guard(jit, cb, ocb, cme, side_exit);
             }
         }
         _ => {
@@ -4879,25 +4879,26 @@ fn gen_send_general(
         let def_type = unsafe { get_cme_def_type(cme) };
         match def_type {
             VM_METHOD_TYPE_ISEQ => {
-                return gen_send_iseq(jit, ctx, cb, ocb, ci, cme, block, argc);
+                return CantCompile; // return gen_send_iseq(jit, ctx, cb, ocb, ci, cme, block, argc);
             }
             VM_METHOD_TYPE_CFUNC => {
+                return CantCompile; /*
                 return gen_send_cfunc(
                     jit,
                     ctx,
-                    cb,
+                    asm,
                     ocb,
                     ci,
                     cme,
                     block,
                     argc,
                     &comptime_recv_klass,
-                );
+                ); */
             }
             VM_METHOD_TYPE_IVAR => {
                 if argc != 0 {
                     // Argument count mismatch. Getters take no arguments.
-                    gen_counter_incr!(cb, send_getter_arity);
+                    gen_counter_incr!(asm, send_getter_arity);
                     return CantCompile;
                 }
 
@@ -4911,10 +4912,11 @@ fn gen_send_general(
                     // attr_accessor is invalidated and we exit at the closest
                     // instruction boundary which is always outside of the body of
                     // the attr_accessor code.
-                    gen_counter_incr!(cb, send_cfunc_tracing);
+                    gen_counter_incr!(asm, send_cfunc_tracing);
                     return CantCompile;
                 }
 
+                return CantCompile; /*
                 mov(cb, REG0, recv);
                 let ivar_name = unsafe { get_cme_def_body_attr_id(cme) };
 
@@ -4929,31 +4931,32 @@ fn gen_send_general(
                     recv_opnd,
                     side_exit,
                 );
+                */
             }
             VM_METHOD_TYPE_ATTRSET => {
                 if flags & VM_CALL_KWARG != 0 {
-                    gen_counter_incr!(cb, send_attrset_kwargs);
+                    gen_counter_incr!(asm, send_attrset_kwargs);
                     return CantCompile;
                 } else if argc != 1 || unsafe { !RB_TYPE_P(comptime_recv, RUBY_T_OBJECT) } {
-                    gen_counter_incr!(cb, send_ivar_set_method);
+                    gen_counter_incr!(asm, send_ivar_set_method);
                     return CantCompile;
                 } else if c_method_tracing_currently_enabled(jit) {
                     // Can't generate code for firing c_call and c_return events
                     // See :attr-tracing:
-                    gen_counter_incr!(cb, send_cfunc_tracing);
+                    gen_counter_incr!(asm, send_cfunc_tracing);
                     return CantCompile;
                 } else {
                     let ivar_name = unsafe { get_cme_def_body_attr_id(cme) };
-                    return gen_set_ivar(jit, ctx, cb, comptime_recv, ivar_name);
+                    return gen_set_ivar(jit, ctx, asm, comptime_recv, ivar_name);
                 }
             }
             // Block method, e.g. define_method(:foo) { :my_block }
             VM_METHOD_TYPE_BMETHOD => {
-                gen_counter_incr!(cb, send_bmethod);
+                gen_counter_incr!(asm, send_bmethod);
                 return CantCompile;
             }
             VM_METHOD_TYPE_ZSUPER => {
-                gen_counter_incr!(cb, send_zsuper_method);
+                gen_counter_incr!(asm, send_zsuper_method);
                 return CantCompile;
             }
             VM_METHOD_TYPE_ALIAS => {
@@ -4962,15 +4965,16 @@ fn gen_send_general(
                 continue;
             }
             VM_METHOD_TYPE_UNDEF => {
-                gen_counter_incr!(cb, send_undef_method);
+                gen_counter_incr!(asm, send_undef_method);
                 return CantCompile;
             }
             VM_METHOD_TYPE_NOTIMPLEMENTED => {
-                gen_counter_incr!(cb, send_not_implemented_method);
+                gen_counter_incr!(asm, send_not_implemented_method);
                 return CantCompile;
             }
             // Send family of methods, e.g. call/apply
             VM_METHOD_TYPE_OPTIMIZED => {
+                return CantCompile; /*
                 let opt_type = unsafe { get_cme_def_body_optimized_type(cme) };
                 match opt_type {
                     OPTIMIZED_METHOD_TYPE_SEND => {
@@ -5013,13 +5017,14 @@ fn gen_send_general(
                         panic!("unknown optimized method type!")
                     }
                 }
+                */
             }
             VM_METHOD_TYPE_MISSING => {
-                gen_counter_incr!(cb, send_missing_method);
+                gen_counter_incr!(asm, send_missing_method);
                 return CantCompile;
             }
             VM_METHOD_TYPE_REFINED => {
-                gen_counter_incr!(cb, send_refined_method);
+                gen_counter_incr!(asm, send_refined_method);
                 return CantCompile;
             }
             _ => {
@@ -5032,23 +5037,24 @@ fn gen_send_general(
 fn gen_opt_send_without_block(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let cd = jit_get_arg(jit, 0).as_ptr();
 
-    gen_send_general(jit, ctx, cb, ocb, cd, None)
+    gen_send_general(jit, ctx, asm, ocb, cd, None)
 }
 
+/*
 fn gen_send(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let cd = jit_get_arg(jit, 0).as_ptr();
     let block = jit_get_arg(jit, 1).as_optional_ptr();
-    return gen_send_general(jit, ctx, cb, ocb, cd, block);
+    return gen_send_general(jit, ctx, asm, ocb, cd, block);
 }
 
 fn gen_invokesuper(
@@ -5268,26 +5274,25 @@ fn gen_getglobal(
     KeepCompiling
 }
 
-/*
 fn gen_setglobal(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let gid = jit_get_arg(jit, 0);
 
     // Save the PC and SP because we might make a Ruby call for
     // Kernel#set_trace_var
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
-    mov(cb, C_ARG_REGS[0], imm_opnd(gid.as_i64()));
-
-    let val = ctx.stack_pop(1);
-
-    mov(cb, C_ARG_REGS[1], val);
-
-    call_ptr(cb, REG0, rb_gvar_set as *const u8);
+    asm.ccall(
+        rb_gvar_set as *const u8,
+        vec![
+            gid.into(),
+            ctx.stack_pop(1),
+        ],
+    );
 
     KeepCompiling
 }
@@ -5295,27 +5300,25 @@ fn gen_setglobal(
 fn gen_anytostring(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     // Save the PC and SP since we might call #to_s
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     let str = ctx.stack_pop(1);
     let val = ctx.stack_pop(1);
 
-    mov(cb, C_ARG_REGS[0], str);
-    mov(cb, C_ARG_REGS[1], val);
-
-    call_ptr(cb, REG0, rb_obj_as_string_result as *const u8);
+    let val = asm.ccall(rb_obj_as_string_result as *const u8, vec![str, val]);
 
     // Push the return value
     let stack_ret = ctx.stack_push(Type::TString);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, val);
 
     KeepCompiling
 }
 
+/*
 fn gen_objtostring(
     jit: &mut JITState,
     ctx: &mut Context,
@@ -5352,25 +5355,23 @@ fn gen_objtostring(
         gen_send_general(jit, ctx, cb, ocb, cd, None)
     }
 }
+*/
 
 fn gen_intern(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     // Save the PC and SP because we might allocate
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     let str = ctx.stack_pop(1);
-
-    mov(cb, C_ARG_REGS[0], str);
-
-    call_ptr(cb, REG0, rb_str_intern as *const u8);
+    let sym = asm.ccall(rb_str_intern as *const u8, vec![str]);
 
     // Push the return value
     let stack_ret = ctx.stack_push(Type::Unknown);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, sym);
 
     KeepCompiling
 }
@@ -5378,7 +5379,7 @@ fn gen_intern(
 fn gen_toregexp(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     let opt = jit_get_arg(jit, 0).as_i64();
@@ -5386,34 +5387,43 @@ fn gen_toregexp(
 
     // Save the PC and SP because this allocates an object and could
     // raise an exception.
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
     let values_ptr = ctx.sp_opnd(-((SIZEOF_VALUE as isize) * (cnt as isize)));
     ctx.stack_pop(cnt);
 
-    mov(cb, C_ARG_REGS[0], imm_opnd(0));
-    mov(cb, C_ARG_REGS[1], imm_opnd(cnt.try_into().unwrap()));
-    lea(cb, C_ARG_REGS[2], values_ptr);
-    call_ptr(cb, REG0, rb_ary_tmp_new_from_values as *const u8);
+    let ary = asm.ccall(
+        rb_ary_tmp_new_from_values as *const u8,
+        vec![
+            Opnd::Imm(0),
+            Opnd::UImm(jit_get_arg(jit, 1).as_u64()),
+            values_ptr,
+        ]
+    );
 
     // Save the array so we can clear it later
-    push(cb, RAX);
-    push(cb, RAX); // Alignment
-    mov(cb, C_ARG_REGS[0], RAX);
-    mov(cb, C_ARG_REGS[1], imm_opnd(opt));
-    call_ptr(cb, REG0, rb_reg_new_ary as *const u8);
+    asm.cpush(ary);
+    asm.cpush(ary); // Alignment
+
+    let val = asm.ccall(
+        rb_reg_new_ary as *const u8,
+        vec![
+            ary,
+            Opnd::Imm(opt),
+        ]
+    );
 
     // The actual regex is in RAX now.  Pop the temp array from
     // rb_ary_tmp_new_from_values into C arg regs so we can clear it
-    pop(cb, REG1); // Alignment
-    pop(cb, C_ARG_REGS[0]);
+    let ary = asm.cpop(); // Alignment
+    asm.cpop_into(ary);
 
     // The value we want to push on the stack is in RAX right now
     let stack_ret = ctx.stack_push(Type::Unknown);
-    mov(cb, stack_ret, RAX);
+    asm.mov(stack_ret, val);
 
     // Clear the temp array.
-    call_ptr(cb, REG0, rb_ary_clear as *const u8);
+    asm.ccall(rb_ary_clear as *const u8, vec![ary]);
 
     KeepCompiling
 }
@@ -5421,7 +5431,7 @@ fn gen_toregexp(
 fn gen_getspecial(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     // This takes two arguments, key and type
@@ -5437,60 +5447,59 @@ fn gen_getspecial(
         // Fetch a "special" backref based on a char encoded by shifting by 1
 
         // Can raise if matchdata uninitialized
-        jit_prepare_routine_call(jit, ctx, cb, REG0);
+        jit_prepare_routine_call(jit, ctx, asm);
 
         // call rb_backref_get()
-        add_comment(cb, "rb_backref_get");
-        call_ptr(cb, REG0, rb_backref_get as *const u8);
-        mov(cb, C_ARG_REGS[0], RAX);
+        asm.comment("rb_backref_get");
+        let backref = asm.ccall(rb_backref_get as *const u8, vec![]);
 
         let rt_u8: u8 = (rtype >> 1).try_into().unwrap();
-        match rt_u8.into() {
+        let val = match rt_u8.into() {
             '&' => {
-                add_comment(cb, "rb_reg_last_match");
-                call_ptr(cb, REG0, rb_reg_last_match as *const u8);
+                asm.comment("rb_reg_last_match");
+                asm.ccall(rb_reg_last_match as *const u8, vec![backref])
             }
             '`' => {
-                add_comment(cb, "rb_reg_match_pre");
-                call_ptr(cb, REG0, rb_reg_match_pre as *const u8);
+                asm.comment("rb_reg_match_pre");
+                asm.ccall(rb_reg_match_pre as *const u8, vec![backref])
             }
             '\'' => {
-                add_comment(cb, "rb_reg_match_post");
-                call_ptr(cb, REG0, rb_reg_match_post as *const u8);
+                asm.comment("rb_reg_match_post");
+                asm.ccall(rb_reg_match_post as *const u8, vec![backref])
             }
             '+' => {
-                add_comment(cb, "rb_reg_match_last");
-                call_ptr(cb, REG0, rb_reg_match_last as *const u8);
+                asm.comment("rb_reg_match_last");
+                asm.ccall(rb_reg_match_last as *const u8, vec![backref])
             }
             _ => panic!("invalid back-ref"),
-        }
+        };
 
         let stack_ret = ctx.stack_push(Type::Unknown);
-        mov(cb, stack_ret, RAX);
+        asm.mov(stack_ret, val);
 
         KeepCompiling
     } else {
         // Fetch the N-th match from the last backref based on type shifted by 1
 
         // Can raise if matchdata uninitialized
-        jit_prepare_routine_call(jit, ctx, cb, REG0);
+        jit_prepare_routine_call(jit, ctx, asm);
 
         // call rb_backref_get()
-        add_comment(cb, "rb_backref_get");
-        call_ptr(cb, REG0, rb_backref_get as *const u8);
+        asm.comment("rb_backref_get");
+        let backref = asm.ccall(rb_backref_get as *const u8, vec![]);
 
         // rb_reg_nth_match((int)(type >> 1), backref);
-        add_comment(cb, "rb_reg_nth_match");
-        mov(
-            cb,
-            C_ARG_REGS[0],
-            imm_opnd((rtype >> 1).try_into().unwrap()),
+        asm.comment("rb_reg_nth_match");
+        let val = asm.ccall(
+            rb_reg_nth_match as *const u8,
+            vec![
+                Opnd::Imm((rtype >> 1).try_into().unwrap()),
+                backref,
+            ]
         );
-        mov(cb, C_ARG_REGS[1], RAX);
-        call_ptr(cb, REG0, rb_reg_nth_match as *const u8);
 
         let stack_ret = ctx.stack_push(Type::Unknown);
-        mov(cb, stack_ret, RAX);
+        asm.mov(stack_ret, val);
 
         KeepCompiling
     }
@@ -5499,22 +5508,24 @@ fn gen_getspecial(
 fn gen_getclassvariable(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     // rb_vm_getclassvariable can raise exceptions.
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
-    let cfp_iseq_opnd = mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_ISEQ);
-    mov(cb, C_ARG_REGS[0], cfp_iseq_opnd);
-    mov(cb, C_ARG_REGS[1], REG_CFP);
-    mov(cb, C_ARG_REGS[2], uimm_opnd(jit_get_arg(jit, 0).as_u64()));
-    mov(cb, C_ARG_REGS[3], uimm_opnd(jit_get_arg(jit, 1).as_u64()));
+    let val_opnd = asm.ccall(
+        rb_vm_getclassvariable as *const u8,
+        vec![
+            Opnd::mem(64, CFP, RUBY_OFFSET_CFP_ISEQ),
+            CFP,
+            Opnd::UImm(jit_get_arg(jit, 0).as_u64()),
+            Opnd::UImm(jit_get_arg(jit, 1).as_u64()),
+        ],
+    );
 
-    call_ptr(cb, REG0, rb_vm_getclassvariable as *const u8);
-
-    let stack_top = ctx.stack_push(Type::Unknown);
-    mov(cb, stack_top, RAX);
+    let top = ctx.stack_push(Type::Unknown);
+    asm.mov(top, val_opnd);
 
     KeepCompiling
 }
@@ -5522,24 +5533,27 @@ fn gen_getclassvariable(
 fn gen_setclassvariable(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     // rb_vm_setclassvariable can raise exceptions.
-    jit_prepare_routine_call(jit, ctx, cb, REG0);
+    jit_prepare_routine_call(jit, ctx, asm);
 
-    let cfp_iseq_opnd = mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_ISEQ);
-    mov(cb, C_ARG_REGS[0], cfp_iseq_opnd);
-    mov(cb, C_ARG_REGS[1], REG_CFP);
-    mov(cb, C_ARG_REGS[2], uimm_opnd(jit_get_arg(jit, 0).as_u64()));
-    mov(cb, C_ARG_REGS[3], ctx.stack_pop(1));
-    mov(cb, C_ARG_REGS[4], uimm_opnd(jit_get_arg(jit, 1).as_u64()));
-
-    call_ptr(cb, REG0, rb_vm_setclassvariable as *const u8);
+    asm.ccall(
+        rb_vm_setclassvariable as *const u8,
+        vec![
+            Opnd::mem(64, CFP, RUBY_OFFSET_CFP_ISEQ),
+            CFP,
+            Opnd::UImm(jit_get_arg(jit, 0).as_u64()),
+            ctx.stack_pop(1),
+            Opnd::UImm(jit_get_arg(jit, 1).as_u64()),
+        ],
+    );
 
     KeepCompiling
 }
 
+/*
 fn gen_opt_getinlinecache(
     jit: &mut JITState,
     ctx: &mut Context,
@@ -5901,7 +5915,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_duphash => Some(gen_duphash),
         YARVINSN_newarray => Some(gen_newarray),
         YARVINSN_duparray => Some(gen_duparray),
-        //YARVINSN_checktype => Some(gen_checktype),
+        YARVINSN_checktype => Some(gen_checktype),
         YARVINSN_opt_lt => Some(gen_opt_lt),
         /*
         YARVINSN_opt_le => Some(gen_opt_le),
@@ -5914,12 +5928,10 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_splatarray => Some(gen_splatarray),
         YARVINSN_newrange => Some(gen_newrange),
         YARVINSN_putstring => Some(gen_putstring),
-        /*
-        YARVINSN_expandarray => Some(gen_expandarray),
+        //YARVINSN_expandarray => Some(gen_expandarray),
         YARVINSN_defined => Some(gen_defined),
-        */
         YARVINSN_checkkeyword => Some(gen_checkkeyword),
-        //YARVINSN_concatstrings => Some(gen_concatstrings),
+        YARVINSN_concatstrings => Some(gen_concatstrings),
         YARVINSN_getinstancevariable => Some(gen_getinstancevariable),
         //YARVINSN_setinstancevariable => Some(gen_setinstancevariable),
 
@@ -5951,22 +5963,20 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
 
         //YARVINSN_getblockparamproxy => Some(gen_getblockparamproxy),
         //YARVINSN_getblockparam => Some(gen_getblockparam),
-        //YARVINSN_opt_send_without_block => Some(gen_opt_send_without_block),
+        YARVINSN_opt_send_without_block => Some(gen_opt_send_without_block),
         //YARVINSN_send => Some(gen_send),
         //YARVINSN_invokesuper => Some(gen_invokesuper),
         YARVINSN_leave => Some(gen_leave),
 
         YARVINSN_getglobal => Some(gen_getglobal),
-        /*
         YARVINSN_setglobal => Some(gen_setglobal),
         YARVINSN_anytostring => Some(gen_anytostring),
-        YARVINSN_objtostring => Some(gen_objtostring),
+        //YARVINSN_objtostring => Some(gen_objtostring),
         YARVINSN_intern => Some(gen_intern),
         YARVINSN_toregexp => Some(gen_toregexp),
         YARVINSN_getspecial => Some(gen_getspecial),
         YARVINSN_getclassvariable => Some(gen_getclassvariable),
         YARVINSN_setclassvariable => Some(gen_setclassvariable),
-        */
 
         // Unimplemented opcode, YJIT won't generate code for this yet
         _ => None,

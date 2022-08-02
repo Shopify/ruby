@@ -144,6 +144,19 @@ assert_equal 'true', %q{
     foo()
 }
 
+# opt_send_without_block (VM_METHOD_TYPE_ATTRSET)
+assert_equal 'foo', %q{
+    class Foo
+      attr_writer :foo
+
+      def foo()
+        self.foo = "foo"
+      end
+    end
+    foo = Foo.new
+    foo.foo
+}
+
 # getglobal
 assert_equal '333', %q{
     $bar = 333
@@ -161,13 +174,86 @@ assert_equal '0..3', %q{
     foo(3)
 }
 
+# defined
+assert_equal '[nil, "method"]', %q{
+    def foo()
+        [defined?(a), defined?(foo)]
+    end
+    foo()
+}
 
+# checktype
+assert_equal 'false', %q{
+    def function()
+        [1, 2] in [Integer, String]
+    end
+    function()
+}
 
+# getclassvariable
+assert_equal 'foo', %q{
+    class Foo
+      @@foo = "foo"
 
+      def self.foo
+        @@foo
+      end
+    end
 
+    Foo.foo
+}
 
+# setclassvariable
+assert_equal 'foo', %q{
+    class Foo
+      def self.foo
+        @@foo = "foo"
+      end
+    end
 
+    Foo.foo
+}
 
+# getspecial
+assert_equal '[nil, nil, nil, nil, nil]', %q{
+    def foo()
+      [$&, $`, $', $+, $1]
+    end
+    foo().inspect
+}
+
+# setglobal
+assert_equal 'foo', %q{
+    def foo()
+      $foo = "foo"
+    end
+    foo()
+    $foo
+}
+
+# anytostring, intern
+assert_equal 'true', %q{
+    def foo()
+      :"#{true}"
+    end
+    foo()
+}
+
+# toregexp
+assert_equal '/true/', %q{
+    def foo()
+      /#{true}/
+    end
+    foo().inspect
+}
+
+# concatstrings
+assert_equal '9001', %q{
+    def foo()
+      "#{9001}"
+    end
+    foo()
+}
 
 
 
