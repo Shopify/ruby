@@ -223,7 +223,38 @@ assert_equal 'foo', %q{
     Foo.foo
 }
 
+# getspecial
+assert_equal 'nil', %q{
+    def foo()
+      $1
+    end
+    foo().inspect
+}
 
+# setglobal
+assert_equal 'foo', %q{
+    def foo()
+      $foo = "foo"
+    end
+    foo()
+    $foo
+}
+
+# anytostring, intern
+assert_equal 'true', %q{
+    def foo()
+      :"#{true}"
+    end
+    foo()
+}
+
+# toregexp
+assert_equal '/true/', %q{
+    def foo()
+      /#{true}/
+    end
+    foo().inspect
+}
 
 
 
