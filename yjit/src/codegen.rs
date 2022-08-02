@@ -2265,8 +2265,10 @@ fn gen_concatstrings(
     let values_ptr = ctx.sp_opnd(-((SIZEOF_VALUE as isize) * n.as_isize()));
 
     // call rb_str_concat_literals(long n, const VALUE *strings);
-    let args: Vec<Opnd> = vec![Opnd::UImm(n.into()), values_ptr];
-    let return_value = asm.ccall(rb_str_concat_literals as *const u8, args);
+    let return_value = asm.ccall(
+        rb_str_concat_literals as *const u8,
+        vec![Opnd::UImm(n.into()), values_ptr]
+    );
 
     ctx.stack_pop(n.as_usize());
     let stack_ret = ctx.stack_push(Type::CString);

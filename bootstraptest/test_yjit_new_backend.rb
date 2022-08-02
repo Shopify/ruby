@@ -231,7 +231,6 @@ assert_equal 'foo', %q{
     $foo
 }
 
-<<<<<<< HEAD
 # anytostring, intern
 assert_equal 'true', %q{
     def foo()
