@@ -5431,11 +5431,10 @@ fn gen_toregexp(
     KeepCompiling
 }
 
-/*
 fn gen_getspecial(
     jit: &mut JITState,
     ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     // This takes two arguments, key and type
@@ -5451,65 +5450,63 @@ fn gen_getspecial(
         // Fetch a "special" backref based on a char encoded by shifting by 1
 
         // Can raise if matchdata uninitialized
-        jit_prepare_routine_call(jit, ctx, cb, REG0);
+        jit_prepare_routine_call(jit, ctx, asm);
 
         // call rb_backref_get()
-        add_comment(cb, "rb_backref_get");
-        call_ptr(cb, REG0, rb_backref_get as *const u8);
-        mov(cb, C_ARG_REGS[0], RAX);
+        asm.comment("rb_backref_get");
+        let backref = asm.ccall(rb_backref_get as *const u8, vec![]);
 
         let rt_u8: u8 = (rtype >> 1).try_into().unwrap();
-        match rt_u8.into() {
+        let val = match rt_u8.into() {
             '&' => {
-                add_comment(cb, "rb_reg_last_match");
-                call_ptr(cb, REG0, rb_reg_last_match as *const u8);
+                asm.comment("rb_reg_last_match");
+                asm.ccall(rb_reg_last_match as *const u8, vec![backref])
             }
             '`' => {
-                add_comment(cb, "rb_reg_match_pre");
-                call_ptr(cb, REG0, rb_reg_match_pre as *const u8);
+                asm.comment("rb_reg_match_pre");
+                asm.ccall(rb_reg_match_pre as *const u8, vec![backref])
             }
             '\'' => {
-                add_comment(cb, "rb_reg_match_post");
-                call_ptr(cb, REG0, rb_reg_match_post as *const u8);
+                asm.comment("rb_reg_match_post");
+                asm.ccall(rb_reg_match_post as *const u8, vec![backref])
             }
             '+' => {
-                add_comment(cb, "rb_reg_match_last");
-                call_ptr(cb, REG0, rb_reg_match_last as *const u8);
+                asm.comment("rb_reg_match_last");
+                asm.ccall(rb_reg_match_last as *const u8, vec![backref])
             }
             _ => panic!("invalid back-ref"),
-        }
+        };
 
         let stack_ret = ctx.stack_push(Type::Unknown);
-        mov(cb, stack_ret, RAX);
+        asm.mov(stack_ret, val);
 
         KeepCompiling
     } else {
         // Fetch the N-th match from the last backref based on type shifted by 1
 
         // Can raise if matchdata uninitialized
-        jit_prepare_routine_call(jit, ctx, cb, REG0);
+        jit_prepare_routine_call(jit, ctx, asm);
 
         // call rb_backref_get()
-        add_comment(cb, "rb_backref_get");
-        call_ptr(cb, REG0, rb_backref_get as *const u8);
+        asm.comment("rb_backref_get");
+        let backref = asm.ccall(rb_backref_get as *const u8, vec![]);
 
         // rb_reg_nth_match((int)(type >> 1), backref);
-        add_comment(cb, "rb_reg_nth_match");
-        mov(
-            cb,
-            C_ARG_REGS[0],
-            imm_opnd((rtype >> 1).try_into().unwrap()),
+        asm.comment("rb_reg_nth_match");
+        let val = asm.ccall(
+            rb_reg_nth_match as *const u8,
+            vec![
+                Opnd::Imm((rtype >> 1).try_into().unwrap()),
+                backref,
+            ]
         );
-        mov(cb, C_ARG_REGS[1], RAX);
-        call_ptr(cb, REG0, rb_reg_nth_match as *const u8);
 
         let stack_ret = ctx.stack_push(Type::Unknown);
-        mov(cb, stack_ret, RAX);
+        asm.mov(stack_ret, val);
 
         KeepCompiling
     }
 }
-*/
 
 fn gen_getclassvariable(
     jit: &mut JITState,
@@ -5980,7 +5977,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         //YARVINSN_objtostring => Some(gen_objtostring),
         YARVINSN_intern => Some(gen_intern),
         YARVINSN_toregexp => Some(gen_toregexp),
-        //YARVINSN_getspecial => Some(gen_getspecial),
+        YARVINSN_getspecial => Some(gen_getspecial),
         YARVINSN_getclassvariable => Some(gen_getclassvariable),
         YARVINSN_setclassvariable => Some(gen_setclassvariable),
 
