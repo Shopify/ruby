@@ -2043,7 +2043,7 @@ fn gen_get_ivar(
 
         // Check that the ivar is not Qundef
         asm.cmp(ivar_opnd, Qundef.into());
-        let out_val = asm.csel_e(ivar_opnd, Qnil.into());
+        let out_val = asm.csel_ne(ivar_opnd, Qnil.into());
 
         // Push the ivar on the stack
         let out_opnd = ctx.stack_push(Type::Unknown);
