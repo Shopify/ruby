@@ -98,7 +98,7 @@ impl Assembler
             // Load heap object operands into registers because most
             // instructions can't directly work with 64-bit constants
             let opnds = match op {
-                Op::Load | Op::Mov => opnds,
+                Op::Load => opnds,
                 _ => opnds.into_iter().map(|opnd| {
                     if let Opnd::Value(value) = opnd {
                         if !value.special_const_p() {
