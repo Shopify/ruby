@@ -233,7 +233,7 @@ macro_rules! counted_exit {
             gen_counter_incr!(ocb_asm, $counter_name);
 
             // Jump to the existing side exit
-            ocb_asm.jmp(Target::CodePtr($existing_side_exit));
+            ocb_asm.jmp($existing_side_exit.into());
             ocb_asm.compile(ocb);
 
             // Pointer to the side-exit code
@@ -1782,7 +1782,7 @@ fn gen_jnz_to_target0(
 ) {
     match shape {
         BranchShape::Next0 | BranchShape::Next1 => unreachable!(),
-        BranchShape::Default => asm.jnz(Target::CodePtr(target0)),
+        BranchShape::Default => asm.jnz(target0.into()),
     }
 }
 
