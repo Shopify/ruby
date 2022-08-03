@@ -2036,7 +2036,7 @@ fn gen_get_ivar(
         }
 
         // Get a pointer to the extended table
-        let tbl_opnd = Opnd::mem(64, recv, ROBJECT_OFFSET_AS_HEAP_IVPTR);
+        let tbl_opnd = asm.load(Opnd::mem(64, recv, ROBJECT_OFFSET_AS_HEAP_IVPTR));
 
         // Read the ivar from the extended table
         let ivar_opnd = Opnd::mem(64, tbl_opnd, (SIZEOF_VALUE * ivar_index) as i32);
@@ -3483,6 +3483,11 @@ fn jit_guard_known_klass(
             ctx.upgrade_opnd_type(insn_opnd, Type::UnknownHeap);
         }
 
+        // If obj_opnd isn't already a register, load it.
+        let obj_opnd = match obj_opnd {
+            Opnd::Reg(_) => obj_opnd,
+            _ => asm.load(obj_opnd),
+        };
         let klass_opnd = Opnd::mem(64, obj_opnd, RUBY_OFFSET_RBASIC_KLASS);
 
         // Bail if receiver class is different from known_klass

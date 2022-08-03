@@ -242,15 +242,6 @@ impl Opnd
                 })
             },
 
-            Opnd::Mem(base) => {
-                assert!(num_bits == base.num_bits);
-                Opnd::Mem(Mem {
-                    base: base.base,
-                    disp: disp + base.disp,
-                    num_bits: num_bits,
-                })
-            },
-
             _ => unreachable!("memory operand with non-register base")
         }
     }

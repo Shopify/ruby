@@ -112,12 +112,6 @@ fn test_mov_mem2mem()
     asm.compile_with_num_regs(&mut cb, 1);
 }
 
-#[test]
-fn test_mem_based_mem() {
-    let self_asm_opnd = Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF);
-    Opnd::mem(64, self_asm_opnd, RUBY_OFFSET_RBASIC_KLASS);
-}
-
 // Test load of register into new register
 #[test]
 fn test_load_reg()
