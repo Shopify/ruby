@@ -1973,7 +1973,7 @@ fn gen_get_ivar(
         // Check that the slot is inside the ivar table (num_slots > index)
         let num_slots = Opnd::mem(32, recv, ROBJECT_OFFSET_NUMIV);
         asm.cmp(num_slots, Opnd::UImm(ivar_index as u64));
-        asm.jbe(Target::CodePtr(counted_exit!(ocb, side_exit, getivar_idx_out_of_range)));
+        asm.jbe(counted_exit!(ocb, side_exit, getivar_idx_out_of_range).into());
     }
 
     // Compile time self is embedded and the ivar index lands within the object
