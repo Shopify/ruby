@@ -145,13 +145,14 @@ assert_equal 'true', %q{
 }
 
 # opt_send_without_block (VM_METHOD_TYPE_CFUNC)
-assert_equal '["nil", 4, "aba", true]', %q{
+assert_equal '["nil", 4, "aba", true, ["a", "b"]]', %q{
     def foo
       [
-        nil.inspect,              # 0
-        2.pow(2),                 # 1
-        "abc".tr("c", "a"),       # 2
-        respond_to?(:inspect),    # -1
+        nil.inspect,               # 0
+        2.pow(2),                  # 1
+        "abc".tr("c", "a"),        # 2
+        respond_to?(:inspect),     # -1
+        "a\nb".lines(chomp: true), # -1
       ]
     end
     foo

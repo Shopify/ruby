@@ -4033,13 +4033,9 @@ fn gen_send_cfunc(
 
     if !kw_arg.is_null() {
         // Build a hash from all kwargs passed
-        let kwargs = asm.ccall(
-            build_kwhash as *const u8,
-            vec![
-                Opnd::UImm(ci as u64),
-                ctx.sp_opnd(0),
-            ],
-        );
+        asm.comment("build_kwhash");
+        let sp = asm.lea(ctx.sp_opnd(0));
+        let kwargs = asm.ccall(build_kwhash as *const u8, vec![Opnd::UImm(ci as u64), sp]);
 
         // Replace the stack location at the start of kwargs with the new hash
         let stack_opnd = ctx.stack_opnd(argc - passed_argc);
