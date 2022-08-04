@@ -180,6 +180,15 @@ fn jit_peek_at_local(jit: &JITState, n: i32) -> VALUE {
     }
 }
 
+fn jit_peek_at_block_handler(jit: &JITState, level: u32) -> VALUE {
+    assert!(jit_at_current_insn(jit));
+
+    unsafe {
+        let ep = get_cfp_ep_level(get_ec_cfp(jit.ec.unwrap()), level);
+        *ep.offset(VM_ENV_DATA_INDEX_SPECVAL as isize)
+    }
+}
+
 // Add a comment at the current position in the code block
 fn add_comment(cb: &mut CodeBlock, comment_str: &str) {
     if cfg!(feature = "asm_comments") {
@@ -1319,6 +1328,31 @@ fn guard_object_is_array(
     jne_ptr(cb, side_exit);
 }
 
+fn guard_object_is_string(
+    cb: &mut CodeBlock,
+    object_reg: X86Opnd,
+    flags_reg: X86Opnd,
+    side_exit: CodePtr,
+) {
+    add_comment(cb, "guard object is string");
+
+    // Pull out the type mask
+    mov(
+        cb,
+        flags_reg,
+        mem_opnd(
+            8 * SIZEOF_VALUE as u8,
+            object_reg,
+            RUBY_OFFSET_RBASIC_FLAGS,
+        ),
+    );
+    and(cb, flags_reg, uimm_opnd(RUBY_T_MASK as u64));
+
+    // Compare the result with T_STRING
+    cmp(cb, flags_reg, uimm_opnd(RUBY_T_STRING as u64));
+    jne_ptr(cb, side_exit);
+}
+
 // push enough nils onto the stack to fill out an array
 fn gen_expandarray(
     jit: &mut JITState,
@@ -2190,22 +2224,16 @@ fn gen_checktype(
         let val = ctx.stack_pop(1);
 
         // Check if we know from type information
-        match (type_val, val_type) {
-            (RUBY_T_STRING, Type::TString)
-            | (RUBY_T_STRING, Type::CString)
-            | (RUBY_T_ARRAY, Type::Array)
-            | (RUBY_T_HASH, Type::Hash) => {
-                // guaranteed type match
-                let stack_ret = ctx.stack_push(Type::True);
-                asm.mov(stack_ret, Opnd::UImm(Qtrue.into()));
-                return KeepCompiling;
-            }
-            _ if val_type.is_imm() || val_type.is_specific() => {
-                // guaranteed not to match T_STRING/T_ARRAY/T_HASH
-                let stack_ret = ctx.stack_push(Type::False);
-                asm.mov(stack_ret, Opnd::UImm(Qfalse.into()));
-                return KeepCompiling;
-            }
+        match val_type.known_value_type() {
+            Some(value_type) => {
+                if value_type == type_val {
+                    jit_putobject(jit, ctx, asm, Qtrue);
+                    return KeepCompiling;
+                } else {
+                    jit_putobject(jit, ctx, asm, Qfalse);
+                    return KeepCompiling;
+                }
+            },
             _ => (),
         }
 
@@ -2469,7 +2497,8 @@ fn gen_equality_specialized(
 
         // Otherwise guard that b is a T_STRING (from type info) or String (from runtime guard)
         let btype = ctx.get_opnd_type(StackOpnd(0));
-        if btype != Type::TString && btype != Type::CString {
+        if btype.known_value_type() != Some(RUBY_T_STRING) {
+            mov(cb, REG0, C_ARG_REGS[1]);
             // Note: any T_STRING is valid here, but we check for a ::String for simplicity
             // To pass a mutable static variable (rb_cString) requires an unsafe block
             jit_guard_known_klass(
@@ -3374,52 +3403,48 @@ fn jit_guard_known_klass(
 ) {
     let val_type = ctx.get_opnd_type(insn_opnd);
 
+    if val_type.known_class() == Some(known_klass) {
+        // We already know from type information that this is a match
+        return;
+    }
+
     if unsafe { known_klass == rb_cNilClass } {
         assert!(!val_type.is_heap());
-        if val_type != Type::Nil {
-            assert!(val_type.is_unknown());
+        assert!(val_type.is_unknown());
 
-            asm.comment("guard object is nil");
-            asm.cmp(obj_opnd, Qnil.into());
-            jit_chain_guard(JCC_JNE, jit, ctx, asm, ocb, max_chain_depth, side_exit);
+        asm.comment("guard object is nil");
+        asm.cmp(obj_opnd, Qnil.into());
+        jit_chain_guard(JCC_JNE, jit, ctx, asm, ocb, max_chain_depth, side_exit);
 
-            ctx.upgrade_opnd_type(insn_opnd, Type::Nil);
-        }
+        ctx.upgrade_opnd_type(insn_opnd, Type::Nil);
     } else if unsafe { known_klass == rb_cTrueClass } {
         assert!(!val_type.is_heap());
-        if val_type != Type::True {
-            assert!(val_type.is_unknown());
+        assert!(val_type.is_unknown());
 
-            asm.comment("guard object is true");
-            asm.cmp(obj_opnd, Qtrue.into());
-            jit_chain_guard(JCC_JNE, jit, ctx, asm, ocb, max_chain_depth, side_exit);
+        asm.comment("guard object is true");
+        asm.cmp(obj_opnd, Qtrue.into());
+        jit_chain_guard(JCC_JNE, jit, ctx, asm, ocb, max_chain_depth, side_exit);
 
-            ctx.upgrade_opnd_type(insn_opnd, Type::True);
-        }
+        ctx.upgrade_opnd_type(insn_opnd, Type::True);
     } else if unsafe { known_klass == rb_cFalseClass } {
         assert!(!val_type.is_heap());
-        if val_type != Type::False {
-            assert!(val_type.is_unknown());
+        assert!(val_type.is_unknown());
 
-            asm.comment("guard object is false");
-            assert!(Qfalse.as_i32() == 0);
-            asm.test(obj_opnd, obj_opnd);
-            jit_chain_guard(JCC_JNZ, jit, ctx, asm, ocb, max_chain_depth, side_exit);
+        asm.comment("guard object is false");
+        assert!(Qfalse.as_i32() == 0);
+        asm.test(obj_opnd, obj_opnd);
+        jit_chain_guard(JCC_JNZ, jit, ctx, asm, ocb, max_chain_depth, side_exit);
 
-            ctx.upgrade_opnd_type(insn_opnd, Type::False);
-        }
+        ctx.upgrade_opnd_type(insn_opnd, Type::False);
     } else if unsafe { known_klass == rb_cInteger } && sample_instance.fixnum_p() {
-        assert!(!val_type.is_heap());
         // We will guard fixnum and bignum as though they were separate classes
         // BIGNUM can be handled by the general else case below
-        if val_type != Type::Fixnum || !val_type.is_imm() {
-            assert!(val_type.is_unknown());
+        assert!(val_type.is_unknown());
 
-            asm.comment("guard object is fixnum");
-            asm.test(obj_opnd, Opnd::Imm(RUBY_FIXNUM_FLAG as i64));
-            jit_chain_guard(JCC_JZ, jit, ctx, asm, ocb, max_chain_depth, side_exit);
-            ctx.upgrade_opnd_type(insn_opnd, Type::Fixnum);
-        }
+        asm.comment("guard object is fixnum");
+        asm.test(obj_opnd, Opnd::Imm(RUBY_FIXNUM_FLAG as i64));
+        jit_chain_guard(JCC_JZ, jit, ctx, asm, ocb, max_chain_depth, side_exit);
+        ctx.upgrade_opnd_type(insn_opnd, Type::Fixnum);
     } else if unsafe { known_klass == rb_cSymbol } && sample_instance.static_sym_p() {
         assert!(!val_type.is_heap());
         // We will guard STATIC vs DYNAMIC as though they were separate classes
@@ -3547,23 +3572,25 @@ fn jit_rb_obj_not(
 ) -> bool {
     let recv_opnd = ctx.get_opnd_type(StackOpnd(0));
 
-    if recv_opnd == Type::Nil || recv_opnd == Type::False {
-        add_comment(cb, "rb_obj_not(nil_or_false)");
-        ctx.stack_pop(1);
-        let out_opnd = ctx.stack_push(Type::True);
-        mov(cb, out_opnd, uimm_opnd(Qtrue.into()));
-    } else if recv_opnd.is_heap() || recv_opnd.is_specific() {
-        // Note: recv_opnd != Type::Nil && recv_opnd != Type::False.
-        add_comment(cb, "rb_obj_not(truthy)");
-        ctx.stack_pop(1);
-        let out_opnd = ctx.stack_push(Type::False);
-        mov(cb, out_opnd, uimm_opnd(Qfalse.into()));
-    } else {
-        // jit_guard_known_klass() already ran on the receiver which should
-        // have deduced deduced the type of the receiver. This case should be
-        // rare if not unreachable.
-        return false;
+    match recv_opnd.known_truthy() {
+        Some(false) => {
+            add_comment(cb, "rb_obj_not(nil_or_false)");
+            ctx.stack_pop(1);
+            let out_opnd = ctx.stack_push(Type::True);
+            mov(cb, out_opnd, uimm_opnd(Qtrue.into()));
+        },
+        Some(true) => {
+            // Note: recv_opnd != Type::Nil && recv_opnd != Type::False.
+            add_comment(cb, "rb_obj_not(truthy)");
+            ctx.stack_pop(1);
+            let out_opnd = ctx.stack_push(Type::False);
+            mov(cb, out_opnd, uimm_opnd(Qfalse.into()));
+        },
+        _ => {
+            return false;
+        },
     }
+
     true
 }
 
@@ -3718,7 +3745,7 @@ fn jit_rb_str_to_s(
     false
 }
 
-// Codegen for rb_str_concat()
+// Codegen for rb_str_concat() -- *not* String#concat
 // Frequently strings are concatenated using "out_str << next_str".
 // This is common in Erb and similar templating languages.
 fn jit_rb_str_concat(
@@ -3732,14 +3759,12 @@ fn jit_rb_str_concat(
     _argc: i32,
     _known_recv_class: *const VALUE,
 ) -> bool {
+    // The << operator can accept integer codepoints for characters
+    // as the argument. We only specially optimise string arguments.
+    // If the peeked-at compile time argument is something other than
+    // a string, assume it won't be a string later either.
     let comptime_arg = jit_peek_at_stack(jit, ctx, 0);
-    let comptime_arg_type = ctx.get_opnd_type(StackOpnd(0));
-
-    // String#<< can take an integer codepoint as an argument, but we don't optimise that.
-    // Also, a non-string argument would have to call .to_str on itself before being treated
-    // as a string, and that would require saving pc/sp, which we don't do here.
-    // TODO: figure out how we should optimise a string-subtype argument here
-    if comptime_arg_type != Type::CString && comptime_arg.class_of() != unsafe { rb_cString } {
+    if ! unsafe { RB_TYPE_P(comptime_arg, RUBY_T_STRING) } {
         return false;
     }
 
@@ -3747,18 +3772,25 @@ fn jit_rb_str_concat(
     let side_exit = get_side_exit(jit, ocb, ctx);
 
     // Guard that the argument is of class String at runtime.
-    jit_guard_known_klass(
-        jit,
-        ctx,
-        cb,
-        ocb,
-        unsafe { rb_cString },
-        ctx.stack_opnd(0),
-        StackOpnd(0),
-        comptime_arg,
-        SEND_MAX_DEPTH,
-        side_exit,
-    );
+    let insn_opnd = StackOpnd(0);
+    let arg_opnd = ctx.stack_opnd(0);
+    mov(cb, REG0, arg_opnd);
+    let arg_type = ctx.get_opnd_type(insn_opnd);
+
+    if arg_type != Type::CString && arg_type != Type::TString {
+        if !arg_type.is_heap() {
+            add_comment(cb, "guard arg not immediate");
+            test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK as i64));
+            jnz_ptr(cb, side_exit);
+            cmp(cb, REG0, imm_opnd(Qnil.into()));
+            jbe_ptr(cb, side_exit);
+
+            ctx.upgrade_opnd_type(insn_opnd, Type::UnknownHeap);
+        }
+        guard_object_is_string(cb, REG0, REG1, side_exit);
+        // We know this has type T_STRING, but not necessarily that it's a ::String
+        ctx.upgrade_opnd_type(insn_opnd, Type::TString);
+    }
 
     let concat_arg = ctx.stack_pop(1);
     let recv = ctx.stack_pop(1);
@@ -3781,7 +3813,7 @@ fn jit_rb_str_concat(
     test(cb, REG0, uimm_opnd(RUBY_ENCODING_MASK as u64));
 
     let enc_mismatch = cb.new_label("enc_mismatch".to_string());
-    jne_label(cb, enc_mismatch);
+    jnz_label(cb, enc_mismatch);
 
     // If encodings match, call the simple append function and jump to return
     call_ptr(cb, REG0, rb_yjit_str_simple_append as *const u8);
@@ -5637,12 +5669,28 @@ fn gen_getblockparamproxy(
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
+    if !jit_at_current_insn(jit) {
+        defer_compilation(jit, ctx, cb, ocb);
+        return EndBlock;
+    }
+
+    let starting_context = *ctx; // make a copy for use with jit_chain_guard
+
     // A mirror of the interpreter code. Checking for the case
     // where it's pushing rb_block_param_proxy.
     let side_exit = get_side_exit(jit, ocb, ctx);
 
     // EP level
     let level = jit_get_arg(jit, 1).as_u32();
+
+    // Peek at the block handler so we can check whether it's nil
+    let comptime_handler = jit_peek_at_block_handler(jit, level);
+
+    // When a block handler is present, it should always be a GC-guarded
+    // pointer (VM_BH_ISEQ_BLOCK_P)
+    if comptime_handler.as_u64() != 0 && comptime_handler.as_u64() & 0x3 != 0x1 {
+        return CantCompile;
+    }
 
     // Load environment pointer EP from CFP
     gen_get_ep(cb, REG0, level);
@@ -5672,27 +5720,54 @@ fn gen_getblockparamproxy(
         ),
     );
 
-    // Block handler is a tagged pointer. Look at the tag. 0x03 is from VM_BH_ISEQ_BLOCK_P().
-    and(cb, REG0_8, imm_opnd(0x3));
+    // Specialize compilation for the case where no block handler is present
+    if comptime_handler.as_u64() == 0 {
+        // Bail if there is a block handler
+        cmp(cb, REG0, uimm_opnd(0));
 
-    // Bail unless VM_BH_ISEQ_BLOCK_P(bh). This also checks for null.
-    cmp(cb, REG0_8, imm_opnd(0x1));
-    jnz_ptr(
-        cb,
-        counted_exit!(ocb, side_exit, gbpp_block_handler_not_iseq),
-    );
+        jit_chain_guard(
+            JCC_JNZ,
+            jit,
+            &starting_context,
+            cb,
+            ocb,
+            SEND_MAX_DEPTH,
+            side_exit,
+        );
 
-    // Push rb_block_param_proxy. It's a root, so no need to use jit_mov_gc_ptr.
-    mov(
-        cb,
-        REG0,
-        const_ptr_opnd(unsafe { rb_block_param_proxy }.as_ptr()),
-    );
-    assert!(!unsafe { rb_block_param_proxy }.special_const_p());
-    let top = ctx.stack_push(Type::UnknownHeap);
-    mov(cb, top, REG0);
+        jit_putobject(jit, ctx, cb, Qnil);
+    } else {
+        // Block handler is a tagged pointer. Look at the tag. 0x03 is from VM_BH_ISEQ_BLOCK_P().
+        and(cb, REG0_8, imm_opnd(0x3));
 
-    KeepCompiling
+        // Bail unless VM_BH_ISEQ_BLOCK_P(bh). This also checks for null.
+        cmp(cb, REG0_8, imm_opnd(0x1));
+
+        jit_chain_guard(
+            JCC_JNZ,
+            jit,
+            &starting_context,
+            cb,
+            ocb,
+            SEND_MAX_DEPTH,
+            side_exit,
+        );
+
+        // Push rb_block_param_proxy. It's a root, so no need to use jit_mov_gc_ptr.
+        mov(
+            cb,
+            REG0,
+            const_ptr_opnd(unsafe { rb_block_param_proxy }.as_ptr()),
+        );
+        assert!(!unsafe { rb_block_param_proxy }.special_const_p());
+
+        let top = ctx.stack_push(Type::Unknown);
+        mov(cb, top, REG0);
+    }
+
+    jump_to_next_insn(jit, ctx, cb, ocb);
+
+    EndBlock
 }
 
 fn gen_getblockparam(
