@@ -68,24 +68,25 @@ jobs:
           bootstraptest/test_gc.rb \
           bootstraptest/test_io.rb \
           bootstraptest/test_jump.rb \
+          bootstraptest/test_literal.rb \
           bootstraptest/test_literal_suffix.rb \
           bootstraptest/test_load.rb \
           bootstraptest/test_marshal.rb \
           bootstraptest/test_massign.rb \
           bootstraptest/test_method.rb \
           bootstraptest/test_objectspace.rb \
+          bootstraptest/test_proc.rb \
           bootstraptest/test_string.rb \
           bootstraptest/test_struct.rb \
+          bootstraptest/test_thread.rb \
           bootstraptest/test_yjit_new_backend.rb \
           bootstraptest/test_yjit_rust_port.rb
 
       # These are the btests we can't run yet on x86:
       #bootstraptest/test_block.rb (missing opt_send)
       #bootstraptest/test_insns.rb (missing opt_send)
-      #bootstraptest/test_literal.rb (bug in x86_split pass)
-      #bootstraptest/test_proc.rb (bug in x86_split pass)
+      #bootstraptest/test_ractor.rb (splitting error?)
       #bootstraptest/test_syntax.rb (missing opt_send)
-      #bootstraptest/test_thread.rb (deadlock)
       #bootstraptest/test_yjit.rb (multiple bugs)
       #bootstraptest/test_yjit_30k_ifelse.rb (missing opt_send)
       #bootstraptest/test_yjit_30k_methods.rb (missing opt_send)
