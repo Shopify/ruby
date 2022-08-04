@@ -2225,7 +2225,7 @@ fn gen_checktype(
             Opnd::mem(64, val, RUBY_OFFSET_RBASIC_FLAGS),
             Opnd::UImm(RUBY_T_MASK.into()));
         asm.cmp(object_type, Opnd::UImm(type_val.into()));
-        let ret_opnd = asm.csel_ne(Opnd::UImm(Qfalse.into()), Opnd::UImm(Qtrue.into()));
+        let ret_opnd = asm.csel_e(Qtrue.into(), Qfalse.into());
 
         asm.write_label(ret);
         let stack_ret = ctx.stack_push(Type::UnknownImm);
