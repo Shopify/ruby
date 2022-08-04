@@ -4,6 +4,31 @@
 # To look up Ruby snippets using specific instructions, see:
 # https://kddnewton.com/yarv/
 
+# Microbenchmark with a loop, opt_lt
+assert_equal '55', %q{
+    def foo(n)
+        i = 0
+        s = 0
+        while i < n do
+            i += 1
+            s += i
+        end
+        s
+    end
+    foo(10)
+}
+
+# Small recursive microbenchmark
+assert_equal '21', %q{
+    def fib(n)
+        if n < 2
+            return n
+        end
+        return fib(n-1) + fib(n-2)
+    end
+    fib(8)
+}
+
 assert_equal '1', %q{
     def foo()
       1
@@ -312,6 +337,24 @@ assert_equal '[nil, 1]', %q{
     [Foo.new.foo, bar]
 }
 
+# BOP redefinition works on Integer#<
+assert_equal 'false', %q{
+  def less_than x
+    x < 10
+  end
+
+  less_than 2
+  less_than 2
+
+  class Integer
+    def < x
+      false
+    end
+  end
+
+  less_than 2
+}
+
 # Test that object references in generated code get marked and moved
 assert_equal "good", %q{
   def bar
@@ -332,29 +375,4 @@ assert_equal "good", %q{
   end
 
   foo
-}
-
-# Microbenchmark with a loop, opt_lt
-assert_equal '55', %q{
-    def foo(n)
-        i = 0
-        s = 0
-        while i < n do
-            i += 1
-            s += i
-        end
-        s
-    end
-    foo(10)
-}
-
-# Small recursive microbenchmark
-assert_equal '21', %q{
-    def fib(n)
-        if n < 2
-            return n
-        end
-        return fib(n-1) + fib(n-2)
-    end
-    fib(8)
 }
