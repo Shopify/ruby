@@ -291,8 +291,8 @@ impl Opnd
         }
     }
 
-    /// Maps the indices from instructions in the old assembler to the
-    /// indices of transformed instructions in the new assembler
+    /// Maps the indices from a previous list of instructions to a new list of
+    /// instructions.
     pub fn map_index(self, indices: &Vec<usize>) -> Opnd {
         match self {
             Opnd::InsnOut { idx, num_bits } => {
@@ -817,11 +817,6 @@ impl AssemblerDrainingIterator {
         opnd.map_index(&self.indices)
     }
 
-    /// Map a vector of operands using this iterator's list of mapped indices.
-    pub fn map_opnds(&self, opnds: Vec<Opnd>) -> Vec<Opnd> {
-        opnds.into_iter().map(|opnd| self.map_opnd(opnd)).collect()
-    }
-
     /// Returns the next instruction in the list with the indices corresponding
     /// to the next list of instructions.
     pub fn next_mapped(&mut self) -> Option<(usize, Insn)> {
@@ -1027,3 +1022,46 @@ def_push_2_opnd!(csel_g, Op::CSelG);
 def_push_2_opnd!(csel_ge, Op::CSelGE);
 def_push_0_opnd_no_out!(frame_setup, Op::FrameSetup);
 def_push_0_opnd_no_out!(frame_teardown, Op::FrameTeardown);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_draining_iterator() {
+        let mut asm = Assembler::new();
+
+        asm.load(Opnd::None);
+        asm.store(Opnd::None, Opnd::None);
+        asm.add(Opnd::None, Opnd::None);
+
+        let mut iter = asm.into_draining_iter();
+
+        while let Some((index, insn)) = iter.next_unmapped() {
+            match index {
+                0 => assert_eq!(insn.op, Op::Load),
+                1 => assert_eq!(insn.op, Op::Store),
+                2 => assert_eq!(insn.op, Op::Add),
+                _ => panic!("Unexpected instruction index"),
+            };
+        }
+    }
+
+    #[test]
+    fn test_lookback_iterator() {
+        let mut asm = Assembler::new();
+
+        asm.load(Opnd::None);
+        asm.store(Opnd::None, Opnd::None);
+        asm.store(Opnd::None, Opnd::None);
+
+        let mut iter = asm.into_lookback_iter();
+
+        while let Some((index, insn)) = iter.next_unmapped() {
+            if index > 0 {
+                assert_eq!(iter.get_previous().unwrap().opnds[0], Opnd::None);
+                assert_eq!(insn.op, Op::Store);
+            }
+        }
+    }
+}
