@@ -145,15 +145,33 @@ assert_equal 'true', %q{
 }
 
 # opt_send_without_block (VM_METHOD_TYPE_CFUNC)
-assert_equal '["nil", 4, "aba", true, ["a", "b"]]', %q{
+assert_equal 'nil', %q{
     def foo
-      [
-        nil.inspect,               # 0
-        2.pow(2),                  # 1
-        "abc".tr("c", "a"),        # 2
-        respond_to?(:inspect),     # -1
-        "a\nb".lines(chomp: true), # -1
-      ]
+      nil.inspect # argc: 0
+    end
+    foo
+}
+assert_equal '4', %q{
+    def foo
+      2.pow(2) # argc: 1
+    end
+    foo
+}
+assert_equal 'aba', %q{
+    def foo
+      "abc".tr("c", "a") # argc: 2
+    end
+    foo
+}
+assert_equal 'true', %q{
+    def foo
+      respond_to?(:inspect) # argc: -1
+    end
+    foo
+}
+assert_equal '["a", "b"]', %q{
+    def foo
+      "a\nb".lines(chomp: true) # kwargs
     end
     foo
 }
