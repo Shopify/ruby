@@ -95,7 +95,7 @@ impl Assembler
         let live_ranges: Vec<usize> = std::mem::take(&mut self.live_ranges);
 
         self.forward_pass(|asm, index, op, opnds, target, text, pos_marker, original_opnds| {
-            // Load VALUEs into registers for because
+            // Load VALUEs into registers because
             //  - Most instructions can't be encoded with 64-bit immediates.
             //  - We look for Op::Load specifically when emiting to keep GC'ed
             //    VALUEs alive. This is a sort of canonicalization.
