@@ -1605,13 +1605,21 @@ uint32_t
 rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, T_OBJECT));
+    uint32_t len;
+
     // This uint32_t cast shouldn't lose information as it's checked in
     // iv_index_tbl_extend(). The index is stored as an uint32_t in
     // struct rb_iv_index_tbl_entry.
     transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
-    uint32_t idx = obj_ensure_iv_index_mapping(obj, id).index;
-    RUBY_ASSERT(idx <= ROBJECT_NUMIV(obj));
-    return idx;
+
+    struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
+    len = ROBJECT_NUMIV(obj);
+    if (len <= (ivup.index)) {
+        uint32_t newsize = iv_index_tbl_newsize(&ivup);
+        rb_ensure_iv_list_size(obj, len, newsize);
+    }
+    RUBY_ASSERT(ivup.index <= ROBJECT_NUMIV(obj));
+    return ivup.index;
 }
 
 static VALUE
