@@ -299,11 +299,3 @@ fn test_bake_string() {
     asm.bake_string("Hello, world!");
     asm.compile_with_num_regs(&mut cb, 0);
 }
-
-#[test]
-fn test_sub_mem() {
-    let (mut asm, mut cb) = setup_asm();
-    let cfp = Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP);
-    asm.sub(cfp, Opnd::UImm(RUBY_SIZEOF_CONTROL_FRAME as u64));
-    asm.compile_with_num_regs(&mut cb, 1);
-}
