@@ -65,6 +65,12 @@ assert_equal '[8]', %q{
     end
     foo(7)
 }
+assert_equal 'ab', %q{
+    def foo
+      "a" + "b"
+    end
+    foo
+}
 
 # setlocal, getlocal, opt_plus
 assert_equal '10', %q{
@@ -123,6 +129,120 @@ assert_equal '{:a=>777}', %q{
         { a: n }
     end
     foo(777)
+}
+
+# opt_lt
+assert_equal 'true', %q{1 < 2}
+assert_equal 'false', %q{1 < 1}
+assert_equal 'true', %q{"1" < "2"}
+assert_equal 'false', %q{"1" < "1"}
+
+# opt_le
+assert_equal 'true', %q{1 <= 1}
+assert_equal 'false', %q{1 <= 0}
+assert_equal 'true', %q{"1" <= "1"}
+assert_equal 'false', %q{"1" <= "0"}
+
+# opt_ge
+assert_equal 'true', %q{1 >= 1}
+assert_equal 'false', %q{0 >= 1}
+assert_equal 'true', %q{"1" >= "1"}
+assert_equal 'false', %q{"0" >= "1"}
+
+# opt_gt
+assert_equal 'true', %q{2 > 1}
+assert_equal 'false', %q{1 > 1}
+assert_equal 'true', %q{"2" > "1"}
+assert_equal 'false', %q{"1" > "1"}
+
+# opt_mult
+assert_equal '6', %q{
+    def foo
+      2 * 3
+    end
+    foo
+}
+
+# opt_div
+assert_equal '3', %q{
+    def foo
+      6 / 2
+    end
+    foo
+}
+
+# opt_ltlt
+assert_equal 'ab', %q{
+    def foo
+      "a" << "b"
+    end
+    foo
+}
+
+# opt_nil_p
+assert_equal 'true', %q{
+    def foo
+      nil.nil?
+    end
+    foo
+}
+
+# opt_empty_p
+assert_equal 'true', %q{
+    def foo
+      "".empty?
+    end
+    foo
+}
+
+# opt_succ
+assert_equal '2', %q{
+    def foo
+      1.succ
+    end
+    foo
+}
+
+# opt_not
+assert_equal 'false', %q{
+    def foo
+      !true
+    end
+    foo
+}
+
+# opt_size
+assert_equal '2', %q{
+    def foo
+      [1, nil].size
+    end
+    foo
+}
+
+# opt_length
+assert_equal '2', %q{
+    def foo
+      [1, nil].length
+    end
+    foo
+}
+
+# opt_regexpmatch2
+assert_equal '0', %q{
+    def foo
+      /a/ =~ 'a'
+    end
+    foo
+}
+
+# opt_case_dispatch
+assert_equal 'true', %q{
+    case 2
+    when 1
+      false
+    when 2
+      true
+    end
 }
 
 # branchunless
