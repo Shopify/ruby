@@ -1403,7 +1403,7 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
     ASSERT_vm_locking();
     VALUE ent_data;
     struct rb_id_table *iv_table;
-    int r;
+    int r = 0;
 
     if (rb_no_cache_shape_p(ivup->shape)) {
         iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
@@ -1426,6 +1426,9 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
     if (r) {
         ivup->index = (uint32_t) ent_data;
         ivup->iv_extended = 1;
+    }
+    else {
+        rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(id));
     }
 }
 
@@ -1589,6 +1592,8 @@ obj_ensure_iv_index_mapping(VALUE obj, ID id)
     return ivup;
 }
 
+static void transition_shape(VALUE obj, ID id, rb_shape_t *shape);
+
 // Return the instance variable index for a given name and T_OBJECT object. The
 // mapping between name and index lives on `rb_obj_class(obj)` and is created
 // if not already present.
@@ -1603,7 +1608,10 @@ rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
     // This uint32_t cast shouldn't lose information as it's checked in
     // iv_index_tbl_extend(). The index is stored as an uint32_t in
     // struct rb_iv_index_tbl_entry.
-    return obj_ensure_iv_index_mapping(obj, id).index;
+    transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
+    uint32_t idx = obj_ensure_iv_index_mapping(obj, id).index;
+    RUBY_ASSERT(idx <= ROBJECT_NUMIV(obj));
+    return idx;
 }
 
 static VALUE
