@@ -3551,7 +3551,13 @@ fn jit_guard_known_shape(
 ) {
     mov(cb, C_ARG_REGS[0], ctx.stack_opnd(stack_index));
     call_ptr(cb, REG0, rb_shape_get_shape_id as *const u8);
-    cmp(cb, REG0, imm_opnd(known_shape.into()));
+    // panic if too many bits
+    let shape_into: i64 = known_shape.into();
+    if sig_imm_size(shape_into) > 32 {
+        panic!("{} shape is too big", sig_imm_size(shape_into));
+    }
+
+    cmp(cb, REG0, imm_opnd(shape_into));
     jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
 }
 
