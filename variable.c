@@ -903,7 +903,7 @@ frozen_shape_p(rb_shape_t* shape)
     return RB_OBJ_FROZEN((VALUE)shape);
 }
 
-struct rb_id_table *
+MJIT_FUNC_EXPORTED struct rb_id_table *
 rb_shape_generate_iv_table(rb_shape_t* shape) {
     if (frozen_shape_p(shape)) {
         return rb_shape_generate_iv_table(shape->parent);
@@ -1641,7 +1641,7 @@ shape_get_shape_id(rb_shape_t *shape) {
     return (shape_id_t)(0xffff & (shape->flags >> 16));
 }
 
-shape_id_t
+MJIT_FUNC_EXPORTED shape_id_t
 rb_generic_shape_id(VALUE obj)
 {
     struct gen_ivtbl *ivtbl = 0;
