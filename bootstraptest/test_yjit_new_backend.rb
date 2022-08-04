@@ -144,6 +144,14 @@ assert_equal 'true', %q{
     foo()
 }
 
+# opt_send_without_block (VM_METHOD_TYPE_CFUNC)
+assert_equal 'nil', %q{
+    def foo
+      nil.inspect
+    end
+    foo
+}
+
 # opt_send_without_block (VM_METHOD_TYPE_ATTRSET)
 assert_equal 'foo', %q{
     class Foo
