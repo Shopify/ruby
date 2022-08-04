@@ -175,7 +175,7 @@ impl Assembler
                         }
                     }
                 },
-                Op::And | Op::Or => {
+                Op::And => {
                     match (opnds[0], opnds[1]) {
                         (Opnd::Reg(_), Opnd::Reg(_)) => {
                             asm.and(opnds[0], opnds[1]);
@@ -189,6 +189,23 @@ impl Assembler
                             let opnd0 = asm.load(opnds[0]);
                             let opnd1 = split_bitmask_immediate(asm, opnds[1]);
                             asm.and(opnd0, opnd1);
+                        }
+                    }
+                },
+                Op::Or => {
+                    match (opnds[0], opnds[1]) {
+                        (Opnd::Reg(_), Opnd::Reg(_)) => {
+                            asm.or(opnds[0], opnds[1]);
+                        },
+                        (reg_opnd @ Opnd::Reg(_), other_opnd) |
+                        (other_opnd, reg_opnd @ Opnd::Reg(_)) => {
+                            let opnd1 = split_bitmask_immediate(asm, other_opnd);
+                            asm.or(reg_opnd, opnd1);
+                        },
+                        _ => {
+                            let opnd0 = asm.load(opnds[0]);
+                            let opnd1 = split_bitmask_immediate(asm, opnds[1]);
+                            asm.or(opnd0, opnd1);
                         }
                     }
                 },

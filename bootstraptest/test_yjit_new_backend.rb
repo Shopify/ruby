@@ -123,6 +123,48 @@ assert_equal '[2, 5]', %q{
     [foo, foo(foo: 5)]
 }
 
+# opt_minus
+assert_equal '1', %q{
+  def foo
+    2 - 1
+  end
+  foo
+}
+assert_equal '[1]', %q{
+  def foo
+    [1, 2] - [2]
+  end
+  foo
+}
+
+# opt_and
+assert_equal '1', %q{
+  def foo
+    3 & 1
+  end
+  foo
+}
+assert_equal '[2]', %q{
+  def foo
+    [1, 2] & [2]
+  end
+  foo
+}
+
+# opt_or
+assert_equal '3', %q{
+  def foo
+    2 | 1
+  end
+  foo
+}
+assert_equal '[1, 2, 3]', %q{
+  def foo
+    [1, 2] | [2, 3]
+  end
+  foo
+}
+
 # putobject, getlocal, newhash
 assert_equal '{:a=>777}', %q{
     def foo(n)
