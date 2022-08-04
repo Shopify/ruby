@@ -2016,7 +2016,7 @@ fn gen_get_ivar(
         asm.comment("guard extended getivar");
         let flags_opnd = Opnd::mem(64, recv, RUBY_OFFSET_RBASIC_FLAGS);
         asm.test(flags_opnd, Opnd::UImm(ROBJECT_EMBED as u64));
-        let side_exit = counted_exit!(ocb, side_exit, getivar_megamorphic);
+        let megamorphic_side_exit = counted_exit!(ocb, side_exit, getivar_megamorphic);
         jit_chain_guard(
             JCC_JNZ,
             jit,
@@ -2024,7 +2024,7 @@ fn gen_get_ivar(
             asm,
             ocb,
             max_chain_depth,
-            side_exit,
+            megamorphic_side_exit,
         );
 
         if USE_RVARGC == 0 {
