@@ -2,6 +2,7 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
+use std::cell::Cell;
 use std::fmt;
 use std::convert::From;
 use crate::cruby::{VALUE};
@@ -288,6 +289,20 @@ impl Opnd
             _ => unreachable!()
         }
     }
+
+    /// Maps the indices from a previous list of instructions to a new list of
+    /// instructions.
+    pub fn map_index(self, indices: &Vec<usize>) -> Opnd {
+        match self {
+            Opnd::InsnOut { idx, num_bits } => {
+                Opnd::InsnOut { idx: indices[idx], num_bits }
+            }
+            Opnd::Mem(Mem { base: MemBase::InsnOut(idx), disp, num_bits }) => {
+                Opnd::Mem(Mem { base: MemBase::InsnOut(indices[idx]), disp, num_bits })
+            },
+            _ => self
+        }
+    }
 }
 
 impl From<usize> for Opnd {
@@ -433,11 +448,15 @@ pub struct Assembler
 
 impl Assembler
 {
-    pub fn new() -> Assembler {
-        Assembler {
+    pub fn new() -> Self {
+        Self::new_with_label_names(Vec::default())
+    }
+
+    pub fn new_with_label_names(label_names: Vec<String>) -> Self {
+        Self {
             insns: Vec::default(),
             live_ranges: Vec::default(),
-            label_names: Vec::default(),
+            label_names
         }
     }
 
@@ -577,11 +596,7 @@ impl Assembler
     pub(super) fn forward_pass<F>(mut self, mut map_insn: F) -> Assembler
         where F: FnMut(&mut Assembler, usize, Op, Vec<Opnd>, Option<Target>, Option<String>, Option<PosMarkerFn>, Vec<Opnd>)
     {
-        let mut asm = Assembler {
-            insns: Vec::default(),
-            live_ranges: Vec::default(),
-            label_names: self.label_names,
-        };
+        let mut asm = Assembler::new_with_label_names(self.label_names);
 
         // Indices maps from the old instruction index to the new instruction
         // index.
@@ -794,6 +809,109 @@ impl Assembler
     }
 }
 
+/// A struct that allows iterating through an assembler's instructions and
+/// consuming them as it iterates.
+pub struct AssemblerDrainingIterator {
+    insns: std::vec::IntoIter<Insn>,
+    index: usize,
+    indices: Vec<usize>
+}
+
+impl AssemblerDrainingIterator {
+    fn new(asm: Assembler) -> Self {
+        Self {
+            insns: asm.insns.into_iter(),
+            index: 0,
+            indices: Vec::default()
+        }
+    }
+
+    /// When you're working with two lists of instructions, you need to make
+    /// sure you do some bookkeeping to align the indices contained within the
+    /// operands of the two lists.
+    /// 
+    /// This function accepts the assembler that is being built and tracks the
+    /// end of the current list of instructions in order to maintain that
+    /// alignment.
+    pub fn map_index(&mut self, asm: &mut Assembler) {
+        self.indices.push(asm.insns.len() - 1);
+    }
+
+    /// Returns the next instruction in the list with the indices corresponding
+    /// to the next list of instructions.
+    pub fn next_mapped(&mut self) -> Option<(usize, Insn)> {
+        self.next_unmapped().map(|(index, insn)| {
+            let opnds = insn.opnds.into_iter().map(|opnd| opnd.map_index(&self.indices)).collect();
+            (index, Insn { opnds, ..insn })
+        })
+    }
+
+    /// Returns the next instruction in the list with the indices corresponding
+    /// to the previous list of instructions.
+    pub fn next_unmapped(&mut self) -> Option<(usize, Insn)> {
+        let index = self.index;
+        self.index += 1;
+        self.insns.next().map(|insn| (index, insn))
+    }
+}
+
+/// A struct that allows iterating through references to an assembler's
+/// instructions without consuming them.
+pub struct AssemblerLookbackIterator {
+    asm: Assembler,
+    index: Cell<usize>
+}
+
+impl AssemblerLookbackIterator {
+    fn new(asm: Assembler) -> Self {
+        Self { asm, index: Cell::new(0) }
+    }
+
+    /// Fetches a reference to an instruction at a specific index.
+    pub fn get(&self, index: usize) -> Option<&Insn> {
+        self.asm.insns.get(index)
+    }
+
+    /// Fetches a reference to an instruction in the list relative to the
+    /// current cursor location of this iterator.
+    pub fn get_relative(&self, difference: i8) -> Option<&Insn> {
+        let index: Result<usize, _> = ((self.index.get() as i8) + difference).try_into();
+        index.ok().and_then(|index| self.asm.insns.get(index))
+    }
+
+    /// Fetches the previous instruction relative to the current cursor location
+    /// of this iterator.
+    pub fn get_previous(&self) -> Option<&Insn> {
+        self.get_relative(-1)
+    }
+
+    /// Fetches the next instruction relative to the current cursor location of
+    /// this iterator.
+    pub fn get_next(&self) -> Option<&Insn> {
+        self.get_relative(1)
+    }
+
+    /// Returns the next instruction in the list with the indices corresponding
+    /// to the previous list of instructions.
+    pub fn next_unmapped(&self) -> Option<(usize, &Insn)> {
+        let index = self.index.get();
+        self.index.set(index + 1);
+        self.asm.insns.get(index).map(|insn| (index, insn))
+    }
+}
+
+impl Assembler {
+    /// Consume the assembler by creating a new draining iterator.
+    pub fn into_draining_iter(self) -> AssemblerDrainingIterator {
+        AssemblerDrainingIterator::new(self)
+    }
+
+    /// Consume the assembler by creating a new lookback iterator.
+    pub fn into_lookback_iter(self) -> AssemblerLookbackIterator {
+        AssemblerLookbackIterator::new(self)
+    }
+}
+
 impl fmt::Debug for Assembler {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "Assembler\n")?;
@@ -950,3 +1068,46 @@ def_push_2_opnd!(csel_g, Op::CSelG);
 def_push_2_opnd!(csel_ge, Op::CSelGE);
 def_push_0_opnd_no_out!(frame_setup, Op::FrameSetup);
 def_push_0_opnd_no_out!(frame_teardown, Op::FrameTeardown);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_draining_iterator() {
+        let mut asm = Assembler::new();
+
+        asm.load(Opnd::None);
+        asm.store(Opnd::None, Opnd::None);
+        asm.add(Opnd::None, Opnd::None);
+
+        let mut iter = asm.into_draining_iter();
+
+        while let Some((index, insn)) = iter.next_unmapped() {
+            match index {
+                0 => assert_eq!(insn.op, Op::Load),
+                1 => assert_eq!(insn.op, Op::Store),
+                2 => assert_eq!(insn.op, Op::Add),
+                _ => panic!("Unexpected instruction index"),
+            };
+        }
+    }
+
+    #[test]
+    fn test_lookback_iterator() {
+        let mut asm = Assembler::new();
+
+        asm.load(Opnd::None);
+        asm.store(Opnd::None, Opnd::None);
+        asm.store(Opnd::None, Opnd::None);
+
+        let mut iter = asm.into_lookback_iter();
+
+        while let Some((index, insn)) = iter.next_unmapped() {
+            if index > 0 {
+                assert_eq!(iter.get_previous().unwrap().opnds[0], Opnd::None);
+                assert_eq!(insn.op, Op::Store);
+            }
+        }
+    }
+}
