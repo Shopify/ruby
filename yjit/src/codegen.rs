@@ -2094,23 +2094,22 @@ fn gen_getinstancevariable(
     let ivar_name = jit_get_arg(jit, 0).as_u64();
 
     let comptime_val = jit_peek_at_self(jit);
+    let comptime_val_shape = comptime_val.shape_of();
     let comptime_val_klass = comptime_val.class_of();
 
     // Generate a side exit
     let side_exit = get_side_exit(jit, ocb, ctx);
 
-    // Guard that the receiver has the same class as the one from compile time.
-    mov(cb, REG0, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SELF));
-
-    jit_guard_known_klass(
+    // Guard that the receiver has the same shape as the one from compile time.
+    jit_guard_known_shape(
         jit,
         ctx,
         cb,
         ocb,
+        comptime_val_shape,
         comptime_val_klass,
-        SelfOpnd,
-        comptime_val,
         GET_IVAR_MAX_DEPTH,
+        0,
         side_exit,
     );
 
@@ -3532,6 +3531,36 @@ fn jit_guard_known_klass(
     }
 }
 
+/// Guard that self or a stack operand has the same shape as `known_shape`, using
+/// `sample_instance` to speculate about the shape of the runtime value.
+/// FIXNUM and on-heap integers are treated as if they have distinct classes, and
+/// the guard generated for one will fail for the other.
+///
+/// Recompile as contingency if possible, or take side exit a last resort.
+
+fn jit_guard_known_shape(
+    jit: &mut JITState,
+    ctx: &mut Context,
+    cb: &mut CodeBlock,
+    ocb: &mut OutlinedCb,
+    known_shape: u16,
+    known_klass: VALUE,
+    max_chain_depth: i32,
+    stack_index: i32,
+    side_exit: CodePtr,
+) {
+    if unsafe { known_klass != rb_cBasicObject } {
+        jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
+    }
+
+    mov(cb, C_ARG_REGS[0], ctx.stack_opnd(stack_index));
+    push(cb, REG0);
+    call_ptr(cb, REG0, rb_shape_get_shape_id as *const u8);
+    cmp(cb, REG0, imm_opnd(known_shape.into()));
+    pop(cb, REG0);
+    jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
+}
+
 // Generate ancestry guard for protected callee.
 // Calls to protected callees only go through when self.is_a?(klass_that_defines_the_callee).
 fn jit_protected_callee_ancestry_guard(
@@ -4947,6 +4976,19 @@ fn gen_send_general(
 
                 mov(cb, REG0, recv);
                 let ivar_name = unsafe { get_cme_def_body_attr_id(cme) };
+                let comptime_recv_shape = comptime_recv.shape_of();
+
+                jit_guard_known_shape(
+                    jit,
+                    ctx,
+                    cb,
+                    ocb,
+                    comptime_recv_shape,
+                    comptime_recv_klass,
+                    SEND_MAX_DEPTH,
+                    argc,
+                    side_exit
+                );
 
                 return gen_get_ivar(
                     jit,

@@ -477,6 +477,10 @@ impl VALUE {
         unsafe { CLASS_OF(self) }
     }
 
+    pub fn shape_of(self) -> u16 {
+        unsafe { rb_shape_get_shape_id(self) }
+    }
+
     pub fn as_isize(self) -> isize {
         let VALUE(is) = self;
         is as isize
