@@ -995,7 +995,7 @@ gen_ivtbl_get_unlocked(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
     return 0;
 }
 
-int
+MJIT_FUNC_EXPORTED int
 rb_gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
 {
     st_data_t data;
