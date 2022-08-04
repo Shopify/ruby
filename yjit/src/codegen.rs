@@ -2095,7 +2095,6 @@ fn gen_getinstancevariable(
 
     let comptime_val = jit_peek_at_self(jit);
     let comptime_val_shape = comptime_val.shape_of();
-    let comptime_val_klass = comptime_val.class_of();
 
     // Generate a side exit
     let side_exit = get_side_exit(jit, ocb, ctx);
@@ -2107,11 +2106,13 @@ fn gen_getinstancevariable(
         cb,
         ocb,
         comptime_val_shape,
-        comptime_val_klass,
         GET_IVAR_MAX_DEPTH,
         0,
         side_exit,
     );
+
+    // Guard that the receiver has the same class as the one from compile time.
+    mov(cb, REG0, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SELF));
 
     gen_get_ivar(
         jit,
@@ -3544,20 +3545,13 @@ fn jit_guard_known_shape(
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
     known_shape: u16,
-    known_klass: VALUE,
     max_chain_depth: i32,
     stack_index: i32,
     side_exit: CodePtr,
 ) {
-    if unsafe { known_klass != rb_cBasicObject } {
-        jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
-    }
-
     mov(cb, C_ARG_REGS[0], ctx.stack_opnd(stack_index));
-    push(cb, REG0);
     call_ptr(cb, REG0, rb_shape_get_shape_id as *const u8);
     cmp(cb, REG0, imm_opnd(known_shape.into()));
-    pop(cb, REG0);
     jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
 }
 
@@ -4974,7 +4968,6 @@ fn gen_send_general(
                     return CantCompile;
                 }
 
-                mov(cb, REG0, recv);
                 let ivar_name = unsafe { get_cme_def_body_attr_id(cme) };
                 let comptime_recv_shape = comptime_recv.shape_of();
 
@@ -4984,12 +4977,12 @@ fn gen_send_general(
                     cb,
                     ocb,
                     comptime_recv_shape,
-                    comptime_recv_klass,
                     SEND_MAX_DEPTH,
                     argc,
                     side_exit
                 );
 
+                mov(cb, REG0, recv);
                 return gen_get_ivar(
                     jit,
                     ctx,
