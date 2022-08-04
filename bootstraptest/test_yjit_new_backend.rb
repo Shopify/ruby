@@ -255,6 +255,22 @@ assert_equal '9001', %q{
     foo()
 }
 
+# getinstancevariable
+assert_equal '[nil, 1]', %q{
+    class Foo
+      def foo()
+        @foo
+      end
+    end
+
+    @bar = 1
+    def bar
+      @bar
+    end
+
+    [Foo.new.foo, bar]
+}
+
 
 
 
