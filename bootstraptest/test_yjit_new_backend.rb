@@ -345,3 +345,25 @@ assert_equal 'false', %q{
 
   less_than 2
 }
+
+# Test that object references in generated code get marked and moved
+assert_equal "good", %q{
+  def bar
+    "good"
+  end
+
+  def foo
+    bar
+  end
+
+  foo
+  foo
+
+  begin
+    GC.verify_compaction_references(expand_heap: true, toward: :empty)
+  rescue NotImplementedError
+    # in case compaction isn't supported
+  end
+
+  foo
+}
