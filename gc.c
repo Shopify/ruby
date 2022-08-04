@@ -10529,7 +10529,7 @@ gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
                 update_m_tbl(objspace, shape->edges);
             }
             if (shape->parent) {
-                UPDATE_IF_MOVED(objspace, shape->parent);
+                UPDATE_IF_MOVED(objspace, (VALUE)shape->parent);
             }
         }
         break;
