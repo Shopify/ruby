@@ -829,12 +829,22 @@ impl AssemblerDrainingIterator {
     /// When you're working with two lists of instructions, you need to make
     /// sure you do some bookkeeping to align the indices contained within the
     /// operands of the two lists.
-    /// 
+    ///
     /// This function accepts the assembler that is being built and tracks the
     /// end of the current list of instructions in order to maintain that
     /// alignment.
     pub fn map_index(&mut self, asm: &mut Assembler) {
         self.indices.push(asm.insns.len() - 1);
+    }
+
+    /// Map an operand by using this iterator's list of mapped indices.
+    pub fn map_opnd(&self, opnd: Opnd) -> Opnd {
+        opnd.map_index(&self.indices)
+    }
+
+    /// Map a vector of operands using this iterator's list of mapped indices.
+    pub fn map_opnds(&self, opnds: Vec<Opnd>) -> Vec<Opnd> {
+        opnds.into_iter().map(|opnd| self.map_opnd(opnd)).collect()
     }
 
     /// Returns the next instruction in the list with the indices corresponding
