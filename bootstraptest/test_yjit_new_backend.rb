@@ -132,28 +132,42 @@ assert_equal '{:a=>777}', %q{
 }
 
 # opt_lt
-assert_equal 'true', %q{1 < 2}
-assert_equal 'false', %q{1 < 1}
-assert_equal 'true', %q{"1" < "2"}
-assert_equal 'false', %q{"1" < "1"}
+assert_equal 'true',  %q{def foo = 1 < 2; foo}
+assert_equal 'false', %q{def foo = 1 < 1; foo}
+assert_equal 'true',  %q{def foo = "1" < "2"; foo}
+assert_equal 'false', %q{def foo = "1" < "1"; foo}
 
 # opt_le
-assert_equal 'true', %q{1 <= 1}
-assert_equal 'false', %q{1 <= 0}
-assert_equal 'true', %q{"1" <= "1"}
-assert_equal 'false', %q{"1" <= "0"}
+assert_equal 'true',  %q{def foo = 1 <= 1; foo}
+assert_equal 'false', %q{def foo = 1 <= 0; foo}
+assert_equal 'true',  %q{def foo = "1" <= "1"; foo}
+assert_equal 'false', %q{def foo = "1" <= "0"; foo}
 
 # opt_ge
-assert_equal 'true', %q{1 >= 1}
-assert_equal 'false', %q{0 >= 1}
-assert_equal 'true', %q{"1" >= "1"}
-assert_equal 'false', %q{"0" >= "1"}
+assert_equal 'true',  %q{def foo = 1 >= 1; foo}
+assert_equal 'false', %q{def foo = 0 >= 1; foo}
+assert_equal 'true',  %q{def foo = "1" >= "1"; foo}
+assert_equal 'false', %q{def foo = "0" >= "1"; foo}
 
 # opt_gt
-assert_equal 'true', %q{2 > 1}
-assert_equal 'false', %q{1 > 1}
-assert_equal 'true', %q{"2" > "1"}
-assert_equal 'false', %q{"1" > "1"}
+assert_equal 'true',  %q{def foo = 2 > 1; foo}
+assert_equal 'false', %q{def foo = 1 > 1; foo}
+assert_equal 'true',  %q{def foo = "2" > "1"; foo}
+assert_equal 'false', %q{def foo = "1" > "1"; foo}
+
+# opt_mod
+assert_equal '1', %q{
+  def foo
+    5 % 2
+  end
+  foo
+}
+assert_equal '01', %q{
+  def foo
+    "%02d" % 1
+  end
+  foo
+}
 
 # opt_mult
 assert_equal '6', %q{
