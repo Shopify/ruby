@@ -451,9 +451,26 @@ assert_equal '[nil, 1]', %q{
 # setinstancevariable
 assert_equal 'foo', %q{
   def foo
-    @foo = "foo"
+    @foo = "foo" # embedded
   end
   foo
+}
+assert_equal '4', %q{
+  def foo
+    @foo1 = 1
+    @foo2 = 2
+    @foo3 = 3
+    @foo4 = 4 # heap
+  end
+  foo
+}
+assert_equal 'foo', %q{
+  class Foo < Hash
+    def foo
+      @foo = "foo" # exivar
+    end
+  end
+  Foo.new.foo
 }
 
 # BOP redefinition works on Integer#<
