@@ -291,8 +291,8 @@ impl Opnd
         }
     }
 
-    /// Maps the indices from a previous list of instructions to a new list of
-    /// instructions.
+    /// Maps the indices from instructions in the old assembler to the
+    /// indices of transformed instructions in the new assembler
     pub fn map_index(self, indices: &Vec<usize>) -> Opnd {
         match self {
             Opnd::InsnOut { idx, num_bits } => {
