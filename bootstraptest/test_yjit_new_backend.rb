@@ -538,6 +538,14 @@ assert_equal 'foo', %q{
   Foo.new.foo
 }
 
+# opt_str_freeze
+assert_equal 'netscape', %q{
+    def foo()
+      "netscape".freeze
+    end
+    foo()
+}
+
 # BOP redefinition works on Integer#<
 assert_equal 'false', %q{
   def less_than x
