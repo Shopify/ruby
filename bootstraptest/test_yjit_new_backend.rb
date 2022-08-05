@@ -402,6 +402,11 @@ assert_equal 'foo', %q{
     foo.foo
 }
 
+# send
+assert_equal '["1", "2"]', %q{def foo = [1, 2].map(&:to_s); foo}
+assert_equal '["1", "2"]', %q{def foo = [1, 2].map { |i| i.to_s }; foo}
+assert_equal '["bar"]', %q{def foo = ["foo/bar"].map(&File.method(:basename)); foo}
+
 # getglobal
 assert_equal '333', %q{
     $bar = 333
