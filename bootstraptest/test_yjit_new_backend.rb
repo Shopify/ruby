@@ -211,6 +211,18 @@ assert_equal '01', %q{
   foo
 }
 
+# opt_eq
+assert_equal 'true',  %q{def foo = 1 == 1; foo}
+assert_equal 'false', %q{def foo = 1 == 2; foo}
+assert_equal 'true',  %q{def foo = "1" == "1"; foo}
+assert_equal 'false', %q{def foo = "1" == "2"; foo}
+assert_equal 'true',  %q{def foo = [1] == [1]; foo}
+assert_equal 'false', %q{def foo = [1] == [2]; foo}
+
+# opt_neq
+assert_equal 'true',  %q{def foo = 1 != 2; foo}
+assert_equal 'false', %q{def foo = "1" != "1"; foo}
+
 # opt_mult
 assert_equal '6', %q{
     def foo
