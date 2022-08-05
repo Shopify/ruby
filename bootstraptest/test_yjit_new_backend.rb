@@ -470,6 +470,14 @@ assert_equal 'netscape', %q{
     foo()
 }
 
+# opt_str_uminus
+assert_equal 'mosaic', %q{
+    def foo()
+      -"mosaic"
+    end
+    foo()
+}
+
 # BOP redefinition works on Integer#<
 assert_equal 'false', %q{
   def less_than x
