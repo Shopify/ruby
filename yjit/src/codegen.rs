@@ -2477,12 +2477,12 @@ fn gen_equality_specialized(
             side_exit,
         );
 
-        let equal = asm.new_label("equal");
         let ret = asm.new_label("ret");
 
         // If they are equal by identity, return true
         asm.cmp(a_opnd, b_opnd);
-        asm.je(equal);
+        asm.mov(C_RET_OPND, Qtrue.into());
+        asm.je(ret);
 
         // Otherwise guard that b is a T_STRING (from type info) or String (from runtime guard)
         let btype = ctx.get_opnd_type(StackOpnd(0));
@@ -2504,16 +2504,12 @@ fn gen_equality_specialized(
         }
 
         // Call rb_str_eql_internal(a, b)
-        let val = asm.ccall(rb_str_eql_internal as *const u8, vec![a_opnd, b_opnd]);
+        asm.ccall(rb_str_eql_internal as *const u8, vec![a_opnd, b_opnd]);
 
         // Push the output on the stack
         ctx.stack_pop(2);
         let dst = ctx.stack_push(Type::UnknownImm);
-        asm.mov(dst, val);
-        asm.jmp(ret);
-
-        asm.write_label(equal);
-        asm.mov(dst, Qtrue.into());
+        asm.mov(dst, C_RET_OPND);
 
         asm.write_label(ret);
 
