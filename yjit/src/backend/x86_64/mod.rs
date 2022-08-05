@@ -172,7 +172,7 @@ impl Assembler
                                 Opnd::InsnOut { idx, .. } => {
                                     idx
                                 },
-                                _ => panic!("nooooo")
+                                _ => unreachable!()
                             };
 
                             // Our input must be from a previous instruction!
