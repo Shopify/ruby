@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   cargo:
-    name: Rust cargo test
+    name: Rust cargo test new backend (x86)
     # GitHub Action's image seems to already contain a Rust 1.58.0.
     runs-on: ubuntu-20.04
     steps:
@@ -28,6 +28,7 @@ jobs:
       - run: RUST_BACKTRACE=1 cargo test --all-features
         working-directory: yjit
   make:
+    name: build and test new backend (x86)
     runs-on: ubuntu-20.04
     steps:
       - name: Install libraries
