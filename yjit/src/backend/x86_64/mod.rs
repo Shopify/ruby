@@ -244,7 +244,7 @@ impl Assembler
                     asm.not(opnd0);
                 },
                 _ => {
-                    asm.push_insn(insn.op, iterator.map_opnds(opnds), insn.target, insn.text, insn.pos_marker);
+                    asm.push_insn(insn.op, opnds, insn.target, insn.text, insn.pos_marker);
                 }
             };
 
