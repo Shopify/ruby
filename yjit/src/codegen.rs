@@ -2848,7 +2848,7 @@ fn gen_opt_and(
 
         // Push the output on the stack
         let dst = ctx.stack_push(Type::Fixnum);
-        asm.mov(dst, val);
+        asm.store(dst, val);
 
         KeepCompiling
     } else {
@@ -2893,7 +2893,7 @@ fn gen_opt_or(
 
         // Push the output on the stack
         let dst = ctx.stack_push(Type::Fixnum);
-        asm.mov(dst, val);
+        asm.store(dst, val);
 
         KeepCompiling
     } else {
@@ -2940,7 +2940,7 @@ fn gen_opt_minus(
 
         // Push the output on the stack
         let dst = ctx.stack_push(Type::Fixnum);
-        asm.mov(dst, val);
+        asm.store(dst, val);
 
         KeepCompiling
     } else {
