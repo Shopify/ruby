@@ -5,6 +5,7 @@
 use std::cell::Cell;
 use std::fmt;
 use std::convert::From;
+use std::mem::take;
 use crate::cruby::{VALUE};
 use crate::virtualmem::{CodePtr};
 use crate::asm::{CodeBlock, uimm_num_bits, imm_num_bits};
@@ -592,54 +593,6 @@ impl Assembler
         self.live_ranges.push(self.insns.len());
     }
 
-    /// Transform input instructions, consumes the input assembler
-    pub(super) fn forward_pass<F>(mut self, mut map_insn: F) -> Assembler
-        where F: FnMut(&mut Assembler, usize, Op, Vec<Opnd>, Option<Target>, Option<String>, Option<PosMarkerFn>, Vec<Opnd>)
-    {
-        let mut asm = Assembler::new_with_label_names(self.label_names);
-
-        // Indices maps from the old instruction index to the new instruction
-        // index.
-        let mut indices: Vec<usize> = Vec::default();
-
-        // Map an operand to the next set of instructions by correcting previous
-        // InsnOut indices.
-        fn map_opnd(opnd: Opnd, indices: &mut Vec<usize>) -> Opnd {
-            match opnd {
-                Opnd::InsnOut{ idx, num_bits } => {
-                    Opnd::InsnOut{ idx: indices[idx], num_bits }
-                }
-                Opnd::Mem(Mem{ base: MemBase::InsnOut(idx), disp, num_bits,  }) => {
-                    Opnd::Mem(Mem{ base:MemBase::InsnOut(indices[idx]), disp, num_bits })
-                }
-                _ => opnd
-            }
-        }
-
-        for (index, insn) in self.insns.drain(..).enumerate() {
-            let original_opnds = insn.opnds.clone();
-            let opnds: Vec<Opnd> = insn.opnds.into_iter().map(|opnd| map_opnd(opnd, &mut indices)).collect();
-
-            // For each instruction, either handle it here or allow the map_insn
-            // callback to handle it.
-            match insn.op {
-                Op::Comment => {
-                    asm.comment(insn.text.unwrap().as_str());
-                },
-                _ => {
-                    map_insn(&mut asm, index, insn.op, opnds, insn.target, insn.text, insn.pos_marker, original_opnds);
-                }
-            };
-
-            // Here we're assuming that if we've pushed multiple instructions,
-            // the output that we're using is still the final instruction that
-            // was pushed.
-            indices.push(asm.insns.len() - 1);
-        }
-
-        asm
-    }
-
     /// Sets the out field on the various instructions that require allocated
     /// registers because their output is used as the operand on a subsequent
     /// instruction. This is our implementation of the linear scan algorithm.
@@ -686,13 +639,15 @@ impl Assembler
             }
         }
 
-        let live_ranges: Vec<usize> = std::mem::take(&mut self.live_ranges);
+        let live_ranges: Vec<usize> = take(&mut self.live_ranges);
+        let mut asm = Assembler::new_with_label_names(take(&mut self.label_names));
+        let mut iterator = self.into_draining_iter();
 
-        let asm = self.forward_pass(|asm, index, op, opnds, target, text, pos_marker, original_insns| {
+        while let Some((index, insn)) = iterator.next_unmapped() {
             // Check if this is the last instruction that uses an operand that
             // spans more than one instruction. In that case, return the
             // allocated register to the pool.
-            for opnd in &opnds {
+            for opnd in &insn.opnds {
                 match opnd {
                     Opnd::InsnOut{idx, .. } |
                     Opnd::Mem( Mem { base: MemBase::InsnOut(idx), .. }) => {
@@ -708,7 +663,7 @@ impl Assembler
                             if let Opnd::Reg(reg) = asm.insns[start_index].out {
                                 dealloc_reg(&mut pool, &regs, &reg);
                             } else {
-                                unreachable!("no register allocated for insn {:?}", op);
+                                unreachable!("no register allocated for insn {:?}", insn.op);
                             }
                         }
                     }
@@ -718,7 +673,7 @@ impl Assembler
             }
 
             // C return values need to be mapped to the C return register
-            if op == Op::CCall {
+            if insn.op == Op::CCall {
                 assert_eq!(pool, 0, "register lives past C function call");
             }
 
@@ -728,7 +683,7 @@ impl Assembler
             if live_ranges[index] != index {
 
                 // C return values need to be mapped to the C return register
-                if op == Op::CCall {
+                if insn.op == Op::CCall {
                     out_reg = Opnd::Reg(take_reg(&mut pool, &regs, &C_RET_REG))
                 }
 
@@ -737,8 +692,8 @@ impl Assembler
                 // We do this to improve register allocation on x86
                 // e.g. out  = add(reg0, reg1)
                 //      reg0 = add(reg0, reg1)
-                else if opnds.len() > 0 {
-                    if let Opnd::InsnOut{idx, ..} = opnds[0] {
+                else if insn.opnds.len() > 0 {
+                    if let Opnd::InsnOut{idx, ..} = insn.opnds[0] {
                         if live_ranges[idx] == index {
                             if let Opnd::Reg(reg) = asm.insns[idx].out {
                                 out_reg = Opnd::Reg(take_reg(&mut pool, &regs, &reg))
@@ -749,9 +704,9 @@ impl Assembler
 
                 // Allocate a new register for this instruction
                 if out_reg == Opnd::None {
-                    out_reg = if op == Op::LiveReg {
+                    out_reg = if insn.op == Op::LiveReg {
                         // Allocate a specific register
-                        let reg = opnds[0].unwrap_reg();
+                        let reg = insn.opnds[0].unwrap_reg();
                         Opnd::Reg(take_reg(&mut pool, &regs, &reg))
                     } else {
                         Opnd::Reg(alloc_reg(&mut pool, &regs))
@@ -760,7 +715,7 @@ impl Assembler
             }
 
             // Replace InsnOut operands by their corresponding register
-            let reg_opnds: Vec<Opnd> = opnds.into_iter().map(|opnd|
+            let reg_opnds: Vec<Opnd> = insn.opnds.into_iter().map(|opnd|
                 match opnd {
                     Opnd::InsnOut{idx, ..} => asm.insns[idx].out,
                     Opnd::Mem(Mem { base: MemBase::InsnOut(idx), disp, num_bits }) => {
@@ -775,7 +730,7 @@ impl Assembler
                 }
             ).collect();
 
-            asm.push_insn(op, reg_opnds, target, text, pos_marker);
+            asm.push_insn(insn.op, reg_opnds, insn.target, insn.text, insn.pos_marker);
 
             // Set the output register for this instruction
             let num_insns = asm.insns.len();
@@ -785,7 +740,7 @@ impl Assembler
                 out_reg = Opnd::Reg(reg.sub_reg(num_out_bits))
             }
             new_insn.out = out_reg;
-        });
+        }
 
         assert_eq!(pool, 0, "Expected all registers to be returned to the pool");
         asm
