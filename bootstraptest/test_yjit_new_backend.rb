@@ -481,7 +481,7 @@ assert_equal 'true', %q{
     foo()
 }
 
-# toregexp
+# toregexp, objtostring
 assert_equal '/true/', %q{
     def foo()
       /#{true}/
@@ -489,7 +489,7 @@ assert_equal '/true/', %q{
     foo().inspect
 }
 
-# concatstrings
+# concatstrings, objtostring
 assert_equal '9001', %q{
     def foo()
       "#{9001}"
