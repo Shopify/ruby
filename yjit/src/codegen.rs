@@ -2513,7 +2513,7 @@ fn gen_equality_specialized(
         asm.jmp(ret);
 
         asm.write_label(equal);
-        asm.mov(dst, Opnd::Imm(Qtrue.into()));
+        asm.mov(dst, Qtrue.into());
 
         asm.write_label(ret);
 
