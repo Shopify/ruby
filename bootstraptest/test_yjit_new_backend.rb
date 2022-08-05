@@ -123,6 +123,48 @@ assert_equal '[2, 5]', %q{
     [foo, foo(foo: 5)]
 }
 
+# opt_minus
+assert_equal '1', %q{
+  def foo
+    2 - 1
+  end
+  foo
+}
+assert_equal '[1]', %q{
+  def foo
+    [1, 2] - [2]
+  end
+  foo
+}
+
+# opt_and
+assert_equal '1', %q{
+  def foo
+    3 & 1
+  end
+  foo
+}
+assert_equal '[2]', %q{
+  def foo
+    [1, 2] & [2]
+  end
+  foo
+}
+
+# opt_or
+assert_equal '3', %q{
+  def foo
+    2 | 1
+  end
+  foo
+}
+assert_equal '[1, 2, 3]', %q{
+  def foo
+    [1, 2] | [2, 3]
+  end
+  foo
+}
+
 # putobject, getlocal, newhash
 assert_equal '{:a=>777}', %q{
     def foo(n)
@@ -476,6 +518,32 @@ assert_equal 'mosaic', %q{
       -"mosaic"
     end
     foo()
+}
+
+# setinstancevariable
+assert_equal 'foo', %q{
+  def foo
+    @foo = "foo" # embedded
+  end
+  foo
+}
+assert_equal '4', %q{
+  def foo
+    @foo1 = 1
+    @foo2 = 2
+    @foo3 = 3
+    @foo4 = 4 # heap
+  end
+  foo
+}
+assert_equal 'foo', %q{
+  class Foo < Hash
+    def foo
+      @foo = "foo" # exivar
+    end
+  end
+  Foo.new.foo
+
 }
 
 # BOP redefinition works on Integer#<
