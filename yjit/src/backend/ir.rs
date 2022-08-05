@@ -839,9 +839,10 @@ impl AssemblerLookbackIterator {
 
     /// Fetches a reference to an instruction in the list relative to the
     /// current cursor location of this iterator.
-    pub fn get_relative(&self, difference: i8) -> Option<&Insn> {
-        let index: Result<usize, _> = ((self.index.get() as i8) + difference).try_into();
-        index.ok().and_then(|index| self.asm.insns.get(index))
+    pub fn get_relative(&self, difference: i32) -> Option<&Insn> {
+        let index: Result<i32, _> = self.index.get().try_into();
+        let relative: Result<usize, _> = index.and_then(|value| (value + difference).try_into());
+        relative.ok().and_then(|value| self.asm.insns.get(value))
     }
 
     /// Fetches the previous instruction relative to the current cursor location
