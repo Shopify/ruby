@@ -529,6 +529,14 @@ assert_equal 'foo', %q{
   Foo.new.foo
 }
 
+# opt_str_uminus
+assert_equal 'mosaic', %q{
+    def foo()
+      -"mosaic"
+    end
+    foo()
+}
+
 # opt_str_freeze
 assert_equal 'netscape', %q{
     def foo()
