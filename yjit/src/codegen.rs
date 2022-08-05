@@ -2159,7 +2159,7 @@ fn gen_setinstancevariable(
     asm.ccall(
         rb_vm_setinstancevariable as *const u8,
         vec![
-            Opnd::UImm(jit.iseq as u64),
+            Opnd::const_ptr(jit.iseq as *const u8),
             Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF),
             Opnd::UImm(id.into()),
             val_opnd,
