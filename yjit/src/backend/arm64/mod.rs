@@ -397,7 +397,7 @@ impl Assembler
                 }
             };
 
-            iterator.map_index(&mut asm);
+            iterator.map_insn_index(&mut asm);
         }
 
         asm

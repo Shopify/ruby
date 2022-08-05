@@ -762,6 +762,26 @@ impl Assembler
         let alloc_regs = alloc_regs.drain(0..num_regs).collect();
         self.compile_with_regs(cb, alloc_regs)
     }
+
+    /// Consume the assembler by creating a new draining iterator.
+    pub fn into_draining_iter(self) -> AssemblerDrainingIterator {
+        AssemblerDrainingIterator::new(self)
+    }
+
+    /// Consume the assembler by creating a new lookback iterator.
+    pub fn into_lookback_iter(self) -> AssemblerLookbackIterator {
+        AssemblerLookbackIterator::new(self)
+    }
+
+    pub fn ccall(&mut self, fptr: *const u8, opnds: Vec<Opnd>) -> Opnd {
+        let target = Target::FunPtr(fptr);
+        self.push_insn(Op::CCall, opnds, Some(target), None, None)
+    }
+
+    // pub fn pos_marker<F: FnMut(CodePtr)>(&mut self, marker_fn: F)
+    pub fn pos_marker(&mut self, marker_fn: impl Fn(CodePtr) + 'static) {
+        self.push_insn(Op::PosMarker, vec![], None, None, Some(Box::new(marker_fn)));
+    }
 }
 
 /// A struct that allows iterating through an assembler's instructions and
@@ -788,7 +808,7 @@ impl AssemblerDrainingIterator {
     /// This function accepts the assembler that is being built and tracks the
     /// end of the current list of instructions in order to maintain that
     /// alignment.
-    pub fn map_index(&mut self, asm: &mut Assembler) {
+    pub fn map_insn_index(&mut self, asm: &mut Assembler) {
         self.indices.push(asm.insns.len() - 1);
     }
 
@@ -866,18 +886,6 @@ impl AssemblerLookbackIterator {
     }
 }
 
-impl Assembler {
-    /// Consume the assembler by creating a new draining iterator.
-    pub fn into_draining_iter(self) -> AssemblerDrainingIterator {
-        AssemblerDrainingIterator::new(self)
-    }
-
-    /// Consume the assembler by creating a new lookback iterator.
-    pub fn into_lookback_iter(self) -> AssemblerLookbackIterator {
-        AssemblerLookbackIterator::new(self)
-    }
-}
-
 impl fmt::Debug for Assembler {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "Assembler\n")?;
@@ -887,21 +895,6 @@ impl fmt::Debug for Assembler {
         }
 
         Ok(())
-    }
-}
-
-impl Assembler
-{
-    pub fn ccall(&mut self, fptr: *const u8, opnds: Vec<Opnd>) -> Opnd
-    {
-        let target = Target::FunPtr(fptr);
-        self.push_insn(Op::CCall, opnds, Some(target), None, None)
-    }
-
-    //pub fn pos_marker<F: FnMut(CodePtr)>(&mut self, marker_fn: F)
-    pub fn pos_marker(&mut self, marker_fn: impl Fn(CodePtr) + 'static)
-    {
-        self.push_insn(Op::PosMarker, vec![], None, None, Some(Box::new(marker_fn)));
     }
 }
 
