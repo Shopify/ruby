@@ -164,6 +164,8 @@ impl Assembler
 
                     asm.push_insn(op, vec![opnd0, opnd1], target, text, pos_marker);
                 },
+                // These instructions modify their input operand in-place, so we
+                // may need to load the input value to preserve it
                 Op::LShift | Op::RShift | Op::URShift => {
                     let (opnd0, opnd1) = match (opnds[0], opnds[1]) {
                         // Instruction output whose live range spans beyond this instruction
