@@ -1605,21 +1605,24 @@ uint32_t
 rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, T_OBJECT));
-    uint32_t len;
-
-    // This uint32_t cast shouldn't lose information as it's checked in
-    // iv_index_tbl_extend(). The index is stored as an uint32_t in
-    // struct rb_iv_index_tbl_entry.
     transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
 
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
-    len = ROBJECT_NUMIV(obj);
+    uint32_t len = ROBJECT_NUMIV(obj);
     if (len <= (ivup.index)) {
         uint32_t newsize = iv_index_tbl_newsize(&ivup);
         rb_ensure_iv_list_size(obj, len, newsize);
     }
     RUBY_ASSERT(ivup.index <= ROBJECT_NUMIV(obj));
     return ivup.index;
+}
+
+static VALUE
+obj_ivar_set(VALUE obj, ID id, VALUE val)
+{
+    uint32_t index = rb_obj_ensure_iv_index_mapping(obj, id);
+    RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[index], val);
+    return val;
 }
 
 /* Set the instance variable +val+ on object +obj+ at ivar name +id+.
@@ -1629,36 +1632,8 @@ rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 VALUE
 rb_vm_set_ivar_id(VALUE obj, ID id, VALUE val)
 {
-    RUBY_ASSERT(RB_TYPE_P(obj, T_OBJECT));
-    uint32_t index = rb_obj_ensure_iv_index_mapping(obj, id);
-
     rb_check_frozen_internal(obj);
-
-    VM_ASSERT(!rb_ractor_shareable_p(obj));
-
-    if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
-        rb_init_iv_list(obj);
-    }
-
-    VALUE *ptr = ROBJECT_IVPTR(obj);
-    RB_OBJ_WRITE(obj, &ptr[index], val);
-
-    return val;
-}
-
-static VALUE
-obj_ivar_set(VALUE obj, ID id, VALUE val)
-{
-    uint32_t len;
-    struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
-
-    len = ROBJECT_NUMIV(obj);
-    if (len <= (ivup.index)) {
-        uint32_t newsize = iv_index_tbl_newsize(&ivup);
-        rb_ensure_iv_list_size(obj, len, newsize);
-    }
-    RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[ivup.index], val);
-
+    obj_ivar_set(obj, id, val);
     return val;
 }
 
@@ -2118,7 +2093,6 @@ ivar_set(VALUE obj, ID id, VALUE val)
            * Array of existing shapes which we can index into w a shape_id
            * Hash (tree representation) of ivar transitions between shapes
            */
-          transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
           obj_ivar_set(obj, id, val);
           break;
       }
