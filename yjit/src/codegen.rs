@@ -1907,7 +1907,7 @@ fn gen_set_ivar(
     let val_opnd = ctx.stack_pop(1);
     let recv_opnd = ctx.stack_pop(1);
 
-    // Call rb_vm_set_ivar_idx with the receiver, the index of the ivar, and the value
+    // Call rb_vm_set_ivar_id with the receiver, the ivar name, and the value
     mov(cb, C_ARG_REGS[0], recv_opnd);
     mov(cb, C_ARG_REGS[1], uimm_opnd(ivar_name.into()));
     mov(cb, C_ARG_REGS[2], val_opnd);

@@ -3256,6 +3256,7 @@ vm_call_attrset_direct(rb_execution_context_t *ec, rb_control_frame_t *cfp, cons
     uint32_t index = vm_cc_attr_index(cc);
     shape_id_t dest_shape_id = vm_cc_attr_index_dest_shape_id(cc);
     ID id = vm_cc_cme(cc)->def->body.attr.id;
+    rb_check_frozen_internal(obj);
     VALUE res = vm_setivar(obj, id, val, source_shape_id, dest_shape_id, index);
     if (res == Qundef) {
         switch (BUILTIN_TYPE(obj)) {
