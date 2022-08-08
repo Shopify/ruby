@@ -1297,7 +1297,7 @@ fn guard_object_is_heap(
     asm.jnz(side_exit.into());
 
     // Test that the object is not false or nil
-    asm.cmp(object_opnd, Opnd::UImm(Qnil.into()));
+    asm.cmp(object_opnd, Qnil.into());
     asm.jbe(side_exit.into());
 }
 
@@ -1385,7 +1385,7 @@ fn gen_expandarray(
         // push N nils onto the stack
         for _i in 0..(num.into()) {
             let push_opnd = ctx.stack_push(Type::Nil);
-            asm.mov(push_opnd, Opnd::UImm(Qnil.into()));
+            asm.mov(push_opnd, Qnil.into());
         }
         return KeepCompiling;
     }
@@ -1425,7 +1425,7 @@ fn gen_expandarray(
 
     // Only handle the case where the number of values in the array is greater
     // than or equal to the number of values requested.
-    asm.cmp(array_len_opnd, Opnd::UImm(num.into()));
+    asm.cmp(array_len_opnd, num.into());
     asm.jo(counted_exit!(ocb, side_exit, expandarray_rhs_too_small).into());
 
     // Load the address of the embedded array into REG1.
