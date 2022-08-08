@@ -7,7 +7,7 @@ dll: $(LIBRUBY_SO)
 .SUFFIXES: .rbinc .rb .inc .h .c .y .i .$(ASMEXT) .$(DTRACE_EXT)
 
 # V=0 quiet, V=1 verbose.  other values don't work.
-V = 0
+V = 1
 V0 = $(V:0=)
 Q1 = $(V:1=)
 Q = $(Q1:0=@)
