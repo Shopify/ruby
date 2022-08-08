@@ -1293,7 +1293,7 @@ fn guard_object_is_heap(
     asm.comment("guard object is heap");
 
     // Test that the object is not an immediate
-    asm.test(object_opnd, Opnd::UImm(RUBY_IMMEDIATE_MASK as u64));
+    asm.test(object_opnd, (RUBY_IMMEDIATE_MASK as u64).into());
     asm.jnz(side_exit.into());
 
     // Test that the object is not false or nil
@@ -1310,17 +1310,15 @@ fn guard_object_is_array(
 
     // Pull out the type mask
     let object_opnd = asm.load(object_opnd);
-    let flags_opnd = asm.load(
-        Opnd::mem(
-            8 * SIZEOF_VALUE as u8,
-            object_opnd,
-            RUBY_OFFSET_RBASIC_FLAGS,
-        ),
+    let flags_opnd = Opnd::mem(
+        8 * SIZEOF_VALUE as u8,
+        object_opnd,
+        RUBY_OFFSET_RBASIC_FLAGS,
     );
-    let flags_opnd = asm.and(flags_opnd, Opnd::UImm(RUBY_T_MASK as u64));
+    let flags_opnd = asm.and(flags_opnd, (RUBY_T_MASK as u64).into());
 
     // Compare the result with T_ARRAY
-    asm.cmp(flags_opnd, Opnd::UImm(RUBY_T_ARRAY as u64));
+    asm.cmp(flags_opnd, (RUBY_T_ARRAY as u64).into());
     asm.jne(side_exit.into());
 }
 
@@ -1412,12 +1410,12 @@ fn gen_expandarray(
     let flags_opnd = Opnd::mem((8 * SIZEOF_VALUE) as u8, asm.load(array_opnd), RUBY_OFFSET_RBASIC_FLAGS);
 
     // Move the length of the embedded array into REG1.
-    let emb_len_opnd = asm.and(flags_opnd, Opnd::UImm(RARRAY_EMBED_LEN_MASK as u64));
-    let emb_len_opnd = asm.rshift(emb_len_opnd, Opnd::UImm(RARRAY_EMBED_LEN_SHIFT as u64));
+    let emb_len_opnd = asm.and(flags_opnd, (RARRAY_EMBED_LEN_MASK as u64).into());
+    let emb_len_opnd = asm.rshift(emb_len_opnd, (RARRAY_EMBED_LEN_SHIFT as u64).into());
 
     // Conditionally move the length of the heap array into REG1.
     let flags_opnd = Opnd::mem((8 * SIZEOF_VALUE) as u8, asm.load(array_opnd), RUBY_OFFSET_RBASIC_FLAGS);
-    asm.test(flags_opnd, Opnd::UImm(RARRAY_EMBED_FLAG as u64));
+    asm.test(flags_opnd, (RARRAY_EMBED_FLAG as u64).into());
     let array_len_opnd = Opnd::mem(
         (8 * size_of::<std::os::raw::c_long>()) as u8,
         asm.load(array_opnd),
