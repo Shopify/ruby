@@ -11776,11 +11776,15 @@ seek_before_access(VALUE argp)
  *    IO.read('| cat t.txt')
  *    # => "First line\nSecond line\n\nThird line\nFourth line\n"
  *
- *  With only argument +path+ given, reads and returns the entire content
+ *  With only argument +path+ given, reads in text mode and returns the entire content
  *  of the file at the given path:
  *
  *    IO.read('t.txt')
  *    # => "First line\nSecond line\n\nThird line\nFourth line\n"
+ *
+ *  On Windows, text mode can terminate reading and leave bytes in the file
+ *  unread when encountering certain special bytes. Consider using
+ *  IO.binread if all bytes in the file should be read.
  *
  *  For both forms, command and path, the remaining arguments are the same.
  *
@@ -14500,9 +14504,11 @@ set_LAST_READ_LINE(VALUE val, ID _x, VALUE *_y)
  *  Either of the following may be suffixed to any of the string read/write modes above:
  *
  *  - <tt>'t'</tt>: Text data; sets the default external encoding to +Encoding::UTF_8+;
- *    on Windows, enables conversion between EOL and CRLF.
+ *    on Windows, enables conversion between EOL and CRLF and enables interpreting +0x1A+
+ *    as an end-of-file marker.
  *  - <tt>'b'</tt>: Binary data; sets the default external encoding to +Encoding::ASCII_8BIT+;
- *    on Windows, suppresses conversion between EOL and CRLF.
+ *    on Windows, suppresses conversion between EOL and CRLF and disables interpreting +0x1A+
+ *    as an end-of-file marker.
  *
  *  If neither is given, the stream defaults to text data.
  *
