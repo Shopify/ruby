@@ -83,14 +83,14 @@ jobs:
           bootstraptest/test_struct.rb \
           bootstraptest/test_syntax.rb \
           bootstraptest/test_thread.rb \
+          bootstraptest/test_yjit_30k_ifelse.rb \
+          bootstraptest/test_yjit_30k_methods.rb \
           bootstraptest/test_yjit_new_backend.rb \
           bootstraptest/test_yjit_rust_port.rb
 
       # These are the btests we can't run yet on x86:
       #bootstraptest/test_ractor.rb (splitting error?)
       #bootstraptest/test_yjit.rb (multiple bugs)
-      #bootstraptest/test_yjit_30k_ifelse.rb (missing iseq-to-iseq calls)
-      #bootstraptest/test_yjit_30k_methods.rb (missing iseq-to-iseq calls)
 
       # Check that we can do a full build
       #- run: make -j

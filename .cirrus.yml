@@ -155,6 +155,8 @@ yjit_task:
     bootstraptest/test_struct.rb \
     bootstraptest/test_syntax.rb \
     bootstraptest/test_thread.rb \
+    bootstraptest/test_yjit_30k_ifelse.rb \
+    bootstraptest/test_yjit_30k_methods.rb \
     bootstraptest/test_yjit_new_backend.rb \
     bootstraptest/test_yjit_rust_port.rb
 
@@ -162,7 +164,5 @@ yjit_task:
   #bootstraptest/test_ractor.rb ? (untested)
   #bootstraptest/test_literal.rb (displacement bug)
   #bootstraptest/test_yjit.rb  (multiple bugs)
-  #bootstraptest/test_yjit_30k_ifelse.rb (missing opt_send)
-  #bootstraptest/test_yjit_30k_methods.rb (missing opt_send)
 
   # full_build_script: make -j
