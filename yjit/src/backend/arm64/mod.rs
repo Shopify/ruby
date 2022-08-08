@@ -568,7 +568,7 @@ impl Assembler
                     subs(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
                 },
                 Op::And => {
-                    ands(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
+                    and(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
                 },
                 Op::Or => {
                     orr(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
