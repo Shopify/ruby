@@ -1309,6 +1309,7 @@ fn guard_object_is_array(
     asm.comment("guard object is array");
 
     // Pull out the type mask
+    let object_opnd = asm.load(object_opnd);
     let flags_opnd = asm.load(
         Opnd::mem(
             8 * SIZEOF_VALUE as u8,
@@ -1378,7 +1379,7 @@ fn gen_expandarray(
     // array then we're going to push on nils.
     let num = jit_get_arg(jit, 0);
     let array_type = ctx.get_opnd_type(StackOpnd(0));
-    let array_opnd = asm.load(ctx.stack_pop(1));
+    let array_opnd = ctx.stack_pop(1);
 
     if matches!(array_type, Type::Nil) {
         // special case for a, b = nil pattern
@@ -1408,17 +1409,18 @@ fn gen_expandarray(
     }
 
     // Pull out the embed flag to check if it's an embedded array.
-    let flags_opnd = Opnd::mem((8 * SIZEOF_VALUE) as u8, array_opnd, RUBY_OFFSET_RBASIC_FLAGS);
+    let flags_opnd = Opnd::mem((8 * SIZEOF_VALUE) as u8, asm.load(array_opnd), RUBY_OFFSET_RBASIC_FLAGS);
 
     // Move the length of the embedded array into REG1.
     let emb_len_opnd = asm.and(flags_opnd, Opnd::UImm(RARRAY_EMBED_LEN_MASK as u64));
     let emb_len_opnd = asm.rshift(emb_len_opnd, Opnd::UImm(RARRAY_EMBED_LEN_SHIFT as u64));
 
     // Conditionally move the length of the heap array into REG1.
+    let flags_opnd = Opnd::mem((8 * SIZEOF_VALUE) as u8, asm.load(array_opnd), RUBY_OFFSET_RBASIC_FLAGS);
     asm.test(flags_opnd, Opnd::UImm(RARRAY_EMBED_FLAG as u64));
     let array_len_opnd = Opnd::mem(
         (8 * size_of::<std::os::raw::c_long>()) as u8,
-        array_opnd,
+        asm.load(array_opnd),
         RUBY_OFFSET_RARRAY_AS_HEAP_LEN,
     );
     let array_len_opnd = asm.csel_nz(emb_len_opnd, array_len_opnd);
@@ -1430,14 +1432,16 @@ fn gen_expandarray(
 
     // Load the address of the embedded array into REG1.
     // (struct RArray *)(obj)->as.ary
-    let ary_opnd = asm.lea(Opnd::mem((8 * SIZEOF_VALUE) as u8, array_opnd, RUBY_OFFSET_RARRAY_AS_ARY));
+    let ary_opnd = asm.load(array_opnd);
+    let ary_opnd = asm.lea(Opnd::mem((8 * SIZEOF_VALUE) as u8, ary_opnd, RUBY_OFFSET_RARRAY_AS_ARY));
 
     // Conditionally load the address of the heap array into REG1.
     // (struct RArray *)(obj)->as.heap.ptr
+    let flags_opnd = Opnd::mem((8 * SIZEOF_VALUE) as u8, asm.load(array_opnd), RUBY_OFFSET_RBASIC_FLAGS);
     asm.test(flags_opnd, Opnd::UImm(RARRAY_EMBED_FLAG as u64));
     let heap_ptr_opnd = Opnd::mem(
         (8 * size_of::<usize>()) as u8,
-        array_opnd,
+        asm.load(array_opnd),
         RUBY_OFFSET_RARRAY_AS_HEAP_PTR,
     );
     let ary_opnd = asm.csel_nz(ary_opnd, heap_ptr_opnd);
