@@ -163,31 +163,21 @@ impl Assembler
                 Op::LShift | Op::RShift | Op::URShift => {
                     let (opnd0, opnd1) = match (opnds[0], opnds[1]) {
                         // Instruction output whose live range spans beyond this instruction
-                        (Opnd::InsnOut { .. }, _) => {
-                            let idx = match original_opnds[0] {
-                                Opnd::InsnOut { idx, .. } => {
-                                    idx
-                                },
-                                _ => unreachable!()
-                            };
-
-                            // Our input must be from a previous instruction!
-                            assert!(idx < index);
-
+                        (Opnd::InsnOut { idx, .. }, _) => {
                             if live_ranges[idx] > index {
-                                (asm.load(opnds[0]), opnds[1])
+                                (asm.load(iterator.map_opnd(opnds[0])), iterator.map_opnd(opnds[1]))
                             } else {
-                                (opnds[0], opnds[1])
+                                (iterator.map_opnd(opnds[0]), iterator.map_opnd(opnds[1]))
                             }
                         },
                         // We have to load memory operands to avoid corrupting them
                         (Opnd::Mem(_) | Opnd::Reg(_), _) => {
-                            (asm.load(opnds[0]), opnds[1])
+                            (asm.load(iterator.map_opnd(opnds[0])), iterator.map_opnd(opnds[1]))
                         },
-                        _ => (opnds[0], opnds[1])
+                        _ => (iterator.map_opnd(opnds[0]), iterator.map_opnd(opnds[1]))
                     };
 
-                    asm.push_insn(op, vec![opnd0, opnd1], target, text, pos_marker);
+                    asm.push_insn(insn.op, vec![opnd0, opnd1], insn.target, insn.text, insn.pos_marker);
                 },
                 Op::CSelZ | Op::CSelNZ | Op::CSelE | Op::CSelNE |
                 Op::CSelL | Op::CSelLE | Op::CSelG | Op::CSelGE => {
