@@ -3978,7 +3978,7 @@ fn gen_send_cfunc(
     // sp[-3] = me;
     // Put compile time cme into REG1. It's assumed to be valid because we are notified when
     // any cme we depend on become outdated. See yjit_method_lookup_change().
-    asm.store(Opnd::mem(64, sp, SIZEOF_VALUE_I32 * -3), Opnd::UImm(cme as u64));
+    asm.mov(Opnd::mem(64, sp, SIZEOF_VALUE_I32 * -3), Opnd::UImm(cme as u64));
 
     // Write block handler at sp[-2]
     // sp[-2] = block_handler;
@@ -4003,7 +4003,7 @@ fn gen_send_cfunc(
     // Allocate a new CFP (ec->cfp--)
     let ec_cfp_opnd = Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP);
     let new_cfp = asm.sub(ec_cfp_opnd, Opnd::UImm(RUBY_SIZEOF_CONTROL_FRAME as u64));
-    asm.store(ec_cfp_opnd, new_cfp);
+    asm.mov(ec_cfp_opnd, new_cfp);
 
     // Setup the new frame
     // *cfp = (const struct rb_control_frame_struct) {
@@ -4568,14 +4568,14 @@ fn gen_send_iseq(
     //    .block_code = 0,
     //    .__bp__     = sp,
     // };
-    asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF), recv);
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF), recv);
     asm.mov(SP, callee_sp);
-    asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SP), callee_sp);
-    asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_BP), callee_sp);
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SP), callee_sp);
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_BP), callee_sp);
     let callee_ep = asm.sub(callee_sp, (SIZEOF_VALUE as u64).into());
-    asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_EP), callee_ep);
-    asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_ISEQ), VALUE(iseq as usize).into());
-    asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_BLOCK_CODE), 0.into());
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_EP), callee_ep);
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_ISEQ), VALUE(iseq as usize).into());
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_BLOCK_CODE), 0.into());
 
     // No need to set cfp->pc since the callee sets it whenever calling into routines
     // that could look at it through jit_save_pc().
