@@ -461,6 +461,58 @@ impl Assembler
         }
     }
 
+    pub(super) fn push_insn_built(&mut self, mut insn: Insn) -> Opnd {
+        // Index of this instruction
+        let insn_idx = self.insns.len();
+
+        // If we find any InsnOut from previous instructions, we're going to
+        // update the live range of the previous instruction to point to this
+        // one.
+        for opnd in &insn.opnds {
+            match opnd {
+                Opnd::InsnOut{ idx, .. } => {
+                    self.live_ranges[*idx] = insn_idx;
+                }
+                Opnd::Mem(Mem { base: MemBase::InsnOut(idx), .. }) => {
+                    self.live_ranges[*idx] = insn_idx;
+                }
+                _ => {}
+            }
+        }
+
+        let mut out_num_bits: u8 = 0;
+
+        for opnd in &insn.opnds {
+            match *opnd {
+                Opnd::InsnOut { num_bits, .. } |
+                Opnd::Mem(Mem { num_bits, .. }) |
+                Opnd::Reg(Reg { num_bits, .. }) => {
+                    if out_num_bits == 0 {
+                        out_num_bits = num_bits
+                    }
+                    else if out_num_bits != num_bits {
+                        panic!("operands of incompatible sizes");
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if out_num_bits == 0 {
+            out_num_bits = 64;
+        }
+
+        // Operand for the output of this instruction
+        let out_opnd = Opnd::InsnOut { idx: insn_idx, num_bits: out_num_bits };
+        insn.out = out_opnd;
+
+        self.insns.push(insn);
+        self.live_ranges.push(insn_idx);
+
+        // Return an operand for the output of this instruction
+        out_opnd
+    }
+
     /// Append an instruction to the list
     pub(super) fn push_insn(
         &mut self,
