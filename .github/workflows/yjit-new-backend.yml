@@ -92,5 +92,8 @@ jobs:
       # These are the btests we can't run yet on x86:
       #bootstraptest/test_yjit.rb (out of executable memory not handled)
 
-      # Check that we can do a full build
-      #- run: make -j
+      # Try building rdoc
+      - run: make -j rdoc
+
+      # Check that we can do a full ruby build
+      - run: make -j
