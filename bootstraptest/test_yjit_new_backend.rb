@@ -478,6 +478,16 @@ assert_equal '0..3', %q{
     foo(3)
 }
 
+# expandarray
+assert_equal 'true', %q{
+  def foo
+    y = [true, false, nil]
+    x, = y
+    x
+  end
+  foo
+}
+
 # defined
 assert_equal '[nil, "method"]', %q{
     def foo()
