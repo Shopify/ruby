@@ -8,6 +8,7 @@ use crate::codegen::{JITState};
 use crate::cruby::*;
 use crate::backend::ir::*;
 use crate::virtualmem::CodePtr;
+use std::mem::take;
 
 // Use the arm64 register type for this platform
 pub type Reg = A64Reg;
@@ -182,58 +183,99 @@ impl Assembler
             }
         }
 
-        let mut asm_local = Assembler::new_with_label_names(std::mem::take(&mut self.label_names));
+        /// Both operands (the truthy and falsy cases) must be in registers for
+        /// out conditional select instructions. If they are not, we load those
+        /// values here.
+        fn split_csel_opnd(asm: &mut Assembler, opnd: Opnd) -> Opnd {
+            match opnd {
+                Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
+                _ => split_load_operand(asm, opnd)
+            }
+        }
+
+        fn split_value_opnd(asm: &mut Assembler, opnd: Opnd) -> Opnd {
+            match opnd {
+                Opnd::Value(_) => asm.load(opnd),
+                _ => opnd
+            }
+        }
+
+        let mut asm_local = Assembler::new_with_label_names(take(&mut self.label_names));
         let asm = &mut asm_local;
         let mut iterator = self.into_draining_iter();
 
         while let Some((index, insn)) = iterator.next_mapped() {
-            let opnds = match insn.op {
-                Op::Load => insn.opnds,
-                _ => insn.opnds.into_iter().map(|opnd| {
-                    if let Opnd::Value(_) = opnd {
-                        asm.load(opnd)
-                    } else {
-                        opnd
-                    }
-                }).collect()
-            };
-
-            match insn.op {
-                Op::Add => {
-                    match (opnds[0], opnds[1]) {
+            match insn {
+                Insn::Add { left, right, .. } => {
+                    match (left, right) {
                         (Opnd::Reg(_) | Opnd::InsnOut { .. }, Opnd::Reg(_) | Opnd::InsnOut { .. }) => {
-                            asm.add(opnds[0], opnds[1]);
+                            asm.push_insn(insn);
                         },
                         (reg_opnd @ (Opnd::Reg(_) | Opnd::InsnOut { .. }), other_opnd) |
                         (other_opnd, reg_opnd @ (Opnd::Reg(_) | Opnd::InsnOut { .. })) => {
-                            let opnd1 = split_shifted_immediate(asm, other_opnd);
-                            asm.add(reg_opnd, opnd1);
+                            let other_opnd = split_value_opnd(asm, other_opnd);
+                            let other_opnd = split_shifted_immediate(asm, other_opnd);
+
+                            asm.add(reg_opnd, other_opnd);
                         },
                         _ => {
-                            let opnd0 = split_load_operand(asm, opnds[0]);
-                            let opnd1 = split_shifted_immediate(asm, opnds[1]);
-                            asm.add(opnd0, opnd1);
+                            let left = split_value_opnd(asm, left);
+                            let left = split_load_operand(asm, left);
+
+                            let right = split_value_opnd(asm, right);
+                            let right = split_shifted_immediate(asm, right);
+
+                            asm.add(left, right);
                         }
                     }
                 },
-                Op::And | Op::Or => {
-                    match (opnds[0], opnds[1]) {
+                Insn::And { left, right, .. } => {
+                    match (left, right) {
                         (Opnd::Reg(_), Opnd::Reg(_)) => {
-                            asm.push_insn(insn.op, vec![opnds[0], opnds[1]], insn.target, insn.text, insn.pos_marker);
+                            asm.push_insn(insn);
                         },
                         (reg_opnd @ Opnd::Reg(_), other_opnd) |
                         (other_opnd, reg_opnd @ Opnd::Reg(_)) => {
-                            let opnd1 = split_bitmask_immediate(asm, other_opnd);
-                            asm.push_insn(insn.op, vec![reg_opnd, opnd1], insn.target, insn.text, insn.pos_marker);
+                            let other_opnd = split_value_opnd(asm, other_opnd);
+                            let other_opnd = split_bitmask_immediate(asm, other_opnd);
+
+                            asm.add(reg_opnd, other_opnd);
                         },
                         _ => {
-                            let opnd0 = split_load_operand(asm, opnds[0]);
-                            let opnd1 = split_bitmask_immediate(asm, opnds[1]);
-                            asm.push_insn(insn.op, vec![opnd0, opnd1], insn.target, insn.text, insn.pos_marker);
+                            let left = split_value_opnd(asm, left);
+                            let left = split_load_operand(asm, left);
+
+                            let right = split_value_opnd(asm, right);
+                            let right = split_bitmask_immediate(asm, right);
+
+                            asm.add(left, right);
                         }
                     }
                 },
-                Op::CCall => {
+                Insn::Or { left, right, out } => {
+                    match (left, right) {
+                        (Opnd::Reg(_), Opnd::Reg(_)) => {
+                            asm.push_insn(insn);
+                        },
+                        (reg_opnd @ Opnd::Reg(_), other_opnd) |
+                        (other_opnd, reg_opnd @ Opnd::Reg(_)) => {
+                            let other_opnd = split_value_opnd(asm, other_opnd);
+                            let other_opnd = split_bitmask_immediate(asm, other_opnd);
+
+                            asm.or(reg_opnd, other_opnd);
+                        },
+                        _ => {
+                            let left = split_value_opnd(asm, left);
+                            let left = split_load_operand(asm, left);
+
+                            let right = split_value_opnd(asm, right);
+                            let right = split_bitmask_immediate(asm, right);
+
+                            asm.or(left, right);
+                        }
+                    }
+                },
+                Insn::CCall { target, opnds, .. } => {
                     assert!(opnds.len() <= C_ARG_OPNDS.len());
 
                     // For each of the operands we're going to first load them
@@ -242,67 +284,142 @@ impl Assembler
                     // Note: the iteration order is reversed to avoid corrupting x0,
                     // which is both the return value and first argument register
                     for (idx, opnd) in opnds.into_iter().enumerate().rev() {
-                        let value = split_load_operand(asm, opnd);
-                        asm.mov(C_ARG_OPNDS[idx], value);
+                        let opnd = split_value_opnd(asm, opnd);
+                        let opnd = split_load_operand(asm, opnd);
+
+                        asm.mov(C_ARG_OPNDS[idx], opnd);
                     }
 
                     // Now we push the CCall without any arguments so that it
                     // just performs the call.
-                    asm.ccall(insn.target.unwrap().unwrap_fun_ptr(), vec![]);
+                    asm.ccall(target.unwrap_fun_ptr(), vec![]);
                 },
-                Op::Cmp => {
-                    let opnd0 = match opnds[0] {
-                        Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[0],
-                        _ => split_load_operand(asm, opnds[0])
+                Insn::Cmp { left, right } => {
+                    let left = match left {
+                        Opnd::Reg(_) | Opnd::InsnOut { .. } => left,
+                        _ => {
+                            let left = split_value_opnd(asm, left);
+                            split_load_operand(asm, left)
+                        }
                     };
 
-                    let opnd1 = split_shifted_immediate(asm, opnds[1]);
-                    asm.cmp(opnd0, opnd1);
-                },
-                Op::CRet => {
-                    if opnds[0] != Opnd::Reg(C_RET_REG) {
-                        let value = split_load_operand(asm, opnds[0]);
-                        asm.mov(C_RET_OPND, value);
-                    }
-                    asm.cret(C_RET_OPND);
-                },
-                Op::CSelZ | Op::CSelNZ | Op::CSelE | Op::CSelNE |
-                Op::CSelL | Op::CSelLE | Op::CSelG | Op::CSelGE => {
-                    let new_opnds = opnds.into_iter().map(|opnd| {
-                        match opnd {
-                            Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
-                            _ => split_load_operand(asm, opnd)
-                        }
-                    }).collect();
+                    let right = split_value_opnd(asm, right);
+                    let right = split_shifted_immediate(asm, right);
 
-                    asm.push_insn(insn.op, new_opnds, insn.target, insn.text, insn.pos_marker);
+                    asm.cmp(left, right);
                 },
-                Op::IncrCounter => {
+                Insn::CRet(opnd) => {
+                    if opnd == Opnd::Reg(C_RET_REG) {
+                        asm.push_insn(insn);
+                    } else {
+                        let opnd = split_value_opnd(asm, opnd);
+                        let opnd = split_load_operand(asm, opnd);
+
+                        asm.mov(C_RET_OPND, opnd);
+                        asm.cret(C_RET_OPND);
+                    }
+                },
+                Insn::CSelZ { truthy, falsy, .. } => {
+                    let truthy = split_value_opnd(asm, truthy);
+                    let truthy = split_csel_opnd(asm, truthy);
+
+                    let falsy = split_value_opnd(asm, falsy);
+                    let falsy = split_csel_opnd(asm, falsy);
+
+                    asm.push_insn(Insn::CSelZ { truthy, falsy, out: Opnd::None });
+                },
+                Insn::CSelNZ { truthy, falsy, .. } => {
+                    let truthy = split_value_opnd(asm, truthy);
+                    let truthy = split_csel_opnd(asm, truthy);
+
+                    let falsy = split_value_opnd(asm, falsy);
+                    let falsy = split_csel_opnd(asm, falsy);
+
+                    asm.push_insn(Insn::CSelNZ { truthy, falsy, out: Opnd::None });
+                },
+                Insn::CSelE { truthy, falsy, .. } => {
+                    let truthy = split_value_opnd(asm, truthy);
+                    let truthy = split_csel_opnd(asm, truthy);
+
+                    let falsy = split_value_opnd(asm, falsy);
+                    let falsy = split_csel_opnd(asm, falsy);
+
+                    asm.push_insn(Insn::CSelE { truthy, falsy, out: Opnd::None });
+                },
+                Insn::CSelNE { truthy, falsy, .. } => {
+                    let truthy = split_value_opnd(asm, truthy);
+                    let truthy = split_csel_opnd(asm, truthy);
+
+                    let falsy = split_value_opnd(asm, falsy);
+                    let falsy = split_csel_opnd(asm, falsy);
+
+                    asm.push_insn(Insn::CSelNE { truthy, falsy, out: Opnd::None });
+                },
+                Insn::CSelL { truthy, falsy, .. } => {
+                    let truthy = split_value_opnd(asm, truthy);
+                    let truthy = split_csel_opnd(asm, truthy);
+
+                    let falsy = split_value_opnd(asm, falsy);
+                    let falsy = split_csel_opnd(asm, falsy);
+
+                    asm.push_insn(Insn::CSelL { truthy, falsy, out: Opnd::None });
+                },
+                Insn::CSelLE { truthy, falsy, .. } => {
+                    let truthy = split_value_opnd(asm, truthy);
+                    let truthy = split_csel_opnd(asm, truthy);
+
+                    let falsy = split_value_opnd(asm, falsy);
+                    let falsy = split_csel_opnd(asm, falsy);
+
+                    asm.push_insn(Insn::CSelLE { truthy, falsy, out: Opnd::None });
+                },
+                Insn::CSelG { truthy, falsy, .. } => {
+                    let truthy = split_value_opnd(asm, truthy);
+                    let truthy = split_csel_opnd(asm, truthy);
+
+                    let falsy = split_value_opnd(asm, falsy);
+                    let falsy = split_csel_opnd(asm, falsy);
+
+                    asm.push_insn(Insn::CSelG { truthy, falsy, out: Opnd::None });
+                },
+                Insn::CSelGE { truthy, falsy, .. } => {
+                    let truthy = split_value_opnd(asm, truthy);
+                    let truthy = split_csel_opnd(asm, truthy);
+
+                    let falsy = split_value_opnd(asm, falsy);
+                    let falsy = split_csel_opnd(asm, falsy);
+
+                    asm.push_insn(Insn::CSelGE { truthy, falsy, out: Opnd::None });
+                },
+                Insn::IncrCounter { mem, value } => {
                     // We'll use LDADD later which only works with registers
                     // ... Load pointer into register
-                    let counter_addr = split_lea_operand(asm, opnds[0]);
+                    let counter_addr = split_value_opnd(asm, mem);
+                    let counter_addr = split_lea_operand(asm, counter_addr);
 
                     // Load immediates into a register
-                    let addend = match opnds[1] {
+                    let value = split_value_opnd(asm, value);
+                    let addend = match value {
                         opnd @ Opnd::Imm(_) | opnd @ Opnd::UImm(_) => asm.load(opnd),
                         opnd => opnd,
                     };
 
                     asm.incr_counter(counter_addr, addend);
                 },
-                Op::JmpOpnd => {
-                    if let Opnd::Mem(_) = opnds[0] {
-                        let opnd0 = split_load_operand(asm, opnds[0]);
+                Insn::JmpOpnd(opnd) => {
+                    if let Opnd::Mem(_) = opnd {
+                        let opnd0 = split_load_operand(asm, opnd);
                         asm.jmp_opnd(opnd0);
                     } else {
-                        asm.jmp_opnd(opnds[0]);
+                        let opnd = split_value_opnd(asm, opnd);
+                        asm.jmp_opnd(opnd);
                     }
                 },
-                Op::Load => {
-                    split_load_operand(asm, opnds[0]);
+                Insn::Load { opnd, .. } => {
+                    split_load_operand(asm, opnd);
                 },
-                Op::LoadSExt => {
-                    match opnds[0] {
+                Insn::LoadSExt { opnd, .. } => {
+                    match opnd {
                         // We only want to sign extend if the operand is a
                         // register, instruction output, or memory address that
                         // is 32 bits. Otherwise we'll just load the value
@@ -310,91 +427,115 @@ impl Assembler
                         Opnd::Reg(Reg { num_bits: 32, .. }) |
                         Opnd::InsnOut { num_bits: 32, .. } |
                         Opnd::Mem(Mem { num_bits: 32, .. }) => {
-                            asm.load_sext(opnds[0]);
+                            asm.load_sext(opnd);
                         },
                         _ => {
-                            asm.load(opnds[0]);
+                            let opnd = split_value_opnd(asm, opnd);
+                            asm.load(opnd);
                         }
                     };
                 },
-                Op::Mov => {
-                    let value = match (opnds[0], opnds[1]) {
+                Insn::Mov { dest, src } => {
+                    let value = match (dest, src) {
                         // If the first operand is a memory operand, we're going
                         // to transform this into a store instruction, so we'll
                         // need to load this anyway.
-                        (Opnd::Mem(_), Opnd::UImm(_)) => asm.load(opnds[1]),
+                        (Opnd::Mem(_), Opnd::UImm(_)) => asm.load(src),
                         // The value that is being moved must be either a
                         // register or an immediate that can be encoded as a
                         // bitmask immediate. Otherwise, we'll need to split the
                         // move into multiple instructions.
-                        _ => split_bitmask_immediate(asm, opnds[1])
+                        _ => {
+                            let src = split_value_opnd(asm, src);
+                            split_bitmask_immediate(asm, src)
+                        }
                     };
 
                     // If we're attempting to load into a memory operand, then
                     // we'll switch over to the store instruction. Otherwise
                     // we'll use the normal mov instruction.
-                    match opnds[0] {
+                    match dest {
                         Opnd::Mem(_) => {
-                            let opnd0 = split_memory_address(asm, opnds[0]);
+                            let opnd0 = split_memory_address(asm, dest);
                             asm.store(opnd0, value);
                         },
                         Opnd::Reg(_) => {
-                            asm.mov(opnds[0], value);
+                            asm.mov(dest, value);
                         },
                         _ => unreachable!()
                     };
                 },
-                Op::Not => {
+                Insn::Not { opnd, .. } => {
                     // The value that is being negated must be in a register, so
                     // if we get anything else we need to load it first.
-                    let opnd0 = match opnds[0] {
-                        Opnd::Mem(_) => split_load_operand(asm, opnds[0]),
-                        _ => opnds[0]
-                    };
-
-                    asm.not(opnd0);
+                    match opnd {
+                        Opnd::Mem(_) => {
+                            let opnd0 = split_load_operand(asm, opnd);
+                            asm.not(opnd0);
+                        },
+                        Opnd::Value(_) => {
+                            let opnd0 = split_value_opnd(asm, opnd);
+                            asm.not(opnd0);
+                        },
+                        _ => {
+                            asm.push_insn(insn);
+                        }
+                    }
                 },
-                Op::Store => {
+                Insn::Store { dest, src } => {
                     // The displacement for the STUR instruction can't be more
                     // than 9 bits long. If it's longer, we need to load the
                     // memory address into a register first.
-                    let opnd0 = split_memory_address(asm, opnds[0]);
+                    let opnd0 = split_memory_address(asm, dest);
 
                     // The value being stored must be in a register, so if it's
                     // not already one we'll load it first.
-                    let opnd1 = match opnds[1] {
-                        Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[1],
-                        _ => split_load_operand(asm, opnds[1])
+                    let opnd1 = match src {
+                        Opnd::Reg(_) | Opnd::InsnOut { .. } => src,
+                        _ => {
+                            let src = split_value_opnd(asm, src);
+                            split_load_operand(asm, src)
+                        }
                     };
 
                     asm.store(opnd0, opnd1);
                 },
-                Op::Sub => {
-                    let opnd0 = match opnds[0] {
-                        Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[0],
-                        _ => split_load_operand(asm, opnds[0])
+                Insn::Sub { left, right, out } => {
+                    let opnd0 = match left {
+                        Opnd::Reg(_) | Opnd::InsnOut { .. } => left,
+                        _ => {
+                            let left = split_value_opnd(asm, left);
+                            split_load_operand(asm, left)
+                        }
                     };
 
-                    let opnd1 = split_shifted_immediate(asm, opnds[1]);
+                    let right = split_value_opnd(asm, right);
+                    let opnd1 = split_shifted_immediate(asm, right);
+
                     asm.sub(opnd0, opnd1);
                 },
-                Op::Test => {
+                Insn::Test { left, right } => {
                     // The value being tested must be in a register, so if it's
                     // not already one we'll load it first.
-                    let opnd0 = match opnds[0] {
-                        Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[0],
-                        _ => split_load_operand(asm, opnds[0])
+                    let opnd0 = match left {
+                        Opnd::Reg(_) | Opnd::InsnOut { .. } => left,
+                        _ => {
+                            let left = split_value_opnd(asm, left);
+                            split_load_operand(asm, left)
+                        }
                     };
 
                     // The second value must be either a register or an
                     // unsigned immediate that can be encoded as a bitmask
                     // immediate. If it's not one of those, we'll need to load
                     // it first.
-                    let opnd1 = split_bitmask_immediate(asm, opnds[1]);
+                    let right = split_value_opnd(asm, right);
+                    let opnd1 = split_bitmask_immediate(asm, right);
+
                     asm.test(opnd0, opnd1);
                 },
                 _ => {
-                    asm.push_insn(insn.op, opnds, insn.target, insn.text, insn.pos_marker);
+                    asm.push_insn(insn);
                 }
             };
 
@@ -406,7 +547,7 @@ impl Assembler
 
     /// Emit platform-specific machine code
     /// Returns a list of GC offsets
-    pub fn arm64_emit(&mut self, cb: &mut CodeBlock) -> Vec<u32>
+    pub fn arm64_emit(mut self, cb: &mut CodeBlock) -> Vec<u32>
     {
         /// Determine how many instructions it will take to represent moving
         /// this value into a register. Note that the return value of this
@@ -559,24 +700,22 @@ impl Assembler
         let mut gc_offsets: Vec<u32> = Vec::new();
 
         // For each instruction
-        for insn in &self.insns {
-            match insn.op {
-                Op::Comment => {
+        for insn in self.insns {
+            match insn {
+                Insn::Comment(text) => {
                     if cfg!(feature = "asm_comments") {
-                        cb.add_comment(&insn.text.as_ref().unwrap());
+                        cb.add_comment(text.as_str());
                     }
                 },
-                Op::Label => {
-                    cb.write_label(insn.target.unwrap().unwrap_label_idx());
+                Insn::Label(target) => {
+                    cb.write_label(target.unwrap_label_idx());
                 },
                 // Report back the current position in the generated code
-                Op::PosMarker => {
-                    let pos = cb.get_write_ptr();
-                    let pos_marker_fn = insn.pos_marker.as_ref().unwrap();
-                    pos_marker_fn(pos);
+                Insn::PosMarker(pos_marker) => {
+                    pos_marker(cb.get_write_ptr());
                 }
-                Op::BakeString => {
-                    let str = insn.text.as_ref().unwrap();
+                Insn::BakeString(text) => {
+                    let str = text.as_str();
                     for byte in str.as_bytes() {
                         cb.write_byte(*byte);
                     }
@@ -591,69 +730,69 @@ impl Assembler
                         cb.write_byte(0);
                     }
                 },
-                Op::Add => {
-                    adds(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::Add { left, right, out } => {
+                    adds(cb, out.into(), left.into(), right.into());
                 },
-                Op::FrameSetup => {
+                Insn::FrameSetup => {
                     stp_pre(cb, X29, X30, A64Opnd::new_mem(128, C_SP_REG, -16));
 
                     // X29 (frame_pointer) = SP
                     mov(cb, X29, C_SP_REG);
                 },
-                Op::FrameTeardown => {
+                Insn::FrameTeardown => {
                     // SP = X29 (frame pointer)
                     mov(cb, C_SP_REG, X29);
 
                     ldp_post(cb, X29, X30, A64Opnd::new_mem(128, C_SP_REG, 16));
                 },
-                Op::Sub => {
-                    subs(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::Sub { left, right, out } => {
+                    subs(cb, out.into(), left.into(), right.into());
                 },
-                Op::And => {
-                    and(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::And { left, right, out } => {
+                    and(cb, out.into(), left.into(), right.into());
                 },
-                Op::Or => {
-                    orr(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::Or { left, right, out } => {
+                    orr(cb, out.into(), left.into(), right.into());
                 },
-                Op::Not => {
-                    mvn(cb, insn.out.into(), insn.opnds[0].into());
+                Insn::Not { opnd, out } => {
+                    mvn(cb, out.into(), opnd.into());
                 },
-                Op::RShift => {
-                    asr(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::RShift { opnd, shift, out } => {
+                    asr(cb, out.into(), opnd.into(), shift.into());
                 },
-                Op::URShift => {
-                    lsr(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::URShift { opnd, shift, out } => {
+                    lsr(cb, out.into(), opnd.into(), shift.into());
                 },
-                Op::LShift => {
-                    lsl(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::LShift { opnd, shift, out } => {
+                    lsl(cb, out.into(), opnd.into(), shift.into());
                 },
-                Op::Store => {
+                Insn::Store { dest, src } => {
                     // This order may be surprising but it is correct. The way
                     // the Arm64 assembler works, the register that is going to
                     // be stored is first and the address is second. However in
                     // our IR we have the address first and the register second.
-                    stur(cb, insn.opnds[1].into(), insn.opnds[0].into());
+                    stur(cb, src.into(), dest.into());
                 },
-                Op::Load => {
-                    match insn.opnds[0] {
+                Insn::Load { opnd, out } => {
+                    match opnd {
                         Opnd::Reg(_) | Opnd::InsnOut { .. } => {
-                            mov(cb, insn.out.into(), insn.opnds[0].into());
+                            mov(cb, out.into(), opnd.into());
                         },
                         Opnd::UImm(uimm) => {
-                            emit_load_value(cb, insn.out.into(), uimm);
+                            emit_load_value(cb, out.into(), uimm);
                         },
                         Opnd::Imm(imm) => {
-                            emit_load_value(cb, insn.out.into(), imm as u64);
+                            emit_load_value(cb, out.into(), imm as u64);
                         },
                         Opnd::Mem(_) => {
-                            ldur(cb, insn.out.into(), insn.opnds[0].into());
+                            ldur(cb, out.into(), opnd.into());
                         },
                         Opnd::Value(value) => {
                             // This assumes only load instructions can contain
                             // references to GC'd Value operands. If the value
                             // being loaded is a heap object, we'll report that
                             // back out to the gc_offsets list.
-                            ldr_literal(cb, insn.out.into(), 2);
+                            ldr_literal(cb, out.into(), 2);
                             b(cb, A64Opnd::new_imm(1 + (SIZEOF_VALUE as i64) / 4));
                             cb.write_bytes(&value.as_u64().to_le_bytes());
 
@@ -667,29 +806,29 @@ impl Assembler
                         }
                     };
                 },
-                Op::LoadSExt => {
-                    match insn.opnds[0] {
+                Insn::LoadSExt { opnd, out } => {
+                    match opnd {
                         Opnd::Reg(Reg { num_bits: 32, .. }) |
                         Opnd::InsnOut { num_bits: 32, .. } => {
-                            sxtw(cb, insn.out.into(), insn.opnds[0].into());
+                            sxtw(cb, out.into(), opnd.into());
                         },
                         Opnd::Mem(Mem { num_bits: 32, .. }) => {
-                            ldursw(cb, insn.out.into(), insn.opnds[0].into());
+                            ldursw(cb, out.into(), opnd.into());
                         },
                         _ => unreachable!()
                     };
                 },
-                Op::Mov => {
-                    mov(cb, insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::Mov { dest, src } => {
+                    mov(cb, dest.into(), src.into());
                 },
-                Op::Lea => {
-                    let opnd: A64Opnd = insn.opnds[0].into();
+                Insn::Lea { opnd, out } => {
+                    let opnd: A64Opnd = opnd.into();
 
                     match opnd {
                         A64Opnd::Mem(mem) => {
                             add(
                                 cb,
-                                insn.out.into(),
+                                out.into(),
                                 A64Opnd::Reg(A64Reg { reg_no: mem.base_reg_no, num_bits: 64 }),
                                 A64Opnd::new_imm(mem.disp.into())
                             );
@@ -699,25 +838,25 @@ impl Assembler
                         }
                     };
                 },
-                Op::LeaLabel => {
-                    let label_idx = insn.target.unwrap().unwrap_label_idx();
+                Insn::LeaLabel { target, out } => {
+                    let label_idx = target.unwrap_label_idx();
 
                     cb.label_ref(label_idx, 4, |cb, end_addr, dst_addr| {
                         adr(cb, Self::SCRATCH0, A64Opnd::new_imm(dst_addr - (end_addr - 4)));
                     });
 
-                    mov(cb, insn.out.into(), Self::SCRATCH0);
+                    mov(cb, out.into(), Self::SCRATCH0);
                 },
-                Op::CPush => {
-                    emit_push(cb, insn.opnds[0].into());
+                Insn::CPush(opnd) => {
+                    emit_push(cb, opnd.into());
                 },
-                Op::CPop => {
-                    emit_pop(cb, insn.out.into());
+                Insn::CPop { out } => {
+                    emit_pop(cb, out.into());
                 },
-                Op::CPopInto => {
-                    emit_pop(cb, insn.opnds[0].into());
+                Insn::CPopInto(opnd) => {
+                    emit_pop(cb, opnd.into());
                 },
-                Op::CPushAll => {
+                Insn::CPushAll => {
                     let regs = Assembler::get_caller_save_regs();
 
                     for reg in regs {
@@ -728,7 +867,7 @@ impl Assembler
                     mrs(cb, Self::SCRATCH0, SystemRegister::NZCV);
                     emit_push(cb, Self::SCRATCH0);
                 },
-                Op::CPopAll => {
+                Insn::CPopAll => {
                     let regs = Assembler::get_caller_save_regs();
 
                     // Pop the state/flags register
@@ -739,10 +878,10 @@ impl Assembler
                         emit_pop(cb, A64Opnd::Reg(reg));
                     }
                 },
-                Op::CCall => {
+                Insn::CCall { target, .. } => {
                     // The offset to the call target in bytes
                     let src_addr = cb.get_write_ptr().into_i64();
-                    let dst_addr = insn.target.unwrap().unwrap_fun_ptr() as i64;
+                    let dst_addr = target.unwrap_fun_ptr() as i64;
                     let offset = dst_addr - src_addr;
                     // The offset in instruction count for BL's immediate
                     let offset = offset / 4;
@@ -756,20 +895,20 @@ impl Assembler
                         blr(cb, Self::SCRATCH0);
                     }
                 },
-                Op::CRet => {
+                Insn::CRet(_) => {
                     ret(cb, A64Opnd::None);
                 },
-                Op::Cmp => {
-                    cmp(cb, insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::Cmp { left, right } => {
+                    cmp(cb, left.into(), right.into());
                 },
-                Op::Test => {
-                    tst(cb, insn.opnds[0].into(), insn.opnds[1].into());
+                Insn::Test { left, right } => {
+                    tst(cb, left.into(), right.into());
                 },
-                Op::JmpOpnd => {
-                    br(cb, insn.opnds[0].into());
+                Insn::JmpOpnd(opnd) => {
+                    br(cb, opnd.into());
                 },
-                Op::Jmp => {
-                    match insn.target.unwrap() {
+                Insn::Jmp(target) => {
+                    match target {
                         Target::CodePtr(dst_ptr) => {
                             let src_addr = cb.get_write_ptr().into_i64();
                             let dst_addr = dst_ptr.into_i64();
@@ -805,49 +944,49 @@ impl Assembler
                         _ => unreachable!()
                     };
                 },
-                Op::Je => {
-                    emit_conditional_jump::<{Condition::EQ}>(cb, insn.target.unwrap());
+                Insn::Je(target) => {
+                    emit_conditional_jump::<{Condition::EQ}>(cb, target);
                 },
-                Op::Jne => {
-                    emit_conditional_jump::<{Condition::NE}>(cb, insn.target.unwrap());
+                Insn::Jne(target) => {
+                    emit_conditional_jump::<{Condition::NE}>(cb, target);
                 },
-                Op::Jbe => {
-                    emit_conditional_jump::<{Condition::LS}>(cb, insn.target.unwrap());
+                Insn::Jbe(target) => {
+                    emit_conditional_jump::<{Condition::LS}>(cb, target);
                 },
-                Op::Jz => {
-                    emit_conditional_jump::<{Condition::EQ}>(cb, insn.target.unwrap());
+                Insn::Jz(target) => {
+                    emit_conditional_jump::<{Condition::EQ}>(cb, target);
                 },
-                Op::Jnz => {
-                    emit_conditional_jump::<{Condition::NE}>(cb, insn.target.unwrap());
+                Insn::Jnz(target) => {
+                    emit_conditional_jump::<{Condition::NE}>(cb, target);
                 },
-                Op::Jo => {
-                    emit_conditional_jump::<{Condition::VS}>(cb, insn.target.unwrap());
+                Insn::Jo(target) => {
+                    emit_conditional_jump::<{Condition::VS}>(cb, target);
                 },
-                Op::IncrCounter => {
-                    ldaddal(cb, insn.opnds[1].into(), insn.opnds[1].into(), insn.opnds[0].into());
+                Insn::IncrCounter { mem, value } => {
+                    ldaddal(cb, value.into(), value.into(), mem.into());
                 },
-                Op::Breakpoint => {
+                Insn::Breakpoint => {
                     brk(cb, A64Opnd::None);
                 },
-                Op::CSelZ | Op::CSelE => {
-                    csel(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into(), Condition::EQ);
+                Insn::CSelZ { truthy, falsy, out } | Insn::CSelE { truthy, falsy, out } => {
+                    csel(cb, out.into(), truthy.into(), falsy.into(), Condition::EQ);
                 },
-                Op::CSelNZ | Op::CSelNE => {
-                    csel(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into(), Condition::NE);
+                Insn::CSelNZ { truthy, falsy, out } | Insn::CSelNE { truthy, falsy, out } => {
+                    csel(cb, out.into(), truthy.into(), falsy.into(), Condition::NE);
                 },
-                Op::CSelL => {
-                    csel(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into(), Condition::LT);
+                Insn::CSelL { truthy, falsy, out } => {
+                    csel(cb, out.into(), truthy.into(), falsy.into(), Condition::LT);
                 },
-                Op::CSelLE => {
-                    csel(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into(), Condition::LE);
+                Insn::CSelLE { truthy, falsy, out } => {
+                    csel(cb, out.into(), truthy.into(), falsy.into(), Condition::LE);
                 },
-                Op::CSelG => {
-                    csel(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into(), Condition::GT);
+                Insn::CSelG { truthy, falsy, out } => {
+                    csel(cb, out.into(), truthy.into(), falsy.into(), Condition::GT);
                 },
-                Op::CSelGE => {
-                    csel(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into(), Condition::GE);
+                Insn::CSelGE { truthy, falsy, out } => {
+                    csel(cb, out.into(), truthy.into(), falsy.into(), Condition::GE);
                 }
-                Op::LiveReg => (), // just a reg alloc signal, no code
+                Insn::LiveReg { .. } => (), // just a reg alloc signal, no code
             };
         }
 
