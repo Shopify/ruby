@@ -460,9 +460,11 @@ impl Assembler
         for opnd in &opnds {
             match opnd {
                 Opnd::InsnOut{ idx, .. } => {
+                    assert!(*idx < self.insns.len());
                     self.live_ranges[*idx] = insn_idx;
                 }
                 Opnd::Mem(Mem { base: MemBase::InsnOut(idx), .. }) => {
+                    assert!(*idx < self.insns.len());
                     self.live_ranges[*idx] = insn_idx;
                 }
                 _ => {}
