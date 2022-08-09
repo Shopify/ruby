@@ -374,11 +374,26 @@ pub fn ldp_post(cb: &mut CodeBlock, rt1: A64Opnd, rt2: A64Opnd, rn: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
+/// LDR - load a memory address into a register with a register offset
+pub fn ldr(cb: &mut CodeBlock, rt: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
+    let bytes: [u8; 4] = match (rt, rn, rm) {
+        (A64Opnd::Reg(rt), A64Opnd::Reg(rn), A64Opnd::Reg(rm)) => {
+            assert!(rt.num_bits == rn.num_bits, "Expected registers to be the same size");
+            assert!(rn.num_bits == rm.num_bits, "Expected registers to be the same size");
+
+            LoadRegister::ldr(rt.reg_no, rn.reg_no, rm.reg_no, rt.num_bits).into()
+        },
+        _ => panic!("Invalid operand combination to ldr instruction.")
+    };
+
+    cb.write_bytes(&bytes);
+}
+
 /// LDR - load a PC-relative memory address into a register
-pub fn ldr(cb: &mut CodeBlock, rt: A64Opnd, rn: i32) {
+pub fn ldr_literal(cb: &mut CodeBlock, rt: A64Opnd, rn: i32) {
     let bytes: [u8; 4] = match rt {
         A64Opnd::Reg(rt) => {
-            LoadLiteral::ldr(rt.reg_no, rn, rt.num_bits).into()
+            LoadLiteral::ldr_literal(rt.reg_no, rn, rt.num_bits).into()
         },
         _ => panic!("Invalid operand combination to ldr instruction."),
     };
@@ -1024,7 +1039,12 @@ mod tests {
 
     #[test]
     fn test_ldr() {
-        check_bytes("40010058", |cb| ldr(cb, X0, 10));
+        check_bytes("6a696cf8", |cb| ldr(cb, X10, X11, X12));
+    }
+
+    #[test]
+    fn test_ldr_literal() {
+        check_bytes("40010058", |cb| ldr_literal(cb, X0, 10));
     }
 
     #[test]

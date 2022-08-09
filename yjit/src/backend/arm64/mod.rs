@@ -611,7 +611,7 @@ impl Assembler
                             // references to GC'd Value operands. If the value
                             // being loaded is a heap object, we'll report that
                             // back out to the gc_offsets list.
-                            ldr(cb, insn.out.into(), 2);
+                            ldr_literal(cb, insn.out.into(), 2);
                             b(cb, A64Opnd::new_imm(1 + (SIZEOF_VALUE as i64) / 4));
                             cb.write_bytes(&value.as_u64().to_le_bytes());
 
