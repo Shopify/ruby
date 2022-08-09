@@ -4340,7 +4340,7 @@ fn gen_send_iseq(
 
             // Push the return value
             let stack_ret = ctx.stack_push(Type::Unknown);
-            asm.store(stack_ret, val);
+            asm.mov(stack_ret, val);
 
             // Note: assuming that the leaf builtin doesn't change local variables here.
             // Seems like a safe assumption.
@@ -4494,7 +4494,7 @@ fn gen_send_iseq(
         // pushed onto the stack that represents the parameters that weren't
         // explicitly given a value and have a non-constant default.
         let unspec_opnd = VALUE::fixnum_from_usize(unspecified_bits).as_u64();
-        asm.store(ctx.stack_opnd(-1), unspec_opnd.into());
+        asm.mov(ctx.stack_opnd(-1), unspec_opnd.into());
     }
 
     // Points to the receiver operand on the stack
