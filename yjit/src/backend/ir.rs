@@ -75,6 +75,11 @@ pub enum Op
     /// Shift a value left by a certain amount.
     LShift,
 
+    /// A no-op instruction used for padding. It accepts a single Opnd::UImm
+    /// operand the specifies the minimum number of bytes that should be
+    /// inserted into the codeblock.
+    Nop,
+
     //
     // Low-level instructions
     //
@@ -924,6 +929,7 @@ def_push_1_opnd!(not, Op::Not);
 def_push_2_opnd!(lshift, Op::LShift);
 def_push_2_opnd!(rshift, Op::RShift);
 def_push_2_opnd!(urshift, Op::URShift);
+def_push_1_opnd_no_out!(nop, Op::Nop);
 def_push_1_opnd_no_out!(cpush, Op::CPush);
 def_push_0_opnd!(cpop, Op::CPop);
 def_push_1_opnd_no_out!(cpop_into, Op::CPopInto);

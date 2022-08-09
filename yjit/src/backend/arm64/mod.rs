@@ -573,6 +573,19 @@ impl Assembler
                 Op::Or => {
                     orr(cb, insn.out.into(), insn.opnds[0].into(), insn.opnds[1].into());
                 },
+                Op::Nop => {
+                    match insn.opnds[0] {
+                        Opnd::UImm(uimm) => {
+                            // The uimm represents the minimum number of bytes
+                            // that we need to pad. Since all of our
+                            // instructions are 4 bytes long, we need at least
+                            // ceil(uimm/4) instructions.
+                            let insts = (uimm + 4 - 1) / 4;
+                            for _ in 0..insts { nop(cb) }
+                        },
+                        _ => unreachable!("Op::Nop only accepts Opnd::UImm operands.")
+                    };
+                },
                 Op::Not => {
                     mvn(cb, insn.out.into(), insn.opnds[0].into());
                 },
@@ -899,6 +912,26 @@ mod tests {
         asm.store(Opnd::mem(64, SP, 0), opnd);
 
         asm.compile_with_num_regs(&mut cb, 1);
+    }
+
+    #[test]
+    fn test_emit_nop_8() {
+        let (mut asm, mut cb) = setup_asm();
+
+        asm.nop(Opnd::UImm(8));
+        asm.compile_with_num_regs(&mut cb, 0);
+
+        assert_eq!(8, cb.get_write_pos());
+    }
+
+    #[test]
+    fn test_emit_nop_9() {
+        let (mut asm, mut cb) = setup_asm();
+
+        asm.nop(Opnd::UImm(9));
+        asm.compile_with_num_regs(&mut cb, 0);
+
+        assert_eq!(12, cb.get_write_pos());
     }
 
     #[test]

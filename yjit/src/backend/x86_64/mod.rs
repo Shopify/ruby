@@ -320,6 +320,15 @@ impl Assembler
                     or(cb, insn.opnds[0].into(), insn.opnds[1].into());
                 },
 
+                Op::Nop => {
+                    match insn.opnds[0] {
+                        Opnd::UImm(uimm) => {
+                            nop(cb, uimm.try_into().unwrap());
+                        },
+                        _ => unreachable!("Op::Nop only accepts Opnd::UImm operands.")
+                    };
+                },
+
                 Op::Not => {
                     not(cb, insn.opnds[0].into())
                 },
