@@ -3988,7 +3988,7 @@ fn gen_send_cfunc(
     // sp[-3] = me;
     // Put compile time cme into REG1. It's assumed to be valid because we are notified when
     // any cme we depend on become outdated. See yjit_method_lookup_change().
-    asm.mov(Opnd::mem(64, sp, 8 * -3), Opnd::UImm(cme as u64));
+    asm.mov(Opnd::mem(64, sp, SIZEOF_VALUE_I32 * -3), Opnd::UImm(cme as u64));
 
     // Write block handler at sp[-2]
     // sp[-2] = block_handler;
@@ -3996,9 +3996,9 @@ fn gen_send_cfunc(
         // reg1 = VM_BH_FROM_ISEQ_BLOCK(VM_CFP_TO_CAPTURED_BLOCK(reg_cfp));
         let cfp_self = asm.lea(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF));
         let block_handler = asm.or(cfp_self, Opnd::Imm(1));
-        asm.mov(Opnd::mem(64, sp, 8 * -2), block_handler);
+        asm.mov(Opnd::mem(64, sp, SIZEOF_VALUE_I32 * -2), block_handler);
     } else {
-        let dst_opnd = Opnd::mem(64, sp, 8 * -2);
+        let dst_opnd = Opnd::mem(64, sp, SIZEOF_VALUE_I32 * -2);
         asm.mov(dst_opnd, Opnd::UImm(VM_BLOCK_HANDLER_NONE.into()));
     }
 
@@ -4008,7 +4008,7 @@ fn gen_send_cfunc(
     if !kw_arg.is_null() {
         frame_type |= VM_FRAME_FLAG_CFRAME_KW
     }
-    asm.mov(Opnd::mem(64, sp, 8 * -1), Opnd::UImm(frame_type.into()));
+    asm.mov(Opnd::mem(64, sp, SIZEOF_VALUE_I32 * -1), Opnd::UImm(frame_type.into()));
 
     // Allocate a new CFP (ec->cfp--)
     let ec_cfp_opnd = Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP);
@@ -4541,7 +4541,7 @@ fn gen_send_iseq(
     // any cme we depend on become outdated. See yjit_method_lookup_change().
     // Write method entry at sp[-3]
     // sp[-3] = me;
-    asm.mov(Opnd::mem(64, callee_sp, 8 * -3), VALUE(cme as usize).into());
+    asm.mov(Opnd::mem(64, callee_sp, SIZEOF_VALUE_I32 * -3), VALUE(cme as usize).into());
 
     // Write block handler at sp[-2]
     // sp[-2] = block_handler;
@@ -4550,17 +4550,17 @@ fn gen_send_iseq(
             // reg1 = VM_BH_FROM_ISEQ_BLOCK(VM_CFP_TO_CAPTURED_BLOCK(reg_cfp));
             let block_handler = asm.lea(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF));
             let block_handler = asm.or(block_handler, 1.into());
-            asm.mov(Opnd::mem(64, callee_sp, 8 * -2), block_handler);
+            asm.mov(Opnd::mem(64, callee_sp, SIZEOF_VALUE_I32 * -2), block_handler);
         }
         None => {
-            asm.mov(Opnd::mem(64, callee_sp, 8 * -2), VM_BLOCK_HANDLER_NONE.into());
+            asm.mov(Opnd::mem(64, callee_sp, SIZEOF_VALUE_I32 * -2), VM_BLOCK_HANDLER_NONE.into());
         }
     }
 
     // Write env flags at sp[-1]
     // sp[-1] = frame_type;
     let frame_type = VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL;
-    asm.mov(Opnd::mem(64, callee_sp, 8 * -1), frame_type.into());
+    asm.mov(Opnd::mem(64, callee_sp, SIZEOF_VALUE_I32 * -1), frame_type.into());
 
     asm.comment("push callee CFP");
     // Allocate a new CFP (ec->cfp--)
