@@ -223,6 +223,52 @@ assert_equal 'false', %q{def foo = [1] == [2]; foo}
 assert_equal 'true',  %q{def foo = 1 != 2; foo}
 assert_equal 'false', %q{def foo = "1" != "1"; foo}
 
+# opt_aref
+assert_equal '[:a, :b, :b, nil]', %q{
+  def foo
+    arr = [:a, :b]
+    [arr[0], arr[1], arr[-1], arr[2]]
+  end
+  foo
+}
+assert_equal '[1, 2, nil]', %q{
+  def foo
+    hash = { a: 1, b: 2 }
+    [hash[:a], hash[:b], hash[:c]]
+  end
+  foo
+}
+assert_equal '[0, 1, 0]', %q{
+  def foo
+    num = 2
+    [num[2], num[1], num[0]]
+  end
+  foo
+}
+
+# opt_aset
+assert_equal '[2, [2, 1]]', %q{
+  def foo
+    arr = [0, 1]
+    [arr[0] = 2, arr]
+  end
+  foo
+}
+assert_equal '[4, {:a=>4, :b=>2, :c=>3}]', %q{
+  def foo
+    hash = { a: 1, b: 2 }
+    hash[:c] = 3
+    [hash[:a] = 4, hash]
+  end
+  foo
+}
+assert_equal 'foo', %q{
+  def foo
+    ENV['YJIT_NEW_BACKEND'] = 'foo'
+  end
+  foo
+}
+
 # opt_mult
 assert_equal '6', %q{
     def foo
