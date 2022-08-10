@@ -206,7 +206,7 @@ impl Assembler
                         },
                         (reg_opnd @ (Opnd::Reg(_) | Opnd::InsnOut { .. }), other_opnd) |
                         (other_opnd, reg_opnd @ (Opnd::Reg(_) | Opnd::InsnOut { .. })) => {
-                            let opnd1 = split_shifted_immediate(&mut asm, other_opnd);
+                            let opnd1 = split_shifted_immediate(asm, other_opnd);
                             asm.add(reg_opnd, opnd1);
                         },
                         _ => {
@@ -327,7 +327,7 @@ impl Assembler
                         // register or an immediate that can be encoded as a
                         // bitmask immediate. Otherwise, we'll need to split the
                         // move into multiple instructions.
-                        _ => split_bitmask_immediate(&mut asm, opnds[1])
+                        _ => split_bitmask_immediate(asm, opnds[1])
                     };
 
                     // If we're attempting to load into a memory operand, then
@@ -376,7 +376,7 @@ impl Assembler
                     };
 
                     let opnd1 = split_shifted_immediate(asm, opnds[1]);
-                    asm.sub(opnd1);
+                    asm.sub(opnd0, opnd1);
                 },
                 Op::Test => {
                     // The value being tested must be in a register, so if it's
