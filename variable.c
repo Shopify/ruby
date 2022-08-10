@@ -1582,7 +1582,7 @@ uint32_t
 rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, T_OBJECT));
-    transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
+    rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
 
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
     uint32_t len = ROBJECT_NUMIV(obj);
@@ -1693,7 +1693,7 @@ void rb_obj_freeze_inline(VALUE x)
     if (RB_FL_ABLE(x)) {
         RB_OBJ_FREEZE_RAW(x);
 
-        transition_shape_frozen(x);
+        rb_shape_transition_shape_frozen(x);
 
         if (RBASIC_CLASS(x) && !(RBASIC(x)->flags & RUBY_FL_SINGLETON)) {
             rb_freeze_singleton_class(x);
@@ -1719,7 +1719,7 @@ ivar_set(VALUE obj, ID id, VALUE val)
       case T_CLASS:
       case T_MODULE:
         // TODO: Transition shapes on classes
-        //transition_shape(obj, id, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
+        //rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         rb_class_ivar_set(obj, id, val);
         break;
@@ -1782,7 +1782,7 @@ iterate_over_shapes_with_callback(VALUE obj, rb_shape_t *shape, VALUE* iv_list, 
     if (rb_shape_root_shape_p(shape)) {
         return;
     }
-    else if (frozen_shape_p(shape)) {
+    else if (rb_shape_frozen_shape_p(shape)) {
         iterate_over_shapes_with_callback(obj, shape->parent, iv_list, numiv, callback, arg);
         return;
     }

@@ -221,13 +221,13 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
 }
 
 int
-frozen_shape_p(rb_shape_t* shape)
+rb_shape_frozen_shape_p(rb_shape_t* shape)
 {
     return RB_OBJ_FROZEN((VALUE)shape);
 }
 
 void
-transition_shape_frozen(VALUE obj)
+rb_shape_transition_shape_frozen(VALUE obj)
 {
     rb_shape_t* shape = rb_shape_get_shape(obj);
     RUBY_ASSERT(shape);
@@ -253,7 +253,7 @@ transition_shape_frozen(VALUE obj)
         next_shape = rb_shape_get_frozen_root_shape();
     }
     else {
-        if (frozen_shape_p(shape)) {
+        if (rb_shape_frozen_shape_p(shape)) {
             return;
         }
         else {
@@ -276,7 +276,7 @@ transition_shape_frozen(VALUE obj)
 }
 
 void
-transition_shape(VALUE obj, ID id, rb_shape_t *shape)
+rb_shape_transition_shape(VALUE obj, ID id, rb_shape_t *shape)
 {
     rb_shape_t* next_shape = rb_shape_get_next(shape, obj, id);
     if (shape == next_shape) {
@@ -350,7 +350,7 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
 
 MJIT_FUNC_EXPORTED struct rb_id_table *
 rb_shape_generate_iv_table(rb_shape_t* shape) {
-    if (frozen_shape_p(shape)) {
+    if (rb_shape_frozen_shape_p(shape)) {
         return rb_shape_generate_iv_table(shape->parent);
     }
 
@@ -409,12 +409,12 @@ shape_mark(void *ptr)
     rb_gc_mark((VALUE)ptr);
 }
 
-size_t imemo_memsize(VALUE obj);
+size_t rb_gc_imemo_memsize(VALUE obj);
 
 static size_t
 shape_memsize(const void *ptr)
 {
-    return imemo_memsize((VALUE)ptr);
+    return rb_gc_imemo_memsize((VALUE)ptr);
 }
 
 static const rb_data_type_t shape_data_type = {

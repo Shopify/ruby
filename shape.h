@@ -43,9 +43,9 @@ MJIT_SYMBOL_EXPORT_BEGIN
 rb_shape_t* rb_shape_get_shape_by_id(shape_id_t shape_id);
 shape_id_t rb_shape_get_shape_id(VALUE obj);
 rb_shape_t* rb_shape_get_shape(VALUE obj);
-int frozen_shape_p(rb_shape_t* shape);
-void transition_shape_frozen(VALUE obj);
-void transition_shape(VALUE obj, ID id, rb_shape_t *shape);
+int rb_shape_frozen_shape_p(rb_shape_t* shape);
+void rb_shape_transition_shape_frozen(VALUE obj);
+void rb_shape_transition_shape(VALUE obj, ID id, rb_shape_t *shape);
 rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
 int rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE * value);
 MJIT_SYMBOL_EXPORT_END

@@ -3009,7 +3009,7 @@ rb_imemo_tmpbuf_parser_heap(void *buf, rb_imemo_tmpbuf_t *old_heap, size_t cnt)
 }
 
 size_t
-imemo_memsize(VALUE obj)
+rb_gc_imemo_memsize(VALUE obj)
 {
     size_t size = 0;
     switch (imemo_type(obj)) {
@@ -5003,7 +5003,7 @@ obj_memsize_of(VALUE obj, int use_all_types)
       case T_COMPLEX:
         break;
       case T_IMEMO:
-        size += imemo_memsize(obj);
+        size += rb_gc_imemo_memsize(obj);
         break;
 
       case T_FLOAT:
