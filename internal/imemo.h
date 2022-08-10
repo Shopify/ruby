@@ -14,6 +14,7 @@
 #include "internal/gc.h"        /* for RB_OBJ_WRITE */
 #include "ruby/internal/stdbool.h"     /* for bool */
 #include "ruby/ruby.h"          /* for rb_block_call_func_t */
+#include "ruby/internal/rgengc.h"
 
 #ifndef IMEMO_DEBUG
 # define IMEMO_DEBUG 0

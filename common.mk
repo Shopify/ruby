@@ -134,6 +134,7 @@ COMMONOBJS    = array.$(OBJEXT) \
 		regsyntax.$(OBJEXT) \
 		ruby.$(OBJEXT) \
 		scheduler.$(OBJEXT) \
+		shape.$(OBJEXT) \
 		signal.$(OBJEXT) \
 		sprintf.$(OBJEXT) \
 		st.$(OBJEXT) \
@@ -13862,6 +13863,7 @@ setproctitle.$(OBJEXT): {$(VPATH)}setproctitle.c
 setproctitle.$(OBJEXT): {$(VPATH)}st.h
 setproctitle.$(OBJEXT): {$(VPATH)}subst.h
 setproctitle.$(OBJEXT): {$(VPATH)}util.h
+shape.$(OBJEXT): {$(VPATH)}shape.c
 signal.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 signal.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 signal.$(OBJEXT): $(CCAN_DIR)/list/list.h

@@ -132,13 +132,6 @@ typedef uint16_t shape_id_t;
 #define shape_id_t shape_id_t
 #endif
 
-static inline shape_id_t
-RCLASS_SHAPE_ID(VALUE obj)
-{
-    return RCLASS_EXT(obj)->shape_id;
-}
-
-
 /* class.c */
 void rb_class_subclass_add(VALUE super, VALUE klass);
 void rb_class_remove_from_super_subclasses(VALUE);

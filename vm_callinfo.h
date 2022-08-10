@@ -11,6 +11,7 @@
 #include "debug_counter.h"
 #include "internal/variable.h"
 #include "internal/class.h"
+#include "shape.h"
 
 enum vm_call_flag_bits {
     VM_CALL_ARGS_SPLAT_bit,     /* m(*args) */

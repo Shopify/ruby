@@ -34,6 +34,7 @@
 #include "ruby/st.h"
 #include "ruby/util.h"
 #include "transient_heap.h"
+#include "shape.h"
 #include "variable.h"
 #include "vm_core.h"
 #include "ractor_core.h"
@@ -897,28 +898,6 @@ rb_alias_variable(ID name1, ID name2)
     entry1->var = entry2->var;
 }
 
-static int
-frozen_shape_p(rb_shape_t* shape)
-{
-    return RB_OBJ_FROZEN((VALUE)shape);
-}
-
-MJIT_FUNC_EXPORTED struct rb_id_table *
-rb_shape_generate_iv_table(rb_shape_t* shape) {
-    if (frozen_shape_p(shape)) {
-        return rb_shape_generate_iv_table(shape->parent);
-    }
-
-    struct rb_id_table *iv_table = rb_id_table_create(0);
-    uint32_t index = 0;
-    while (shape->parent) {
-        rb_id_table_insert(iv_table, shape->edge_name, shape->iv_count - (VALUE)index - 1);
-        index++;
-        shape = shape->parent;
-    }
-    return iv_table;
-}
-
 static bool
 iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 {
@@ -927,7 +906,7 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 
     rb_shape_t* shape = rb_shape_get_shape(obj);
 
-    if (rb_no_cache_shape_p(shape)) {
+    if (rb_shape_no_cache_shape_p(shape)) {
         struct rb_id_table *iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
         if (iv_table) {
             r = rb_id_table_lookup(iv_table, (st_data_t)id, &ent_data);
@@ -1405,7 +1384,7 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
     struct rb_id_table *iv_table;
     int r = 0;
 
-    if (rb_no_cache_shape_p(ivup->shape)) {
+    if (rb_shape_no_cache_shape_p(ivup->shape)) {
         iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
         if ((VALUE)iv_table == Qundef) {
             iv_table = rb_id_table_create(0);
@@ -1592,8 +1571,6 @@ obj_ensure_iv_index_mapping(VALUE obj, ID id)
     return ivup;
 }
 
-static void transition_shape(VALUE obj, ID id, rb_shape_t *shape);
-
 // Return the instance variable index for a given name and T_OBJECT object. The
 // mapping between name and index lives on `rb_obj_class(obj)` and is created
 // if not already present.
@@ -1637,25 +1614,6 @@ rb_vm_set_ivar_id(VALUE obj, ID id, VALUE val)
     return val;
 }
 
-bool
-rb_no_cache_shape_p(rb_shape_t * shape)
-{
-    // TODO JEM: Could likely save time by comparing IDs
-    rb_vm_t *vm = GET_VM();
-    return shape == vm->no_cache_shape;
-}
-
-static rb_shape_t*
-get_frozen_root_shape(void) {
-    rb_vm_t *vm = GET_VM();
-    return vm->frozen_root_shape;
-}
-
-static inline shape_id_t
-shape_get_shape_id(rb_shape_t *shape) {
-    return (shape_id_t)(0xffff & (shape->flags >> 16));
-}
-
 MJIT_FUNC_EXPORTED shape_id_t
 rb_generic_shape_id(VALUE obj)
 {
@@ -1678,35 +1636,7 @@ rb_generic_shape_id(VALUE obj)
     return shape_id;
 }
 
-shape_id_t rb_shape_get_shape_id(VALUE obj)
-{
-    shape_id_t shape_id = ROOT_SHAPE_ID;
-
-    if (RB_SPECIAL_CONST_P(obj)) {
-        return SHAPE_ID(get_frozen_root_shape());
-    }
-
-    switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-          return ROBJECT_SHAPE_ID(obj);
-          break;
-      case T_CLASS:
-      case T_MODULE:
-          return RCLASS_SHAPE_ID(obj);
-      case T_IMEMO:
-          if (imemo_type(obj) == imemo_shape) {
-              return shape_get_shape_id((rb_shape_t *)obj);
-              break;
-          }
-      default:
-          return rb_generic_shape_id(obj);
-    }
-
-    RUBY_ASSERT(shape_id < MAX_SHAPE_ID);
-    return shape_id;
-}
-
-static bool
+bool
 rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
 {
     if (rb_shape_get_shape_id(obj) == shape_id) {
@@ -1750,316 +1680,6 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
     }
 
     return true;
-}
-
-void
-rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
-{
-    RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
-    if(rb_shape_set_shape_id(obj, shape_get_shape_id(shape))) {
-        RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
-    }
-}
-
-void
-rb_shape_set_shape_in_bitmap(shape_id_t shape_id) {
-    uint16_t bitmap_index = shape_id >> 5;
-    uint32_t mask = (1 << (shape_id & 31));
-    GET_VM()->shape_bitmaps[bitmap_index] |= mask;
-}
-
-void
-rb_shape_unset_shape_in_bitmap(shape_id_t shape_id) {
-    uint16_t bitmap_index = shape_id >> 5;
-    uint32_t mask = (1 << (shape_id & 31));
-    GET_VM()->shape_bitmaps[bitmap_index] &= ~mask;
-}
-
-void
-rb_shape_set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
-{
-    rb_vm_t *vm = GET_VM();
-    RUBY_ASSERT(shape == NULL || IMEMO_TYPE_P(shape, imemo_shape));
-    if (shape == NULL) {
-        rb_shape_unset_shape_in_bitmap(shape_id);
-    }
-    else {
-        rb_shape_set_shape_in_bitmap(shape_id);
-    }
-    vm->shape_list[shape_id] = shape;
-}
-
-rb_shape_t*
-rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id)
-{
-    RUBY_ASSERT(shape_id != INVALID_SHAPE_ID);
-
-    rb_vm_t *vm = GET_VM();
-    rb_shape_t *shape = vm->shape_list[shape_id];
-    return shape;
-}
-
-rb_shape_t*
-rb_shape_get_shape_by_id(shape_id_t shape_id)
-{
-    RUBY_ASSERT(shape_id != INVALID_SHAPE_ID);
-
-    rb_vm_t *vm = GET_VM();
-    rb_shape_t *shape = vm->shape_list[shape_id];
-    RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
-    return shape;
-}
-
-rb_shape_t* rb_shape_get_shape(VALUE obj)
-{
-    return rb_shape_get_shape_by_id(rb_shape_get_shape_id(obj));
-}
-
-rb_shape_t*
-rb_vm_get_root_shape(void) {
-    rb_vm_t *vm = GET_VM();
-    return vm->root_shape;
-}
-
-static rb_shape_t*
-get_no_cache_shape(void) {
-    rb_vm_t *vm = GET_VM();
-    return vm->no_cache_shape;
-}
-
-bool
-rb_shape_root_shape_p(rb_shape_t* shape) {
-    return shape == rb_vm_get_root_shape();
-}
-
-static rb_shape_t *
-shape_alloc(void)
-{
-    rb_shape_t *shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
-    FL_SET_RAW((VALUE)shape, RUBY_FL_SHAREABLE);
-    return shape;
-}
-
-rb_shape_t *
-rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
-{
-    rb_shape_t * shape = shape_alloc();
-    rb_shape_set_shape_id((VALUE)shape, shape_id);
-    shape->edge_name = edge_name;
-    shape->iv_count = parent ? parent->iv_count + 1 : 0;
-    RB_OBJ_WRITE(shape, &shape->parent, parent);
-    RUBY_ASSERT(!parent || IMEMO_TYPE_P(parent, imemo_shape));
-    return shape;
-}
-
-enum transition_type {
-    SHAPE_IVAR,
-    SHAPE_FROZEN,
-};
-
-static shape_id_t
-get_next_shape_id(void)
-{
-    rb_vm_t *vm = GET_VM();
-    int next_shape_id = 0;
-
-    for (int i = 0; i < 2048; i++) {
-        uint32_t cur_bitmap = vm->shape_bitmaps[i];
-        if (~cur_bitmap) {
-            uint32_t copied_curbitmap = ~cur_bitmap;
-
-            uint32_t count = 0;
-            while (!(copied_curbitmap & 0x1)) {
-                copied_curbitmap >>= 1;
-                count++;
-            }
-            next_shape_id = i * 32 + count;
-            break;
-        }
-    }
-    if (next_shape_id > vm->max_shape_count) {
-        vm->max_shape_count = next_shape_id;
-    }
-
-    return next_shape_id;
-}
-
-static bool
-rb_shape_lookup_id(rb_shape_t* shape, ID id) {
-    while (shape->parent) {
-        if (shape->edge_name == id) {
-            return true;
-        }
-        shape = shape->parent;
-    }
-    return false;
-}
-
-
-static rb_shape_t*
-get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_type tt)
-{
-    rb_shape_t *res = NULL;
-    RB_VM_LOCK_ENTER();
-    {
-        // no_cache_shape should only transition to other no_cache_shapes
-        if(shape == get_no_cache_shape()) return shape;
-
-        if (rb_shape_lookup_id(shape, id)) {
-            // If shape already contains the ivar that is being set, we'll return shape
-            res = shape;
-        }
-        else {
-            if (!shape->edges)
-                shape->edges = rb_id_table_create(0);
-
-            // Lookup the shape in edges - if there's already an edge and a corresponding shape for it,
-            // we can return that. Otherwise, we'll need to get a new shape
-            if (!rb_id_table_lookup(shape->edges, id, (VALUE *)&res) || rb_objspace_garbage_object_p((VALUE)res)) {
-                if (res) {
-                    // TODO: Figure out if we want this???
-                    rb_id_table_delete(shape->edges, id);
-                    res->parent = NULL;
-                }
-                shape_id_t next_shape_id = get_next_shape_id();
-
-                if (next_shape_id == MAX_SHAPE_ID) {
-                    res = get_no_cache_shape();
-                }
-                else {
-                    RUBY_ASSERT(next_shape_id < MAX_SHAPE_ID);
-                    rb_shape_t * new_shape = rb_shape_alloc(next_shape_id,
-                            id,
-                            shape);
-
-                    if (BUILTIN_TYPE(obj) == T_OBJECT) {
-                        VALUE klass = rb_obj_class(obj);
-                        uint32_t cur_iv_count = RCLASS_EXT(klass)->max_iv_count;
-                        uint32_t new_iv_count = new_shape->iv_count;
-                        if (new_iv_count > cur_iv_count) {
-                            RCLASS_EXT(klass)->max_iv_count = new_iv_count;
-                        }
-                    }
-
-                    rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
-                    RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
-
-                    rb_shape_set_shape_by_id(next_shape_id, new_shape);
-
-                    if (tt == SHAPE_FROZEN) {
-                        new_shape->iv_count--;
-                        RB_OBJ_FREEZE_RAW((VALUE)new_shape);
-                    }
-
-                    res = new_shape;
-                }
-            }
-        }
-    }
-    RB_VM_LOCK_LEAVE();
-    return res;
-}
-
-rb_shape_t*
-rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id)
-{
-    return get_next_shape_internal(shape, id, obj, SHAPE_IVAR);
-}
-
-int
-rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE *value) {
-    size_t depth = 0;
-    int counting = FALSE;
-    while (shape->parent) {
-        if (counting) {
-            depth++;
-        }
-        else {
-            if (shape->edge_name == id) {
-                counting = TRUE;
-            }
-        }
-        shape = shape->parent;
-    }
-    if (counting) {
-        *value = depth;
-    }
-    return counting;
-}
-
-static void
-transition_shape_frozen(VALUE obj)
-{
-    rb_shape_t* shape = rb_shape_get_shape(obj);
-    RUBY_ASSERT(shape);
-    if(rb_objspace_garbage_object_p((VALUE)shape)) {
-        rb_bug("shape is garbage object\n");
-    }
-
-    rb_shape_t* next_shape;
-
-    if (shape == get_frozen_root_shape()) {
-        return;
-    }
-
-    if (shape == rb_vm_get_root_shape()) {
-        switch(BUILTIN_TYPE(obj)) {
-            case T_OBJECT:
-            case T_CLASS:
-            case T_MODULE:
-                break;
-            default:
-                return;
-        }
-        next_shape = get_frozen_root_shape();
-    }
-    else {
-        if (frozen_shape_p(shape)) {
-            return;
-        }
-        else {
-            static ID id_frozen;
-            if (!id_frozen) id_frozen = rb_make_internal_id();
-
-            next_shape = get_next_shape_internal(shape, (ID)id_frozen, obj, SHAPE_FROZEN);
-        }
-    }
-
-    RUBY_ASSERT(next_shape);
-    rb_shape_set_shape(obj, next_shape);
-    // 1. Eagerly make frozen transition for not_cool_objects
-    // 2. Make a global variable that contains the id (which shounld always be 1)
-    // 3. When we freeze an object, if it's "not cool", do nothing (just let the
-    // header bits get set)
-    //
-    // if root shape, and not_cool_object, return;
-    //
-}
-
-static void
-transition_shape(VALUE obj, ID id, rb_shape_t *shape)
-{
-    rb_shape_t* next_shape = rb_shape_get_next(shape, obj, id);
-    if (shape == next_shape) {
-        return;
-    }
-
-    if (BUILTIN_TYPE(obj) == T_OBJECT && next_shape == get_no_cache_shape()) {
-        // If the object is embedded, we need to make it extended so that
-        // the instance variable index table can be stored on the object.
-        // The "no cache shape" is a singleton and is allowed to be shared
-        // among objects, so it cannot store instance variable index information.
-        // Therefore we need to store the iv index table on the object itself.
-        // Embedded objects don't have the room for an iv index table, so
-        // we'll force it to be extended
-        uint32_t num_iv = ROBJECT_NUMIV(obj);
-        // Make the object extended
-        rb_ensure_iv_list_size(obj, num_iv, num_iv + 1);
-        RUBY_ASSERT(!(RBASIC(obj)->flags & ROBJECT_EMBED));
-        ROBJECT(obj)->as.heap.iv_index_tbl = rb_shape_generate_iv_table(shape);
-    }
-    RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));
-    rb_shape_set_shape(obj, next_shape);
 }
 
 /**
@@ -2158,12 +1778,12 @@ typedef int rb_ivar_foreach_callback_func(ID key, VALUE val, st_data_t arg);
 st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 static void
-iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
+iterate_over_shapes_with_callback(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
     if (rb_shape_root_shape_p(shape)) {
         return;
     }
     else if (frozen_shape_p(shape)) {
-        iterate_over_shapes(obj, shape->parent, iv_list, numiv, callback, arg);
+        iterate_over_shapes_with_callback(obj, shape->parent, iv_list, numiv, callback, arg);
         return;
     }
     else if (numiv <= 0) {
@@ -2171,13 +1791,13 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
     }
     else {
         rb_shape_t *parent_shape;
-        if (rb_no_cache_shape_p(shape)) {
+        if (rb_shape_no_cache_shape_p(shape)) {
             parent_shape = shape;
         }
         else {
             parent_shape = shape->parent;
         }
-        iterate_over_shapes(obj, parent_shape, iv_list, numiv - 1, callback, arg);
+        iterate_over_shapes_with_callback(obj, parent_shape, iv_list, numiv - 1, callback, arg);
 
         if (iv_list[numiv - 1] != Qundef) {
             ID id = shape->edge_name;
@@ -2203,7 +1823,7 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     rb_shape_t* shape = rb_shape_get_shape(obj);
     struct rb_id_table *iv_index_tbl;
 
-    if (rb_no_cache_shape_p(shape)) {
+    if (rb_shape_no_cache_shape_p(shape)) {
         iv_index_tbl = ROBJECT(obj)->as.heap.iv_index_tbl;
         uint32_t table_size = (uint32_t) rb_id_table_size(iv_index_tbl);
         VALUE * array = xmalloc(sizeof(VALUE) * table_size);
@@ -2221,7 +1841,7 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
             return;
         }
         rb_shape_t * shape = rb_shape_get_shape(obj);
-        iterate_over_shapes(obj, shape, ROBJECT_IVPTR(obj), (int)shape->iv_count, func, arg);
+        iterate_over_shapes_with_callback(obj, shape, ROBJECT_IVPTR(obj), (int)shape->iv_count, func, arg);
     }
 }
 
@@ -2234,7 +1854,7 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     if (!iv_index_tbl) return;
     if (!rb_gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    iterate_over_shapes(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)shape->iv_count, func, arg);
+    iterate_over_shapes_with_callback(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)shape->iv_count, func, arg);
 }
 
 void

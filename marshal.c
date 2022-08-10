@@ -38,6 +38,7 @@
 #include "ruby/st.h"
 #include "ruby/util.h"
 #include "builtin.h"
+#include "shape.h"
 
 #define BITSPERSHORT (2*CHAR_BIT)
 #define SHORTMASK ((1<<BITSPERSHORT)-1)

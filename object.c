@@ -39,6 +39,7 @@
 #include "ruby/util.h"
 #include "ruby/assert.h"
 #include "builtin.h"
+#include "shape.h"
 
 /*!
  * \addtogroup object

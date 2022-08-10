@@ -40,42 +40,7 @@ uint32_t rb_obj_ensure_iv_index_mapping(VALUE obj, ID id);
 struct gen_ivtbl;
 int rb_gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl);
 
-#ifndef shape_id_t
-typedef uint16_t shape_id_t;
-#define shape_id_t shape_id_t
-#endif
-
-struct rb_shape {
-    VALUE flags; // Shape ID and frozen status encoded within flags
-    struct rb_shape * parent; // Pointer to the parent
-    struct rb_id_table * edges; // id_table from ID (ivar) to next shape
-    ID edge_name; // ID (ivar) for transition from parent to rb_shape
-    uint32_t iv_count;
-};
-
-#define USE_SHAPE_CACHE_P (SIZEOF_UINT64_T == SIZEOF_VALUE)
-
-#define SHAPE_ID(shape) rb_shape_get_shape_id((VALUE)shape)
-
-#ifndef rb_shape_t
-typedef struct rb_shape rb_shape_t;
-#define rb_shape_t rb_shape_t
-#endif
-
-rb_shape_t* rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id);
-rb_shape_t* rb_vm_get_root_shape();
-bool rb_shape_root_shape_p(rb_shape_t* shape);
-void rb_shape_set_shape_by_id(shape_id_t, rb_shape_t *);
-rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent);
-struct rb_id_table * rb_shape_generate_iv_table(rb_shape_t* shape);
 shape_id_t rb_generic_shape_id(VALUE obj);
-
-# define MAX_SHAPE_ID 0xFFFE
-# define NO_CACHE_SHAPE_ID (0x2)
-# define INVALID_SHAPE_ID (MAX_SHAPE_ID + 1)
-# define ROOT_SHAPE_ID 0x0
-# define FROZEN_ROOT_SHAPE_ID 0x1
-
 RUBY_SYMBOL_EXPORT_BEGIN
 /* variable.c (export) */
 void rb_mark_generic_ivar(VALUE);
@@ -86,13 +51,6 @@ void rb_iv_tbl_copy(VALUE dst, VALUE src);
 RUBY_SYMBOL_EXPORT_END
 
 MJIT_SYMBOL_EXPORT_BEGIN
-bool rb_no_cache_shape_p(rb_shape_t * shape);
-int rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE * value);
-rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
-rb_shape_t* rb_shape_get_shape(VALUE obj);
-rb_shape_t* rb_shape_get_shape_by_id(shape_id_t shape_id);
-shape_id_t rb_shape_get_shape_id(VALUE obj);
-void rb_shape_set_shape(VALUE obj, rb_shape_t* shape);
 VALUE rb_gvar_get(ID);
 VALUE rb_gvar_set(ID, VALUE);
 VALUE rb_gvar_defined(ID);
