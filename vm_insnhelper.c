@@ -3858,14 +3858,14 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
                                 vm_call_attrset_direct(ec, cfp, cc, calling->recv),
                                 CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
         } else {
+#if USE_SHAPE_CACHE_P
             cc = &VM_CC_ON_STACK(cc->klass,
                     cc->call_,
-#if USE_SHAPE_CACHE_P
                     { .attr_index = ((uint64_t)INVALID_SHAPE_ID << 48 | (uint64_t)INVALID_SHAPE_ID << 32) },
-#else
-                    { .attr_index = 0 },
-#endif
                     cc->cme_);
+#else
+            cc = &VM_CC_ON_STACK(cc->klass, cc->call_, { .attr_index = 0 }, cc->cme_);
+#endif
             VM_CALL_METHOD_ATTR(v,
                                 vm_call_attrset_direct(ec, cfp, cc, calling->recv),
                                 CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
