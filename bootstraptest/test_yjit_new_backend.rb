@@ -461,6 +461,34 @@ assert_equal '[1, 2]', %q{
   bar
 }
 
+# invokesuper
+assert_equal '[1, 2, 3]', %q{
+  class Foo
+    def foo(a = 1) = a
+  end
+  class Bar < Foo
+    def foo = [super, super(2), 3]
+  end
+  Bar.new.foo
+}
+assert_equal '[1, 2, 3]', %q{
+  class Foo
+    def zsuper(a, b) = [a, b]
+  end
+  class Bar < Foo
+    def zsuper(a, b) = super + [3]
+  end
+  Bar.new.zsuper(1, 2)
+}
+assert_equal 'A!', %q{
+  class Foo < String
+    def initialize(a) = super
+
+    def upcase = super + "!"
+  end
+  Foo.new("a").upcase
+}
+
 # getglobal
 assert_equal '333', %q{
     $bar = 333
