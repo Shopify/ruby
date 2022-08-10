@@ -629,7 +629,13 @@ ruby_init_loadpath(void)
 #if defined(LOAD_RELATIVE) || defined(__MACH__)
     VALUE libruby_path = runtime_libruby_path();
 # if defined(__MACH__)
-    rb_libruby_selfpath = libruby_path;
+    VALUE selfpath = libruby_path;
+#   if defined(LOAD_RELATIVE)
+    selfpath = rb_str_dup(selfpath);
+#   endif
+    rb_obj_hide(selfpath);
+    OBJ_FREEZE_RAW(selfpath);
+    rb_libruby_selfpath = selfpath;
     rb_gc_register_address(&rb_libruby_selfpath);
 # endif
 #endif
@@ -1529,7 +1535,8 @@ void rb_call_builtin_inits(void);
 #if RBIMPL_HAS_ATTRIBUTE(weak)
 __attribute__((weak))
 #endif
-void Init_extra_exts(void)
+void
+Init_extra_exts(void)
 {
 }
 

@@ -158,6 +158,8 @@ Note: We're only listing outstanding class updates.
     * bigdecimal 3.1.2
     * bundler 2.4.0.dev
     * cgi 0.3.2
+    * date 3.2.3
+    * error_highlight 0.4.0
     * etc 1.4.0
     * io-console 0.5.11
     * io-nonblock 0.1.1
@@ -178,7 +180,7 @@ Note: We're only listing outstanding class updates.
     * net-imap 0.2.3
     * rbs 2.6.0
     * typeprof 0.21.3
-    * debug 1.6.1
+    * debug 1.6.2
 *   The following default gems are now bundled gems.
 
 ## Compatibility issues
