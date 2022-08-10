@@ -379,6 +379,22 @@ assert_equal 'true', %q{
     foo()
 }
 
+# getblockparamproxy
+assert_equal 'foo', %q{
+  def foo(&block)
+    block.call
+  end
+  foo { "foo" }
+}
+
+# getblockparam
+assert_equal 'foo', %q{
+  def foo(&block)
+    block
+  end
+  foo { "foo" }.call
+}
+
 # opt_send_without_block (VM_METHOD_TYPE_ISEQ)
 assert_equal '1', %q{
   def foo = 1
