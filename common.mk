@@ -13871,7 +13871,7 @@ setproctitle.$(OBJEXT): {$(VPATH)}setproctitle.c
 setproctitle.$(OBJEXT): {$(VPATH)}st.h
 setproctitle.$(OBJEXT): {$(VPATH)}subst.h
 setproctitle.$(OBJEXT): {$(VPATH)}util.h
-shape.$(OBJEXT): {$(VPATH)}shape.c
+shape.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 shape.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 shape.$(OBJEXT): $(CCAN_DIR)/list/list.h
 shape.$(OBJEXT): $(CCAN_DIR)/str/str.h

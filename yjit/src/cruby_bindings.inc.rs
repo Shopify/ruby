@@ -481,9 +481,6 @@ extern "C" {
     pub fn rb_obj_ensure_iv_index_mapping(obj: VALUE, id: ID) -> u32;
 }
 extern "C" {
-    pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;
-}
-extern "C" {
     pub fn rb_gvar_get(arg1: ID) -> VALUE;
 }
 extern "C" {
@@ -677,6 +674,9 @@ pub struct rb_cvar_class_tbl_entry {
     pub index: u32,
     pub global_cvar_state: rb_serial_t,
     pub class_value: VALUE,
+}
+extern "C" {
+    pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;
 }
 pub const VM_CALL_ARGS_SPLAT_bit: vm_call_flag_bits = 0;
 pub const VM_CALL_ARGS_BLOCKARG_bit: vm_call_flag_bits = 1;
