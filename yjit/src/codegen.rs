@@ -2633,7 +2633,6 @@ fn gen_opt_aref(
             return CantCompile;
         }
 
-        let key_opnd = ctx.stack_opnd(0);
         let recv_opnd = ctx.stack_opnd(1);
 
         // Guard that the receiver is a hash
@@ -2650,14 +2649,13 @@ fn gen_opt_aref(
             side_exit,
         );
 
-        // Workaround to use rbx and avoid spill before moved by jit_prepare_routine_call
-        asm.mov(C_ARG_OPNDS[0], recv_opnd);
-        asm.mov(C_ARG_OPNDS[1], key_opnd);
-
         // Prepare to call rb_hash_aref(). It might call #hash on the key.
         jit_prepare_routine_call(jit, ctx, asm);
 
-        let val = asm.ccall(rb_hash_aref as *const u8, vec![]);
+        // Call rb_hash_aref
+        let key_opnd = ctx.stack_opnd(0);
+        let recv_opnd = ctx.stack_opnd(1);
+        let val = asm.ccall(rb_hash_aref as *const u8, vec![recv_opnd, key_opnd]);
 
         // Pop the key and the receiver
         ctx.stack_pop(2);
@@ -2726,18 +2724,15 @@ fn gen_opt_aset(
             side_exit,
         );
 
-        // Call rb_ary_store
-        let index = asm.load(key);
-        let index = asm.rshift(index, Opnd::UImm(1)); // FIX2LONG(key)
-        // Workaround to use rbx and avoid spill before moved by jit_prepare_routine_call
-        asm.mov(C_ARG_OPNDS[0], recv);
-        asm.mov(C_ARG_OPNDS[1], index);
-        asm.mov(C_ARG_OPNDS[2], val);
-
         // We might allocate or raise
         jit_prepare_routine_call(jit, ctx, asm);
 
-        asm.ccall(rb_ary_store as *const u8, vec![]);
+        // Call rb_ary_store
+        let recv = ctx.stack_opnd(2);
+        let key = asm.load(ctx.stack_opnd(1));
+        let key = asm.rshift(key, Opnd::UImm(1)); // FIX2LONG(key)
+        let val = ctx.stack_opnd(0);
+        asm.ccall(rb_ary_store as *const u8, vec![recv, key, val]);
 
         // rb_ary_store returns void
         // stored value should still be on stack
@@ -2767,20 +2762,19 @@ fn gen_opt_aset(
             side_exit,
         );
 
-        // Workaround to use rbx and avoid spill before moved by jit_prepare_routine_call
-        asm.mov(C_ARG_OPNDS[0], recv);
-        asm.mov(C_ARG_OPNDS[1], key);
-        asm.mov(C_ARG_OPNDS[2], val);
-
         // We might allocate or raise
         jit_prepare_routine_call(jit, ctx, asm);
 
-        let val = asm.ccall(rb_hash_aset as *const u8, vec![]);
+        // Call rb_hash_aset
+        let recv = ctx.stack_opnd(2);
+        let key = ctx.stack_opnd(1);
+        let val = ctx.stack_opnd(0);
+        let ret = asm.ccall(rb_hash_aset as *const u8, vec![recv, key, val]);
 
         // Push the return value onto the stack
         ctx.stack_pop(3);
         let stack_ret = ctx.stack_push(Type::Unknown);
-        asm.mov(stack_ret, val);
+        asm.mov(stack_ret, ret);
 
         jump_to_next_insn(jit, ctx, asm, ocb);
         EndBlock
