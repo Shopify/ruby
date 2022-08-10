@@ -36,6 +36,8 @@ pub const _C_RET_OPND: Opnd = Opnd::Reg(X0_REG);
 pub const C_SP_REG: A64Opnd = X31;
 pub const C_SP_STEP: i32 = 16;
 
+pub const MIN_INVALIDATABLE_SIZE:usize = 16;
+
 /// Map Opnd to A64Opnd
 impl From<Opnd> for A64Opnd {
     fn from(opnd: Opnd) -> Self {
@@ -643,6 +645,8 @@ impl Assembler
 
         // List of GC offsets
         let mut gc_offsets: Vec<u32> = Vec::new();
+        let mut needs_inval = false;
+        let cb_start = cb.get_write_pos();
 
         // For each instruction
         let start_write_pos = cb.get_write_pos();
@@ -653,6 +657,7 @@ impl Assembler
                         cb.add_comment(text);
                     }
                 },
+                Insn::InvalRegion => needs_inval = true,
                 Insn::Label(target) => {
                     cb.write_label(target.unwrap_label_idx());
                 },
@@ -949,6 +954,14 @@ impl Assembler
                     }
                 }
             };
+        }
+
+        if needs_inval {
+            let emitted_size = cb.get_write_pos() - cb_start;
+            if emitted_size < MIN_INVALIDATABLE_SIZE {
+                let add_nops = (MIN_INVALIDATABLE_SIZE - emitted_size + 3) / 4;
+                for i in 0..add_nops { nop(cb); }
+            }
         }
 
         gc_offsets

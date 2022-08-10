@@ -32,6 +32,8 @@ pub const _C_ARG_OPNDS: [Opnd; 6] = [
 pub const C_RET_REG: Reg = RAX_REG;
 pub const _C_RET_OPND: Opnd = Opnd::Reg(RAX_REG);
 
+pub const MIN_INVALIDATABLE_SIZE:usize = 16;
+
 /// Map Opnd to X86Opnd
 impl From<Opnd> for X86Opnd {
     fn from(opnd: Opnd) -> Self {
@@ -334,6 +336,10 @@ impl Assembler
         // List of GC offsets
         let mut gc_offsets: Vec<u32> = Vec::new();
 
+        // If true, the block needs to be large enough to invalidate
+        let mut needs_inval = false;
+        let cb_start = cb.get_write_pos();
+
         // For each instruction
         let start_write_pos = cb.get_write_pos();
         for insn in &self.insns {
@@ -363,6 +369,8 @@ impl Assembler
                     // this to C code)
                     cb.write_byte(0);
                 },
+
+                Insn::InvalRegion => needs_inval = true,
 
                 Insn::Add { left, right, .. } => {
                     add(cb, left.into(), right.into())
@@ -637,6 +645,12 @@ impl Assembler
             };
         }
 
+        if needs_inval {
+            let emitted_size = cb.get_write_pos() - cb_start;
+            if emitted_size < MIN_INVALIDATABLE_SIZE {
+                nop(cb, (MIN_INVALIDATABLE_SIZE - emitted_size) as u32);
+            }
+        }
         gc_offsets
     }
 

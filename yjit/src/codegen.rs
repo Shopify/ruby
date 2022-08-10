@@ -3697,7 +3697,6 @@ fn jit_rb_str_bytesize(
     true
 }
 
-/*
 // Codegen for rb_str_to_s()
 // When String#to_s is called on a String instance, the method returns self and
 // most of the overhead comes from setting up the method call. We observed that
@@ -3705,7 +3704,7 @@ fn jit_rb_str_bytesize(
 fn jit_rb_str_to_s(
     _jit: &mut JITState,
     _ctx: &mut Context,
-    cb: &mut CodeBlock,
+    asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
     _ci: *const rb_callinfo,
     _cme: *const rb_callable_method_entry_t,
@@ -3714,14 +3713,13 @@ fn jit_rb_str_to_s(
     known_recv_class: *const VALUE,
 ) -> bool {
     if !known_recv_class.is_null() && unsafe { *known_recv_class == rb_cString } {
-        add_comment(cb, "to_s on plain string");
+        asm.comment("to_s on plain string");
         // The method returns the receiver, which is already on the stack.
         // No stack movement.
         return true;
     }
     false
 }
-*/
 
 // Codegen for rb_str_concat() -- *not* String#concat
 // Frequently strings are concatenated using "out_str << next_str".
@@ -3926,6 +3924,10 @@ fn gen_send_cfunc(
         let codegen_p = lookup_cfunc_codegen(unsafe { (*cme).def });
         if let Some(known_cfunc_codegen) = codegen_p {
             if known_cfunc_codegen(jit, ctx, asm, ocb, ci, cme, block, argc, recv_known_klass) {
+                // Make sure the generated block is large enough to hold a jump so we can invalidate it.
+                // Some cfunc generators can have empty output.
+                asm.inval_region();
+
                 // cfunc codegen generated code. Terminate the block so
                 // there isn't multiple calls in the same block.
                 jump_to_next_insn(jit, ctx, asm, ocb);
@@ -6138,8 +6140,8 @@ impl CodegenGlobals {
             self.yjit_reg_method(rb_cSymbol, "===", jit_rb_obj_equal);
 
             // rb_str_to_s() methods in string.c
-            //self.yjit_reg_method(rb_cString, "to_s", jit_rb_str_to_s);
-            //self.yjit_reg_method(rb_cString, "to_str", jit_rb_str_to_s);
+            self.yjit_reg_method(rb_cString, "to_s", jit_rb_str_to_s);
+            self.yjit_reg_method(rb_cString, "to_str", jit_rb_str_to_s);
             self.yjit_reg_method(rb_cString, "bytesize", jit_rb_str_bytesize);
             //self.yjit_reg_method(rb_cString, "<<", jit_rb_str_concat);
             //self.yjit_reg_method(rb_cString, "+@", jit_rb_str_uplus);

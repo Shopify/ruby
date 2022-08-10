@@ -357,6 +357,9 @@ pub enum Insn {
     // Produces no output
     IncrCounter { mem: Opnd, value: Opnd },
 
+    /// Add NOPs until the block is large enough to be guaranteed invalidatable.
+    InvalRegion,
+
     /// Jump if below or equal
     Jbe(Target),
 
@@ -487,6 +490,7 @@ impl Insn {
             Insn::FrameSetup => "FrameSetup",
             Insn::FrameTeardown => "FrameTeardown",
             Insn::IncrCounter { .. } => "IncrCounter",
+            Insn::InvalRegion { .. } => "InvalRegion",
             Insn::Jbe(_) => "Jbe",
             Insn::Je(_) => "Je",
             Insn::Jl(_) => "Jl",
@@ -633,6 +637,7 @@ impl<'a> Iterator for InsnOpndIterator<'a> {
             Insn::CPushAll |
             Insn::FrameSetup |
             Insn::FrameTeardown |
+            Insn::InvalRegion |
             Insn::Jbe(_) |
             Insn::Je(_) |
             Insn::Jl(_) |
@@ -729,6 +734,7 @@ impl<'a> InsnOpndMutIterator<'a> {
             Insn::CPushAll |
             Insn::FrameSetup |
             Insn::FrameTeardown |
+            Insn::InvalRegion |
             Insn::Jbe(_) |
             Insn::Je(_) |
             Insn::Jl(_) |
@@ -1341,6 +1347,10 @@ impl Assembler {
 
     pub fn incr_counter(&mut self, mem: Opnd, value: Opnd) {
         self.push_insn(Insn::IncrCounter { mem, value });
+    }
+
+    pub fn inval_region(&mut self) {
+        self.push_insn(Insn::InvalRegion);
     }
 
     pub fn jbe(&mut self, target: Target) {
