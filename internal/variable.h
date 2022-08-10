@@ -53,6 +53,8 @@ struct rb_shape {
     uint32_t iv_count;
 };
 
+#define USE_SHAPE_CACHE_P (SIZEOF_UINT64_T == SIZEOF_VALUE)
+
 #define SHAPE_ID(shape) rb_shape_get_shape_id((VALUE)shape)
 
 #ifndef rb_shape_t
