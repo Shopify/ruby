@@ -266,13 +266,6 @@ rb_shape_transition_shape_frozen(VALUE obj)
 
     RUBY_ASSERT(next_shape);
     rb_shape_set_shape(obj, next_shape);
-    // 1. Eagerly make frozen transition for not_cool_objects
-    // 2. Make a global variable that contains the id (which shounld always be 1)
-    // 3. When we freeze an object, if it's "not cool", do nothing (just let the
-    // header bits get set)
-    //
-    // if root shape, and not_cool_object, return;
-    //
 }
 
 void
@@ -316,9 +309,7 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE *value) {
             depth++;
         }
         else {
-            if (shape->edge_name == id) {
-                counting = TRUE;
-            }
+            counting = (shape->edge_name == id);
         }
         shape = shape->parent;
     }

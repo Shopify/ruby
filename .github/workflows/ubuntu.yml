@@ -43,6 +43,11 @@ jobs:
     steps:
       - run: mkdir build
         working-directory:
+      - name: Set ENV
+        env:
+          configure: ${{matrix.configure}}
+        run: |
+          echo "GNUMAKEFLAGS=-j$((1 + $(nproc --all)))" >> $GITHUB_ENV
       - name: Install libraries
         env:
           arch: ${{matrix.arch}}

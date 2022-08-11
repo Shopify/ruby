@@ -323,3 +323,4 @@ rb_id_table_foreach_values_with_replace(struct rb_id_table *tbl, rb_id_table_for
         }
     }
 }
+
