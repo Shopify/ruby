@@ -220,7 +220,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
     return res;
 }
 
-int
+MJIT_FUNC_EXPORTED int
 rb_shape_frozen_shape_p(rb_shape_t* shape)
 {
     return RB_OBJ_FROZEN((VALUE)shape);
@@ -364,7 +364,7 @@ rb_shape_generate_iv_table(rb_shape_t* shape) {
     return iv_table;
 }
 
-void
+MJIT_FUNC_EXPORTED void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 {
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
