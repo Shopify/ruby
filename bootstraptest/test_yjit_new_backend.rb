@@ -738,6 +738,15 @@ assert_equal 'netscape', %q{
     foo()
 }
 
+# opt_getinlinecache
+assert_equal 'navigator', %q{
+    NETSCAPE = "navigator"
+    def foo()
+      NETSCAPE
+    end
+    foo()
+}
+
 # BOP redefinition works on Integer#<
 assert_equal 'false', %q{
   def less_than x
