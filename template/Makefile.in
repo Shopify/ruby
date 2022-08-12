@@ -89,7 +89,9 @@ optflags = @optflags@
 debugflags = @debugflags@
 warnflags = @warnflags@ @strict_warnflags@
 cppflags = @cppflags@
-XCFLAGS = @XCFLAGS@ $(INCFLAGS)
+RUBY_DEVEL = @RUBY_DEVEL@ # "yes" or empty
+_RUBY_DEVEL_enabled = $(RUBY_DEVEL:no=)
+XCFLAGS = @XCFLAGS@ $(INCFLAGS) $(_RUBY_DEVEL_enabled:yes=-DRUBY_DEVEL=1)
 USE_RUBYGEMS = @USE_RUBYGEMS@
 USE_RUBYGEMS_ = $(USE_RUBYGEMS:yes=)
 CPPFLAGS = @CPPFLAGS@ $(USE_RUBYGEMS_:no=-DDISABLE_RUBYGEMS=1)
@@ -530,12 +532,16 @@ ext/clean.mk ext/distclean.mk ext/realclean.mk::
 ext/clean:: ext/clean.sub
 ext/distclean:: ext/distclean.sub
 ext/realclean:: ext/realclean.sub
-gems/clean:: gems/clean.sub
-gems/distclean:: gems/distclean.sub
-gems/realclean:: gems/realclean.sub
+.bundle/clean:: .bundle/clean.sub
+.bundle/distclean:: .bundle/distclean.sub
+.bundle/realclean:: .bundle/realclean.sub
+
+ext/clean.sub .bundle/clean.sub:: ext/clean.mk
+ext/distclean.sub .bundle/distclean.sub:: ext/distclean.mk
+ext/realclean.sub .bundle/realclean.sub:: ext/realclean.mk
 
 ext/clean.sub ext/distclean.sub ext/realclean.sub \
-gems/clean.sub gems/distclean.sub gems/realclean.sub::
+.bundle/clean.sub .bundle/distclean.sub .bundle/realclean.sub::
 	$(Q) set dummy `echo "${EXTS}" | tr , ' '`; shift; \
 	test "$$#" = 0 && set .; \
 	set dummy `\
@@ -551,7 +557,7 @@ gems/clean.sub gems/distclean.sub gems/realclean.sub::
 	    fi; \
 	done || true
 
-ext/distclean ext/realclean gems/distclean gems/realclean::
+ext/distclean ext/realclean .bundle/distclean .bundle/realclean::
 	$(Q) set dummy `echo "${EXTS}" | tr , ' '`; shift; \
 	test "$$#" = 0 && set .; \
 	cd $(@D) 2>/dev/null && \
