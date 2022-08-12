@@ -918,11 +918,9 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 
     if (r) {
         *indexp = (uint32_t)ent_data;
-        return true;
     }
-    else {
-        return false;
-    }
+
+    return r;
 }
 
 static void
