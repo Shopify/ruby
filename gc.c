@@ -2634,7 +2634,6 @@ heap_next_free_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_
     heap->free_pages = page->free_next;
 
     GC_ASSERT(page->free_slots != 0);
-
     RUBY_DEBUG_LOG("page:%p freelist:%p cnt:%d", (void *)page, (void *)page->freelist, page->free_slots);
 
     asan_unlock_freelist(page);
@@ -3008,8 +3007,8 @@ rb_imemo_tmpbuf_parser_heap(void *buf, rb_imemo_tmpbuf_t *old_heap, size_t cnt)
     return (rb_imemo_tmpbuf_t *)rb_imemo_tmpbuf_new((VALUE)buf, (VALUE)old_heap, (VALUE)cnt, 0);
 }
 
-size_t
-rb_gc_imemo_memsize(VALUE obj)
+static size_t
+imemo_memsize(VALUE obj)
 {
     size_t size = 0;
     switch (imemo_type(obj)) {
@@ -3021,7 +3020,7 @@ rb_gc_imemo_memsize(VALUE obj)
         break;
       case imemo_shape:
         {
-            struct rb_id_table* edges= ((rb_shape_t *) obj)->edges;
+            struct rb_id_table* edges = ((rb_shape_t *) obj)->edges;
             if (edges) {
                 size += rb_id_table_memsize(edges);
             }
@@ -3446,15 +3445,20 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             RB_DEBUG_COUNTER_INC(obj_obj_transient);
         }
         else {
-            // "No cache" objects have a singleton iv_index_tbl that we need to free
+            // A shape can be collected before an object is collected (if both
+            // happened to be garbage at the same time), so when we look up the shape, _do not_
+            // assert that the shape is an IMEMO because it could be null
             rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(ROBJECT_SHAPE_ID(obj));
             if (shape) {
                 VALUE klass = RBASIC_CLASS(obj);
+
+                // Increment max_iv_count if applicable, used to determine size pool allocation
                 uint32_t num_of_ivs = shape->iv_count;
                 if (RCLASS_EXT(klass)->max_iv_count < num_of_ivs) {
                     RCLASS_EXT(klass)->max_iv_count = num_of_ivs;
                 }
 
+                // "No cache" objects have a singleton iv_index_tbl that we need to free
                 if (shape && rb_shape_no_cache_shape_p(shape)) {
                     rb_id_table_free(ROBJECT(obj)->as.heap.iv_index_tbl);
                 }
@@ -5003,7 +5007,7 @@ obj_memsize_of(VALUE obj, int use_all_types)
       case T_COMPLEX:
         break;
       case T_IMEMO:
-        size += rb_gc_imemo_memsize(obj);
+        size += imemo_memsize(obj);
         break;
 
       case T_FLOAT:
@@ -5709,7 +5713,6 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
     if (!heap->compact_cursor) {
         gc_setup_mark_bits(sweep_page);
     }
-
 
 #if GC_PROFILE_MORE_DETAIL
     if (gc_prof_enabled(objspace)) {

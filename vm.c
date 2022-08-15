@@ -3972,13 +3972,6 @@ Init_vm_objects(void)
             0);
     rb_shape_set_shape_by_id(NO_CACHE_SHAPE_ID, vm->no_cache_shape);
     RB_OBJ_WRITTEN(vm->no_cache_shape, Qundef, (VALUE)vm);
-
-    /*
-     * TODO: Why are these not working here?
-    // RubyVM.debug_shape functionality
-    rb_cShape = rb_define_class_under(rb_cRubyVM, "Shape", rb_cObject);
-    rb_define_method(rb_cShape, "id", rb_shape_id, 0);
-    */
 }
 
 /* Stub for builtin function when not building YJIT units*/

@@ -7,7 +7,6 @@ module Bug end
 module Bug::Marshal
   class TestInternalIVar < Test::Unit::TestCase
     def test_marshal
-      pend "TEMPORARY: skipping because it's failing with internal ID 0, not supported by ID tables"
       v = InternalIVar.new("hello", "world", "bye")
       assert_equal("hello", v.normal)
       assert_equal("world", v.internal)

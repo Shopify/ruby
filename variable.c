@@ -1089,7 +1089,7 @@ static uint32_t
 iv_index_tbl_newsize(struct ivar_update *ivup)
 {
     if (!ivup->iv_extended) {
-        return (uint32_t) ivup->u.iv_index_tbl_size;
+        return (uint32_t)ivup->u.iv_index_tbl_size;
     }
     else {
         uint32_t index = (uint32_t)ivup->index;	/* should not overflow */
