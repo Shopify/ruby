@@ -4379,6 +4379,8 @@ vm_concat_array(VALUE ary1, VALUE ary2st)
     return rb_ary_concat(tmp1, tmp2);
 }
 
+// YJIT implementation is using the C function
+// and needs to call a non-static function
 VALUE
 rb_vm_concat_array(VALUE ary1, VALUE ary2st)
 {
@@ -4400,6 +4402,8 @@ vm_splat_array(VALUE flag, VALUE ary)
     }
 }
 
+// YJIT implementation is using the C function
+// and needs to call a non-static function
 VALUE
 rb_vm_splat_array(VALUE flag, VALUE ary)
 {
