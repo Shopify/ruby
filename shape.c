@@ -501,8 +501,16 @@ rb_shape_parent(VALUE self)
     return rb_shape_t_to_rb_cShape(shape->parent);
 }
 
-VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
+VALUE rb_shape_debug_shape(VALUE self, VALUE obj) {
     return rb_shape_t_to_rb_cShape(rb_shape_get_shape(obj));
+}
+
+VALUE rb_shape_debug_root_shape(VALUE self) {
+    return rb_shape_t_to_rb_cShape(rb_shape_get_root_shape());
+}
+
+VALUE rb_shape_debug_frozen_root_shape(VALUE self) {
+    return rb_shape_t_to_rb_cShape(rb_shape_get_frozen_root_shape());
 }
 
 VALUE rb_obj_shape(rb_shape_t* shape);
@@ -552,6 +560,12 @@ static VALUE shape_count(VALUE self) {
     return INT2NUM(shape_count);
 }
 
+static VALUE
+shape_max_shape_count(VALUE self)
+{
+    return INT2NUM(GET_VM()->max_shape_count);
+}
+
 void
 Init_shape(void)
 {
@@ -565,4 +579,8 @@ Init_shape(void)
     rb_define_method(rb_cShape, "id", rb_shape_id, 0);
     rb_define_module_function(rb_cRubyVM, "debug_shape_transition_tree", shape_transition_tree, 0);
     rb_define_module_function(rb_cRubyVM, "debug_shape_count", shape_count, 0);
+    rb_define_singleton_method(rb_cRubyVM, "debug_shape", rb_shape_debug_shape, 1);
+    rb_define_singleton_method(rb_cRubyVM, "debug_max_shape_count", shape_max_shape_count, 0);
+    rb_define_singleton_method(rb_cRubyVM, "debug_root_shape", rb_shape_debug_root_shape, 0);
+    rb_define_singleton_method(rb_cRubyVM, "debug_frozen_root_shape", rb_shape_debug_frozen_root_shape, 0);
 }

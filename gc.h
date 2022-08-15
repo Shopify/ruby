@@ -138,8 +138,6 @@ void rb_objspace_each_objects_without_setup(
 
 size_t rb_gc_obj_slot_size(VALUE obj);
 
-VALUE rb_obj_debug_shape(VALUE self, VALUE obj);
-
 RUBY_SYMBOL_EXPORT_END
 
 #endif /* RUBY_GC_H */

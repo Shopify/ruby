@@ -3543,12 +3543,6 @@ vm_keep_script_lines_set(VALUE self, VALUE flags)
     return flags;
 }
 
-static VALUE
-vm_max_shape_count(VALUE self)
-{
-    return INT2NUM(GET_VM()->max_shape_count);
-}
-
 void
 Init_VM(void)
 {
@@ -3573,8 +3567,6 @@ Init_VM(void)
     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines", vm_keep_script_lines, 0);
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines=", vm_keep_script_lines_set, 1);
-    rb_define_singleton_method(rb_cRubyVM, "debug_shape", rb_obj_debug_shape, 1);
-    rb_define_singleton_method(rb_cRubyVM, "max_shape_count", vm_max_shape_count, 0);
 
 #if USE_DEBUG_COUNTER
     rb_define_singleton_method(rb_cRubyVM, "reset_debug_counters", rb_debug_counter_reset, 0);
