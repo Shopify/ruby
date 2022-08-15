@@ -14077,7 +14077,6 @@ signal.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 signal.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 signal.$(OBJEXT): $(CCAN_DIR)/list/list.h
 signal.$(OBJEXT): $(CCAN_DIR)/str/str.h
-signal.$(OBJEXT): $(hdrdir)/ruby.h
 signal.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 signal.$(OBJEXT): $(top_srcdir)/internal/array.h
 signal.$(OBJEXT): $(top_srcdir)/internal/compilers.h
@@ -14265,7 +14264,6 @@ signal.$(OBJEXT): {$(VPATH)}internal/warning_push.h
 signal.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 signal.$(OBJEXT): {$(VPATH)}method.h
 signal.$(OBJEXT): {$(VPATH)}missing.h
-signal.$(OBJEXT): {$(VPATH)}mjit.h
 signal.$(OBJEXT): {$(VPATH)}node.h
 signal.$(OBJEXT): {$(VPATH)}onigmo.h
 signal.$(OBJEXT): {$(VPATH)}oniguruma.h
@@ -14281,7 +14279,6 @@ signal.$(OBJEXT): {$(VPATH)}thread_native.h
 signal.$(OBJEXT): {$(VPATH)}vm_core.h
 signal.$(OBJEXT): {$(VPATH)}vm_debug.h
 signal.$(OBJEXT): {$(VPATH)}vm_opts.h
-signal.$(OBJEXT): {$(VPATH)}yjit.h
 sprintf.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 sprintf.$(OBJEXT): $(top_srcdir)/internal/bignum.h
 sprintf.$(OBJEXT): $(top_srcdir)/internal/bits.h
@@ -17875,16 +17872,14 @@ yjit.$(OBJEXT): $(top_srcdir)/internal/array.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/class.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/compile.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/compilers.h
+yjit.$(OBJEXT): $(top_srcdir)/internal/fixnum.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/gc.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/hash.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/imemo.h
-yjit.$(OBJEXT): $(top_srcdir)/internal/object.h
-yjit.$(OBJEXT): $(top_srcdir)/internal/re.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/sanitizers.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/serial.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/static_assert.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/string.h
-yjit.$(OBJEXT): $(top_srcdir)/internal/struct.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/variable.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/vm.h
 yjit.$(OBJEXT): $(top_srcdir)/internal/warnings.h
@@ -17902,6 +17897,7 @@ yjit.$(OBJEXT): {$(VPATH)}backward/2/stdarg.h
 yjit.$(OBJEXT): {$(VPATH)}builtin.h
 yjit.$(OBJEXT): {$(VPATH)}config.h
 yjit.$(OBJEXT): {$(VPATH)}constant.h
+yjit.$(OBJEXT): {$(VPATH)}debug.h
 yjit.$(OBJEXT): {$(VPATH)}debug_counter.h
 yjit.$(OBJEXT): {$(VPATH)}defines.h
 yjit.$(OBJEXT): {$(VPATH)}encoding.h
@@ -18080,6 +18076,7 @@ yjit.$(OBJEXT): {$(VPATH)}thread_native.h
 yjit.$(OBJEXT): {$(VPATH)}vm_callinfo.h
 yjit.$(OBJEXT): {$(VPATH)}vm_core.h
 yjit.$(OBJEXT): {$(VPATH)}vm_debug.h
+yjit.$(OBJEXT): {$(VPATH)}vm_insnhelper.h
 yjit.$(OBJEXT): {$(VPATH)}vm_opts.h
 yjit.$(OBJEXT): {$(VPATH)}vm_sync.h
 yjit.$(OBJEXT): {$(VPATH)}yjit.c
