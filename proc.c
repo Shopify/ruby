@@ -2517,7 +2517,7 @@ rb_method_call_with_block(int argc, const VALUE *argv, VALUE method, VALUE passe
  */
 
 static void
-convert_umethod_to_method_components(const struct METHOD *data, VALUE recv, VALUE *methclass_out, VALUE *klass_out, VALUE *iclass_out, const rb_method_entry_t **me_out)
+convert_umethod_to_method_components(const struct METHOD *data, VALUE recv, VALUE *methclass_out, VALUE *klass_out, VALUE *iclass_out, const rb_method_entry_t **me_out, const bool clone)
 {
     VALUE methclass = data->owner;
     VALUE iclass = data->me->defined_class;
@@ -2539,17 +2539,26 @@ convert_umethod_to_method_components(const struct METHOD *data, VALUE recv, VALU
 	}
     }
 
-    const rb_method_entry_t *me = rb_method_entry_clone(data->me);
+    const rb_method_entry_t *me;
+    if (clone) {
+        me = rb_method_entry_clone(data->me);
+    } else {
+        me = data->me;
+    }
 
     if (RB_TYPE_P(me->owner, T_MODULE)) {
-	VALUE ic = rb_class_search_ancestor(klass, me->owner);
-	if (ic) {
-	    klass = ic;
-            iclass = ic;
-	}
-	else {
-	    klass = rb_include_class_new(methclass, klass);
-	}
+        if (!clone) {
+            // if we didn't previously clone the method entry, then we need to clone it now
+            // because this branch manipualtes it in rb_method_entry_complement_defined_class
+            me = rb_method_entry_clone(me);
+        }
+        VALUE ic = rb_class_search_ancestor(klass, me->owner);
+        if (ic) {
+            klass = ic;
+    }
+    else {
+        klass = rb_include_class_new(methclass, klass);
+    }
         me = (const rb_method_entry_t *) rb_method_entry_complement_defined_class(me, me->called_id, klass);
     }
 
@@ -2601,7 +2610,7 @@ umethod_bind(VALUE method, VALUE recv)
     const rb_method_entry_t *me;
     const struct METHOD *data;
     TypedData_Get_Struct(method, struct METHOD, &method_data_type, data);
-    convert_umethod_to_method_components(data, recv, &methclass, &klass, &iclass, &me);
+    convert_umethod_to_method_components(data, recv, &methclass, &klass, &iclass, &me, true);
 
     struct METHOD *bound;
     method = TypedData_Make_Struct(rb_cMethod, struct METHOD, &method_data_type, bound);
@@ -2644,7 +2653,7 @@ umethod_bind_call(int argc, VALUE *argv, VALUE method)
     else {
         VALUE methclass, klass, iclass;
         const rb_method_entry_t *me;
-        convert_umethod_to_method_components(data, recv, &methclass, &klass, &iclass, &me);
+        convert_umethod_to_method_components(data, recv, &methclass, &klass, &iclass, &me, false);
         struct METHOD bound = { recv, klass, 0, methclass, me };
 
         return call_method_data(ec, &bound, argc, argv, passed_procval, RB_PASS_CALLED_KEYWORDS);
