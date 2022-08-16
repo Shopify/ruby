@@ -104,6 +104,9 @@ Note: We're only listing outstanding class updates.
       empty, instead of returning the default value or
       calling the default proc. [[Bug #16908]]
 
+* Integer
+    * Integer#ceildiv has been added. [[Feature #18809]]
+
 * Kernel
     * Kernel#binding raises RuntimeError if called from a non-Ruby frame
       (such as a method defined in C). [[Bug #18487]]
@@ -276,3 +279,4 @@ The following deprecated APIs are removed.
 [Feature #18685]: https://bugs.ruby-lang.org/issues/18685
 [Bug #18782]:     https://bugs.ruby-lang.org/issues/18782
 [Feature #18788]: https://bugs.ruby-lang.org/issues/18788
+[Feature #18809]: https://bugs.ruby-lang.org/issues/18809
