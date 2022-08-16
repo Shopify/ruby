@@ -96,4 +96,7 @@ jobs:
       # Check that we can build rdoc successfully
       - run: make -j rdoc
 
-      # TODO: check that we can we run test-all successfully
+      # Run John's YJIT instruction tests, and make sure we can load the test-all runner
+      - run: make test-all TESTS='test/ruby/test_yjit.rb' RUN_OPTS="--yjit-call-threshold=1"
+
+      # TODO: check that we can we run all of test-all successfully
