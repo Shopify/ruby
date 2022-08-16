@@ -403,6 +403,18 @@ assert_equal '10', %q{
     foo(false)
 }
 
+# <<
+assert_equal 'abc', %q{
+  def foo
+    b = ""
+    b<<'a'
+    b<<'b'
+    b<<'c'
+    b
+  end
+  foo()
+}
+
 # branchunless, jump
 assert_equal '1', %q{
     def foo(n)
