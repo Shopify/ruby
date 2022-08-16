@@ -94,7 +94,7 @@ require 'rdoc'
 # - {Directive}[rdoc-ref:RDoc::MarkupReference@Directives]:
 #   various special directions for the rendering.
 # - {Text Markup}[rdoc-ref:RDoc:MarkupReference@Text+Markup]:
-#   text to be rendered in italic, bold, or monofont.
+#   text to be rendered in a special way.
 #
 # About the blocks:
 #
@@ -632,18 +632,24 @@ require 'rdoc'
 #
 # ==== Text Markup
 #
-# Text markup is metatext that marks text as:
+# Text markup is metatext that affects HTML rendering:
 #
-# - Italic.
-# - Bold.
-# - Monofont.
+# - Typeface: italic, bold, monofont.
+# - Character conversions: copyright, trademark, certain punctuation.
+# - Links.
+# - Escapes: marking text as "not markup."
 #
-# Text markup may contain only one type of nested block:
+# ===== Typeface Markup
 #
-# - More text markup:
+# Typeface markup can specify that text is to be rendered
+# as italic, bold, or monofont.
+#
+# Typeface markup may contain only one type of nested block:
+#
+# - More typeface markup:
 #   italic, bold, monofont.
 #
-# ===== Italic
+# ====== Italic
 #
 # Text may be marked as italic via HTML tag <tt><i></tt> or <tt><em></tt>.
 #
@@ -698,7 +704,7 @@ require 'rdoc'
 #
 #   ====== _Italic_ in a Heading
 #
-# ===== Bold
+# ====== Bold
 #
 # Text may be marked as bold via HTML tag <tt><b></tt>.
 #
@@ -755,7 +761,7 @@ require 'rdoc'
 #
 #   ===== *Bold* in a Heading
 #
-# ===== Monofont
+# ====== Monofont
 #
 # Text may be marked as monofont
 # -- sometimes called 'typewriter font' --
@@ -814,37 +820,6 @@ require 'rdoc'
 #
 #   ====== +Monofont+ in a Heading
 #
-# ==== Escaping Text Markup
-#
-# Text markup can be escaped with a backslash, as in \<tt>, which was obtained
-# with <tt>\\<tt></tt>.  Except in verbatim sections and between \<tt> tags,
-# to produce a backslash you have to double it unless it is followed by a
-# space, tab or newline. Otherwise, the HTML formatter will discard it, as it
-# is used to escape potential links:
-#
-#   * The \ must be doubled if not followed by white space: \\.
-#   * But not in \<tt> tags: in a Regexp, <tt>\S</tt> matches non-space.
-#   * This is a link to {ruby-lang}[https://www.ruby-lang.org].
-#   * This is not a link, however: \{ruby-lang.org}[https://www.ruby-lang.org].
-#   * This will not be linked to \RDoc::RDoc#document
-#
-# generates:
-#
-# * The \ must be doubled if not followed by white space: \\.
-# * But not in \<tt> tags: in a Regexp, <tt>\S</tt> matches non-space.
-# * This is a link to {ruby-lang}[https://www.ruby-lang.org]
-# * This is not a link, however: \{ruby-lang.org}[https://www.ruby-lang.org]
-# * This will not be linked to \RDoc::RDoc#document
-#
-# Inside \<tt> tags, more precisely, leading backslashes are removed only if
-# followed by a markup character (<tt><*_+</tt>), a backslash, or a known link
-# reference (a known class or method). So in the example above, the backslash
-# of <tt>\S</tt> would be removed if there was a class or module named +S+ in
-# the current context.
-#
-# This behavior is inherited from RDoc version 1, and has been kept for
-# compatibility with existing RDoc documentation.
-#
 # ==== Character Conversions
 #
 # Certain combinations of characters may be converted to special characters;
@@ -891,7 +866,6 @@ require 'rdoc'
 #
 #   - On-page: <tt>::dummy_singleton_method</tt> links to ::dummy_singleton_method.
 #   - Off-page<tt>RDoc::TokenStream::to_html</tt> links to RDoc::TokenStream::to_html.
-#     to \RDoc::TokenStream::to_html.
 #
 #   Note: Occasionally \RDoc is not linked to a method whose name
 #   has only special characters. Check whether the links you were expecting
@@ -1067,6 +1041,93 @@ require 'rdoc'
 #   - Link: <tt>{rdoc-image:https://www.ruby-lang.org/images/header-ruby-logo@2x.png}[./Alias.html]</tt> links to <tt>./Alias.html</tt>
 #
 #     {rdoc-image:https://www.ruby-lang.org/images/header-ruby-logo@2x.png}[./Alias.html]
+#
+# === Escaping Text
+#
+# Text that would otherwise be interpreted as markup
+# can be "escaped," so that it is not interpreted as markup;
+# the escape character is the backslash (<tt>'\\'</tt>).
+#
+# In a verbatim text block or a code block,
+# the escape character is always preserved:
+#
+# Example input:
+#
+#   This is not verbatim text.
+#
+#     This is verbatim text, with an escape character \.
+#
+#   This is not a code block.
+#
+#     def foo
+#       'String with an escape character.'
+#     end
+#
+# Rendered HTML:
+#
+# >>>
+#   This is not verbatim text.
+#
+#     This is verbatim text, with an escape character \.
+#
+#   This is not a code block.
+#
+#     def foo
+#       'This is a code block with an escape character \.'
+#     end
+#
+# In typeface markup (italic, bold, or monofont),
+# an escape character is preserved unless it is immediately
+# followed by nested typeface markup.
+#
+# Example input:
+#
+#   This list is about escapes; it contains:
+#
+#   - <tt>Monofont text with unescaped nested _italic_</tt>.
+#   - <tt>Monofont text with escaped nested \_italic_</tt>.
+#   - <tt>Monofont text with an escape character \</tt>.
+#
+# Rendered HTML:
+#
+# >>>
+#   This list is about escapes; it contains:
+#
+#   - <tt>Monofont text with unescaped nested _italic_</tt>.
+#   - <tt>Monofont text with escaped nested \_italic_</tt>.
+#   - <tt>Monofont text with an escape character \ </tt>.
+#
+# In other text-bearing blocks
+# (paragraphs, block quotes, list items, headings):
+#
+# - A single escape character immediately followed by markup
+#   escapes the markup.
+# - A single escape character followed by whitespace is preserved.
+# - A single escape character anywhere else is ignored.
+# - A double escape character is rendered as a single backslash.
+#
+#   Example input:
+#
+#     This list is about escapes; it contains:
+#
+#     - An unescaped class name, RDoc, that will become a link.
+#     - An escaped class name, \RDoc, that will not become a link.
+#     - An escape character followed by whitespace \ .
+#     - An escape character \that is ignored.
+#     - A double escape character \\ that is rendered
+#       as a single backslash.
+#
+#   Rendered HTML:
+#
+#   >>>
+#     This list is about escapes; it contains:
+#
+#     - An unescaped class name, RDoc, that will become a link.
+#     - An escaped class name, \RDoc, that will not become a link.
+#     - An escape character followed by whitespace \ .
+#     - An escape character \that is ignored.
+#     - A double escape character \\ that is rendered
+#       as a single backslash.
 #
 # == Documentation Derived from Ruby Code
 #
