@@ -223,24 +223,24 @@ impl Assembler
                         }
                     }
                 },
-                Insn { op: Op::And | Op::Or | Op::Xor, opnds, .. } => {
+                Insn { op: Op::And | Op::Or | Op::Xor, opnds, target, text, pos_marker, .. } => {
                     match (opnds[0], opnds[1]) {
                         (Opnd::Reg(_), Opnd::Reg(_)) => {
-                            asm.push_insn_parts(insn.op, vec![opnds[0], opnds[1]], insn.target, insn.text, insn.pos_marker);
+                            asm.push_insn_parts(insn.op, vec![opnds[0], opnds[1]], target, text, pos_marker);
                         },
                         (reg_opnd @ Opnd::Reg(_), other_opnd) |
                         (other_opnd, reg_opnd @ Opnd::Reg(_)) => {
                             let opnd1 = split_bitmask_immediate(asm, other_opnd);
-                            asm.push_insn_parts(insn.op, vec![reg_opnd, opnd1], insn.target, insn.text, insn.pos_marker);
+                            asm.push_insn_parts(insn.op, vec![reg_opnd, opnd1], target, text, pos_marker);
                         },
                         _ => {
                             let opnd0 = split_load_operand(asm, opnds[0]);
                             let opnd1 = split_bitmask_immediate(asm, opnds[1]);
-                            asm.push_insn_parts(insn.op, vec![opnd0, opnd1], insn.target, insn.text, insn.pos_marker);
+                            asm.push_insn_parts(insn.op, vec![opnd0, opnd1], target, text, pos_marker);
                         }
                     }
                 },
-                Insn { op: Op::CCall, opnds, .. } => {
+                Insn { op: Op::CCall, opnds, target, .. } => {
                     assert!(opnds.len() <= C_ARG_OPNDS.len());
 
                     // For each of the operands we're going to first load them
@@ -255,7 +255,7 @@ impl Assembler
 
                     // Now we push the CCall without any arguments so that it
                     // just performs the call.
-                    asm.ccall(insn.target.unwrap().unwrap_fun_ptr(), vec![]);
+                    asm.ccall(target.unwrap().unwrap_fun_ptr(), vec![]);
                 },
                 Insn { op: Op::Cmp, opnds, .. } => {
                     let opnd0 = match opnds[0] {
@@ -273,7 +273,7 @@ impl Assembler
                     }
                     asm.cret(C_RET_OPND);
                 },
-                Insn { op: Op::CSelZ | Op::CSelNZ | Op::CSelE | Op::CSelNE | Op::CSelL | Op::CSelLE | Op::CSelG | Op::CSelGE, opnds, .. } => {
+                Insn { op: Op::CSelZ | Op::CSelNZ | Op::CSelE | Op::CSelNE | Op::CSelL | Op::CSelLE | Op::CSelG | Op::CSelGE, opnds, target, text, pos_marker, .. } => {
                     let new_opnds = opnds.into_iter().map(|opnd| {
                         match opnd {
                             Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
@@ -281,7 +281,7 @@ impl Assembler
                         }
                     }).collect();
 
-                    asm.push_insn_parts(insn.op, new_opnds, insn.target, insn.text, insn.pos_marker);
+                    asm.push_insn_parts(insn.op, new_opnds, target, text, pos_marker);
                 },
                 Insn { op: Op::IncrCounter, opnds, .. } => {
                     // We'll use LDADD later which only works with registers
@@ -400,7 +400,10 @@ impl Assembler
                     asm.test(opnd0, opnd1);
                 },
                 _ => {
-                    asm.push_insn_parts(insn.op, insn.opnds, insn.target, insn.text, insn.pos_marker);
+                    if insn.out.is_some() {
+                        insn.out = asm.next_opnd_out(&insn.opnds);
+                    }
+                    asm.push_insn(insn);
                 }
             };
 

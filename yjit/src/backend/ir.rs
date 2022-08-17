@@ -496,7 +496,7 @@ impl Assembler
     /// given slice of operands. The operands are given to determine the number
     /// of bits necessary for the output operand. They should all be the same
     /// size.
-    fn next_opnd_out(&self, opnds: &[Opnd]) -> Opnd {
+    pub(super) fn next_opnd_out(&self, opnds: &[Opnd]) -> Opnd {
         Opnd::InsnOut {
             idx: self.insns.len(),
             num_bits: Opnd::match_num_bits(opnds)
