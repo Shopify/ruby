@@ -186,29 +186,27 @@ impl Assembler
         let asm = &mut asm_local;
         let mut iterator = self.into_draining_iter();
 
-        while let Some((index, insn)) = iterator.next_mapped() {
+        while let Some((index, mut insn)) = iterator.next_mapped() {
             // Here we're going to map the operands of the instruction to load
             // any Opnd::Value operands into registers if they are heap objects
             // such that only the Op::Load instruction needs to handle that
             // case. If the values aren't heap objects then we'll treat them as
             // if they were just unsigned integer.
-            let opnds: Vec<Opnd> = insn.opnds.into_iter().map(|opnd| {
+            for opnd in &mut insn.opnds {
                 match opnd {
                     Opnd::Value(value) => {
                         if value.special_const_p() {
-                            Opnd::UImm(value.as_u64())
-                        } else if insn.op == Op::Load {
-                            opnd
-                        } else {
-                            asm.load(opnd)
+                            *opnd = Opnd::UImm(value.as_u64());
+                        } else if insn.op != Op::Load {
+                            *opnd = asm.load(*opnd);
                         }
                     },
-                    _ => opnd
-                }
-            }).collect();
+                    _ => {}
+                };
+            }
 
-            match insn.op {
-                Op::Add => {
+            match insn {
+                Insn { op: Op::Add, opnds, .. } => {
                     match (opnds[0], opnds[1]) {
                         (Opnd::Reg(_) | Opnd::InsnOut { .. }, Opnd::Reg(_) | Opnd::InsnOut { .. }) => {
                             asm.add(opnds[0], opnds[1]);
@@ -225,7 +223,7 @@ impl Assembler
                         }
                     }
                 },
-                Op::And | Op::Or | Op::Xor => {
+                Insn { op: Op::And | Op::Or | Op::Xor, opnds, .. } => {
                     match (opnds[0], opnds[1]) {
                         (Opnd::Reg(_), Opnd::Reg(_)) => {
                             asm.push_insn_parts(insn.op, vec![opnds[0], opnds[1]], insn.target, insn.text, insn.pos_marker);
@@ -242,7 +240,7 @@ impl Assembler
                         }
                     }
                 },
-                Op::CCall => {
+                Insn { op: Op::CCall, opnds, .. } => {
                     assert!(opnds.len() <= C_ARG_OPNDS.len());
 
                     // For each of the operands we're going to first load them
@@ -259,7 +257,7 @@ impl Assembler
                     // just performs the call.
                     asm.ccall(insn.target.unwrap().unwrap_fun_ptr(), vec![]);
                 },
-                Op::Cmp => {
+                Insn { op: Op::Cmp, opnds, .. } => {
                     let opnd0 = match opnds[0] {
                         Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[0],
                         _ => split_load_operand(asm, opnds[0])
@@ -268,15 +266,14 @@ impl Assembler
                     let opnd1 = split_shifted_immediate(asm, opnds[1]);
                     asm.cmp(opnd0, opnd1);
                 },
-                Op::CRet => {
+                Insn { op: Op::CRet, opnds, .. } => {
                     if opnds[0] != Opnd::Reg(C_RET_REG) {
                         let value = split_load_operand(asm, opnds[0]);
                         asm.mov(C_RET_OPND, value);
                     }
                     asm.cret(C_RET_OPND);
                 },
-                Op::CSelZ | Op::CSelNZ | Op::CSelE | Op::CSelNE |
-                Op::CSelL | Op::CSelLE | Op::CSelG | Op::CSelGE => {
+                Insn { op: Op::CSelZ | Op::CSelNZ | Op::CSelE | Op::CSelNE | Op::CSelL | Op::CSelLE | Op::CSelG | Op::CSelGE, opnds, .. } => {
                     let new_opnds = opnds.into_iter().map(|opnd| {
                         match opnd {
                             Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
@@ -286,7 +283,7 @@ impl Assembler
 
                     asm.push_insn_parts(insn.op, new_opnds, insn.target, insn.text, insn.pos_marker);
                 },
-                Op::IncrCounter => {
+                Insn { op: Op::IncrCounter, opnds, .. } => {
                     // We'll use LDADD later which only works with registers
                     // ... Load pointer into register
                     let counter_addr = split_lea_operand(asm, opnds[0]);
@@ -299,7 +296,7 @@ impl Assembler
 
                     asm.incr_counter(counter_addr, addend);
                 },
-                Op::JmpOpnd => {
+                Insn { op: Op::JmpOpnd, opnds, .. } => {
                     if let Opnd::Mem(_) = opnds[0] {
                         let opnd0 = split_load_operand(asm, opnds[0]);
                         asm.jmp_opnd(opnd0);
@@ -307,10 +304,10 @@ impl Assembler
                         asm.jmp_opnd(opnds[0]);
                     }
                 },
-                Op::Load => {
+                Insn { op: Op::Load, opnds, .. } => {
                     split_load_operand(asm, opnds[0]);
                 },
-                Op::LoadSExt => {
+                Insn { op: Op::LoadSExt, opnds, .. } => {
                     match opnds[0] {
                         // We only want to sign extend if the operand is a
                         // register, instruction output, or memory address that
@@ -326,7 +323,7 @@ impl Assembler
                         }
                     };
                 },
-                Op::Mov => {
+                Insn { op: Op::Mov, opnds, .. } => {
                     let value = match (opnds[0], opnds[1]) {
                         // If the first operand is a memory operand, we're going
                         // to transform this into a store instruction, so we'll
@@ -353,7 +350,7 @@ impl Assembler
                         _ => unreachable!()
                     };
                 },
-                Op::Not => {
+                Insn { op: Op::Not, opnds, .. } => {
                     // The value that is being negated must be in a register, so
                     // if we get anything else we need to load it first.
                     let opnd0 = match opnds[0] {
@@ -363,7 +360,7 @@ impl Assembler
 
                     asm.not(opnd0);
                 },
-                Op::Store => {
+                Insn { op: Op::Store, opnds, .. } => {
                     // The displacement for the STUR instruction can't be more
                     // than 9 bits long. If it's longer, we need to load the
                     // memory address into a register first.
@@ -378,7 +375,7 @@ impl Assembler
 
                     asm.store(opnd0, opnd1);
                 },
-                Op::Sub => {
+                Insn { op: Op::Sub, opnds, .. } => {
                     let opnd0 = match opnds[0] {
                         Opnd::Reg(_) | Opnd::InsnOut { .. } => opnds[0],
                         _ => split_load_operand(asm, opnds[0])
@@ -387,7 +384,7 @@ impl Assembler
                     let opnd1 = split_shifted_immediate(asm, opnds[1]);
                     asm.sub(opnd0, opnd1);
                 },
-                Op::Test => {
+                Insn { op: Op::Test, opnds, .. } => {
                     // The value being tested must be in a register, so if it's
                     // not already one we'll load it first.
                     let opnd0 = match opnds[0] {
@@ -403,7 +400,7 @@ impl Assembler
                     asm.test(opnd0, opnd1);
                 },
                 _ => {
-                    asm.push_insn_parts(insn.op, opnds, insn.target, insn.text, insn.pos_marker);
+                    asm.push_insn_parts(insn.op, insn.opnds, insn.target, insn.text, insn.pos_marker);
                 }
             };
 
