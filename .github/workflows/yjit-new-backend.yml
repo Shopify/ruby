@@ -97,6 +97,6 @@ jobs:
       - run: make -j rdoc
 
       # Run John's YJIT instruction tests, and make sure we can load the test-all runner
-      - run: make -j test-all TESTS='test/ruby/test_method test/ruby/test_module test/ruby/test_yjit' RUN_OPTS="--yjit-call-threshold=1"
+      - run: make -j test-all TESTS='test/ruby/test_assignment test/ruby/test_method test/ruby/test_module test/ruby/test_yjit' RUN_OPTS="--yjit-call-threshold=1"
 
       # TODO: check that we can we run all of test-all successfully
