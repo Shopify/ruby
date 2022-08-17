@@ -279,6 +279,7 @@ impl Assembler
         let mut gc_offsets: Vec<u32> = Vec::new();
 
         // For each instruction
+        let start_write_pos = cb.get_write_pos();
         for insn in &self.insns {
             match insn.op {
                 Op::Comment => {
@@ -548,6 +549,10 @@ impl Assembler
                     cmovl(cb, insn.out.into(), insn.opnds[1].into());
                 }
                 Op::LiveReg => (), // just a reg alloc signal, no code
+                Op::PadEntryExit => {
+                    let jmp_len = 5; // We assume that our Op::Jmp usage that gets invalidated is <= 5
+                    nop(cb, jmp_len);
+                }
 
                 // We want to keep the panic here because some instructions that
                 // we feed to the backend could get lowered into other
