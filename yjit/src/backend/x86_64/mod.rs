@@ -550,8 +550,11 @@ impl Assembler
                 }
                 Op::LiveReg => (), // just a reg alloc signal, no code
                 Op::PadEntryExit => {
-                    let jmp_len = 5; // We assume that our Op::Jmp usage that gets invalidated is <= 5
-                    nop(cb, jmp_len);
+                    // We assume that our Op::Jmp usage that gets invalidated is <= 5
+                    let code_size: u32 = (cb.get_write_pos() - start_write_pos).try_into().unwrap();
+                    if code_size < 5 {
+                        nop(cb, 5 - code_size);
+                    }
                 }
 
                 // We want to keep the panic here because some instructions that
