@@ -937,6 +937,8 @@ rb_str_format(int argc, const VALUE *argv, VALUE fmt)
         if (RTEST(ruby_verbose)) rb_warn("%s", mesg);
     }
     rb_str_resize(result, blen);
+    // rb_str_format mutates the string without updating coderange
+    ENC_CODERANGE_CLEAR(result);
 
     return result;
 }
@@ -1145,17 +1147,37 @@ ruby__sfvextra(rb_printf_buffer *fp, size_t valsize, void *valp, long *sz, int s
     return cp;
 }
 
-VALUE
-rb_enc_vsprintf(rb_encoding *enc, const char *fmt, va_list ap)
+static void
+ruby_vsprintf0(VALUE result, char *p, const char *fmt, va_list ap)
 {
     rb_printf_buffer_extra buffer;
 #define f buffer.base
-    VALUE result;
+    VALUE klass = RBASIC(result)->klass;
 
     f._flags = __SWR | __SSTR;
     f._bf._size = 0;
-    f._w = 120;
-    result = rb_str_buf_new(f._w);
+    f._w = rb_str_capacity(result);
+    f._bf._base = (unsigned char *)result;
+    f._p = (unsigned char *)p;
+    RBASIC_CLEAR_CLASS(result);
+    f.vwrite = ruby__sfvwrite;
+    f.vextra = ruby__sfvextra;
+    buffer.value = 0;
+    BSD_vfprintf(&f, fmt, ap);
+    RBASIC_SET_CLASS_RAW(result, klass);
+    // vfprintf mutates the string without updating coderange
+    ENC_CODERANGE_CLEAR(result);
+    rb_str_resize(result, (char *)f._p - RSTRING_PTR(result));
+#undef f
+}
+
+VALUE
+rb_enc_vsprintf(rb_encoding *enc, const char *fmt, va_list ap)
+{
+    const int initial_len = 120;
+    VALUE result;
+
+    result = rb_str_buf_new(initial_len);
     if (enc) {
         if (rb_enc_mbminlen(enc) > 1) {
             /* the implementation deeply depends on plain char */
@@ -1164,17 +1186,7 @@ rb_enc_vsprintf(rb_encoding *enc, const char *fmt, va_list ap)
         }
         rb_enc_associate(result, enc);
     }
-    f._bf._base = (unsigned char *)result;
-    f._p = (unsigned char *)RSTRING_PTR(result);
-    RBASIC_CLEAR_CLASS(result);
-    f.vwrite = ruby__sfvwrite;
-    f.vextra = ruby__sfvextra;
-    buffer.value = 0;
-    BSD_vfprintf(&f, fmt, ap);
-    RBASIC_SET_CLASS_RAW(result, rb_cString);
-    rb_str_resize(result, (char *)f._p - RSTRING_PTR(result));
-#undef f
-
+    ruby_vsprintf0(result, RSTRING_PTR(result), fmt, ap);
     return result;
 }
 
@@ -1213,26 +1225,9 @@ rb_sprintf(const char *format, ...)
 VALUE
 rb_str_vcatf(VALUE str, const char *fmt, va_list ap)
 {
-    rb_printf_buffer_extra buffer;
-#define f buffer.base
-    VALUE klass;
-
     StringValue(str);
     rb_str_modify(str);
-    f._flags = __SWR | __SSTR;
-    f._bf._size = 0;
-    f._w = rb_str_capacity(str);
-    f._bf._base = (unsigned char *)str;
-    f._p = (unsigned char *)RSTRING_END(str);
-    klass = RBASIC(str)->klass;
-    RBASIC_CLEAR_CLASS(str);
-    f.vwrite = ruby__sfvwrite;
-    f.vextra = ruby__sfvextra;
-    buffer.value = 0;
-    BSD_vfprintf(&f, fmt, ap);
-    RBASIC_SET_CLASS_RAW(str, klass);
-    rb_str_resize(str, (char *)f._p - RSTRING_PTR(str));
-#undef f
+    ruby_vsprintf0(str, RSTRING_END(str), fmt, ap);
 
     return str;
 }
