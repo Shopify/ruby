@@ -74,9 +74,12 @@ fn test_alloc_regs() {
     // Now we're going to verify that the out field has been appropriately
     // updated for each of the instructions that needs it.
     let regs = Assembler::get_alloc_regs();
-    assert_eq!(result.insns[0].out, Opnd::Reg(regs[0]));
-    assert_eq!(result.insns[2].out, Opnd::Reg(regs[1]));
-    assert_eq!(result.insns[5].out, Opnd::Reg(regs[0]));
+    let reg0 = regs[0];
+    let reg1 = regs[1];
+
+    assert!(matches!(result.insns[0].out_opnd(), Some(Opnd::Reg(reg0))));
+    assert!(matches!(result.insns[2].out_opnd(), Some(Opnd::Reg(reg1))));
+    assert!(matches!(result.insns[5].out_opnd(), Some(Opnd::Reg(reg0))));
 }
 
 fn setup_asm() -> (Assembler, CodeBlock) {

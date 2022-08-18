@@ -405,8 +405,10 @@ impl Assembler
                 _ => {
                     // If we have an output operand, then we need to replace it
                     // with a new output operand from the new assembler.
-                    if insn.out.is_some() {
-                        insn.out = asm.next_opnd_out(Opnd::match_num_bits_iter(insn.opnd_iter()));
+                    if insn.out_opnd().is_some() {
+                        let out_num_bits = Opnd::match_num_bits_iter(insn.opnd_iter());
+                        let out = insn.out_opnd_mut().unwrap();
+                        *out = asm.next_opnd_out(out_num_bits);
                     }
 
                     asm.push_insn(insn);

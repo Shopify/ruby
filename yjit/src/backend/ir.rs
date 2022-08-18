@@ -463,6 +463,70 @@ impl Insn {
     pub(super) fn opnd_iter_mut(&mut self) -> InsnOpndMutIterator {
         InsnOpndMutIterator::new(self)
     }
+
+    /// Return a non-mutable reference to the out operand for this instruction
+    /// if it has one.
+    pub fn out_opnd(&self) -> Option<&Opnd> {
+        match self {
+            Insn { op: Op::Add, out, .. } |
+            Insn { op: Op::And, out, .. } |
+            Insn { op: Op::CCall, out, .. } |
+            Insn { op: Op::CPop, out, .. } |
+            Insn { op: Op::CSelE, out, .. } |
+            Insn { op: Op::CSelG, out, .. } |
+            Insn { op: Op::CSelGE, out, .. } |
+            Insn { op: Op::CSelL, out, .. } |
+            Insn { op: Op::CSelLE, out, .. } |
+            Insn { op: Op::CSelNE, out, .. } |
+            Insn { op: Op::CSelNZ, out, .. } |
+            Insn { op: Op::CSelZ, out, .. } |
+            Insn { op: Op::Lea, out, .. } |
+            Insn { op: Op::LeaLabel, out, .. } |
+            Insn { op: Op::LiveReg, out, .. } |
+            Insn { op: Op::Load, out, .. } |
+            Insn { op: Op::LoadSExt, out, .. } |
+            Insn { op: Op::LShift, out, .. } |
+            Insn { op: Op::Not, out, .. } |
+            Insn { op: Op::Or, out, .. } |
+            Insn { op: Op::RShift, out, .. } |
+            Insn { op: Op::Sub, out, .. } |
+            Insn { op: Op::URShift, out, .. } |
+            Insn { op: Op::Xor, out, .. } => Some(out),
+            _ => None
+        }
+    }
+
+    /// Return a mutable reference to the out operand for this instruction if it
+    /// has one.
+    pub fn out_opnd_mut(&mut self) -> Option<&mut Opnd> {
+        match self {
+            Insn { op: Op::Add, out, .. } |
+            Insn { op: Op::And, out, .. } |
+            Insn { op: Op::CCall, out, .. } |
+            Insn { op: Op::CPop, out, .. } |
+            Insn { op: Op::CSelE, out, .. } |
+            Insn { op: Op::CSelG, out, .. } |
+            Insn { op: Op::CSelGE, out, .. } |
+            Insn { op: Op::CSelL, out, .. } |
+            Insn { op: Op::CSelLE, out, .. } |
+            Insn { op: Op::CSelNE, out, .. } |
+            Insn { op: Op::CSelNZ, out, .. } |
+            Insn { op: Op::CSelZ, out, .. } |
+            Insn { op: Op::Lea, out, .. } |
+            Insn { op: Op::LeaLabel, out, .. } |
+            Insn { op: Op::LiveReg, out, .. } |
+            Insn { op: Op::Load, out, .. } |
+            Insn { op: Op::LoadSExt, out, .. } |
+            Insn { op: Op::LShift, out, .. } |
+            Insn { op: Op::Not, out, .. } |
+            Insn { op: Op::Or, out, .. } |
+            Insn { op: Op::RShift, out, .. } |
+            Insn { op: Op::Sub, out, .. } |
+            Insn { op: Op::URShift, out, .. } |
+            Insn { op: Op::Xor, out, .. } => Some(out),
+            _ => None
+        }
+    }
 }
 
 /// An iterator that will yield a non-mutable reference to each operand in turn
@@ -684,7 +748,7 @@ impl fmt::Debug for Insn {
             write!(fmt, " target={target:?}")?;
         }
 
-        write!(fmt, " -> {:?}", self.out)
+        write!(fmt, " -> {:?}", self.out_opnd().unwrap_or(&Opnd::None))
     }
 }
 
@@ -861,8 +925,8 @@ impl Assembler
                         // uses this operand. If it is, we can return the allocated
                         // register to the pool.
                         if live_ranges[start_index] == index {
-                            if let Opnd::Reg(reg) = asm.insns[start_index].out {
-                                dealloc_reg(&mut pool, &regs, &reg);
+                            if let Some(Opnd::Reg(reg)) = asm.insns[start_index].out_opnd() {
+                                dealloc_reg(&mut pool, &regs, reg);
                             } else {
                                 unreachable!("no register allocated for insn {:?}", insn.op);
                             }
@@ -885,7 +949,7 @@ impl Assembler
                 // true that we set an output operand for this instruction. If
                 // it's not true, something has gone wrong.
                 assert!(
-                    !matches!(insn.out, Opnd::None),
+                    !matches!(insn.out_opnd(), None),
                     "Instruction output reused but no output operand set"
                 );
 
@@ -908,8 +972,8 @@ impl Assembler
 
                     if let Some(Opnd::InsnOut{ idx, .. }) = opnd_iter.next() {
                         if live_ranges[*idx] == index {
-                            if let Opnd::Reg(reg) = asm.insns[*idx].out {
-                                out_reg = Some(take_reg(&mut pool, &regs, &reg));
+                            if let Some(Opnd::Reg(reg)) = asm.insns[*idx].out_opnd() {
+                                out_reg = Some(take_reg(&mut pool, &regs, reg));
                             }
                         }
                     }
@@ -932,7 +996,12 @@ impl Assembler
 
                 // Set the output operand on the instruction
                 let out_num_bits = Opnd::match_num_bits_iter(insn.opnd_iter());
-                insn.out = Opnd::Reg(out_reg.unwrap().sub_reg(out_num_bits));
+
+                // If we have gotten to this point, then we're sure we have an
+                // output operand on this instruction because the live range
+                // extends beyond the index of the instruction.
+                let out = insn.out_opnd_mut().unwrap();
+                *out = Opnd::Reg(out_reg.unwrap().sub_reg(out_num_bits));
             }
 
             // Replace InsnOut operands by their corresponding register
@@ -940,10 +1009,10 @@ impl Assembler
             while let Some(opnd) = opnd_iter.next() {
                 match *opnd {
                     Opnd::InsnOut { idx, .. } => {
-                        *opnd = asm.insns[idx].out;
+                        *opnd = *asm.insns[idx].out_opnd().unwrap();
                     },
                     Opnd::Mem(Mem { base: MemBase::InsnOut(idx), disp, num_bits }) => {
-                        let base = MemBase::Reg(asm.insns[idx].out.unwrap_reg().reg_no);
+                        let base = MemBase::Reg(asm.insns[idx].out_opnd().unwrap().unwrap_reg().reg_no);
                         *opnd = Opnd::Mem(Mem { base, disp, num_bits });
                     }
                      _ => {},
