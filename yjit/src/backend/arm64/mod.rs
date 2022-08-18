@@ -182,6 +182,41 @@ impl Assembler
             }
         }
 
+        /// Returns the operands that should be used for a boolean logic
+        /// instruction.
+        fn split_boolean_operands(asm: &mut Assembler, opnd0: Opnd, opnd1: Opnd) -> (Opnd, Opnd) {
+            match (opnd0, opnd1) {
+                (Opnd::Reg(_), Opnd::Reg(_)) => {
+                    (opnd0, opnd1)
+                },
+                (reg_opnd @ Opnd::Reg(_), other_opnd) |
+                (other_opnd, reg_opnd @ Opnd::Reg(_)) => {
+                    let opnd1 = split_bitmask_immediate(asm, other_opnd);
+                    (reg_opnd, opnd1)
+                },
+                _ => {
+                    let opnd0 = split_load_operand(asm, opnd0);
+                    let opnd1 = split_bitmask_immediate(asm, opnd1);
+                    (opnd0, opnd1)
+                }
+            }
+        }
+
+        /// Returns the operands that should be used for a csel instruction.
+        fn split_csel_operands(asm: &mut Assembler, opnd0: Opnd, opnd1: Opnd) -> (Opnd, Opnd) {
+            let opnd0 = match opnd0 {
+                Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd0,
+                _ => split_load_operand(asm, opnd0)
+            };
+
+            let opnd1 = match opnd1 {
+                Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd1,
+                _ => split_load_operand(asm, opnd1)
+            };
+
+            (opnd0, opnd1)
+        }
+
         let mut asm_local = Assembler::new_with_label_names(std::mem::take(&mut self.label_names));
         let asm = &mut asm_local;
         let mut iterator = self.into_draining_iter();
@@ -226,22 +261,17 @@ impl Assembler
                         }
                     }
                 },
-                Insn { op: Op::And | Op::Or | Op::Xor, opnds, target, text, pos_marker, .. } => {
-                    match (opnds[0], opnds[1]) {
-                        (Opnd::Reg(_), Opnd::Reg(_)) => {
-                            asm.push_insn_parts(insn.op, vec![opnds[0], opnds[1]], target, text, pos_marker);
-                        },
-                        (reg_opnd @ Opnd::Reg(_), other_opnd) |
-                        (other_opnd, reg_opnd @ Opnd::Reg(_)) => {
-                            let opnd1 = split_bitmask_immediate(asm, other_opnd);
-                            asm.push_insn_parts(insn.op, vec![reg_opnd, opnd1], target, text, pos_marker);
-                        },
-                        _ => {
-                            let opnd0 = split_load_operand(asm, opnds[0]);
-                            let opnd1 = split_bitmask_immediate(asm, opnds[1]);
-                            asm.push_insn_parts(insn.op, vec![opnd0, opnd1], target, text, pos_marker);
-                        }
-                    }
+                Insn { op: Op::And, opnds, .. } => {
+                    let (opnd0, opnd1) = split_boolean_operands(asm, opnds[0], opnds[1]);
+                    asm.and(opnd0, opnd1);
+                },
+                Insn { op: Op::Or, opnds, .. } => {
+                    let (opnd0, opnd1) = split_boolean_operands(asm, opnds[0], opnds[1]);
+                    asm.or(opnd0, opnd1);
+                },
+                Insn { op: Op::Xor, opnds, .. } => {
+                    let (opnd0, opnd1) = split_boolean_operands(asm, opnds[0], opnds[1]);
+                    asm.xor(opnd0, opnd1);
                 },
                 Insn { op: Op::CCall, opnds, target, .. } => {
                     assert!(opnds.len() <= C_ARG_OPNDS.len());
@@ -276,15 +306,37 @@ impl Assembler
                     }
                     asm.cret(C_RET_OPND);
                 },
-                Insn { op: Op::CSelZ | Op::CSelNZ | Op::CSelE | Op::CSelNE | Op::CSelL | Op::CSelLE | Op::CSelG | Op::CSelGE, opnds, target, text, pos_marker, .. } => {
-                    let new_opnds = opnds.into_iter().map(|opnd| {
-                        match opnd {
-                            Opnd::Reg(_) | Opnd::InsnOut { .. } => opnd,
-                            _ => split_load_operand(asm, opnd)
-                        }
-                    }).collect();
-
-                    asm.push_insn_parts(insn.op, new_opnds, target, text, pos_marker);
+                Insn { op: Op::CSelZ, opnds, .. } => {
+                    let (opnd0, opnd1) = split_csel_operands(asm, opnds[0], opnds[1]);
+                    asm.csel_z(opnd0, opnd1);
+                },
+                Insn { op: Op::CSelNZ, opnds, .. } => {
+                    let (opnd0, opnd1) = split_csel_operands(asm, opnds[0], opnds[1]);
+                    asm.csel_nz(opnd0, opnd1);
+                },
+                Insn { op: Op::CSelE, opnds, .. } => {
+                    let (opnd0, opnd1) = split_csel_operands(asm, opnds[0], opnds[1]);
+                    asm.csel_e(opnd0, opnd1);
+                },
+                Insn { op: Op::CSelNE, opnds, .. } => {
+                    let (opnd0, opnd1) = split_csel_operands(asm, opnds[0], opnds[1]);
+                    asm.csel_ne(opnd0, opnd1);
+                },
+                Insn { op: Op::CSelL, opnds, .. } => {
+                    let (opnd0, opnd1) = split_csel_operands(asm, opnds[0], opnds[1]);
+                    asm.csel_l(opnd0, opnd1);
+                },
+                Insn { op: Op::CSelLE, opnds, .. } => {
+                    let (opnd0, opnd1) = split_csel_operands(asm, opnds[0], opnds[1]);
+                    asm.csel_le(opnd0, opnd1);
+                },
+                Insn { op: Op::CSelG, opnds, .. } => {
+                    let (opnd0, opnd1) = split_csel_operands(asm, opnds[0], opnds[1]);
+                    asm.csel_g(opnd0, opnd1);
+                },
+                Insn { op: Op::CSelGE, opnds, .. } => {
+                    let (opnd0, opnd1) = split_csel_operands(asm, opnds[0], opnds[1]);
+                    asm.csel_ge(opnd0, opnd1);
                 },
                 Insn { op: Op::IncrCounter, opnds, .. } => {
                     // We'll use LDADD later which only works with registers

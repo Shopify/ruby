@@ -527,6 +527,31 @@ impl Insn {
             _ => None
         }
     }
+
+    /// Returns the target for this instruction if there is one.
+    pub fn target(&self) -> Option<&Target> {
+        match self {
+            Insn { op: Op::Jbe, target, .. } |
+            Insn { op: Op::Je, target, .. } |
+            Insn { op: Op::Jl, target, .. } |
+            Insn { op: Op::Jmp, target, .. } |
+            Insn { op: Op::Jne, target, .. } |
+            Insn { op: Op::Jnz, target, .. } |
+            Insn { op: Op::Jo, target, .. } |
+            Insn { op: Op::Jz, target, .. } |
+            Insn { op: Op::LeaLabel, target, .. } => target.as_ref(),
+            _ => None
+        }
+    }
+
+    /// Returns the text associated with this instruction if there is some.
+    pub fn text(&self) -> Option<&String> {
+        match self {
+            Insn { op: Op::BakeString, text, .. } |
+            Insn { op: Op::Comment, text, .. } => text.as_ref(),
+            _ => None
+        }
+    }
 }
 
 /// An iterator that will yield a non-mutable reference to each operand in turn
@@ -741,10 +766,10 @@ impl fmt::Debug for Insn {
         write!(fmt, ")")?;
 
         // Print text, target, and pos if they are present
-        if let Some(text) = &self.text {
+        if let Some(text) = self.text() {
             write!(fmt, " {text:?}")?
         }
-        if let Some(target) = self.target {
+        if let Some(target) = self.target() {
             write!(fmt, " target={target:?}")?;
         }
 
@@ -812,23 +837,6 @@ impl Assembler
 
         self.insns.push(insn);
         self.live_ranges.push(insn_idx);
-    }
-
-    /// Append an instruction to the list by creating a new instruction from the
-    /// component parts given to this function. This will also create a new
-    /// output operand from the given operands for the new instruction.
-    pub(super) fn push_insn_parts(
-        &mut self,
-        op: Op,
-        opnds: Vec<Opnd>,
-        target: Option<Target>,
-        text: Option<String>,
-        pos_marker: Option<PosMarkerFn>
-    ) -> Opnd
-    {
-        let out = self.next_opnd_out(Opnd::match_num_bits(&opnds));
-        self.push_insn(Insn { op, text, opnds, out, target, pos_marker });
-        out
     }
 
     /// Create a new label instance that we can jump to
@@ -928,7 +936,7 @@ impl Assembler
                             if let Some(Opnd::Reg(reg)) = asm.insns[start_index].out_opnd() {
                                 dealloc_reg(&mut pool, &regs, reg);
                             } else {
-                                unreachable!("no register allocated for insn {:?}", insn.op);
+                                unreachable!("no register allocated for insn {:?}", insn);
                             }
                         }
                     }
@@ -937,7 +945,7 @@ impl Assembler
             }
 
             // C return values need to be mapped to the C return register
-            if insn.op == Op::CCall {
+            if matches!(insn, Insn { op: Op::CCall, .. }) {
                 assert_eq!(pool, 0, "register lives past C function call");
             }
 
@@ -958,7 +966,7 @@ impl Assembler
                 let mut out_reg: Option<Reg> = None;
 
                 // C return values need to be mapped to the C return register
-                if insn.op == Op::CCall {
+                if matches!(insn, Insn { op: Op::CCall, .. }) {
                     out_reg = Some(take_reg(&mut pool, &regs, &C_RET_REG));
                 }
 
