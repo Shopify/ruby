@@ -332,7 +332,8 @@ fn test_lookback_iterator() {
 
     while let Some((index, insn)) = iter.next_unmapped() {
         if index > 0 {
-            assert_eq!(iter.get_previous().unwrap().opnds[0], Opnd::None);
+            let opnd_iter = iter.get_previous().unwrap().opnd_iter();
+            assert_eq!(opnd_iter.take(1).next(), Some(&Opnd::None));
             assert_eq!(insn.op, Op::Store);
         }
     }
