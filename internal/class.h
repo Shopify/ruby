@@ -64,7 +64,6 @@ struct rb_classext_struct {
     rb_alloc_func_t allocator;
     const VALUE includer;
     uint32_t max_iv_count;
-    uint16_t shape_id;
 };
 
 struct RClass {

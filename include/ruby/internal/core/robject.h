@@ -228,8 +228,8 @@ typedef uint16_t shape_id_t;
 static inline shape_id_t
 ROBJECT_SHAPE_ID(VALUE obj)
 {
-    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
-    return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
+    RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
+    return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 48));
 }
 
 static inline void
@@ -240,7 +240,7 @@ ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
     // 4 bits are unused
     // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
     // | XXXX ractor_id | shape_id | UUUU flags |
-    RBASIC(obj)->flags &= 0xffffffff0000ffff;
-    RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
+    RBASIC(obj)->flags &= 0x0000ffffffffffff;
+    RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
 }
 #endif /* RBIMPL_ROBJECT_H */

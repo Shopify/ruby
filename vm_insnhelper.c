@@ -1112,8 +1112,8 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             if (FL_TEST_RAW(obj, FL_EXIVAR)) {
                 struct gen_ivtbl *ivtbl;
                 rb_ivar_generic_ivtbl_lookup(obj, &ivtbl);
-                shape_id = ivtbl->shape_id;
-                //shape_id = rb_shape_get_shape_id(obj);
+
+                shape_id = ROBJECT_SHAPE_ID(obj);
                 ivar_list = ivtbl->ivptr;
             } else {
                 return Qnil;
@@ -1378,7 +1378,7 @@ NOINLINE(static VALUE vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t
 static VALUE
 vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, uint32_t index)
 {
-    shape_id_t shape_id = rb_generic_shape_id(obj);
+    shape_id_t shape_id = rb_shape_get_shape_id(obj);
 
     if (shape_id != NO_CACHE_SHAPE_ID) {
         // Do we have a cache hit *and* is the CC intitialized
@@ -1387,9 +1387,10 @@ vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shap
 
             struct gen_ivtbl *ivtbl = 0;
             if (dest_shape_id != shape_id) {
+                rb_shape_t * shape = rb_shape_get_shape_by_id(dest_shape_id);
                 ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
-                ivtbl->shape_id = dest_shape_id;
-                RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
+                rb_shape_set_shape(obj, shape);
+                RB_OBJ_WRITTEN(obj, Qundef, shape);
             }
             else {
                 // Just get the IV table

@@ -1118,7 +1118,6 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     // Reinsert in to the hash table because ivtbl might be a newly resized chunk of memory
     *v = (st_data_t)ivtbl;
     ivup->u.ivtbl = ivtbl;
-    ivtbl->shape_id = SHAPE_ID(ivup->shape);
     return ST_CONTINUE;
 }
 
@@ -1169,7 +1168,6 @@ rb_mark_generic_ivar(VALUE obj)
     struct gen_ivtbl *ivtbl;
 
     if (rb_gen_ivtbl_get(obj, 0, &ivtbl)) {
-        rb_gc_mark((VALUE)rb_shape_get_shape_by_id(ivtbl->shape_id));
 	gen_ivtbl_mark(ivtbl);
     }
 }
@@ -1612,28 +1610,6 @@ rb_vm_set_ivar_id(VALUE obj, ID id, VALUE val)
     return val;
 }
 
-MJIT_FUNC_EXPORTED shape_id_t
-rb_generic_shape_id(VALUE obj)
-{
-    struct gen_ivtbl *ivtbl = 0;
-    shape_id_t shape_id = 0;
-
-    RB_VM_LOCK_ENTER();
-    {
-        st_table* global_iv_table = generic_ivtbl(obj, 0, false);
-
-        if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
-            shape_id = ivtbl->shape_id;
-        }
-        else if (OBJ_FROZEN(obj)) {
-            shape_id = FROZEN_ROOT_SHAPE_ID;
-        }
-    }
-    RB_VM_LOCK_LEAVE();
-
-    return shape_id;
-}
-
 bool
 rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
 {
@@ -1642,15 +1618,6 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
     }
 
     switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-          ROBJECT_SET_SHAPE_ID(obj, shape_id);
-          break;
-      case T_CLASS:
-      case T_MODULE:
-          {
-              RCLASS_EXT(obj)->shape_id = shape_id;
-              break;
-          }
       case T_IMEMO:
           if (imemo_type(obj) == imemo_shape) {
               RBASIC(obj)->flags &= 0xffffffff0000ffff;
@@ -1658,23 +1625,7 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
           }
           break;
       default:
-          {
-              if (shape_id != FROZEN_ROOT_SHAPE_ID) {
-                  struct gen_ivtbl *ivtbl = 0;
-                  RB_VM_LOCK_ENTER();
-                  {
-                      st_table* global_iv_table = generic_ivtbl(obj, 0, false);
-
-                      if (st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
-                          ivtbl->shape_id = shape_id;
-                      }
-                      else {
-                          rb_bug("Expected shape_id entry in global iv table");
-                      }
-                  }
-                  RB_VM_LOCK_LEAVE();
-              }
-          }
+          ROBJECT_SET_SHAPE_ID(obj, shape_id);
     }
 
     return true;
@@ -1717,7 +1668,6 @@ ivar_set(VALUE obj, ID id, VALUE val)
       case T_CLASS:
       case T_MODULE:
         // TODO: Transition shapes on classes
-        //rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         rb_class_ivar_set(obj, id, val);
         break;
