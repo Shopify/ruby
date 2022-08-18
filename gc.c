@@ -3448,7 +3448,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             // A shape can be collected before an object is collected (if both
             // happened to be garbage at the same time), so when we look up the shape, _do not_
             // assert that the shape is an IMEMO because it could be null
-            rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(ROBJECT_SHAPE_ID(obj));
+            rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(RBASIC_SHAPE_ID(obj));
             if (shape) {
                 VALUE klass = RBASIC_CLASS(obj);
 

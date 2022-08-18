@@ -20,13 +20,15 @@ typedef struct rb_shape rb_shape_t;
 #define rb_shape_t rb_shape_t
 #endif
 
-# define MAX_SHAPE_ID 0xFFFE
+# define SHAPE_BITS 16
+# define SHAPE_MASK ((1 << SHAPE_BITS) - 1)
+# define MAX_SHAPE_ID (SHAPE_MASK - 1)
 # define NO_CACHE_SHAPE_ID (0x2)
-# define INVALID_SHAPE_ID (MAX_SHAPE_ID + 1)
+# define INVALID_SHAPE_ID SHAPE_MASK
 # define ROOT_SHAPE_ID 0x0
 # define FROZEN_ROOT_SHAPE_ID 0x1
 
-#define SHAPE_ID(shape) rb_shape_get_shape_id((VALUE)shape)
+#define SHAPE_ID(shape) ((((rb_shape_t *)shape)->flags >> SHAPE_BITS) & SHAPE_MASK)
 
 bool rb_shape_root_shape_p(rb_shape_t* shape);
 

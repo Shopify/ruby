@@ -219,28 +219,4 @@ ROBJECT_IVPTR(VALUE obj)
         return ptr->as.heap.ivptr;
     }
 }
-
-#ifndef shape_id_t
-typedef uint16_t shape_id_t;
-#define shape_id_t shape_id_t
-#endif
-
-static inline shape_id_t
-ROBJECT_SHAPE_ID(VALUE obj)
-{
-    RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
-    return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 48));
-}
-
-static inline void
-ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
-{
-    // Ractors are occupying the upper 32 bits of flags
-    // Object shapes are occupying the next 16 bits
-    // 4 bits are unused
-    // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
-    // | XXXX ractor_id | shape_id | UUUU flags |
-    RBASIC(obj)->flags &= 0x0000ffffffffffff;
-    RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
-}
 #endif /* RBIMPL_ROBJECT_H */

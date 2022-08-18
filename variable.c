@@ -1578,7 +1578,7 @@ uint32_t
 rb_obj_ensure_iv_index_mapping(VALUE obj, ID id)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, T_OBJECT));
-    rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
+    rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(RBASIC_SHAPE_ID(obj)));
 
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
     uint32_t len = ROBJECT_NUMIV(obj);
@@ -1617,16 +1617,7 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
         return false;
     }
 
-    switch (BUILTIN_TYPE(obj)) {
-      case T_IMEMO:
-          if (imemo_type(obj) == imemo_shape) {
-              RBASIC(obj)->flags &= 0xffffffff0000ffff;
-              RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
-          }
-          break;
-      default:
-          ROBJECT_SET_SHAPE_ID(obj, shape_id);
-    }
+    RBASIC_SET_SHAPE_ID(obj, shape_id);
 
     return true;
 }

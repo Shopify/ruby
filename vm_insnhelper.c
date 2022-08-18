@@ -1096,12 +1096,11 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         goto general_path;
     }
 
+    shape_id = RBASIC_SHAPE_ID(obj);
+
     switch (BUILTIN_TYPE(obj)) {
         case T_OBJECT:
-            {
-                shape_id = ROBJECT_SHAPE_ID(obj);
-                ivar_list = ROBJECT_IVPTR(obj);
-            }
+            ivar_list = ROBJECT_IVPTR(obj);
             break;
         case T_CLASS:
         case T_MODULE:
@@ -1112,8 +1111,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             if (FL_TEST_RAW(obj, FL_EXIVAR)) {
                 struct gen_ivtbl *ivtbl;
                 rb_ivar_generic_ivtbl_lookup(obj, &ivtbl);
-
-                shape_id = ROBJECT_SHAPE_ID(obj);
                 ivar_list = ivtbl->ivptr;
             } else {
                 return Qnil;
@@ -1424,7 +1421,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t d
                 // then do the shape transition and write the ivar
                 // If object's shape id is the same as the dest
                 // then write the ivar
-                shape_id_t shape_id = ROBJECT_SHAPE_ID(obj);
+                shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
 
                 if (shape_id != NO_CACHE_SHAPE_ID) {
                     // Do we have a cache hit *and* is the CC intitialized
@@ -1437,7 +1434,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t d
                             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                                 rb_init_iv_list(obj);
                             }
-                            ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);
+                            RBASIC_SET_SHAPE_ID(obj, dest_shape_id);
                             RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
                         }
                         else {

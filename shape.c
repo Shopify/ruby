@@ -64,8 +64,9 @@ rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id)
 }
 
 static inline shape_id_t
-shape_get_shape_id(rb_shape_t *shape) {
-    return (shape_id_t)(0xffff & (shape->flags >> 16));
+shape_set_shape_id(rb_shape_t *shape, shape_id_t id) {
+    VALUE flags = shape->flags & ~((uint64_t)SHAPE_MASK << 16);
+    return (shape_id_t)(shape->flags = (flags | (id << SHAPE_BITS)));
 }
 
 shape_id_t
@@ -75,15 +76,7 @@ rb_shape_get_shape_id(VALUE obj)
         return SHAPE_ID(rb_shape_get_frozen_root_shape());
     }
 
-    switch (BUILTIN_TYPE(obj)) {
-      case T_IMEMO:
-          if (imemo_type(obj) == imemo_shape) {
-              return shape_get_shape_id((rb_shape_t *)obj);
-              break;
-          }
-      default:
-          return ROBJECT_SHAPE_ID(obj);
-    }
+    return RBASIC_SHAPE_ID(obj);
 }
 
 rb_shape_t*
@@ -301,7 +294,7 @@ rb_shape_t *
 rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
 {
     rb_shape_t * shape = shape_alloc();
-    rb_shape_set_shape_id((VALUE)shape, shape_id);
+    shape_set_shape_id(shape, shape_id);
 
     shape->edge_name = edge_name;
     shape->iv_count = parent ? parent->iv_count + 1 : 0;
@@ -334,7 +327,7 @@ MJIT_FUNC_EXPORTED void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 {
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
-    if(rb_shape_set_shape_id(obj, shape_get_shape_id(shape))) {
+    if(rb_shape_set_shape_id(obj, SHAPE_ID(shape))) {
         if (shape != rb_shape_get_frozen_root_shape()) {
             RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
         }
@@ -401,7 +394,12 @@ rb_shape_parent_id(VALUE self)
 {
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
-    return INT2NUM(SHAPE_ID(shape->parent));
+    if (shape->parent) {
+        return INT2NUM(SHAPE_ID(shape->parent));
+    }
+    else {
+        return Qnil;
+    }
 }
 
 static VALUE parse_key(ID key) {
