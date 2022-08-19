@@ -1560,7 +1560,7 @@ vm_setinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, VALUE val, IVC i
     shape_id_t source_shape_id = vm_ic_attr_index_source_shape_id(ic);
     uint32_t index = vm_ic_attr_index(ic);
     shape_id_t dest_shape_id = vm_ic_attr_index_dest_shape_id(ic);
-    if (vm_setivar(obj, id, val, source_shape_id, dest_shape_id, index) == Qundef) {
+    if (UNLIKELY(vm_setivar(obj, id, val, source_shape_id, dest_shape_id, index) == Qundef)) {
         switch (BUILTIN_TYPE(obj)) {
             case T_OBJECT:
             case T_CLASS:
