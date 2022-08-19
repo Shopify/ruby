@@ -156,6 +156,7 @@ RBASIC_CLASS(VALUE obj)
 }
 
 #define USE_SHAPE_CACHE_P (SIZEOF_UINT64_T == SIZEOF_VALUE)
+#define NO_CACHE_SHAPE_ID (0x2)
 
 #ifndef shape_id_t
 typedef uint16_t shape_id_t;
@@ -185,7 +186,6 @@ RBASIC_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
     RBASIC(obj)->flags &= 0x0000ffffffffffff;
     RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
 #else
-    rb_bug("unreachable");
 #endif
 }
 #endif /* RBIMPL_RBASIC_H */
