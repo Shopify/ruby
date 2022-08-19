@@ -67,7 +67,7 @@
             }
             else {
                 fprintf(f, "    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && shape_id == RBASIC_SHAPE_ID(obj) && index < ROBJECT_NUMIV(obj) && !RB_OBJ_FROZEN_RAW(obj))) {\n");
-                fprintf(f, "        ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);\n");
+                fprintf(f, "        RBASIC_SET_SHAPE_ID(obj, dest_shape_id);\n");
                 fprintf(f, "        VALUE *ptr = ROBJECT_IVPTR(obj);\n");
                 fprintf(f, "        RB_OBJ_WRITE(obj, &ptr[index], stack[%d]);\n", b->stack_size - 1);
                 fprintf(f, "    }\n");

@@ -1,3 +1,5 @@
+#ifndef RUBY_SHAPE_H
+#define RUBY_SHAPE_H
 #define USE_SHAPE_CACHE_P (SIZEOF_UINT64_T == SIZEOF_VALUE)
 
 #ifndef shape_id_t
@@ -54,3 +56,4 @@ bool rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id);
 void rb_shape_set_shape_by_id(shape_id_t, rb_shape_t *);
 
 VALUE rb_obj_debug_shape(VALUE self, VALUE obj);
+#endif
