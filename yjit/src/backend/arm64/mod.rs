@@ -8,6 +8,7 @@ use crate::codegen::{JITState};
 use crate::cruby::*;
 use crate::backend::ir::*;
 use crate::virtualmem::CodePtr;
+use crate::options::*;
 
 // Use the arm64 register type for this platform
 pub type Reg = A64Reg;
@@ -957,6 +958,9 @@ impl Assembler
     /// Optimize and compile the stored instructions
     pub fn compile_with_regs(self, cb: &mut CodeBlock, regs: Vec<Reg>) -> Vec<u32>
     {
+        #[cfg(feature = "disasm")]
+        let start_addr = cb.get_write_ptr().raw_ptr();
+
         let mut asm = self.arm64_split().alloc_regs(regs);
 
         // Create label instances in the code block
@@ -969,6 +973,16 @@ impl Assembler
 
         if !cb.has_dropped_bytes() {
             cb.link_labels();
+        }
+
+        #[cfg(feature = "disasm")]
+        if *get_option_ref!(dump_disasm) && !cb.outlined {
+            use crate::disasm::disasm_addr_range;
+            let last_ptr = cb.get_write_ptr();
+            let disasm = disasm_addr_range(cb, start_addr, last_ptr.raw_ptr() as usize - start_addr as usize);
+            if disasm.len() > 0 {
+                println!("{disasm}");
+            }
         }
 
         gc_offsets

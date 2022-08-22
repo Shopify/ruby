@@ -622,9 +622,9 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: u32) -> O
     cb.align_pos(64);
 
     let code_ptr = cb.get_write_ptr();
-    add_comment(cb, "yjit entry");
 
     let mut asm = Assembler::new();
+    asm.comment(&format!("YJIT entry: {}", iseq_get_location(iseq)));
 
     asm.frame_setup();
 
@@ -747,6 +747,11 @@ pub fn gen_single_block(
 
     // Create a backend assembler instance
     let mut asm = Assembler::new();
+
+    #[cfg(feature = "disasm")]
+    if *get_option_ref!(dump_disasm) {
+        asm.comment(&format!("Block: {} (ISEQ offset: {})", iseq_get_location(blockid.iseq), blockid.idx));
+    }
 
     // For each instruction to compile
     // NOTE: could rewrite this loop with a std::iter::Iterator
@@ -6044,8 +6049,8 @@ impl CodegenGlobals {
                 half_size
             );
 
-            let cb = CodeBlock::new(first_half);
-            let ocb = OutlinedCb::wrap(CodeBlock::new(second_half));
+            let cb = CodeBlock::new(first_half, false);
+            let ocb = OutlinedCb::wrap(CodeBlock::new(second_half, true));
 
             (cb, ocb)
         };
