@@ -31,6 +31,7 @@ pub struct RBasic {
     pub flags: VALUE,
     pub klass: VALUE,
 }
+pub type shape_id_t = u16;
 pub const RUBY_T_NONE: ruby_value_type = 0;
 pub const RUBY_T_OBJECT: ruby_value_type = 1;
 pub const RUBY_T_CLASS: ruby_value_type = 2;
@@ -115,7 +116,6 @@ pub const ROBJECT_OFFSET_NUMIV: i32 = 16;
 pub const ROBJECT_OFFSET_AS_HEAP_IVPTR: i32 = 24;
 pub const ROBJECT_OFFSET_AS_HEAP_IV_INDEX_TBL: i32 = 32;
 pub const ROBJECT_OFFSET_AS_ARY: i32 = 24;
-pub type shape_id_t = u16;
 extern "C" {
     pub static mut rb_mKernel: VALUE;
 }
