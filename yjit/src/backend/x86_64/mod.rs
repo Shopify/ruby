@@ -9,7 +9,6 @@ use crate::asm::x86_64::*;
 use crate::codegen::{JITState};
 use crate::cruby::*;
 use crate::backend::ir::*;
-use crate::options::*;
 
 // Use the x86 register type for this platform
 pub type Reg = X86Reg;
@@ -644,9 +643,6 @@ impl Assembler
     /// Optimize and compile the stored instructions
     pub fn compile_with_regs(self, cb: &mut CodeBlock, regs: Vec<Reg>) -> Vec<u32>
     {
-        #[cfg(feature = "disasm")]
-        let start_addr = cb.get_write_ptr().raw_ptr();
-
         let mut asm = self.x86_split().alloc_regs(regs);
 
         // Create label instances in the code block
@@ -659,11 +655,6 @@ impl Assembler
 
         if !cb.has_dropped_bytes() {
             cb.link_labels();
-        }
-
-        #[cfg(feature = "disasm")]
-        if get_option!(dump_disasm) && !cb.outlined {
-            cb.disasm_from_addr(start_addr);
         }
 
         gc_offsets
