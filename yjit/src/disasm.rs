@@ -3,6 +3,7 @@ use crate::cruby::*;
 use crate::yjit::yjit_enabled_p;
 use crate::asm::CodeBlock;
 use crate::codegen::CodePtr;
+use std::fmt::Write;
 
 /// Primitive called in yjit.rb
 /// Produce a string representing the disassembly for an ISEQ
@@ -151,10 +152,10 @@ pub fn disasm_addr_range(cb: &CodeBlock, start_addr: *const u8, code_size: usize
         // Comments for this block
         if let Some(comment_list) = cb.comments_at(insn.address() as usize) {
             for comment in comment_list {
-                out.push_str(&format!("  \x1b[1m# {}\x1b[0m\n", comment));
+                write!(&mut out, "  \x1b[1m# {}\x1b[0m\n", comment).unwrap();
             }
         }
-        out.push_str(&format!("  {}\n", insn));
+        write!(&mut out, "  {}\n", insn).unwrap();
     }
 
     return out;
