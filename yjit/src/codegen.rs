@@ -749,7 +749,7 @@ pub fn gen_single_block(
     let mut asm = Assembler::new();
 
     #[cfg(feature = "disasm")]
-    if *get_option_ref!(dump_disasm) {
+    if get_option!(dump_disasm) {
         asm.comment(&format!("Block: {} (ISEQ offset: {})", iseq_get_location(blockid.iseq), blockid.idx));
     }
 

@@ -976,7 +976,7 @@ impl Assembler
         }
 
         #[cfg(feature = "disasm")]
-        if *get_option_ref!(dump_disasm) && !cb.outlined {
+        if get_option!(dump_disasm) && !cb.outlined {
             use crate::disasm::disasm_addr_range;
             let last_ptr = cb.get_write_ptr();
             let disasm = disasm_addr_range(cb, start_addr, last_ptr.raw_ptr() as usize - start_addr as usize);
