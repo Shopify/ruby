@@ -275,6 +275,16 @@ impl CodeBlock {
     pub fn mark_all_executable(&mut self) {
         self.mem_block.mark_all_executable();
     }
+
+    #[cfg(feature = "disasm")]
+    pub fn disasm_from_addr(&mut self, start_addr: *const u8) {
+        use crate::disasm::disasm_addr_range;
+        let last_ptr = self.get_write_ptr();
+        let disasm = disasm_addr_range(self, start_addr, last_ptr.raw_ptr() as usize - start_addr as usize);
+        if disasm.len() > 0 {
+            println!("{disasm}");
+        }
+    }
 }
 
 #[cfg(test)]

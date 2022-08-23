@@ -977,12 +977,7 @@ impl Assembler
 
         #[cfg(feature = "disasm")]
         if get_option!(dump_disasm) && !cb.outlined {
-            use crate::disasm::disasm_addr_range;
-            let last_ptr = cb.get_write_ptr();
-            let disasm = disasm_addr_range(cb, start_addr, last_ptr.raw_ptr() as usize - start_addr as usize);
-            if disasm.len() > 0 {
-                println!("{disasm}");
-            }
+            cb.disasm_from_addr(start_addr);
         }
 
         gc_offsets
