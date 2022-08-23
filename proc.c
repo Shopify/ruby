@@ -1684,7 +1684,6 @@ mnew_internal(const rb_method_entry_t *me, VALUE klass, VALUE iclass,
     VALUE method;
     rb_method_visibility_t visi = METHOD_VISI_UNDEF;
 
-  again:
     if (UNDEFINED_METHOD_ENTRY_P(me)) {
         if (respond_to_missing_p(klass, obj, ID2SYM(id), scope)) {
             return mnew_missing(klass, obj, id, mclass);
@@ -1699,19 +1698,6 @@ mnew_internal(const rb_method_entry_t *me, VALUE klass, VALUE iclass,
             if (!error) return Qnil;
             rb_print_inaccessible(klass, id, visi);
         }
-    }
-    if (me->def->type == VM_METHOD_TYPE_ZSUPER) {
-        if (me->defined_class) {
-            VALUE klass = RCLASS_SUPER(RCLASS_ORIGIN(me->defined_class));
-            id = me->def->original_id;
-            me = (rb_method_entry_t *)rb_callable_method_entry_with_refinements(klass, id, &iclass);
-        }
-        else {
-            VALUE klass = RCLASS_SUPER(RCLASS_ORIGIN(me->owner));
-            id = me->def->original_id;
-            me = rb_method_entry_without_refinements(klass, id, &iclass);
-        }
-        goto again;
     }
 
     method = TypedData_Make_Struct(mclass, struct METHOD, &method_data_type, data);
@@ -1750,6 +1736,27 @@ mnew_unbound(VALUE klass, ID id, VALUE mclass, int scope)
 
     me = rb_method_entry_with_refinements(klass, id, &iclass);
     return mnew_from_me(me, klass, iclass, Qundef, id, mclass, scope);
+}
+
+static const rb_method_entry_t*
+zsuper_resolve(const rb_method_entry_t *me)
+{
+    const rb_method_entry_t *super_me;
+    while (me->def->type == VM_METHOD_TYPE_ZSUPER) {
+        VALUE defined_class = me->defined_class ? me->defined_class : me->owner;
+        VALUE super_class = RCLASS_SUPER(RCLASS_ORIGIN(defined_class));
+        if (!super_class) {
+            break;
+        }
+        ID id = me->def->original_id;
+        VALUE iclass;
+        super_me = (rb_method_entry_t *)rb_callable_method_entry_with_refinements(super_class, id, &iclass);
+        if (!super_me) {
+            break;
+        }
+        me = super_me;
+    }
+    return me;
 }
 
 static inline VALUE
@@ -1812,10 +1819,13 @@ method_eq(VALUE method, VALUE other)
     m1 = (struct METHOD *)DATA_PTR(method);
     m2 = (struct METHOD *)DATA_PTR(other);
 
-    klass1 = method_entry_defined_class(m1->me);
-    klass2 = method_entry_defined_class(m2->me);
+    const rb_method_entry_t *m1_me = zsuper_resolve(m1->me);
+    const rb_method_entry_t *m2_me = zsuper_resolve(m2->me);
 
-    if (!rb_method_entry_eq(m1->me, m2->me) ||
+    klass1 = method_entry_defined_class(m1_me);
+    klass2 = method_entry_defined_class(m2_me);
+
+    if (!rb_method_entry_eq(m1_me, m2_me) ||
         klass1 != klass2 ||
         m1->klass != m2->klass ||
         m1->recv != m2->recv) {
@@ -1934,7 +1944,15 @@ method_original_name(VALUE obj)
  *  call-seq:
  *     meth.owner    -> class_or_module
  *
- *  Returns the class or module that defines the method.
+ *  Returns the class or module on which this method is defined.
+ *  In other words,
+ *
+ *    meth.owner.instance_methods(false).include?(meth.name) # => true
+ *
+ *  holds as long as the method is not removed/undefined/replaced,
+ *  (with private_instance_methods instead of instance_methods if the method
+ *  is private).
+ *
  *  See also Method#receiver.
  *
  *    (1..3).method(:map).owner #=> Enumerable
@@ -2951,6 +2969,14 @@ rb_method_entry_location(const rb_method_entry_t *me)
     return method_def_location(me->def);
 }
 
+static const rb_method_definition_t *
+zsuper_ref_method_def(VALUE method)
+{
+    const struct METHOD *data;
+    TypedData_Get_Struct(method, struct METHOD, &method_data_type, data);
+    return zsuper_resolve(data->me)->def;
+}
+
 /*
  * call-seq:
  *    meth.source_location  -> [String, Integer]
@@ -2962,7 +2988,7 @@ rb_method_entry_location(const rb_method_entry_t *me)
 VALUE
 rb_method_location(VALUE method)
 {
-    return method_def_location(rb_method_def(method));
+    return method_def_location(zsuper_ref_method_def(method));
 }
 
 static const rb_method_definition_t *
@@ -3050,7 +3076,7 @@ method_def_parameters(const rb_method_definition_t *def)
 static VALUE
 rb_method_parameters(VALUE method)
 {
-    return method_def_parameters(rb_method_def(method));
+    return method_def_parameters(zsuper_ref_method_def(method));
 }
 
 /*
@@ -3113,7 +3139,7 @@ method_inspect(VALUE method)
         defined_class = data->me->def->body.alias.original_me->owner;
     }
     else {
-        defined_class = method_entry_defined_class(data->me);
+        defined_class = method_entry_defined_class(zsuper_resolve(data->me));
     }
 
     if (RB_TYPE_P(defined_class, T_ICLASS)) {

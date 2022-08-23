@@ -1,6 +1,6 @@
 /**********************************************************************
 
-  mjit_compile.c - MRI method JIT compiler
+  mjit_compiler.c - MRI method JIT compiler
 
   Copyright (C) 2017 Takashi Kokubun <takashikkbn@gmail.com>.
 
@@ -370,7 +370,7 @@ mjit_compile_body(FILE *f, const rb_iseq_t *iseq, struct compile_status *status)
     }
 
     // Simulate `opt_pc` in setup_parameters_complex. Other PCs which may be passed by catch tables
-    // are not considered since vm_exec doesn't call mjit_exec for catch tables.
+    // are not considered since vm_exec doesn't call jit_exec for catch tables.
     if (body->param.flags.has_opt) {
         int i;
         fprintf(f, "\n");
@@ -587,9 +587,6 @@ mjit_compile(FILE *f, const rb_iseq_t *iseq, const char *funcname, int id)
             return false;
     }
 
-#ifdef _WIN32
-    fprintf(f, "__declspec(dllexport)\n");
-#endif
     fprintf(f, "VALUE\n%s(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)\n{\n", funcname);
     bool success = mjit_compile_body(f, iseq, &status);
     fprintf(f, "\n} // end of %s\n", funcname);

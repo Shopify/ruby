@@ -156,6 +156,11 @@ Note: We're only listing outstanding class updates.
 
 ## Stdlib updates
 
+* SyntaxSuggest
+
+  * The feature of `syntax_suggest` formerly `dead_end` is integrated in Ruby.
+    [[Feature #18159]]
+
 *   The following default gems are updated.
     * RubyGems 3.4.0.dev
     * bigdecimal 3.1.2
@@ -177,9 +182,10 @@ Note: We're only listing outstanding class updates.
     * reline 0.3.1
     * securerandom 0.2.0
     * stringio 3.0.3
+    * syntax_suggest 0.0.1
     * timeout 0.3.0
 *   The following bundled gems are updated.
-    * minitest 5.16.2
+    * minitest 5.16.3
     * net-imap 0.2.3
     * rbs 2.6.0
     * typeprof 0.21.3
@@ -269,6 +275,7 @@ The following deprecated APIs are removed.
 [Bug #17545]:     https://bugs.ruby-lang.org/issues/17545
 [Feature #17881]: https://bugs.ruby-lang.org/issues/17881
 [Feature #18037]: https://bugs.ruby-lang.org/issues/18037
+[Feature #18159]: https://bugs.ruby-lang.org/issues/18159
 [Feature #18351]: https://bugs.ruby-lang.org/issues/18351
 [Bug #18487]:     https://bugs.ruby-lang.org/issues/18487
 [Feature #18571]: https://bugs.ruby-lang.org/issues/18571

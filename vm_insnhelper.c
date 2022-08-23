@@ -5022,16 +5022,16 @@ vm_sendish(
 
 #ifdef MJIT_HEADER
     /* When calling ISeq which may catch an exception from JIT-ed
-       code, we should not call mjit_exec directly to prevent the
+       code, we should not call jit_exec directly to prevent the
        caller frame from being canceled. That's because the caller
        frame may have stack values in the local variables and the
        cancelling the caller frame will purge them. But directly
-       calling mjit_exec is faster... */
+       calling jit_exec is faster... */
     if (ISEQ_BODY(GET_ISEQ())->catch_except_p) {
         VM_ENV_FLAGS_SET(GET_EP(), VM_FRAME_FLAG_FINISH);
         return vm_exec(ec, true);
     }
-    else if ((val = mjit_exec(ec)) == Qundef) {
+    else if ((val = jit_exec(ec)) == Qundef) {
         VM_ENV_FLAGS_SET(GET_EP(), VM_FRAME_FLAG_FINISH);
         return vm_exec(ec, false);
     }
@@ -5040,9 +5040,8 @@ vm_sendish(
     }
 #else
     /* When calling from VM, longjmp in the callee won't purge any
-       JIT-ed caller frames.  So it's safe to directly call
-       mjit_exec. */
-    return mjit_exec(ec);
+       JIT-ed caller frames. So it's safe to directly call jit_exec. */
+    return jit_exec(ec);
 #endif
 }
 
@@ -5080,7 +5079,7 @@ vm_objtostring(const rb_iseq_t *iseq, VALUE recv, CALL_DATA cd)
             // going to use this string for interpolation, it's fine to use the
             // frozen string.
             VALUE val = rb_mod_name(recv);
-            if (val == Qnil) {
+            if (NIL_P(val)) {
                 val = rb_mod_to_s(recv);
             }
             return val;

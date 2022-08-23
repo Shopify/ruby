@@ -5035,9 +5035,7 @@ ssym		: tSYMBEG sym
 		;
 
 sym		: fname
-		| tIVAR
-		| tGVAR
-		| tCVAR
+		| nonlocal_var
 		;
 
 dsym		: tSYMBEG string_contents tSTRING_END
@@ -5073,10 +5071,8 @@ nonlocal_var    : tIVAR
 		;
 
 user_variable	: tIDENTIFIER
-		| tIVAR
-		| tGVAR
 		| tCONSTANT
-		| tCVAR
+		| nonlocal_var
 		;
 
 keyword_variable: keyword_nil {$$ = KWD2EID(nil, $1);}
@@ -5779,8 +5775,7 @@ rbracket	: opt_nl ']'
 rbrace		: opt_nl '}'
 		;
 
-trailer		: /* none */
-		| '\n'
+trailer		: opt_nl
 		| ','
 		;
 
@@ -13612,7 +13607,7 @@ ripper_validate_object(VALUE self, VALUE x)
 {
     if (x == Qfalse) return x;
     if (x == Qtrue) return x;
-    if (x == Qnil) return x;
+    if (NIL_P(x)) return x;
     if (x == Qundef)
 	rb_raise(rb_eArgError, "Qundef given");
     if (FIXNUM_P(x)) return x;
