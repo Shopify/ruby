@@ -3881,7 +3881,7 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
 #if USE_SHAPE_CACHE_P
             cc = &VM_CC_ON_STACK(cc->klass,
                     cc->call_,
-                    { .attr_index = ((uint64_t)INVALID_SHAPE_ID << 48 | (uint64_t)INVALID_SHAPE_ID << 32) },
+                    { .as.atomic.attr_index = ((uint64_t)INVALID_SHAPE_ID << 48 | (uint64_t)INVALID_SHAPE_ID << 32) },
                     cc->cme_);
 #else
             cc = &VM_CC_ON_STACK(cc->klass, cc->call_, { .attr_index = 0 }, cc->cme_);

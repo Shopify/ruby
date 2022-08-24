@@ -294,7 +294,17 @@ struct rb_callcache {
          * source_shape_id  | dest_shape_id | attr_index
          */
 #if USE_SHAPE_CACHE_P
-        const uint64_t attr_index;
+        union {
+          struct {
+            uint64_t attr_index;
+          } atomic;
+
+          struct {
+            uint32_t attr_index;
+            shape_id_t dest_shape_id;
+            shape_id_t source_shape_id;
+          } split;
+        } as;
 #else
         const uint32_t attr_index;
 #endif
@@ -317,7 +327,7 @@ vm_cc_attr_index_initialize(const struct rb_callcache *cc, shape_id_t shape_id)
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
 #if USE_SHAPE_CACHE_P
-    *(uint64_t *)&cc->aux_.attr_index = ((uint64_t)(shape_id) << 48) | ((uint64_t)(shape_id) << 32) | 0;
+    *(uint64_t *)&cc->aux_.as.atomic.attr_index = ((uint64_t)(shape_id) << 48) | ((uint64_t)(shape_id) << 32) | 0;
 #else
     *(uint32_t *)&cc->aux_.attr_index =  0;
 #endif
@@ -385,7 +395,7 @@ static inline unsigned int
 vm_cc_attr_index(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    return (int)(cc->aux_.attr_index - 1);
+    return (int)(cc->aux_.as.split.attr_index - 1);
 }
 
 static inline bool
@@ -393,7 +403,7 @@ vm_cc_attr_index_p(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
 #if USE_SHAPE_CACHE_P
-    return (cc->aux_.attr_index & 0xFFFFFFFF) != 0;
+    return cc->aux_.as.split.attr_index != 0;
 #else
     return (cc->aux_.attr_index & 0xFFFF) != 0;
 #endif
@@ -404,7 +414,7 @@ vm_cc_attr_shape_id(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
 #if USE_SHAPE_CACHE_P
-    return (cc->aux_.attr_index >> 32) & 0xFFFF;
+    return cc->aux_.as.split.dest_shape_id;
 #else
     return NO_CACHE_SHAPE_ID;
 #endif
@@ -416,7 +426,7 @@ vm_cc_attr_index_source_shape_id(const struct rb_callcache *cc)
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
 
 #if USE_SHAPE_CACHE_P
-    return cc->aux_.attr_index >> 48;
+    return cc->aux_.as.split.source_shape_id;
 #else
     return NO_CACHE_SHAPE_ID;
 #endif
@@ -426,11 +436,7 @@ static inline uint16_t
 vm_cc_attr_index_dest_shape_id(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-#if USE_SHAPE_CACHE_P
-    return (cc->aux_.attr_index >> 32) & 0xFFFF;
-#else
-    return NO_CACHE_SHAPE_ID;
-#endif
+    return vm_cc_attr_shape_id(cc);
 }
 
 static inline unsigned int
@@ -510,7 +516,7 @@ vm_cc_attr_index_set(const struct rb_callcache *cc, int index, shape_id_t source
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
 #if USE_SHAPE_CACHE_P
-    *(uint64_t *)&cc->aux_.attr_index = ((uint64_t)source_shape_id << 48) | ((uint64_t)dest_shape_id << 32) | (index + 1);
+    *(uint64_t *)&cc->aux_.as.atomic.attr_index = ((uint64_t)source_shape_id << 48) | ((uint64_t)dest_shape_id << 32) | (index + 1);
 #else
     *(uint32_t *)&cc->aux_.attr_index = index + 1;
 #endif
