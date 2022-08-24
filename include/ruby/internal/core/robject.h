@@ -220,9 +220,21 @@ ROBJECT_IVPTR(VALUE obj)
     }
 }
 
-#include "shape.h"
+#if USE_SHAPE_CACHE_P
+static inline shape_id_t
+ROBJECT_SHAPE_ID(VALUE obj)
+{
+    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
+    return RBASIC_SHAPE_ID(obj);
+}
 
-#if !USE_SHAPE_CACHE_P
+static inline void
+ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
+{
+    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
+    return RBASIC_SET_SHAPE_ID(obj, shape_id);
+}
+#else
 static inline shape_id_t
 ROBJECT_SHAPE_ID(VALUE obj)
 {

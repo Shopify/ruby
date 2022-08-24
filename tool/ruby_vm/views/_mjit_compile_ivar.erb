@@ -27,7 +27,7 @@
         if (status->merge_ivar_guards_p) {
 % # JIT: Access ivar without checking these VM_ASSERTed prerequisites as we checked them in the beginning of `mjit_compile_body`
             fprintf(f, "    VM_ASSERT(RB_TYPE_P(obj, T_OBJECT));\n");
-            fprintf(f, "    VM_ASSERT((shape_id_t)%hu == RBASIC_SHAPE_ID(obj));\n", vm_ic_attr_shape_id(ic_copy));
+            fprintf(f, "    VM_ASSERT((shape_id_t)%hu == ROBJECT_SHAPE_ID(obj));\n", vm_ic_attr_shape_id(ic_copy));
             fprintf(f, "    VM_ASSERT(index < ROBJECT_NUMIV(obj));\n");
 % if insn.name == 'setinstancevariable'
 #if USE_RVARGC
@@ -60,14 +60,14 @@
             fprintf(f, "    shape_id_t shape_id = (shape_id_t)%hu;\n", source_shape_id);
             fprintf(f, "    shape_id_t dest_shape_id = %hu;\n", dest_shape_id);
             if (source_shape_id == dest_shape_id) {
-                fprintf(f, "    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && dest_shape_id == RBASIC_SHAPE_ID(obj) && index < ROBJECT_NUMIV(obj) && !RB_OBJ_FROZEN_RAW(obj))) {\n");
+                fprintf(f, "    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && dest_shape_id == ROBJECT_SHAPE_ID(obj) && index < ROBJECT_NUMIV(obj) && !RB_OBJ_FROZEN_RAW(obj))) {\n");
                 fprintf(f, "        VALUE *ptr = ROBJECT_IVPTR(obj);\n");
                 fprintf(f, "        RB_OBJ_WRITE(obj, &ptr[index], stack[%d]);\n", b->stack_size - 1);
                 fprintf(f, "    }\n");
             }
             else {
-                fprintf(f, "    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && shape_id == RBASIC_SHAPE_ID(obj) && index < ROBJECT_NUMIV(obj) && !RB_OBJ_FROZEN_RAW(obj))) {\n");
-                fprintf(f, "        RBASIC_SET_SHAPE_ID(obj, dest_shape_id);\n");
+                fprintf(f, "    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && shape_id == ROBJECT_SHAPE_ID(obj) && index < ROBJECT_NUMIV(obj) && !RB_OBJ_FROZEN_RAW(obj))) {\n");
+                fprintf(f, "        ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);\n");
                 fprintf(f, "        VALUE *ptr = ROBJECT_IVPTR(obj);\n");
                 fprintf(f, "        RB_OBJ_WRITE(obj, &ptr[index], stack[%d]);\n", b->stack_size - 1);
                 fprintf(f, "    }\n");
@@ -75,7 +75,7 @@
 % else
             fprintf(f, "    VALUE val;\n");
             fprintf(f, "    shape_id_t shape_id = (shape_id_t)%hu;\n", source_shape_id);
-            fprintf(f, "    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && shape_id == RBASIC_SHAPE_ID(obj) && index < ROBJECT_NUMIV(obj) && (val = ROBJECT_IVPTR(obj)[index]) != Qundef)) {\n");
+            fprintf(f, "    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && shape_id == ROBJECT_SHAPE_ID(obj) && index < ROBJECT_NUMIV(obj) && (val = ROBJECT_IVPTR(obj)[index]) != Qundef)) {\n");
             fprintf(f, "        stack[%d] = val;\n", b->stack_size);
             fprintf(f, "    }\n");
 % end

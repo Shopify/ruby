@@ -163,17 +163,16 @@ typedef uint16_t shape_id_t;
 #define shape_id_t shape_id_t
 #endif
 
+#if USE_SHAPE_CACHE_P
 static inline shape_id_t
 RBASIC_SHAPE_ID(VALUE obj)
 {
     RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
-#if USE_SHAPE_CACHE_P
     return (shape_id_t)(0xffff & ((RBASIC(obj)->flags) >> 48));
-#else
-    return NO_CACHE_SHAPE_ID;
-#endif
 }
+#endif
 
+#if USE_SHAPE_CACHE_P
 static inline void
 RBASIC_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
 {
@@ -182,10 +181,8 @@ RBASIC_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
     // 4 bits are unused
     // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
     // | XXXX ractor_id | shape_id | UUUU flags |
-#if USE_SHAPE_CACHE_P
     RBASIC(obj)->flags &= 0x0000ffffffffffff;
     RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
-#else
-#endif
 }
+#endif
 #endif /* RBIMPL_RBASIC_H */
