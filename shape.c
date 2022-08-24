@@ -69,14 +69,38 @@ shape_set_shape_id(rb_shape_t *shape, shape_id_t id) {
     return (shape_id_t)(shape->flags = (flags | (id << SHAPE_BITS)));
 }
 
+static inline shape_id_t
+RCLASS_SHAPE_ID(VALUE obj)
+{
+    return RCLASS_EXT(obj)->shape_id;
+}
+
 shape_id_t
 rb_shape_get_shape_id(VALUE obj)
 {
+    shape_id_t shape_id = ROOT_SHAPE_ID;
+
     if (RB_SPECIAL_CONST_P(obj)) {
         return SHAPE_ID(rb_shape_get_frozen_root_shape());
     }
 
+#if USE_SHAPE_CACHE_P
     return RBASIC_SHAPE_ID(obj);
+#else
+    switch (BUILTIN_TYPE(obj)) {
+      case T_OBJECT:
+          return ROBJECT_SHAPE_ID(obj);
+          break;
+      case T_CLASS:
+      case T_MODULE:
+          return RCLASS_SHAPE_ID(obj);
+      default:
+          return rb_generic_shape_id(obj);
+    }
+
+    RUBY_ASSERT(shape_id < MAX_SHAPE_ID);
+    return shape_id;
+#endif
 }
 
 rb_shape_t*
@@ -212,9 +236,21 @@ rb_shape_transition_shape_frozen(VALUE obj)
     rb_shape_t* shape = rb_shape_get_shape(obj);
     RUBY_ASSERT(shape);
 
+    if (rb_shape_frozen_shape_p(shape)) {
+        return;
+    }
+
     rb_shape_t* next_shape;
 
     if (shape == rb_shape_get_root_shape()) {
+        switch(BUILTIN_TYPE(obj)) {
+            case T_OBJECT:
+            case T_CLASS:
+            case T_MODULE:
+                break;
+            default:
+                return;
+        }
         next_shape = rb_shape_get_frozen_root_shape();
     }
     else {
