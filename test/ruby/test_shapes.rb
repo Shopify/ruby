@@ -88,13 +88,6 @@ class TestShapes < Test::Unit::TestCase
     assert_equal(obj2.instance_variable_get(:@a), 1)
   end
 
-  def test_freezing_and_duplicating_string
-    str = "str".freeze
-    str2 = str.dup
-    refute_predicate(str2, :frozen?)
-    refute_equal(RubyVM.debug_shape(str).id, RubyVM.debug_shape(str2).id)
-  end
-
   def test_freezing_and_duplicating_string_with_ivars
     str = "str"
     str.instance_variable_set(:@a, 1)
