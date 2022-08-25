@@ -69,17 +69,17 @@ shape_set_shape_id(rb_shape_t *shape, shape_id_t id) {
     return (shape_id_t)(shape->flags = (flags | (id << SHAPE_BITS)));
 }
 
+#if !USE_SHAPE_CACHE_P
 static inline shape_id_t
 RCLASS_SHAPE_ID(VALUE obj)
 {
     return RCLASS_EXT(obj)->shape_id;
 }
+#endif
 
 shape_id_t
 rb_shape_get_shape_id(VALUE obj)
 {
-    shape_id_t shape_id = ROOT_SHAPE_ID;
-
     if (RB_SPECIAL_CONST_P(obj)) {
         return SHAPE_ID(rb_shape_get_frozen_root_shape());
     }
@@ -97,9 +97,6 @@ rb_shape_get_shape_id(VALUE obj)
       default:
           return rb_generic_shape_id(obj);
     }
-
-    RUBY_ASSERT(shape_id < MAX_SHAPE_ID);
-    return shape_id;
 #endif
 }
 

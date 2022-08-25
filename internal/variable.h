@@ -40,7 +40,9 @@ uint32_t rb_obj_ensure_iv_index_mapping(VALUE obj, ID id);
 struct gen_ivtbl;
 int rb_gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl);
 
+#if !USE_SHAPE_CACHE_P
 shape_id_t rb_generic_shape_id(VALUE obj);
+#endif
 RUBY_SYMBOL_EXPORT_BEGIN
 /* variable.c (export) */
 void rb_mark_generic_ivar(VALUE);

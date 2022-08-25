@@ -293,7 +293,7 @@ uint32_t rb_ractor_current_id(void);
 static inline void
 rb_ractor_setup_belonging_to(VALUE obj, uint32_t rid)
 {
-    VALUE flags = RBASIC(obj)->flags & 0xffffffff; // 4B
+    VALUE flags = RBASIC(obj)->flags & 0xffff0000ffffffff; // 4B
     RBASIC(obj)->flags = flags | ((VALUE)rid << 32);
 }
 
@@ -310,7 +310,7 @@ rb_ractor_belonging(VALUE obj)
         return 0;
     }
     else {
-        return RBASIC(obj)->flags >> 32;
+        return RBASIC(obj)->flags >> 32 & 0xFFFF;
     }
 }
 

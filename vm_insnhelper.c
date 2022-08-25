@@ -1383,7 +1383,11 @@ NOINLINE(static VALUE vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t
 static VALUE
 vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t dest_shape_id, uint32_t index)
 {
+#if USE_SHAPE_CACHE_P
+    shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
+#else
     shape_id_t shape_id = rb_generic_shape_id(obj);
+#endif
 
     if (shape_id != NO_CACHE_SHAPE_ID) {
         // Do we have a cache hit *and* is the CC intitialized
@@ -1393,7 +1397,11 @@ vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shap
             struct gen_ivtbl *ivtbl = 0;
             if (dest_shape_id != shape_id) {
                 ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
+#if USE_SHAPE_CACHE_P
+                RBASIC_SET_SHAPE_ID(obj, dest_shape_id);
+#else
                 ivtbl->shape_id = dest_shape_id;
+#endif
                 RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
             }
             else {
@@ -3887,10 +3895,22 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
                                 CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
         } else {
 #if USE_SHAPE_CACHE_P
-            cc = &VM_CC_ON_STACK(cc->klass,
-                    cc->call_,
-                    { .as.atomic.attr_index = ((uint64_t)INVALID_SHAPE_ID << 48 | (uint64_t)INVALID_SHAPE_ID << 32) },
-                    cc->cme_);
+            cc = &((struct rb_callcache) {
+                .flags = T_IMEMO |
+                    (imemo_callcache << FL_USHIFT) |
+                    VM_CALLCACHE_UNMARKABLE |
+                    VM_CALLCACHE_ON_STACK,
+                    .klass = cc->klass,
+                    .cme_  = cc->cme_,
+                    .call_ = cc->call_,
+                    .aux_  = {
+                        .as.split = {
+                            .attr_index = 0,
+                            .dest_shape_id = INVALID_SHAPE_ID,
+                            .source_shape_id = INVALID_SHAPE_ID
+                        }
+                    },
+            });
 #else
             cc = &VM_CC_ON_STACK(cc->klass, cc->call_, { .attr_index = 0 }, cc->cme_);
 #endif
