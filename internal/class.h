@@ -127,11 +127,6 @@ typedef struct rb_classext_struct rb_classext_t;
 #define RCLASS_SUPERCLASSES_INCLUDE_SELF FL_USER2
 #define RICLASS_ORIGIN_SHARED_MTBL FL_USER3
 
-#ifndef shape_id_t
-typedef uint16_t shape_id_t;
-#define shape_id_t shape_id_t
-#endif
-
 /* class.c */
 void rb_class_subclass_add(VALUE super, VALUE klass);
 void rb_class_remove_from_super_subclasses(VALUE);
