@@ -2,26 +2,6 @@
 #define RUBY_SHAPE_H
 #define USE_SHAPE_CACHE_P (SIZEOF_UINT64_T == SIZEOF_VALUE)
 
-#ifndef shape_id_t
-typedef uint16_t shape_id_t;
-#define shape_id_t shape_id_t
-#endif
-
-#ifndef rb_shape
-struct rb_shape {
-    VALUE flags; // Shape ID and frozen status encoded within flags
-    struct rb_shape * parent; // Pointer to the parent
-    struct rb_id_table * edges; // id_table from ID (ivar) to next shape
-    ID edge_name; // ID (ivar) for transition from parent to rb_shape
-    uint32_t iv_count;
-};
-#endif
-
-#ifndef rb_shape_t
-typedef struct rb_shape rb_shape_t;
-#define rb_shape_t rb_shape_t
-#endif
-
 # define SHAPE_BITS 16
 # define SHAPE_MASK ((1 << SHAPE_BITS) - 1)
 # define MAX_SHAPE_ID (SHAPE_MASK - 1)
@@ -31,6 +11,75 @@ typedef struct rb_shape rb_shape_t;
 # define FROZEN_ROOT_SHAPE_ID 0x1
 
 #define SHAPE_ID(shape) ((((rb_shape_t *)shape)->flags >> SHAPE_BITS) & SHAPE_MASK)
+
+typedef uint16_t shape_id_t;
+
+struct rb_shape {
+    VALUE flags; // Shape ID and frozen status encoded within flags
+    struct rb_shape * parent; // Pointer to the parent
+    struct rb_id_table * edges; // id_table from ID (ivar) to next shape
+    ID edge_name; // ID (ivar) for transition from parent to rb_shape
+    uint32_t iv_count;
+};
+
+typedef struct rb_shape rb_shape_t;
+
+
+#if USE_SHAPE_CACHE_P
+static inline shape_id_t
+RBASIC_SHAPE_ID(VALUE obj)
+{
+    RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
+    return (shape_id_t)(0xffff & ((RBASIC(obj)->flags) >> 48));
+}
+
+static inline void
+RBASIC_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
+{
+    // Ractors are occupying the upper 32 bits of flags
+    // Object shapes are occupying the next 16 bits
+    // 4 bits are unused
+    // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
+    // | XXXX ractor_id | shape_id | UUUU flags |
+    RBASIC(obj)->flags &= 0x0000ffffffffffff;
+    RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
+}
+
+static inline shape_id_t
+ROBJECT_SHAPE_ID(VALUE obj)
+{
+    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
+    return RBASIC_SHAPE_ID(obj);
+}
+
+static inline void
+ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
+{
+    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
+    RBASIC_SET_SHAPE_ID(obj, shape_id);
+}
+#else
+shape_id_t rb_generic_shape_id(VALUE obj);
+
+static inline shape_id_t
+ROBJECT_SHAPE_ID(VALUE obj)
+{
+    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
+    return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
+}
+
+static inline void
+ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
+{
+    // Ractors are occupying the upper 32 bits of flags
+    // Object shapes are occupying the next 16 bits
+    // 4 bits are unused
+    // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
+    // | XXXX ractor_id | shape_id | UUUU flags |
+    RBASIC(obj)->flags &= 0xffffffff0000ffff;
+    RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
+}
+#endif
 
 bool rb_shape_root_shape_p(rb_shape_t* shape);
 

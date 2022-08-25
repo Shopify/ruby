@@ -220,39 +220,4 @@ ROBJECT_IVPTR(VALUE obj)
     }
 }
 
-#if USE_SHAPE_CACHE_P
-static inline shape_id_t
-ROBJECT_SHAPE_ID(VALUE obj)
-{
-    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
-    return RBASIC_SHAPE_ID(obj);
-}
-
-static inline void
-ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
-{
-    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
-    RBASIC_SET_SHAPE_ID(obj, shape_id);
-}
-#else
-static inline shape_id_t
-ROBJECT_SHAPE_ID(VALUE obj)
-{
-    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
-    return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
-}
-
-static inline void
-ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
-{
-    // Ractors are occupying the upper 32 bits of flags
-    // Object shapes are occupying the next 16 bits
-    // 4 bits are unused
-    // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
-    // | XXXX ractor_id | shape_id | UUUU flags |
-    RBASIC(obj)->flags &= 0xffffffff0000ffff;
-    RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
-}
-#endif /* USE_SHAPE_CACHE_P */
-
 #endif /* RBIMPL_ROBJECT_H */

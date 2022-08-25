@@ -92,7 +92,6 @@ extern int ruby_assert_critical_section_entered;
 #include "internal.h"
 #include "internal/array.h"
 #include "internal/serial.h"
-#include "internal/variable.h"
 #include "internal/vm.h"
 #include "method.h"
 #include "node.h"
@@ -100,6 +99,7 @@ extern int ruby_assert_critical_section_entered;
 #include "ruby/st.h"
 #include "ruby_atomic.h"
 #include "vm_opts.h"
+#include "shape.h"
 
 #include "ruby/thread_native.h"
 
@@ -338,12 +338,6 @@ pathobj_realpath(VALUE pathobj)
 /* Forward declarations */
 struct rb_mjit_unit;
 
-struct rb_shape;
-
-#ifndef rb_shape_t
-typedef struct rb_shape rb_shape_t;
-#define rb_shape_t rb_shape_t
-#endif
 typedef uintptr_t iseq_bits_t;
 
 #define ISEQ_IS_SIZE(body) (body->ic_size + body->ivc_size + body->ise_size + body->icvarc_size)
