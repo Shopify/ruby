@@ -4,6 +4,10 @@
 
 # define SHAPE_BITS 16
 # define SHAPE_MASK ((1 << SHAPE_BITS) - 1)
+
+# define SHAPE_FLAG_SHIFT ((SIZEOF_VALUE * 8) - SHAPE_BITS)
+# define SHAPE_FLAG_MASK (((VALUE)-1) >> SHAPE_BITS)
+
 # define MAX_SHAPE_ID (SHAPE_MASK - 1)
 # define NO_CACHE_SHAPE_ID (0x2)
 # define INVALID_SHAPE_ID SHAPE_MASK
@@ -30,19 +34,16 @@ static inline shape_id_t
 RBASIC_SHAPE_ID(VALUE obj)
 {
     RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
-    return (shape_id_t)(0xffff & ((RBASIC(obj)->flags) >> 48));
+    return (shape_id_t)(SHAPE_MASK & ((RBASIC(obj)->flags) >> SHAPE_FLAG_SHIFT));
 }
 
 static inline void
 RBASIC_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
 {
-    // Ractors are occupying the upper 32 bits of flags
-    // Object shapes are occupying the next 16 bits
-    // 4 bits are unused
-    // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
-    // | XXXX ractor_id | shape_id | UUUU flags |
-    RBASIC(obj)->flags &= 0x0000ffffffffffff;
-    RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
+    // Ractors are occupying the upper 32 bits of flags, but only in debug mode
+    // Object shapes are occupying top bits
+    RBASIC(obj)->flags &= SHAPE_FLAG_MASK;
+    RBASIC(obj)->flags |= ((uint64_t)(shape_id) << SHAPE_FLAG_SHIFT);
 }
 
 static inline shape_id_t
@@ -65,19 +66,14 @@ static inline shape_id_t
 ROBJECT_SHAPE_ID(VALUE obj)
 {
     RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
-    return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
+    return (shape_id_t)(SHAPE_MASK & (RBASIC(obj)->flags >> SHAPE_FLAG_SHIFT));
 }
 
 static inline void
 ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
 {
-    // Ractors are occupying the upper 32 bits of flags
-    // Object shapes are occupying the next 16 bits
-    // 4 bits are unused
-    // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
-    // | XXXX ractor_id | shape_id | UUUU flags |
-    RBASIC(obj)->flags &= 0xffffffff0000ffff;
-    RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
+    RBASIC(obj)->flags &= SHAPE_FLAG_MASK;
+    RBASIC(obj)->flags |= ((uint32_t)(shape_id) << SHAPE_FLAG_SHIFT);
 }
 #endif
 
