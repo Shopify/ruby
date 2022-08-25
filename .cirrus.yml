@@ -91,6 +91,7 @@ yjit_task:
     matrix:
       CC: clang-12
       CC: gcc-11
+  timeout_in: 90m
   id_script: id
   set_env_script:
     # Set `GNUMAKEFLAGS`, because the flags are GNU make specific. Note using
