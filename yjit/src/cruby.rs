@@ -465,12 +465,16 @@ impl VALUE {
 
     /// Read the flags bits from the RBasic object, then return a Ruby type enum (e.g. RUBY_T_ARRAY)
     pub fn builtin_type(self) -> ruby_value_type {
+        (self.builtin_flags() & (RUBY_T_MASK as usize)) as ruby_value_type
+    }
+
+    pub fn builtin_flags(self) -> usize {
         assert!(!self.special_const_p());
 
         let VALUE(cval) = self;
         let rbasic_ptr = cval as *const RBasic;
         let flags_bits: usize = unsafe { (*rbasic_ptr).flags }.as_usize();
-        (flags_bits & (RUBY_T_MASK as usize)) as ruby_value_type
+        return flags_bits;
     }
 
     pub fn class_of(self) -> VALUE {

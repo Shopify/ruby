@@ -2004,39 +2004,46 @@ fn gen_get_ivar(
     let ivar_index =
         unsafe { rb_obj_ensure_iv_index_mapping(comptime_receiver, ivar_name) }.as_usize();
 
+    // must be before stack_pop
+    let reg0_type = ctx.get_opnd_type(reg0_opnd);
+
     // Pop receiver if it's on the temp stack
     if reg0_opnd != SelfOpnd {
         ctx.stack_pop(1);
     }
 
-    if USE_RVARGC != 0 {
-        // Check that the ivar table is big enough
-        // Check that the slot is inside the ivar table (num_slots > index)
-        let num_slots = mem_opnd(32, REG0, ROBJECT_OFFSET_NUMIV);
-        cmp(cb, num_slots, uimm_opnd(ivar_index as u64));
-        jle_ptr(cb, counted_exit!(ocb, side_exit, getivar_idx_out_of_range));
+    // Guard heap object
+    if !reg0_type.is_heap() {
+        guard_object_is_heap(cb, REG0, ctx, side_exit);
+        ctx.upgrade_opnd_type(reg0_opnd, Type::UnknownHeap);
     }
 
     // Compile time self is embedded and the ivar index lands within the object
-    let test_result = unsafe { FL_TEST_RAW(comptime_receiver, VALUE(ROBJECT_EMBED.as_usize())) != VALUE(0) };
-    if test_result {
-        // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
+    let embed_test_result = unsafe { FL_TEST_RAW(comptime_receiver, VALUE(ROBJECT_EMBED.as_usize())) != VALUE(0) };
 
-        // Guard that self is embedded
-        // TODO: BT and JC is shorter
-        add_comment(cb, "guard embedded getivar");
-        let flags_opnd = mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS);
-        test(cb, flags_opnd, uimm_opnd(ROBJECT_EMBED as u64));
-        let side_exit = counted_exit!(ocb, side_exit, getivar_megamorphic);
-        jit_chain_guard(
-            JCC_JZ,
-            jit,
-            &starting_context,
-            cb,
-            ocb,
-            max_chain_depth,
-            side_exit,
-        );
+    let expected_flags_mask: usize = (RUBY_T_MASK as usize) | 0xffff_0000_0000_0000 | (ROBJECT_EMBED as usize);
+    let expected_flags = comptime_receiver.builtin_flags() & expected_flags_mask;
+
+    // Combined guard for all flags: shape, embeddedness, and T_OBJECT
+    let reg2 = C_ARG_REGS[0]; // we need an extra reg for storage without clobbering REG0
+    let flags_opnd = mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS);
+    add_comment(cb, "guard shape, embedded, and T_OBJECT");
+    mov(cb, REG1, uimm_opnd(expected_flags_mask as u64));
+    and(cb, REG1, flags_opnd);
+    mov(cb, reg2, uimm_opnd(expected_flags as u64));
+    cmp(cb, REG1, reg2);
+    jit_chain_guard(
+        JCC_JNE,
+        jit,
+        &starting_context,
+        cb,
+        ocb,
+        max_chain_depth,
+        side_exit,
+    );
+
+    if embed_test_result {
+        // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
 
         // Load the variable
         let offs = ROBJECT_OFFSET_AS_ARY + (ivar_index * SIZEOF_VALUE) as i32;
@@ -2053,22 +2060,6 @@ fn gen_get_ivar(
         mov(cb, out_opnd, REG1);
     } else {
         // Compile time value is *not* embedded.
-
-        // Guard that value is *not* embedded
-        // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
-        add_comment(cb, "guard extended getivar");
-        let flags_opnd = mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS);
-        test(cb, flags_opnd, uimm_opnd(ROBJECT_EMBED as u64));
-        let side_exit = counted_exit!(ocb, side_exit, getivar_megamorphic);
-        jit_chain_guard(
-            JCC_JNZ,
-            jit,
-            &starting_context,
-            cb,
-            ocb,
-            max_chain_depth,
-            side_exit,
-        );
 
         if USE_RVARGC == 0 {
             // Check that the extended table is big enough
@@ -2116,22 +2107,9 @@ fn gen_getinstancevariable(
     let ivar_name = jit_get_arg(jit, 0).as_u64();
 
     let comptime_val = jit_peek_at_self(jit);
-    let comptime_val_shape = comptime_val.shape_of();
 
     // Generate a side exit
     let side_exit = get_side_exit(jit, ocb, ctx);
-
-    // Guard that the receiver has the same shape as the one from compile time.
-    jit_guard_known_shape(
-        jit,
-        ctx,
-        cb,
-        ocb,
-        comptime_val_shape,
-        GET_IVAR_MAX_DEPTH,
-        0,
-        side_exit,
-    );
 
     // Guard that the receiver has the same class as the one from compile time.
     mov(cb, REG0, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SELF));
@@ -3533,35 +3511,6 @@ fn jit_guard_known_klass(
             ctx.upgrade_opnd_type(insn_opnd, Type::CString);
         }
     }
-}
-
-/// Guard that self or a stack operand has the same shape as `known_shape`, using
-/// `sample_instance` to speculate about the shape of the runtime value.
-/// FIXNUM and on-heap integers are treated as if they have distinct classes, and
-/// the guard generated for one will fail for the other.
-///
-/// Recompile as contingency if possible, or take side exit a last resort.
-
-fn jit_guard_known_shape(
-    jit: &mut JITState,
-    ctx: &mut Context,
-    cb: &mut CodeBlock,
-    ocb: &mut OutlinedCb,
-    known_shape: u16,
-    max_chain_depth: i32,
-    stack_index: i32,
-    side_exit: CodePtr,
-) {
-    mov(cb, C_ARG_REGS[0], ctx.stack_opnd(stack_index));
-    call_ptr(cb, REG0, rb_shape_get_shape_id as *const u8);
-    // panic if too many bits
-    let shape_into: i64 = known_shape.into();
-    if sig_imm_size(shape_into) > 32 {
-        panic!("{} shape is too big", sig_imm_size(shape_into));
-    }
-
-    cmp(cb, REG0, imm_opnd(shape_into));
-    jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
 }
 
 // Generate ancestry guard for protected callee.
@@ -4984,18 +4933,6 @@ fn gen_send_general(
                 }
 
                 let ivar_name = unsafe { get_cme_def_body_attr_id(cme) };
-                let comptime_recv_shape = comptime_recv.shape_of();
-
-                jit_guard_known_shape(
-                    jit,
-                    ctx,
-                    cb,
-                    ocb,
-                    comptime_recv_shape,
-                    SEND_MAX_DEPTH,
-                    argc,
-                    side_exit
-                );
 
                 mov(cb, REG0, recv);
                 return gen_get_ivar(
