@@ -2007,6 +2007,11 @@ fn gen_get_ivar(
     // must be before stack_pop
     let reg0_type = ctx.get_opnd_type(reg0_opnd);
 
+    // Upgrade type
+    if !reg0_type.is_heap() {
+        ctx.upgrade_opnd_type(reg0_opnd, Type::UnknownHeap);
+    }
+
     // Pop receiver if it's on the temp stack
     if reg0_opnd != SelfOpnd {
         ctx.stack_pop(1);
@@ -2015,7 +2020,6 @@ fn gen_get_ivar(
     // Guard heap object
     if !reg0_type.is_heap() {
         guard_object_is_heap(cb, REG0, ctx, side_exit);
-        ctx.upgrade_opnd_type(reg0_opnd, Type::UnknownHeap);
     }
 
     // Compile time self is embedded and the ivar index lands within the object
