@@ -3899,6 +3899,7 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
                 .flags = T_IMEMO |
                     (imemo_callcache << FL_USHIFT) |
                     VM_CALLCACHE_UNMARKABLE |
+                    ((VALUE)INVALID_SHAPE_ID << SHAPE_FLAG_SHIFT) |
                     VM_CALLCACHE_ON_STACK,
                     .klass = cc->klass,
                     .cme_  = cc->cme_,
@@ -3907,7 +3908,6 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
                         .as.split = {
                             .attr_index = 0,
                             .dest_shape_id = INVALID_SHAPE_ID,
-                            .source_shape_id = INVALID_SHAPE_ID
                         }
                     },
             });

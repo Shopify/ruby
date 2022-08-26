@@ -67,7 +67,7 @@ rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id)
 static inline shape_id_t
 shape_set_shape_id(rb_shape_t *shape, shape_id_t id) {
     VALUE flags = shape->flags & ~((uint64_t)SHAPE_MASK << 16);
-    return (shape_id_t)(shape->flags = (flags | (id << SHAPE_BITS)));
+    return (shape_id_t)(shape->flags = (flags | ((VALUE)id << SHAPE_BITS)));
 }
 
 #if !USE_SHAPE_CACHE_P
@@ -118,7 +118,7 @@ static shape_id_t
 get_next_shape_id(void)
 {
     rb_vm_t *vm = GET_VM();
-    int next_shape_id = 0;
+    shape_id_t next_shape_id = 0;
 
     /*
      * Speedup for getting next shape_id by using bitmaps
@@ -551,7 +551,7 @@ static VALUE shape_transition_tree(VALUE self) {
 
 static VALUE shape_count(VALUE self) {
     int shape_count = 0;
-    for(int i=0; i<MAX_SHAPE_ID; i++) {
+    for(shape_id_t i=0; i<MAX_SHAPE_ID; i++) {
         if(rb_shape_get_shape_by_id_without_assertion(i)) {
             shape_count++;
         }

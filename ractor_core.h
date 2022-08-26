@@ -5,7 +5,7 @@
 #include "vm_debug.h"
 
 #ifndef RACTOR_CHECK_MODE
-#define RACTOR_CHECK_MODE (VM_CHECK_MODE || RUBY_DEBUG) && (SIZEOF_UINT64_T == SIZEOF_VALUE)
+#define RACTOR_CHECK_MODE (VM_CHECK_MODE) && (SIZEOF_UINT64_T == SIZEOF_VALUE)
 #endif
 
 enum rb_ractor_basket_type {

@@ -2,8 +2,15 @@
 #define RUBY_SHAPE_H
 #define USE_SHAPE_CACHE_P (SIZEOF_UINT64_T == SIZEOF_VALUE)
 
+#if RUBY_DEBUG
+typedef uint16_t shape_id_t;
 # define SHAPE_BITS 16
-# define SHAPE_MASK ((1 << SHAPE_BITS) - 1)
+#else
+typedef uint32_t shape_id_t;
+# define SHAPE_BITS 32
+#endif
+
+# define SHAPE_MASK (((VALUE)1 << SHAPE_BITS) - 1)
 
 # define SHAPE_FLAG_SHIFT ((SIZEOF_VALUE * 8) - SHAPE_BITS)
 # define SHAPE_FLAG_MASK (((VALUE)-1) >> SHAPE_BITS)
@@ -15,8 +22,6 @@
 # define FROZEN_ROOT_SHAPE_ID 0x1
 
 #define SHAPE_ID(shape) ((((rb_shape_t *)shape)->flags >> SHAPE_BITS) & SHAPE_MASK)
-
-typedef uint16_t shape_id_t;
 
 struct rb_shape {
     VALUE flags; // Shape ID and frozen status encoded within flags
