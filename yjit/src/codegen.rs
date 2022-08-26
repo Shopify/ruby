@@ -2025,7 +2025,7 @@ fn gen_get_ivar(
     // Compile time self is embedded and the ivar index lands within the object
     let embed_test_result = unsafe { FL_TEST_RAW(comptime_receiver, VALUE(ROBJECT_EMBED.as_usize())) != VALUE(0) };
 
-    let expected_flags_mask: usize = (RUBY_T_MASK as usize) | 0xffff_0000_0000_0000 | (ROBJECT_EMBED as usize);
+    let expected_flags_mask: usize = (RUBY_T_MASK as usize) | 0xFFFFFFFF_00000000 | (ROBJECT_EMBED as usize);
     let expected_flags = comptime_receiver.builtin_flags() & expected_flags_mask;
 
     // Combined guard for all flags: shape, embeddedness, and T_OBJECT

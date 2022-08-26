@@ -266,6 +266,10 @@ extern "C" {
 extern "C" {
     pub fn rb_reg_new_ary(ary: VALUE, options: ::std::os::raw::c_int) -> VALUE;
 }
+pub type shape_id_t = u16;
+extern "C" {
+    pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;
+}
 pub const idDot2: ruby_method_ids = 128;
 pub const idDot3: ruby_method_ids = 129;
 pub const idUPlus: ruby_method_ids = 132;
@@ -562,10 +566,6 @@ extern "C" {
 extern "C" {
     pub fn rb_callable_method_entry(klass: VALUE, id: ID) -> *const rb_callable_method_entry_t;
 }
-pub type shape_id_t = u16;
-extern "C" {
-    pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;
-}
 pub type rb_num_t = ::std::os::raw::c_ulong;
 #[repr(C)]
 pub struct iseq_inline_constant_cache_entry {
@@ -582,6 +582,7 @@ pub struct iseq_inline_constant_cache {
     pub get_insn_idx: ::std::os::raw::c_uint,
 }
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct iseq_inline_iv_cache_entry {
     pub source_shape_id: shape_id_t,
     pub dest_shape_id: shape_id_t,

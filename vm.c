@@ -2810,7 +2810,6 @@ rb_vm_mark(void *ptr)
 
         rb_gc_mark((VALUE)vm->root_shape);
         rb_gc_mark((VALUE)vm->frozen_root_shape);
-        rb_gc_mark((VALUE)vm->no_cache_shape);
         rb_gc_mark_movable(vm->load_path);
         rb_gc_mark_movable(vm->load_path_snapshot);
         RUBY_MARK_MOVABLE_UNLESS_NULL(vm->load_path_check_cache);
@@ -4062,13 +4061,6 @@ Init_vm_objects(void)
     RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_root_shape);
     rb_shape_set_shape_by_id(FROZEN_ROOT_SHAPE_ID, vm->frozen_root_shape);
     RB_OBJ_WRITTEN(vm->frozen_root_shape, Qundef, (VALUE)vm);
-
-    // No cache shape
-    vm->no_cache_shape = rb_shape_alloc(NO_CACHE_SHAPE_ID,
-            0,
-            0);
-    rb_shape_set_shape_by_id(NO_CACHE_SHAPE_ID, vm->no_cache_shape);
-    RB_OBJ_WRITTEN(vm->no_cache_shape, Qundef, (VALUE)vm);
 }
 
 /* Stub for builtin function when not building YJIT units*/

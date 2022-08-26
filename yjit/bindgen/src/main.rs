@@ -40,6 +40,7 @@ fn main() {
         .header("internal.h")
         .header("internal/re.h")
         .header("include/ruby/ruby.h")
+        .header("shape.h")
         .header("vm_core.h")
         .header("vm_callinfo.h")
 
@@ -80,6 +81,9 @@ fn main() {
         // From internal.h
         // This function prints info about a value and is useful for debugging
         .allowlist_function("rb_obj_info_dump")
+
+        // From shape.h
+        .allowlist_function("rb_shape_get_shape_id")
 
         // From ruby/internal/intern/object.h
         .allowlist_function("rb_obj_is_kind_of")
@@ -296,7 +300,6 @@ fn main() {
         // From internal/variable.h
         .allowlist_function("rb_gvar_(get|set)")
         .allowlist_function("rb_obj_ensure_iv_index_mapping")
-        .allowlist_function("rb_shape_get_shape_id")
 
         // From include/ruby/internal/intern/variable.h
         .allowlist_function("rb_attr_get")

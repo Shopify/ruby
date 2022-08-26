@@ -1125,10 +1125,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             }
     }
 
-    if (shape_id == NO_CACHE_SHAPE_ID) {
-        goto general_path;
-    }
-
     shape_id_t cached_id;
 
     if (is_attr) {
@@ -1289,39 +1285,17 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                     rb_shape_set_shape(obj, next_shape);
                 }
 
-                // cache -> no cache
-                //   ensure object isn't embedded
-                //   copy the iv idnex table
-                //   set the iv index table pointer on the object
-                // no cache -> no cache
-                //
-                // both caches
-                if (!rb_shape_no_cache_shape_p(shape) && rb_shape_no_cache_shape_p(next_shape)) {
-                    // Ensure the object is *not* embedded
-                    rb_ensure_iv_list_size(obj, num_iv, num_iv + 1);
-                    RUBY_ASSERT(!(RBASIC(obj)->flags & ROBJECT_EMBED));
+                VALUE x;
+                if (rb_shape_get_iv_index(next_shape, id, &x)) { // based off the hash stored in the transition tree
+                    index = (uint32_t)x;
+                    if (index >= INT_MAX) {
+                        rb_raise(rb_eArgError, "too many instance variables");
+                    }
 
-                    // Save the IV index table on the instance
-                    ROBJECT(obj)->as.heap.iv_index_tbl = rb_shape_generate_iv_table(shape);
-                }
-
-                if (rb_shape_no_cache_shape_p(shape) || rb_shape_no_cache_shape_p(next_shape)) {
-                    index = (uint32_t)rb_id_table_size(ROBJECT(obj)->as.heap.iv_index_tbl);
-                    rb_id_table_insert(ROBJECT(obj)->as.heap.iv_index_tbl, id, (VALUE)index);
+                    populate_cache(index, shape, next_shape, id, iseq, ic, cc, is_attr);
                 }
                 else {
-                    VALUE x;
-                    if (rb_shape_get_iv_index(next_shape, id, &x)) { // based off the has stored in the transition tree
-                        index = (uint32_t)x;
-                        if (index >= INT_MAX) {
-                            rb_raise(rb_eArgError, "too many instance variables");
-                        }
-
-                        populate_cache(index, shape, next_shape, id, iseq, ic, cc, is_attr);
-                    }
-                    else {
-                        rb_bug("didn't find the id\n");
-                    }
+                    rb_bug("Didn't find instance variable %s\n", rb_id2name(id));
                 }
 
                 // Ensure the IV buffer is wide enough to store the IV
@@ -1347,7 +1321,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 VALUE x;
                 uint32_t index;
 
-                if (rb_shape_get_iv_index(next_shape, id, &x)) { // based off the has stored in the transition tree
+                if (rb_shape_get_iv_index(next_shape, id, &x)) { // based off the hash stored in the transition tree
                     index = (uint32_t)x;
                     if (index >= INT_MAX) {
                         rb_raise(rb_eArgError, "too many instance variables");
@@ -1389,36 +1363,34 @@ vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shap
     shape_id_t shape_id = rb_generic_shape_id(obj);
 #endif
 
-    if (shape_id != NO_CACHE_SHAPE_ID) {
-        // Do we have a cache hit *and* is the CC intitialized
-        if (shape_id == source_shape_id) {
-            RUBY_ASSERT(dest_shape_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
+    // Do we have a cache hit *and* is the CC intitialized
+    if (shape_id == source_shape_id) {
+        RUBY_ASSERT(dest_shape_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
 
-            struct gen_ivtbl *ivtbl = 0;
-            if (dest_shape_id != shape_id) {
-                ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
+        struct gen_ivtbl *ivtbl = 0;
+        if (dest_shape_id != shape_id) {
+            ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
 #if USE_SHAPE_CACHE_P
-                RBASIC_SET_SHAPE_ID(obj, dest_shape_id);
+            RBASIC_SET_SHAPE_ID(obj, dest_shape_id);
 #else
-                ivtbl->shape_id = dest_shape_id;
+            ivtbl->shape_id = dest_shape_id;
 #endif
-                RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
-            }
-            else {
-                // Just get the IV table
-                RUBY_ASSERT(GET_VM()->shape_list[dest_shape_id]);
-                rb_gen_ivtbl_get(obj, 0, &ivtbl);
-            }
-
-            VALUE *ptr = ivtbl->ivptr;
-
-            // Ensuring we have a place to store the IV value
-            RB_OBJ_WRITE(obj, &ptr[index], val);
-
-            RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
-
-            return val; /* inline cache hit */
+            RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
         }
+        else {
+            // Just get the IV table
+            RUBY_ASSERT(GET_VM()->shape_list[dest_shape_id]);
+            rb_gen_ivtbl_get(obj, 0, &ivtbl);
+        }
+
+        VALUE *ptr = ivtbl->ivptr;
+
+        // Ensuring we have a place to store the IV value
+        RB_OBJ_WRITE(obj, &ptr[index], val);
+
+        RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
+
+        return val; /* inline cache hit */
     }
 
     return Qundef;
@@ -1438,34 +1410,32 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t source_shape_id, shape_id_t d
                 // then write the ivar
                 shape_id_t shape_id = ROBJECT_SHAPE_ID(obj);
 
-                if (shape_id != NO_CACHE_SHAPE_ID) {
-                    // Do we have a cache hit *and* is the CC intitialized
-                    if (shape_id == source_shape_id) {
-                        RUBY_ASSERT(dest_shape_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
+                // Do we have a cache hit *and* is the CC intitialized
+                if (shape_id == source_shape_id) {
+                    RUBY_ASSERT(dest_shape_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
 
-                        VM_ASSERT(!rb_ractor_shareable_p(obj));
+                    VM_ASSERT(!rb_ractor_shareable_p(obj));
 
-                        if (dest_shape_id != shape_id) {
-                            if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
-                                rb_init_iv_list(obj);
-                            }
-                            ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);
-                            RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
+                    if (dest_shape_id != shape_id) {
+                        if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
+                            rb_init_iv_list(obj);
                         }
-                        else {
-                            RUBY_ASSERT(GET_VM()->shape_list[dest_shape_id]);
-                        }
-
-                        RUBY_ASSERT(index < ROBJECT_NUMIV(obj));
-
-                        VALUE *ptr = ROBJECT_IVPTR(obj);
-
-                        RB_OBJ_WRITE(obj, &ptr[index], val);
-
-                        RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
-
-                        return val;
+                        ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);
+                        RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(dest_shape_id));
                     }
+                    else {
+                        RUBY_ASSERT(GET_VM()->shape_list[dest_shape_id]);
+                    }
+
+                    RUBY_ASSERT(index < ROBJECT_NUMIV(obj));
+
+                    VALUE *ptr = ROBJECT_IVPTR(obj);
+
+                    RB_OBJ_WRITE(obj, &ptr[index], val);
+
+                    RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
+
+                    return val;
                 }
             }
             break;

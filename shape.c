@@ -6,7 +6,7 @@
 #include "internal/variable.h"
 
 /*
- * Getters for root_shape, frozen_root_shape and no_cache_shape
+ * Getters for root_shape, frozen_root_shape
  */
 static rb_shape_t*
 rb_shape_get_root_shape(void) {
@@ -20,24 +20,12 @@ rb_shape_get_frozen_root_shape(void) {
     return vm->frozen_root_shape;
 }
 
-static rb_shape_t*
-rb_shape_get_no_cache_shape(void) {
-    rb_vm_t *vm = GET_VM();
-    return vm->no_cache_shape;
-}
-
 /*
- * Predicate methods for root_shape and no_cache_shape
+ * Predicate method for root_shape
  */
 bool
 rb_shape_root_shape_p(rb_shape_t* shape) {
     return shape == rb_shape_get_root_shape();
-}
-
-bool
-rb_shape_no_cache_shape_p(rb_shape_t * shape)
-{
-    return shape == rb_shape_get_no_cache_shape();
 }
 
 /*
@@ -163,9 +151,6 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
     rb_shape_t *res = NULL;
     RB_VM_LOCK_ENTER();
     {
-        // no_cache_shape should only transition to other no_cache_shapes
-        if(shape == rb_shape_get_no_cache_shape()) return shape;
-
         if (rb_shape_lookup_id(shape, id)) {
             // If shape already contains the ivar that is being set, we'll return shape
             res = shape;
@@ -187,7 +172,8 @@ get_next_shape_internal(rb_shape_t* shape, ID id, VALUE obj, enum transition_typ
                 shape_id_t next_shape_id = get_next_shape_id();
 
                 if (next_shape_id == MAX_SHAPE_ID) {
-                    res = rb_shape_get_no_cache_shape();
+                    // TODO: Make an OutOfShapesError ??
+                    rb_bug("Out of shapes\n");
                 }
                 else {
                     RUBY_ASSERT(next_shape_id < MAX_SHAPE_ID);
@@ -272,21 +258,6 @@ rb_shape_transition_shape(VALUE obj, ID id, rb_shape_t *shape)
     rb_shape_t* next_shape = rb_shape_get_next(shape, obj, id);
     if (shape == next_shape) {
         return;
-    }
-
-    if (BUILTIN_TYPE(obj) == T_OBJECT && next_shape == rb_shape_get_no_cache_shape()) {
-        // If the object is embedded, we need to make it extended so that
-        // the instance variable index table can be stored on the object.
-        // The "no cache shape" is a singleton and is allowed to be shared
-        // among objects, so it cannot store instance variable index information.
-        // Therefore we need to store the iv index table on the object itself.
-        // Embedded objects don't have the room for an iv index table, so
-        // we'll force it to be extended
-        uint32_t num_iv = ROBJECT_NUMIV(obj);
-        // Make the object extended
-        rb_ensure_iv_list_size(obj, num_iv, num_iv + 1);
-        RUBY_ASSERT(!(RBASIC(obj)->flags & ROBJECT_EMBED));
-        ROBJECT(obj)->as.heap.iv_index_tbl = rb_shape_generate_iv_table(shape);
     }
 
     RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));

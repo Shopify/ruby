@@ -902,19 +902,9 @@ static bool
 iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 {
     st_data_t ent_data;
-    int r = 0;
-
     rb_shape_t* shape = rb_shape_get_shape(obj);
 
-    if (rb_shape_no_cache_shape_p(shape)) {
-        struct rb_id_table *iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
-        if (iv_table) {
-            r = rb_id_table_lookup(iv_table, (st_data_t)id, &ent_data);
-        }
-    }
-    else {
-        r = rb_shape_get_iv_index(shape, id, &ent_data);
-    }
+    int r = rb_shape_get_iv_index(shape, id, &ent_data);
 
     if (r) {
         *indexp = (uint32_t)ent_data;
@@ -1408,26 +1398,10 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
 {
     ASSERT_vm_locking();
     VALUE ent_data;
-    struct rb_id_table *iv_table;
-    int r = 0;
 
-    if (rb_shape_no_cache_shape_p(ivup->shape)) {
-        iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
-        if ((VALUE)iv_table == Qundef) {
-            iv_table = rb_id_table_create(0);
-            ROBJECT(obj)->as.heap.iv_index_tbl = iv_table;
-        }
-
-        uint32_t index = (uint32_t)rb_id_table_size(iv_table);
-        rb_id_table_insert(iv_table, id, (VALUE)index);
-        ivup->u.iv_index_tbl_size = rb_id_table_size(iv_table);
-        r = rb_id_table_lookup(iv_table, id, &ent_data);
-    }
-    else {
-        // This sets the iv table in the ivup struct
-        ivup->u.iv_index_tbl_size = ivup->shape->iv_count;
-        r = rb_shape_get_iv_index(ivup->shape, id, &ent_data);
-    }
+    // This sets the iv table in the ivup struct
+    ivup->u.iv_index_tbl_size = ivup->shape->iv_count;
+    int r = rb_shape_get_iv_index(ivup->shape, id, &ent_data);
 
     if (r) {
         ivup->index = (uint32_t) ent_data;
@@ -1799,14 +1773,7 @@ iterate_over_shapes_with_callback(VALUE obj, rb_shape_t *shape, VALUE* iv_list, 
         rb_bug("bad numiv iterating over shapes\n");
     }
     else {
-        rb_shape_t *parent_shape;
-        if (rb_shape_no_cache_shape_p(shape)) {
-            parent_shape = shape;
-        }
-        else {
-            parent_shape = shape->parent;
-        }
-        iterate_over_shapes_with_callback(obj, parent_shape, iv_list, numiv - 1, callback, arg);
+        iterate_over_shapes_with_callback(obj, shape->parent, iv_list, numiv - 1, callback, arg);
 
         if (iv_list[numiv - 1] != Qundef) {
             ID id = shape->edge_name;
@@ -1817,41 +1784,17 @@ iterate_over_shapes_with_callback(VALUE obj, rb_shape_t *shape, VALUE* iv_list, 
     }
 }
 
-static enum rb_id_table_iterator_result
-add_to_array(ID id, VALUE val, void * data)
-{
-    uint32_t idx = (uint32_t)val;
-    VALUE * list = (VALUE *)data;
-    list[idx] = id;
-    return ID_TABLE_CONTINUE;
-}
-
 static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
-    rb_shape_t* shape = rb_shape_get_shape(obj);
     struct rb_id_table *iv_index_tbl;
+    rb_shape_t* shape = rb_shape_get_shape(obj);
 
-    if (rb_shape_no_cache_shape_p(shape)) {
-        iv_index_tbl = ROBJECT(obj)->as.heap.iv_index_tbl;
-        uint32_t table_size = (uint32_t) rb_id_table_size(iv_index_tbl);
-        VALUE * array = xmalloc(sizeof(VALUE) * table_size);
-
-        rb_id_table_foreach(iv_index_tbl, add_to_array, array);
-        for (uint32_t i = 0; i < table_size; i++) {
-            func(array[i], ROBJECT_IVPTR(obj)[i], arg);
-        }
-
-        xfree(array);
+    iv_index_tbl = rb_shape_generate_iv_table(shape);
+    if (!iv_index_tbl) {
+        return;
     }
-    else {
-        iv_index_tbl = rb_shape_generate_iv_table(rb_shape_get_shape(obj));
-        if (!iv_index_tbl) {
-            return;
-        }
-        rb_shape_t * shape = rb_shape_get_shape(obj);
-        iterate_over_shapes_with_callback(obj, shape, ROBJECT_IVPTR(obj), (int)shape->iv_count, func, arg);
-    }
+    iterate_over_shapes_with_callback(obj, shape, ROBJECT_IVPTR(obj), (int)shape->iv_count, func, arg);
 }
 
 static void

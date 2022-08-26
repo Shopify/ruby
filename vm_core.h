@@ -681,7 +681,6 @@ typedef struct rb_vm_struct {
     rb_shape_t **shape_list;
     rb_shape_t *root_shape;
     rb_shape_t *frozen_root_shape;
-    rb_shape_t *no_cache_shape;
     shape_id_t max_shape_count;
     uint32_t shape_bitmaps[2048];
 

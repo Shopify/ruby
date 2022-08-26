@@ -16,7 +16,6 @@ typedef uint32_t shape_id_t;
 # define SHAPE_FLAG_MASK (((VALUE)-1) >> SHAPE_BITS)
 
 # define MAX_SHAPE_ID (SHAPE_MASK - 1)
-# define NO_CACHE_SHAPE_ID (0x2)
 # define INVALID_SHAPE_ID SHAPE_MASK
 # define ROOT_SHAPE_ID 0x0
 # define FROZEN_ROOT_SHAPE_ID 0x1
@@ -87,7 +86,6 @@ bool rb_shape_root_shape_p(rb_shape_t* shape);
 rb_shape_t* rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id);
 
 MJIT_SYMBOL_EXPORT_BEGIN
-bool rb_shape_no_cache_shape_p(rb_shape_t * shape);
 rb_shape_t* rb_shape_get_shape_by_id(shape_id_t shape_id);
 void rb_shape_set_shape(VALUE obj, rb_shape_t* shape);
 shape_id_t rb_shape_get_shape_id(VALUE obj);

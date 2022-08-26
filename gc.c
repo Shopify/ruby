@@ -3457,11 +3457,6 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                 if (RCLASS_EXT(klass)->max_iv_count < num_of_ivs) {
                     RCLASS_EXT(klass)->max_iv_count = num_of_ivs;
                 }
-
-                // "No cache" objects have a singleton iv_index_tbl that we need to free
-                if (shape && rb_shape_no_cache_shape_p(shape)) {
-                    rb_id_table_free(ROBJECT(obj)->as.heap.iv_index_tbl);
-                }
             }
             xfree(RANY(obj)->as.object.as.heap.ivptr);
             RB_DEBUG_COUNTER_INC(obj_obj_ptr);
@@ -4916,15 +4911,7 @@ obj_memsize_of(VALUE obj, int use_all_types)
         if (!(RBASIC(obj)->flags & ROBJECT_EMBED)) {
             size += ROBJECT_NUMIV(obj) * sizeof(VALUE);
         }
-        else {
-            // We can't look up the shape here because `obj_memsize_of` is used during
-            // the sweep phase when RGENGC_CHECK_MODE is enabled.  The shape may have been
-            // collected, so we just want to check the ID
-            if (NO_CACHE_SHAPE_ID == rb_shape_get_shape_id(obj)) {
-                size += rb_id_table_memsize(ROBJECT(obj)->as.heap.iv_index_tbl);
-            }
-        }
-	break;
+        break;
       case T_MODULE:
       case T_CLASS:
         if (RCLASS_EXT(obj)) {
