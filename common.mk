@@ -2155,6 +2155,7 @@ ast.$(OBJEXT): {$(VPATH)}onigmo.h
 ast.$(OBJEXT): {$(VPATH)}oniguruma.h
 ast.$(OBJEXT): {$(VPATH)}ruby_assert.h
 ast.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+ast.$(OBJEXT): {$(VPATH)}shape.h
 ast.$(OBJEXT): {$(VPATH)}st.h
 ast.$(OBJEXT): {$(VPATH)}subst.h
 ast.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -2523,6 +2524,7 @@ builtin.$(OBJEXT): {$(VPATH)}missing.h
 builtin.$(OBJEXT): {$(VPATH)}node.h
 builtin.$(OBJEXT): {$(VPATH)}ruby_assert.h
 builtin.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+builtin.$(OBJEXT): {$(VPATH)}shape.h
 builtin.$(OBJEXT): {$(VPATH)}st.h
 builtin.$(OBJEXT): {$(VPATH)}subst.h
 builtin.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -2725,6 +2727,7 @@ class.$(OBJEXT): {$(VPATH)}onigmo.h
 class.$(OBJEXT): {$(VPATH)}oniguruma.h
 class.$(OBJEXT): {$(VPATH)}ruby_assert.h
 class.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+class.$(OBJEXT): {$(VPATH)}shape.h
 class.$(OBJEXT): {$(VPATH)}st.h
 class.$(OBJEXT): {$(VPATH)}subst.h
 class.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -3507,6 +3510,7 @@ cont.$(OBJEXT): {$(VPATH)}ractor.h
 cont.$(OBJEXT): {$(VPATH)}ractor_core.h
 cont.$(OBJEXT): {$(VPATH)}ruby_assert.h
 cont.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+cont.$(OBJEXT): {$(VPATH)}shape.h
 cont.$(OBJEXT): {$(VPATH)}st.h
 cont.$(OBJEXT): {$(VPATH)}subst.h
 cont.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -6175,6 +6179,7 @@ error.$(OBJEXT): {$(VPATH)}onigmo.h
 error.$(OBJEXT): {$(VPATH)}oniguruma.h
 error.$(OBJEXT): {$(VPATH)}ruby_assert.h
 error.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+error.$(OBJEXT): {$(VPATH)}shape.h
 error.$(OBJEXT): {$(VPATH)}st.h
 error.$(OBJEXT): {$(VPATH)}subst.h
 error.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -6396,6 +6401,7 @@ eval.$(OBJEXT): {$(VPATH)}ractor.h
 eval.$(OBJEXT): {$(VPATH)}ractor_core.h
 eval.$(OBJEXT): {$(VPATH)}ruby_assert.h
 eval.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+eval.$(OBJEXT): {$(VPATH)}shape.h
 eval.$(OBJEXT): {$(VPATH)}st.h
 eval.$(OBJEXT): {$(VPATH)}subst.h
 eval.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -7043,6 +7049,7 @@ goruby.$(OBJEXT): {$(VPATH)}missing.h
 goruby.$(OBJEXT): {$(VPATH)}node.h
 goruby.$(OBJEXT): {$(VPATH)}ruby_assert.h
 goruby.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+goruby.$(OBJEXT): {$(VPATH)}shape.h
 goruby.$(OBJEXT): {$(VPATH)}st.h
 goruby.$(OBJEXT): {$(VPATH)}subst.h
 goruby.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -8244,6 +8251,7 @@ load.$(OBJEXT): {$(VPATH)}probes.dmyh
 load.$(OBJEXT): {$(VPATH)}probes.h
 load.$(OBJEXT): {$(VPATH)}ruby_assert.h
 load.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+load.$(OBJEXT): {$(VPATH)}shape.h
 load.$(OBJEXT): {$(VPATH)}st.h
 load.$(OBJEXT): {$(VPATH)}subst.h
 load.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -9490,6 +9498,7 @@ miniinit.$(OBJEXT): {$(VPATH)}prelude.rb
 miniinit.$(OBJEXT): {$(VPATH)}ractor.rb
 miniinit.$(OBJEXT): {$(VPATH)}ruby_assert.h
 miniinit.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+miniinit.$(OBJEXT): {$(VPATH)}shape.h
 miniinit.$(OBJEXT): {$(VPATH)}st.h
 miniinit.$(OBJEXT): {$(VPATH)}subst.h
 miniinit.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -10111,6 +10120,7 @@ node.$(OBJEXT): {$(VPATH)}node.c
 node.$(OBJEXT): {$(VPATH)}node.h
 node.$(OBJEXT): {$(VPATH)}ruby_assert.h
 node.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+node.$(OBJEXT): {$(VPATH)}shape.h
 node.$(OBJEXT): {$(VPATH)}st.h
 node.$(OBJEXT): {$(VPATH)}subst.h
 node.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -11115,6 +11125,7 @@ proc.$(OBJEXT): {$(VPATH)}oniguruma.h
 proc.$(OBJEXT): {$(VPATH)}proc.c
 proc.$(OBJEXT): {$(VPATH)}ruby_assert.h
 proc.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+proc.$(OBJEXT): {$(VPATH)}shape.h
 proc.$(OBJEXT): {$(VPATH)}st.h
 proc.$(OBJEXT): {$(VPATH)}subst.h
 proc.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -11334,6 +11345,7 @@ process.$(OBJEXT): {$(VPATH)}process.c
 process.$(OBJEXT): {$(VPATH)}ractor.h
 process.$(OBJEXT): {$(VPATH)}ruby_assert.h
 process.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+process.$(OBJEXT): {$(VPATH)}shape.h
 process.$(OBJEXT): {$(VPATH)}st.h
 process.$(OBJEXT): {$(VPATH)}subst.h
 process.$(OBJEXT): {$(VPATH)}thread.h
@@ -11550,6 +11562,7 @@ ractor.$(OBJEXT): {$(VPATH)}ractor.rbinc
 ractor.$(OBJEXT): {$(VPATH)}ractor_core.h
 ractor.$(OBJEXT): {$(VPATH)}ruby_assert.h
 ractor.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+process.$(OBJEXT): {$(VPATH)}shape.h
 ractor.$(OBJEXT): {$(VPATH)}st.h
 ractor.$(OBJEXT): {$(VPATH)}subst.h
 ractor.$(OBJEXT): {$(VPATH)}thread.h
@@ -13504,6 +13517,7 @@ ruby.$(OBJEXT): {$(VPATH)}oniguruma.h
 ruby.$(OBJEXT): {$(VPATH)}ruby.c
 ruby.$(OBJEXT): {$(VPATH)}ruby_assert.h
 ruby.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+ruby.$(OBJEXT): {$(VPATH)}shape.h
 ruby.$(OBJEXT): {$(VPATH)}st.h
 ruby.$(OBJEXT): {$(VPATH)}subst.h
 ruby.$(OBJEXT): {$(VPATH)}thread.h
@@ -13706,6 +13720,7 @@ scheduler.$(OBJEXT): {$(VPATH)}onigmo.h
 scheduler.$(OBJEXT): {$(VPATH)}oniguruma.h
 scheduler.$(OBJEXT): {$(VPATH)}ruby_assert.h
 scheduler.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+scheduler.$(OBJEXT): {$(VPATH)}shape.h
 scheduler.$(OBJEXT): {$(VPATH)}scheduler.c
 scheduler.$(OBJEXT): {$(VPATH)}st.h
 scheduler.$(OBJEXT): {$(VPATH)}subst.h
@@ -14272,6 +14287,7 @@ signal.$(OBJEXT): {$(VPATH)}ractor.h
 signal.$(OBJEXT): {$(VPATH)}ractor_core.h
 signal.$(OBJEXT): {$(VPATH)}ruby_assert.h
 signal.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+signal.$(OBJEXT): {$(VPATH)}shape.h
 signal.$(OBJEXT): {$(VPATH)}signal.c
 signal.$(OBJEXT): {$(VPATH)}st.h
 signal.$(OBJEXT): {$(VPATH)}subst.h
@@ -15258,6 +15274,7 @@ struct.$(OBJEXT): {$(VPATH)}onigmo.h
 struct.$(OBJEXT): {$(VPATH)}oniguruma.h
 struct.$(OBJEXT): {$(VPATH)}ruby_assert.h
 struct.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+struct.$(OBJEXT): {$(VPATH)}shape.h
 struct.$(OBJEXT): {$(VPATH)}st.h
 struct.$(OBJEXT): {$(VPATH)}struct.c
 struct.$(OBJEXT): {$(VPATH)}subst.h
@@ -15677,6 +15694,7 @@ thread.$(OBJEXT): {$(VPATH)}ractor.h
 thread.$(OBJEXT): {$(VPATH)}ractor_core.h
 thread.$(OBJEXT): {$(VPATH)}ruby_assert.h
 thread.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+thread.$(OBJEXT): {$(VPATH)}shape.h
 thread.$(OBJEXT): {$(VPATH)}st.h
 thread.$(OBJEXT): {$(VPATH)}subst.h
 thread.$(OBJEXT): {$(VPATH)}thread.c
@@ -16814,6 +16832,7 @@ version.$(OBJEXT): {$(VPATH)}mjit.h
 version.$(OBJEXT): {$(VPATH)}node.h
 version.$(OBJEXT): {$(VPATH)}ruby_assert.h
 version.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+version.$(OBJEXT): {$(VPATH)}shape.h
 version.$(OBJEXT): {$(VPATH)}st.h
 version.$(OBJEXT): {$(VPATH)}subst.h
 version.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -17267,6 +17286,7 @@ vm_backtrace.$(OBJEXT): {$(VPATH)}onigmo.h
 vm_backtrace.$(OBJEXT): {$(VPATH)}oniguruma.h
 vm_backtrace.$(OBJEXT): {$(VPATH)}ruby_assert.h
 vm_backtrace.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+vm_backtrace.$(OBJEXT): {$(VPATH)}shape.h
 vm_backtrace.$(OBJEXT): {$(VPATH)}st.h
 vm_backtrace.$(OBJEXT): {$(VPATH)}subst.h
 vm_backtrace.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -17457,6 +17477,7 @@ vm_dump.$(OBJEXT): {$(VPATH)}ractor.h
 vm_dump.$(OBJEXT): {$(VPATH)}ractor_core.h
 vm_dump.$(OBJEXT): {$(VPATH)}ruby_assert.h
 vm_dump.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+vm_dump.$(OBJEXT): {$(VPATH)}shape.h
 vm_dump.$(OBJEXT): {$(VPATH)}st.h
 vm_dump.$(OBJEXT): {$(VPATH)}subst.h
 vm_dump.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -17646,6 +17667,7 @@ vm_sync.$(OBJEXT): {$(VPATH)}ractor.h
 vm_sync.$(OBJEXT): {$(VPATH)}ractor_core.h
 vm_sync.$(OBJEXT): {$(VPATH)}ruby_assert.h
 vm_sync.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+vm_sync.$(OBJEXT): {$(VPATH)}shape.h
 vm_sync.$(OBJEXT): {$(VPATH)}st.h
 vm_sync.$(OBJEXT): {$(VPATH)}subst.h
 vm_sync.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -17854,6 +17876,7 @@ vm_trace.$(OBJEXT): {$(VPATH)}oniguruma.h
 vm_trace.$(OBJEXT): {$(VPATH)}ractor.h
 vm_trace.$(OBJEXT): {$(VPATH)}ruby_assert.h
 vm_trace.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+vm_trace.$(OBJEXT): {$(VPATH)}shape.h
 vm_trace.$(OBJEXT): {$(VPATH)}st.h
 vm_trace.$(OBJEXT): {$(VPATH)}subst.h
 vm_trace.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h

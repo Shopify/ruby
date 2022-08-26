@@ -31,7 +31,6 @@ pub struct RBasic {
     pub flags: VALUE,
     pub klass: VALUE,
 }
-pub type shape_id_t = u16;
 pub const RUBY_T_NONE: ruby_value_type = 0;
 pub const RUBY_T_OBJECT: ruby_value_type = 1;
 pub const RUBY_T_CLASS: ruby_value_type = 2;
@@ -492,15 +491,6 @@ extern "C" {
 }
 pub type rb_serial_t = ::std::os::raw::c_ulonglong;
 extern "C" {
-    pub fn rb_obj_ensure_iv_index_mapping(obj: VALUE, id: ID) -> u32;
-}
-extern "C" {
-    pub fn rb_gvar_get(arg1: ID) -> VALUE;
-}
-extern "C" {
-    pub fn rb_gvar_set(arg1: ID, arg2: VALUE) -> VALUE;
-}
-extern "C" {
     pub fn rb_class_allocate_instance(klass: VALUE) -> VALUE;
 }
 extern "C" {
@@ -571,6 +561,10 @@ extern "C" {
 }
 extern "C" {
     pub fn rb_callable_method_entry(klass: VALUE, id: ID) -> *const rb_callable_method_entry_t;
+}
+pub type shape_id_t = u16;
+extern "C" {
+    pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;
 }
 pub type rb_num_t = ::std::os::raw::c_ulong;
 #[repr(C)]
@@ -686,14 +680,20 @@ extern "C" {
         cfp: *const rb_control_frame_t,
     ) -> *const rb_callable_method_entry_t;
 }
+extern "C" {
+    pub fn rb_obj_ensure_iv_index_mapping(obj: VALUE, id: ID) -> u32;
+}
+extern "C" {
+    pub fn rb_gvar_get(arg1: ID) -> VALUE;
+}
+extern "C" {
+    pub fn rb_gvar_set(arg1: ID, arg2: VALUE) -> VALUE;
+}
 #[repr(C)]
 pub struct rb_cvar_class_tbl_entry {
     pub index: u32,
     pub global_cvar_state: rb_serial_t,
     pub class_value: VALUE,
-}
-extern "C" {
-    pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;
 }
 pub const VM_CALL_ARGS_SPLAT_bit: vm_call_flag_bits = 0;
 pub const VM_CALL_ARGS_BLOCKARG_bit: vm_call_flag_bits = 1;
