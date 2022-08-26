@@ -1208,6 +1208,30 @@ rb_generic_ivar_memsize(VALUE obj)
     return 0;
 }
 
+#if !USE_SHAPE_CACHE_P
+MJIT_FUNC_EXPORTED shape_id_t
+rb_generic_shape_id(VALUE obj)
+{
+    struct gen_ivtbl *ivtbl = 0;
+    shape_id_t shape_id = 0;
+
+    RB_VM_LOCK_ENTER();
+    {
+        st_table* global_iv_table = generic_ivtbl(obj, 0, false);
+
+        if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
+            shape_id = ivtbl->shape_id;
+        }
+        else if (OBJ_FROZEN(obj)) {
+            shape_id = FROZEN_ROOT_SHAPE_ID;
+        }
+    }
+    RB_VM_LOCK_LEAVE();
+
+    return shape_id;
+}
+#endif
+
 static size_t
 gen_ivtbl_count(const struct gen_ivtbl *ivtbl)
 {
