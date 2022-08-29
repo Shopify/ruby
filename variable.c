@@ -1108,7 +1108,7 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     // Reinsert in to the hash table because ivtbl might be a newly resized chunk of memory
     *v = (st_data_t)ivtbl;
     ivup->u.ivtbl = ivtbl;
-#if !USE_SHAPE_CACHE_P
+#if !USE_WIDE_SHAPE
     ivtbl->shape_id = SHAPE_ID(ivup->shape);
 #endif
     return ST_CONTINUE;
@@ -1162,7 +1162,7 @@ rb_mark_generic_ivar(VALUE obj)
 
     if (rb_gen_ivtbl_get(obj, 0, &ivtbl)) {
 
-#if !USE_SHAPE_CACHE_P
+#if !USE_WIDE_SHAPE
         rb_gc_mark((VALUE)rb_shape_get_shape_by_id(ivtbl->shape_id));
 #endif
 	gen_ivtbl_mark(ivtbl);
@@ -1198,7 +1198,7 @@ rb_generic_ivar_memsize(VALUE obj)
     return 0;
 }
 
-#if !USE_SHAPE_CACHE_P
+#if !USE_WIDE_SHAPE
 MJIT_FUNC_EXPORTED shape_id_t
 rb_generic_shape_id(VALUE obj)
 {
@@ -1622,7 +1622,7 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
         return false;
     }
 
-#if USE_SHAPE_CACHE_P
+#if USE_WIDE_SHAPE
     RBASIC_SET_SHAPE_ID(obj, shape_id);
 #else
     switch (BUILTIN_TYPE(obj)) {

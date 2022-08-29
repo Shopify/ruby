@@ -11,7 +11,7 @@
 /* per-object */
 
 struct gen_ivtbl {
-#if !USE_SHAPE_CACHE_P
+#if !USE_WIDE_SHAPE
     uint16_t shape_id;
 #endif
     uint32_t numiv;

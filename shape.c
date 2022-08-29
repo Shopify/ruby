@@ -58,7 +58,7 @@ shape_set_shape_id(rb_shape_t *shape, shape_id_t id) {
     return (shape_id_t)(shape->flags = (flags | ((VALUE)id << SHAPE_BITS)));
 }
 
-#if !USE_SHAPE_CACHE_P
+#if !USE_WIDE_SHAPE
 static inline shape_id_t
 RCLASS_SHAPE_ID(VALUE obj)
 {
@@ -75,7 +75,7 @@ rb_shape_get_shape_id(VALUE obj)
         return SHAPE_ID(rb_shape_get_frozen_root_shape());
     }
 
-#if USE_SHAPE_CACHE_P
+#if USE_WIDE_SHAPE
     return RBASIC_SHAPE_ID(obj);
 #else
     switch (BUILTIN_TYPE(obj)) {

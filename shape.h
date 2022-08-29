@@ -1,6 +1,6 @@
 #ifndef RUBY_SHAPE_H
 #define RUBY_SHAPE_H
-#define USE_SHAPE_CACHE_P (SIZEOF_UINT64_T == SIZEOF_VALUE)
+#define USE_WIDE_SHAPE (SIZEOF_UINT64_T == SIZEOF_VALUE)
 
 #if RUBY_DEBUG
 typedef uint16_t shape_id_t;
@@ -50,7 +50,7 @@ IMEMO_SET_CACHED_SHAPE_ID(VALUE cc, shape_id_t shape_id)
     RBASIC(cc)->flags |= ((VALUE)(shape_id) << SHAPE_FLAG_SHIFT);
 }
 
-#if USE_SHAPE_CACHE_P
+#if USE_WIDE_SHAPE
 typedef uint32_t attr_index_t;
 
 static inline shape_id_t
