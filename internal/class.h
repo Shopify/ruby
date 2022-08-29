@@ -14,6 +14,7 @@
 #include "ruby/internal/stdbool.h"     /* for bool */
 #include "ruby/intern.h"        /* for rb_alloc_func_t */
 #include "ruby/ruby.h"          /* for struct RBasic */
+#include "shape.h"
 
 #ifdef RCLASS_SUPER
 # undef RCLASS_SUPER
@@ -27,8 +28,8 @@ struct rb_subclass_entry {
 
 struct rb_iv_index_tbl_entry {
     uint32_t idx;
-    uint16_t source_shape_id;
-    uint16_t dest_shape_id;
+    shape_id_t source_shape_id;
+    shape_id_t dest_shape_id;
 };
 
 struct rb_cvar_class_tbl_entry {

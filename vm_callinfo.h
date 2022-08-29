@@ -498,16 +498,16 @@ vm_cc_attr_index_set(const struct rb_callcache *cc, int index, shape_id_t source
 static inline void
 vm_ic_attr_index_set(const rb_iseq_t *iseq, const struct iseq_inline_iv_cache_entry *ic, int index, shape_id_t source_shape_id, shape_id_t dest_shape_id)
 {
-    *(uint16_t *)&ic->source_shape_id = source_shape_id;
-    *(uint16_t *)&ic->dest_shape_id = dest_shape_id;
+    *(shape_id_t *)&ic->source_shape_id = source_shape_id;
+    *(shape_id_t *)&ic->dest_shape_id = dest_shape_id;
     *(uint32_t *)&ic->attr_index = index + 1;
 }
 
 static inline void
 vm_ic_attr_index_initialize(const struct iseq_inline_iv_cache_entry *ic, shape_id_t shape_id)
 {
-    *(uint16_t *)&ic->source_shape_id = shape_id;
-    *(uint16_t *)&ic->dest_shape_id = shape_id;
+    *(shape_id_t *)&ic->source_shape_id = shape_id;
+    *(shape_id_t *)&ic->dest_shape_id = shape_id;
     *(uint32_t *)&ic->attr_index = 0;
 }
 
