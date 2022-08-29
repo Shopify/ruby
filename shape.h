@@ -14,6 +14,7 @@ typedef uint32_t shape_id_t;
 
 # define SHAPE_FLAG_SHIFT ((SIZEOF_VALUE * 8) - SHAPE_BITS)
 # define SHAPE_FLAG_MASK (((VALUE)-1) >> SHAPE_BITS)
+# define SHAPE_BITMAP_SIZE 16384
 
 # define MAX_SHAPE_ID (SHAPE_MASK - 1)
 # define INVALID_SHAPE_ID SHAPE_MASK

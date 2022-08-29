@@ -112,7 +112,7 @@ get_next_shape_id(void)
      * Speedup for getting next shape_id by using bitmaps
      * TODO: Can further optimize here by nesting more bitmaps
      */
-    for (int i = 0; i < 2048; i++) {
+    for (int i = 0; i < SHAPE_BITMAP_SIZE; i++) {
         uint32_t cur_bitmap = vm->shape_bitmaps[i];
         if (~cur_bitmap) {
             uint32_t copied_curbitmap = ~cur_bitmap;
