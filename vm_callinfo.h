@@ -314,7 +314,7 @@ vm_cc_attr_index_initialize(const struct rb_callcache *cc, shape_id_t shape_id)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    ROBJECT_SET_SHAPE_ID((VALUE)cc, shape_id);
+    IMEMO_SET_CACHED_SHAPE_ID((VALUE)cc, shape_id);
     *(unsigned int *)&cc->aux_.as.split.attr_index = 0;
     *(shape_id_t *)&cc->aux_.as.split.dest_shape_id = shape_id;
 }
@@ -396,7 +396,7 @@ vm_cc_attr_index_source_shape_id(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
 
-    return ROBJECT_SHAPE_ID((VALUE)cc);
+    return IMEMO_CACHED_SHAPE_ID((VALUE)cc);
 }
 
 static inline uint16_t
@@ -490,7 +490,7 @@ vm_cc_attr_index_set(const struct rb_callcache *cc, int index, shape_id_t source
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    ROBJECT_SET_SHAPE_ID((VALUE)cc, source_shape_id);
+    IMEMO_SET_CACHED_SHAPE_ID((VALUE)cc, source_shape_id);
     *(unsigned int *)&cc->aux_.as.split.attr_index = (index + 1);
     *(shape_id_t *)&cc->aux_.as.split.dest_shape_id = dest_shape_id;
 }

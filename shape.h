@@ -33,6 +33,23 @@ struct rb_shape {
 typedef struct rb_shape rb_shape_t;
 
 
+shape_id_t rb_generic_shape_id(VALUE obj);
+
+static inline shape_id_t
+IMEMO_CACHED_SHAPE_ID(VALUE cc)
+{
+    RBIMPL_ASSERT_TYPE((VALUE)cc, RUBY_T_IMEMO);
+    return (shape_id_t)(SHAPE_MASK & (RBASIC(cc)->flags >> SHAPE_FLAG_SHIFT));
+}
+
+static inline void
+IMEMO_SET_CACHED_SHAPE_ID(VALUE cc, shape_id_t shape_id)
+{
+    RBIMPL_ASSERT_TYPE((VALUE)cc, RUBY_T_IMEMO);
+    RBASIC(cc)->flags &= SHAPE_FLAG_MASK;
+    RBASIC(cc)->flags |= ((VALUE)(shape_id) << SHAPE_FLAG_SHIFT);
+}
+
 #if USE_SHAPE_CACHE_P
 static inline shape_id_t
 RBASIC_SHAPE_ID(VALUE obj)
@@ -47,7 +64,7 @@ RBASIC_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
     // Ractors are occupying the upper 32 bits of flags, but only in debug mode
     // Object shapes are occupying top bits
     RBASIC(obj)->flags &= SHAPE_FLAG_MASK;
-    RBASIC(obj)->flags |= ((uint64_t)(shape_id) << SHAPE_FLAG_SHIFT);
+    RBASIC(obj)->flags |= ((VALUE)(shape_id) << SHAPE_FLAG_SHIFT);
 }
 
 static inline shape_id_t
@@ -77,7 +94,7 @@ static inline void
 ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
 {
     RBASIC(obj)->flags &= SHAPE_FLAG_MASK;
-    RBASIC(obj)->flags |= ((uint32_t)(shape_id) << SHAPE_FLAG_SHIFT);
+    RBASIC(obj)->flags |= ((VALUE)(shape_id) << SHAPE_FLAG_SHIFT);
 }
 #endif
 
