@@ -51,6 +51,8 @@ IMEMO_SET_CACHED_SHAPE_ID(VALUE cc, shape_id_t shape_id)
 }
 
 #if USE_SHAPE_CACHE_P
+typedef uint32_t attr_index_t;
+
 static inline shape_id_t
 RBASIC_SHAPE_ID(VALUE obj)
 {
@@ -81,6 +83,8 @@ ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
     RBASIC_SET_SHAPE_ID(obj, shape_id);
 }
 #else
+typedef uint16_t attr_index_t;
+
 shape_id_t rb_generic_shape_id(VALUE obj);
 
 static inline shape_id_t

@@ -3372,7 +3372,7 @@ vm_call_alias(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_cal
 {
     calling->cc = &VM_CC_ON_STACK(Qundef,
                                   vm_call_general,
-                                  { 0 },
+                                  {{0}},
                                   aliased_callable_method_entry(vm_cc_cme(calling->cc)));
 
     return vm_call_method_each_type(ec, cfp, calling);
@@ -3542,7 +3542,7 @@ vm_call_method_missing_body(rb_execution_context_t *ec, rb_control_frame_t *reg_
 
     ec->method_missing_reason = reason;
     calling->ci = &VM_CI_ON_STACK(idMethodMissing, flag, argc, vm_ci_kwarg(orig_ci));
-    calling->cc = &VM_CC_ON_STACK(Qundef, vm_call_general, { 0 },
+    calling->cc = &VM_CC_ON_STACK(Qundef, vm_call_general, {{ 0 }},
                                   rb_callable_method_entry_without_refinements(CLASS_OF(calling->recv), idMethodMissing, NULL));
     return vm_call_method(ec, reg_cfp, calling);
 }
@@ -3568,7 +3568,7 @@ vm_call_zsuper(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_ca
         cme = refined_method_callable_without_refinement(cme);
     }
 
-    calling->cc = &VM_CC_ON_STACK(Qundef, vm_call_general, { 0 }, cme);
+    calling->cc = &VM_CC_ON_STACK(Qundef, vm_call_general, {{ 0 }}, cme);
 
     return vm_call_method_each_type(ec, cfp, calling);
 }
@@ -3675,7 +3675,7 @@ search_refined_method(rb_execution_context_t *ec, rb_control_frame_t *cfp, struc
 static VALUE
 vm_call_refined(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling)
 {
-    struct rb_callcache *ref_cc =  &VM_CC_ON_STACK(Qundef, vm_call_general, { 0 },
+    struct rb_callcache *ref_cc =  &VM_CC_ON_STACK(Qundef, vm_call_general, {{ 0 }},
                                                    search_refined_method(ec, cfp, calling));
 
     if (vm_cc_cme(ref_cc)) {
@@ -3864,7 +3864,6 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
                                 vm_call_attrset_direct(ec, cfp, cc, calling->recv),
                                 CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
         } else {
-#if USE_SHAPE_CACHE_P
             cc = &((struct rb_callcache) {
                 .flags = T_IMEMO |
                     (imemo_callcache << FL_USHIFT) |
@@ -3875,15 +3874,13 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
                     .cme_  = cc->cme_,
                     .call_ = cc->call_,
                     .aux_  = {
-                        .as.split = {
-                            .attr_index = 0,
+                        .attr = {
+                            .index = 0,
                             .dest_shape_id = INVALID_SHAPE_ID,
                         }
                     },
             });
-#else
-            cc = &VM_CC_ON_STACK(cc->klass, cc->call_, { .attr_index = 0 }, cc->cme_);
-#endif
+
             VM_CALL_METHOD_ATTR(v,
                                 vm_call_attrset_direct(ec, cfp, cc, calling->recv),
                                 CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));

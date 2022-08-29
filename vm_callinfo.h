@@ -286,16 +286,10 @@ struct rb_callcache {
     const vm_call_handler call_;
 
     union {
-        union {
-          struct {
-#if USE_SHAPE_CACHE_P
-            uint32_t attr_index;
-#else
-            uint16_t attr_index;
-#endif
-            shape_id_t dest_shape_id;
-          } split;
-        } as;
+        struct {
+          const attr_index_t index;
+          shape_id_t dest_shape_id;
+        } attr;
         const enum method_missing_reason method_missing_reason; /* used by method_missing */
         VALUE v;
     } aux_;
@@ -315,8 +309,8 @@ vm_cc_attr_index_initialize(const struct rb_callcache *cc, shape_id_t shape_id)
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
     IMEMO_SET_CACHED_SHAPE_ID((VALUE)cc, shape_id);
-    *(unsigned int *)&cc->aux_.as.split.attr_index = 0;
-    *(shape_id_t *)&cc->aux_.as.split.dest_shape_id = shape_id;
+    *(unsigned int *)&cc->aux_.attr.index = 0;
+    *(shape_id_t *)&cc->aux_.attr.dest_shape_id = shape_id;
 }
 
 static inline const struct rb_callcache *
@@ -381,14 +375,14 @@ static inline unsigned int
 vm_cc_attr_index(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    return (int)(cc->aux_.as.split.attr_index - 1);
+    return (int)(cc->aux_.attr.index - 1);
 }
 
 static inline bool
 vm_cc_attr_index_p(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    return cc->aux_.as.split.attr_index != 0;
+    return cc->aux_.attr.index != 0;
 }
 
 static inline uint16_t
@@ -411,7 +405,7 @@ vm_cc_attr_index_dest_shape_id(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
 
-    return cc->aux_.as.split.dest_shape_id;
+    return cc->aux_.attr.dest_shape_id;
 }
 
 static inline unsigned int
@@ -491,8 +485,8 @@ vm_cc_attr_index_set(const struct rb_callcache *cc, int index, shape_id_t source
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
     IMEMO_SET_CACHED_SHAPE_ID((VALUE)cc, source_shape_id);
-    *(unsigned int *)&cc->aux_.as.split.attr_index = (index + 1);
-    *(shape_id_t *)&cc->aux_.as.split.dest_shape_id = dest_shape_id;
+    *(unsigned int *)&cc->aux_.attr.index = (index + 1);
+    *(shape_id_t *)&cc->aux_.attr.dest_shape_id = dest_shape_id;
 }
 
 static inline void
