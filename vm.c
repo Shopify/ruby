@@ -2721,7 +2721,7 @@ rb_vm_update_references(void *ptr)
         vm->top_self = rb_gc_location(vm->top_self);
         vm->orig_progname = rb_gc_location(vm->orig_progname);
 
-        for (shape_id_t i = 0; i < MAX_SHAPE_ID; i++) {
+        for (shape_id_t i = 0; i < vm->max_shape_count; i++) {
             if (vm->shape_list[i]) {
                 vm->shape_list[i] = (rb_shape_t *)rb_gc_location((VALUE)vm->shape_list[i]);
             }
@@ -4030,6 +4030,11 @@ Init_BareVM(void)
     rb_native_cond_initialize(&vm->ractor.sync.terminate_cond);
 }
 
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/mman.h>
+#endif
+
 void
 Init_vm_objects(void)
 {
@@ -4041,7 +4046,14 @@ Init_vm_objects(void)
     vm->mark_object_ary = rb_ary_hidden_new(128);
     vm->loading_table = st_init_strtable();
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
+
+#if HAVE_MMAP
+    vm->shape_list = (rb_shape_t **)mmap(NULL, rb_size_mul_or_raise(MAX_SHAPE_ID, sizeof(rb_shape_t *), rb_eRuntimeError),
+                         PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#else
     vm->shape_list = xcalloc(MAX_SHAPE_ID, sizeof(rb_shape_t *));
+#endif
+
     for (int i = 0; i < 2048; i++) {
         vm->shape_bitmaps[i] = 0;
     }

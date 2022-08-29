@@ -522,7 +522,8 @@ static VALUE shape_transition_tree(VALUE self) {
 
 static VALUE shape_count(VALUE self) {
     int shape_count = 0;
-    for(shape_id_t i=0; i<MAX_SHAPE_ID; i++) {
+    rb_vm_t *vm = GET_VM();
+    for(shape_id_t i = 0; i < vm->max_shape_count; i++) {
         if(rb_shape_get_shape_by_id_without_assertion(i)) {
             shape_count++;
         }
