@@ -1,13 +1,13 @@
 #ifndef RUBY_SHAPE_H
 #define RUBY_SHAPE_H
-#define USE_WIDE_SHAPE ((SIZEOF_UINT64_T == SIZEOF_VALUE) && HAVE_MMAP && !VM_CHECK_MODE)
+#define USE_WIDE_SHAPE (RUBY_DEBUG || ((SIZEOF_UINT64_T == SIZEOF_VALUE) && HAVE_MMAP && !VM_CHECK_MODE))
 
-#if RUBY_DEBUG
-typedef uint16_t shape_id_t;
-# define SHAPE_BITS 16
-#else
+#if USE_WIDE_SHAPE
 typedef uint32_t shape_id_t;
 # define SHAPE_BITS 32
+#else
+typedef uint16_t shape_id_t;
+# define SHAPE_BITS 16
 #endif
 
 # define SHAPE_MASK (((VALUE)1 << SHAPE_BITS) - 1)
