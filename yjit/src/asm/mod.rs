@@ -276,7 +276,7 @@ impl CodeBlock {
         self.mem_block.mark_all_executable();
     }
 
-    pub fn inlined(&self) -> bool {
+    pub fn inline(&self) -> bool {
         !self.outlined
     }
 }
