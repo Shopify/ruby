@@ -2432,7 +2432,13 @@ class CSV
   #     p row
   #   end
   def each(&block)
-    parser_enumerator.each(&block)
+    return to_enum(__method__) unless block_given?
+    begin
+      while true
+        yield(parser_enumerator.next)
+      end
+    rescue StopIteration
+    end
   end
 
   # :call-seq:
@@ -2467,14 +2473,7 @@ class CSV
   #   # Raises IOError (not opened for reading)
   #   csv.read
   def read
-    rows = []
-    enumerator = parser_enumerator
-    begin
-      while true
-        rows << enumerator.next
-      end
-    rescue StopIteration
-    end
+    rows = to_a
     if parser.use_headers?
       Table.new(rows, headers: parser.headers)
     else
