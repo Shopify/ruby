@@ -407,6 +407,7 @@ rb_transient_heap_alloc(VALUE obj, size_t req_size)
             header->magic = TRANSIENT_HEAP_ALLOC_MAGIC;
             header->next_marked_index = TRANSIENT_HEAP_ALLOC_MARKING_FREE;
             header->obj = obj; /* TODO: can we eliminate it? */
+            // fprintf(stderr, "transient heap: %ld\n", obj);
 
             /* header is fixed; shall poison again */
             asan_poison_memory_region(header, sizeof *header);
@@ -728,6 +729,7 @@ transient_heap_block_evacuate(struct transient_heap* theap, struct transient_hea
 
             switch (BUILTIN_TYPE(obj)) {
               case T_ARRAY:
+              case T_MOVED: // FIXME: this is a terrible hack
                 rb_ary_transient_heap_evacuate(obj, !TRANSIENT_HEAP_DEBUG_DONT_PROMOTE);
                 break;
               case T_OBJECT:
@@ -739,6 +741,8 @@ transient_heap_block_evacuate(struct transient_heap* theap, struct transient_hea
               case T_HASH:
                 rb_hash_transient_heap_evacuate(obj, !TRANSIENT_HEAP_DEBUG_DONT_PROMOTE);
                 break;
+            //   case T_NONE: // FIXME: couldn't debug this bug
+                // break;
               default:
                 rb_bug("unsupported: %s\n", rb_obj_info(obj));
             }

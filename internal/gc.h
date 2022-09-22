@@ -119,6 +119,7 @@ const char *rb_objspace_data_type_name(VALUE obj);
 VALUE rb_wb_protected_newobj_of(VALUE, VALUE, size_t);
 VALUE rb_wb_unprotected_newobj_of(VALUE, VALUE, size_t);
 VALUE rb_ec_wb_protected_newobj_of(struct rb_execution_context_struct *ec, VALUE klass, VALUE flags, size_t);
+VALUE rb_gc_realloc_obj(VALUE obj, size_t size);
 size_t rb_obj_memsize_of(VALUE);
 void rb_gc_verify_internal_consistency(void);
 size_t rb_obj_gc_flags(VALUE, ID[], size_t);

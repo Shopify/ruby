@@ -33,6 +33,7 @@
 #include "ruby/internal/stdbool.h"
 #include "ruby/internal/value.h"
 #include "ruby/internal/value_type.h"
+#include "ruby/internal/gc.h"
 #include "ruby/assert.h"
 
 /**
@@ -53,7 +54,8 @@
  * @param   obj  An object, which is in fact an ::RArray.
  * @return  The passed object casted to ::RArray.
  */
-#define RARRAY(obj)            RBIMPL_CAST((struct RArray *)(obj))
+#define RARRAY_REALIZE_MOVED_OBJ(obj) (rb_gc_realize_moved_obj(obj))
+#define RARRAY(obj)            RBIMPL_CAST((struct RArray *)(RARRAY_REALIZE_MOVED_OBJ(obj)))
 /** @cond INTERNAL_MACRO */
 #define RARRAY_EMBED_FLAG      RARRAY_EMBED_FLAG
 #define RARRAY_EMBED_LEN_MASK  RARRAY_EMBED_LEN_MASK
@@ -299,7 +301,7 @@ RARRAY_EMBED_LEN(VALUE ary)
     RBIMPL_ASSERT_TYPE(ary, RUBY_T_ARRAY);
     RBIMPL_ASSERT_OR_ASSUME(RB_FL_ANY_RAW(ary, RARRAY_EMBED_FLAG));
 
-    VALUE f = RBASIC(ary)->flags;
+    VALUE f = RARRAY(ary)->basic.flags;
     f &= RARRAY_EMBED_LEN_MASK;
     f >>= RARRAY_EMBED_LEN_SHIFT;
     return RBIMPL_CAST((long)f);
@@ -316,13 +318,15 @@ RBIMPL_ATTR_PURE_UNLESS_DEBUG()
 static inline long
 rb_array_len(VALUE a)
 {
+    a = RARRAY_REALIZE_MOVED_OBJ(a);
+
     RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY);
 
     if (RB_FL_ANY_RAW(a, RARRAY_EMBED_FLAG)) {
         return RARRAY_EMBED_LEN(a);
     }
     else {
-        return RARRAY(a)->as.heap.len;
+        return ((struct RArray *)a)->as.heap.len;
     }
 }
 
@@ -363,6 +367,8 @@ RBIMPL_ATTR_ARTIFICIAL()
 static inline bool
 RARRAY_TRANSIENT_P(VALUE ary)
 {
+    ary = RARRAY_REALIZE_MOVED_OBJ(ary);
+
     RBIMPL_ASSERT_TYPE(ary, RUBY_T_ARRAY);
 
 #if USE_TRANSIENT_HEAP
@@ -385,13 +391,15 @@ RBIMPL_ATTR_PURE_UNLESS_DEBUG()
 static inline const VALUE *
 rb_array_const_ptr_transient(VALUE a)
 {
+    a = RARRAY_REALIZE_MOVED_OBJ(a);
+
     RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY);
 
     if (RB_FL_ANY_RAW(a, RARRAY_EMBED_FLAG)) {
-        return FIX_CONST_VALUE_PTR(RARRAY(a)->as.ary);
+        return FIX_CONST_VALUE_PTR(((struct RArray *)a)->as.ary);
     }
     else {
-        return FIX_CONST_VALUE_PTR(RARRAY(a)->as.heap.ptr);
+        return FIX_CONST_VALUE_PTR(((struct RArray *)a)->as.heap.ptr);
     }
 }
 
@@ -411,7 +419,7 @@ RBIMPL_ATTR_PURE_UNLESS_DEBUG()
 static inline const VALUE *
 rb_array_const_ptr(VALUE a)
 {
-    RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY);
+    // RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY); // FIXME
 
 #if USE_TRANSIENT_HEAP
     if (RARRAY_TRANSIENT_P(a)) {
@@ -475,8 +483,8 @@ rb_array_ptr_use_end(VALUE a,
  * directly.
  */
 #define RBIMPL_RARRAY_STMT(flag, ary, var, expr) do {        \
-    RBIMPL_ASSERT_TYPE((ary), RUBY_T_ARRAY);                 \
-    const VALUE rbimpl_ary = (ary);                          \
+    const VALUE rbimpl_ary = RARRAY_REALIZE_MOVED_OBJ(ary);  \
+    RBIMPL_ASSERT_TYPE((rbimpl_ary), RUBY_T_ARRAY);                 \
     VALUE *var = rb_array_ptr_use_start(rbimpl_ary, (flag)); \
     expr;                                                   \
     rb_array_ptr_use_end(rbimpl_ary, (flag));                \
@@ -565,6 +573,7 @@ RARRAY_PTR(VALUE ary)
 static inline void
 RARRAY_ASET(VALUE ary, long i, VALUE v)
 {
+    ary = RARRAY_REALIZE_MOVED_OBJ(ary);
     RARRAY_PTR_USE_TRANSIENT(ary, ptr,
         RB_OBJ_WRITE(ary, &ptr[i], v));
 }

@@ -92,24 +92,24 @@ should_be_T_ARRAY(VALUE ary)
 #define ARY_EMBED_PTR(a) (assert(ARY_EMBED_P(a)), RARRAY(a)->as.ary)
 #define ARY_EMBED_LEN(a) \
     (assert(ARY_EMBED_P(a)), \
-     (long)((RBASIC(a)->flags >> RARRAY_EMBED_LEN_SHIFT) & \
+     (long)((RARRAY(a)->basic.flags >> RARRAY_EMBED_LEN_SHIFT) & \
          (RARRAY_EMBED_LEN_MASK >> RARRAY_EMBED_LEN_SHIFT)))
 #define ARY_HEAP_SIZE(a) (assert(!ARY_EMBED_P(a)), assert(ARY_OWNS_HEAP_P(a)), ARY_CAPA(a) * sizeof(VALUE))
 
 #define ARY_OWNS_HEAP_P(a) (assert(should_be_T_ARRAY((VALUE)(a))), \
-                            !FL_TEST_RAW((a), RARRAY_SHARED_FLAG|RARRAY_EMBED_FLAG))
+                            !FL_TEST_RAW(RARRAY_REALIZE_MOVED_OBJ(a), RARRAY_SHARED_FLAG|RARRAY_EMBED_FLAG))
 
 #define FL_SET_EMBED(a) do { \
     assert(!ARY_SHARED_P(a)); \
-    FL_SET((a), RARRAY_EMBED_FLAG); \
+    FL_SET(RARRAY_REALIZE_MOVED_OBJ(a), RARRAY_EMBED_FLAG); \
     RARY_TRANSIENT_UNSET(a); \
     ary_verify(a); \
 } while (0)
 
-#define FL_UNSET_EMBED(ary) FL_UNSET((ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK)
+#define FL_UNSET_EMBED(ary) FL_UNSET(RARRAY_REALIZE_MOVED_OBJ(ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK)
 #define FL_SET_SHARED(ary) do { \
     assert(!ARY_EMBED_P(ary)); \
-    FL_SET((ary), RARRAY_SHARED_FLAG); \
+    FL_SET(RARRAY_REALIZE_MOVED_OBJ(ary), RARRAY_SHARED_FLAG); \
 } while (0)
 #define FL_UNSET_SHARED(ary) FL_UNSET((ary), RARRAY_SHARED_FLAG)
 
@@ -121,8 +121,8 @@ should_be_T_ARRAY(VALUE ary)
 #define ARY_SET_EMBED_LEN(ary, n) do { \
     long tmp_n = (n); \
     assert(ARY_EMBED_P(ary)); \
-    RBASIC(ary)->flags &= ~RARRAY_EMBED_LEN_MASK; \
-    RBASIC(ary)->flags |= (tmp_n) << RARRAY_EMBED_LEN_SHIFT; \
+    RARRAY(ary)->basic.flags &= ~RARRAY_EMBED_LEN_MASK; \
+    RARRAY(ary)->basic.flags |= (tmp_n) << RARRAY_EMBED_LEN_SHIFT; \
 } while (0)
 #define ARY_SET_HEAP_LEN(ary, n) do { \
     assert(!ARY_EMBED_P(ary)); \
@@ -182,7 +182,7 @@ should_be_T_ARRAY(VALUE ary)
     assert(!OBJ_FROZEN(ary)); \
     assert(!ARY_EMBED_P(ary)); \
     assert(!RARRAY_TRANSIENT_P(ary)); \
-    FL_SET((ary), RARRAY_SHARED_ROOT_FLAG); \
+    FL_SET(RARRAY_REALIZE_MOVED_OBJ(ary), RARRAY_SHARED_ROOT_FLAG); \
 } while (0)
 
 static inline void
@@ -198,6 +198,7 @@ ARY_SET(VALUE a, long i, VALUE v)
 static long
 ary_embed_capa(VALUE ary)
 {
+    ary = RARRAY_REALIZE_MOVED_OBJ(ary);
 #if USE_RVARGC
     size_t size = rb_gc_obj_slot_size(ary) - offsetof(struct RArray, as.ary);
     assert(size % sizeof(VALUE) == 0);
@@ -454,6 +455,8 @@ static inline void
 rb_ary_transient_heap_evacuate_(VALUE ary, int transient, int promote)
 {
     if (transient) {
+        ary = RARRAY_REALIZE_MOVED_OBJ(ary);
+
         assert(!ARY_SHARED_ROOT_P(ary));
 
         VALUE *new_ptr;
@@ -524,21 +527,32 @@ ary_resize_capa(VALUE ary, long capacity)
     assert(!OBJ_FROZEN(ary));
     assert(!ARY_SHARED_P(ary));
 
+    // fprintf(stderr, "ary_resize_capa: %ld (new capa: %ld)\n", ary, capacity);
+
     if (capacity > ary_embed_capa(ary)) {
         size_t new_capa = capacity;
-        if (ARY_EMBED_P(ary)) {
-            long len = ARY_EMBED_LEN(ary);
-            VALUE *ptr = ary_heap_alloc(ary, capacity);
 
-            MEMCPY(ptr, ARY_EMBED_PTR(ary), VALUE, len);
-            FL_UNSET_EMBED(ary);
-            ARY_SET_PTR(ary, ptr);
-            ARY_SET_HEAP_LEN(ary, len);
+        if (ARY_EMBED_P(ary)) {
+            VALUE new_ary = rb_gc_realloc_obj(ary, ary_embed_size(capacity));
+            if (new_ary) {
+                ary = new_ary;
+                // fprintf(stderr, "  new_ary: %ld (len: %ld, capa: %ld)\n", new_ary, RARRAY_LEN(new_ary), ARY_CAPA(new_ary));
+            }
+            else { // GC could not allocate new size
+                long len = ARY_EMBED_LEN(ary);
+                VALUE *ptr = ary_heap_alloc(ary, capacity);
+
+                MEMCPY(ptr, ARY_EMBED_PTR(ary), VALUE, len);
+                FL_UNSET_EMBED(ary);
+                ARY_SET_PTR(ary, ptr);
+                ARY_SET_HEAP_LEN(ary, len);
+                ARY_SET_CAPA(ary, new_capa);
+            }
         }
         else {
             new_capa = ary_heap_realloc(ary, capacity);
+            ARY_SET_CAPA(ary, new_capa);
         }
-        ARY_SET_CAPA(ary, new_capa);
     }
     else {
         if (!ARY_EMBED_P(ary)) {
@@ -1110,6 +1124,7 @@ rb_assoc_new(VALUE car, VALUE cdr)
 VALUE
 rb_to_array_type(VALUE ary)
 {
+    ary = RARRAY_REALIZE_MOVED_OBJ(ary);
     return rb_convert_type_with_id(ary, T_ARRAY, "Array", idTo_ary);
 }
 #define to_ary rb_to_array_type
@@ -1117,18 +1132,21 @@ rb_to_array_type(VALUE ary)
 VALUE
 rb_check_array_type(VALUE ary)
 {
+    ary = RARRAY_REALIZE_MOVED_OBJ(ary);
     return rb_check_convert_type_with_id(ary, T_ARRAY, "Array", idTo_ary);
 }
 
 MJIT_FUNC_EXPORTED VALUE
 rb_check_to_array(VALUE ary)
 {
+    ary = RARRAY_REALIZE_MOVED_OBJ(ary);
     return rb_check_convert_type_with_id(ary, T_ARRAY, "Array", idTo_a);
 }
 
 VALUE
 rb_to_array(VALUE ary)
 {
+    ary = RARRAY_REALIZE_MOVED_OBJ(ary);
     return rb_convert_type_with_id(ary, T_ARRAY, "Array", idTo_a);
 }
 
@@ -1472,7 +1490,7 @@ VALUE
 rb_ary_push(VALUE ary, VALUE item)
 {
     long idx = RARRAY_LEN((ary_verify(ary), ary));
-    VALUE target_ary = ary_ensure_room_for_push(ary, 1);
+    VALUE target_ary = RARRAY_REALIZE_MOVED_OBJ(ary_ensure_room_for_push(ary, 1));
     RARRAY_PTR_USE_TRANSIENT(ary, ptr, {
         RB_OBJ_WRITE(target_ary, &ptr[idx], item);
     });
@@ -4726,6 +4744,12 @@ rb_ary_transpose(VALUE ary)
 VALUE
 rb_ary_replace(VALUE copy, VALUE orig)
 {
+    // When called from Object#dup, duplicated array could be T_MOVED with no fields copied
+    // if (BUILTIN_TYPE(ary) == T_MOVED && RARRAY_REALIZE_MOVED_OBJ(ary) == 0) {
+
+    //     FL_SET_EMBED(ary);
+    //     ARY_SET_EMBED_LEN(ary, 0);
+    // }
     rb_ary_modify_check(copy);
     orig = to_ary(orig);
     if (copy == orig) return copy;

@@ -49,6 +49,7 @@ static rb_control_frame_t *vm_get_ruby_level_caller_cfp(const rb_execution_conte
 MJIT_STATIC VALUE
 ruby_vm_special_exception_copy(VALUE exc)
 {
+    rb_bug("ruby_vm_special_exception_copy: check me");
     VALUE e = rb_obj_alloc(rb_class_real(RBASIC_CLASS(exc)));
     rb_obj_copy_ivar(e, exc);
     return e;

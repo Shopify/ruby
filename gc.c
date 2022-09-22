@@ -1959,6 +1959,8 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
 
     asan_unlock_freelist(page);
 
+    fprintf(stderr, "heap_page_add_freeobj: %ld\n", obj);
+
     p->as.free.flags = 0;
     p->as.free.next = page->freelist;
     page->freelist = p;
@@ -2476,6 +2478,8 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
     rb_ractor_setup_belonging(obj);
 #endif
 
+    fprintf(stderr, "newobj_init: %ld (TYPE: %u)\n", obj, BUILTIN_TYPE(obj));
+
 #if RGENGC_CHECK_MODE
     p->as.values.v1 = p->as.values.v2 = p->as.values.v3 = 0;
 
@@ -2748,6 +2752,8 @@ newobj_alloc(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size_pool_idx, boo
         }
     }
 
+    fprintf(stderr, "newobj_alloc: %ld\n", obj);
+
     return obj;
 }
 
@@ -2881,6 +2887,102 @@ VALUE
 rb_newobj(void)
 {
     return newobj_of(0, T_NONE, 0, 0, 0, FALSE, sizeof(RVALUE));
+}
+
+static void
+update_id_table_for_moved_obj(rb_objspace_t *objspace, VALUE src, VALUE dest)
+{
+    if (FL_TEST((VALUE)src, FL_EXIVAR)) {
+        /* Same deal as below. Generic ivars are held in st tables.
+         * Resizing the table could cause a GC to happen and we can't allow it */
+        VALUE already_disabled = rb_gc_disable_no_rest();
+        rb_mv_generic_ivar((VALUE)src, (VALUE)dest);
+        if (already_disabled == Qfalse) rb_objspace_gc_enable(objspace);
+    }
+
+    st_data_t id;
+    st_data_t srcid = (st_data_t)src;
+
+    /* If the source object's object_id has been seen, we need to update
+     * the object to object id mapping. */
+    if (st_lookup(objspace->obj_to_id_tbl, srcid, &id)) {
+        gc_report(4, objspace, "Moving object with seen id: %p -> %p\n", (void *)src, (void *)dest);
+        /* inserting in the st table can cause the GC to run. We need to
+         * prevent re-entry in to the GC since `gc_move` is running in the GC,
+         * so temporarily disable the GC around the st table mutation */
+        VALUE already_disabled = rb_gc_disable_no_rest();
+        st_delete(objspace->obj_to_id_tbl, &srcid, 0);
+        st_insert(objspace->obj_to_id_tbl, (st_data_t)dest, id);
+        if (already_disabled == Qfalse) rb_objspace_gc_enable(objspace);
+    }
+}
+
+VALUE
+rb_gc_realloc_obj(VALUE obj, size_t size)
+{
+    rb_objspace_t *objspace = &rb_objspace;
+
+    fprintf(stderr, "rb_gc_realloc_obj: %ld -> %ld\n", obj, rb_gc_realize_moved_obj(obj));
+
+    obj = rb_gc_realize_moved_obj(obj);
+    VALUE new_obj = 0;
+
+    if (rb_gc_size_allocatable_p(size)) {
+        // Create new resized object
+        VALUE klass = RBASIC(obj)->klass;
+        VALUE flags = RBASIC(obj)->flags;
+        bool wb_protected = !MARKED_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
+        bool old = RVALUE_OLD_P(obj);
+
+        new_obj = newobj_of0(klass, flags, wb_protected, GET_RACTOR(), size);
+
+        fprintf(stderr, "rb_gc_realloc_obj: %ld -> %ld\n", obj, new_obj);
+
+        // Copy contents to new object
+        size_t obj_size = rb_gc_obj_slot_size(obj);
+        size_t copy_size = obj_size < size ? obj_size : size;
+        GC_ASSERT(copy_size >= sizeof(struct RBasic));
+        copy_size -= sizeof(struct RBasic);
+
+        memcpy((void *)(new_obj + sizeof(struct RBasic)), (void *)(obj + sizeof(struct RBasic)), copy_size);
+
+        // Change original object to T_MOVED
+        RMOVED(obj)->flags = T_MOVED;
+        // RMOVED(obj)->dummy = Qundef;
+        RMOVED(obj)->destination = new_obj;
+        // RB_OBJ_WRITE(obj, &RMOVED(obj)->destination)
+
+        if (old) {
+            RVALUE_AGE_SET_OLD(objspace, obj);
+            RVALUE_OLD_UNCOLLECTIBLE_SET(objspace, new_obj);
+        }
+
+        update_id_table_for_moved_obj(objspace, obj, new_obj);
+    }
+
+    return new_obj;
+}
+
+VALUE
+rb_gc_realize_moved_obj(VALUE obj)
+{
+    if (SPECIAL_CONST_P(obj)) return obj;
+
+    bool is_t_moved = BUILTIN_TYPE(obj) == T_MOVED;
+
+    if (is_t_moved) fprintf(stderr, "rb_gc_realize_moved_obj: (%ld) %s\n", obj, obj_info(obj));
+
+    while (BUILTIN_TYPE(obj) == T_MOVED) {
+        obj = RMOVED(obj)->destination;
+        fprintf(stderr, "   -> (%ld) %s\n", obj, obj_info(obj));
+    }
+
+    // DEBUG
+    if (is_t_moved && BUILTIN_TYPE(obj) != T_ARRAY) {
+        rb_bug("wrong type");
+    }
+
+    return obj;
 }
 
 static size_t
@@ -3390,6 +3492,7 @@ obj_free_object_id(rb_objspace_t *objspace, VALUE obj)
 static int
 obj_free(rb_objspace_t *objspace, VALUE obj)
 {
+    fprintf(stderr, "obj_free: %ld\n", obj);
     RB_DEBUG_COUNTER_INC(obj_free);
     // RUBY_DEBUG_LOG("obj:%p (%s)", (void *)obj, obj_type_name(obj));
 
@@ -4581,7 +4684,7 @@ is_live_object(rb_objspace_t *objspace, VALUE ptr)
 {
     switch (BUILTIN_TYPE(ptr)) {
       case T_NONE:
-      case T_MOVED:
+    //   case T_MOVED:
       case T_ZOMBIE:
         return FALSE;
       default:
@@ -5497,6 +5600,7 @@ static void gc_mode_transition(rb_objspace_t *objspace, enum gc_mode mode);
 static void
 gc_compact_finish(rb_objspace_t *objspace)
 {
+    rb_bug("gc_compact_finish");
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
         rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
@@ -5574,6 +5678,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     break;
 
                 case T_MOVED:
+                    break; // TODO: don't sweep T_MOVED for now
                     if (objspace->flags.during_compacting) {
                         /* The sweep cursor shouldn't have made it to any
                          * T_MOVED slots while the compact flag is enabled.
@@ -6055,6 +6160,7 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_size_pool_t *sweep_size_pool, rb_h
 static void
 invalidate_moved_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p, bits_t bitset)
 {
+    rb_bug("invalidate_moved_plane");
     if (bitset) {
         do {
             if (bitset & 1) {
@@ -6118,6 +6224,7 @@ invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page)
 static void
 gc_compact_start(rb_objspace_t *objspace)
 {
+    rb_bug("compaction not supported");
     struct heap_page *page = NULL;
     gc_mode_transition(objspace, gc_mode_compacting);
 
@@ -6323,6 +6430,7 @@ push_mark_stack(mark_stack_t *stack, VALUE data)
       case T_SYMBOL:
       case T_IMEMO:
       case T_ICLASS:
+      case T_MOVED:
         if (stack->index == stack->limit) {
             push_mark_stack_chunk(stack);
         }
@@ -6332,7 +6440,6 @@ push_mark_stack(mark_stack_t *stack, VALUE data)
       case T_NONE:
       case T_NIL:
       case T_FIXNUM:
-      case T_MOVED:
       case T_ZOMBIE:
       case T_UNDEF:
       case T_MASK:
@@ -7344,11 +7451,15 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
         }
         break;
 
+      case T_MOVED:
+        gc_mark(objspace, any->as.moved.destination);
+        break;
+
       default:
 #if GC_DEBUG
         rb_gcdebug_print_obj_condition((VALUE)obj);
 #endif
-        if (BUILTIN_TYPE(obj) == T_MOVED)   rb_bug("rb_gc_mark(): %p is T_MOVED", (void *)obj);
+        // if (BUILTIN_TYPE(obj) == T_MOVED)   rb_bug("rb_gc_mark(): %p is T_MOVED", (void *)obj);
         if (BUILTIN_TYPE(obj) == T_NONE)   rb_bug("rb_gc_mark(): %p is T_NONE", (void *)obj);
         if (BUILTIN_TYPE(obj) == T_ZOMBIE) rb_bug("rb_gc_mark(): %p is T_ZOMBIE", (void *)obj);
         rb_bug("rb_gc_mark(): unknown data type 0x%x(%p) %s",
@@ -9819,6 +9930,8 @@ gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj)
 static VALUE
 gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free, size_t src_slot_size, size_t slot_size)
 {
+    rb_bug("gc_move ");
+
     int marked;
     int wb_unprotected;
     int uncollectible;
@@ -10273,7 +10386,6 @@ check_id_table_move(VALUE value, void *data)
 VALUE
 rb_gc_location(VALUE value)
 {
-
     VALUE destination;
 
     if (!SPECIAL_CONST_P(value)) {
@@ -10443,6 +10555,7 @@ update_superclasses(rb_objspace_t *objspace, VALUE obj)
 static void
 gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
 {
+    rb_bug("gc_update_object_references");
     RVALUE *any = RANY(obj);
 
     gc_report(4, objspace, "update-refs: %p ->\n", (void *)obj);
@@ -10618,6 +10731,7 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
 static int
 gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t * objspace, struct heap_page *page)
 {
+    rb_bug("gc_ref_update");
     VALUE v = (VALUE)vstart;
     asan_unlock_freelist(page);
     asan_lock_freelist(page);
@@ -14108,7 +14222,7 @@ rb_raw_obj_info(char *const buff, const size_t buff_size, VALUE obj)
 #undef APPEND_F
 #undef BUFF_ARGS
 
-#if RGENGC_OBJ_INFO
+#if RGENGC_OBJ_INFO || true
 #define OBJ_INFO_BUFFERS_NUM  10
 #define OBJ_INFO_BUFFERS_SIZE 0x100
 static rb_atomic_t obj_info_buffers_index = 0;

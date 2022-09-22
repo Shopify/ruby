@@ -52,6 +52,8 @@ void rb_gc_unregister_address(VALUE *valptr);
  */
 void rb_gc_register_mark_object(VALUE object);
 
+VALUE rb_gc_realize_moved_obj(VALUE obj);
+
 RBIMPL_SYMBOL_EXPORT_END()
 
 #endif /* RBIMPL_GC_H */

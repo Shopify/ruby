@@ -378,6 +378,9 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
     VALUE clone, singleton;
     VALUE argv[2];
 
+    // TODO: do the same stuff as rb_obj_dup
+    rb_bug("mutable_obj_clone: TODO");
+
     clone = rb_obj_alloc(rb_obj_class(obj));
 
     singleton = rb_singleton_class_clone_and_attach(obj, clone);
@@ -485,7 +488,9 @@ rb_obj_dup(VALUE obj)
     if (special_object_p(obj)) {
         return obj;
     }
+    obj = rb_gc_realize_moved_obj(obj);
     dup = rb_obj_alloc(rb_obj_class(obj));
+    fprintf(stderr, "rb_obj_dup: %ld\n", dup);
     init_copy(dup, obj);
     rb_funcall(dup, id_init_dup, 1, obj);
 
@@ -2965,7 +2970,7 @@ rb_convert_type(VALUE val, int type, const char *tname, const char *method)
 
     if (TYPE(val) == type) return val;
     v = convert_type(val, tname, method, TRUE);
-    if (TYPE(v) != type) {
+    if (TYPE(v) != type && TYPE(v) != T_MOVED) {
         conversion_mismatch(val, tname, method, v);
     }
     return v;
@@ -2979,7 +2984,7 @@ rb_convert_type_with_id(VALUE val, int type, const char *tname, ID method)
 
     if (TYPE(val) == type) return val;
     v = convert_type_with_id(val, tname, method, TRUE, -1);
-    if (TYPE(v) != type) {
+    if (TYPE(v) != type && TYPE(v) != T_MOVED) {
         conversion_mismatch(val, tname, RSTRING_PTR(rb_id2str(method)), v);
     }
     return v;
@@ -2994,7 +2999,7 @@ rb_check_convert_type(VALUE val, int type, const char *tname, const char *method
     if (TYPE(val) == type && type != T_DATA) return val;
     v = convert_type(val, tname, method, FALSE);
     if (NIL_P(v)) return Qnil;
-    if (TYPE(v) != type) {
+    if (TYPE(v) != type && TYPE(v) != T_MOVED) {
         conversion_mismatch(val, tname, method, v);
     }
     return v;
@@ -3010,7 +3015,7 @@ rb_check_convert_type_with_id(VALUE val, int type, const char *tname, ID method)
     if (TYPE(val) == type && type != T_DATA) return val;
     v = convert_type_with_id(val, tname, method, FALSE, -1);
     if (NIL_P(v)) return Qnil;
-    if (TYPE(v) != type) {
+    if (TYPE(v) != type && TYPE(v) != T_MOVED) {
         conversion_mismatch(val, tname, RSTRING_PTR(rb_id2str(method)), v);
     }
     return v;
