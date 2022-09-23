@@ -1959,7 +1959,7 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
 
     asan_unlock_freelist(page);
 
-    fprintf(stderr, "heap_page_add_freeobj: %ld\n", obj);
+    // fprintf(stderr, "heap_page_add_freeobj: %ld\n", obj);
 
     p->as.free.flags = 0;
     p->as.free.next = page->freelist;
@@ -2478,7 +2478,7 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
     rb_ractor_setup_belonging(obj);
 #endif
 
-    fprintf(stderr, "newobj_init: %ld (TYPE: %u)\n", obj, BUILTIN_TYPE(obj));
+    // fprintf(stderr, "newobj_init: %ld (TYPE: %u)\n", obj, BUILTIN_TYPE(obj));
 
 #if RGENGC_CHECK_MODE
     p->as.values.v1 = p->as.values.v2 = p->as.values.v3 = 0;
@@ -2752,7 +2752,7 @@ newobj_alloc(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size_pool_idx, boo
         }
     }
 
-    fprintf(stderr, "newobj_alloc: %ld\n", obj);
+    // fprintf(stderr, "newobj_alloc: %ld\n", obj);
 
     return obj;
 }
@@ -2917,52 +2917,75 @@ update_id_table_for_moved_obj(rb_objspace_t *objspace, VALUE src, VALUE dest)
     }
 }
 
+NOINLINE(static void gc_writebarrier_incremental(VALUE a, VALUE b, rb_objspace_t *objspace));
+
 VALUE
 rb_gc_realloc_obj(VALUE obj, size_t size)
 {
     rb_objspace_t *objspace = &rb_objspace;
 
-    fprintf(stderr, "rb_gc_realloc_obj: %ld -> %ld\n", obj, rb_gc_realize_moved_obj(obj));
+    // fprintf(stderr, "rb_gc_realloc_obj: %ld -> %ld\n", obj, rb_gc_realize_moved_obj(obj));
 
     obj = rb_gc_realize_moved_obj(obj);
     VALUE new_obj = 0;
 
-    if (rb_gc_size_allocatable_p(size)) {
-        // Create new resized object
-        VALUE klass = RBASIC(obj)->klass;
-        VALUE flags = RBASIC(obj)->flags;
-        bool wb_protected = !MARKED_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
-        bool old = RVALUE_OLD_P(obj);
+    RB_VM_LOCK_ENTER_NO_BARRIER();
+    {
+        if (rb_gc_size_allocatable_p(size)) {
+            // Create new resized object
+            VALUE klass = RBASIC(obj)->klass;
+            VALUE flags = RBASIC(obj)->flags;
+            bool wb_protected = !MARKED_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
+            bool old = RVALUE_OLD_P(obj);
 
-        new_obj = newobj_of0(klass, flags, wb_protected, GET_RACTOR(), size);
+            new_obj = newobj_of0(klass, flags, wb_protected, GET_RACTOR(), size);
 
-        fprintf(stderr, "rb_gc_realloc_obj: %ld -> %ld\n", obj, new_obj);
+            // Copy contents to new object
+            size_t obj_size = rb_gc_obj_slot_size(obj);
+            size_t copy_size = obj_size < size ? obj_size : size;
+            GC_ASSERT(copy_size >= sizeof(struct RBasic));
+            copy_size -= sizeof(struct RBasic);
 
-        // Copy contents to new object
-        size_t obj_size = rb_gc_obj_slot_size(obj);
-        size_t copy_size = obj_size < size ? obj_size : size;
-        GC_ASSERT(copy_size >= sizeof(struct RBasic));
-        copy_size -= sizeof(struct RBasic);
+            memcpy((void *)(new_obj + sizeof(struct RBasic)), (void *)(obj + sizeof(struct RBasic)), copy_size);
 
-        memcpy((void *)(new_obj + sizeof(struct RBasic)), (void *)(obj + sizeof(struct RBasic)), copy_size);
+            // Change original object to T_MOVED
+            RMOVED(obj)->flags = T_MOVED;
 
-        // Change original object to T_MOVED
-        RMOVED(obj)->flags = T_MOVED;
-        // RMOVED(obj)->dummy = Qundef;
-        RMOVED(obj)->destination = new_obj;
-        // RB_OBJ_WRITE(obj, &RMOVED(obj)->destination)
+            if (old) {
+                RVALUE_AGE_SET_OLD(objspace, obj);
+                RVALUE_OLD_UNCOLLECTIBLE_SET(objspace, new_obj);
+                MARK_IN_BITMAP(GET_HEAP_MARK_BITS(new_obj), new_obj);
+            }
 
-        if (old) {
-            RVALUE_AGE_SET_OLD(objspace, obj);
-            RVALUE_OLD_UNCOLLECTIBLE_SET(objspace, new_obj);
+            RMOVED(obj)->destination = new_obj;
+
+            if (is_incremental_marking(objspace)) {
+                gc_writebarrier_incremental(obj, new_obj, objspace);
+            }
+
+            rb_gc_writebarrier(obj, new_obj); // TODO: I don't think this is needed
+            // else {
+            //     if (old) {
+            //         rgengc_remember(objspace, new_obj);
+            //     }
+            // }
+            // RB_OBJ_WRITTEN(obj, Qnil, new_obj);
+
+            // RB_OBJ_WRITE(obj, &RMOVED(obj)->destination, new_obj);
+
+            // RMOVED(obj)->dummy = Qundef;
+
+            update_id_table_for_moved_obj(objspace, obj, new_obj);
+
+            // fprintf(stderr, "rb_gc_realloc_obj: %ld (age: %d, uncollectable: %d) -> %ld (age: %d, uncollectable: %d) (incremental? %d)\n", obj, RVALUE_FLAGS_AGE(RBASIC(obj)->flags), RVALUE_UNCOLLECTIBLE(obj), new_obj, RVALUE_FLAGS_AGE(RBASIC(new_obj)->flags), RVALUE_UNCOLLECTIBLE(new_obj), is_incremental_marking(objspace));
         }
-
-        update_id_table_for_moved_obj(objspace, obj, new_obj);
     }
+    RB_VM_LOCK_LEAVE_NO_BARRIER();
 
     return new_obj;
 }
 
+RBIMPL_ATTR_PURE()
 VALUE
 rb_gc_realize_moved_obj(VALUE obj)
 {
@@ -2970,11 +2993,11 @@ rb_gc_realize_moved_obj(VALUE obj)
 
     bool is_t_moved = BUILTIN_TYPE(obj) == T_MOVED;
 
-    if (is_t_moved) fprintf(stderr, "rb_gc_realize_moved_obj: (%ld) %s\n", obj, obj_info(obj));
+    // if (is_t_moved) fprintf(stderr, "rb_gc_realize_moved_obj: (%ld) %s\n", obj, obj_info(obj));
 
     while (BUILTIN_TYPE(obj) == T_MOVED) {
         obj = RMOVED(obj)->destination;
-        fprintf(stderr, "   -> (%ld) %s\n", obj, obj_info(obj));
+        // fprintf(stderr, "   -> (%ld) %s\n", obj, obj_info(obj));
     }
 
     // DEBUG
@@ -3492,7 +3515,7 @@ obj_free_object_id(rb_objspace_t *objspace, VALUE obj)
 static int
 obj_free(rb_objspace_t *objspace, VALUE obj)
 {
-    fprintf(stderr, "obj_free: %ld\n", obj);
+    // fprintf(stderr, "obj_free: %ld\n", obj);
     RB_DEBUG_COUNTER_INC(obj_free);
     // RUBY_DEBUG_LOG("obj:%p (%s)", (void *)obj, obj_type_name(obj));
 
@@ -5677,20 +5700,20 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     }
                     break;
 
-                case T_MOVED:
-                    break; // TODO: don't sweep T_MOVED for now
-                    if (objspace->flags.during_compacting) {
-                        /* The sweep cursor shouldn't have made it to any
-                         * T_MOVED slots while the compact flag is enabled.
-                         * The sweep cursor and compact cursor move in
-                         * opposite directions, and when they meet references will
-                         * get updated and "during_compacting" should get disabled */
-                        rb_bug("T_MOVED shouldn't be seen until compaction is finished\n");
-                    }
-                    gc_report(3, objspace, "page_sweep: %s is added to freelist\n", obj_info(vp));
-                    ctx->empty_slots++;
-                    heap_page_add_freeobj(objspace, sweep_page, vp);
-                    break;
+                // case T_MOVED:
+                //     if (objspace->flags.during_compacting) {
+                //         /* The sweep cursor shouldn't have made it to any
+                //          * T_MOVED slots while the compact flag is enabled.
+                //          * The sweep cursor and compact cursor move in
+                //          * opposite directions, and when they meet references will
+                //          * get updated and "during_compacting" should get disabled */
+                //         rb_bug("T_MOVED shouldn't be seen until compaction is finished\n");
+                //     }
+                //     gc_report(3, objspace, "page_sweep: %s is added to freelist\n", obj_info(vp));
+                //     ctx->empty_slots++;
+                //     heap_page_add_freeobj(objspace, sweep_page, vp);
+                //     break;
+
                 case T_ZOMBIE:
                     /* already counted */
                     break;
@@ -7351,7 +7374,9 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
         else {
             long i, len = RARRAY_LEN(obj);
             const VALUE *ptr = RARRAY_CONST_PTR_TRANSIENT(obj);
+            // fprintf(stderr, "gc_mark_children: mark array %ld\n", obj);
             for (i=0; i < len; i++) {
+                // fprintf(stderr, "  %ld: %ld\n", i, ptr[i]);
                 gc_mark(objspace, ptr[i]);
             }
 

@@ -379,7 +379,8 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
     VALUE argv[2];
 
     // TODO: do the same stuff as rb_obj_dup
-    rb_bug("mutable_obj_clone: TODO");
+    // rb_bug("mutable_obj_clone: TODO");
+    obj = rb_gc_realize_moved_obj(obj);
 
     clone = rb_obj_alloc(rb_obj_class(obj));
 
@@ -490,7 +491,7 @@ rb_obj_dup(VALUE obj)
     }
     obj = rb_gc_realize_moved_obj(obj);
     dup = rb_obj_alloc(rb_obj_class(obj));
-    fprintf(stderr, "rb_obj_dup: %ld\n", dup);
+    // fprintf(stderr, "rb_obj_dup: %ld\n", dup);
     init_copy(dup, obj);
     rb_funcall(dup, id_init_dup, 1, obj);
 

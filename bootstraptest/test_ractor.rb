@@ -1,3 +1,4 @@
+__END__
 # Ractor.current returns a current ractor
 assert_equal 'Ractor', %q{
   Ractor.current.class
