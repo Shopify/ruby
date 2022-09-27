@@ -159,6 +159,8 @@ void rb_st_cleanup_safe(st_table *, st_data_t);
 void rb_st_clear(st_table *);
 #define st_clear rb_st_clear
 st_table *rb_st_copy(st_table *);
+void rb_st_rehash(st_table *);
+#define st_rehash rb_st_rehash
 #define st_copy rb_st_copy
 CONSTFUNC(int rb_st_numcmp(st_data_t, st_data_t));
 #define st_numcmp rb_st_numcmp

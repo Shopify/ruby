@@ -2159,7 +2159,7 @@ st_rehash_indexed(st_table *tab)
 /* Reconstruct TAB's bins according to TAB's entries. This function
    permits conflicting keys inside of entries.  No errors are reported
    then.  All but one of them are discarded silently. */
-static void
+void
 st_rehash(st_table *tab)
 {
     int rebuilt_p;
