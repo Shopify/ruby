@@ -1039,6 +1039,12 @@ gen_ivtbl_resize(struct gen_ivtbl *old, uint32_t n)
     return ivtbl;
 }
 
+void
+rb_gen_iv_tbl_rehash()
+{
+    rb_st_rehash(generic_iv_tbl_);
+}
+
 #if 0
 static struct gen_ivtbl *
 gen_ivtbl_dup(const struct gen_ivtbl *orig)

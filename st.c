@@ -2173,6 +2173,12 @@ st_rehash(st_table *tab)
 }
 
 #ifdef RUBY
+void
+rb_st_rehash(st_table *tab)
+{
+    st_rehash(tab);
+}
+
 static st_data_t
 st_stringify(VALUE key)
 {
