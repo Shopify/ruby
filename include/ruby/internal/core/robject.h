@@ -72,19 +72,28 @@ enum ruby_robject_flags {
      * 3rd parties must  not be aware that  there even is more than  one way to
      * store instance variables.  Might better be hidden.
      */
-    ROBJECT_EMBED = RUBY_FL_USER1
+    ROBJECT_EMBED = RUBY_FL_USER1,
+
+    /* ROBJECT_TRANSIENT_FLAG (defined in internal/variable.h) is using RUBY_FL_USER2 */
+
+#if USE_RVARGC
+    ROBJECT_EMBED_NUMIV_MASK = RUBY_FL_USER9 | RUBY_FL_USER8 | RUBY_FL_USER7 | RUBY_FL_USER6 |
+                                   RUBY_FL_USER5 | RUBY_FL_USER4 | RUBY_FL_USER3
+#endif
 };
 
-#if !USE_RVARGC
 /**
  * This is an enum because GDB wants it (rather than a macro).  People need not
  * bother.
  */
 enum ruby_robject_consts {
+#if USE_RVARGC
+    ROBJECT_EMBED_LEN_SHIFT = RUBY_FL_USHIFT + 3
+#else
     /** Max possible number of instance variables that can be embedded. */
     ROBJECT_EMBED_LEN_MAX = RBIMPL_EMBED_LEN_MAX_OF(VALUE)
-};
 #endif
+};
 
 struct st_table;
 
@@ -97,14 +106,6 @@ struct RObject {
     /** Basic part, including flags and class. */
     struct RBasic basic;
 
-#if USE_RVARGC
-    /**
-    * Number of instance variables.  This is per object; objects might
-    * differ in this field even if they have the identical classes.
-    */
-    uint32_t numiv;
-#endif
-
     /** Object's specific fields. */
     union {
 
@@ -113,13 +114,11 @@ struct RObject {
          * this pattern.
          */
         struct {
-#if !USE_RVARGC
             /**
              * Number of instance variables.  This is per object; objects might
              * differ in this field even if they have the identical classes.
              */
             uint32_t numiv;
-#endif
 
             /** Pointer to a C array that holds instance variables. */
             VALUE *ivptr;
@@ -157,11 +156,7 @@ struct RObject {
 
 /* Offsets for YJIT */
 #ifndef __cplusplus
-# if USE_RVARGC
-static const int32_t ROBJECT_OFFSET_NUMIV = offsetof(struct RObject, numiv);
-# else
 static const int32_t ROBJECT_OFFSET_NUMIV = offsetof(struct RObject, as.heap.numiv);
-# endif
 static const int32_t ROBJECT_OFFSET_AS_HEAP_IVPTR = offsetof(struct RObject, as.heap.ivptr);
 static const int32_t ROBJECT_OFFSET_AS_HEAP_IV_INDEX_TBL = offsetof(struct RObject, as.heap.iv_index_tbl);
 static const int32_t ROBJECT_OFFSET_AS_ARY = offsetof(struct RObject, as.ary);
@@ -181,16 +176,19 @@ ROBJECT_NUMIV(VALUE obj)
 {
     RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
 
+    if (FL_TEST_RAW(obj, ROBJECT_EMBED)) {
 #if USE_RVARGC
-    return ROBJECT(obj)->numiv;
+        VALUE f = RBASIC(obj)->flags;
+        f &= ROBJECT_EMBED_NUMIV_MASK;
+        f >>= ROBJECT_EMBED_LEN_SHIFT;
+        return (uint32_t)f;
 #else
-    if (RB_FL_ANY_RAW(obj, ROBJECT_EMBED)) {
         return ROBJECT_EMBED_LEN_MAX;
+#endif
     }
     else {
         return ROBJECT(obj)->as.heap.numiv;
     }
-#endif
 }
 
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()

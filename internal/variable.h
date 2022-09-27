@@ -80,4 +80,23 @@ ROBJ_TRANSIENT_UNSET(VALUE obj)
 #endif
 }
 
+static inline void
+ROBJ_NUMIV_SET(VALUE obj, uint32_t numiv)
+{
+    if (FL_TEST_RAW(obj, ROBJECT_EMBED)) {
+#if USE_RVARGC
+        RBASIC(obj)->flags &= ~ROBJECT_EMBED_NUMIV_MASK;
+        RBASIC(obj)->flags |= ((VALUE)numiv) << ROBJECT_EMBED_LEN_SHIFT;
+        assert(ROBJECT_NUMIV(obj) == numiv);
+        if (ROBJECT_NUMIV(obj) != numiv) rb_bug("wat");
+#else
+        /* no-op */
+        assert(numiv <= ROBJECT_EMBED_LEN_MAX);
+#endif
+    }
+    else {
+        ROBJECT(obj)->as.heap.numiv = numiv;
+    }
+}
+
 #endif /* INTERNAL_VARIABLE_H */

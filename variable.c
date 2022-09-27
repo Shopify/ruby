@@ -1505,11 +1505,8 @@ init_iv_list(VALUE obj, uint32_t len, uint32_t newsize, st_table *index_tbl)
     for (; len < newsize; len++) {
         newptr[len] = Qundef;
     }
-#if USE_RVARGC
-    ROBJECT(obj)->numiv = newsize;
-#else
-    ROBJECT(obj)->as.heap.numiv = newsize;
-#endif
+    ROBJ_NUMIV_SET(obj, newsize);
+
     ROBJECT(obj)->as.heap.iv_index_tbl = index_tbl;
 }
 
