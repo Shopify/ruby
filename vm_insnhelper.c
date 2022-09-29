@@ -1173,6 +1173,16 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         }
 
         val = ivar_list[index];
+        if (rb_ractor_shareable_p(obj)) {
+            if (!rb_ractor_shareable_p(val)) {
+                rp(obj);
+                rp(val);
+                fprintf(stderr, "obj shape id: %d\n", rb_shape_get_shape_id(obj));
+                fprintf(stderr, "obj type: %d\n", BUILTIN_TYPE(obj));
+                fprintf(stderr, "val shape id: %d\n", rb_shape_get_shape_id(val));
+                fprintf(stderr, "val type: %d\n", BUILTIN_TYPE(val));
+            }
+        }
         VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
     }
     else { // cache miss case
