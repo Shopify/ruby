@@ -9371,6 +9371,7 @@ gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free, size_t slot_size)
          * Resizing the table could cause a GC to happen and we can't allow it */
         VALUE already_disabled = rb_gc_disable_no_rest();
         rb_replace_generic_ivar((VALUE)dest, (VALUE)src);
+        fprintf(stderr, "gc_move: moving ivars table for VALUE %p to VALUE %p\n", src, dest);
         rb_gen_iv_tbl_rehash();
         if (already_disabled == Qfalse) rb_objspace_gc_enable(objspace);
     }
