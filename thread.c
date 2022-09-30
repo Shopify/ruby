@@ -97,6 +97,7 @@
 #include "ractor_core.h"
 #include "vm_debug.h"
 #include "vm_sync.h"
+#include "variable.h"
 
 #ifndef USE_NATIVE_THREAD_PRIORITY
 #define USE_NATIVE_THREAD_PRIORITY 0
@@ -131,9 +132,10 @@ rb_thread_local_storage(VALUE thread)
     rb_thread_t *th = (rb_thread_t *)DATA_PTR(thread);
 
     if (LIKELY(!THREAD_LOCAL_STORAGE_INITIALISED_P(thread))) {
-        rb_ivar_set(thread, idLocals, rb_hash_new());
+        VALUE hash = rb_hash_new();
+        rb_ivar_set(thread, idLocals, hash);
         RB_FL_SET_RAW(thread, THREAD_LOCAL_STORAGE_INITIALISED);
-        fprintf(stderr, "Setting local storage on VALUE %p thread %p\n", (void *)thread, (void *)th);
+        fprintf(stderr, "Setting local storage on VALUE %p, thread %p, hash: %lu\n", (void *)thread, (void *)th, hash);
         if_hit = 1;
     }
     compact_count = rb_gc_compact_count() - compact_count;
@@ -144,6 +146,7 @@ rb_thread_local_storage(VALUE thread)
 
     VALUE locals = rb_ivar_get(thread, idLocals);
     if (NIL_P(locals)) {
+        fprintf(stderr, "generic_iv_tbl_: %p\n", generic_iv_tbl_);
         rb_obj_info_dump(thread);
         rb_bug("locals should be a hash, if statement run? %d VALUE %p thread: %p\n", if_hit, (void *)thread, (void *)th);
     }
@@ -3716,6 +3719,7 @@ rb_thread_variable_get(VALUE thread, VALUE key)
     if (LIKELY(!THREAD_LOCAL_STORAGE_INITIALISED_P(thread))) {
         return Qnil;
     }
+    fprintf(stderr, "rb_thread_variable_get: { thread: %lu, key: %lu }\n", thread, key);
     locals = rb_thread_local_storage(thread);
     return rb_hash_aref(locals, rb_to_symbol(key));
 }
@@ -3738,6 +3742,7 @@ rb_thread_variable_set(VALUE thread, VALUE key, VALUE val)
         rb_frozen_error_raise(thread, "can't modify frozen thread locals");
     }
 
+    fprintf(stderr, "rb_thread_variable_set: { thread: %lu, key: %lu, value: %lu }\n", thread, key, val);
     locals = rb_thread_local_storage(thread);
     return rb_hash_aset(locals, rb_to_symbol(key), val);
 }

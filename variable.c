@@ -51,7 +51,6 @@ static VALUE autoload_featuremap; /* feature => autoload_i */
 static void check_before_mod_set(VALUE, ID, VALUE, const char *);
 static void setup_const_entry(rb_const_entry_t *, VALUE, VALUE, rb_const_flag_t);
 static VALUE rb_const_search(VALUE klass, ID id, int exclude, int recurse, int visibility);
-static st_table *generic_iv_tbl_;
 
 struct ivar_update {
     union {
@@ -1042,6 +1041,7 @@ gen_ivtbl_resize(struct gen_ivtbl *old, uint32_t n)
 void
 rb_gen_iv_tbl_rehash()
 {
+    fprintf(stderr, "rb_gen_iv_tbl_rehash: rehashing generic_iv_tbl_\n");
     rb_st_rehash(generic_iv_tbl_);
 }
 
@@ -1280,8 +1280,11 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
             }
         }
       default:
-	if (FL_TEST(obj, FL_EXIVAR))
+	if (FL_TEST(obj, FL_EXIVAR)){
+            fprintf(stderr, "looking up ID %lu for obj %lu\n", id, obj);
+
 	    return generic_ivar_get(obj, id, undef);
+        }
 	break;
     }
     return undef;
