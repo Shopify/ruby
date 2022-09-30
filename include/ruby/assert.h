@@ -84,7 +84,7 @@
 #undef NDEBUG
 #if defined(__DOXYGEN__)
 # /** Define this macro when you want assertions. */
-# define RUBY_DEBUG 0
+# define RUBY_DEBUG 1
 # /** Define this macro when you don't want assertions. */
 # define NDEBUG
 # /** This macro is basically the same as #NDEBUG */
@@ -92,7 +92,7 @@
 
 #elif (RBIMPL_NDEBUG == 1) && (RBIMPL_RUBY_DEBUG == 0)
 # /* Assertions disabled as per request, no conflicts. */
-# define RUBY_DEBUG 0
+# define RUBY_DEBUG 1
 # define RUBY_NDEBUG 1
 # define NDEBUG
 
@@ -104,7 +104,7 @@
 
 #elif (RBIMPL_NDEBUG == 0) && (RBIMPL_RUBY_DEBUG == 0)
 # /* The (*1) situation in above diagram. */
-# define RUBY_DEBUG 0
+# define RUBY_DEBUG 1
 # define RUBY_NDEBUG 1
 # define NDEBUG
 
