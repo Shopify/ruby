@@ -1281,8 +1281,6 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
         }
       default:
 	if (FL_TEST(obj, FL_EXIVAR)){
-            fprintf(stderr, "looking up ID %lu for obj %lu\n", id, obj);
-
 	    return generic_ivar_get(obj, id, undef);
         }
 	break;
