@@ -134,7 +134,7 @@ rb_thread_local_storage(VALUE thread)
         VALUE hash = rb_hash_new();
         rb_ivar_set(thread, idLocals, hash);
         RB_FL_SET_RAW(thread, THREAD_LOCAL_STORAGE_INITIALISED);
-        fprintf(stderr, "Setting local storage (ID %s - %lu) on VALUE %p (native_thread %p), hash: %lu\n",
+        fprintf(stderr, "Setting local storage (ID %s - %i) on VALUE %p (native_thread %p), hash: %lu\n",
             rb_id2name(idLocals), idLocals,
             (void *)thread, (void *)th, hash
         );

@@ -5114,6 +5114,24 @@ revert_machine_stack_references(rb_objspace_t *objspace, VALUE v)
     }
 }
 
+static bool
+iv_index_tbl_lookup(struct st_table *iv_index_tbl, ID id, struct rb_iv_index_tbl_entry **ent)
+{
+    int found;
+    st_data_t ent_data;
+
+    if (iv_index_tbl == NULL) return false;
+
+    RB_VM_LOCK_ENTER();
+    {
+        found = st_lookup(iv_index_tbl, (st_data_t)id, &ent_data);
+    }
+    RB_VM_LOCK_LEAVE();
+    if (found) *ent = (struct rb_iv_index_tbl_entry *)ent_data;
+
+    return found ? true : false;
+}
+
 static void each_machine_stack_value(const rb_execution_context_t *ec, void (*cb)(rb_objspace_t *, VALUE));
 
 static void
@@ -5124,6 +5142,8 @@ check_stack_for_moved(rb_objspace_t *objspace)
     rb_vm_each_stack_value(vm, revert_stack_objects, (void*)objspace);
     each_machine_stack_value(ec, revert_machine_stack_references);
 }
+
+static void print_thread_debug_info(void);
 
 static void
 gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap)
@@ -5158,6 +5178,32 @@ gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap
         record->moved_objects = objspace->rcompactor.total_moved - record->moved_objects;
     }
     objspace->flags.during_compacting = FALSE;
+
+    print_thread_debug_info();
+}
+
+#include "variable.h"
+
+static void
+print_thread_debug_info(void)
+{
+    VALUE main_thread = rb_thread_main();
+    VALUE local_storage = rb_ivar_get(main_thread, idLocals);
+
+    st_table * iv_index_tbl = RCLASS_EXT(CLASS_OF(main_thread))->iv_index_tbl;
+    st_data_t data;
+
+    rb_st_lookup(generic_iv_tbl_, main_thread, &data);
+
+    struct rb_iv_index_tbl_entry *locals;
+    if (iv_index_tbl_lookup(iv_index_tbl, idLocals, &locals)) {
+        fprintf(stderr, "\tlocals found in iv_index => %p\n", locals);
+    } else {
+        fprintf(stderr, "\tlocals not found in iv_index\n");
+    }
+
+   fprintf(stderr, "gc_compact_finish: {thread => %p, local_storage => %p, gen_ivtbl => %p}\n",
+          (void *)main_thread, (void *)local_storage, (void *)data);
 }
 
 struct gc_sweep_context {
@@ -5626,6 +5672,8 @@ gc_sweep_finish(rb_objspace_t *objspace)
 #if RGENGC_CHECK_MODE >= 2
     gc_verify_internal_consistency(objspace);
 #endif
+
+    print_thread_debug_info();
 }
 
 static int
