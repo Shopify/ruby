@@ -126,7 +126,6 @@ enum SLEEP_FLAGS {
 static inline VALUE
 rb_thread_local_storage(VALUE thread)
 {
-    size_t compact_count = rb_gc_compact_count();
     int if_hit = 0;
 
     rb_thread_t *th = (rb_thread_t *)DATA_PTR(thread);
@@ -135,13 +134,11 @@ rb_thread_local_storage(VALUE thread)
         VALUE hash = rb_hash_new();
         rb_ivar_set(thread, idLocals, hash);
         RB_FL_SET_RAW(thread, THREAD_LOCAL_STORAGE_INITIALISED);
-        fprintf(stderr, "Setting local storage on VALUE %p, thread %p, hash: %lu\n", (void *)thread, (void *)th, hash);
+        fprintf(stderr, "Setting local storage (ID %s - %lu) on VALUE %p (native_thread %p), hash: %lu\n",
+            rb_id2name(idLocals), idLocals,
+            (void *)thread, (void *)th, hash
+        );
         if_hit = 1;
-    }
-    compact_count = rb_gc_compact_count() - compact_count;
-
-    if (compact_count > 0) {
-        rb_bug("we should not have compacted!");
     }
 
     VALUE locals = rb_ivar_get(thread, idLocals);
@@ -3717,11 +3714,15 @@ rb_thread_variable_get(VALUE thread, VALUE key)
     VALUE locals;
 
     if (LIKELY(!THREAD_LOCAL_STORAGE_INITIALISED_P(thread))) {
+        fprintf(stderr, "rb_thread_variable_get: attempted to get key VALUE %p from thread VALUE %p before initialized\n", (void *)key, (void *)thread);
         return Qnil;
     }
-    fprintf(stderr, "rb_thread_variable_get: { thread: %lu, key: %lu }\n", thread, key);
     locals = rb_thread_local_storage(thread);
-    return rb_hash_aref(locals, rb_to_symbol(key));
+    VALUE retval = rb_hash_aref(locals, rb_to_symbol(key));
+    fprintf(stderr, "rb_thread_variable_get: { thread: %p, key: %p, value: %p }\n", (void *)thread, (void*)key, (void *)retval);
+
+    return retval;
+
 }
 
 /*
@@ -3742,7 +3743,7 @@ rb_thread_variable_set(VALUE thread, VALUE key, VALUE val)
         rb_frozen_error_raise(thread, "can't modify frozen thread locals");
     }
 
-    fprintf(stderr, "rb_thread_variable_set: { thread: %lu, key: %lu, value: %lu }\n", thread, key, val);
+    fprintf(stderr, "rb_thread_variable_set: { thread: %p, key: %p, value: %p }\n", (void *)thread, (void *)key, (void *)val);
     locals = rb_thread_local_storage(thread);
     return rb_hash_aset(locals, rb_to_symbol(key), val);
 }
