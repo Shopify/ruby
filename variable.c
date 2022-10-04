@@ -1410,6 +1410,8 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id, VALUE klass)
 static void
 generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
+    check_main_thread_locals();
+
     VALUE klass = rb_obj_class(obj);
     struct ivar_update ivup;
     ivup.iv_extended = 0;
