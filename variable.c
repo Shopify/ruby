@@ -932,6 +932,19 @@ generic_ivtbl(VALUE obj, ID id, bool force_check_ractor)
     return generic_iv_tbl_;
 }
 
+static void
+check_main_thread_locals(void)
+{
+    VALUE main_thread = rb_thread_main();
+    VALUE local_storage = rb_ivar_get(main_thread, idLocals);
+
+    if (FL_TEST(main_thread, FL_EXIVAR)) {
+        if (!RTEST(local_storage)) {
+            rb_bug("variable.c: thread %ld, local_storage: %ld", main_thread, local_storage);
+        }
+    }
+}
+
 static inline struct st_table *
 generic_ivtbl_no_ractor_check(VALUE obj)
 {
@@ -1164,6 +1177,8 @@ rb_free_generic_ivar(VALUE obj)
 
     if (st_delete(generic_ivtbl_no_ractor_check(obj), &key, &ivtbl))
 	xfree((struct gen_ivtbl *)ivtbl);
+
+    check_main_thread_locals();
 }
 
 RUBY_FUNC_EXPORTED size_t
@@ -1411,6 +1426,8 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     ivup.u.ivtbl->ivptr[ivup.index] = val;
 
     RB_OBJ_WRITTEN(obj, Qundef, val);
+
+    check_main_thread_locals();
 }
 
 static VALUE *
@@ -1764,6 +1781,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
         }
         RB_VM_LOCK_LEAVE();
     }
+    check_main_thread_locals();
     return;
 
   clear:
@@ -1771,6 +1789,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
         rb_free_generic_ivar(clone);
         FL_UNSET(clone, FL_EXIVAR);
     }
+    check_main_thread_locals();
 }
 
 void
