@@ -5143,7 +5143,7 @@ check_stack_for_moved(rb_objspace_t *objspace)
     each_machine_stack_value(ec, revert_machine_stack_references);
 }
 
-static void print_thread_debug_info(void);
+static void print_thread_debug_info(const char *);
 
 static void
 gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap)
@@ -5185,7 +5185,7 @@ gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap
 #include "variable.h"
 
 static void
-print_thread_debug_info(char * stage)
+print_thread_debug_info(const char * stage)
 {
     if (getenv("LOLWAT")) {
         VALUE main_thread = rb_thread_main();
