@@ -5179,13 +5179,13 @@ gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap
     }
     objspace->flags.during_compacting = FALSE;
 
-    print_thread_debug_info();
+    print_thread_debug_info("compact");
 }
 
 #include "variable.h"
 
 static void
-print_thread_debug_info(void)
+print_thread_debug_info(char * stage)
 {
     if (getenv("LOLWAT")) {
         VALUE main_thread = rb_thread_main();
@@ -5203,8 +5203,8 @@ print_thread_debug_info(void)
             fprintf(stderr, "\tlocals not found in iv_index\n");
         }
 
-        fprintf(stderr, "gc_compact_finish: {thread => %p, local_storage => %p, gen_ivtbl => %p}\n",
-                (void *)main_thread, (void *)local_storage, (void *)data);
+        fprintf(stderr, "gc_%s_finish: {thread => %p, local_storage => %p, gen_ivtbl => %p}\n",
+                stage, (void *)main_thread, (void *)local_storage, (void *)data);
     }
 }
 
@@ -5675,7 +5675,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
     gc_verify_internal_consistency(objspace);
 #endif
 
-    print_thread_debug_info();
+    print_thread_debug_info("sweep");
 }
 
 static int
