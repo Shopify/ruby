@@ -933,7 +933,7 @@ generic_ivtbl(VALUE obj, ID id, bool force_check_ractor)
 }
 
 static void
-check_main_thread_locals(char *name)
+check_main_thread_locals(const char *name)
 {
     VALUE main_thread = rb_thread_main();
     VALUE local_storage = rb_ivar_get(main_thread, idLocals);
@@ -1178,7 +1178,7 @@ rb_free_generic_ivar(VALUE obj)
     if (st_delete(generic_ivtbl_no_ractor_check(obj), &key, &ivtbl))
 	xfree((struct gen_ivtbl *)ivtbl);
 
-    check_main_thread_locals();
+    check_main_thread_locals("rb_free_generic_ivar");
 }
 
 RUBY_FUNC_EXPORTED size_t
@@ -1785,7 +1785,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
         }
         RB_VM_LOCK_LEAVE();
     }
-    check_main_thread_locals();
+    check_main_thread_locals("rb_copy_generic_ivar 1");
     return;
 
   clear:
@@ -1793,7 +1793,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
         rb_free_generic_ivar(clone);
         FL_UNSET(clone, FL_EXIVAR);
     }
-    check_main_thread_locals();
+    check_main_thread_locals("rb_copy_generic_ivar 2");
 }
 
 void
