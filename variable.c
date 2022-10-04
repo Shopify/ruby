@@ -933,14 +933,14 @@ generic_ivtbl(VALUE obj, ID id, bool force_check_ractor)
 }
 
 static void
-check_main_thread_locals(void)
+check_main_thread_locals(char *name)
 {
     VALUE main_thread = rb_thread_main();
     VALUE local_storage = rb_ivar_get(main_thread, idLocals);
 
     if (FL_TEST(main_thread, FL_EXIVAR)) {
         if (!RTEST(local_storage)) {
-            rb_bug("variable.c: thread %ld, local_storage: %ld", main_thread, local_storage);
+            rb_bug("variable.c: %s thread %ld, local_storage: %ld", name, main_thread, local_storage);
         }
     }
 }
@@ -1410,7 +1410,7 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id, VALUE klass)
 static void
 generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
-    check_main_thread_locals();
+    check_main_thread_locals("start");
 
     VALUE klass = rb_obj_class(obj);
     struct ivar_update ivup;
@@ -1420,8 +1420,10 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     RB_VM_LOCK_ENTER();
     {
         iv_index_tbl_extend(&ivup, id, klass);
+        check_main_thread_locals("before st_update");
         st_update(generic_ivtbl(obj, id, false), (st_data_t)obj, generic_ivar_update,
                   (st_data_t)&ivup);
+        check_main_thread_locals("after st_update");
     }
     RB_VM_LOCK_LEAVE();
 
@@ -1429,7 +1431,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 
     RB_OBJ_WRITTEN(obj, Qundef, val);
 
-    check_main_thread_locals();
+    check_main_thread_locals("done");
 }
 
 static VALUE *
