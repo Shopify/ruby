@@ -735,6 +735,10 @@ rebuild_table(st_table *tab)
 					  2 * tab->num_entries - 1);
 	new_entries = new_tab->entries;
     }
+
+    bound = tab->entries_bound;
+    entries = tab->entries;
+
     ni = 0;
     bins = new_tab->bins;
     size_ind = get_size_ind(new_tab);
