@@ -5194,7 +5194,7 @@ print_thread_debug_info(const char * stage)
         st_table * iv_index_tbl = RCLASS_EXT(CLASS_OF(main_thread))->iv_index_tbl;
         st_data_t data;
 
-        rb_st_lookup(generic_iv_tbl_, main_thread, &data);
+        rb_st_lookup(get_generic_iv_tbl(), main_thread, &data);
 
         struct rb_iv_index_tbl_entry *locals;
         if (iv_index_tbl_lookup(iv_index_tbl, idLocals, &locals)) {

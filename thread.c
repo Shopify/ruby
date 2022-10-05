@@ -143,7 +143,7 @@ rb_thread_local_storage(VALUE thread)
 
     VALUE locals = rb_ivar_get(thread, idLocals);
     if (NIL_P(locals)) {
-        fprintf(stderr, "generic_iv_tbl_: %p\n", generic_iv_tbl_);
+        fprintf(stderr, "generic_iv_tbl_: %p\n", get_generic_iv_tbl());
         rb_obj_info_dump(thread);
         rb_bug("locals should be a hash, if statement run? %d VALUE %p thread: %p\n", if_hit, (void *)thread, (void *)th);
     }

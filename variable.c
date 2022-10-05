@@ -39,6 +39,14 @@
 #include "ractor_core.h"
 #include "vm_sync.h"
 
+static st_table *generic_iv_tbl_;
+
+st_table *
+get_generic_iv_tbl(void)
+{
+    return generic_iv_tbl_;
+}
+
 RUBY_EXTERN rb_serial_t ruby_vm_global_cvar_state;
 #define GET_GLOBAL_CVAR_STATE() (ruby_vm_global_cvar_state)
 
