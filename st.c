@@ -696,6 +696,8 @@ count_collision(const struct st_hash_type *type)
 #error "REBUILD_THRESHOLD should be >= 2"
 #endif
 
+#include "variable.h"
+
 /* Rebuild table TAB.  Rebuilding removes all deleted bins and entries
    and can change size of the table entries and bins arrays.
    Rebuilding is implemented by creation of a new table or by
@@ -710,6 +712,11 @@ rebuild_table(st_table *tab)
     st_table_entry *curr_entry_ptr;
     st_index_t *bins;
     st_index_t bin_ind;
+
+    if (getenv("LOLWAT") && tab == get_generic_iv_tbl()) {
+        fprintf(stderr, "rebuild_table:\n");
+        fprintf(stderr, "  tab: entry_power %d, rebuilds_num: %d, num_entries %ld, bins %p, entries_start %ld, entries_bound %ld, entries %p\n", tab->entry_power, tab->rebuilds_num, tab->num_entries, tab->bins, tab->entries_start, tab->entries_bound, tab->entries);
+    }
 
     bound = tab->entries_bound;
     entries = tab->entries;
@@ -746,6 +753,11 @@ rebuild_table(st_table *tab)
 	new_tab->num_entries++;
 	ni++;
     }
+
+    if (getenv("LOLWAT") && tab == get_generic_iv_tbl()) {
+        fprintf(stderr, "  new_tab: entry_power %d, rebuilds_num: %d, num_entries %ld, bins %p, entries_start %ld, entries_bound %ld, entries %p\n", new_tab->entry_power, new_tab->rebuilds_num, new_tab->num_entries, new_tab->bins, new_tab->entries_start, new_tab->entries_bound, new_tab->entries);
+    }
+
     if (new_tab != tab) {
         tab->entry_power = new_tab->entry_power;
 	tab->bin_power = new_tab->bin_power;

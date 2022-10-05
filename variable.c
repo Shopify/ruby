@@ -1099,6 +1099,10 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     struct ivar_update *ivup = (struct ivar_update *)u;
     struct gen_ivtbl *ivtbl = 0;
 
+    if (getenv("LOLWAT")) {
+        fprintf(stderr, "generic_ivar_update: k %p, v %p, existing %d\n", (void *)*k, (void *)*v, existing);
+    }
+
     if (existing) {
 	ivtbl = (struct gen_ivtbl *)*v;
         if (ivup->index < ivtbl->numiv) {
