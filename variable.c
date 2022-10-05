@@ -938,7 +938,7 @@ check_main_thread_locals(const char *name)
     VALUE main_thread = rb_thread_main();
     VALUE local_storage = rb_ivar_get(main_thread, idLocals);
 
-    if (FL_TEST(main_thread, FL_EXIVAR)) {
+    if (FL_TEST(main_thread, FL_USER13)) { // THREAD_LOCAL_STORAGE_INITIALISED
         if (!RTEST(local_storage)) {
             rb_bug("variable.c: %s thread %ld, local_storage: %ld", name, main_thread, local_storage);
         }
