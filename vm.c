@@ -2649,6 +2649,9 @@ rb_vm_mark(void *ptr)
             const struct rb_callcache *cc = vm->global_cc_cache_table[i];
 
             if (cc != NULL) {
+                if (!objspace_minor_compaction() && (objspace_during_compacting() < ruby_autocompact_enabled_p())) {
+                    rb_bug("trying to pin global_cc_table_entry %p but it will not be pinned", cc);
+                }
                 if (!vm_cc_invalidated_p(cc)) {
                     rb_gc_mark((VALUE)cc);
                 }

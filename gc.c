@@ -6725,11 +6725,30 @@ static inline void
 gc_pin(rb_objspace_t *objspace, VALUE obj)
 {
     GC_ASSERT(is_markable_object(objspace, obj));
+    GC_ASSERT(ruby_enable_autocompact == objspace->flags.during_compacting);
     if (UNLIKELY(objspace->flags.during_compacting)) {
         if (LIKELY(during_gc)) {
             MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(obj), obj);
         }
     }
+}
+
+int
+objspace_minor_compaction()
+{
+    return ruby_current_vm_ptr->objspace->flags.during_minor_gc;
+}
+
+int
+objspace_during_compacting()
+{
+    return ruby_current_vm_ptr->objspace->flags.during_compacting;
+}
+
+int
+ruby_autocompact_enabled_p()
+{
+    return ruby_enable_autocompact;
 }
 
 static inline void

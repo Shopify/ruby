@@ -136,6 +136,10 @@ void rb_objspace_each_objects_without_setup(
     int (*callback)(void *, void *, size_t, void *),
     void *data);
 
+int objspace_during_compacting();
+int objspace_minor_compaction();
+int ruby_autocompact_enabled_p();
+
 RUBY_SYMBOL_EXPORT_END
 
 #endif /* RUBY_GC_H */
