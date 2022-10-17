@@ -368,6 +368,10 @@ vm_cc_cmethod_missing_reason(const struct rb_callcache *cc)
 static inline bool
 vm_cc_invalidated_p(const struct rb_callcache *cc)
 {
+    if (cc->klass) {
+        RUBY_ASSERT(BUILTIN_TYPE(cc) == T_IMEMO);
+        RUBY_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
+    }
     if (cc->klass && !METHOD_ENTRY_INVALIDATED(vm_cc_cme(cc))) {
         return false;
     }
