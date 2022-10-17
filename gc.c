@@ -7845,7 +7845,7 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
 #endif
 	objspace->flags.during_minor_gc = FALSE;
         if (ruby_enable_autocompact) {
-            objspace->flags.during_compacting |= TRUE;
+            objspace->flags.during_compacting = TRUE;
         }
 	objspace->profile.major_gc_count++;
 	objspace->rgengc.uncollectible_wb_unprotected_objects = 0;
