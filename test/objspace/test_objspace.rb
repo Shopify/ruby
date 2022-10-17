@@ -1,5 +1,6 @@
 # frozen_string_literal: false
 require "test/unit"
+require 'tempfile'
 require "objspace"
 begin
   require "json"
@@ -723,6 +724,46 @@ class TestObjSpace < Test::Unit::TestCase
       assert_equal '"foo" @ -:2', out[0]
       assert_equal '"bar" @ -:3', out[1]
       assert_equal '42', out[2]
+    end
+  end
+
+  def load_allocation_path_helper
+    str = "#{Time.now.to_f.to_s}_#{rand.to_s}"
+    Tempfile.create(["test_ruby_load_allocation_path", ".rb"]) do |t|
+      t.puts <<~RUBY
+      # frozen-string-literal: true
+      return if Time.now.to_i > 0
+      $gv = 'rnd-#{str}' # unreachable, but the string literal was written
+      RUBY
+      t.close
+
+      ObjectSpace.trace_object_allocations do
+        yield t.path
+      end
+
+      n = 0
+      dump = ObjectSpace.dump_all(output: :string)
+      dump.each_line{|line|
+        if /"value":"rnd-#{str}"/ =~ line && /"frozen":true/ =~ line
+          assert /"file":"#{t.path}"/ =~ line
+          assert /"line":/ !~ line
+          n += 1
+        end
+      }
+
+      assert_equal(1, n)
+    end
+  end
+
+  def test_load_allocation_path_load
+    load_allocation_path_helper do |path|
+      load path
+    end
+  end
+
+  def test_load_allocation_path_compile_file
+    load_allocation_path_helper do |path|
+      RubyVM::InstructionSequence.compile_file path
     end
   end
 

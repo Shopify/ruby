@@ -429,6 +429,34 @@ rb_vm_pop_frame(rb_execution_context_t *ec)
     vm_pop_frame(ec, ec->cfp, ec->cfp->ep);
 }
 
+// it pushes pseudo-frame with fname filename.
+VALUE
+rb_vm_push_frame_fname(rb_execution_context_t *ec, VALUE fname)
+{
+    VALUE tmpbuf = rb_imemo_tmpbuf_auto_free_pointer();
+    void *ptr = ruby_xcalloc(sizeof(struct rb_iseq_constant_body) + sizeof(struct rb_iseq_struct), 1);
+    rb_imemo_tmpbuf_set_ptr(tmpbuf, ptr);
+
+    struct rb_iseq_struct *dmy_iseq = (struct rb_iseq_struct *)ptr;
+    struct rb_iseq_constant_body *dmy_body = (struct rb_iseq_constant_body *)&dmy_iseq[1];
+    dmy_iseq->body = dmy_body;
+    dmy_body->type = ISEQ_TYPE_TOP;
+    dmy_body->location.pathobj = fname;
+
+    vm_push_frame(ec,
+                  dmy_iseq, //const rb_iseq_t *iseq,
+                  VM_FRAME_MAGIC_DUMMY | VM_ENV_FLAG_LOCAL | VM_FRAME_FLAG_FINISH, // VALUE type,
+                  ec->cfp->self, // VALUE self,
+                  Qnil, // VALUE specval,
+                  Qfalse, // VALUE cref_or_me,
+                  NULL, // const VALUE *pc,
+                  ec->cfp->sp, // VALUE *sp,
+                  0, // int local_size,
+                  0); // int stack_max
+
+    return tmpbuf;
+}
+
 /* method dispatch */
 static inline VALUE
 rb_arity_error_new(int argc, int min, int max)
