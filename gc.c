@@ -5136,6 +5136,15 @@ gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap
 
     uninstall_handlers();
 
+    for (int i=0; i<VM_GLOBAL_CC_CACHE_TABLE_SIZE; i++) {
+        const struct rb_callcache *cc = GET_VM()->global_cc_cache_table[i];
+        
+        if (cc && RB_TYPE_P((VALUE)cc, T_MOVED)) {
+            rb_bug("cc %p is in the global_cc_cache table and T_MOVED", cc);
+        }
+    }
+
+
     /* The mutator is allowed to run during incremental sweeping. T_MOVED
      * objects can get pushed on the stack and when the compaction process
      * finishes up, it may remove the read barrier before anything has a
@@ -6743,6 +6752,12 @@ int
 objspace_during_compacting()
 {
     return ruby_current_vm_ptr->objspace->flags.during_compacting;
+}
+
+int
+objspace_profile_count()
+{
+    return GET_VM()->objspace->profile.count;
 }
 
 int

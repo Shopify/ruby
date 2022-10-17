@@ -139,6 +139,7 @@ void rb_objspace_each_objects_without_setup(
 int objspace_during_compacting();
 int objspace_minor_compaction();
 int ruby_autocompact_enabled_p();
+int objspace_profile_count();
 
 RUBY_SYMBOL_EXPORT_END
 

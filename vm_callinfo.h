@@ -41,6 +41,8 @@ enum vm_call_flag_bits {
 #define VM_CALL_OPT_SEND        (0x01 << VM_CALL_OPT_SEND_bit)
 #define VM_CALL_KW_SPLAT_MUT    (0x01 << VM_CALL_KW_SPLAT_MUT_bit)
 
+#include "gc.h"
+
 struct rb_callinfo_kwarg {
     int keyword_len;
     VALUE keywords[];
@@ -425,6 +427,7 @@ vm_cc_invalidate(const struct rb_callcache *cc)
     VM_ASSERT(cc->klass != 0); // should be enable
 
     *(VALUE *)&cc->klass = 0;
+    *(unsigned int *)&cc->aux_.attr_index = objspace_profile_count();
     RB_DEBUG_COUNTER_INC(cc_ent_invalidate);
 }
 
