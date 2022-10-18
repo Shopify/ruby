@@ -532,6 +532,7 @@ pub extern "C" fn rb_yjit_tracing_invalidate_all() {
     // Stop other ractors since we are going to patch machine code.
     with_vm_lock(src_loc!(), || {
         // Make it so all live block versions are no longer valid branch targets
+        // TODO: invalidate only on-stack ISEQs for code GC
         for_each_iseq(|iseq| {
             if let Some(payload) = get_iseq_payload(iseq) {
                 // C comment:

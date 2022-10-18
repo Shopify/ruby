@@ -825,6 +825,41 @@ class TestYJIT < Test::Unit::TestCase
     RUBY
   end
 
+  def test_code_gc
+    assert_compiles(<<~'RUBY', exits: :any, result: :ok)
+      def compiles(&block)
+        failures = RubyVM::YJIT.runtime_stats[:compilation_failure]
+        block.call
+        failures == RubyVM::YJIT.runtime_stats[:compilation_failure]
+      end
+
+      def add_pages(num_jits)
+        pages = RubyVM::YJIT.runtime_stats[:compiled_page_count]
+        100.times { return false unless eval('compiles { nil.to_i }') }
+        pages.nil? || pages < RubyVM::YJIT.runtime_stats[:compiled_page_count]
+      end
+
+      def code_gc
+        RubyVM::YJIT.simulate_oom! # bump write_pos
+        eval('proc { nil }.call') # trigger code GC
+      end
+
+      return :not_paged unless add_pages(100) # prepare freeable pages
+      code_gc # first code GC
+      return :not_compiled1 unless compiles { nil } # should be JITable again
+
+      code_gc # second code GC
+      return :not_compiled2 unless compiles { nil } # should be JITable again
+
+      code_gc_count = RubyVM::YJIT.runtime_stats[:code_gc_count]
+      return :"code_gc_#{code_gc_count}" if code_gc_count && code_gc_count != 2
+
+      :ok
+    RUBY
+  end
+
+  private
+
   def assert_no_exits(script)
     assert_compiles(script)
   end
