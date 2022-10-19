@@ -9832,8 +9832,28 @@ garbage_collect_with_gvl(rb_objspace_t *objspace, unsigned int reason)
     }
 }
 
+static int
+gc_promote_object_i(void *vstart, void *vend, size_t stride, void *data)
+{
+    rb_objspace_t *objspace = &rb_objspace;
+    VALUE v = (VALUE)vstart;
+    for (; v != (VALUE)vend; v += stride) {
+        switch (BUILTIN_TYPE(v)) {
+          case T_NONE:
+          case T_ZOMBIE:
+            break;
+          default:
+            if (!RVALUE_OLD_P(v) && !RVALUE_WB_UNPROTECTED(v)) {
+                RVALUE_AGE_SET_OLD(objspace, v);
+            }
+        }
+    }
+
+    return 0;
+}
+
 static VALUE
-gc_start_internal(rb_execution_context_t *ec, VALUE self, VALUE full_mark, VALUE immediate_mark, VALUE immediate_sweep, VALUE compact)
+gc_start_internal(rb_execution_context_t *ec, VALUE self, VALUE full_mark, VALUE immediate_mark, VALUE immediate_sweep, VALUE compact, VALUE promote)
 {
     rb_objspace_t *objspace = &rb_objspace;
     unsigned int reason = (GPR_FLAG_FULL_MARK |
@@ -9856,7 +9876,20 @@ gc_start_internal(rb_execution_context_t *ec, VALUE self, VALUE full_mark, VALUE
     garbage_collect(objspace, reason);
     gc_finalize_deferred(objspace);
 
+    if (RTEST(promote)) {
+        /* The transient heap need to be evacuated before we promote objects */
+        rb_transient_heap_evacuate();
+        objspace_each_objects(objspace, gc_promote_object_i, NULL, TRUE);
+        rb_transient_heap_evacuate();
+    }
+
     return Qnil;
+}
+
+void
+rb_gc_prepare_heap(void)
+{
+    gc_start_internal(NULL, Qtrue, Qtrue, Qtrue, Qtrue, Qtrue, Qtrue);
 }
 
 static int
@@ -10938,7 +10971,7 @@ static VALUE
 gc_compact(VALUE self)
 {
     /* Run GC with compaction enabled */
-    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qtrue);
+    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qtrue, Qfalse);
 
     return gc_compact_stats(self);
 }
@@ -10953,7 +10986,7 @@ gc_verify_compaction_references(rb_execution_context_t *ec, VALUE self, VALUE do
     rb_objspace_t *objspace = &rb_objspace;
 
     /* Clear the heap. */
-    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qfalse);
+    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qfalse, Qfalse);
     size_t growth_slots = gc_params.heap_init_slots;
 
     if (RTEST(double_heap)) {
@@ -10986,7 +11019,7 @@ gc_verify_compaction_references(rb_execution_context_t *ec, VALUE self, VALUE do
     }
     RB_VM_LOCK_LEAVE();
 
-    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qtrue);
+    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qtrue, Qfalse);
 
     objspace_reachable_objects_from_root(objspace, root_obj_check_moved_i, NULL);
     objspace_each_objects(objspace, heap_check_moved_i, NULL, TRUE);
