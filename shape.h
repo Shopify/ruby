@@ -130,7 +130,14 @@ ROBJECT_IV_COUNT(VALUE obj)
 {
     RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
     uint32_t ivc = rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj))->iv_count;
-    RUBY_ASSERT(ivc <= ROBJECT_NUMIV(obj));
+    if(ivc > ROBJECT_NUMIV(obj)) {
+        rb_shape_t * shape = rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj));
+        fprintf(stderr, "shape iv count: %d\n", ivc);
+        fprintf(stderr, "robject num iv: %d\n", ROBJECT_NUMIV(obj));
+        rp(obj);
+        fprintf(stderr, "Shape type: %d\n", shape->type);
+        rb_bug("uh oh\n");
+    }
     return ivc;
 }
 
