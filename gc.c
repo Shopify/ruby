@@ -6734,7 +6734,9 @@ static inline void
 gc_pin(rb_objspace_t *objspace, VALUE obj)
 {
     GC_ASSERT(is_markable_object(objspace, obj));
-    GC_ASSERT(ruby_enable_autocompact <= objspace->flags.during_compacting);
+    if (objspace->flags.during_minor_gc == 0 && ruby_enable_autocompact) {
+        GC_ASSERT(objspace->flags.during_compacting == 1);
+    }
     if (UNLIKELY(objspace->flags.during_compacting)) {
         if (LIKELY(during_gc)) {
             MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(obj), obj);
