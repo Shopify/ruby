@@ -197,6 +197,7 @@ impl CodeBlock {
             while page_idxs.last() == Some(&(batch_idxs.last().unwrap() + 1)) {
                 batch_idxs.push(page_idxs.pop().unwrap());
             }
+            println!("free batch: {:?}", batch_idxs);
 
             // Free the grouped pages at once
             let start_ptr = self.mem_block.borrow().start_ptr().add_bytes(page_idx * self.page_size);
@@ -551,6 +552,12 @@ impl CodeBlock {
         // Let VirtuamMem free the pages
         let freed_pages: Vec<usize> = pages_in_use.iter().enumerate()
             .filter(|&(_, &in_use)| !in_use).map(|(page, _)| page).collect();
+        println!();
+        if freed_pages.is_empty() {
+            println!("code_gc: give up");
+        } else {
+            println!("code_gc:");
+        }
         self.free_pages(&freed_pages);
 
         // We free or not reuse the bytes frozen by any past invalidation, so this
