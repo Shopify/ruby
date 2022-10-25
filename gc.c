@@ -10019,6 +10019,10 @@ gc_ref_update_object(rb_objspace_t *objspace, VALUE v)
 
         uint32_t capa = (uint32_t)((slot_size - offsetof(struct RObject, as.ary)) / sizeof(VALUE));
         ROBJECT(v)->numiv = capa;
+
+        for (uint32_t i = numiv; i < capa; i++) {
+            ptr[i] = 0xFFFFFFFFCAFEF00A;
+        }
     }
 #endif
 
