@@ -1267,6 +1267,9 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
             rb_shape_transition_shape_remove_ivar(obj, id, shape);
             val = ROBJECT_IVPTR(obj)[index];
             ROBJECT_IVPTR(obj)[index] = Qundef;
+            if (ROBJECT_IVPTR(obj)[index] == 16) {
+                rb_bug("what is going on");
+            }
             return val;
         }
 
@@ -1464,6 +1467,9 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     }
 
     RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[index], val);
+    if (val == 16) {
+        rb_bug("waaaattt");
+    }
     rb_shape_set_shape(obj, shape);
 
     return val;
@@ -1892,6 +1898,9 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
             rb_shape_transition_shape_remove_ivar(obj, id, shape);
             val = ROBJECT_IVPTR(obj)[index];
             ROBJECT_IVPTR(obj)[index] = Qundef;
+            if (ROBJECT_IVPTR(obj)[index] == 16) {
+                rb_bug("?????");
+            }
             return val;
         }
 
