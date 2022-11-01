@@ -388,6 +388,8 @@ fn gen_code_for_exit_from_stub(ocb: &mut OutlinedCb) -> CodePtr {
     gen_counter_incr!(asm, exit_from_branch_stub);
 
     asm.comment("exit from branch stub");
+    #[cfg(target_arch = "x86_64")]
+    asm.cpop_into(Opnd::Reg(crate::asm::x86_64::RSI_REG));
     asm.frame_teardown();
     asm.cret(Qundef.into());
 
@@ -434,6 +436,8 @@ fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, asm: &mut Assembler) {
         }
     }
 
+    #[cfg(target_arch = "x86_64")]
+    asm.cpop_into(Opnd::Reg(crate::asm::x86_64::RSI_REG));
     asm.frame_teardown();
     asm.cret(Qundef.into());
 }
@@ -514,6 +518,8 @@ fn gen_full_cfunc_return(ocb: &mut OutlinedCb) -> CodePtr {
     // Count the exit
     gen_counter_incr!(asm, traced_cfunc_return);
 
+    #[cfg(target_arch = "x86_64")]
+    asm.cpop_into(Opnd::Reg(crate::asm::x86_64::RSI_REG));
     // Return to the interpreter
     asm.frame_teardown();
     asm.cret(Qundef.into());
@@ -705,6 +711,10 @@ pub fn gen_single_block(
     // Put frame setup code if requested
     if ctx.get_frame_setup() {
         asm.frame_setup();
+
+        #[cfg(target_arch = "x86_64")]
+        asm.cpush(C_RET_OPND);
+
         ctx.set_frame_setup(false);
     }
 
@@ -5023,12 +5033,12 @@ fn gen_send_iseq(
     }
 
     // Return in case the callee wants to exit to the interpreter
-    let dont_exit = asm.new_label("dont_exit");
+    // HACK: stub_exit_code happens to be exactly what we want.
+    //       It just pops the native frame and returns.
+    //       Since we check that C_RET_OPND is Qundef, we don't
+    //       need to write to the register, though. Close enough.
     asm.cmp(C_RET_OPND, Qundef.into());
-    asm.jne(dont_exit);
-    asm.frame_teardown();
-    asm.cret(C_RET_OPND);
-    asm.write_label(dont_exit);
+    asm.je(CodegenGlobals::get_stub_exit_code().into());
 
     // The callee might change locals through Kernel#binding and other means.
     ctx.clear_local_types();
@@ -5765,6 +5775,8 @@ fn gen_leave(
     asm.mov(SP, Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SP));
     asm.mov(Opnd::mem(64, SP, 0), retval_opnd);
 
+    #[cfg(target_arch = "x86_64")]
+    asm.cpop_into(Opnd::Reg(crate::asm::x86_64::RSI_REG));
     asm.frame_teardown();
     asm.cret(retval_opnd);
 

@@ -1909,6 +1909,9 @@ fn get_branch_target(
 
     if ctx.get_frame_setup() {
         asm.frame_setup();
+
+        #[cfg(target_arch = "x86_64")]
+        asm.cpush(C_RET_OPND);
     }
 
     // Call branch_stub_hit(branch_ptr, target_idx, ec)
@@ -1922,6 +1925,9 @@ fn get_branch_target(
     );
 
     if ctx.get_frame_setup() {
+        #[cfg(target_arch = "x86_64")]
+        asm.cpop_into(Opnd::Reg(crate::core::x86_64::RSI_REG));
+
         asm.frame_teardown();
     }
 
