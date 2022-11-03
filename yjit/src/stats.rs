@@ -287,12 +287,12 @@ make_counters! {
 /// Check if stats generation is enabled
 #[no_mangle]
 pub extern "C" fn rb_yjit_stats_enabled_p(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
-    #[cfg(feature = "stats")]
+
     if get_option!(gen_stats) {
         return Qtrue;
+    } else {
+        return Qfalse;
     }
-
-    return Qfalse;
 }
 
 /// Primitive called in yjit.rb.
@@ -399,7 +399,7 @@ fn rb_yjit_gen_stats_dict() -> VALUE {
     }
 
     // If the stats feature is enabled
-    #[cfg(feature = "stats")]
+
     unsafe {
         // Indicate that the complete set of stats is available
         rb_hash_aset(hash, rust_str_to_sym("all_stats"), Qtrue);
