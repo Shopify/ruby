@@ -1056,6 +1056,7 @@ ary_make_shared(VALUE ary)
         /* Shared roots cannot be embedded because the reference count
          * (refcnt) is stored in as.heap.aux.capa. */
         VALUE shared = ary_alloc_heap(0);
+        FL_SET_SHARED_ROOT(shared);
 
         if (ARY_EMBED_P(ary)) {
             /* Cannot use ary_heap_alloc because we don't want to allocate
@@ -1074,7 +1075,6 @@ ary_make_shared(VALUE ary)
 
         ARY_SET_LEN(shared, capa);
         ary_mem_clear(shared, len, capa - len);
-        FL_SET_SHARED_ROOT(shared);
         ARY_SET_SHARED_ROOT_REFCNT(shared, 1);
         FL_SET_SHARED(ary);
         RB_DEBUG_COUNTER_INC(obj_ary_shared_create);
@@ -1348,10 +1348,10 @@ ary_make_partial(VALUE ary, VALUE klass, long offset, long len)
         return result;
     }
     else {
+        VALUE shared = ary_make_shared(ary);
+
         VALUE result = ary_alloc_heap(klass);
         assert(!ARY_EMBED_P(result));
-
-        VALUE shared = ary_make_shared(ary);
 
         ARY_SET_PTR(result, RARRAY_CONST_PTR_TRANSIENT(ary));
         ARY_SET_LEN(result, RARRAY_LEN(ary));
