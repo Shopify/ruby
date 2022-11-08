@@ -1,4 +1,16 @@
 class Array
+  def each
+    unless block_given?
+      return to_enum(:each) { self.length }
+    end
+    i = 0
+    while i < self.length
+      yield self[i]
+      i += 1
+    end
+    self
+  end
+
   # call-seq:
   #    array.shuffle!(random: Random) -> array
   #
