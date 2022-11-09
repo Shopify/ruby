@@ -55,5 +55,8 @@ main(int argc, char **argv)
 #endif
 
     ruby_sysinit(&argc, &argv);
-    return rb_main(argc, argv);
+    int result = rb_main(argc, argv);
+    extern void rb_yjit_end_profiler();
+    rb_yjit_end_profiler();
+    return result;
 }

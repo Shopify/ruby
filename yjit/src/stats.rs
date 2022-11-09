@@ -10,11 +10,6 @@ use crate::cruby::*;
 use crate::options::*;
 use crate::yjit::yjit_enabled_p;
 
-// stats_alloc is a middleware to instrument global allocations in Rust.
-#[cfg(feature="stats")]
-#[global_allocator]
-static GLOBAL_ALLOCATOR: &stats_alloc::StatsAlloc<std::alloc::System> = &stats_alloc::INSTRUMENTED_SYSTEM;
-
 // YJIT exit counts for each instruction type
 const VM_INSTRUCTION_SIZE_USIZE:usize = VM_INSTRUCTION_SIZE as usize;
 static mut EXIT_OP_COUNT: [u64; VM_INSTRUCTION_SIZE_USIZE] = [0; VM_INSTRUCTION_SIZE_USIZE];
@@ -816,6 +811,5 @@ pub extern "C" fn rb_yjit_count_side_exit_op(exit_pc: *const VALUE) -> *const VA
 // Get the size of global allocations in Rust.
 #[cfg(feature="stats")]
 fn global_allocation_size() -> usize {
-    let stats = GLOBAL_ALLOCATOR.stats();
-    stats.bytes_allocated.saturating_sub(stats.bytes_deallocated)
+    0
 }

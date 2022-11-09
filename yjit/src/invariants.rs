@@ -429,7 +429,7 @@ pub extern "C" fn rb_yjit_constant_ic_update(iseq: *const rb_iseq_t, ic: IC, ins
                 let translated_opcode: VALUE = opcode_pc.read();
                 rb_vm_insn_decode(translated_opcode)
             },
-            YARVINSN_opt_getconstant_path.try_into().unwrap()
+            std::os::raw::c_int::try_from(YARVINSN_opt_getconstant_path).unwrap()
         );
 
         // Find the matching opt_getinlinecache and invalidate all the blocks there

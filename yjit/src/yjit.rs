@@ -52,9 +52,16 @@ pub extern "C" fn rb_yjit_threshold_hit(_iseq: IseqPtr, total_calls: u64) -> boo
     return total_calls == call_threshold;
 }
 
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
+static mut PROFILER: Option<*mut dhat::Profiler> = None;
+
 /// This function is called from C code
 #[no_mangle]
 pub extern "C" fn rb_yjit_init_rust() {
+    unsafe { PROFILER = Some(Box::into_raw(Box::new(dhat::Profiler::new_heap()))) };
+
     // TODO: need to make sure that command-line options have been
     // initialized by CRuby
 
@@ -180,4 +187,14 @@ pub extern "C" fn rb_yjit_simulate_oom_bang(_ec: EcPtr, _ruby_self: VALUE) -> VA
     }
 
     return Qnil;
+}
+
+#[no_mangle]
+pub extern "C" fn rb_yjit_end_profiler() {
+    unsafe {
+        if let Some(profiler) = PROFILER {
+            let profiler = Box::from_raw(profiler);
+            drop(profiler);
+        }
+    }
 }
