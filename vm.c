@@ -3133,6 +3133,7 @@ rb_execution_context_mark(const rb_execution_context_t *ec)
         rb_control_frame_t *limit_cfp = (void *)(ec->vm_stack + ec->vm_stack_size);
 
         VM_ASSERT(sp == ec->cfp->sp);
+        fprintf(stderr, "rb_execution_context_mark: ec %p, p %p, count %ld\n", ec, p, sp - p);
         rb_gc_mark_vm_stack_values((long)(sp - p), p);
 
         while (cfp != limit_cfp) {

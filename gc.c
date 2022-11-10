@@ -8157,6 +8157,7 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
         objspace->flags.during_minor_gc = FALSE;
         if (ruby_enable_autocompact) {
             objspace->flags.during_compacting |= TRUE;
+            fprintf(stderr, "gc_marks_start: start marking for compact\n");
         }
         objspace->profile.major_gc_count++;
         objspace->rgengc.uncollectible_wb_unprotected_objects = 0;
@@ -8261,6 +8262,9 @@ gc_marks_finish(rb_objspace_t *objspace)
         }
     }
 #endif /* GC_ENABLE_INCREMENTAL_MARK */
+
+    if (objspace->flags.during_compacting)
+        fprintf(stderr, "gc_marks_finish: finish marking for compact\n");
 
 #if RGENGC_CHECK_MODE >= 2
     gc_verify_internal_consistency(objspace);
