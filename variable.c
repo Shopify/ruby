@@ -3909,7 +3909,7 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
             rb_shape_set_shape(obj, shape);
         }
 
-        fprintf(stderr, "rb_class_ivar_set: obj %ld, key %ld, value %ld (type %d, flags %ld), idx %d, found %d, shape %p\n", obj, key, value, rb_type(value), RB_SPECIAL_CONST_P(obj) ? 0 : RBASIC(value)->flags, idx, found, shape);
+        fprintf(stderr, "rb_class_ivar_set: obj %ld, key %ld, value %ld (type %d, flags %ld), idx %d, found %d, shape %p\n", obj, key, value, rb_type(value), RB_SPECIAL_CONST_P(value) ? 0 : RBASIC(value)->flags, idx, found, shape);
 
         if (rb_type(value) == T_NONE) {
             rb_bug("should not be T_NONE");
