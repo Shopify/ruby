@@ -568,6 +568,15 @@ rb_singleton_class_clone(VALUE obj)
     return rb_singleton_class_clone_and_attach(obj, Qundef);
 }
 
+static int
+tbl_verify_i(st_data_t key, st_data_t val, st_data_t dest) {
+    if (rb_type(val) == T_NONE) {
+        rb_bug("T_NONE");
+    }
+
+    return ST_CONTINUE;
+}
+
 // Clone and return the singleton class of `obj` if it has been created and is attached to `obj`.
 VALUE
 rb_singleton_class_clone_and_attach(VALUE obj, VALUE attach)
@@ -622,6 +631,8 @@ rb_singleton_class_clone_and_attach(VALUE obj, VALUE attach)
             rb_singleton_class_attached(METACLASS_OF(clone), clone);
         }
         FL_SET(clone, FL_SINGLETON);
+
+        rb_ivar_foreach(clone, tbl_verify_i, 0);
 
         return clone;
     }

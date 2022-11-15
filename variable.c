@@ -1601,6 +1601,11 @@ iterate_over_shapes_with_callback(rb_shape_t *shape, rb_ivar_foreach_callback_fu
         if (val != Qundef) {
             callback(shape->edge_name, val, itr_data->arg);
         }
+
+        if (val == Qundef && shape->edge_name == id__attached__) {
+            rb_bug("iterate_over_shapes_with_callback: __attached__ is undef");
+        }
+
         return;
       case SHAPE_INITIAL_CAPACITY:
       case SHAPE_CAPACITY_CHANGE:
