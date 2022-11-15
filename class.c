@@ -596,7 +596,7 @@ rb_singleton_class_clone_and_attach(VALUE obj, VALUE attach)
         bool klass_of_clone_is_new;
         VALUE clone = class_alloc(RBASIC(klass)->flags, 0);
 
-        fprintf(stderr, "rb_singleton_class_clone_and_attach: obj %ld (type %d), attach %ld, clone %ld\n", obj, BUILTIN_TYPE(obj), attach, clone);
+        // fprintf(stderr, "rb_singleton_class_clone_and_attach: obj %ld (type %d), attach %ld, clone %ld\n", obj, BUILTIN_TYPE(obj), attach, clone);
 
         if (BUILTIN_TYPE(obj) == T_CLASS) {
             klass_of_clone_is_new = true;
@@ -604,7 +604,7 @@ rb_singleton_class_clone_and_attach(VALUE obj, VALUE attach)
         }
         else {
             VALUE klass_metaclass_clone = rb_singleton_class_clone(klass);
-            fprintf(stderr, "  rb_singleton_class_clone_and_attach: klass_metaclass_clone %ld\n", klass_metaclass_clone);
+            // fprintf(stderr, "  rb_singleton_class_clone_and_attach: klass_metaclass_clone %ld\n", klass_metaclass_clone);
             // When `METACLASS_OF(klass) == klass_metaclass_clone`, it means the
             // recursive call did not clone `METACLASS_OF(klass)`.
             klass_of_clone_is_new = (METACLASS_OF(klass) != klass_metaclass_clone);
