@@ -3908,6 +3908,8 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
             if ((idx & (idx - 1)) == 0) {
                 size_t newsize = idx ? idx * 2 : 1;
                 REALLOC_N(RCLASS_IVPTR(obj), VALUE, newsize);
+
+                fprintf(stderr, "  rb_class_ivar_set: resize ivptr to %p (size %ld)\n", RCLASS_IVPTR(obj), newsize);
             }
 
             RUBY_ASSERT(RCLASS_IVPTR(obj));
@@ -3915,6 +3917,8 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
             RB_OBJ_WRITE(obj, &RCLASS_IVPTR(obj)[idx], value);
             rb_shape_set_shape(obj, shape);
         }
+
+        fprintf(stderr, "  rb_class_ivar_set: idx %d, written val %ld\n", idx, RCLASS_IVPTR(obj)[idx]);
     }
     RB_VM_LOCK_LEAVE();
 
