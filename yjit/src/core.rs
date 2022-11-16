@@ -939,6 +939,7 @@ impl Block {
             cme_dependencies: Vec::new(),
             entry_exit: None,
         };
+        add_counter!(compiled_block_size, std::mem::size_of_val(&block) as u64);
 
         // Wrap the block in a reference counted refcell
         // so that the block ownership can be shared
@@ -1669,6 +1670,7 @@ fn make_branch_entry(block: &BlockRef, gen_fn: BranchGenFn) -> BranchRef {
         // Shape of the branch
         shape: BranchShape::Default,
     };
+    add_counter!(compiled_branch_size, std::mem::size_of_val(&branch) as u64);
 
     // Add to the list of outgoing branches for the block
     let branchref = Rc::new(RefCell::new(branch));

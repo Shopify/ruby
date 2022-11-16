@@ -256,7 +256,9 @@ module RubyVM::YJIT
       $stderr.puts "compilation_failure:   " + ("%10d" % compilation_failure) if compilation_failure != 0
       $stderr.puts "compiled_iseq_count:   " + ("%10d" % stats[:compiled_iseq_count])
       $stderr.puts "compiled_block_count:  " + ("%10d" % stats[:compiled_block_count])
+      $stderr.puts "compiled_block_size:   " + ("%10d" % stats[:compiled_block_size])
       $stderr.puts "compiled_branch_count: " + ("%10d" % stats[:compiled_branch_count])
+      $stderr.puts "compiled_branch_size:  " + ("%10d" % stats[:compiled_branch_size])
       $stderr.puts "freed_iseq_count:      " + ("%10d" % stats[:freed_iseq_count])
       $stderr.puts "invalidation_count:    " + ("%10d" % stats[:invalidation_count])
       $stderr.puts "constant_state_bumps:  " + ("%10d" % stats[:constant_state_bumps])

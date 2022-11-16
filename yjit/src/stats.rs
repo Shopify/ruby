@@ -152,6 +152,18 @@ macro_rules! incr_counter {
 }
 pub(crate) use incr_counter;
 
+macro_rules! add_counter {
+    // Unsafe is ok here because options are initialized
+    // once before any Ruby code executes
+    ($counter_name:ident, $num:expr) => {
+        #[allow(unused_unsafe)]
+        {
+            unsafe { $crate::stats::COUNTERS.$counter_name += $num }
+        }
+    };
+}
+pub(crate) use add_counter;
+
 /// Macro to get a raw pointer to a given counter
 macro_rules! ptr_to_counter {
     ($counter_name:ident) => {
@@ -267,7 +279,9 @@ make_counters! {
     vm_insns_count,
     compiled_iseq_count,
     compiled_block_count,
+    compiled_block_size,
     compiled_branch_count,
+    compiled_branch_size,
     compilation_failure,
     freed_iseq_count,
 
