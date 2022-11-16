@@ -3907,9 +3907,11 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
             // only need to realloc when we expand into a new power of two size
             if ((idx & (idx - 1)) == 0) {
                 size_t newsize = idx ? idx * 2 : 1;
+                fprintf(stderr, "  rb_class_ivar_set: resize ivptr from %p ", RCLASS_IVPTR(obj));
+
                 REALLOC_N(RCLASS_IVPTR(obj), VALUE, newsize);
 
-                fprintf(stderr, "  rb_class_ivar_set: resize ivptr to %p (size %ld)\n", RCLASS_IVPTR(obj), newsize);
+                fprintf(stderr, "to %p (size %ld)\n", RCLASS_IVPTR(obj), newsize);
             }
 
             RUBY_ASSERT(RCLASS_IVPTR(obj));

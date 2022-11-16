@@ -3446,6 +3446,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
         rb_id_table_free(RCLASS_M_TBL(obj));
         cc_table_free(objspace, obj, FALSE);
         if (RCLASS_IVPTR(obj)) {
+            fprintf(stderr, "gc: free ivptr %p (obj %ld)\n", RCLASS_IVPTR(obj), obj);
             xfree(RCLASS_IVPTR(obj));
         }
         if (RCLASS_CONST_TBL(obj)) {
