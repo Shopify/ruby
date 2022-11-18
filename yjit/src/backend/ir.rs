@@ -434,9 +434,13 @@ pub enum Insn {
     // binary OR operation.
     Or { left: Opnd, right: Opnd, out: Opnd },
 
-    /// Pad nop instructions to accomodate Op::Jmp in case the block or the insn
-    /// is invalidated.
+    /// Pad nop instructinos to accommodate a non-conditional jump for invalidating
+    /// patch points and YJIT entry.
     PadInvalPatch,
+
+    /// Pad nop instructions to accommodate a conditional jump for invalidating
+    /// regenerated branches.
+    PadInvalBranch,
 
     // Mark a position in the generated code
     PosMarker(PosMarkerFn),
@@ -522,7 +526,8 @@ impl Insn {
             Insn::Mov { .. } => "Mov",
             Insn::Not { .. } => "Not",
             Insn::Or { .. } => "Or",
-            Insn::PadInvalPatch => "PadEntryExit",
+            Insn::PadInvalPatch => "PadInvalPatch",
+            Insn::PadInvalBranch => "PadInvalBranch",
             Insn::PosMarker(_) => "PosMarker",
             Insn::RShift { .. } => "RShift",
             Insn::Store { .. } => "Store",
@@ -660,6 +665,7 @@ impl<'a> Iterator for InsnOpndIterator<'a> {
             Insn::Label(_) |
             Insn::LeaLabel { .. } |
             Insn::PadInvalPatch |
+            Insn::PadInvalBranch |
             Insn::PosMarker(_) => None,
             Insn::CPopInto(opnd) |
             Insn::CPush(opnd) |
@@ -757,6 +763,7 @@ impl<'a> InsnOpndMutIterator<'a> {
             Insn::Label(_) |
             Insn::LeaLabel { .. } |
             Insn::PadInvalPatch |
+            Insn::PadInvalBranch |
             Insn::PosMarker(_) => None,
             Insn::CPopInto(opnd) |
             Insn::CPush(opnd) |
@@ -1505,6 +1512,10 @@ impl Assembler {
 
     pub fn pad_inval_patch(&mut self) {
         self.push_insn(Insn::PadInvalPatch);
+    }
+
+    pub fn pad_inval_branch(&mut self) {
+        self.push_insn(Insn::PadInvalBranch);
     }
 
     //pub fn pos_marker<F: FnMut(CodePtr)>(&mut self, marker_fn: F)

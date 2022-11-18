@@ -2,6 +2,7 @@
 //! generated code if and when these assumptions are invalidated.
 
 use crate::asm::OutlinedCb;
+use crate::backend::ir::*;
 use crate::codegen::*;
 use crate::core::*;
 use crate::cruby::*;
@@ -117,6 +118,7 @@ pub fn assume_bop_not_redefined(
 // @raise NoMemoryError
 pub fn assume_method_lookup_stable(
     jit: &mut JITState,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
     callee_cme: *const rb_callable_method_entry_t,
 ) {
@@ -132,6 +134,7 @@ pub fn assume_method_lookup_stable(
         .entry(callee_cme)
         .or_default()
         .insert(block.clone());
+    asm.pad_inval_branch(); // for rb_yjit_cme_invalidate
 }
 
 // Checks rb_method_basic_definition_p and registers the current block for invalidation if method
@@ -140,13 +143,14 @@ pub fn assume_method_lookup_stable(
 // default behavior.
 pub fn assume_method_basic_definition(
     jit: &mut JITState,
+    asm: &mut Assembler,
     ocb: &mut OutlinedCb,
     klass: VALUE,
-    mid: ID
-    ) -> bool {
+    mid: ID,
+) -> bool {
     if unsafe { rb_method_basic_definition_p(klass, mid) } != 0 {
         let cme = unsafe { rb_callable_method_entry(klass, mid) };
-        assume_method_lookup_stable(jit, ocb, cme);
+        assume_method_lookup_stable(jit, asm, ocb, cme);
         true
     } else {
         false
@@ -171,7 +175,12 @@ pub fn assume_single_ractor_mode(jit: &mut JITState, ocb: &mut OutlinedCb) -> bo
 /// subsequent opt_setinlinecache and find all of the name components that are
 /// associated with this constant (which correspond to the getconstant
 /// arguments).
-pub fn assume_stable_constant_names(jit: &mut JITState, ocb: &mut OutlinedCb, idlist: *const ID) {
+pub fn assume_stable_constant_names(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    ocb: &mut OutlinedCb,
+    idlist: *const ID,
+) {
     /// Tracks that a block is assuming that the name component of a constant
     /// has not changed since the last call to this function.
     fn assume_stable_constant_name(
@@ -203,6 +212,7 @@ pub fn assume_stable_constant_names(jit: &mut JITState, ocb: &mut OutlinedCb, id
             id => assume_stable_constant_name(jit, id),
         }
     }
+    asm.pad_inval_branch(); // for rb_yjit_constant_state_changed
 
     jit_ensure_block_entry_exit(jit, ocb);
 

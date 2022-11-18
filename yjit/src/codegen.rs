@@ -1883,6 +1883,7 @@ fn jit_chain_guard(
     } else {
         target0_gen_fn(asm, side_exit, None, BranchShape::Default);
     }
+    asm.pad_inval_branch(); // for invalidation
 }
 
 // up to 5 different classes, and embedded or not for each
@@ -3884,7 +3885,7 @@ fn jit_obj_respond_to(
     if result != Qtrue {
         // Only if respond_to_missing? hasn't been overridden
         // In the future, we might want to jit the call to respond_to_missing?
-        if !assume_method_basic_definition(jit, ocb, recv_class, idRespond_to_missing.into()) {
+        if !assume_method_basic_definition(jit, asm, ocb, recv_class, idRespond_to_missing.into()) {
             return false;
         }
     }
@@ -3892,7 +3893,7 @@ fn jit_obj_respond_to(
     // Invalidate this block if method lookup changes for the method being queried. This works
     // both for the case where a method does or does not exist, as for the latter we asked for a
     // "negative CME" earlier.
-    assume_method_lookup_stable(jit, ocb, target_cme);
+    assume_method_lookup_stable(jit, asm, ocb, target_cme);
 
     // Generate a side exit
     let side_exit = get_side_exit(jit, ocb, ctx);
@@ -5288,7 +5289,7 @@ fn gen_send_general(
 
     // Register block for invalidation
     //assert!(cme->called_id == mid);
-    assume_method_lookup_stable(jit, ocb, cme);
+    assume_method_lookup_stable(jit, asm, ocb, cme);
 
     // To handle the aliased method case (VM_METHOD_TYPE_ALIAS)
     loop {
@@ -5467,7 +5468,7 @@ fn gen_send_general(
 
                         flags |= VM_CALL_FCALL | VM_CALL_OPT_SEND;
 
-                        assume_method_lookup_stable(jit, ocb, cme);
+                        assume_method_lookup_stable(jit, asm, ocb, cme);
 
                         let (known_class, type_mismatch_exit) = {
                             if compile_time_name.string_p() {
@@ -5888,8 +5889,8 @@ fn gen_invokesuper(
 
     // We need to assume that both our current method entry and the super
     // method entry we invoke remain stable
-    assume_method_lookup_stable(jit, ocb, me);
-    assume_method_lookup_stable(jit, ocb, cme);
+    assume_method_lookup_stable(jit, asm, ocb, me);
+    assume_method_lookup_stable(jit, asm, ocb, cme);
 
     // Method calls may corrupt types
     ctx.clear_local_types();
@@ -6259,6 +6260,9 @@ fn gen_opt_getconstant_path(
     let ic: *const iseq_inline_constant_cache = const_cache_as_value.as_ptr();
     let idlist: *const ID = unsafe { (*ic).segments };
 
+    // rb_yjit_constant_ic_update may regenerate this block
+    asm.pad_inval_branch();
+
     // See vm_ic_hit_p(). The same conditions are checked in yjit_constant_ic_update().
     let ice = unsafe { (*ic).entry };
     if ice.is_null() {
@@ -6314,7 +6318,7 @@ fn gen_opt_getconstant_path(
 
         // Invalidate output code on any constant writes associated with
         // constants referenced within the current block.
-        assume_stable_constant_names(jit, ocb, idlist);
+        assume_stable_constant_names(jit, asm, ocb, idlist);
 
         jit_putobject(jit, ctx, asm, unsafe { (*ice).value });
     }

@@ -1611,6 +1611,7 @@ fn regenerate_branch(cb: &mut CodeBlock, branch: &mut Branch) {
         branch.dst_addrs[1],
         branch.shape,
     );
+    //asm.pad_inval_branch(); // keep it regeneratable
 
     // Rewrite the branch
     let old_write_pos = cb.get_write_pos();
@@ -1990,6 +1991,7 @@ pub fn gen_branch(
     if let Some(dst_addr) = branch.dst_addrs[0] {
         gen_fn(asm, dst_addr, branch.dst_addrs[1], BranchShape::Default);
     }
+    asm.pad_inval_branch(); // for branch_stub_hit
     asm.mark_branch_end(&branchref);
 }
 
@@ -2031,6 +2033,7 @@ pub fn gen_direct_jump(jit: &JITState, ctx: &Context, target0: BlockId, asm: &mu
         asm.comment("gen_direct_jmp: existing block");
         asm.mark_branch_start(&branchref);
         gen_jump_branch(asm, branch.dst_addrs[0].unwrap(), None, BranchShape::Default);
+        asm.pad_inval_branch(); // for invalidation
         asm.mark_branch_end(&branchref);
     } else {
         // This None target address signals gen_block_series() to compile the
@@ -2081,6 +2084,7 @@ pub fn defer_compilation(
     if let Some(dst_addr) = branch.dst_addrs[0] {
         gen_jump_branch(asm, dst_addr, None, BranchShape::Default);
     }
+    asm.pad_inval_branch(); // for invalidation
     asm.mark_branch_end(&branch_rc);
 }
 
