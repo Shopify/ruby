@@ -2490,6 +2490,23 @@ rb_iseq_disasm(const rb_iseq_t *iseq)
     return str;
 }
 
+int
+rb_iseq_count_setivars(const rb_iseq_t * iseq)
+{
+    unsigned int i = 0;
+    int count = 0;
+    for (i = 0; i < ISEQ_BODY(iseq)->iseq_size; ) {
+        VALUE insn = ISEQ_BODY(iseq)->iseq_encoded[i];
+        int original_insn = rb_vm_insn_addr2insn((const void *)insn);
+
+        i += insn_len(original_insn);
+        if (BIN(setinstancevariable) == original_insn) {
+            count++;
+        }
+    }
+    return count;
+}
+
 /*
  *  call-seq:
  *     iseq.disasm -> str
