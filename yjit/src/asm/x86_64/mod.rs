@@ -606,7 +606,7 @@ fn write_rm_multi(cb: &mut CodeBlock, op_mem_reg8: u8, op_mem_reg_pref: u8, op_r
         },
         // R/M + UImm
         (_, X86Opnd::UImm(uimm)) => {
-            let num_bits = imm_num_bits(uimm.value.try_into().unwrap());
+            let num_bits = uimm_num_bits(uimm.value.try_into().unwrap());
 
             if num_bits <= 8 {
                 // 8-bit immediate

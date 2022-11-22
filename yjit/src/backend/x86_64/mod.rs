@@ -354,7 +354,7 @@ impl Assembler
                 },
                 Opnd::UImm(value) => {
                     // 32-bit values will be sign-extended
-                    if imm_num_bits(*value as i64) > 32 {
+                    if uimm_num_bits(*value as u64) > 32 {
                         mov(cb, Assembler::SCRATCH0, opnd.into());
                         Assembler::SCRATCH0
                     } else {
@@ -725,7 +725,7 @@ mod tests {
     fn test_emit_add_lt_32_bits() {
         let (mut asm, mut cb) = setup_asm();
 
-        let _ = asm.add(Opnd::Reg(RAX_REG), Opnd::UImm(0xFF));
+        let _ = asm.add(Opnd::Reg(RAX_REG), Opnd::Imm(0xFF));
         asm.compile_with_num_regs(&mut cb, 1);
 
         assert_eq!(format!("{:x}", cb), "4889c04881c0ff000000");
@@ -745,7 +745,7 @@ mod tests {
     fn test_emit_and_lt_32_bits() {
         let (mut asm, mut cb) = setup_asm();
 
-        let _ = asm.and(Opnd::Reg(RAX_REG), Opnd::UImm(0xFF));
+        let _ = asm.and(Opnd::Reg(RAX_REG), Opnd::Imm(0xFF));
         asm.compile_with_num_regs(&mut cb, 1);
 
         assert_eq!(format!("{:x}", cb), "4889c04881e0ff000000");
@@ -765,7 +765,7 @@ mod tests {
     fn test_emit_cmp_lt_32_bits() {
         let (mut asm, mut cb) = setup_asm();
 
-        asm.cmp(Opnd::Reg(RAX_REG), Opnd::UImm(0xFF));
+        asm.cmp(Opnd::Reg(RAX_REG), Opnd::Imm(0xFF));
         asm.compile_with_num_regs(&mut cb, 0);
 
         assert_eq!(format!("{:x}", cb), "4881f8ff000000");
@@ -782,10 +782,34 @@ mod tests {
     }
 
     #[test]
+    fn test_emit_cmp_mem_16_bits_with_imm_16() {
+        let (mut asm, mut cb) = setup_asm();
+
+        let shape_opnd = Opnd::mem(16, Opnd::Reg(RAX_REG), 6);
+
+        asm.cmp(shape_opnd, Opnd::UImm(0xF000));
+        asm.compile_with_num_regs(&mut cb, 0);
+
+        assert_eq!(format!("{:x}", cb), "6681780600f0");
+    }
+
+    #[test]
+    fn test_emit_cmp_mem_32_bits_with_imm_32() {
+        let (mut asm, mut cb) = setup_asm();
+
+        let shape_opnd = Opnd::mem(32, Opnd::Reg(RAX_REG), 4);
+
+        asm.cmp(shape_opnd, Opnd::UImm(0xF000_0000));
+        asm.compile_with_num_regs(&mut cb, 0);
+
+        assert_eq!(format!("{:x}", cb), "817804000000f0");
+    }
+
+    #[test]
     fn test_emit_or_lt_32_bits() {
         let (mut asm, mut cb) = setup_asm();
 
-        let _ = asm.or(Opnd::Reg(RAX_REG), Opnd::UImm(0xFF));
+        let _ = asm.or(Opnd::Reg(RAX_REG), Opnd::Imm(0xFF));
         asm.compile_with_num_regs(&mut cb, 1);
 
         assert_eq!(format!("{:x}", cb), "4889c04881c8ff000000");
@@ -805,7 +829,7 @@ mod tests {
     fn test_emit_sub_lt_32_bits() {
         let (mut asm, mut cb) = setup_asm();
 
-        let _ = asm.sub(Opnd::Reg(RAX_REG), Opnd::UImm(0xFF));
+        let _ = asm.sub(Opnd::Reg(RAX_REG), Opnd::Imm(0xFF));
         asm.compile_with_num_regs(&mut cb, 1);
 
         assert_eq!(format!("{:x}", cb), "4889c04881e8ff000000");
@@ -845,7 +869,7 @@ mod tests {
     fn test_emit_xor_lt_32_bits() {
         let (mut asm, mut cb) = setup_asm();
 
-        let _ = asm.xor(Opnd::Reg(RAX_REG), Opnd::UImm(0xFF));
+        let _ = asm.xor(Opnd::Reg(RAX_REG), Opnd::Imm(0xFF));
         asm.compile_with_num_regs(&mut cb, 1);
 
         assert_eq!(format!("{:x}", cb), "4889c04881f0ff000000");
