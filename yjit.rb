@@ -285,6 +285,8 @@ module RubyVM::YJIT
         $stderr.puts "ratio_in_yjit:         " + ("%9.1f" % stats[:ratio_in_yjit]) + "%"
       end
       $stderr.puts "avg_len_in_yjit:       " + ("%10.1f" % stats[:avg_len_in_yjit])
+      $stderr.puts "inline_send:           " + ("%10d" % stats[:inline_send])
+      $stderr.puts "non_inline_send:       " + ("%10d" % stats[:non_inline_send])
 
       print_sorted_exit_counts(stats, prefix: "exit_")
     end

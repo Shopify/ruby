@@ -4499,6 +4499,40 @@ fn gen_send_bmethod(
     gen_send_iseq(jit, ctx, asm, ocb, iseq, ci, frame_type, Some(capture.ep), cme, block, flags, argc, None)
 }
 
+fn is_inlinable_iseq(iseq: IseqPtr) -> bool {
+    let mut inlinable_opcodes = vec![];
+    inlinable_opcodes.push(YARVINSN_putnil.as_usize());
+    inlinable_opcodes.push(YARVINSN_putself.as_usize());
+    inlinable_opcodes.push(YARVINSN_putobject.as_usize());
+    inlinable_opcodes.push(YARVINSN_putobject_INT2FIX_0_.as_usize());
+    inlinable_opcodes.push(YARVINSN_putobject_INT2FIX_1_.as_usize());
+    inlinable_opcodes.push(YARVINSN_putstring.as_usize());
+    inlinable_opcodes.push(YARVINSN_newarray.as_usize());
+    inlinable_opcodes.push(YARVINSN_duparray.as_usize());
+    inlinable_opcodes.push(YARVINSN_duphash.as_usize());
+    //inlinable_opcodes.push(YARVINSN_intern.as_usize());
+    //inlinable_opcodes.push(YARVINSN_pop.as_usize());
+    //inlinable_opcodes.push(YARVINSN_dup.as_usize());
+    //inlinable_opcodes.push(YARVINSN_dupn.as_usize());
+    //inlinable_opcodes.push(YARVINSN_swap.as_usize());
+    //inlinable_opcodes.push(YARVINSN_topn.as_usize());
+    //inlinable_opcodes.push(YARVINSN_setn.as_usize());
+    //inlinable_opcodes.push(YARVINSN_adjuststack.as_usize());
+    inlinable_opcodes.push(YARVINSN_leave.as_usize());
+
+    let mut insn_idx: c_uint = 0;
+    let iseq_size = unsafe { get_iseq_encoded_size(iseq) };
+    while insn_idx < iseq_size {
+        let pc = unsafe { rb_iseq_pc_at_idx(iseq, insn_idx) };
+        let opcode: usize = unsafe { rb_iseq_opcode_at_pc(iseq, pc) }.try_into().unwrap();
+        if !inlinable_opcodes.contains(&opcode) {
+            return false;
+        }
+        insn_idx += insn_len(opcode);
+    }
+    true
+}
+
 fn gen_send_iseq(
     jit: &mut JITState,
     ctx: &mut Context,
@@ -5006,6 +5040,12 @@ fn gen_send_iseq(
     } else {
         SpecVal::None
     };
+
+    if is_inlinable_iseq(iseq) {
+        gen_counter_incr!(asm, inline_send);
+    } else {
+        gen_counter_incr!(asm, non_inline_send);
+    }
 
     // Setup the new frame
     gen_push_frame(jit, ctx, asm, true, ControlFrame {

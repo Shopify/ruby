@@ -282,6 +282,9 @@ make_counters! {
 
     constant_state_bumps,
 
+    inline_send,
+    non_inline_send,
+
     // Currently, it's out of the ordinary (might be impossible) for YJIT to leave gaps in
     // executable memory, so this should be 0.
     exec_mem_non_bump_alloc,
