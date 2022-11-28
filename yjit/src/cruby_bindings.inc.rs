@@ -312,6 +312,15 @@ extern "C" {
     pub fn rb_ary_clear(ary: VALUE) -> VALUE;
 }
 extern "C" {
+    pub fn rb_hash_foreach(
+        hash: VALUE,
+        func: ::std::option::Option<
+            unsafe extern "C" fn(key: VALUE, val: VALUE, arg: VALUE) -> ::std::os::raw::c_int,
+        >,
+        arg: VALUE,
+    );
+}
+extern "C" {
     pub fn rb_hash_new() -> VALUE;
 }
 extern "C" {
@@ -322,6 +331,9 @@ extern "C" {
 }
 extern "C" {
     pub fn rb_hash_bulk_insert(argc: ::std::os::raw::c_long, argv: *const VALUE, hash: VALUE);
+}
+extern "C" {
+    pub fn rb_hash_size(hash: VALUE) -> VALUE;
 }
 extern "C" {
     pub fn rb_sym2id(obj: VALUE) -> ID;
@@ -414,6 +426,7 @@ extern "C" {
 pub type attr_index_t = u32;
 pub type shape_id_t = u32;
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct rb_shape {
     pub edges: *mut rb_id_table,
     pub edge_name: ID,

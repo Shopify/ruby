@@ -140,9 +140,10 @@ mjit_compile(FILE *f, const rb_iseq_t *iseq, const char *funcname, int id)
 static VALUE
 cdhash_to_hash(rb_execution_context_t *ec, VALUE self, VALUE cdhash_addr)
 {
-    VALUE hash = rb_hash_new();
-    rb_hash_foreach((VALUE)NUM2PTR(cdhash_addr), cdhash_each, hash);
-    return hash;
+    return rb_hash_values((VALUE)NUM2PTR(cdhash_addr));
+    //VALUE hash = rb_hash_new();
+    //rb_hash_foreach((VALUE)NUM2PTR(cdhash_addr), cdhash_each, hash);
+    //return hash;
 }
 
 static VALUE

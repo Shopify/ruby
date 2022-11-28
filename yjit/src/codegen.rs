@@ -3128,18 +3128,23 @@ fn gen_opt_regexpmatch2(
 }
 
 fn gen_opt_case_dispatch(
-    _jit: &mut JITState,
+    jit: &mut JITState,
     ctx: &mut Context,
     _asm: &mut Assembler,
     _ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
-    // Normally this instruction would lookup the key in a hash and jump to an
-    // offset based on that.
-    // Instead we can take the fallback case and continue with the next
-    // instruction.
-    // We'd hope that our jitted code will be sufficiently fast without the
-    // hash lookup, at least for small hashes, but it's worth revisiting this
-    // assumption in the future.
+    let cdhash = jit_get_arg(jit, 0);
+    //let else_offset = jit_get_arg(jit, 1).as_i32();
+
+    //fn cdhash_to_hashmap(cdhash: VALUE) {
+    //    rb_hash_foreach(cdhash, func, arg);
+    //}
+    //cdhash_to_hashmap(cdhash);
+    let size = unsafe { rb_hash_size(cdhash) }.0 >> 1;
+    println!("hash: {:#?} ({})", size, iseq_get_location(jit.block.borrow().get_blockid().iseq));
+
+    // 1. convert cdhash into a Rust Map
+    // 2. call gen_branch for each offset
 
     ctx.stack_pop(1);
 

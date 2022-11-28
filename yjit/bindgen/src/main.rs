@@ -105,6 +105,8 @@ fn main() {
         .allowlist_function("rb_hash_aset")
         .allowlist_function("rb_hash_aref")
         .allowlist_function("rb_hash_bulk_insert")
+        .allowlist_function("rb_hash_foreach")
+        .allowlist_function("rb_hash_size")
 
         // From include/ruby/internal/intern/array.h
         .allowlist_function("rb_ary_new_capa")
