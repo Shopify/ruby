@@ -821,7 +821,11 @@ impl Assembler
                     // the Arm64 assembler works, the register that is going to
                     // be stored is first and the address is second. However in
                     // our IR we have the address first and the register second.
-                    stur(cb, src.into(), dest.into());
+                    match dest.rm_num_bits() {
+                        64 => stur(cb, src.into(), dest.into()),
+                        32 => sturh(cb, src.into(), dest.into()),
+                        _ => unreachable!()
+                    }
                 },
                 Insn::Load { opnd, out } |
                 Insn::LoadInto { opnd, dest: out } => {
