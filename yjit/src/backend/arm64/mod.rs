@@ -1379,6 +1379,15 @@ mod tests {
     }
 
     #[test]
+    fn test_32_bit_register_store_some_number() {
+        let (mut asm, mut cb) = setup_asm();
+
+        let shape_opnd = Opnd::mem(32, Opnd::Reg(X0_REG), 6);
+        asm.store(shape_opnd, Opnd::UImm(4097));
+        asm.compile_with_num_regs(&mut cb, 2);
+    }
+
+    #[test]
     fn test_emit_xor() {
         let (mut asm, mut cb) = setup_asm();
 
