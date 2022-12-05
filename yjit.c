@@ -1079,6 +1079,23 @@ object_shape_count(rb_execution_context_t *ec, VALUE self)
     return ULONG2NUM((unsigned long)GET_VM()->next_shape_id);
 }
 
+extern size_t rb_shape_counters[];
+
+static VALUE
+set_shape_stats(rb_execution_context_t *ec, VALUE self, VALUE stats)
+{
+#define SET_STAT(name) rb_hash_aset(stats, ID2SYM(rb_intern(#name)), SIZET2NUM(rb_shape_counters[name]))
+    SET_STAT(SHAPE_ROOT);
+    SET_STAT(SHAPE_IVAR);
+    SET_STAT(SHAPE_FROZEN);
+    SET_STAT(SHAPE_CAPACITY_CHANGE);
+    SET_STAT(SHAPE_IVAR_UNDEF);
+    SET_STAT(SHAPE_INITIAL_CAPACITY);
+    SET_STAT(SHAPE_T_OBJECT);
+#undef SET_STAT
+    return Qnil;
+}
+
 // Primitives used by yjit.rb
 VALUE rb_yjit_stats_enabled_p(rb_execution_context_t *ec, VALUE self);
 VALUE rb_yjit_trace_exit_locations_enabled_p(rb_execution_context_t *ec, VALUE self);

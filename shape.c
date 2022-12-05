@@ -102,6 +102,15 @@ rb_shape_get_shape(VALUE obj)
     return rb_shape_get_shape_by_id(rb_shape_get_shape_id(obj));
 }
 
+size_t rb_shape_counters[SHAPE_T_OBJECT + 1] = { 0 };
+
+static void
+set_shape_type(rb_shape_t *shape, enum shape_type shape_type)
+{
+    shape->type = (uint8_t)shape_type;
+    rb_shape_counters[shape_type]++;
+}
+
 static rb_shape_t*
 get_next_shape_internal(rb_shape_t * shape, ID id, enum shape_type shape_type)
 {
@@ -123,7 +132,7 @@ get_next_shape_internal(rb_shape_t * shape, ID id, enum shape_type shape_type)
 
             rb_shape_t * new_shape = rb_shape_alloc(id, shape);
 
-            new_shape->type = (uint8_t)shape_type;
+            set_shape_type(new_shape, shape_type);
             new_shape->capacity = shape->capacity;
 
             switch (shape_type) {
@@ -584,7 +593,7 @@ Init_default_shapes(void)
     // Root shape
     rb_shape_t * root = rb_shape_alloc_with_parent_id(0, INVALID_SHAPE_ID);
     root->capacity = (uint32_t)((rb_size_pool_slot_size(0) - offsetof(struct RObject, as.ary)) / sizeof(VALUE));
-    root->type = SHAPE_ROOT;
+    set_shape_type(root, SHAPE_ROOT);
     root->size_pool_index = 0;
     GET_VM()->root_shape = root;
     RUBY_ASSERT(rb_shape_id(GET_VM()->root_shape) == ROOT_SHAPE_ID);
@@ -593,7 +602,7 @@ Init_default_shapes(void)
     for (int i = 1; i < SIZE_POOL_COUNT; i++) {
         uint32_t capa = (uint32_t)((rb_size_pool_slot_size(i) - offsetof(struct RObject, as.ary)) / sizeof(VALUE));
         rb_shape_t * new_shape = rb_shape_transition_shape_capa(root, capa);
-        new_shape->type = SHAPE_INITIAL_CAPACITY;
+        set_shape_type(new_shape, SHAPE_INITIAL_CAPACITY);
         new_shape->size_pool_index = i;
         RUBY_ASSERT(rb_shape_id(new_shape) == (shape_id_t)i);
     }

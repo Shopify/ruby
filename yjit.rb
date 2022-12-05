@@ -175,6 +175,8 @@ module RubyVM::YJIT
     stats[:total_exit_count] = total_exits
     stats[:avg_len_in_yjit]  = avg_len_in_yjit
 
+    Primitive.set_shape_stats(stats)
+
     stats
   end
 
