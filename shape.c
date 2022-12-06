@@ -2,6 +2,7 @@
 #include "vm_sync.h"
 #include "shape.h"
 #include "gc.h"
+#include "id_table.h"
 #include "internal/class.h"
 #include "internal/symbol.h"
 #include "internal/variable.h"
@@ -34,6 +35,17 @@ bool
 rb_shape_root_shape_p(rb_shape_t* shape)
 {
     return shape == rb_shape_get_root_shape();
+}
+
+void
+rb_shape_each_shape(each_shape_callback callback, void *data)
+{
+    rb_shape_t *cursor = rb_shape_get_root_shape();
+    rb_shape_t *end = rb_shape_get_shape_by_id(GET_VM()->next_shape_id);
+    while (cursor < end) {
+        callback(cursor, data);
+        cursor += 1;
+    }
 }
 
 rb_shape_t*
@@ -343,16 +355,45 @@ rb_shape_rebuild_shape(rb_shape_t * initial_shape, rb_shape_t * dest_shape)
     return midway_shape;
 }
 
+size_t
+rb_shape_edges_count(rb_shape_t *shape)
+{
+    if (shape->edges) {
+        return rb_id_table_size(shape->edges);
+    }
+    return 0;
+}
+
+size_t
+rb_shape_memsize(rb_shape_t *shape)
+{
+    size_t memsize = sizeof(rb_shape_t);
+    if (shape->edges) {
+        memsize += rb_id_table_memsize(shape->edges);
+    }
+    return memsize;
+}
+
 #if SHAPE_DEBUG
 VALUE rb_cShape;
+
+static size_t
+shape_memsize(const void *shape_ptr)
+{
+    return rb_shape_memsize((rb_shape_t *)shape_ptr);
+}
 
 /*
  * Exposing Shape to Ruby via RubyVM.debug_shape
  */
 static const rb_data_type_t shape_data_type = {
-    "Shape",
-    {NULL, NULL, NULL,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED
+    .wrap_struct_name = "Shape",
+    .function = {
+        .dmark = NULL,
+        .dfree = NULL,
+        .dsize = shape_memsize,
+    },
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED
 };
 
 static VALUE

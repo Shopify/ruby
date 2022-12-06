@@ -184,4 +184,11 @@ bool rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id);
 VALUE rb_obj_debug_shape(VALUE self, VALUE obj);
 VALUE rb_shape_flags_mask(void);
 
+RUBY_SYMBOL_EXPORT_BEGIN
+typedef void each_shape_callback(rb_shape_t * shape, void *data);
+void rb_shape_each_shape(each_shape_callback callback, void *data);
+size_t rb_shape_memsize(rb_shape_t *shape);
+size_t rb_shape_edges_count(rb_shape_t *shape);
+RUBY_SYMBOL_EXPORT_END
+
 #endif

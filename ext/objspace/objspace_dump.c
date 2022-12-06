@@ -18,6 +18,7 @@
 #include "internal/hash.h"
 #include "internal/string.h"
 #include "internal/sanitizers.h"
+#include "shape.h"
 #include "node.h"
 #include "objspace.h"
 #include "ruby/debug.h"
@@ -378,12 +379,12 @@ dump_object(VALUE obj, struct dump_config *dc)
     dump_append(dc, "{\"address\":");
     dump_append_ref(dc, obj);
 
-    dump_append(dc, ", \"shape_id\":");
-    dump_append_sizet(dc, rb_shape_get_shape_id(obj));
-
     dump_append(dc, ", \"type\":\"");
     dump_append(dc, obj_type(obj));
     dump_append(dc, "\"");
+
+    dump_append(dc, ", \"shape_id\":");
+    dump_append_sizet(dc, rb_shape_get_shape_id(obj));
 
     dump_append(dc, ", \"slot_size\":");
     dump_append_sizet(dc, dc->cur_page_slot_size);
@@ -679,6 +680,72 @@ objspace_dump(VALUE os, VALUE obj, VALUE output)
     return dump_result(&dc);
 }
 
+static void
+shape_i(rb_shape_t *shape, void *data)
+{
+    struct dump_config *dc = (struct dump_config *)data;
+
+    dump_append(dc, "{\"address\":");
+    dump_append_ref(dc, (VALUE)shape);
+
+    dump_append(dc, ", \"type\":\"SHAPE\", \"id\":");
+    dump_append_lu(dc, rb_shape_id(shape));
+
+    if (shape->type != SHAPE_ROOT) {
+        dump_append(dc, ", \"parent_id\":");
+        dump_append_lu(dc, shape->parent_id);
+    }
+
+    dump_append(dc, ", \"shape_type\":");
+    switch(shape->type) {
+      case SHAPE_ROOT:
+        dump_append(dc, "\"ROOT\"");
+        break;
+      case SHAPE_IVAR:
+        dump_append(dc, "\"IVAR\"");
+
+        if (shape->edge_name && (shape->edge_name & ID_INTERNAL) != ID_INTERNAL) {
+            dump_append(dc, ",\"edge_name\":");
+            dump_append_string_value(dc, rb_sym2str(ID2SYM(shape->edge_name)));
+        }
+
+        break;
+      case SHAPE_FROZEN:
+        dump_append(dc, "\"FROZEN\"");
+        break;
+      case SHAPE_CAPACITY_CHANGE:
+        dump_append(dc, "\"CAPACITY_CHANGE\"");
+        dump_append(dc, ", \"capacity\":");
+        dump_append_sizet(dc, shape->capacity);
+        break;
+      case SHAPE_IVAR_UNDEF:
+        dump_append(dc, "\"IVAR_UNDEF\"");
+
+        if (shape->edge_name && (shape->edge_name & ID_INTERNAL) != ID_INTERNAL) {
+            dump_append(dc, ",\"edge_name\":");
+            dump_append_string_value(dc, rb_sym2str(ID2SYM(shape->edge_name)));
+        }
+
+        break;
+      case SHAPE_INITIAL_CAPACITY:
+        dump_append(dc, "\"INITIAL_CAPACITY\"");
+        break;
+      case SHAPE_T_OBJECT:
+        dump_append(dc, "\"T_OBJECT\"");
+        break;
+      default:
+        rb_bug("[objspace] unexpected shape type");
+    }
+
+    dump_append(dc, ", \"edges\":");
+    dump_append_sizet(dc, rb_shape_edges_count(shape));
+
+    dump_append(dc, ", \"memsize\":");
+    dump_append_sizet(dc, rb_shape_memsize(shape));
+
+    dump_append(dc, "}\n");
+}
+
 static VALUE
 objspace_dump_all(VALUE os, VALUE output, VALUE full, VALUE since)
 {
@@ -690,6 +757,8 @@ objspace_dump_all(VALUE os, VALUE output, VALUE full, VALUE since)
         rb_objspace_reachable_objects_from_root(root_obj_i, &dc);
         if (dc.roots) dump_append(&dc, "]}\n");
     }
+
+    rb_shape_each_shape(shape_i, &dc);
 
     /* dump all objects */
     rb_objspace_each_objects(heap_i, &dc);
