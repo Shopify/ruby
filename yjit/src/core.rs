@@ -25,7 +25,7 @@ pub const MAX_TEMP_TYPES: usize = 8;
 const MAX_LOCAL_TYPES: usize = 8;
 
 // Represent the type of a value (local/stack/self) in YJIT
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum Type {
     Unknown,
     UnknownImm,
@@ -249,7 +249,7 @@ impl Type {
 
 // Potential mapping of a value on the temporary stack to
 // self, a local variable or constant so that we can track its type
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum TempMapping {
     MapToStack, // Normal stack value
     MapToSelf,  // Temp maps to the self operand
@@ -276,7 +276,7 @@ pub enum YARVOpnd {
 /// Code generation context
 /// Contains information we can use to specialize/optimize code
 /// There are a lot of context objects so we try to keep the size small.
-#[derive(Copy, Clone, Default, PartialEq, Debug)]
+#[derive(Copy, Clone, Default, Eq, PartialEq, Debug, Hash)]
 pub struct Context {
     // Number of values currently on the temporary stack
     stack_size: u16,

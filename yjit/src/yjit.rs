@@ -5,6 +5,7 @@ use crate::invariants::*;
 use crate::options::*;
 use crate::stats::YjitExitLocations;
 
+use std::collections::HashSet;
 use std::os::raw;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -108,4 +109,29 @@ pub extern "C" fn rb_yjit_simulate_oom_bang(_ec: EcPtr, _ruby_self: VALUE) -> VA
     }
 
     return Qnil;
+}
+
+#[no_mangle]
+pub extern "C" fn rb_yjit_count_contexts(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
+    let mut all_contexts: Vec<Context> = vec![];
+    let mut unique_contexts: HashSet<Context> = HashSet::new();
+    fn push_context(all_contexts: &mut Vec<Context>, unique_contexts: &mut HashSet<Context>, context: Context) {
+        all_contexts.push(context);
+        unique_contexts.insert(context);
+    }
+    for_each_iseq(|iseq| {
+        if let Some(iseq_payload) = get_iseq_payload(iseq) {
+            for block in iseq_payload.take_all_blocks() {
+                let block = block.borrow();
+                push_context(&mut all_contexts, &mut unique_contexts, block.get_ctx());
+            }
+            for block in iseq_payload.dead_blocks.iter_mut() {
+                let block = block.borrow();
+                push_context(&mut all_contexts, &mut unique_contexts, block.get_ctx());
+            }
+        }
+    });
+    println!("all_contexts: {}", all_contexts.len());
+    println!("unique_contexts: {}", unique_contexts.len());
+    Qnil
 }

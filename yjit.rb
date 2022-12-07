@@ -289,6 +289,7 @@ module RubyVM::YJIT
       $stderr.puts "avg_len_in_yjit:       " + ("%10.1f" % stats[:avg_len_in_yjit])
 
       print_sorted_exit_counts(stats, prefix: "exit_")
+      Primitive.rb_yjit_count_contexts
     end
 
     def print_sorted_exit_counts(stats, prefix:, how_many: 20, left_pad: 4)
