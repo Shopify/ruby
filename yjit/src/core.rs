@@ -336,7 +336,7 @@ struct BranchTarget {
 
 /// Store info about an outgoing branch in a code segment
 /// Note: care must be taken to minimize the size of branch objects
-struct Branch {
+pub struct Branch {
     // Block this is attached to
     block: BlockRef,
 

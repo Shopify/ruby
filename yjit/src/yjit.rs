@@ -113,6 +113,8 @@ pub extern "C" fn rb_yjit_simulate_oom_bang(_ec: EcPtr, _ruby_self: VALUE) -> VA
 
 #[no_mangle]
 pub extern "C" fn rb_yjit_count_contexts(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
+    let mut num_blocks = 0;
+    let mut num_branches = 0;
     let mut all_contexts: Vec<Context> = vec![];
     let mut unique_contexts: HashSet<Context> = HashSet::new();
     fn push_context(all_contexts: &mut Vec<Context>, unique_contexts: &mut HashSet<Context>, context: Context) {
@@ -124,20 +126,30 @@ pub extern "C" fn rb_yjit_count_contexts(_ec: EcPtr, _ruby_self: VALUE) -> VALUE
             for block in iseq_payload.take_all_blocks() {
                 let block = block.borrow();
                 push_context(&mut all_contexts, &mut unique_contexts, block.get_ctx());
+                num_blocks += 1;
                 for ctx in &block.branch_contexts {
                     push_context(&mut all_contexts, &mut unique_contexts, *ctx);
+                    num_branches += 1;
                 }
             }
             for block in iseq_payload.dead_blocks.iter_mut() {
                 let block = block.borrow();
                 push_context(&mut all_contexts, &mut unique_contexts, block.get_ctx());
+                num_blocks += 1;
                 for ctx in &block.branch_contexts {
                     push_context(&mut all_contexts, &mut unique_contexts, *ctx);
+                    num_branches += 1;
                 }
             }
         }
     });
+    println!("num_blocks: {}", num_blocks);
+    println!("num_branches: {}", num_branches);
     println!("all_contexts: {}", all_contexts.len());
     println!("unique_contexts: {}", unique_contexts.len());
+    use std::mem::size_of;
+    println!("size_of Context: {}", size_of::<Context>());
+    println!("size_of Block: {}", size_of::<Block>());
+    println!("size_of Branch: {}", size_of::<Branch>());
     Qnil
 }
