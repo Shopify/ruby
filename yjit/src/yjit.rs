@@ -124,10 +124,16 @@ pub extern "C" fn rb_yjit_count_contexts(_ec: EcPtr, _ruby_self: VALUE) -> VALUE
             for block in iseq_payload.take_all_blocks() {
                 let block = block.borrow();
                 push_context(&mut all_contexts, &mut unique_contexts, block.get_ctx());
+                for ctx in &block.branch_contexts {
+                    push_context(&mut all_contexts, &mut unique_contexts, *ctx);
+                }
             }
             for block in iseq_payload.dead_blocks.iter_mut() {
                 let block = block.borrow();
                 push_context(&mut all_contexts, &mut unique_contexts, block.get_ctx());
+                for ctx in &block.branch_contexts {
+                    push_context(&mut all_contexts, &mut unique_contexts, *ctx);
+                }
             }
         }
     });

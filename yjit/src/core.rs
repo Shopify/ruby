@@ -422,6 +422,8 @@ pub struct Block {
     // Code address of an exit for `ctx` and `blockid`.
     // Used for block invalidation.
     pub entry_exit: Option<CodePtr>,
+
+    pub branch_contexts: Vec<Context>,
 }
 
 /// Reference-counted pointer to a block that can be borrowed mutably.
@@ -947,6 +949,7 @@ impl Block {
             gc_obj_offsets: Vec::new(),
             cme_dependencies: Vec::new(),
             entry_exit: None,
+            branch_contexts: Vec::new(),
         };
 
         // Wrap the block in a reference counted refcell
@@ -1024,6 +1027,14 @@ impl Block {
     fn push_incoming(&mut self, branch: BranchRef) {
         self.incoming.push(branch);
         self.incoming.shrink_to_fit();
+    }
+
+    fn push_branch_contexts(&mut self, branch: &Branch) {
+        for target in &branch.targets {
+            if let Some(target) = target {
+                self.branch_contexts.push(target.ctx);
+            }
+        }
     }
 
     // Push an outgoing branch ref and shrink the vector
@@ -1522,6 +1533,9 @@ fn gen_block_series_body(
         last_target.address = new_blockref.borrow().start_addr;
         new_blockref
             .borrow_mut()
+            .push_branch_contexts(&last_branch);
+        new_blockref
+            .borrow_mut()
             .push_incoming(last_branchref.clone());
 
         // Track the block
@@ -1809,6 +1823,7 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
             assert!(!(branch.shape == target_branch_shape && block.start_addr != branch.end_addr));
 
             // Add this branch to the list of incoming branches for the target
+            block.push_branch_contexts(&branch);
             block.push_incoming(branch_rc.clone());
 
             // Update the branch target address
@@ -1882,6 +1897,7 @@ fn set_branch_target(
         let mut block = blockref.borrow_mut();
 
         // Add an incoming branch into this block
+        block.push_branch_contexts(&branch);
         block.push_incoming(branchref.clone());
 
         // Fill out the target with this block
@@ -2030,6 +2046,7 @@ pub fn gen_direct_jump(jit: &JITState, ctx: &Context, target0: BlockId, asm: &mu
     if let Some(blockref) = maybe_block {
         let mut block = blockref.borrow_mut();
 
+        block.push_branch_contexts(&branch);
         block.push_incoming(branchref.clone());
 
         new_target.address = block.start_addr;
