@@ -15,6 +15,7 @@
 #include "gc.h"
 #include "internal.h"
 #include "internal/array.h"
+#include "internal/class.h"
 #include "internal/hash.h"
 #include "internal/string.h"
 #include "internal/sanitizers.h"
@@ -494,6 +495,9 @@ dump_object(VALUE obj, struct dump_config *dc)
         break;
 
       case T_CLASS:
+        dump_append(dc, ", \"shape_leaf_count\":");
+        dump_append_d(dc, RCLASS_EXT(obj)->shape_leaf_count);
+
       case T_MODULE:
         if (rb_class_get_superclass(obj)) {
             dump_append(dc, ", \"superclass\":");
