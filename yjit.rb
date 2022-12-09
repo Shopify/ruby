@@ -289,6 +289,11 @@ module RubyVM::YJIT
       $stderr.puts "avg_len_in_yjit:       " + ("%10.1f" % stats[:avg_len_in_yjit])
 
       print_sorted_exit_counts(stats, prefix: "exit_")
+
+      defer_stats = stats.select { |key, _value| key.to_s.start_with?("defer_") }
+      defer_stats.sort_by(&:last).reverse_each do |key, value|
+        puts "#{key}: #{value}"
+      end
     end
 
     def print_sorted_exit_counts(stats, prefix:, how_many: 20, left_pad: 4)

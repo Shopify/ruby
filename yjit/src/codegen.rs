@@ -737,6 +737,7 @@ pub fn gen_single_block(
         // if we run into it. This is necessary because we want to invalidate based on the
         // instruction's index.
         if opcode == YARVINSN_opt_getconstant_path.as_usize() && insn_idx > starting_insn_idx {
+            incr_counter!(defer_opt_getconstant_path);
             jump_to_next_insn(&mut jit, &ctx, &mut asm, ocb);
             break;
         }
@@ -1090,6 +1091,7 @@ fn gen_opt_plus(
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_opt_plus);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -2108,6 +2110,7 @@ fn gen_getinstancevariable(
 ) -> CodegenStatus {
     // Defer compilation so we can specialize on a runtime `self`
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_getinstancevariable);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -2182,6 +2185,7 @@ fn gen_setinstancevariable(
 
     // Defer compilation so we can specialize on a runtime `self`
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_setinstancevariable);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -2581,6 +2585,7 @@ fn gen_fixnum_cmp(
 ) -> CodegenStatus {
     // Defer compilation so we can specialize base on a runtime receiver
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_fixnum_cmp);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -2763,6 +2768,7 @@ fn gen_opt_eq(
 ) -> CodegenStatus {
     // Defer compilation so we can specialize base on a runtime receiver
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_opt_eq);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -2807,6 +2813,7 @@ fn gen_opt_aref(
 
     // Defer compilation so we can specialize base on a runtime receiver
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_opt_aref);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -2917,6 +2924,7 @@ fn gen_opt_aset(
 ) -> CodegenStatus {
     // Defer compilation so we can specialize on a runtime `self`
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_opt_aset);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -3027,6 +3035,7 @@ fn gen_opt_and(
 ) -> CodegenStatus {
     // Defer compilation so we can specialize on a runtime `self`
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_opt_and);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -3072,6 +3081,7 @@ fn gen_opt_or(
 ) -> CodegenStatus {
     // Defer compilation so we can specialize on a runtime `self`
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_opt_or);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -3117,6 +3127,7 @@ fn gen_opt_minus(
 ) -> CodegenStatus {
     // Defer compilation so we can specialize on a runtime `self`
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_opt_minus);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -3184,6 +3195,7 @@ fn gen_opt_mod(
 ) -> CodegenStatus {
     // Defer compilation so we can specialize on a runtime `self`
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_opt_mod);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -3390,6 +3402,7 @@ fn gen_opt_case_dispatch(
     // hash lookup, at least for small hashes, but it's worth revisiting this
     // assumption in the future.
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_opt_case_dispatch);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -5567,6 +5580,7 @@ fn gen_send_general(
 
     // Defer compilation so we can specialize on class of receiver
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_send_general);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -6018,6 +6032,7 @@ fn gen_invokeblock(
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_invokeblock);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -6111,6 +6126,7 @@ fn gen_invokesuper(
 
     // Defer compilation so we can specialize on class of receiver
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_invokesuper);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -6364,6 +6380,7 @@ fn gen_objtostring(
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_objtostring);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }
@@ -6674,6 +6691,7 @@ fn gen_getblockparamproxy(
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
     if !jit_at_current_insn(jit) {
+        incr_counter!(defer_getblockparamproxy);
         defer_compilation(jit, ctx, asm, ocb);
         return EndBlock;
     }

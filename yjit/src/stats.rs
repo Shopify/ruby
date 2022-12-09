@@ -289,6 +289,25 @@ make_counters! {
     exec_mem_non_bump_alloc,
 
     num_gc_obj_refs,
+
+    defer_opt_plus,
+    defer_getinstancevariable,
+    defer_setinstancevariable,
+    defer_fixnum_cmp,
+    defer_opt_eq,
+    defer_opt_aref,
+    defer_opt_aset,
+    defer_opt_and,
+    defer_opt_or,
+    defer_opt_minus,
+    defer_opt_mod,
+    defer_opt_case_dispatch,
+    defer_send_general,
+    defer_invokeblock,
+    defer_invokesuper,
+    defer_objtostring,
+    defer_getblockparamproxy,
+    defer_opt_getconstant_path,
 }
 
 //===========================================================================
