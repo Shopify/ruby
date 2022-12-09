@@ -310,6 +310,7 @@ module RubyVM::YJIT
 
         longest_insn_name_len = exits.map { |name, count| name.length }.max
         exits.each do |name, count|
+          next unless %w[checkmatch defineclass definemethod definesmethod getconstant newarraykwsplat once opt_aref_with opt_aset_with opt_newarray_max opt_reverse setblockparam setconstant setspecial throw].include?(name.to_s)
           padding = longest_insn_name_len + left_pad
           padded_name = "%#{padding}s" % name
           padded_count = "%10d" % count
