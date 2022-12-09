@@ -455,6 +455,7 @@ vm_cc_attr_index_set(const struct rb_callcache *cc, attr_index_t index, shape_id
         *attr_value = (uintptr_t)INVALID_SHAPE_ID << SHAPE_FLAG_SHIFT;
         return;
     }
+
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
     *attr_value = (attr_index_t)(index + 1) | ((uintptr_t)(dest_shape_id) << SHAPE_FLAG_SHIFT);
