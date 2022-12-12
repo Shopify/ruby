@@ -1927,6 +1927,10 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
 #if USE_YJIT
     if (FEATURE_SET_P(opt->features, yjit)) {
         opt->yjit = true; // set opt->yjit for Init_ruby_description() and calling rb_yjit_init()
+        if (getenv("YJIT_STATS")) {
+            bool rb_yjit_parse_option(const char* s);
+            rb_yjit_parse_option("stats");
+        }
     }
 #endif
     Init_ruby_description(opt);
