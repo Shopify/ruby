@@ -1927,6 +1927,18 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
 #if USE_YJIT
     if (FEATURE_SET_P(opt->features, yjit)) {
         opt->yjit = true; // set opt->yjit for Init_ruby_description() and calling rb_yjit_init()
+
+        // Usage: RUBY_YJIT_ENABLE=1 YJIT_STATS=1 YJIT_EXEC_MEM_SIZE=8 ruby ...
+        extern bool rb_yjit_parse_option(const char* s);
+        if (getenv("YJIT_STATS")) {
+            assert(rb_yjit_parse_option("stats"));
+        }
+        char *mem_size = getenv("YJIT_EXEC_MEM_SIZE");
+        if (mem_size) {
+            char buf[1024];
+            sprintf(buf, "exec-mem-size=%s", mem_size);
+            assert(rb_yjit_parse_option(buf));
+        }
     }
 #endif
     Init_ruby_description(opt);
