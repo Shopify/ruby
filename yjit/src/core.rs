@@ -1829,18 +1829,6 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
             block_rc.borrow().start_addr.unwrap()
         }
         None => {
-            // Code GC needs to borrow blocks for invalidation, so their mutable
-            // borrows must be dropped first.
-            drop(block);
-            drop(branch);
-            // Trigger code GC. The whole ISEQ will be recompiled later.
-            // We shouldn't trigger it in the middle of compilation in branch_stub_hit
-            // because incomplete code could be used when cb.dropped_bytes is flipped
-            // by code GC. So this place, after all compilation, is the safest place
-            // to hook code GC on branch_stub_hit.
-            cb.code_gc();
-            branch = branch_rc.borrow_mut();
-
             // Failed to service the stub by generating a new block so now we
             // need to exit to the interpreter at the stubbed location. We are
             // intentionally *not* restoring original_interp_sp. At the time of
