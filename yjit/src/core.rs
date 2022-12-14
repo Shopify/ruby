@@ -1829,10 +1829,17 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
             block_rc.borrow().start_addr.unwrap()
         }
         None => {
+                 
+            let payload = get_iseq_payload(branch.block.borrow().blockid.iseq).unwrap();
+            dbg!(&payload.pages, cb.get_ptr(0));
+            
+            
             // Code GC needs to borrow blocks for invalidation, so their mutable
             // borrows must be dropped first.
             drop(block);
             drop(branch);
+
+
             // Trigger code GC. The whole ISEQ will be recompiled later.
             // We shouldn't trigger it in the middle of compilation in branch_stub_hit
             // because incomplete code could be used when cb.dropped_bytes is flipped
