@@ -91,6 +91,9 @@ rb_yjit_mark_unused(void *mem_block, uint32_t mem_size)
     // We might not need to call this on macOS, but it's not really documented.
     // We generally prefer to do the same thing on both to ease testing too.
     madvise(mem_block, mem_size, MADV_DONTNEED);
+    
+    // !!! DEBUG CODE
+    __builtin___clear_cache(mem_block, (char *)mem_block+mem_size);
 
     // On macOS, mprotect PROT_NONE seems to reduce RSS.
     // We also call this on Linux to avoid executing unused pages.
