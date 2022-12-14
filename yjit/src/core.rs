@@ -1769,8 +1769,17 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
         let branch_old_shape = branch.shape;
         let mut branch_modified = false;
 
-        // If the new block can be generated right after the branch (at cb->write_pos)
-        if Some(cb.get_write_ptr()) == branch.end_addr {
+        // If the new block can be generated right after the branch (at cb->write_pos),
+        // we can regenerate the branch with a fall-through branch shape. This usually
+        // shrinks the branch's code, possibly down to 0 bytes.
+        // But, don't shrink the branch if it straddles two pages. There is no savings
+        // in that case and can leave outlined code unaccounted for w.r.t. code GC.
+        let branch_terminates_cb = Some(cb.get_write_ptr()) == branch.end_addr;
+        let single_page_branch = match (branch.start_addr, branch.end_addr) {
+            (Some(start), Some(end)) => cb.get_page_idx(start) == cb.get_page_idx(end),
+            _ => false
+        };
+        if branch_terminates_cb && single_page_branch {
             // This branch should be terminating its block
             assert!(branch.end_addr == branch.block.borrow().end_addr);
 

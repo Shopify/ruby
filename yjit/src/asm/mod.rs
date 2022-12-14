@@ -243,6 +243,13 @@ impl CodeBlock {
         CODE_PAGE_SIZE * page_idx + self.page_start()
     }
 
+    /// Get index of a code page given a code pointer
+    pub fn get_page_idx(&self, addr: CodePtr) -> usize {
+        let region_start = self.get_ptr(0).into_usize();
+        let addr = addr.into_usize();
+        addr.saturating_sub(region_start) / CODE_PAGE_SIZE
+    }
+
     /// write_pos of the current page start
     pub fn page_start_pos(&self) -> usize {
         self.get_write_pos() / CODE_PAGE_SIZE * CODE_PAGE_SIZE + self.page_start()

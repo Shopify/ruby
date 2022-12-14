@@ -835,6 +835,12 @@ pub fn gen_single_block(
 
         // Store the index of the last instruction in the block
         block.set_end_idx(insn_idx);
+
+        // Code GC only marks inline code block pages, so inline and outlined code
+        // should be on same code page to keep outlined code alive.
+        let inline_page_idx = cb.get_page_idx(cb.get_write_ptr());
+        let outlined_page_idx = cb.get_page_idx(ocb.unwrap().get_write_ptr());
+        assert_eq!(inline_page_idx, outlined_page_idx);
     }
 
     // We currently can't handle cases where the request is for a block that
