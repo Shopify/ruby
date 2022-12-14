@@ -1582,6 +1582,7 @@ pub fn gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> Option<CodePtr> {
         // Compilation failed
         None => {
             // Trigger code GC. This entry point will be recompiled later.
+            println!("cb.code_gc: gen_entry_point");
             cb.code_gc();
             return None;
         }
@@ -1838,6 +1839,7 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
             // because incomplete code could be used when cb.dropped_bytes is flipped
             // by code GC. So this place, after all compilation, is the safest place
             // to hook code GC on branch_stub_hit.
+            println!("cb.code_gc: branch_stub_hit_body");
             cb.code_gc();
             branch = branch_rc.borrow_mut();
 
