@@ -4537,7 +4537,7 @@ fn gen_send_cfunc(
 ) -> CodegenStatus {
     let cfunc = unsafe { get_cme_def_body_cfunc(cme) };
     let cfunc_argc = unsafe { get_mct_argc(cfunc) };
-    let argc = argc;
+    let mut argc = argc;
 
     // Create a side-exit to fall back to the interpreter
     let side_exit = get_side_exit(jit, ocb, ctx);
@@ -4548,8 +4548,29 @@ fn gen_send_cfunc(
         return CantCompile;
     }
 
-    if flags & VM_CALL_ARGS_SPLAT != 0  {
-        gen_counter_incr!(asm, send_args_splat_cfunc);
+    if flags & VM_CALL_ARGS_SPLAT != 0 && cfunc_argc == -1 {
+        gen_counter_incr!(asm, send_args_splat_cfunc_negative);
+        return CantCompile;
+    }
+
+    if flags & VM_CALL_ARGS_SPLAT != 0 && flags & VM_CALL_ZSUPER != 0 {
+        // zsuper methods are super calls without any arguments.
+        // They are also marked as splat, but don't actually have an array
+        // they pull arguments from, instead we need to change to call
+        // a different method with the current stack.
+        gen_counter_incr!(asm, send_args_splat_cfunc_zuper);
+        return CantCompile;
+    }
+
+    // In order to handle backwards compatibility between ruby 3 and 2
+    // ruby2_keywords was introduced. It is called only on methods
+    // with splat and changes they way they handle them.
+    // We are just going to not compile these.
+    // https://www.rubydoc.info/stdlib/core/Proc:ruby2_keywords
+    if unsafe {
+        get_iseq_flags_ruby2_keywords(jit.iseq) && flags & VM_CALL_ARGS_SPLAT != 0
+    } {
+        gen_counter_incr!(asm, send_args_splat_cfunc_ruby2_keywords);
         return CantCompile;
     }
 
@@ -4598,8 +4619,9 @@ fn gen_send_cfunc(
         argc - kw_arg_num + 1
     };
 
+
     // If the argument count doesn't match
-    if cfunc_argc >= 0 && cfunc_argc != passed_argc {
+    if cfunc_argc >= 0 && cfunc_argc != passed_argc && flags & VM_CALL_ARGS_SPLAT == 0 {
         gen_counter_incr!(asm, send_cfunc_argc_mismatch);
         return CantCompile;
     }
@@ -4650,6 +4672,16 @@ fn gen_send_cfunc(
     // This is a .send call and we need to adjust the stack
     if flags & VM_CALL_OPT_SEND != 0 {
         handle_opt_send_shift_stack(asm, argc as i32, ctx);
+    }
+
+    // push_splat_args does stack manipulation so we can no longer side exit
+    if flags & VM_CALL_ARGS_SPLAT != 0 {
+        let required_args : u32 = (cfunc_argc as u32).saturating_sub(argc as u32);
+        // We are going to assume that the splat fills
+        // all the remaining arguments. In the generated code
+        // we test if this is true and if not side exit.
+        argc = required_args as i32;
+        push_splat_args(required_args, ctx, asm, ocb, side_exit)
     }
 
     // Points to the receiver operand on the stack
@@ -4783,7 +4815,7 @@ fn gen_return_branch(
 /// Pushes arguments from an array to the stack that are passed with a splat (i.e. *args)
 /// It optimistically compiles to a static size that is the exact number of arguments
 /// needed for the function.
-fn push_splat_args(required_args: i32, ctx: &mut Context, asm: &mut Assembler, ocb: &mut OutlinedCb, side_exit: CodePtr) {
+fn push_splat_args(required_args: u32, ctx: &mut Context, asm: &mut Assembler, ocb: &mut OutlinedCb, side_exit: CodePtr) {
 
     asm.comment("push_splat_args");
 
@@ -5016,8 +5048,13 @@ fn gen_send_iseq(
         return CantCompile;
     }
 
+    if kw_arg_num != 0 && flags & VM_CALL_ARGS_SPLAT != 0 {
+        gen_counter_incr!(asm, send_cfunc_splat_with_kw);
+        return CantCompile;
+    }
+
     if doing_kw_call && flags & VM_CALL_ARGS_SPLAT != 0 {
-        gen_counter_incr!(asm, send_iseq_splat_with_kw);
+        gen_counter_incr!(asm, send_cfunc_splat_with_kw);
         return CantCompile;
     }
 
@@ -5217,7 +5254,7 @@ fn gen_send_iseq(
 
     // push_splat_args does stack manipulation so we can no longer side exit
     if flags & VM_CALL_ARGS_SPLAT != 0 {
-        let required_args = num_params as i32 - (argc - 1);
+        let required_args = num_params - (argc as u32 - 1);
         // We are going to assume that the splat fills
         // all the remaining arguments. In the generated code
         // we test if this is true and if not side exit.
@@ -5689,11 +5726,6 @@ fn gen_send_general(
     loop {
         let def_type = unsafe { get_cme_def_type(cme) };
 
-        if flags & VM_CALL_ARGS_SPLAT != 0 && def_type != VM_METHOD_TYPE_ISEQ  {
-            gen_counter_incr!(asm, send_args_splat_non_iseq);
-            return CantCompile;
-        }
-
         match def_type {
             VM_METHOD_TYPE_ISEQ => {
                 let iseq = unsafe { get_def_iseq_ptr((*cme).def) };
@@ -5715,6 +5747,11 @@ fn gen_send_general(
                 );
             }
             VM_METHOD_TYPE_IVAR => {
+                if flags & VM_CALL_ARGS_SPLAT != 0 {
+                    gen_counter_incr!(asm, send_args_splat_ivar);
+                    return CantCompile;
+                }
+
                 if argc != 0 {
                     // Argument count mismatch. Getters take no arguments.
                     gen_counter_incr!(asm, send_getter_arity);
@@ -5762,6 +5799,10 @@ fn gen_send_general(
                 );
             }
             VM_METHOD_TYPE_ATTRSET => {
+                if flags & VM_CALL_ARGS_SPLAT != 0 {
+                    gen_counter_incr!(asm, send_args_splat_attrset);
+                    return CantCompile;
+                }
                 if flags & VM_CALL_KWARG != 0 {
                     gen_counter_incr!(asm, send_attrset_kwargs);
                     return CantCompile;
@@ -5783,6 +5824,10 @@ fn gen_send_general(
             }
             // Block method, e.g. define_method(:foo) { :my_block }
             VM_METHOD_TYPE_BMETHOD => {
+                if flags & VM_CALL_ARGS_SPLAT != 0 {
+                    gen_counter_incr!(asm, send_args_splat_bmethod);
+                    return CantCompile;
+                }
                 return gen_send_bmethod(jit, ctx, asm, ocb, ci, cme, block, flags, argc);
             }
             VM_METHOD_TYPE_ZSUPER => {
@@ -5806,6 +5851,11 @@ fn gen_send_general(
             VM_METHOD_TYPE_OPTIMIZED => {
                 if flags & VM_CALL_ARGS_BLOCKARG != 0 {
                     gen_counter_incr!(asm, send_block_arg);
+                    return CantCompile;
+                }
+
+                if flags & VM_CALL_ARGS_SPLAT != 0 {
+                    gen_counter_incr!(asm, send_args_splat_optimized);
                     return CantCompile;
                 }
 
@@ -5975,6 +6025,10 @@ fn gen_send_general(
                         return CantCompile;
                     }
                     OPTIMIZED_METHOD_TYPE_STRUCT_AREF => {
+                        if flags & VM_CALL_ARGS_SPLAT != 0 {
+                            gen_counter_incr!(asm, send_args_splat_aref);
+                            return CantCompile;
+                        }
                         return gen_struct_aref(
                             jit,
                             ctx,
@@ -5989,6 +6043,10 @@ fn gen_send_general(
                         );
                     }
                     OPTIMIZED_METHOD_TYPE_STRUCT_ASET => {
+                        if flags & VM_CALL_ARGS_SPLAT != 0 {
+                            gen_counter_incr!(asm, send_args_splat_aset);
+                            return CantCompile;
+                        }
                         return gen_struct_aset(
                             jit,
                             ctx,
