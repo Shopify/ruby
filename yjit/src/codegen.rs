@@ -4676,7 +4676,7 @@ fn gen_send_cfunc(
 
     // push_splat_args does stack manipulation so we can no longer side exit
     if flags & VM_CALL_ARGS_SPLAT != 0 {
-        let required_args : u32 = (cfunc_argc as u32).saturating_sub(argc as u32);
+        let required_args : u32 = (cfunc_argc as u32).saturating_sub(argc as u32 - 1);
         // We are going to assume that the splat fills
         // all the remaining arguments. In the generated code
         // we test if this is true and if not side exit.
