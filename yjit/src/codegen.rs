@@ -4669,10 +4669,6 @@ fn gen_send_cfunc(
         }
     }
 
-    // This is a .send call and we need to adjust the stack
-    if flags & VM_CALL_OPT_SEND != 0 {
-        handle_opt_send_shift_stack(asm, argc as i32, ctx);
-    }
 
     // push_splat_args does stack manipulation so we can no longer side exit
     if flags & VM_CALL_ARGS_SPLAT != 0 {
@@ -4682,6 +4678,11 @@ fn gen_send_cfunc(
         // we test if this is true and if not side exit.
         argc = required_args as i32;
         push_splat_args(required_args, ctx, asm, ocb, side_exit)
+    }
+
+    // This is a .send call and we need to adjust the stack
+    if flags & VM_CALL_OPT_SEND != 0 {
+        handle_opt_send_shift_stack(asm, argc as i32, ctx);
     }
 
     // Points to the receiver operand on the stack
@@ -5859,10 +5860,6 @@ fn gen_send_general(
                     return CantCompile;
                 }
 
-                if flags & VM_CALL_ARGS_SPLAT != 0 {
-                    gen_counter_incr!(asm, send_args_splat_optimized);
-                    return CantCompile;
-                }
 
                 let opt_type = unsafe { get_cme_def_body_optimized_type(cme) };
                 match opt_type {
@@ -5983,6 +5980,11 @@ fn gen_send_general(
 
                         if flags & VM_CALL_KWARG != 0 {
                             gen_counter_incr!(asm, send_call_kwarg);
+                            return CantCompile;
+                        }
+
+                        if flags & VM_CALL_ARGS_SPLAT != 0 {
+                            gen_counter_incr!(asm, send_args_splat_opt_call);
                             return CantCompile;
                         }
 
