@@ -1981,12 +1981,32 @@ static const rb_data_type_t name_err_mesg_data_type = {
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
+static VALUE name_err_mesg_receiver_name(VALUE obj);
+
 /* :nodoc: */
 static VALUE
 rb_name_err_mesg_init(VALUE klass, VALUE mesg, VALUE recv, VALUE method)
 {
+    // Check recv
+    switch (recv) {
+      case Qnil:
+      case Qtrue:
+      case Qfalse:
+        break;
+      default:
+        {
+            int state = 0;
+            VALUE d = rb_protect(name_err_mesg_receiver_name, recv, &state);
+            if (state || NIL_OR_UNDEF_P(d))
+                rb_protect(rb_inspect, recv, &state);
+            break;
+        }
+    }
+
     VALUE result = TypedData_Wrap_Struct(klass, &name_err_mesg_data_type, 0);
     VALUE *ptr = ALLOC_N(VALUE, NAME_ERR_MESG_COUNT);
+
+    fprintf(stderr, "rb_name_err_mesg_init: %ld (mesg %ld, recv %ld, method %ld)\n", result, mesg, recv, method);
 
     ptr[NAME_ERR_MESG__MESG] = mesg;
     ptr[NAME_ERR_MESG__RECV] = recv;

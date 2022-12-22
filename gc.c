@@ -9922,6 +9922,10 @@ gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj)
 static VALUE
 gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free, size_t src_slot_size, size_t slot_size)
 {
+    if (BUILTIN_TYPE(scan) == T_DATA) {
+        fprintf(stderr, "gc_move: %ld -> %ld\n", scan, free);
+    }
+
     int marked;
     int wb_unprotected;
     int uncollectible;
