@@ -1028,6 +1028,36 @@ class TestYJIT < Test::Unit::TestCase
     RUBY
   end
 
+  def test_invokeblock_many_locals
+    # [Bug #19299]
+    assert_compiles(<<~'RUBY', result: :ok)
+      def foo
+        yield
+      end
+
+      foo do
+        a1=a2=a3=a4=a5=a6=a7=a8=a9=a10=a11=a12=a13=a14=a15=a16=a17=a18=a19=a20=a21=a22=a23=a24=a25=a26=a27=a28=a29=a30 = :ok
+        a30
+      end
+    RUBY
+  end
+
+  def test_bug_19316
+    n = 2 ** 64
+    # foo's extra param and the splats are relevant
+    assert_compiles(<<~'RUBY', result: [[n, -n], [n, -n]])
+      def foo(_, a, b, c)
+        [a & b, ~c]
+      end
+
+      n = 2 ** 64
+      args = [0, -n, n, n-1]
+
+      GC.stress = true
+      [foo(*args), foo(*args)]
+    RUBY
+  end
+
   private
 
   def code_gc_helpers
