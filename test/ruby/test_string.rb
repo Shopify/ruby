@@ -661,6 +661,51 @@ CODE
     assert_equal(Encoding::UTF_8, "#{s}x".encoding)
   end
 
+  def test_concat_small_literals_embed_correctly
+    require 'objspace'
+    a = "Hello"
+    b = "World"
+
+    res = "#{a}, #{b}"
+    dump_res = ObjectSpace.dump(res)
+    dump_orig = ObjectSpace.dump(a)
+    new_slot_size = Integer(dump_res.match(/"slot_size":(\d+)/)[1])
+    orig_slot_size = Integer(dump_orig.match(/"slot_size":(\d+)/)[1])
+
+    assert_match(/"embedded":true/, dump_res)
+    assert_equal(new_slot_size, orig_slot_size)
+  end
+
+  def test_concat_large_literals_get_preallocated
+    require 'objspace'
+    a = "Helloooooooooooooooooooooooooooo"
+    b = "Woooooooooooooooooooooooooooorld"
+
+    res = "#{a}, #{b}"
+    dump_res = ObjectSpace.dump(res)
+    dump_orig = ObjectSpace.dump(a)
+    new_slot_size = Integer(dump_res.match(/"slot_size":(\d+)/)[1])
+    orig_slot_size = Integer(dump_orig.match(/"slot_size":(\d+)/)[1])
+
+    assert_match(/"embedded":true/, dump_res)
+    assert_operator(new_slot_size, :>, orig_slot_size)
+  end
+
+  def test_concat_mixed_literals_get_preallocated
+    require 'objspace'
+    a = "Hello"
+    b = "Woooooooooooooooooooooooooooorld"
+
+    res = "#{a}, #{b}"
+    dump_res = ObjectSpace.dump(res)
+    dump_orig = ObjectSpace.dump(a)
+    new_slot_size = Integer(dump_res.match(/"slot_size":(\d+)/)[1])
+    orig_slot_size = Integer(dump_orig.match(/"slot_size":(\d+)/)[1])
+
+    assert_match(/"embedded":true/, dump_res)
+    assert_operator(new_slot_size, :>, orig_slot_size)
+  end
+
   def test_count
     a = S("hello world")
     assert_equal(5, a.count(S("lo")))
