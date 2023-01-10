@@ -3336,18 +3336,9 @@ rb_str_concat_literals(size_t num, const VALUE *strary)
     if (UNLIKELY(!num)) return rb_str_new(0, 0);
     if (UNLIKELY(num == 1)) return rb_str_resurrect(strary[0]);
 
-    for (i = 0; i < num; ++i) { len += RSTRING_LEN(strary[i]); }
-    // if the new combined string can remain embedded in the first strings slot
-    // use rb_str_resurrect to avoid an allocation.
-    if ((size_t)len <= (rb_gc_obj_slot_size(strary[0]) - sizeof(struct RBasic))) {
-        str = rb_str_resurrect(strary[0]);
-        s = 1;
-    }
-    else {
-        str = rb_str_buf_new(len);
-        rb_enc_copy(str, strary[0]);
-        s = 0;
-    }
+    str = rb_str_buf_new(len);
+    rb_enc_copy(str, strary[0]);
+    s = 0;
 
     for (i = s; i < num; ++i) {
         const VALUE v = strary[i];
