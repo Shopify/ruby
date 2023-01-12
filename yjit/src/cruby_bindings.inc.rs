@@ -829,6 +829,18 @@ pub struct rb_call_data {
     pub ci: *const rb_callinfo,
     pub cc: *const rb_callcache,
 }
+pub const RHASH_PASS_AS_KEYWORDS: ruby_rhash_flags = 8192;
+pub const RHASH_PROC_DEFAULT: ruby_rhash_flags = 16384;
+pub const RHASH_ST_TABLE_FLAG: ruby_rhash_flags = 32768;
+pub const RHASH_AR_TABLE_SIZE_MASK: ruby_rhash_flags = 983040;
+pub const RHASH_AR_TABLE_SIZE_SHIFT: ruby_rhash_flags = 16;
+pub const RHASH_AR_TABLE_BOUND_MASK: ruby_rhash_flags = 15728640;
+pub const RHASH_AR_TABLE_BOUND_SHIFT: ruby_rhash_flags = 20;
+pub const RHASH_TRANSIENT_FLAG: ruby_rhash_flags = 16777216;
+pub const RHASH_LEV_SHIFT: ruby_rhash_flags = 25;
+pub const RHASH_LEV_MAX: ruby_rhash_flags = 127;
+pub type ruby_rhash_flags = u32;
+pub const RHASH_OFFSET_IFNONE: i32 = 24;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct rb_builtin_function {
@@ -1146,6 +1158,7 @@ extern "C" {
     pub fn rb_obj_as_string_result(str_: VALUE, obj: VALUE) -> VALUE;
     pub fn rb_str_concat_literals(num: usize, strary: *const VALUE) -> VALUE;
     pub fn rb_ec_str_resurrect(ec: *mut rb_execution_context_struct, str_: VALUE) -> VALUE;
+    pub fn rb_hash_default_value(hash: VALUE, key: VALUE) -> VALUE;
     pub fn rb_hash_stlike_foreach(
         hash: VALUE,
         func: st_foreach_callback_func,

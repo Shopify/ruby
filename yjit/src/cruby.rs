@@ -424,6 +424,12 @@ impl VALUE {
         }
     }
 
+    pub fn proc_default_p(self) -> bool {
+        unsafe {
+            FL_TEST_RAW(self, VALUE(RHASH_PROC_DEFAULT as usize)) != VALUE(0)
+        }
+    }
+
     pub fn as_isize(self) -> isize {
         let VALUE(is) = self;
         is as isize

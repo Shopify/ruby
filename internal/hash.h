@@ -53,6 +53,11 @@ struct RHash {
     } ar_hint;
 };
 
+// Offsets for YJIT
+#ifndef __cplusplus
+static const int32_t RHASH_OFFSET_IFNONE = offsetof(struct RHash, ifnone);
+#endif
+
 #define RHASH(obj) ((struct RHash *)(obj))
 
 #ifdef RHASH_IFNONE

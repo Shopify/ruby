@@ -108,9 +108,12 @@ fn main() {
         .allowlist_function("rb_hash_new")
 
         // From internal/hash.h
+        .allowlist_function("rb_hash_default_value")
         .allowlist_function("rb_hash_new_with_size")
         .allowlist_function("rb_hash_resurrect")
         .allowlist_function("rb_hash_stlike_foreach")
+        .allowlist_type("ruby_rhash_flags")
+        .allowlist_var("RHASH_OFFSET_IFNONE")
 
         // From include/ruby/st.h
         .allowlist_type("st_retval")

@@ -258,8 +258,11 @@ make_counters! {
     setivar_frozen,
     setivar_megamorphic,
 
-    oaref_argc_not_one,
-    oaref_arg_not_fixnum,
+    opt_aref_argc_not_one,
+    opt_aref_array_arg_not_fixnum,
+    opt_aref_self_not_hash,
+    opt_aref_hash_proc_default,
+    opt_aref_hash_unexpected_key,
 
     opt_getinlinecache_miss,
 

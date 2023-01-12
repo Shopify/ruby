@@ -1894,7 +1894,7 @@ pub const GET_IVAR_MAX_DEPTH: i32 = 10;
 pub const SET_IVAR_MAX_DEPTH: i32 = 10;
 
 // hashes and arrays
-pub const OPT_AREF_MAX_CHAIN_DEPTH: i32 = 2;
+pub const OPT_AREF_MAX_CHAIN_DEPTH: i32 = 10;
 
 // up to 5 different classes
 pub const SEND_MAX_DEPTH: i32 = 5;
@@ -2820,7 +2820,7 @@ fn gen_opt_aref(
 
     // Only JIT one arg calls like `ary[6]`
     if argc != 1 {
-        gen_counter_incr!(asm, oaref_argc_not_one);
+        gen_counter_incr!(asm, opt_aref_argc_not_one);
         return CantCompile;
     }
 
@@ -2831,13 +2831,13 @@ fn gen_opt_aref(
     }
 
     // Specialize base on compile time values
-    let comptime_idx = jit_peek_at_stack(jit, ctx, 0);
+    let comptime_obj = jit_peek_at_stack(jit, ctx, 0);
     let comptime_recv = jit_peek_at_stack(jit, ctx, 1);
 
     // Create a side-exit to fall back to the interpreter
     let side_exit = get_side_exit(jit, ocb, ctx);
 
-    if comptime_recv.class_of() == unsafe { rb_cArray } && comptime_idx.fixnum_p() {
+    if comptime_recv.class_of() == unsafe { rb_cArray } && comptime_obj.fixnum_p() {
         if !assume_bop_not_redefined(jit, ocb, ARRAY_REDEFINED_OP_FLAG, BOP_AREF) {
             return CantCompile;
         }
@@ -2864,7 +2864,7 @@ fn gen_opt_aref(
         // Bail if idx is not a FIXNUM
         let idx_reg = asm.load(idx_opnd);
         asm.test(idx_reg, (RUBY_FIXNUM_FLAG as u64).into());
-        asm.jz(counted_exit!(ocb, side_exit, oaref_arg_not_fixnum).into());
+        asm.jz(counted_exit!(ocb, side_exit, opt_aref_array_arg_not_fixnum).into());
 
         // Call VALUE rb_ary_entry_internal(VALUE ary, long offset).
         // It never raises or allocates, so we don't need to write to cfp->pc.
@@ -2887,10 +2887,14 @@ fn gen_opt_aref(
         if !assume_bop_not_redefined(jit, ocb, HASH_REDEFINED_OP_FLAG, BOP_AREF) {
             return CantCompile;
         }
-
-        let recv_opnd = ctx.stack_opnd(1);
+        // Assume the true branch of rb_hash_default_value
+        if !assume_bop_not_redefined(jit, ocb, HASH_REDEFINED_OP_FLAG, BOP_DEFAULT) {
+            return CantCompile;
+        }
 
         // Guard that the receiver is a hash
+        let recv_opnd = asm.load(ctx.stack_opnd(1));
+        let not_hash_exit = counted_exit!(ocb, side_exit, opt_aref_self_not_hash);
         jit_guard_known_klass(
             jit,
             ctx,
@@ -2901,23 +2905,99 @@ fn gen_opt_aref(
             StackOpnd(1),
             comptime_recv,
             OPT_AREF_MAX_CHAIN_DEPTH,
-            side_exit,
+            not_hash_exit,
         );
 
-        // Prepare to call rb_hash_aref(). It might call #hash on the key.
-        jit_prepare_routine_call(jit, ctx, asm);
+        // Guard that RHASH_PROC_DEFAULT is not set if it holds on comptime_obj
+        let proc_default = comptime_recv.proc_default_p();
+        if !proc_default {
+            asm.comment("guard not Proc default");
+            let flags_opnd = Opnd::mem(64, recv_opnd, RUBY_OFFSET_RBASIC_FLAGS);
+            asm.test(flags_opnd, RHASH_PROC_DEFAULT.into());
+            let proc_default_exit = counted_exit!(ocb, side_exit, opt_aref_hash_proc_default);
+            jit_chain_guard(
+                JCC_JNZ,
+                jit,
+                ctx,
+                asm,
+                ocb,
+                OPT_AREF_MAX_CHAIN_DEPTH,
+                proc_default_exit,
+            );
+        }
 
+        let leaf_hash_key = comptime_obj.class_of() == unsafe { rb_cString } ||
+                            comptime_obj.class_of() == unsafe { rb_cSymbol };
+        if leaf_hash_key {
+            let key_opnd = ctx.stack_opnd(0);
+            let unexpected_key_exit = counted_exit!(ocb, side_exit, opt_aref_hash_unexpected_key);
+            jit_guard_known_klass(
+                jit,
+                ctx,
+                asm,
+                ocb,
+                comptime_obj.class_of(),
+                key_opnd,
+                StackOpnd(0),
+                comptime_recv,
+                OPT_AREF_MAX_CHAIN_DEPTH,
+                unexpected_key_exit,
+            );
+        }
+
+        // Skip jit_prepare_routine_call if possible.
+        //
+        // String and Symbol are the most common key classes, so we optimize those cases.
+        // It's safe to hash functions with T_STRING or T_SYMBOL without jit_prepare_routine_call.
+        if proc_default || !leaf_hash_key {
+            jit_prepare_routine_call(jit, ctx, asm);
+        }
+
+        asm.comment("call rb_hash_stlike_lookup");
+        let recv_opnd = ctx.stack_opnd(1);
+        let key_opnd = ctx.stack_opnd(0);
+        let val_opnd = ctx.stack_opnd(-1);
+        let pval_opnd = asm.lea(val_opnd);
+        let found = asm.ccall(rb_hash_stlike_lookup as *const u8, vec![recv_opnd, key_opnd, pval_opnd]);
+
+        // Branch based on whether a key is found or not
+        let not_found_label = asm.new_label("not_found");
+        asm.test(found, found);
+        asm.jz(not_found_label);
+
+        // Found: Push a lookup result
+        asm.comment("push a lookup result");
+        asm.mov(ctx.stack_opnd(1), val_opnd);
+        let ret_label = asm.new_label("ret");
+        asm.jmp(ret_label);
+
+        // Not found: Push a default
+        asm.write_label(not_found_label);
+        let recv_opnd = ctx.stack_opnd(1);
+        let key_opnd = ctx.stack_opnd(0);
+        let default = if proc_default {
+            asm.comment("call rb_hash_default_value");
+            asm.ccall(rb_hash_default_value as *const u8, vec![recv_opnd, key_opnd])
+        } else {
+            Opnd::mem(64, asm.load(recv_opnd), RHASH_OFFSET_IFNONE)
+        };
+        asm.mov(ctx.stack_opnd(1), default);
+        asm.write_label(ret_label);
+
+        // Pop the key and the receiver
+        ctx.stack_pop(2);
+        // Push the return value onto the stack
+        ctx.stack_push(Type::Unknown);
+
+        /*
         // Call rb_hash_aref
         let key_opnd = ctx.stack_opnd(0);
         let recv_opnd = ctx.stack_opnd(1);
         let val = asm.ccall(rb_hash_aref as *const u8, vec![recv_opnd, key_opnd]);
-
-        // Pop the key and the receiver
         ctx.stack_pop(2);
-
-        // Push the return value onto the stack
         let stack_ret = ctx.stack_push(Type::Unknown);
         asm.mov(stack_ret, val);
+        */
 
         // Jump to next instruction. This allows guard chains to share the same successor.
         jump_to_next_insn(jit, ctx, asm, ocb);
