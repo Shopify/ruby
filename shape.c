@@ -28,6 +28,12 @@ rb_shape_get_root_shape(void)
 }
 
 shape_id_t
+rb_shape_get_invalid_shape_id(void)
+{
+    return INVALID_SHAPE_ID;
+}
+
+shape_id_t
 rb_shape_id(rb_shape_t * shape)
 {
     return (shape_id_t)(shape - GET_VM()->shape_list);

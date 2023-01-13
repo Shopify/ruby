@@ -296,6 +296,14 @@ pub struct rb_shape {
     pub parent_id: shape_id_t,
 }
 pub type rb_shape_t = rb_shape;
+pub const SHAPE_ROOT: shape_type = 0;
+pub const SHAPE_IVAR: shape_type = 1;
+pub const SHAPE_FROZEN: shape_type = 2;
+pub const SHAPE_CAPACITY_CHANGE: shape_type = 3;
+pub const SHAPE_INITIAL_CAPACITY: shape_type = 4;
+pub const SHAPE_T_OBJECT: shape_type = 5;
+pub const SHAPE_OBJ_TOO_COMPLEX: shape_type = 6;
+pub type shape_type = u32;
 pub const idDot2: ruby_method_ids = 128;
 pub const idDot3: ruby_method_ids = 129;
 pub const idUPlus: ruby_method_ids = 132;
@@ -1108,6 +1116,7 @@ extern "C" {
     pub fn rb_reg_new_ary(ary: VALUE, options: ::std::os::raw::c_int) -> VALUE;
     pub fn rb_class_allocate_instance(klass: VALUE) -> VALUE;
     pub fn rb_obj_info(obj: VALUE) -> *const ::std::os::raw::c_char;
+    pub fn rb_shape_get_invalid_shape_id() -> shape_id_t;
     pub fn rb_shape_id_offset() -> i32;
     pub fn rb_shape_get_shape_by_id(shape_id: shape_id_t) -> *mut rb_shape_t;
     pub fn rb_shape_get_shape_id(obj: VALUE) -> shape_id_t;

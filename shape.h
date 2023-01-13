@@ -127,6 +127,7 @@ static inline shape_id_t RCLASS_SHAPE_ID(VALUE obj)
 #endif
 
 bool rb_shape_root_shape_p(rb_shape_t* shape);
+shape_id_t rb_shape_get_invalid_shape_id(void);
 rb_shape_t * rb_shape_get_root_shape(void);
 uint8_t rb_shape_id_num_bits(void);
 int32_t rb_shape_id_offset(void);

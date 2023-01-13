@@ -1945,80 +1945,39 @@ fn gen_set_ivar(
     KeepCompiling
 }
 
+fn gen_call_rb_ivar_get(
+    jit: &mut JITState,
+    ctx: &mut Context,
+    asm: &mut Assembler,
+    ivar_name: ID,
+    recv: Opnd) {
+    // General case. Call rb_ivar_get().
+    // VALUE rb_ivar_get(VALUE obj, ID id)
+    asm.comment("call rb_ivar_get()");
 
+    // The function could raise exceptions.
+    jit_prepare_routine_call(jit, ctx, asm);
 
-// Codegen for getting an instance variable.
-// Preconditions:
-//   - receiver has the same class as CLASS_OF(comptime_receiver)
-//   - no stack push or pops to ctx since the entry to the codegen of the instruction being compiled
-fn gen_get_ivar(
+    let ivar_val = asm.ccall(rb_ivar_get as *const u8, vec![recv, Opnd::UImm(ivar_name)]);
+
+    // Push the ivar on the stack
+    let out_opnd = ctx.stack_push(Type::Unknown);
+    asm.mov(out_opnd, ivar_val);
+}
+
+fn gen_get_ivar_for_object(
     jit: &mut JITState,
     ctx: &mut Context,
     asm: &mut Assembler,
     ocb: &mut OutlinedCb,
     max_chain_depth: i32,
-    comptime_receiver: VALUE,
+    shape_id: u32,
     ivar_name: ID,
     recv: Opnd,
-    recv_opnd: YARVOpnd,
     side_exit: CodePtr,
-) -> CodegenStatus {
-    // If the object has a too complex shape, we exit
-    if comptime_receiver.shape_too_complex() {
-        return CantCompile;
-    }
-
-    let comptime_val_klass = comptime_receiver.class_of();
-    let starting_context = ctx.clone(); // make a copy for use with jit_chain_guard
-
-    // If recv isn't already a register, load it.
-    let recv = match recv {
-        Opnd::Reg(_) => recv,
-        _ => asm.load(recv),
-    };
-
-    // Check if the comptime class uses a custom allocator
-    let custom_allocator = unsafe { rb_get_alloc_func(comptime_val_klass) };
-    let uses_custom_allocator = match custom_allocator {
-        Some(alloc_fun) => {
-            let allocate_instance = rb_class_allocate_instance as *const u8;
-            alloc_fun as *const u8 != allocate_instance
-        }
-        None => false,
-    };
-
-    // Check if the comptime receiver is a T_OBJECT
-    let receiver_t_object = unsafe { RB_TYPE_P(comptime_receiver, RUBY_T_OBJECT) };
-
-    // If the class uses the default allocator, instances should all be T_OBJECT
-    // NOTE: This assumes nobody changes the allocator of the class after allocation.
-    //       Eventually, we can encode whether an object is T_OBJECT or not
-    //       inside object shapes.
-    if !receiver_t_object || uses_custom_allocator {
-        // General case. Call rb_ivar_get().
-        // VALUE rb_ivar_get(VALUE obj, ID id)
-        asm.comment("call rb_ivar_get()");
-
-        // The function could raise exceptions.
-        jit_prepare_routine_call(jit, ctx, asm);
-
-        let ivar_val = asm.ccall(rb_ivar_get as *const u8, vec![recv, Opnd::UImm(ivar_name)]);
-
-        if recv_opnd != SelfOpnd {
-            ctx.stack_pop(1);
-        }
-
-        // Push the ivar on the stack
-        let out_opnd = ctx.stack_push(Type::Unknown);
-        asm.mov(out_opnd, ivar_val);
-
-        // Jump to next instruction. This allows guard chains to share the same successor.
-        jump_to_next_insn(jit, ctx, asm, ocb);
-        return EndBlock;
-    }
-
+    starting_context: Context,
+) {
     let ivar_index = unsafe {
-        let shape_id = comptime_receiver.shape_id_of();
         let shape = rb_shape_get_shape_by_id(shape_id);
         let mut ivar_index: u32 = 0;
         if rb_shape_get_iv_index(shape, ivar_name, &mut ivar_index) {
@@ -2028,33 +1987,15 @@ fn gen_get_ivar(
         }
     };
 
-    // must be before stack_pop
-    let recv_type = ctx.get_opnd_type(recv_opnd);
-
-    // Upgrade type
-    if !recv_type.is_heap() {
-        ctx.upgrade_opnd_type(recv_opnd, Type::UnknownHeap);
-    }
-
-    // Pop receiver if it's on the temp stack
-    if recv_opnd != SelfOpnd {
-        ctx.stack_pop(1);
-    }
-
-    // Guard heap object
-    if !recv_type.is_heap() {
-        guard_object_is_heap(asm, recv, side_exit);
-    }
-
     // Compile time self is embedded and the ivar index lands within the object
-    let embed_test_result = unsafe { FL_TEST_RAW(comptime_receiver, VALUE(ROBJECT_EMBED.as_usize())) != VALUE(0) };
+    // If there was a capacity change, this means the object is not embedded
+    let embed_test_result = !has_shape_type(shape_id, SHAPE_CAPACITY_CHANGE as u8);
 
-    let expected_shape = unsafe { rb_shape_get_shape_id(comptime_receiver) };
     let shape_id_offset = unsafe { rb_shape_id_offset() };
     let shape_opnd = Opnd::mem(SHAPE_ID_NUM_BITS as u8, recv, shape_id_offset);
 
     asm.comment("guard shape");
-    asm.cmp(shape_opnd, Opnd::UImm(expected_shape as u64));
+    asm.cmp(shape_opnd, Opnd::UImm(shape_id as u64));
     let megamorphic_side_exit = counted_exit!(ocb, side_exit, getivar_megamorphic).into();
     jit_chain_guard(
         JCC_JNE,
@@ -2099,10 +2040,124 @@ fn gen_get_ivar(
             }
         }
     }
+}
+
+fn has_shape_type(shape_id: u32, shape_type: u8) -> bool {
+    unsafe {
+        let shape = rb_shape_get_shape_by_id(shape_id);
+        if (*shape).type_ == (SHAPE_ROOT as u8) {
+            return false;
+        } else {
+            if (*shape).type_ == shape_type {
+                return true;
+            } else {
+                return has_shape_type((*shape).parent_id, shape_type);
+            }
+        }
+    }
+}
+
+// Codegen for getting an instance variable.
+// Preconditions:
+//   - receiver has the same class as CLASS_OF(comptime_receiver)
+//   - no stack push or pops to ctx since the entry to the codegen of the instruction being compiled
+fn gen_get_ivar(
+    jit: &mut JITState,
+    ctx: &mut Context,
+    asm: &mut Assembler,
+    ocb: &mut OutlinedCb,
+    max_chain_depth: i32,
+    comptime_receiver: VALUE,
+    ivar_name: ID,
+    recv: Opnd,
+    recv_opnd: YARVOpnd,
+    side_exit: CodePtr,
+) -> CodegenStatus {
+    // If the object has a too complex shape, we exit
+    if comptime_receiver.shape_too_complex() {
+        return CantCompile;
+    }
+
+    let comptime_val_klass = comptime_receiver.class_of();
+    let starting_context = ctx.clone(); // make a copy for use with jit_chain_guard
+
+    // If recv isn't already a register, load it.
+    let recv = match recv {
+        Opnd::Reg(_) => recv,
+        _ => asm.load(recv),
+    };
+    let custom_allocator = unsafe { rb_get_alloc_func(comptime_val_klass) };
+    let uses_custom_allocator = match custom_allocator {
+        Some(alloc_fun) => {
+            let allocate_instance = rb_class_allocate_instance as *const u8;
+            alloc_fun as *const u8 != allocate_instance
+        }
+        None => false,
+    };
+
+    if recv_opnd == SelfOpnd {
+        ctx.set_self_shape_id(comptime_receiver.shape_id_of());
+    }
+
+    // Check if the comptime receiver is a T_OBJECT
+    let receiver_t_object = unsafe { RB_TYPE_P(comptime_receiver, RUBY_T_OBJECT) };
+
+    // If the class uses the default allocator, instances should all be T_OBJECT
+    // NOTE: This assumes nobody changes the allocator of the class after allocation.
+    //       Eventually, we can encode whether an object is T_OBJECT or not
+    //       inside object shapes.
+    if !receiver_t_object || uses_custom_allocator {
+        if recv_opnd != SelfOpnd {
+            ctx.stack_pop(1);
+        }
+
+        gen_call_rb_ivar_get(jit, ctx, asm, ivar_name, recv);
+
+        // Jump to next instruction. This allows guard chains to share the same successor.
+        jump_to_next_insn(jit, ctx, asm, ocb);
+        return EndBlock;
+    }
+
+    let shape_id = comptime_receiver.shape_id_of();
+
+    // must be before stack_pop
+    let recv_type = ctx.get_opnd_type(recv_opnd);
+
+    // Upgrade type
+    if !recv_type.is_heap() {
+        ctx.upgrade_opnd_type(recv_opnd, Type::UnknownHeap);
+    }
+
+    // Pop receiver if it's on the temp stack
+    if recv_opnd != SelfOpnd {
+        ctx.stack_pop(1);
+    }
+    else {
+        ctx.set_self_shape_id(shape_id);
+    }
+
+    // Guard heap object
+    if !recv_type.is_heap() {
+        guard_object_is_heap(asm, recv, side_exit);
+    }
+
+    gen_get_ivar_for_object(
+        jit,
+        ctx,
+        asm,
+        ocb,
+        max_chain_depth,
+        shape_id,
+        ivar_name,
+        recv,
+        side_exit,
+        starting_context,
+    );
 
     // Jump to next instruction. This allows guard chains to share the same successor.
     jump_to_next_insn(jit, ctx, asm, ocb);
     EndBlock
+
 }
 
 fn gen_getinstancevariable(
@@ -2111,15 +2166,17 @@ fn gen_getinstancevariable(
     asm: &mut Assembler,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
+    /*
+     *  1. if (learned shape and type)
+     *    1a. gen code for rb_ivar_get (non t_obj)
+     *    1b. gen code for reading an ivar
+     *  3. else learn shape and type
+     *    defer
+     */
     // Defer compilation so we can specialize on a runtime `self`
-    if !jit_at_current_insn(jit) {
-        defer_compilation(jit, ctx, asm, ocb);
-        return EndBlock;
-    }
-
+    //if ctx.unknown_self_shape() {
+    //}
     let ivar_name = jit_get_arg(jit, 0).as_u64();
-
-    let comptime_val = jit_peek_at_self(jit);
 
     // Generate a side exit
     let side_exit = get_side_exit(jit, ocb, ctx);
@@ -2127,18 +2184,53 @@ fn gen_getinstancevariable(
     // Guard that the receiver has the same class as the one from compile time.
     let self_asm_opnd = Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF);
 
-    gen_get_ivar(
-        jit,
-        ctx,
-        asm,
-        ocb,
-        GET_IVAR_MAX_DEPTH,
-        comptime_val,
-        ivar_name,
-        self_asm_opnd,
-        SelfOpnd,
-        side_exit,
-    )
+    if ctx.learned_self_shape() {
+        let recv = asm.load(self_asm_opnd);
+        let shape_id = ctx.get_self_shape_id();
+
+        // Using the shape, is this object a T_OBJECT?
+        if has_shape_type(shape_id, SHAPE_T_OBJECT as u8) {
+            // Write code to read the IV directly from the object
+            gen_get_ivar_for_object(
+                jit,
+                ctx,
+                asm,
+                ocb,
+                GET_IVAR_MAX_DEPTH,
+                shape_id,
+                ivar_name,
+                recv,
+                side_exit,
+                ctx.clone(),
+                );
+        } else {
+            gen_call_rb_ivar_get(jit, ctx, asm, ivar_name, recv);
+        }
+
+        return KeepCompiling;
+    }
+    else {
+        if jit_at_current_insn(jit) {
+            let comptime_val = jit_peek_at_self(jit);
+            gen_get_ivar(
+                jit,
+                ctx,
+                asm,
+                ocb,
+                GET_IVAR_MAX_DEPTH,
+                comptime_val,
+                ivar_name,
+                self_asm_opnd,
+                SelfOpnd,
+                side_exit,
+            )
+        }
+        else {
+            defer_compilation(jit, ctx, asm, ocb);
+            return EndBlock;
+        }
+    }
+
 }
 
 // Generate an IV write.

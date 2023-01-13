@@ -288,7 +288,7 @@ pub enum YARVOpnd {
 /// Code generation context
 /// Contains information we can use to specialize/optimize code
 /// There are a lot of context objects so we try to keep the size small.
-#[derive(Clone, Default, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Context {
     // Number of values currently on the temporary stack
     stack_size: u16,
@@ -309,8 +309,26 @@ pub struct Context {
     // Type we track for self
     self_type: Type,
 
+    // Shape ID for self
+    self_shape_id: u32,
+
     // Mapping of temp stack entries to types we track
     temp_mapping: [TempMapping; MAX_TEMP_TYPES],
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self {
+            stack_size: 0,
+            sp_offset: 0,
+            chain_depth: 0,
+            local_types: <[Type; MAX_LOCAL_TYPES]>::default(),
+            temp_types: <[Type; MAX_TEMP_TYPES]>::default(),
+            self_type: Type::default(),
+            self_shape_id: unsafe { rb_shape_get_invalid_shape_id() },
+            temp_mapping: <[TempMapping; MAX_TEMP_TYPES]>::default(),
+        }
+    }
 }
 
 /// Tuple of (iseq, idx) used to identify basic blocks
@@ -1075,6 +1093,18 @@ impl Context {
         self.chain_depth += 1;
     }
 
+    pub fn set_self_shape_id(&mut self, shape_id: u32) {
+        self.self_shape_id = shape_id;
+    }
+
+    pub fn get_self_shape_id(&self) -> u32 {
+        self.self_shape_id
+    }
+
+    pub fn learned_self_shape(&self) -> bool {
+        return self.self_shape_id != unsafe { rb_shape_get_invalid_shape_id() };
+    }
+
     /// Get an operand for the adjusted stack pointer address
     pub fn sp_opnd(&self, offset_bytes: isize) -> Opnd {
         let offset = ((self.sp_offset as isize) * (SIZEOF_VALUE as isize)) + offset_bytes;
@@ -1351,6 +1381,7 @@ impl Context {
 
         // Clear the local types
         self.local_types = [Type::default(); MAX_LOCAL_TYPES];
+        self.set_self_shape_id(unsafe { rb_shape_get_invalid_shape_id() });
     }
 
     /// Compute a difference score for two context objects
