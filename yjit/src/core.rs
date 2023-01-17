@@ -339,7 +339,7 @@ type BranchGenFn =
 
 /// A place that a branch could jump to
 #[derive(Debug)]
-enum BranchTarget {
+pub enum BranchTarget {
     Stub(Box<BranchStub>), // Not compiled yet
     Block(BlockRef),       // Already compiled
 }
@@ -382,7 +382,7 @@ impl BranchTarget {
 }
 
 #[derive(Debug)]
-struct BranchStub {
+pub struct BranchStub {
     address: Option<CodePtr>,
     id: BlockId,
     ctx: Context,
@@ -390,7 +390,7 @@ struct BranchStub {
 
 /// Store info about an outgoing branch in a code segment
 /// Note: care must be taken to minimize the size of branch objects
-struct Branch {
+pub struct Branch {
     // Block this is attached to
     block: BlockRef,
 
@@ -399,7 +399,7 @@ struct Branch {
     end_addr: Option<CodePtr>, // exclusive
 
     // Branch target blocks and their contexts
-    targets: [Option<Box<BranchTarget>>; 2],
+    pub targets: [Option<Box<BranchTarget>>; 2],
 
     // Branch code generation function
     gen_fn: BranchGenFn,
@@ -463,7 +463,7 @@ pub struct Block {
     // however, using a RefCell makes it easy to get a pointer to Branch objects
     //
     // List of outgoing branches (to successors)
-    outgoing: Vec<BranchRef>,
+    pub outgoing: Vec<BranchRef>,
 
     // FIXME: should these be code pointers instead?
     // Offsets for GC managed objects in the mainline code block

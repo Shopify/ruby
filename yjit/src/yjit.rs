@@ -109,3 +109,61 @@ pub extern "C" fn rb_yjit_simulate_oom_bang(_ec: EcPtr, _ruby_self: VALUE) -> VA
 
     return Qnil;
 }
+
+#[no_mangle]
+pub extern "C" fn rb_yjit_mem_stats(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
+    let mut num_iseq_payloads = 0;
+    let mut num_blocks = 0;
+    let mut num_branches = 0;
+    let mut num_branch_targets = 0;
+    let mut num_branch_targets_stub = 0;
+    let mut num_branch_targets_block = 0;
+
+    for_each_iseq(|iseq| {
+        if let Some(iseq_payload) = get_iseq_payload(iseq) {
+            let mut blocks: Vec<BlockRef> = vec![];
+            for block in iseq_payload.take_all_blocks() {
+                blocks.push(block);
+            }
+            for block in iseq_payload.dead_blocks.iter() {
+                blocks.push(block.clone());
+            }
+
+            for block in blocks {
+                for branch in &block.borrow().outgoing {
+                    for target in &branch.borrow().targets {
+                        if let Some(target) = target {
+                            match target.as_ref() {
+                                BranchTarget::Stub(_) => num_branch_targets_stub += 1,
+                                BranchTarget::Block(_) => num_branch_targets_block += 1,
+                            }
+                            num_branch_targets += 1;
+                        }
+                    }
+                    num_branches += 1;
+                }
+                num_blocks += 1;
+            }
+            num_iseq_payloads += 1;
+        }
+    });
+
+    eprintln!();
+    eprintln!("# of IseqPayload: {}", num_iseq_payloads);
+    eprintln!("# of Block: {}", num_blocks);
+    eprintln!("# of Branch: {}", num_branches);
+    eprintln!("# of BranchTarget: {}", num_branch_targets);
+    eprintln!("# of BranchTarget::Stub: {}", num_branch_targets_stub);
+    eprintln!("# of BranchTarget::Block: {}", num_branch_targets_block);
+    eprintln!();
+
+    use std::mem::size_of;
+    eprintln!("size of IseqPayload: {}", size_of::<IseqPayload>());
+    eprintln!("size of Block: {}", size_of::<Block>());
+    eprintln!("size of Branch: {}", size_of::<Branch>());
+    eprintln!("size of BranchTarget: {}", size_of::<BranchTarget>());
+    eprintln!("size of BranchStub: {}", size_of::<BranchStub>());
+    eprintln!("size of Context: {}", size_of::<Context>());
+
+    return Qnil;
+}
