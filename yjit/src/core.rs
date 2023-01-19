@@ -25,7 +25,7 @@ pub const MAX_TEMP_TYPES: usize = 8;
 const MAX_LOCAL_TYPES: usize = 8;
 
 // Represent the type of a value (local/stack/self) in YJIT
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum Type {
     Unknown,
     UnknownImm,
@@ -261,7 +261,7 @@ impl Type {
 
 // Potential mapping of a value on the temporary stack to
 // self, a local variable or constant so that we can track its type
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum TempMapping {
     MapToStack, // Normal stack value
     MapToSelf,  // Temp maps to the self operand
@@ -288,7 +288,7 @@ pub enum YARVOpnd {
 /// Code generation context
 /// Contains information we can use to specialize/optimize code
 /// There are a lot of context objects so we try to keep the size small.
-#[derive(Clone, Default, PartialEq, Debug)]
+#[derive(Clone, Default, Eq, PartialEq, Debug, Hash)]
 pub struct Context {
     // Number of values currently on the temporary stack
     stack_size: u16,
@@ -361,8 +361,8 @@ impl BranchTarget {
 
     fn get_ctx(&self) -> Context {
         match self {
-            BranchTarget::Stub(stub) => stub.ctx.clone(),
-            BranchTarget::Block(blockref) => blockref.borrow().ctx.clone(),
+            BranchTarget::Stub(stub) => stub.ctx.as_ref().clone(),
+            BranchTarget::Block(blockref) => blockref.borrow().ctx.as_ref().clone(),
         }
     }
 
@@ -385,7 +385,7 @@ impl BranchTarget {
 struct BranchStub {
     address: Option<CodePtr>,
     id: BlockId,
-    ctx: Context,
+    ctx: Rc<Context>,
 }
 
 /// Store info about an outgoing branch in a code segment
@@ -449,7 +449,7 @@ pub struct Block {
 
     // Context at the start of the block
     // This should never be mutated
-    ctx: Context,
+    ctx: Rc<Context>,
 
     // Positions where the generated code starts and ends
     start_addr: Option<CodePtr>,
@@ -994,7 +994,7 @@ impl Block {
         let block = Block {
             blockid,
             end_idx: 0,
-            ctx: ctx.clone(),
+            ctx: CodegenGlobals::deduplicate_context(ctx),
             start_addr: None,
             end_addr: None,
             incoming: Vec::new(),
@@ -1018,7 +1018,7 @@ impl Block {
     }
 
     pub fn get_ctx(&self) -> Context {
-        self.ctx.clone()
+        self.ctx.as_ref().clone()
     }
 
     #[allow(unused)]
@@ -1973,7 +1973,7 @@ fn set_branch_target(
         branch.targets[target_idx.as_usize()] = Some(Box::new(BranchTarget::Stub(Box::new(BranchStub {
             address: Some(stub_addr),
             id: target,
-            ctx: ctx.clone(),
+            ctx: CodegenGlobals::deduplicate_context(ctx),
         }))));
     }
 }
@@ -2087,7 +2087,7 @@ pub fn gen_direct_jump(jit: &JITState, ctx: &Context, target0: BlockId, asm: &mu
 
     let mut new_target = BranchTarget::Stub(Box::new(BranchStub {
         address: None,
-        ctx: ctx.clone(),
+        ctx: CodegenGlobals::deduplicate_context(ctx),
         id: target0,
     }));
 
@@ -2333,7 +2333,7 @@ pub fn invalidate_block_version(blockref: &BlockRef) {
             branch.targets[target_idx] = Some(Box::new(BranchTarget::Stub(Box::new(BranchStub {
                 address: block.entry_exit,
                 id: block.blockid,
-                ctx: block.ctx.clone(),
+                ctx: CodegenGlobals::deduplicate_context(block.ctx.as_ref()),
             }))));
         }
 
