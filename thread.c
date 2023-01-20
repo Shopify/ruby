@@ -4694,6 +4694,13 @@ struct thgroup {
     VALUE group;
 };
 
+void
+thgroup_mark_and_move(void *ptr)
+{
+    struct thgroup *grp = ptr;
+    rb_gc_mark_and_move(&(grp->group));
+}
+
 static size_t
 thgroup_memsize(const void *ptr)
 {
@@ -4702,7 +4709,7 @@ thgroup_memsize(const void *ptr)
 
 static const rb_data_type_t thgroup_data_type = {
     "thgroup",
-    {0, RUBY_TYPED_DEFAULT_FREE, thgroup_memsize,},
+    {thgroup_mark_and_move, RUBY_TYPED_DEFAULT_FREE, thgroup_memsize, thgroup_mark_and_move},
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
