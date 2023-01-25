@@ -129,6 +129,34 @@ rb_shape_get_shape(VALUE obj)
     return rb_shape_get_shape_by_id(rb_shape_get_shape_id(obj));
 }
 
+static rb_shape_t *
+create_iv_index_hash_shape(rb_shape_t * shape)
+{
+    ID id = 0;
+
+    rb_shape_t * res = rb_shape_alloc(id, shape);
+    res->type = (uint8_t)SHAPE_IV_INDEX_HASH;
+    res->capacity = shape->capacity;
+    res->next_iv_index = shape->next_iv_index;
+
+    // Fill out the hash table by crawling up the shape tree, and adding the pointer to the previous hash shape
+    res->iv_indexes = rb_id_table_create(SHAPE_SIZE_OF_IV_INDEX_HASH_TABLE);
+
+    rb_shape_t * parent = shape;
+    while (parent->type != SHAPE_IV_INDEX_HASH && parent->type != SHAPE_ROOT) {
+        rb_id_table_insert(res->iv_indexes, parent->edge_name, parent->next_iv_index - 1);
+        parent = rb_shape_get_parent(shape);
+    }
+
+    if (parent->type == SHAPE_IV_INDEX_HASH) {
+        res->previous_iv_index_hash_shape = rb_shape_id(parent);
+    }
+
+    rb_id_table_insert(shape->edges, id, (VALUE)res);
+
+    return res;
+}
+
 static rb_shape_t*
 get_next_shape_internal(rb_shape_t * shape, ID id, enum shape_type shape_type, bool * variation_created, bool new_shapes_allowed)
 {
@@ -155,6 +183,18 @@ get_next_shape_internal(rb_shape_t * shape, ID id, enum shape_type shape_type, b
                 res = (rb_shape_t *)lookup_result;
             }
             else {
+                if (shape->next_iv_index % 50 == 0) {
+                    rb_shape_t * iv_index_hash_shape = create_iv_index_hash_shape(shape);
+                    return get_next_shape_internal(
+                            iv_index_hash_shape,
+                            id,
+                            shape_type,
+                            variation_created,
+                            new_shapes_allowed
+                            );
+                }
+
+
                 *variation_created = had_edges;
 
                 rb_shape_t * new_shape = rb_shape_alloc(id, shape);
@@ -371,10 +411,9 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
     RUBY_ASSERT(rb_shape_id(shape) != OBJ_TOO_COMPLEX_SHAPE_ID);
 
     while (shape->parent_id != INVALID_SHAPE_ID) {
-        if (shape->edge_name == id) {
-            enum shape_type shape_type;
-            shape_type = (enum shape_type)shape->type;
+        enum shape_type shape_type = (enum shape_type)shape->type;
 
+        if (shape->edge_name == id) {
             switch (shape_type) {
               case SHAPE_IVAR:
                 RUBY_ASSERT(shape->next_iv_index > 0);
@@ -390,6 +429,16 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
               case SHAPE_FROZEN:
                 rb_bug("Ivar should not exist on transition\n");
             }
+        }
+        else if (shape_type == SHAPE_IV_INDEX_HASH) {
+            /*
+            if lookup_shape_in_hash {
+                return index
+            }
+            else {
+                return rb_shape_get_iv_index(shape->previous_iv_index_hash_shape);
+            }
+            */
         }
         shape = rb_shape_get_parent(shape);
     }

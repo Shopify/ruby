@@ -39,6 +39,8 @@ typedef uint16_t shape_id_t;
 # define SPECIAL_CONST_SHAPE_ID (SIZE_POOL_COUNT * 2)
 # define OBJ_TOO_COMPLEX_SHAPE_ID (SPECIAL_CONST_SHAPE_ID + 1)
 
+# define SHAPE_SIZE_OF_IV_INDEX_HASH_TABLE 50
+
 struct rb_shape {
     struct rb_id_table * edges; // id_table from ID (ivar) to next shape
     ID edge_name; // ID (ivar) for transition from parent to rb_shape
@@ -47,6 +49,8 @@ struct rb_shape {
     uint8_t type;
     uint8_t size_pool_index;
     shape_id_t parent_id;
+    shape_id_t previous_iv_index_hash_shape;
+    struct rb_id_table * iv_indexes;
 };
 
 typedef struct rb_shape rb_shape_t;
