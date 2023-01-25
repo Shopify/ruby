@@ -169,6 +169,7 @@ get_next_shape_internal(rb_shape_t * shape, ID id, enum shape_type shape_type, b
                   case SHAPE_CAPACITY_CHANGE:
                   case SHAPE_FROZEN:
                   case SHAPE_T_OBJECT:
+                  case SHAPE_IV_INDEX_HASH:
                     new_shape->next_iv_index = shape->next_iv_index;
                     break;
                   case SHAPE_OBJ_TOO_COMPLEX:
@@ -384,6 +385,7 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
               case SHAPE_INITIAL_CAPACITY:
               case SHAPE_T_OBJECT:
                 return false;
+              case SHAPE_IV_INDEX_HASH:
               case SHAPE_OBJ_TOO_COMPLEX:
               case SHAPE_FROZEN:
                 rb_bug("Ivar should not exist on transition\n");
@@ -480,6 +482,7 @@ rb_shape_traverse_from_new_root(rb_shape_t *initial_shape, rb_shape_t *dest_shap
       case SHAPE_CAPACITY_CHANGE:
       case SHAPE_INITIAL_CAPACITY:
       case SHAPE_T_OBJECT:
+      case SHAPE_IV_INDEX_HASH:
         break;
       case SHAPE_OBJ_TOO_COMPLEX:
         rb_bug("Unreachable\n");
@@ -517,6 +520,7 @@ rb_shape_rebuild_shape(rb_shape_t * initial_shape, rb_shape_t * dest_shape)
       case SHAPE_CAPACITY_CHANGE:
       case SHAPE_INITIAL_CAPACITY:
       case SHAPE_T_OBJECT:
+      case SHAPE_IV_INDEX_HASH:
         break;
       case SHAPE_OBJ_TOO_COMPLEX:
         rb_bug("Unreachable\n");
