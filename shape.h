@@ -49,7 +49,7 @@ struct rb_shape {
     uint8_t type;
     uint8_t size_pool_index;
     shape_id_t parent_id;
-    shape_id_t previous_iv_index_hash_shape;
+    shape_id_t previous_iv_index_hash_shape_id;
     struct rb_id_table * iv_indexes;
 };
 

@@ -132,9 +132,10 @@ rb_shape_get_shape(VALUE obj)
 static rb_shape_t *
 create_iv_index_hash_shape(rb_shape_t * shape)
 {
-    ID id = 0;
+    // TODO JEM: Fix this
+    ID iv_index_hash_shape_id = rb_make_internal_id();
 
-    rb_shape_t * res = rb_shape_alloc(id, shape);
+    rb_shape_t * res = rb_shape_alloc(iv_index_hash_shape_id, shape);
     res->type = (uint8_t)SHAPE_IV_INDEX_HASH;
     res->capacity = shape->capacity;
     res->next_iv_index = shape->next_iv_index;
@@ -149,10 +150,10 @@ create_iv_index_hash_shape(rb_shape_t * shape)
     }
 
     if (parent->type == SHAPE_IV_INDEX_HASH) {
-        res->previous_iv_index_hash_shape = rb_shape_id(parent);
+        res->previous_iv_index_hash_shape_id = rb_shape_id(parent);
     }
 
-    rb_id_table_insert(shape->edges, id, (VALUE)res);
+    rb_id_table_insert(shape->edges, iv_index_hash_shape_id, (VALUE)res);
 
     return res;
 }
@@ -183,7 +184,7 @@ get_next_shape_internal(rb_shape_t * shape, ID id, enum shape_type shape_type, b
                 res = (rb_shape_t *)lookup_result;
             }
             else {
-                if (shape->next_iv_index % 50 == 0) {
+                if (shape->next_iv_index != 0 && shape->next_iv_index % 50 == 0) {
                     rb_shape_t * iv_index_hash_shape = create_iv_index_hash_shape(shape);
                     return get_next_shape_internal(
                             iv_index_hash_shape,
@@ -431,14 +432,12 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
             }
         }
         else if (shape_type == SHAPE_IV_INDEX_HASH) {
-            /*
-            if lookup_shape_in_hash {
-                return index
+            if (rb_id_table_lookup(shape->iv_indexes, id, (VALUE *)value)) {
+                return true;
             }
             else {
-                return rb_shape_get_iv_index(shape->previous_iv_index_hash_shape);
+                return rb_shape_get_iv_index(rb_shape_get_shape_by_id(shape->previous_iv_index_hash_shape_id), id, value);
             }
-            */
         }
         shape = rb_shape_get_parent(shape);
     }
