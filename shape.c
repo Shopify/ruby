@@ -132,7 +132,7 @@ rb_shape_get_shape(VALUE obj)
 static rb_shape_t *
 create_iv_index_hash_shape(rb_shape_t * shape)
 {
-    // TODO JEM: Fix this
+    // TODO JEM: Fix this id
     ID iv_index_hash_shape_id = rb_make_internal_id();
 
     rb_shape_t * res = rb_shape_alloc(iv_index_hash_shape_id, shape);
@@ -144,9 +144,12 @@ create_iv_index_hash_shape(rb_shape_t * shape)
     res->iv_indexes = rb_id_table_create(SHAPE_SIZE_OF_IV_INDEX_HASH_TABLE);
 
     rb_shape_t * parent = shape;
+
     while (parent->type != SHAPE_IV_INDEX_HASH && parent->type != SHAPE_ROOT) {
-        rb_id_table_insert(res->iv_indexes, parent->edge_name, parent->next_iv_index - 1);
-        parent = rb_shape_get_parent(shape);
+        if (parent->type == SHAPE_IVAR) {
+            rb_id_table_insert(res->iv_indexes, parent->edge_name, parent->next_iv_index - 1);
+        }
+        parent = rb_shape_get_parent(parent);
     }
 
     if (parent->type == SHAPE_IV_INDEX_HASH) {
@@ -184,9 +187,9 @@ get_next_shape_internal(rb_shape_t * shape, ID id, enum shape_type shape_type, b
                 res = (rb_shape_t *)lookup_result;
             }
             else {
-                if (shape->next_iv_index != 0 && shape->next_iv_index % 50 == 0) {
+                if (shape->type == SHAPE_IVAR && shape->next_iv_index != 0 && shape->next_iv_index % 50 == 0) {
                     rb_shape_t * iv_index_hash_shape = create_iv_index_hash_shape(shape);
-                    return get_next_shape_internal(
+                    res = get_next_shape_internal(
                             iv_index_hash_shape,
                             id,
                             shape_type,
@@ -194,35 +197,35 @@ get_next_shape_internal(rb_shape_t * shape, ID id, enum shape_type shape_type, b
                             new_shapes_allowed
                             );
                 }
+                else {
+                    *variation_created = had_edges;
 
+                    rb_shape_t * new_shape = rb_shape_alloc(id, shape);
 
-                *variation_created = had_edges;
+                    new_shape->type = (uint8_t)shape_type;
+                    new_shape->capacity = shape->capacity;
 
-                rb_shape_t * new_shape = rb_shape_alloc(id, shape);
+                    switch (shape_type) {
+                      case SHAPE_IVAR:
+                        new_shape->next_iv_index = shape->next_iv_index + 1;
+                        break;
+                      case SHAPE_CAPACITY_CHANGE:
+                      case SHAPE_FROZEN:
+                      case SHAPE_T_OBJECT:
+                      case SHAPE_IV_INDEX_HASH:
+                        new_shape->next_iv_index = shape->next_iv_index;
+                        break;
+                      case SHAPE_OBJ_TOO_COMPLEX:
+                      case SHAPE_INITIAL_CAPACITY:
+                      case SHAPE_ROOT:
+                        rb_bug("Unreachable");
+                        break;
+                    }
 
-                new_shape->type = (uint8_t)shape_type;
-                new_shape->capacity = shape->capacity;
+                    rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
 
-                switch (shape_type) {
-                  case SHAPE_IVAR:
-                    new_shape->next_iv_index = shape->next_iv_index + 1;
-                    break;
-                  case SHAPE_CAPACITY_CHANGE:
-                  case SHAPE_FROZEN:
-                  case SHAPE_T_OBJECT:
-                  case SHAPE_IV_INDEX_HASH:
-                    new_shape->next_iv_index = shape->next_iv_index;
-                    break;
-                  case SHAPE_OBJ_TOO_COMPLEX:
-                  case SHAPE_INITIAL_CAPACITY:
-                  case SHAPE_ROOT:
-                    rb_bug("Unreachable");
-                    break;
+                    res = new_shape;
                 }
-
-                rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
-
-                res = new_shape;
             }
         }
         RB_VM_LOCK_LEAVE();
