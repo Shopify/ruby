@@ -83,9 +83,9 @@ class TestMJIT < Test::Unit::TestCase
     begin;
       def foo
         a = 0
-        [1, 2].each do |i|
+        [2, 1].reverse_each do |i|
           a += i
-          [3, 4].each do |j|
+          [4, 3].reverse_each do |j|
             a *= j
           end
         end
@@ -820,8 +820,8 @@ class TestMJIT < Test::Unit::TestCase
     assert_eval_with_jit("#{<<~"begin;"}\n#{<<~"end;"}", stdout: '11', success_count: 4)
     begin;
       def catch_true(paths, prefixes) # catch_except_p: true
-        prefixes.each do |prefix| # catch_except_p: true
-          paths.each do |path| # catch_except_p: false
+        prefixes.reverse_each do |prefix| # catch_except_p: true
+          paths.reverse_each do |path| # catch_except_p: false
             return path
           end
         end

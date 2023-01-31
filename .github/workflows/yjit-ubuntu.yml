@@ -143,7 +143,8 @@ jobs:
         timeout-minutes: 60
         env:
           RUBY_TESTOPTS: "-q --tty=no"
-          TEST_BUNDLED_GEMS_ALLOW_FAILURES: ""
+          # Tentatively exclude debug since it expects Array#each to be written in C
+          TEST_BUNDLED_GEMS_ALLOW_FAILURES: "debug"
           PRECHECK_BUNDLED_GEMS: "no"
         continue-on-error: ${{ matrix.test_task == 'yjit-bench' }}
       - name: Show ${{ github.event.pull_request.base.ref }} GitHub URL for yjit-bench comparison

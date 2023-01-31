@@ -107,7 +107,8 @@ jobs:
         env:
           RUBY_TESTOPTS: "-q --tty=no"
           TESTS: ${{ matrix.test_task == 'check' && matrix.skipped_tests || '' }}
-          TEST_BUNDLED_GEMS_ALLOW_FAILURES: ""
+          # Tentatively exclude debug since it expects Array#each to be written in C
+          TEST_BUNDLED_GEMS_ALLOW_FAILURES: "debug"
           PRECHECK_BUNDLED_GEMS: "no"
       - name: make skipped tests
         run: |

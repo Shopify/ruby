@@ -1682,6 +1682,36 @@ rb_lastline_set(VALUE val)
     vm_svar_set(GET_EC(), VM_SVAR_LASTLINE, val);
 }
 
+static rb_control_frame_t *
+vm_caller_frame(int uplevel)
+{
+    const rb_execution_context_t *ec = GET_EC();
+    rb_control_frame_t *cfp = ec->cfp;
+    for (int i = 0; i < uplevel; i++) {
+        cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
+    }
+    return cfp;
+}
+
+// Clear the PC of a caller frame, which lets vm_svar_set ignore the frame.
+// It must be restored with rb_vm_restore_caller_pc using the return value.
+const VALUE *
+rb_vm_clear_caller_pc(int uplevel)
+{
+    rb_control_frame_t *cfp = vm_caller_frame(uplevel);
+    const VALUE *pc = cfp->pc;
+    cfp->pc = 0;
+    return pc;
+}
+
+// Restore PC after rb_vm_clear_caller_pc.
+void
+rb_vm_restore_caller_pc(int uplevel, const VALUE *pc)
+{
+    rb_control_frame_t *cfp = vm_caller_frame(uplevel);
+    cfp->pc = pc;
+}
+
 /* misc */
 
 const char *

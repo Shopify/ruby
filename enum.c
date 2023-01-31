@@ -89,7 +89,11 @@ grep_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, args))
     struct MEMO *memo = MEMO_CAST(args);
     ENUM_WANT_SVALUE();
 
-    if (RTEST(rb_funcallv(memo->v1, id_eqq, 1, &i)) == RTEST(memo->u3.value)) {
+    const VALUE *pc = rb_vm_clear_caller_pc(1); // Skip the Array#each frame on rb_backref_set
+    VALUE match = rb_funcallv(memo->v1, id_eqq, 1, &i);
+    rb_vm_restore_caller_pc(1, pc);
+
+    if (RTEST(match) == RTEST(memo->u3.value)) {
         rb_ary_push(memo->v2, i);
     }
     return Qnil;
@@ -104,7 +108,15 @@ grep_regexp_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, args))
 
     /* In case element can't be converted to a Symbol or String: not a match (don't raise) */
     converted_element = SYMBOL_P(i) ? i : rb_check_string_type(i);
-    match = NIL_P(converted_element) ? Qfalse : rb_reg_match_p(memo->v1, i, 0);
+    if (NIL_P(converted_element)) {
+        match = Qfalse;
+    }
+    else {
+        const VALUE *pc = rb_vm_clear_caller_pc(1); // Skip the Array#each frame on rb_backref_set
+        match = rb_reg_match_p(memo->v1, i, 0);
+        rb_vm_restore_caller_pc(1, pc);
+    }
+
     if (match == memo->u3.value) {
         rb_ary_push(memo->v2, i);
     }
@@ -117,7 +129,11 @@ grep_iter_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, args))
     struct MEMO *memo = MEMO_CAST(args);
     ENUM_WANT_SVALUE();
 
-    if (RTEST(rb_funcallv(memo->v1, id_eqq, 1, &i)) == RTEST(memo->u3.value)) {
+    const VALUE *pc = rb_vm_clear_caller_pc(1); // Skip the Array#each frame on rb_backref_set
+    VALUE match = rb_funcallv(memo->v1, id_eqq, 1, &i);
+    rb_vm_restore_caller_pc(1, pc);
+
+    if (RTEST(match) == RTEST(memo->u3.value)) {
         rb_ary_push(memo->v2, enum_yield(argc, i));
     }
     return Qnil;
