@@ -1624,16 +1624,9 @@ static rb_control_frame_t *
 vm_svar_frame(const rb_execution_context_t *ec, rb_control_frame_t *cfp)
 {
     while (cfp->pc == 0) {
-        if (VM_FRAME_TYPE(cfp) ==  VM_FRAME_MAGIC_IFUNC) {
-            struct vm_ifunc *ifunc = (struct vm_ifunc *)cfp->iseq;
-            rb_control_frame_t *owner_cfp = ifunc->owner_cfp;
-            if (cfp < owner_cfp) {
-                cfp = ifunc->owner_cfp;
-            }
-            else {
-                // orphan ifunc
-                cfp = NULL;
-            }
+        struct vm_ifunc *ifunc;
+        if (VM_FRAME_TYPE(cfp) == VM_FRAME_MAGIC_IFUNC && cfp < (ifunc = (struct vm_ifunc *)cfp->iseq)->owner_cfp) {
+            cfp = ifunc->owner_cfp;
         }
         else {
             cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
