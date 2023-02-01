@@ -1632,7 +1632,7 @@ vm_svar_frame(const rb_execution_context_t *ec, rb_control_frame_t *cfp)
             }
             else {
                 // orphan ifunc
-                cfp = NULL;
+                return NULL;
             }
         }
         else {
