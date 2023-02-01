@@ -2274,11 +2274,7 @@ static struct MEMO *
 lazy_grep_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_index)
 {
     struct proc_entry *entry = proc_entry_ptr(proc_entry);
-
-    const VALUE *pc = rb_vm_clear_caller_pc(1); // Skip the Array#each frame on rb_backref_set
     VALUE chain = rb_funcall(entry->memo, id_eqq, 1, result->memo_value);
-    rb_vm_restore_caller_pc(1, pc);
-
     if (!RTEST(chain)) return 0;
     return result;
 }
@@ -2287,10 +2283,7 @@ static struct MEMO *
 lazy_grep_iter_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_index)
 {
     struct proc_entry *entry = proc_entry_ptr(proc_entry);
-
-    const VALUE *pc = rb_vm_clear_caller_pc(1); // Skip the Array#each frame on rb_backref_set
     VALUE value, chain = rb_funcall(entry->memo, id_eqq, 1, result->memo_value);
-    rb_vm_restore_caller_pc(1, pc);
 
     if (!RTEST(chain)) return 0;
     value = rb_proc_call_with_block(entry->proc, 1, &(result->memo_value), Qnil);
@@ -2328,11 +2321,7 @@ static struct MEMO *
 lazy_grep_v_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_index)
 {
     struct proc_entry *entry = proc_entry_ptr(proc_entry);
-
-    const VALUE *pc = rb_vm_clear_caller_pc(1); // Skip the Array#each frame on rb_backref_set
     VALUE chain = rb_funcall(entry->memo, id_eqq, 1, result->memo_value);
-    rb_vm_restore_caller_pc(1, pc);
-
     if (RTEST(chain)) return 0;
     return result;
 }
@@ -2341,10 +2330,7 @@ static struct MEMO *
 lazy_grep_v_iter_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_index)
 {
     struct proc_entry *entry = proc_entry_ptr(proc_entry);
-
-    const VALUE *pc = rb_vm_clear_caller_pc(1); // Skip the Array#each frame on rb_backref_set
     VALUE value, chain = rb_funcall(entry->memo, id_eqq, 1, result->memo_value);
-    rb_vm_restore_caller_pc(1, pc);
 
     if (RTEST(chain)) return 0;
     value = rb_proc_call_with_block(entry->proc, 1, &(result->memo_value), Qnil);

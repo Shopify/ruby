@@ -57,8 +57,6 @@ int rb_vm_check_optimizable_mid(VALUE mid);
 VALUE rb_yield_refine_block(VALUE refinement, VALUE refinements);
 MJIT_STATIC VALUE ruby_vm_special_exception_copy(VALUE);
 PUREFUNC(st_table *rb_vm_fstring_table(void));
-const VALUE *rb_vm_clear_caller_pc(int uplevel);
-void rb_vm_restore_caller_pc(int uplevel, const VALUE *pc);
 
 MJIT_SYMBOL_EXPORT_BEGIN
 VALUE vm_exec(struct rb_execution_context_struct *, bool); /* used in JIT-ed code */
