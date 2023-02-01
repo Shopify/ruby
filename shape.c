@@ -439,6 +439,9 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
                 return true;
             }
             else {
+                if (shape->previous_iv_index_hash_shape_id == ROOT_SHAPE_ID) {
+                    return false;
+                }
                 return rb_shape_get_iv_index(rb_shape_get_shape_by_id(shape->previous_iv_index_hash_shape_id), id, value);
             }
         }
@@ -871,7 +874,6 @@ Init_shape(void)
     rb_define_const(rb_cShape, "SPECIAL_CONST_SHAPE_ID", INT2NUM(SPECIAL_CONST_SHAPE_ID));
     rb_define_const(rb_cShape, "OBJ_TOO_COMPLEX_SHAPE_ID", INT2NUM(OBJ_TOO_COMPLEX_SHAPE_ID));
     rb_define_const(rb_cShape, "SHAPE_MAX_VARIATIONS", INT2NUM(SHAPE_MAX_VARIATIONS));
-
     rb_define_singleton_method(rb_cShape, "transition_tree", shape_transition_tree, 0);
     rb_define_singleton_method(rb_cShape, "find_by_id", rb_shape_find_by_id, 1);
     rb_define_singleton_method(rb_cShape, "of", rb_shape_debug_shape, 1);

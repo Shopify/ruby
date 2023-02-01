@@ -1420,6 +1420,7 @@ rb_obj_evacuate_ivs_to_hash_table(ID key, VALUE val, st_data_t arg)
 attr_index_t
 rb_obj_ivar_set(VALUE obj, ID id, VALUE val)
 {
+    fprintf(stderr, "starting rb_obj_ivar_set\n\n");
     attr_index_t index;
 
     rb_shape_t *shape = rb_shape_get_shape(obj);
@@ -1432,7 +1433,9 @@ rb_obj_ivar_set(VALUE obj, ID id, VALUE val)
         return 0;
     }
 
+    rp(rb_id2str(id));
     if (!rb_shape_get_iv_index(shape, id, &index)) {
+        rp(rb_id2str(id));
         index = shape->next_iv_index;
         if (index >= MAX_IVARS) {
             rb_raise(rb_eArgError, "too many instance variables");
@@ -1480,8 +1483,14 @@ rb_obj_ivar_set(VALUE obj, ID id, VALUE val)
         }
     }
 
+    if (val == 667) {
+        fprintf(stderr, "leaving rb_obj_ivar_set index: %d\n\n", index);
+    }
+
     RUBY_ASSERT(!rb_shape_obj_too_complex(obj));
-    RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[index], val);
+
+    ROBJECT_IVPTR(obj)[index] = val;
+    RB_OBJ_WRITTEN(obj, 1, val);
 
     return index;
 }
@@ -1565,7 +1574,9 @@ ivar_set(VALUE obj, ID id, VALUE val)
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
       {
-          rb_obj_ivar_set(obj, id, val);
+          fprintf(stderr, "1571\n");
+          int index = rb_obj_ivar_set(obj, id, val);
+          fprintf(stderr, "1573, index: %d\n\n", index);
           break;
       }
       case T_CLASS:
