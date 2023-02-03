@@ -2020,13 +2020,13 @@ vtm_add_offset(VALUE time, struct vtm *vtm, VALUE off, int sign)
     day = 0;
 
     if (!rb_equal(subsec, INT2FIX(0))) {
-        RB_OBJ_WRITE(time, &vtm->subsecx, addv(vtm->subsecx, w2v(rb_time_magnify(v2w(subsec)))));
+        RB_OBJ_WRITE(time, UNALIGNED_MEMBER_PTR(vtm, subsecx), addv(vtm->subsecx, w2v(rb_time_magnify(v2w(subsec)))));
         if (lt(vtm->subsecx, INT2FIX(0))) {
-            RB_OBJ_WRITE(time, &vtm->subsecx, addv(vtm->subsecx, INT2FIX(TIME_SCALE)));
+            RB_OBJ_WRITE(time, UNALIGNED_MEMBER_PTR(vtm, subsecx), addv(vtm->subsecx, INT2FIX(TIME_SCALE)));
             sec -= 1;
         }
         if (le(INT2FIX(TIME_SCALE), vtm->subsecx)) {
-            RB_OBJ_WRITE(time, &vtm->subsecx, subv(vtm->subsecx, INT2FIX(TIME_SCALE)));
+            RB_OBJ_WRITE(time, UNALIGNED_MEMBER_PTR(vtm, subsecx), subv(vtm->subsecx, INT2FIX(TIME_SCALE)));
             sec += 1;
         }
     }
@@ -2302,7 +2302,7 @@ extract_vtm(VALUE time, struct vtm *vtm, VALUE subsecx)
 #undef AREF
     }
 #undef EXTRACT_VTM
-    RB_OBJ_WRITE(time, &vtm->subsecx, subsecx);
+    RB_OBJ_WRITE(time, UNALIGNED_MEMBER_PTR(vtm, subsecx), subsecx);
     validate_vtm(vtm);
     return t;
 }
@@ -2405,12 +2405,12 @@ time_init_args(rb_execution_context_t *ec, VALUE time, VALUE year, VALUE mon, VA
 
     if (NIL_P(sec)) {
         vtm.sec = 0;
-        RB_OBJ_WRITE(time, &vtm.subsecx, INT2FIX(0));
+        RB_OBJ_WRITE(time, UNALIGNED_MEMBER_ACCESS(&vtm.subsecx), INT2FIX(0));
     }
     else {
         VALUE subsecx;
         vtm.sec = obj2subsecx(sec, &subsecx);
-        RB_OBJ_WRITE(time, &vtm.subsecx, subsecx);
+        RB_OBJ_WRITE(time, UNALIGNED_MEMBER_ACCESS(&vtm.subsecx), subsecx);
     }
 
     return time_init_vtm(time, vtm, zone);
@@ -3068,7 +3068,7 @@ time_arg(int argc, const VALUE *argv, struct vtm *vtm)
     vtm->hour = 0;
     vtm->min = 0;
     vtm->sec = 0;
-    RB_OBJ_WRITE(time, &vtm->subsecx, INT2FIX(0));
+    vtm->subsecx = INT2FIX(0);
     vtm->utc_offset = Qnil;
     vtm->wday = 0;
     vtm->yday = 0;
