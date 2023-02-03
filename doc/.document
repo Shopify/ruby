@@ -1,8 +1,4 @@
-*.md
-*.rb
-*.rdoc
-contributing
+**/*.md
+**/*.rb
+**/*.rdoc
 NEWS
-syntax
-optparse
-rdoc
