@@ -1992,7 +1992,7 @@ time_set_utc_offset(VALUE time, VALUE off)
 }
 
 static void
-vtm_add_offset(struct vtm *vtm, VALUE off, int sign)
+vtm_add_offset(VALUE time, struct vtm *vtm, VALUE off, int sign)
 {
     VALUE subsec, v;
     int sec, min, hour;
@@ -2020,13 +2020,13 @@ vtm_add_offset(struct vtm *vtm, VALUE off, int sign)
     day = 0;
 
     if (!rb_equal(subsec, INT2FIX(0))) {
-        vtm->subsecx = addv(vtm->subsecx, w2v(rb_time_magnify(v2w(subsec))));
+        RB_OBJ_WRITE(time, &vtm->subsecx, addv(vtm->subsecx, w2v(rb_time_magnify(v2w(subsec)))));
         if (lt(vtm->subsecx, INT2FIX(0))) {
-            vtm->subsecx = addv(vtm->subsecx, INT2FIX(TIME_SCALE));
+            RB_OBJ_WRITE(time, &vtm->subsecx, addv(vtm->subsecx, INT2FIX(TIME_SCALE)));
             sec -= 1;
         }
         if (le(INT2FIX(TIME_SCALE), vtm->subsecx)) {
-            vtm->subsecx = subv(vtm->subsecx, INT2FIX(TIME_SCALE));
+            RB_OBJ_WRITE(time, &vtm->subsecx, subv(vtm->subsecx, INT2FIX(TIME_SCALE)));
             sec += 1;
         }
     }
@@ -2302,7 +2302,7 @@ extract_vtm(VALUE time, struct vtm *vtm, VALUE subsecx)
 #undef AREF
     }
 #undef EXTRACT_VTM
-    vtm->subsecx = subsecx;
+    RB_OBJ_WRITE(time, &vtm->subsecx, subsecx);
     validate_vtm(vtm);
     return t;
 }
@@ -2405,12 +2405,12 @@ time_init_args(rb_execution_context_t *ec, VALUE time, VALUE year, VALUE mon, VA
 
     if (NIL_P(sec)) {
         vtm.sec = 0;
-        vtm.subsecx = INT2FIX(0);
+        RB_OBJ_WRITE(time, &vtm.subsecx, INT2FIX(0));
     }
     else {
         VALUE subsecx;
         vtm.sec = obj2subsecx(sec, &subsecx);
-        vtm.subsecx = subsecx;
+        RB_OBJ_WRITE(time, &vtm.subsecx, subsecx);
     }
 
     return time_init_vtm(time, vtm, zone);
@@ -2475,7 +2475,7 @@ time_init_vtm(VALUE time, struct vtm vtm, VALUE zone)
 
     if (!NIL_P(vtm.utc_offset)) {
         VALUE off = vtm.utc_offset;
-        vtm_add_offset(&vtm, off, -1);
+        vtm_add_offset(time, &vtm, off, -1);
         vtm.utc_offset = Qnil;
         tobj->timew = timegmw(&vtm);
         return time_set_utc_offset(time, off);
@@ -3068,7 +3068,7 @@ time_arg(int argc, const VALUE *argv, struct vtm *vtm)
     vtm->hour = 0;
     vtm->min = 0;
     vtm->sec = 0;
-    vtm->subsecx = INT2FIX(0);
+    RB_OBJ_WRITE(time, &vtm->subsecx, INT2FIX(0));
     vtm->utc_offset = Qnil;
     vtm->wday = 0;
     vtm->yday = 0;
@@ -4130,7 +4130,7 @@ time_fixoff(VALUE time)
     zone = tobj->vtm.zone;
     tobj->vtm = vtm;
     tobj->vtm.zone = zone;
-    vtm_add_offset(&tobj->vtm, off, +1);
+    vtm_add_offset(time, &tobj->vtm, off, +1);
 
     tobj->tm_got = 1;
     TZMODE_SET_FIXOFF(tobj, off);
