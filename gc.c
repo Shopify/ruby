@@ -797,7 +797,21 @@ typedef struct rb_objspace {
         double invoke_time;
 
         size_t minor_gc_count;
+        size_t minor_gc_newobj_count;
+        size_t minor_gc_malloc_count;
+        size_t minor_gc_method_count;
+        size_t minor_gc_capi_count;
+        size_t minor_gc_stress_count;
+
         size_t major_gc_count;
+        size_t major_gc_nofree_count;
+        size_t major_gc_oldgen_count;
+        size_t major_gc_shady_count;
+        size_t major_gc_force_count;
+#if RGENGC_ESTIMATE_OLDMALLOC
+        size_t major_gc_oldmalloc_count;
+#endif
+
         size_t compact_count;
         size_t read_barrier_faults;
 #if RGENGC_PROFILE > 0
@@ -9532,6 +9546,20 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
 #endif
 
     objspace->profile.count++;
+    if (reason & GPR_FLAG_MAJOR_BY_NOFREE) objspace->profile.major_gc_nofree_count++;
+    if (reason & GPR_FLAG_MAJOR_BY_OLDGEN) objspace->profile.major_gc_oldgen_count++;
+    if (reason & GPR_FLAG_MAJOR_BY_SHADY) objspace->profile.major_gc_shady_count++;
+    if (reason & GPR_FLAG_MAJOR_BY_FORCE) objspace->profile.major_gc_force_count++;
+#if RGENGC_ESTIMATE_OLDMALLOC
+    if (reason & GPR_FLAG_MAJOR_BY_OLDMALLOC) objspace->profile.major_gc_oldmalloc_count++;
+#endif
+
+    if (reason & GPR_FLAG_NEWOBJ) objspace->profile.minor_gc_newobj_count++;
+    if (reason & GPR_FLAG_MALLOC) objspace->profile.minor_gc_malloc_count++;
+    if (reason & GPR_FLAG_METHOD) objspace->profile.minor_gc_method_count++;
+    if (reason & GPR_FLAG_CAPI) objspace->profile.minor_gc_capi_count++;
+    if (reason & GPR_FLAG_STRESS) objspace->profile.minor_gc_stress_count++;
+
     objspace->profile.latest_gc_info = reason;
     objspace->profile.total_allocated_objects_at_gc_start = objspace->total_allocated_objects;
     objspace->profile.heap_used_at_gc_start = heap_allocated_pages;
@@ -11179,6 +11207,19 @@ enum gc_stat_sym {
     gc_stat_sym_malloc_increase_bytes_limit,
     gc_stat_sym_minor_gc_count,
     gc_stat_sym_major_gc_count,
+    gc_stat_sym_major_gc_nofree_count,
+    gc_stat_sym_major_gc_oldgen_count,
+    gc_stat_sym_major_gc_shady_count,
+    gc_stat_sym_major_gc_force_count,
+#if RGENGC_ESTIMATE_OLDMALLOC
+    gc_stat_sym_major_gc_oldmalloc_count,
+#endif
+    gc_stat_sym_minor_gc_newobj_count,
+    gc_stat_sym_minor_gc_malloc_count,
+    gc_stat_sym_minor_gc_method_count,
+    gc_stat_sym_minor_gc_capi_count,
+    gc_stat_sym_minor_gc_stress_count,
+
     gc_stat_sym_compact_count,
     gc_stat_sym_read_barrier_faults,
     gc_stat_sym_total_moved_objects,
@@ -11226,8 +11267,23 @@ setup_gc_stat_symbols(void)
         S(total_freed_objects);
         S(malloc_increase_bytes);
         S(malloc_increase_bytes_limit);
-        S(minor_gc_count);
+
         S(major_gc_count);
+        S(major_gc_nofree_count);
+        S(major_gc_oldgen_count);
+        S(major_gc_shady_count);
+        S(major_gc_force_count);
+#if RGENGC_ESTIMATE_OLDMALLOC
+        S(major_gc_oldmalloc_count);
+#endif
+
+        S(minor_gc_count);
+        S(minor_gc_newobj_count);
+        S(minor_gc_malloc_count);
+        S(minor_gc_method_count);
+        S(minor_gc_capi_count);
+        S(minor_gc_stress_count);
+
         S(compact_count);
         S(read_barrier_faults);
         S(total_moved_objects);
@@ -11295,8 +11351,25 @@ gc_stat_internal(VALUE hash_or_sym)
     SET(total_freed_objects, objspace->profile.total_freed_objects);
     SET(malloc_increase_bytes, malloc_increase);
     SET(malloc_increase_bytes_limit, malloc_limit);
-    SET(minor_gc_count, objspace->profile.minor_gc_count);
+
     SET(major_gc_count, objspace->profile.major_gc_count);
+    SET(major_gc_count, objspace->profile.major_gc_count);
+    SET(major_gc_nofree_count, objspace->profile.major_gc_nofree_count);
+    SET(major_gc_oldgen_count, objspace->profile.major_gc_oldgen_count);
+    SET(major_gc_shady_count, objspace->profile.major_gc_shady_count);
+    SET(major_gc_force_count, objspace->profile.major_gc_force_count);
+#if RGENGC_ESTIMATE_OLDMALLOC
+    SET(major_gc_oldmalloc_count, objspace->profile.major_gc_oldmalloc_count);
+#endif
+
+    SET(minor_gc_count, objspace->profile.minor_gc_count);
+    SET(minor_gc_count, objspace->profile.minor_gc_count);
+    SET(minor_gc_newobj_count, objspace->profile.minor_gc_newobj_count);
+    SET(minor_gc_malloc_count, objspace->profile.minor_gc_malloc_count);
+    SET(minor_gc_method_count, objspace->profile.minor_gc_method_count);
+    SET(minor_gc_capi_count, objspace->profile.minor_gc_capi_count);
+    SET(minor_gc_stress_count, objspace->profile.minor_gc_stress_count);
+
     SET(compact_count, objspace->profile.compact_count);
     SET(read_barrier_faults, objspace->profile.read_barrier_faults);
     SET(total_moved_objects, objspace->rcompactor.total_moved);
