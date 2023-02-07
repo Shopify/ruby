@@ -31,6 +31,7 @@
 #include "ruby/internal/attr/pure.h"
 #include "ruby/internal/cast.h"
 #include "ruby/internal/fl_type.h"
+#include "ruby/internal/shape.h"
 #include "ruby/internal/value.h"
 #include "ruby/internal/value_type.h"
 
@@ -81,7 +82,11 @@ enum ruby_robject_flags {
  */
 enum ruby_robject_consts {
     /** Max possible number of instance variables that can be embedded. */
+# if SHAPE_IN_BASIC_FLAGS
     ROBJECT_EMBED_LEN_MAX = RBIMPL_EMBED_LEN_MAX_OF(VALUE)
+# else
+    ROBJECT_EMBED_LEN_MAX = RBIMPL_EMBED_LEN_MAX_OF(VALUE) - 1
+# endif
 };
 #endif
 
@@ -95,6 +100,10 @@ struct RObject {
 
     /** Basic part, including flags and class. */
     struct RBasic basic;
+
+#if !SHAPE_IN_BASIC_FLAGS
+    shape_id_t shape_id;
+#endif
 
     /** Object's specific fields. */
     union {

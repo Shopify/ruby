@@ -45,6 +45,7 @@
 #include "ruby/internal/newobj.h"
 #include "ruby/internal/rgengc.h"
 #include "ruby/internal/scan_args.h"
+#include "ruby/internal/shape.h"
 #include "ruby/internal/special_consts.h"
 #include "ruby/internal/symbol.h"
 #include "ruby/internal/value.h"

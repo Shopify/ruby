@@ -2496,7 +2496,7 @@ gc_event_hook_body(rb_execution_context_t *ec, rb_objspace_t *objspace, const rb
 #define gc_event_hook(objspace, event, data) gc_event_hook_prep(objspace, event, data, (void)0)
 
 static inline VALUE
-newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace, VALUE obj)
+newobj_init(size_t size_pool_idx, VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace, VALUE obj)
 {
 #if !__has_feature(memory_sanitizer)
     GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE);
@@ -2505,6 +2505,24 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
     RVALUE *p = RANY(obj);
     p->as.basic.flags = flags;
     *((VALUE *)&p->as.basic.klass) = klass;
+
+#if SHAPE_IN_BASIC_FLAGS
+    RBASIC_SET_SHAPE_ID(obj, (shape_id_t)size_pool_idx);
+#else
+    switch (BUILTIN_TYPE(obj)) {
+      case T_OBJECT:
+        ROBJECT_SET_SHAPE_ID(obj, (shape_id_t)size_pool_idx);
+        break;
+
+      case T_CLASS:
+      case T_MODULE:
+        RCLASS_EXT(obj)->shape_id = (shape_id_t)size_pool_idx;
+        break;
+
+      default:
+        break;
+    }
+#endif
 
 #if RACTOR_CHECK_MODE
     rb_ractor_setup_belonging(obj);
@@ -2820,10 +2838,7 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *
         }
 
         obj = newobj_alloc(objspace, cr, size_pool_idx, true);
-#if SHAPE_IN_BASIC_FLAGS
-        flags |= (VALUE)(size_pool_idx) << SHAPE_FLAG_SHIFT;
-#endif
-        newobj_init(klass, flags, wb_protected, objspace, obj);
+        newobj_init(size_pool_idx, klass, flags, wb_protected, objspace, obj);
 
         gc_event_hook_prep(objspace, RUBY_INTERNAL_EVENT_NEWOBJ, obj, newobj_fill(obj, 0, 0, 0));
     }
@@ -2874,10 +2889,7 @@ newobj_of0(VALUE klass, VALUE flags, int wb_protected, rb_ractor_t *cr, size_t a
                   gc_event_hook_available_p(objspace)) &&
             wb_protected) {
         obj = newobj_alloc(objspace, cr, size_pool_idx, false);
-#if SHAPE_IN_BASIC_FLAGS
-        flags |= (VALUE)size_pool_idx << SHAPE_FLAG_SHIFT;
-#endif
-        newobj_init(klass, flags, wb_protected, objspace, obj);
+        newobj_init(size_pool_idx, klass, flags, wb_protected, objspace, obj);
     }
     else {
         RB_DEBUG_COUNTER_INC(obj_newobj_slowpath);

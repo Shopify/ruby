@@ -76,7 +76,9 @@ struct RClass {
 
 #if RCLASS_EXT_EMBEDDED
 // Assert that classes can be embedded in size_pools[2] (which has 160B slot size)
-STATIC_ASSERT(sizeof_rb_classext_t, sizeof(struct RClass) + sizeof(rb_classext_t) <= 4 * RVALUE_SIZE);
+STATIC_ASSERT(sizeof_rb_classext_t,
+    sizeof(struct RClass) + sizeof(rb_classext_t) <=
+        (SHAPE_IN_BASIC_FLAGS ? 4 : 8) * RVALUE_SIZE);
 #endif
 
 #if RCLASS_EXT_EMBEDDED

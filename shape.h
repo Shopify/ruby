@@ -3,42 +3,26 @@
 
 #include "internal/gc.h"
 
-#if (SIZEOF_UINT64_T == SIZEOF_VALUE)
-#define SIZEOF_SHAPE_T 4
-#define SHAPE_IN_BASIC_FLAGS 1
 typedef uint32_t attr_index_t;
-#else
-#define SIZEOF_SHAPE_T 2
-#define SHAPE_IN_BASIC_FLAGS 0
-typedef uint16_t attr_index_t;
-#endif
 
 #define MAX_IVARS (attr_index_t)(-1)
 
-#if SIZEOF_SHAPE_T == 4
-typedef uint32_t shape_id_t;
-# define SHAPE_ID_NUM_BITS 32
-#else
-typedef uint16_t shape_id_t;
-# define SHAPE_ID_NUM_BITS 16
-#endif
+#define SHAPE_MASK (((uint64_t)1 << SHAPE_ID_NUM_BITS) - 1)
+#define SHAPE_FLAG_MASK (((uint64_t)-1) >> SHAPE_ID_NUM_BITS)
 
-# define SHAPE_MASK (((uintptr_t)1 << SHAPE_ID_NUM_BITS) - 1)
-# define SHAPE_FLAG_MASK (((VALUE)-1) >> SHAPE_ID_NUM_BITS)
+#define SHAPE_FLAG_SHIFT ((SIZEOF_VALUE * 8) - SHAPE_ID_NUM_BITS)
 
-# define SHAPE_FLAG_SHIFT ((SIZEOF_VALUE * 8) - SHAPE_ID_NUM_BITS)
+#define SHAPE_BITMAP_SIZE 16384
 
-# define SHAPE_BITMAP_SIZE 16384
+#define SHAPE_MAX_VARIATIONS 8
+#define SHAPE_MAX_NUM_IVS 50
 
-# define SHAPE_MAX_VARIATIONS 8
-# define SHAPE_MAX_NUM_IVS 50
+#define MAX_SHAPE_ID (SHAPE_MASK - 1)
+#define INVALID_SHAPE_ID SHAPE_MASK
+#define ROOT_SHAPE_ID 0x0
 
-# define MAX_SHAPE_ID (SHAPE_MASK - 1)
-# define INVALID_SHAPE_ID SHAPE_MASK
-# define ROOT_SHAPE_ID 0x0
-
-# define SPECIAL_CONST_SHAPE_ID (SIZE_POOL_COUNT * 2)
-# define OBJ_TOO_COMPLEX_SHAPE_ID (SPECIAL_CONST_SHAPE_ID + 1)
+#define SPECIAL_CONST_SHAPE_ID (SIZE_POOL_COUNT * 2)
+#define OBJ_TOO_COMPLEX_SHAPE_ID (SPECIAL_CONST_SHAPE_ID + 1)
 
 struct rb_shape {
     struct rb_id_table * edges; // id_table from ID (ivar) to next shape
@@ -106,14 +90,13 @@ static inline shape_id_t
 ROBJECT_SHAPE_ID(VALUE obj)
 {
     RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
-    return (shape_id_t)(SHAPE_MASK & (RBASIC(obj)->flags >> SHAPE_FLAG_SHIFT));
+    return ROBJECT(obj)->shape_id;
 }
 
 static inline void
 ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
 {
-    RBASIC(obj)->flags &= SHAPE_FLAG_MASK;
-    RBASIC(obj)->flags |= ((VALUE)(shape_id) << SHAPE_FLAG_SHIFT);
+    ROBJECT(obj)->shape_id = shape_id;
 }
 
 MJIT_SYMBOL_EXPORT_BEGIN

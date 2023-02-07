@@ -12,7 +12,7 @@
 
 struct gen_ivtbl {
 #if !SHAPE_IN_BASIC_FLAGS
-    uint16_t shape_id;
+    shape_id_t shape_id;
 #endif
     uint32_t numiv;
     VALUE ivptr[FLEX_ARY_LEN];

@@ -286,7 +286,7 @@ struct rb_callcache {
 
     union {
         struct {
-          uintptr_t value; // Shape ID in upper bits, index in lower bits
+          uint64_t value; // Shape ID in upper bits, index in lower bits
         } attr;
         const enum method_missing_reason method_missing_reason; /* used by method_missing */
         VALUE v;
@@ -385,7 +385,7 @@ vm_cc_attr_index_dest_shape_id(const struct rb_callcache *cc)
 static inline void
 vm_cc_atomic_shape_and_index(const struct rb_callcache *cc, shape_id_t * shape_id, attr_index_t * index)
 {
-    uintptr_t cache_value = cc->aux_.attr.value; // Atomically read 64 bits
+    uint64_t cache_value = cc->aux_.attr.value; // Atomically read 64 bits
     *shape_id = (shape_id_t)(cache_value >> SHAPE_FLAG_SHIFT);
     *index = (attr_index_t)(cache_value & SHAPE_FLAG_MASK) - 1;
     return;
@@ -394,7 +394,7 @@ vm_cc_atomic_shape_and_index(const struct rb_callcache *cc, shape_id_t * shape_i
 static inline void
 vm_ic_atomic_shape_and_index(const struct iseq_inline_iv_cache_entry *ic, shape_id_t * shape_id, attr_index_t * index)
 {
-    uintptr_t cache_value = ic->value; // Atomically read 64 bits
+    uint64_t cache_value = ic->value; // Atomically read 64 bits
     *shape_id = (shape_id_t)(cache_value >> SHAPE_FLAG_SHIFT);
     *index = (attr_index_t)(cache_value & SHAPE_FLAG_MASK) - 1;
     return;
@@ -461,15 +461,15 @@ vm_cc_attr_index_set(const struct rb_callcache *cc, attr_index_t index, shape_id
 }
 
 static inline void
-vm_ic_attr_index_set(const rb_iseq_t *iseq, const struct iseq_inline_iv_cache_entry *ic, attr_index_t index, shape_id_t dest_shape_id)
+vm_ic_attr_index_set(const rb_iseq_t *iseq, struct iseq_inline_iv_cache_entry *ic, attr_index_t index, shape_id_t dest_shape_id)
 {
-    *(uintptr_t *)&ic->value = ((uintptr_t)dest_shape_id << SHAPE_FLAG_SHIFT) | (attr_index_t)(index + 1);
+    ic->value = ((uint64_t)dest_shape_id << SHAPE_FLAG_SHIFT) | (attr_index_t)(index + 1);
 }
 
 static inline void
-vm_ic_attr_index_initialize(const struct iseq_inline_iv_cache_entry *ic, shape_id_t shape_id)
+vm_ic_attr_index_initialize(struct iseq_inline_iv_cache_entry *ic, shape_id_t shape_id)
 {
-    *(uintptr_t *)&ic->value = (uintptr_t)shape_id << SHAPE_FLAG_SHIFT;
+    ic->value = (uint64_t)shape_id << SHAPE_FLAG_SHIFT;
 }
 
 static inline void
