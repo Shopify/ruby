@@ -901,7 +901,7 @@ struct rb_waiting_list {
     struct rb_fiber_struct *fiber;
 };
 
-struct rb_execution_context_struct {
+typedef struct rb_execution_context_struct {
     /* execution information */
     VALUE *vm_stack;		/* must free, must mark */
     size_t vm_stack_size;       /* size in word (byte size / sizeof(VALUE)) */
@@ -955,12 +955,7 @@ struct rb_execution_context_struct {
         size_t stack_maxsize;
         RUBY_ALIGNAS(SIZEOF_VALUE) jmp_buf regs;
     } machine;
-};
-
-#ifndef rb_execution_context_t
-typedef struct rb_execution_context_struct rb_execution_context_t;
-#define rb_execution_context_t rb_execution_context_t
-#endif
+} rb_execution_context_t;
 
 // for builtin.h
 #define VM_CORE_H_EC_DEFINED 1
