@@ -5145,6 +5145,40 @@ enum method_explorer_type {
 };
 #endif
 
+#include <sys/mman.h>
+
+// Allocates RWX memory of given size and returns a pointer to it. On failure,
+// prints out the error and returns NULL.
+void* alloc_executable_memory(size_t size) {
+  void* ptr = mmap(0, size,
+                   PROT_READ | PROT_WRITE | PROT_EXEC,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (ptr == (void*)-1) {
+    perror("mmap");
+    return NULL;
+  }
+  return ptr;
+}
+
+typedef VALUE (*vm_cc_call_trampoline_handler)(
+    struct rb_execution_context_struct *ec,
+    struct rb_control_frame_struct *cfp,
+    struct rb_calling_info *calling,
+    vm_call_handler handler);
+
+#include <stdio.h>
+#include <unistd.h>
+
+static void write_to_perf_map(const char *name, void *addr, size_t size) {
+    char buf[1024];
+    snprintf(buf, sizeof(buf), "/tmp/perf-%d.map", getpid());
+    FILE* fp = fopen(buf, "a+");
+    if (fp) {
+        fprintf(fp, "%x %x %s\n", addr, size, name);
+        fclose(fp);
+    }
+}
+
 static
 #ifndef MJIT_HEADER
 inline
@@ -5173,6 +5207,17 @@ vm_sendish(
         .argc = argc,
         .ci = ci,
     };
+    unsigned char code[] = {
+        0xff, 0xe1, // jmp *%rcx
+    };
+    void* memory = alloc_executable_memory(4);
+    memcpy(memory, code, sizeof(code));
+    vm_cc_call_trampoline_handler handler = memory;
+
+    const char* mid = rb_id2name(vm_ci_mid(ci));
+    write_to_perf_map(mid, memory, sizeof(code));
+
+    // printf("call_data: %p\n", cd);
 
 // The enum-based branch and inlining are faster in VM, but function pointers without inlining are faster in JIT.
 #ifdef MJIT_HEADER
@@ -5182,12 +5227,12 @@ vm_sendish(
     switch (method_explorer) {
       case mexp_search_method:
         calling.cc = cc = vm_search_method_fastpath((VALUE)reg_cfp->iseq, cd, CLASS_OF(recv));
-        val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
+        val = handler(ec, GET_CFP(), &calling, vm_cc_call(cc));
         break;
       case mexp_search_super:
         calling.cc = cc = vm_search_super_method(reg_cfp, cd, recv);
         calling.ci = cd->ci;  // TODO: does it safe?
-        val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
+        val = handler(ec, GET_CFP(), &calling, vm_cc_call(cc));
         break;
       case mexp_search_invokeblock:
         val = vm_invokeblock_i(ec, GET_CFP(), &calling);
