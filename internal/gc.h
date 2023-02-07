@@ -38,8 +38,6 @@ struct rb_objspace; /* in vm_core.h */
 /* optimized version of NEWOBJ() */
 #define RB_NEWOBJ_OF(var, T, c, f) RB_RVARGC_NEWOBJ_OF(var, T, c, f, RVALUE_SIZE)
 
-#define RB_EC_NEWOBJ_OF(ec, var, T, c, f) RB_RVARGC_EC_NEWOBJ_OF(ec, var, T, c, f, RVALUE_SIZE)
-
 #define NEWOBJ_OF(var, T, c, f) RB_NEWOBJ_OF((var), T, (c), (f))
 #define RVARGC_NEWOBJ_OF(var, T, c, f, s) RB_RVARGC_NEWOBJ_OF((var), T, (c), (f), (s))
 #define RB_OBJ_GC_FLAGS_MAX 6   /* used in ext/objspace */
