@@ -10,7 +10,7 @@ typedef uint32_t attr_index_t;
 #define SHAPE_MASK (((uint64_t)1 << SHAPE_ID_NUM_BITS) - 1)
 #define SHAPE_FLAG_MASK (((uint64_t)-1) >> SHAPE_ID_NUM_BITS)
 
-#define SHAPE_FLAG_SHIFT ((SIZEOF_VALUE * 8) - SHAPE_ID_NUM_BITS)
+#define SHAPE_FLAG_SHIFT ((sizeof(uint64_t) * CHAR_BIT) - SHAPE_ID_NUM_BITS)
 
 #define SHAPE_BITMAP_SIZE 16384
 
