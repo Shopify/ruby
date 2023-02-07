@@ -450,14 +450,14 @@ vm_cc_call_set(const struct rb_callcache *cc, vm_call_handler call)
 static inline void
 vm_cc_attr_index_set(const struct rb_callcache *cc, attr_index_t index, shape_id_t dest_shape_id)
 {
-    uintptr_t *attr_value = (uintptr_t *)&cc->aux_.attr.value;
+    uint64_t *attr_value = &((struct rb_callcache *)cc)->aux_.attr.value;
     if (!vm_cc_markable(cc)) {
-        *attr_value = (uintptr_t)INVALID_SHAPE_ID << SHAPE_FLAG_SHIFT;
+        *attr_value = INVALID_SHAPE_ID << SHAPE_FLAG_SHIFT;
         return;
     }
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    *attr_value = (attr_index_t)(index + 1) | ((uintptr_t)(dest_shape_id) << SHAPE_FLAG_SHIFT);
+    *attr_value = (index + 1) | ((uint64_t)(dest_shape_id) << SHAPE_FLAG_SHIFT);
 }
 
 static inline void
