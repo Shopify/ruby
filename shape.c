@@ -11,6 +11,10 @@
 #include "variable.h"
 #include <stdbool.h>
 
+#ifndef _WIN32
+#include <sys/mman.h>
+#endif
+
 #ifndef SHAPE_DEBUG
 #define SHAPE_DEBUG (VM_CHECK_MODE > 0)
 #endif
@@ -24,6 +28,205 @@
 static ID id_frozen;
 static ID id_t_object;
 static ID size_pool_edge_names[SIZE_POOL_COUNT];
+
+typedef struct redblack_node {
+    ID key;
+    rb_shape_t * value;
+    struct redblack_node * left;
+    struct redblack_node * right;
+} redblack_node_t;
+
+redblack_node_t * redblack_nodes = 0;
+unsigned int redblack_buffer_size = 0;
+unsigned int redblack_buffer_max_size = 1000;
+
+#define LEAF 0
+#define BLACK 0x0
+#define RED 0x1
+
+static redblack_node_t *
+redblack_find(redblack_node_t * tree, ID key)
+{
+    if (tree != LEAF) {
+        if (tree->key == key) {
+            return tree;
+        }
+        else {
+            if (key < tree->key) {
+                return redblack_find(tree->left, key);
+            }
+            else {
+                return redblack_find(tree->right, key);
+            }
+        }
+    }
+    else {
+        return 0;
+    }
+}
+
+static inline char
+redblack_color(redblack_node_t * node)
+{
+    return node && ((uintptr_t)node->value & RED);
+}
+
+static inline bool
+redblack_red_p(redblack_node_t * node)
+{
+    return redblack_color(node) == RED;
+}
+
+static inline rb_shape_t *
+redblack_value(redblack_node_t * node)
+{
+    // Color is stored in the bottom bit of the shape pointer
+    // Mask away the bit so we get the actual pointer back
+    return (rb_shape_t *)((uintptr_t)node->value & (((uintptr_t)-1) - 1));
+}
+
+static redblack_node_t *
+redblack_new(char color, ID key, rb_shape_t * value, redblack_node_t * left, redblack_node_t * right)
+{
+    redblack_node_t * node = &redblack_nodes[redblack_buffer_size++];
+    node->key = key;
+    node->value = (rb_shape_t *)((uintptr_t)value | color);
+    node->left = left;
+    node->right = right;
+    return node;
+}
+
+static redblack_node_t *
+redblack_balance(char color, ID key, rb_shape_t * value, redblack_node_t * left, redblack_node_t * right)
+{
+    if (color == BLACK) {
+        ID z, y, x;
+        rb_shape_t * z_, * y_, * x_;
+        redblack_node_t * a, * b, * c, * d;
+
+        if (redblack_red_p(left) && redblack_red_p(left->left)) {
+            z = key;
+            z_ = value;
+            d = right;
+
+            y = left->key;
+            y_ = redblack_value(left);
+            c = left->right;
+
+            x = left->left->key;
+            x_ = redblack_value(left->left);
+
+            a = left->left->left;
+            redblack_node_t * b = left->left->right;
+
+            return redblack_new(
+                    RED, y, y_,
+                    redblack_new(BLACK, x, x_, a, b),
+                    redblack_new(BLACK, z, z_, c, d));
+        }
+        else if (redblack_red_p(left) && redblack_red_p(left->right)) {
+            z = key;
+            z_ = value;
+            d = right;
+
+            x = left->key;
+            x_ = redblack_value(left);
+            a = left->left;
+
+            y = left->right->key;
+            y_ = redblack_value(left->right);
+            b = left->right->left;
+            c = left->right->right;
+
+            return redblack_new(
+                    RED, y, y_,
+                    redblack_new(BLACK, x, x_, a, b),
+                    redblack_new(BLACK, z, z_, c, d));
+        }
+        else if (redblack_red_p(right) && redblack_red_p(right->left)) {
+            x = key;
+            x_ = value;
+            a = left;
+
+            z = right->key;
+            z_ = redblack_value(right);
+            d = right->right;
+
+            y = right->left->key;
+            y_ = redblack_value(right->left);
+            b = right->left->left;
+            c = right->left->right;
+
+            return redblack_new(
+                    RED, y, y_,
+                    redblack_new(BLACK, x, x_, a, b),
+                    redblack_new(BLACK, z, z_, c, d));
+        }
+        else if (redblack_red_p(right) && redblack_red_p(right->right)) {
+            x = key;
+            x_ = value;
+            a = left;
+
+            y = right->key;
+            y_ = redblack_value(right);
+            b = right->left;
+
+            z = right->right->key;
+            z_ = redblack_value(right->right);
+            c = right->right->left;
+            d = right->right->right;
+
+            return redblack_new(
+                    RED, y, y_,
+                    redblack_new(BLACK, x, x_, a, b),
+                    redblack_new(BLACK, z, z_, c, d));
+        }
+    }
+
+    return redblack_new(color, key, value, left, right);
+}
+
+static redblack_node_t *
+redblack_insert_aux(redblack_node_t * tree, ID key, rb_shape_t * value)
+{
+    if (tree == LEAF) {
+        return redblack_new(RED, key, value, LEAF, LEAF);
+    }
+    else {
+        if (key < tree->key) {
+            return redblack_balance(redblack_color(tree),
+                    tree->key,
+                    redblack_value(tree),
+                    redblack_insert_aux(tree->left, key, value),
+                    tree->right);
+        }
+        else {
+            if (key > tree->key) {
+                return redblack_balance(redblack_color(tree),
+                        tree->key,
+                        redblack_value(tree),
+                        tree->left,
+                        redblack_insert_aux(tree->right, key, value));
+            }
+            else {
+                return tree;
+            }
+        }
+    }
+}
+
+static redblack_node_t *
+redblack_insert(redblack_node_t * tree, ID key, rb_shape_t * value)
+{
+    redblack_node_t * root = redblack_insert_aux(tree, key, value);
+
+    if (redblack_red_p(root)) {
+        return redblack_new(BLACK, root->key, redblack_value(root), root->left, root->right);
+    }
+    else {
+        return root;
+    }
+}
 
 rb_shape_tree_t *rb_shape_tree_ptr = NULL;
 
@@ -160,6 +363,7 @@ rb_shape_alloc_new_child(ID id, rb_shape_t * shape, enum shape_type shape_type)
     switch (shape_type) {
       case SHAPE_IVAR:
         new_shape->next_iv_index = shape->next_iv_index + 1;
+        new_shape->ancestor_index = redblack_insert(shape->ancestor_index, id, new_shape);
         break;
       case SHAPE_CAPACITY_CHANGE:
       case SHAPE_FROZEN:
@@ -433,13 +637,9 @@ rb_shape_transition_shape_capa(rb_shape_t* shape)
     return rb_shape_transition_shape_capa_create(shape, shape->capacity * 2);
 }
 
-bool
-rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
+static bool
+rb_shape_get_iv_index_iterative(rb_shape_t * shape, ID id, attr_index_t *value)
 {
-    // It doesn't make sense to ask for the index of an IV that's stored
-    // on an object that is "too complex" as it uses a hash for storing IVs
-    RUBY_ASSERT(rb_shape_id(shape) != OBJ_TOO_COMPLEX_SHAPE_ID);
-
     while (shape->parent_id != INVALID_SHAPE_ID) {
         if (shape->edge_name == id) {
             enum shape_type shape_type;
@@ -464,6 +664,30 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
     }
     return false;
 }
+
+bool
+rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
+{
+    // It doesn't make sense to ask for the index of an IV that's stored
+    // on an object that is "too complex" as it uses a hash for storing IVs
+    RUBY_ASSERT(rb_shape_id(shape) != OBJ_TOO_COMPLEX_SHAPE_ID);
+
+    if (shape->ancestor_index) {
+        redblack_node_t * node = redblack_find(shape->ancestor_index, id);
+        if (node) {
+            rb_shape_t * shape = redblack_value(node);
+            *value = shape->next_iv_index - 1;
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+    else {
+        return rb_shape_get_iv_index_iterative(shape, id, value);
+    }
+}
+
 
 void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
@@ -818,6 +1042,11 @@ Init_default_shapes(void)
     id_frozen = rb_make_internal_id();
     id_t_object = rb_make_internal_id();
 
+#ifdef HAVE_MMAP
+    redblack_nodes = (redblack_node_t *)mmap(NULL, rb_size_mul_or_raise(SHAPE_BUFFER_SIZE * 32, sizeof(rb_shape_t), rb_eRuntimeError),
+                         PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#endif
+
     // Shapes by size pool
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         size_pool_edge_names[i] = rb_make_internal_id();
@@ -837,6 +1066,7 @@ Init_default_shapes(void)
         rb_shape_t * new_shape = rb_shape_transition_shape_capa_create(root, capa);
         new_shape->type = SHAPE_INITIAL_CAPACITY;
         new_shape->size_pool_index = i;
+        new_shape->ancestor_index = LEAF;
         RUBY_ASSERT(rb_shape_id(new_shape) == (shape_id_t)i);
     }
 
@@ -847,6 +1077,7 @@ Init_default_shapes(void)
         rb_shape_t * t_object_shape =
             get_next_shape_internal(shape, id_t_object, SHAPE_T_OBJECT, &dont_care, true, false);
         t_object_shape->edges = rb_id_table_create(0);
+        t_object_shape->ancestor_index = LEAF;
         RUBY_ASSERT(rb_shape_id(t_object_shape) == (shape_id_t)(i + SIZE_POOL_COUNT));
     }
 
