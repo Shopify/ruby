@@ -203,12 +203,19 @@ redblack_insert_aux(redblack_node_t * tree, ID key, rb_shape_t * value)
 }
 
 static redblack_node_t *
+redblack_force_black(redblack_node_t * node)
+{
+    node->value = redblack_value(node);
+    return node;
+}
+
+static redblack_node_t *
 redblack_insert(redblack_node_t * tree, ID key, rb_shape_t * value)
 {
     redblack_node_t * root = redblack_insert_aux(tree, key, value);
 
     if (redblack_red_p(root)) {
-        return redblack_new(BLACK, root->key, redblack_value(root), root->left, root->right);
+        return redblack_force_black(root);
     }
     else {
         return root;
