@@ -194,6 +194,7 @@ struct rb_method_definition_struct {
 
     ID original_id;
     uintptr_t method_serial;
+    void *trampoline_addreses;
 };
 
 struct rb_id_table;

@@ -5174,9 +5174,51 @@ static void write_to_perf_map(const char *name, void *addr, size_t size) {
     snprintf(buf, sizeof(buf), "/tmp/perf-%d.map", getpid());
     FILE* fp = fopen(buf, "a+");
     if (fp) {
-        fprintf(fp, "%x %x %s\n", addr, size, name);
+        fprintf(fp, "%p %x %s\n", addr, size, name);
         fclose(fp);
     }
+}
+
+static VALUE vm_cc_call_trampoline_handler_default (
+    struct rb_execution_context_struct *ec,
+    struct rb_control_frame_struct *cfp,
+    struct rb_calling_info *calling,
+    vm_call_handler handler) {
+    return handler(ec, cfp, calling);
+}
+
+static vm_cc_call_trampoline_handler jump_on_trampoline_handler(const struct rb_callinfo *ci, const struct rb_callcache *cc) {
+    void *memory;
+
+    if (cc == NULL) {
+        return vm_cc_call_trampoline_handler_default;
+    }
+
+    if (cc->cme_->def->trampoline_addreses == NULL) {
+        // sub    $8, %rsp
+        // call    *%rcx
+        // add    $8, %rsp
+        // ret
+        unsigned char code[] = {
+            0x48, 0x83, 0xec, 0x08,
+            0xff, 0xd1,
+            0x48, 0x83, 0xc4, 0x08,
+            0xc3
+        };
+
+        memory = alloc_executable_memory(sizeof(code));
+        memcpy(memory, code, sizeof(code));
+
+        const char *mid = rb_id2name(vm_ci_mid(ci));
+        write_to_perf_map(mid, memory, sizeof(code));
+        cc->cme_->def->trampoline_addreses = memory;
+    } else {
+        memory = cc->cme_->def->trampoline_addreses;
+    }
+
+    vm_cc_call_trampoline_handler handler = memory;
+
+    return handler;
 }
 
 static
@@ -5207,31 +5249,24 @@ vm_sendish(
         .argc = argc,
         .ci = ci,
     };
-    unsigned char code[] = {
-        0xff, 0xe1, // jmp *%rcx
-    };
-    void* memory = alloc_executable_memory(4);
-    memcpy(memory, code, sizeof(code));
-    vm_cc_call_trampoline_handler handler = memory;
-
-    const char* mid = rb_id2name(vm_ci_mid(ci));
-    write_to_perf_map(mid, memory, sizeof(code));
-
-    // printf("call_data: %p\n", cd);
 
 // The enum-based branch and inlining are faster in VM, but function pointers without inlining are faster in JIT.
 #ifdef MJIT_HEADER
     calling.cc = cc = method_explorer(GET_CFP(), cd, recv);
     val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
 #else
+    vm_cc_call_trampoline_handler handler;
+
     switch (method_explorer) {
       case mexp_search_method:
         calling.cc = cc = vm_search_method_fastpath((VALUE)reg_cfp->iseq, cd, CLASS_OF(recv));
+        handler = jump_on_trampoline_handler(ci, cc);
         val = handler(ec, GET_CFP(), &calling, vm_cc_call(cc));
         break;
       case mexp_search_super:
         calling.cc = cc = vm_search_super_method(reg_cfp, cd, recv);
         calling.ci = cd->ci;  // TODO: does it safe?
+        handler = jump_on_trampoline_handler(ci, cc);
         val = handler(ec, GET_CFP(), &calling, vm_cc_call(cc));
         break;
       case mexp_search_invokeblock:
