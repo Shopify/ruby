@@ -45,7 +45,10 @@ jobs:
         with:
           path: .downloaded-cache
           key: downloaded-cache
-      - run: git ls-files '*.[hc]' | xargs clang-format --dry-run --Werror
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v35
+      - run: clang-format --dry-run -Werror ${{ steps.changed-files.outputs.all_changed_files }}
       - uses: ruby/action-slack@b6882ea6ef8f556f9f9af9ec1220d3f1ced74acf # v3.0.0
         with:
           payload: |
