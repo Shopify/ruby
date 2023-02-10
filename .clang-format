@@ -1,0 +1,117 @@
+### .clang-Format
+# The configuration file used by clang-format to control formatting of
+# the Ruby source code.
+#
+# Format a single File
+#     clang-format -i filename.c
+#
+# Format all .c and .h files
+#     find -iname '*.[ch]' -exec clang-format -i {} \;
+#
+# Report violations in .c and .h files, but do not fix
+#
+#     find -iname '*.[ch]' -exec clang-format -n --Werror {} \;
+---
+AlignAfterOpenBracket: false
+AlignConsecutiveAssignments: false
+AlignConsecutiveBitFields: false
+AlignConsecutiveDeclarations: false
+AlignEscapedNewlines: DontAlign
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortBlocksOnASingleLine: Empty
+# TODO: should probably target this one as Never
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+AlwaysBreakAfterReturnType: AllDefinitions
+BasedOnStyle: WebKit
+BinPackArguments: true
+BinPackParameters: true
+BitFieldColonSpacing: Both
+
+BreakBeforeBraces: Stroustrup
+BraceWrapping:
+  AfterCaseLabel:  true
+  AfterControlStatement: Never
+  AfterEnum:       false
+  AfterFunction:   true
+  AfterStruct:     false
+  AfterUnion:      false
+  AfterExternBlock: false
+  BeforeCatch:     true
+  BeforeElse:      true
+  BeforeWhile:     false
+  IndentBraces:    false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: false
+BreakStringLiterals: false
+# TODO: An aspirational goal is to set this to 120? or 80?
+ColumnLimit:     0
+ContinuationIndentWidth: 2
+Cpp11BracedListStyle: false
+# sort each include block separately
+IncludeBlocks: Preserve
+IndentCaseBlocks: true
+IndentCaseLabels: true
+IndentExternBlock: AfterExternBlock
+IndentGotoLabels: true
+IndentPPDirectives: AfterHash
+IndentWidth:     4
+IndentWrappedFunctionNames: false
+# TODO: Should this be false eventually?
+KeepEmptyLinesAtTheStartOfBlocks: true
+Language: Cpp
+MaxEmptyLinesToKeep: 1
+PPIndentWidth:   1
+
+# TODO: Come back to these and tweak
+PenaltyBreakAssignment: 1
+PenaltyBreakBeforeFirstCallParameter: 500
+PenaltyBreakComment: 500
+PenaltyBreakFirstLessLess: 500
+PenaltyBreakOpenParenthesis: 500
+PenaltyBreakString: 500
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 500
+PenaltyIndentedWhitespace: 500
+
+PointerAlignment: Right
+# I don't know if we can inforce this now, but I'd like to
+# QualifierAlignment: Left
+# QualifierOrder: ['inline', 'static', 'type', 'const', 'volatile' ]
+ReferenceAlignment: Pointer
+ReflowComments:  false
+# TODO: This should evetually be Always
+SeparateDefinitionBlocks: Leave
+# TODO: This should eventually be CaseSensitive
+SortIncludes:    Never
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAroundPointerQualifiers: Default
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterControlStatements: true
+  AfterForeachMacros: false
+  AfterFunctionDefinitionName: false
+  AfterFunctionDeclarationName: false
+  AfterIfMacros:   false
+  BeforeNonEmptyParentheses: false
+SpaceBeforeSquareBrackets: false
+SpacesInCStyleCastParentheses: false
+SpacesInConditionalStatement: false
+SpacesInContainerLiterals: false
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesInLineCommentPrefix:
+  Minimum:         1
+  Maximum:         -1
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceBeforeSquareBrackets: false
+TabWidth:        4
+UseTab:          Never
