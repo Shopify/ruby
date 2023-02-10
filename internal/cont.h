@@ -1,4 +1,4 @@
-#ifndef INTERNAL_CONT_H                                  /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_CONT_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_CONT_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -8,11 +8,11 @@
  *             file COPYING are met.  Consult the file for details.
  * @brief      Internal header for Fiber.
  */
-#include "ruby/ruby.h"          /* for VALUE */
+#include "ruby/ruby.h" /* for VALUE */
 #include "iseq.h"
 
-struct rb_thread_struct;        /* in vm_core.h */
-struct rb_fiber_struct;         /* in cont.c */
+struct rb_thread_struct; /* in vm_core.h */
+struct rb_fiber_struct; /* in cont.c */
 struct rb_execution_context_struct; /* in vm_core.c */
 
 /* cont.c */
@@ -27,6 +27,6 @@ VALUE rb_fiber_inherit_storage(struct rb_execution_context_struct *ec, struct rb
 
 VALUE rb_fiberptr_self(struct rb_fiber_struct *fiber);
 unsigned int rb_fiberptr_blocking(struct rb_fiber_struct *fiber);
-struct rb_execution_context_struct * rb_fiberptr_get_ec(struct rb_fiber_struct *fiber);
+struct rb_execution_context_struct *rb_fiberptr_get_ec(struct rb_fiber_struct *fiber);
 
 #endif /* INTERNAL_CONT_H */

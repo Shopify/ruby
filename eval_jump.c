@@ -48,7 +48,7 @@ rb_f_at_exit(VALUE _)
 }
 
 struct end_proc_data {
-    void (*func) (VALUE);
+    void (*func)(VALUE);
     VALUE data;
     struct end_proc_data *next;
 };
@@ -102,20 +102,20 @@ exec_end_procs_chain(struct end_proc_data *volatile *procs, VALUE *errp)
         *procs = link->next;
         endproc = *link;
         xfree(link);
-        (*endproc.func) (endproc.data);
+        (*endproc.func)(endproc.data);
         *errp = errinfo;
     }
 }
 
 static void
-rb_ec_exec_end_proc(rb_execution_context_t * ec)
+rb_ec_exec_end_proc(rb_execution_context_t *ec)
 {
     enum ruby_tag_type state;
     volatile VALUE errinfo = ec->errinfo;
 
     EC_PUSH_TAG(ec);
     if ((state = EC_EXEC_TAG()) == TAG_NONE) {
-      again:
+    again:
         exec_end_procs_chain(&ephemeral_end_procs, &ec->errinfo);
         exec_end_procs_chain(&end_procs, &ec->errinfo);
     }

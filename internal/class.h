@@ -1,4 +1,4 @@
-#ifndef INTERNAL_CLASS_H                                 /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_CLASS_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_CLASS_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -8,12 +8,12 @@
  *             file COPYING are met.  Consult the file for details.
  * @brief      Internal header for Class.
  */
-#include "id_table.h"           /* for struct rb_id_table */
-#include "internal/serial.h"    /* for rb_serial_t */
+#include "id_table.h" /* for struct rb_id_table */
+#include "internal/serial.h" /* for rb_serial_t */
 #include "internal/static_assert.h"
-#include "ruby/internal/stdbool.h"     /* for bool */
-#include "ruby/intern.h"        /* for rb_alloc_func_t */
-#include "ruby/ruby.h"          /* for struct RBasic */
+#include "ruby/internal/stdbool.h" /* for bool */
+#include "ruby/intern.h" /* for rb_alloc_func_t */
+#include "ruby/ruby.h" /* for struct RBasic */
 #include "shape.h"
 
 #ifdef RCLASS_SUPER
@@ -80,9 +80,9 @@ STATIC_ASSERT(sizeof_rb_classext_t, sizeof(struct RClass) + sizeof(rb_classext_t
 #endif
 
 #if RCLASS_EXT_EMBEDDED
-#  define RCLASS_EXT(c) ((rb_classext_t *)((char *)(c) + sizeof(struct RClass)))
+# define RCLASS_EXT(c) ((rb_classext_t *)((char *)(c) + sizeof(struct RClass)))
 #else
-#  define RCLASS_EXT(c) (RCLASS(c)->ptr)
+# define RCLASS_EXT(c) (RCLASS(c)->ptr)
 #endif
 #define RCLASS_CONST_TBL(c) (RCLASS_EXT(c)->const_tbl)
 #define RCLASS_M_TBL(c) (RCLASS(c)->m_tbl)
@@ -101,7 +101,7 @@ STATIC_ASSERT(sizeof_rb_classext_t, sizeof(struct RClass) + sizeof(rb_classext_t
 #define RCLASS_SUPERCLASSES(c) (RCLASS_EXT(c)->superclasses)
 
 #define RICLASS_IS_ORIGIN FL_USER0
-#define RCLASS_CLONED     FL_USER1
+#define RCLASS_CLONED FL_USER1
 #define RCLASS_SUPERCLASSES_INCLUDE_SELF FL_USER2
 #define RICLASS_ORIGIN_SHARED_MTBL FL_USER3
 

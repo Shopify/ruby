@@ -11,7 +11,7 @@
 #include "rubysocket.h"
 
 #ifdef _WIN32
-#define is_socket(fd) rb_w32_is_socket(fd)
+# define is_socket(fd) rb_w32_is_socket(fd)
 #else
 static int
 is_socket(int fd)
@@ -245,22 +245,23 @@ bsock_setsockopt(int argc, VALUE *argv, VALUE sock)
     option = rsock_optname_arg(family, level, optname);
 
     switch (TYPE(val)) {
-      case T_FIXNUM:
-        i = FIX2INT(val);
-        goto numval;
-      case T_FALSE:
-        i = 0;
-        goto numval;
-      case T_TRUE:
-        i = 1;
-      numval:
-        v = (char*)&i; vlen = (int)sizeof(i);
-        break;
-      default:
-        StringValue(val);
-        v = RSTRING_PTR(val);
-        vlen = RSTRING_SOCKLEN(val);
-        break;
+        case T_FIXNUM:
+            i = FIX2INT(val);
+            goto numval;
+        case T_FALSE:
+            i = 0;
+            goto numval;
+        case T_TRUE:
+            i = 1;
+        numval:
+            v = (char *)&i;
+            vlen = (int)sizeof(i);
+            break;
+        default:
+            StringValue(val);
+            v = RSTRING_PTR(val);
+            vlen = RSTRING_SOCKLEN(val);
+            break;
     }
 
     rb_io_check_closed(fptr);
@@ -342,17 +343,17 @@ bsock_getsockopt(VALUE sock, VALUE lev, VALUE optname)
     len = 256;
 #ifdef _AIX
     switch (option) {
-      case SO_DEBUG:
-      case SO_REUSEADDR:
-      case SO_KEEPALIVE:
-      case SO_DONTROUTE:
-      case SO_BROADCAST:
-      case SO_OOBINLINE:
-        /* AIX doesn't set len for boolean options */
-        len = sizeof(int);
+        case SO_DEBUG:
+        case SO_REUSEADDR:
+        case SO_KEEPALIVE:
+        case SO_DONTROUTE:
+        case SO_BROADCAST:
+        case SO_OOBINLINE:
+            /* AIX doesn't set len for boolean options */
+            len = sizeof(int);
     }
 #endif
-    buf = ALLOCA_N(char,len);
+    buf = ALLOCA_N(char, len);
 
     rb_io_check_closed(fptr);
 
@@ -387,7 +388,7 @@ bsock_getsockname(VALUE sock)
     if (getsockname(fptr->fd, &buf.addr, &len) < 0)
         rb_sys_fail("getsockname(2)");
     if (len0 < len) len = len0;
-    return rb_str_new((char*)&buf, len);
+    return rb_str_new((char *)&buf, len);
 }
 
 /*
@@ -418,7 +419,7 @@ bsock_getpeername(VALUE sock)
     if (getpeername(fptr->fd, &buf.addr, &len) < 0)
         rb_sys_fail("getpeername(2)");
     if (len0 < len) len = len0;
-    return rb_str_new((char*)&buf, len);
+    return rb_str_new((char *)&buf, len);
 }
 
 #if defined(HAVE_GETPEEREID) || defined(SO_PEERCRED) || defined(HAVE_GETPEERUCRED)
@@ -447,7 +448,7 @@ bsock_getpeername(VALUE sock)
 static VALUE
 bsock_getpeereid(VALUE self)
 {
-#if defined(HAVE_GETPEEREID)
+# if defined(HAVE_GETPEEREID)
     rb_io_t *fptr;
     uid_t euid;
     gid_t egid;
@@ -455,7 +456,7 @@ bsock_getpeereid(VALUE self)
     if (getpeereid(fptr->fd, &euid, &egid) == -1)
         rb_sys_fail("getpeereid(3)");
     return rb_assoc_new(UIDT2NUM(euid), GIDT2NUM(egid));
-#elif defined(SO_PEERCRED) /* GNU/Linux */
+# elif defined(SO_PEERCRED) /* GNU/Linux */
     rb_io_t *fptr;
     struct ucred cred;
     socklen_t len = sizeof(cred);
@@ -463,7 +464,7 @@ bsock_getpeereid(VALUE self)
     if (getsockopt(fptr->fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) == -1)
         rb_sys_fail("getsockopt(SO_PEERCRED)");
     return rb_assoc_new(UIDT2NUM(cred.uid), GIDT2NUM(cred.gid));
-#elif defined(HAVE_GETPEERUCRED) /* Solaris */
+# elif defined(HAVE_GETPEERUCRED) /* Solaris */
     rb_io_t *fptr;
     ucred_t *uc = NULL;
     VALUE ret;
@@ -473,10 +474,10 @@ bsock_getpeereid(VALUE self)
     ret = rb_assoc_new(UIDT2NUM(ucred_geteuid(uc)), GIDT2NUM(ucred_getegid(uc)));
     ucred_free(uc);
     return ret;
-#endif
+# endif
 }
 #else
-#define bsock_getpeereid rb_f_notimplement
+# define bsock_getpeereid rb_f_notimplement
 #endif
 
 /*
@@ -709,7 +710,7 @@ bsock_recv_nonblock(VALUE sock, VALUE len, VALUE flg, VALUE str, VALUE ex)
 static VALUE
 bsock_do_not_rev_lookup(VALUE _)
 {
-    return rsock_do_not_reverse_lookup?Qtrue:Qfalse;
+    return rsock_do_not_reverse_lookup ? Qtrue : Qfalse;
 }
 
 /*
@@ -747,9 +748,9 @@ rsock_init_basicsocket(void)
     rb_undef_method(rb_cBasicSocket, "initialize");
 
     rb_define_singleton_method(rb_cBasicSocket, "do_not_reverse_lookup",
-                               bsock_do_not_rev_lookup, 0);
+      bsock_do_not_rev_lookup, 0);
     rb_define_singleton_method(rb_cBasicSocket, "do_not_reverse_lookup=",
-                               bsock_do_not_rev_lookup_set, 1);
+      bsock_do_not_rev_lookup_set, 1);
     rb_define_singleton_method(rb_cBasicSocket, "for_fd", bsock_s_for_fd, 1);
 
     rb_define_method(rb_cBasicSocket, "close_read", bsock_close_read, 0);
@@ -770,23 +771,22 @@ rsock_init_basicsocket(void)
 
     /* for ext/socket/lib/socket.rb use only: */
     rb_define_private_method(rb_cBasicSocket,
-                             "__recv_nonblock", bsock_recv_nonblock, 4);
+      "__recv_nonblock", bsock_recv_nonblock, 4);
 
 #if MSG_DONTWAIT_RELIABLE
     rb_define_private_method(rb_cBasicSocket,
-                             "__read_nonblock", rsock_read_nonblock, 3);
+      "__read_nonblock", rsock_read_nonblock, 3);
     rb_define_private_method(rb_cBasicSocket,
-                             "__write_nonblock", rsock_write_nonblock, 2);
+      "__write_nonblock", rsock_write_nonblock, 2);
 #endif
 
     /* in ancdata.c */
     rb_define_private_method(rb_cBasicSocket, "__sendmsg",
-                             rsock_bsock_sendmsg, 4);
+      rsock_bsock_sendmsg, 4);
     rb_define_private_method(rb_cBasicSocket, "__sendmsg_nonblock",
-                             rsock_bsock_sendmsg_nonblock, 5);
+      rsock_bsock_sendmsg_nonblock, 5);
     rb_define_private_method(rb_cBasicSocket, "__recvmsg",
-                             rsock_bsock_recvmsg, 4);
+      rsock_bsock_recvmsg, 4);
     rb_define_private_method(rb_cBasicSocket, "__recvmsg_nonblock",
-                            rsock_bsock_recvmsg_nonblock, 5);
-
+      rsock_bsock_recvmsg_nonblock, 5);
 }

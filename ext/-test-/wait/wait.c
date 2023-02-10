@@ -17,16 +17,14 @@ static VALUE
 io_maybe_wait_readable(VALUE klass, VALUE error, VALUE io, VALUE timeout)
 {
     return RB_INT2NUM(
-        rb_io_maybe_wait_readable(RB_NUM2INT(error), io, timeout)
-    );
+      rb_io_maybe_wait_readable(RB_NUM2INT(error), io, timeout));
 }
 
 static VALUE
 io_maybe_wait_writable(VALUE klass, VALUE error, VALUE io, VALUE timeout)
 {
     return RB_INT2NUM(
-        rb_io_maybe_wait_writable(RB_NUM2INT(error), io, timeout)
-    );
+      rb_io_maybe_wait_writable(RB_NUM2INT(error), io, timeout));
 }
 
 void

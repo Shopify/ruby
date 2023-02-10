@@ -1,4 +1,4 @@
-#ifndef RUBY_THREAD_H                                /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_THREAD_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_THREAD_H 1
 /**
  * @file
@@ -45,7 +45,7 @@
  * of problem you should set this flag.  And check interrupts elsewhere at your
  * own risk.
  */
-#define RB_NOGVL_INTR_FAIL       (0x1)
+#define RB_NOGVL_INTR_FAIL (0x1)
 
 /**
  * Passing  this  flag   to  rb_nogvl()  indicates  that  the   passed  UBF  is
@@ -57,7 +57,7 @@
  *
  * This makes sense only in case of POSIX threads.
  */
-#define RB_NOGVL_UBF_ASYNC_SAFE  (0x2)
+#define RB_NOGVL_UBF_ASYNC_SAFE (0x2)
 
 /** @} */
 
@@ -128,7 +128,7 @@ RBIMPL_ATTR_NONNULL((1))
  *                 your code to see if it is actually worth releasing the GVL.
  */
 void *rb_thread_call_without_gvl(void *(*func)(void *), void *data1,
-                                 rb_unblock_function_t *ubf, void *data2);
+  rb_unblock_function_t *ubf, void *data2);
 
 RBIMPL_ATTR_NONNULL((1))
 /**
@@ -152,7 +152,7 @@ RBIMPL_ATTR_NONNULL((1))
  * @return         What `func` returned, or 0 in case `func` did not return.
  */
 void *rb_thread_call_without_gvl2(void *(*func)(void *), void *data1,
-                                  rb_unblock_function_t *ubf, void *data2);
+  rb_unblock_function_t *ubf, void *data2);
 
 /*
  * XXX: unstable/unapproved - out-of-tree code should NOT not depend
@@ -172,8 +172,8 @@ RBIMPL_ATTR_NONNULL((1))
  * @return         What `func` returned, or 0 in case `func` did not return.
  */
 void *rb_nogvl(void *(*func)(void *), void *data1,
-               rb_unblock_function_t *ubf, void *data2,
-               int flags);
+  rb_unblock_function_t *ubf, void *data2,
+  int flags);
 
 /**
  * @private
@@ -190,18 +190,18 @@ void *rb_nogvl(void *(*func)(void *), void *data1,
  */
 #define RUBY_CALL_WO_GVL_FLAG_SKIP_CHECK_INTS_
 
-#define RUBY_INTERNAL_THREAD_EVENT_STARTED    1 << 0 /** thread started */
-#define RUBY_INTERNAL_THREAD_EVENT_READY      1 << 1 /** acquiring GVL */
-#define RUBY_INTERNAL_THREAD_EVENT_RESUMED    1 << 2 /** acquired GVL */
-#define RUBY_INTERNAL_THREAD_EVENT_SUSPENDED  1 << 3 /** released GVL */
-#define RUBY_INTERNAL_THREAD_EVENT_EXITED     1 << 4 /** thread terminated */
-#define RUBY_INTERNAL_THREAD_EVENT_MASK       0xff /** All Thread events */
+#define RUBY_INTERNAL_THREAD_EVENT_STARTED 1 << 0 /** thread started */
+#define RUBY_INTERNAL_THREAD_EVENT_READY 1 << 1 /** acquiring GVL */
+#define RUBY_INTERNAL_THREAD_EVENT_RESUMED 1 << 2 /** acquired GVL */
+#define RUBY_INTERNAL_THREAD_EVENT_SUSPENDED 1 << 3 /** released GVL */
+#define RUBY_INTERNAL_THREAD_EVENT_EXITED 1 << 4 /** thread terminated */
+#define RUBY_INTERNAL_THREAD_EVENT_MASK 0xff /** All Thread events */
 
 typedef void rb_internal_thread_event_data_t; // for future extension.
 
 typedef void (*rb_internal_thread_event_callback)(rb_event_flag_t event,
-              const rb_internal_thread_event_data_t *event_data,
-              void *user_data);
+  const rb_internal_thread_event_data_t *event_data,
+  void *user_data);
 typedef struct rb_internal_thread_event_hook rb_internal_thread_event_hook_t;
 
 /**
@@ -215,9 +215,8 @@ typedef struct rb_internal_thread_event_hook rb_internal_thread_event_hook_t;
  * @warning    This function MUST not be called from a thread event callback.
  */
 rb_internal_thread_event_hook_t *rb_internal_thread_add_event_hook(
-        rb_internal_thread_event_callback func, rb_event_flag_t events,
-        void *data);
-
+  rb_internal_thread_event_callback func, rb_event_flag_t events,
+  void *data);
 
 /**
  * Unregister the passed hook.
@@ -228,7 +227,7 @@ rb_internal_thread_event_hook_t *rb_internal_thread_add_event_hook(
  * @warning    This function MUST not be called from a thread event callback.
 */
 bool rb_internal_thread_remove_event_hook(
-        rb_internal_thread_event_hook_t * hook);
+  rb_internal_thread_event_hook_t *hook);
 
 RBIMPL_SYMBOL_EXPORT_END()
 

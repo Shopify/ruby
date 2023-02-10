@@ -99,7 +99,7 @@ update_global_event_hook(rb_event_flag_t prev_events, rb_event_flag_t new_events
     rb_event_flag_t new_iseq_events = new_events & ISEQ_TRACE_EVENTS;
     rb_event_flag_t enabled_iseq_events = ruby_vm_event_enabled_global_flags & ISEQ_TRACE_EVENTS;
     bool first_time_iseq_events_p = new_iseq_events & ~enabled_iseq_events;
-    bool enable_c_call   = (prev_events & RUBY_EVENT_C_CALL)   == 0 && (new_events & RUBY_EVENT_C_CALL);
+    bool enable_c_call = (prev_events & RUBY_EVENT_C_CALL) == 0 && (new_events & RUBY_EVENT_C_CALL);
     bool enable_c_return = (prev_events & RUBY_EVENT_C_RETURN) == 0 && (new_events & RUBY_EVENT_C_RETURN);
 
     // Modify ISEQs or CCs to enable tracing
@@ -179,7 +179,7 @@ connect_event_hook(const rb_execution_context_t *ec, rb_event_hook_t *hook)
 
 static void
 rb_threadptr_add_event_hook(const rb_execution_context_t *ec, rb_thread_t *th,
-                            rb_event_hook_func_t func, rb_event_flag_t events, VALUE data, rb_event_hook_flag_t hook_flags)
+  rb_event_hook_func_t func, rb_event_flag_t events, VALUE data, rb_event_hook_flag_t hook_flags)
 {
     rb_event_hook_t *hook = alloc_event_hook(func, events, data, hook_flags);
     hook->filter.th = th;
@@ -270,7 +270,7 @@ remove_event_hook(const rb_execution_context_t *ec, const rb_thread_t *filter_th
             if (hook->filter.th == filter_th || filter_th == MATCH_ANY_FILTER_TH) {
                 if (UNDEF_P(data) || hook->data == data) {
                     hook->hook_flags |= RUBY_EVENT_HOOK_FLAG_DELETED;
-                    ret+=1;
+                    ret += 1;
                     list->need_clean = true;
                 }
             }
@@ -333,9 +333,9 @@ exec_hooks_body(const rb_execution_context_t *ec, rb_hook_list_t *list, const rb
 
     for (hook = list->hooks; hook; hook = hook->next) {
         if (!(hook->hook_flags & RUBY_EVENT_HOOK_FLAG_DELETED) &&
-            (trace_arg->event & hook->events) &&
-            (LIKELY(hook->filter.th == 0) || hook->filter.th == rb_ec_thread_ptr(ec)) &&
-            (LIKELY(hook->filter.target_line == 0) || (hook->filter.target_line == (unsigned int)rb_vm_get_sourceline(ec->cfp)))) {
+          (trace_arg->event & hook->events) &&
+          (LIKELY(hook->filter.th == 0) || hook->filter.th == rb_ec_thread_ptr(ec)) &&
+          (LIKELY(hook->filter.target_line == 0) || (hook->filter.target_line == (unsigned int)rb_vm_get_sourceline(ec->cfp)))) {
             if (!(hook->hook_flags & RUBY_EVENT_HOOK_FLAG_RAW_ARG)) {
                 (*hook->func)(trace_arg->event, hook->data, trace_arg->self, trace_arg->id, trace_arg->klass);
             }
@@ -421,7 +421,7 @@ rb_exec_event_hooks(rb_trace_arg_t *trace_arg, rb_hook_list_t *hooks, int pop_p)
     }
     else {
         if (ec->trace_arg == NULL && /* check reentrant */
-            trace_arg->self != rb_mRubyVMFrozenCore /* skip special methods. TODO: remove it. */) {
+          trace_arg->self != rb_mRubyVMFrozenCore /* skip special methods. TODO: remove it. */) {
             const VALUE errinfo = ec->errinfo;
             const VALUE old_recursive = ec->local_storage_recursive_hash;
             int state = 0;
@@ -640,16 +640,16 @@ static const char *
 get_event_name(rb_event_flag_t event)
 {
     switch (event) {
-      case RUBY_EVENT_LINE:     return "line";
-      case RUBY_EVENT_CLASS:    return "class";
-      case RUBY_EVENT_END:      return "end";
-      case RUBY_EVENT_CALL:     return "call";
-      case RUBY_EVENT_RETURN:	return "return";
-      case RUBY_EVENT_C_CALL:	return "c-call";
-      case RUBY_EVENT_C_RETURN:	return "c-return";
-      case RUBY_EVENT_RAISE:	return "raise";
-      default:
-        return "unknown";
+        case RUBY_EVENT_LINE: return "line";
+        case RUBY_EVENT_CLASS: return "class";
+        case RUBY_EVENT_END: return "end";
+        case RUBY_EVENT_CALL: return "call";
+        case RUBY_EVENT_RETURN: return "return";
+        case RUBY_EVENT_C_CALL: return "c-call";
+        case RUBY_EVENT_C_RETURN: return "c-return";
+        case RUBY_EVENT_RAISE: return "raise";
+        default:
+            return "unknown";
     }
 }
 
@@ -659,7 +659,8 @@ get_event_id(rb_event_flag_t event)
     ID id;
 
     switch (event) {
-#define C(name, NAME) case RUBY_EVENT_##NAME: CONST_ID(id, #name); return id;
+#define C(name, NAME) \
+ case RUBY_EVENT_##NAME: CONST_ID(id, #name); return id;
         C(line, LINE);
         C(class, CLASS);
         C(end, END);
@@ -675,8 +676,8 @@ get_event_id(rb_event_flag_t event)
         C(fiber_switch, FIBER_SWITCH);
         C(script_compiled, SCRIPT_COMPILED);
 #undef C
-      default:
-        return 0;
+        default:
+            return 0;
     }
 }
 
@@ -689,9 +690,7 @@ get_path_and_lineno(const rb_execution_context_t *ec, const rb_control_frame_t *
         const rb_iseq_t *iseq = cfp->iseq;
         *pathp = rb_iseq_path(iseq);
 
-        if (event & (RUBY_EVENT_CLASS |
-                                RUBY_EVENT_CALL  |
-                                RUBY_EVENT_B_CALL)) {
+        if (event & (RUBY_EVENT_CLASS | RUBY_EVENT_CALL | RUBY_EVENT_B_CALL)) {
             *linep = FIX2INT(rb_iseq_first_lineno(iseq));
         }
         else {
@@ -734,9 +733,9 @@ call_trace_func(rb_event_flag_t event, VALUE proc, VALUE self, ID id, VALUE klas
     argv[3] = id ? ID2SYM(id) : Qnil;
     argv[4] = Qnil;
     if (self && (filename != Qnil) &&
-        event != RUBY_EVENT_C_CALL &&
-        event != RUBY_EVENT_C_RETURN &&
-        (VM_FRAME_RUBYFRAME_P(ec->cfp) && imemo_type_p((VALUE)ec->cfp->iseq, imemo_iseq))) {
+      event != RUBY_EVENT_C_CALL &&
+      event != RUBY_EVENT_C_RETURN &&
+      (VM_FRAME_RUBYFRAME_P(ec->cfp) && imemo_type_p((VALUE)ec->cfp->iseq, imemo_iseq))) {
         argv[4] = rb_binding_new();
     }
     argv[5] = klass ? klass : Qnil;
@@ -780,7 +779,11 @@ tp_memsize(const void *ptr)
 
 static const rb_data_type_t tp_data_type = {
     "tracepoint",
-    {tp_mark, RUBY_TYPED_DEFAULT_FREE, tp_memsize,},
+    {
+      tp_mark,
+      RUBY_TYPED_DEFAULT_FREE,
+      tp_memsize,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -797,11 +800,13 @@ symbol2event_flag(VALUE v)
     ID id;
     VALUE sym = rb_to_symbol_type(v);
     const rb_event_flag_t RUBY_EVENT_A_CALL =
-        RUBY_EVENT_CALL | RUBY_EVENT_B_CALL | RUBY_EVENT_C_CALL;
+      RUBY_EVENT_CALL | RUBY_EVENT_B_CALL | RUBY_EVENT_C_CALL;
     const rb_event_flag_t RUBY_EVENT_A_RETURN =
-        RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN | RUBY_EVENT_C_RETURN;
+      RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN | RUBY_EVENT_C_RETURN;
 
-#define C(name, NAME) CONST_ID(id, #name); if (sym == ID2SYM(id)) return RUBY_EVENT_##NAME
+#define C(name, NAME) \
+ CONST_ID(id, #name); \
+ if (sym == ID2SYM(id)) return RUBY_EVENT_##NAME
     C(line, LINE);
     C(class, CLASS);
     C(end, END);
@@ -821,7 +826,7 @@ symbol2event_flag(VALUE v)
     C(a_call, A_CALL);
     C(a_return, A_RETURN);
 #undef C
-    rb_raise(rb_eArgError, "unknown event: %"PRIsVALUE, rb_sym2str(sym));
+    rb_raise(rb_eArgError, "unknown event: %" PRIsVALUE, rb_sym2str(sym));
 }
 
 static rb_tp_t *
@@ -906,38 +911,40 @@ VALUE
 rb_tracearg_parameters(rb_trace_arg_t *trace_arg)
 {
     switch (trace_arg->event) {
-      case RUBY_EVENT_CALL:
-      case RUBY_EVENT_RETURN:
-      case RUBY_EVENT_B_CALL:
-      case RUBY_EVENT_B_RETURN: {
-        const rb_control_frame_t *cfp = rb_vm_get_ruby_level_next_cfp(trace_arg->ec, trace_arg->cfp);
-        if (cfp) {
-            int is_proc = 0;
-            if (VM_FRAME_TYPE(cfp) == VM_FRAME_MAGIC_BLOCK && !VM_FRAME_LAMBDA_P(cfp)) {
-                is_proc = 1;
+        case RUBY_EVENT_CALL:
+        case RUBY_EVENT_RETURN:
+        case RUBY_EVENT_B_CALL:
+        case RUBY_EVENT_B_RETURN:
+            {
+                const rb_control_frame_t *cfp = rb_vm_get_ruby_level_next_cfp(trace_arg->ec, trace_arg->cfp);
+                if (cfp) {
+                    int is_proc = 0;
+                    if (VM_FRAME_TYPE(cfp) == VM_FRAME_MAGIC_BLOCK && !VM_FRAME_LAMBDA_P(cfp)) {
+                        is_proc = 1;
+                    }
+                    return rb_iseq_parameters(cfp->iseq, is_proc);
+                }
+                break;
             }
-            return rb_iseq_parameters(cfp->iseq, is_proc);
-        }
-        break;
-      }
-      case RUBY_EVENT_C_CALL:
-      case RUBY_EVENT_C_RETURN: {
-        fill_id_and_klass(trace_arg);
-        if (trace_arg->klass && trace_arg->id) {
-            const rb_method_entry_t *me;
-            VALUE iclass = Qnil;
-            me = rb_method_entry_without_refinements(trace_arg->klass, trace_arg->called_id, &iclass);
-            return rb_unnamed_parameters(rb_method_entry_arity(me));
-        }
-        break;
-      }
-      case RUBY_EVENT_RAISE:
-      case RUBY_EVENT_LINE:
-      case RUBY_EVENT_CLASS:
-      case RUBY_EVENT_END:
-      case RUBY_EVENT_SCRIPT_COMPILED:
-        rb_raise(rb_eRuntimeError, "not supported by this event");
-        break;
+        case RUBY_EVENT_C_CALL:
+        case RUBY_EVENT_C_RETURN:
+            {
+                fill_id_and_klass(trace_arg);
+                if (trace_arg->klass && trace_arg->id) {
+                    const rb_method_entry_t *me;
+                    VALUE iclass = Qnil;
+                    me = rb_method_entry_without_refinements(trace_arg->klass, trace_arg->called_id, &iclass);
+                    return rb_unnamed_parameters(rb_method_entry_arity(me));
+                }
+                break;
+            }
+        case RUBY_EVENT_RAISE:
+        case RUBY_EVENT_LINE:
+        case RUBY_EVENT_CLASS:
+        case RUBY_EVENT_END:
+        case RUBY_EVENT_SCRIPT_COMPILED:
+            rb_raise(rb_eRuntimeError, "not supported by this event");
+            break;
     }
     return Qnil;
 }
@@ -968,9 +975,9 @@ rb_tracearg_binding(rb_trace_arg_t *trace_arg)
 {
     rb_control_frame_t *cfp;
     switch (trace_arg->event) {
-      case RUBY_EVENT_C_CALL:
-      case RUBY_EVENT_C_RETURN:
-        return Qnil;
+        case RUBY_EVENT_C_CALL:
+        case RUBY_EVENT_C_RETURN:
+            return Qnil;
     }
     cfp = rb_vm_get_binding_creatable_next_cfp(trace_arg->ec, trace_arg->cfp);
 
@@ -1188,11 +1195,11 @@ rb_tracepoint_enable(VALUE tpval)
 
     if (tp->target_th) {
         rb_thread_add_event_hook2(tp->target_th->self, (rb_event_hook_func_t)tp_call_trace, tp->events, tpval,
-                                  RUBY_EVENT_HOOK_FLAG_SAFE | RUBY_EVENT_HOOK_FLAG_RAW_ARG);
+          RUBY_EVENT_HOOK_FLAG_SAFE | RUBY_EVENT_HOOK_FLAG_RAW_ARG);
     }
     else {
         rb_add_event_hook2((rb_event_hook_func_t)tp_call_trace, tp->events, tpval,
-                           RUBY_EVENT_HOOK_FLAG_SAFE | RUBY_EVENT_HOOK_FLAG_RAW_ARG);
+          RUBY_EVENT_HOOK_FLAG_SAFE | RUBY_EVENT_HOOK_FLAG_RAW_ARG);
     }
     tp->tracing = 1;
     return Qundef;
@@ -1241,7 +1248,7 @@ rb_tracepoint_enable_for_target(VALUE tpval, VALUE target, VALUE target_line)
     if (rb_obj_is_method(target)) {
         rb_method_definition_t *def = (rb_method_definition_t *)rb_method_def(target);
         if (def->type == VM_METHOD_TYPE_BMETHOD &&
-            (tp->events & (RUBY_EVENT_CALL | RUBY_EVENT_RETURN))) {
+          (tp->events & (RUBY_EVENT_CALL | RUBY_EVENT_RETURN))) {
             if (def->body.bmethod.hooks == NULL) {
                 def->body.bmethod.hooks = ZALLOC(rb_hook_list_t);
             }
@@ -1256,7 +1263,6 @@ rb_tracepoint_enable_for_target(VALUE tpval, VALUE target, VALUE target_line)
     /* iseq */
     n += rb_iseq_add_local_tracepoint_recursively(iseq, tp->events, tpval, line, target_bmethod);
     rb_hash_aset(tp->local_target_set, (VALUE)iseq, Qtrue);
-
 
     if (n == 0) {
         rb_raise(rb_eArgError, "can not enable any hooks");
@@ -1323,7 +1329,7 @@ rb_hook_list_connect_tracepoint(VALUE target, rb_hook_list_t *list, VALUE tpval,
 {
     rb_tp_t *tp = tpptr(tpval);
     rb_event_hook_t *hook = alloc_event_hook((rb_event_hook_func_t)tp_call_trace, tp->events, tpval,
-                                             RUBY_EVENT_HOOK_FLAG_SAFE | RUBY_EVENT_HOOK_FLAG_RAW_ARG);
+      RUBY_EVENT_HOOK_FLAG_SAFE | RUBY_EVENT_HOOK_FLAG_RAW_ARG);
     hook->filter.target_line = target_line;
     hook_list_connect(target, list, hook, FALSE);
 }
@@ -1386,8 +1392,8 @@ tracepoint_enable_m(rb_execution_context_t *ec, VALUE tpval, VALUE target, VALUE
 
     if (rb_block_given_p()) {
         return rb_ensure(rb_yield, Qundef,
-                         previous_tracing ? rb_tracepoint_enable : rb_tracepoint_disable,
-                         tpval);
+          previous_tracing ? rb_tracepoint_enable : rb_tracepoint_disable,
+          tpval);
     }
     else {
         return RBOOL(previous_tracing);
@@ -1407,8 +1413,8 @@ tracepoint_disable_m(rb_execution_context_t *ec, VALUE tpval)
 
         rb_tracepoint_disable(tpval);
         return rb_ensure(rb_yield, Qundef,
-                         previous_tracing ? rb_tracepoint_enable : rb_tracepoint_disable,
-                         tpval);
+          previous_tracing ? rb_tracepoint_enable : rb_tracepoint_disable,
+          tpval);
     }
     else {
         rb_tracepoint_disable(tpval);
@@ -1430,7 +1436,7 @@ tracepoint_enabled_p(rb_execution_context_t *ec, VALUE tpval)
 }
 
 static VALUE
-tracepoint_new(VALUE klass, rb_thread_t *target_th, rb_event_flag_t events, void (func)(VALUE, void*), void *data, VALUE proc)
+tracepoint_new(VALUE klass, rb_thread_t *target_th, rb_event_flag_t events, void(func)(VALUE, void *), void *data, VALUE proc)
 {
     VALUE tpval = tp_alloc(klass);
     rb_tp_t *tp;
@@ -1468,7 +1474,7 @@ tracepoint_new_s(rb_execution_context_t *ec, VALUE self, VALUE args)
     long argc = RARRAY_LEN(args);
 
     if (argc > 0) {
-        for (i=0; i<argc; i++) {
+        for (i = 0; i < argc; i++) {
             events |= symbol2event_flag(RARRAY_AREF(args, i));
         }
     }
@@ -1499,38 +1505,38 @@ tracepoint_inspect(rb_execution_context_t *ec, VALUE self)
 
     if (trace_arg) {
         switch (trace_arg->event) {
-          case RUBY_EVENT_LINE:
-            {
-                VALUE sym = rb_tracearg_method_id(trace_arg);
-                if (NIL_P(sym))
-                    break;
-                return rb_sprintf("#<TracePoint:%"PRIsVALUE" %"PRIsVALUE":%d in `%"PRIsVALUE"'>",
-                                  rb_tracearg_event(trace_arg),
-                                  rb_tracearg_path(trace_arg),
-                                  FIX2INT(rb_tracearg_lineno(trace_arg)),
-                                  sym);
-            }
-          case RUBY_EVENT_CALL:
-          case RUBY_EVENT_C_CALL:
-          case RUBY_EVENT_RETURN:
-          case RUBY_EVENT_C_RETURN:
-            return rb_sprintf("#<TracePoint:%"PRIsVALUE" `%"PRIsVALUE"' %"PRIsVALUE":%d>",
-                              rb_tracearg_event(trace_arg),
-                              rb_tracearg_method_id(trace_arg),
-                              rb_tracearg_path(trace_arg),
-                              FIX2INT(rb_tracearg_lineno(trace_arg)));
-          case RUBY_EVENT_THREAD_BEGIN:
-          case RUBY_EVENT_THREAD_END:
-            return rb_sprintf("#<TracePoint:%"PRIsVALUE" %"PRIsVALUE">",
-                              rb_tracearg_event(trace_arg),
-                              rb_tracearg_self(trace_arg));
-          default:
-            break;
+            case RUBY_EVENT_LINE:
+                {
+                    VALUE sym = rb_tracearg_method_id(trace_arg);
+                    if (NIL_P(sym))
+                        break;
+                    return rb_sprintf("#<TracePoint:%" PRIsVALUE " %" PRIsVALUE ":%d in `%" PRIsVALUE "'>",
+                      rb_tracearg_event(trace_arg),
+                      rb_tracearg_path(trace_arg),
+                      FIX2INT(rb_tracearg_lineno(trace_arg)),
+                      sym);
+                }
+            case RUBY_EVENT_CALL:
+            case RUBY_EVENT_C_CALL:
+            case RUBY_EVENT_RETURN:
+            case RUBY_EVENT_C_RETURN:
+                return rb_sprintf("#<TracePoint:%" PRIsVALUE " `%" PRIsVALUE "' %" PRIsVALUE ":%d>",
+                  rb_tracearg_event(trace_arg),
+                  rb_tracearg_method_id(trace_arg),
+                  rb_tracearg_path(trace_arg),
+                  FIX2INT(rb_tracearg_lineno(trace_arg)));
+            case RUBY_EVENT_THREAD_BEGIN:
+            case RUBY_EVENT_THREAD_END:
+                return rb_sprintf("#<TracePoint:%" PRIsVALUE " %" PRIsVALUE ">",
+                  rb_tracearg_event(trace_arg),
+                  rb_tracearg_self(trace_arg));
+            default:
+                break;
         }
-        return rb_sprintf("#<TracePoint:%"PRIsVALUE" %"PRIsVALUE":%d>",
-                          rb_tracearg_event(trace_arg),
-                          rb_tracearg_path(trace_arg),
-                          FIX2INT(rb_tracearg_lineno(trace_arg)));
+        return rb_sprintf("#<TracePoint:%" PRIsVALUE " %" PRIsVALUE ":%d>",
+          rb_tracearg_event(trace_arg),
+          rb_tracearg_path(trace_arg),
+          FIX2INT(rb_tracearg_lineno(trace_arg)));
     }
     else {
         return rb_sprintf("#<TracePoint:%s>", tp->tracing ? "enabled" : "disabled");
@@ -1608,8 +1614,8 @@ typedef struct rb_postponed_job_struct {
     void *data;
 } rb_postponed_job_t;
 
-#define MAX_POSTPONED_JOB                  1000
-#define MAX_POSTPONED_JOB_SPECIAL_ADDITION   24
+#define MAX_POSTPONED_JOB 1000
+#define MAX_POSTPONED_JOB_SPECIAL_ADDITION 24
 
 struct rb_workqueue_job {
     struct ccan_list_node jnode; /* <=> vm->workqueue */
@@ -1624,7 +1630,8 @@ rb_vm_memsize_workqueue(struct ccan_list_head *workqueue)
     struct rb_workqueue_job *work = 0;
     size_t size = 0;
 
-    ccan_list_for_each(workqueue, work, jnode) {
+    ccan_list_for_each(workqueue, work, jnode)
+    {
         size += sizeof(struct rb_workqueue_job);
     }
 
@@ -1649,21 +1656,21 @@ Init_vm_postponed_job(void)
 }
 
 enum postponed_job_register_result {
-    PJRR_SUCCESS     = 0,
-    PJRR_FULL        = 1,
+    PJRR_SUCCESS = 0,
+    PJRR_FULL = 1,
     PJRR_INTERRUPTED = 2
 };
 
 /* Async-signal-safe */
 static enum postponed_job_register_result
 postponed_job_register(rb_execution_context_t *ec, rb_vm_t *vm,
-                       unsigned int flags, rb_postponed_job_func_t func, void *data, rb_atomic_t max, rb_atomic_t expected_index)
+  unsigned int flags, rb_postponed_job_func_t func, void *data, rb_atomic_t max, rb_atomic_t expected_index)
 {
     rb_postponed_job_t *pjob;
 
     if (expected_index >= max) return PJRR_FULL; /* failed */
 
-    if (ATOMIC_CAS(vm->postponed_job_index, expected_index, expected_index+1) == expected_index) {
+    if (ATOMIC_CAS(vm->postponed_job_index, expected_index, expected_index + 1) == expected_index) {
         pjob = &vm->postponed_job_buffer[expected_index];
     }
     else {
@@ -1697,12 +1704,12 @@ rb_postponed_job_register(unsigned int flags, rb_postponed_job_func_t func, void
     rb_vm_t *vm = GET_VM();
     rb_execution_context_t *ec = get_valid_ec(vm);
 
-  begin:
+begin:
     switch (postponed_job_register(ec, vm, flags, func, data, MAX_POSTPONED_JOB, vm->postponed_job_index)) {
-      case PJRR_SUCCESS    : return 1;
-      case PJRR_FULL       : return 0;
-      case PJRR_INTERRUPTED: goto begin;
-      default: rb_bug("unreachable\n");
+        case PJRR_SUCCESS: return 1;
+        case PJRR_FULL: return 0;
+        case PJRR_INTERRUPTED: goto begin;
+        default: rb_bug("unreachable\n");
     }
 }
 
@@ -1718,9 +1725,9 @@ rb_postponed_job_register_one(unsigned int flags, rb_postponed_job_func_t func, 
     rb_postponed_job_t *pjob;
     rb_atomic_t i, index;
 
-  begin:
+begin:
     index = vm->postponed_job_index;
-    for (i=0; i<index; i++) {
+    for (i = 0; i < index; i++) {
         pjob = &vm->postponed_job_buffer[i];
         if (pjob->func == func) {
             RUBY_VM_SET_POSTPONED_JOB_INTERRUPT(ec);
@@ -1728,10 +1735,10 @@ rb_postponed_job_register_one(unsigned int flags, rb_postponed_job_func_t func, 
         }
     }
     switch (postponed_job_register(ec, vm, flags, func, data, MAX_POSTPONED_JOB + MAX_POSTPONED_JOB_SPECIAL_ADDITION, index)) {
-      case PJRR_SUCCESS    : return 1;
-      case PJRR_FULL       : return 0;
-      case PJRR_INTERRUPTED: goto begin;
-      default: rb_bug("unreachable\n");
+        case PJRR_SUCCESS: return 1;
+        case PJRR_FULL: return 0;
+        case PJRR_INTERRUPTED: goto begin;
+        default: rb_bug("unreachable\n");
     }
 }
 
@@ -1763,7 +1770,7 @@ void
 rb_postponed_job_flush(rb_vm_t *vm)
 {
     rb_execution_context_t *ec = GET_EC();
-    const rb_atomic_t block_mask = POSTPONED_JOB_INTERRUPT_MASK|TRAP_INTERRUPT_MASK;
+    const rb_atomic_t block_mask = POSTPONED_JOB_INTERRUPT_MASK | TRAP_INTERRUPT_MASK;
     volatile rb_atomic_t saved_mask = ec->interrupt_mask & block_mask;
     VALUE volatile saved_errno = ec->errinfo;
     struct ccan_list_head tmp;
@@ -1784,8 +1791,8 @@ rb_postponed_job_flush(rb_vm_t *vm)
             struct rb_workqueue_job *wq_job;
 
             while ((index = vm->postponed_job_index) > 0) {
-                if (ATOMIC_CAS(vm->postponed_job_index, index, index-1) == index) {
-                    rb_postponed_job_t *pjob = &vm->postponed_job_buffer[index-1];
+                if (ATOMIC_CAS(vm->postponed_job_index, index, index - 1) == index) {
+                    rb_postponed_job_t *pjob = &vm->postponed_job_buffer[index - 1];
                     (*pjob->func)(pjob->data);
                 }
             }

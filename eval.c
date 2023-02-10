@@ -14,7 +14,7 @@
 #include "ruby/internal/config.h"
 
 #ifdef HAVE_SYS_PRCTL_H
-#include <sys/prctl.h>
+# include <sys/prctl.h>
 #endif
 
 #include "eval_intern.h"
@@ -59,8 +59,8 @@ extern ID ruby_static_id_cause;
 #include "eval_jump.c"
 
 #define CLASS_OR_MODULE_P(obj) \
-    (!SPECIAL_CONST_P(obj) && \
-     (BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE))
+ (!SPECIAL_CONST_P(obj) && \
+   (BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE))
 
 int
 ruby_setup(void)
@@ -202,7 +202,8 @@ rb_ec_cleanup(rb_execution_context_t *ec, enum ruby_tag_type ex)
     if ((state = EC_EXEC_TAG()) == TAG_NONE) {
         SAVE_ROOT_JMPBUF(th, { RUBY_VM_CHECK_INTS(ec); });
 
-      step_0: step++;
+    step_0:
+        step++;
         save_error = ec->errinfo;
         if (THROW_DATA_P(ec->errinfo)) ec->errinfo = Qnil;
         ruby_init_stack(&message);
@@ -211,7 +212,8 @@ rb_ec_cleanup(rb_execution_context_t *ec, enum ruby_tag_type ex)
          * here */
         SAVE_ROOT_JMPBUF(th, rb_ec_teardown(ec));
 
-      step_1: step++;
+    step_1:
+        step++;
         VALUE err = ec->errinfo;
         volatile int mode0 = 0, mode1 = 0;
         if (err != save_error && !NIL_P(err)) {
@@ -232,28 +234,30 @@ rb_ec_cleanup(rb_execution_context_t *ec, enum ruby_tag_type ex)
             }
         }
 
-      step_2: step++;
+    step_2:
+        step++;
         /* protect from Thread#raise */
         th->status = THREAD_KILLED;
 
         SAVE_ROOT_JMPBUF(th, rb_ractor_terminate_all());
 
-      step_3: step++;
+    step_3:
+        step++;
         if (!NIL_P(buf = message)) {
             warn_print_str(buf);
         }
         else if (!NIL_OR_UNDEF_P(err = save_error) ||
-                 (ex != TAG_NONE && !((mode0|mode1) & EXITING_WITH_STATUS))) {
+          (ex != TAG_NONE && !((mode0 | mode1) & EXITING_WITH_STATUS))) {
             sysex = error_handle(ec, err, ex);
         }
     }
     else {
         th = th0;
         switch (step) {
-          case 0: goto step_0;
-          case 1: goto step_1;
-          case 2: goto step_2;
-          case 3: goto step_3;
+            case 0: goto step_0;
+            case 1: goto step_1;
+            case 2: goto step_2;
+            case 3: goto step_3;
         }
     }
 
@@ -307,11 +311,11 @@ ruby_executable_node(void *n, int *status)
     int s;
 
     switch (v) {
-      case Qtrue:  s = EXIT_SUCCESS; break;
-      case Qfalse: s = EXIT_FAILURE; break;
-      default:
-        if (!FIXNUM_P(v)) return TRUE;
-        s = FIX2INT(v);
+        case Qtrue: s = EXIT_SUCCESS; break;
+        case Qfalse: s = EXIT_FAILURE; break;
+        default:
+            if (!FIXNUM_P(v)) return TRUE;
+            s = FIX2INT(v);
     }
     if (status) *status = s;
     return FALSE;
@@ -361,7 +365,7 @@ rb_mod_nesting(VALUE _)
     while (cref && CREF_NEXT(cref)) {
         VALUE klass = CREF_CLASS(cref);
         if (!CREF_PUSHED_BY_EVAL(cref) &&
-            !NIL_P(klass)) {
+          !NIL_P(klass)) {
             rb_ary_push(ary, klass);
         }
         cref = CREF_NEXT(cref);
@@ -406,7 +410,7 @@ rb_mod_s_constants(int argc, VALUE *argv, VALUE mod)
     while (cref) {
         klass = CREF_CLASS(cref);
         if (!CREF_PUSHED_BY_EVAL(cref) &&
-            !NIL_P(klass)) {
+          !NIL_P(klass)) {
             data = rb_mod_const_at(CREF_CLASS(cref), data);
             if (!cbase) {
                 cbase = klass;
@@ -444,33 +448,33 @@ rb_class_modify_check(VALUE klass)
             klass = rb_ivar_get(klass, id__attached__);
             if (!SPECIAL_CONST_P(klass)) {
                 switch (BUILTIN_TYPE(klass)) {
-                  case T_MODULE:
-                  case T_ICLASS:
-                    desc = "Module";
-                    break;
-                  case T_CLASS:
-                    desc = "Class";
-                    break;
-                  default:
-                    break;
+                    case T_MODULE:
+                    case T_ICLASS:
+                        desc = "Module";
+                        break;
+                    case T_CLASS:
+                        desc = "Class";
+                        break;
+                    default:
+                        break;
                 }
             }
         }
         else {
             switch (BUILTIN_TYPE(klass)) {
-              case T_MODULE:
-              case T_ICLASS:
-                desc = "module";
-                break;
-              case T_CLASS:
-                desc = "class";
-                break;
-              default:
-                Check_Type(klass, T_CLASS);
-                UNREACHABLE;
+                case T_MODULE:
+                case T_ICLASS:
+                    desc = "module";
+                    break;
+                case T_CLASS:
+                    desc = "class";
+                    break;
+                default:
+                    Check_Type(klass, T_CLASS);
+                    UNREACHABLE;
             }
         }
-        rb_frozen_error_raise(klass, "can't modify frozen %s: %"PRIsVALUE, desc, klass);
+        rb_frozen_error_raise(klass, "can't modify frozen %s: %" PRIsVALUE, desc, klass);
     }
 }
 
@@ -559,7 +563,7 @@ setup_exception(rb_execution_context_t *ec, int tag, volatile VALUE mesg, VALUE 
     const char *file = rb_source_location_cstr(&line);
     const char *const volatile file0 = file;
 
-    if ((file && !NIL_P(mesg)) || !UNDEF_P(cause))  {
+    if ((file && !NIL_P(mesg)) || !UNDEF_P(cause)) {
         volatile int state = 0;
 
         EC_PUSH_TAG(ec);
@@ -590,7 +594,7 @@ setup_exception(rb_execution_context_t *ec, int tag, volatile VALUE mesg, VALUE 
     }
 
     if (RTEST(ruby_debug) && !NIL_P(e = ec->errinfo) &&
-        !rb_obj_is_kind_of(e, rb_eSystemExit)) {
+      !rb_obj_is_kind_of(e, rb_eSystemExit)) {
         enum ruby_tag_type state;
 
         mesg = e;
@@ -600,16 +604,16 @@ setup_exception(rb_execution_context_t *ec, int tag, volatile VALUE mesg, VALUE 
             e = rb_obj_as_string(mesg);
             ec->errinfo = mesg;
             if (file && line) {
-                e = rb_sprintf("Exception `%"PRIsVALUE"' at %s:%d - %"PRIsVALUE"\n",
-                               rb_obj_class(mesg), file, line, e);
+                e = rb_sprintf("Exception `%" PRIsVALUE "' at %s:%d - %" PRIsVALUE "\n",
+                  rb_obj_class(mesg), file, line, e);
             }
             else if (file) {
-                e = rb_sprintf("Exception `%"PRIsVALUE"' at %s - %"PRIsVALUE"\n",
-                               rb_obj_class(mesg), file, e);
+                e = rb_sprintf("Exception `%" PRIsVALUE "' at %s - %" PRIsVALUE "\n",
+                  rb_obj_class(mesg), file, e);
             }
             else {
-                e = rb_sprintf("Exception `%"PRIsVALUE"' - %"PRIsVALUE"\n",
-                               rb_obj_class(mesg), e);
+                e = rb_sprintf("Exception `%" PRIsVALUE "' - %" PRIsVALUE "\n",
+                  rb_obj_class(mesg), e);
             }
             warn_print_str(e);
         }
@@ -633,7 +637,7 @@ setup_exception(rb_execution_context_t *ec, int tag, volatile VALUE mesg, VALUE 
     }
     return;
 
-  fatal:
+fatal:
     ec->errinfo = exception_error;
     rb_ec_reset_raised(ec);
     EC_JUMP_TAG(ec, TAG_FATAL);
@@ -705,7 +709,8 @@ rb_interrupt(void)
     rb_exc_raise(rb_exc_new(rb_eInterrupt, 0, 0));
 }
 
-enum {raise_opt_cause, raise_max_opt}; /*< \private */
+enum { raise_opt_cause,
+    raise_max_opt }; /*< \private */
 
 static int
 extract_raise_opts(int argc, VALUE *argv, VALUE *opts)
@@ -718,7 +723,7 @@ extract_raise_opts(int argc, VALUE *argv, VALUE *opts)
             if (!RHASH_EMPTY_P(opt)) {
                 ID keywords[1];
                 CONST_ID(keywords[0], "cause");
-                rb_get_kwargs(opt, keywords, 0, -1-raise_max_opt, opts);
+                rb_get_kwargs(opt, keywords, 0, -1 - raise_max_opt, opts);
                 if (!RHASH_EMPTY_P(opt)) argv[argc++] = opt;
                 return argc;
             }
@@ -794,22 +799,22 @@ make_exception(int argc, const VALUE *argv, int isstr)
 
     mesg = Qnil;
     switch (argc) {
-      case 0:
-        return Qnil;
-      case 1:
-        exc = argv[0];
-        if (isstr &&! NIL_P(exc)) {
-            mesg = rb_check_string_type(exc);
-            if (!NIL_P(mesg)) {
-                return rb_exc_new3(rb_eRuntimeError, mesg);
+        case 0:
+            return Qnil;
+        case 1:
+            exc = argv[0];
+            if (isstr && !NIL_P(exc)) {
+                mesg = rb_check_string_type(exc);
+                if (!NIL_P(mesg)) {
+                    return rb_exc_new3(rb_eRuntimeError, mesg);
+                }
             }
-        }
 
-      case 2:
-      case 3:
-        break;
-      default:
-        rb_error_arity(argc, 0, 3);
+        case 2:
+        case 3:
+            break;
+        default:
+            rb_error_arity(argc, 0, 3);
     }
     if (NIL_P(mesg)) {
         mesg = rb_check_funcall(argv[0], idException, argc != 1, &argv[1]);
@@ -890,8 +895,8 @@ rb_need_block(void)
 }
 
 VALUE
-rb_rescue2(VALUE (* b_proc) (VALUE), VALUE data1,
-           VALUE (* r_proc) (VALUE, VALUE), VALUE data2, ...)
+rb_rescue2(VALUE (*b_proc)(VALUE), VALUE data1,
+  VALUE (*r_proc)(VALUE, VALUE), VALUE data2, ...)
 {
     va_list ap;
     va_start(ap, data2);
@@ -901,20 +906,20 @@ rb_rescue2(VALUE (* b_proc) (VALUE), VALUE data1,
 }
 
 VALUE
-rb_vrescue2(VALUE (* b_proc) (VALUE), VALUE data1,
-            VALUE (* r_proc) (VALUE, VALUE), VALUE data2,
-            va_list args)
+rb_vrescue2(VALUE (*b_proc)(VALUE), VALUE data1,
+  VALUE (*r_proc)(VALUE, VALUE), VALUE data2,
+  va_list args)
 {
     enum ruby_tag_type state;
-    rb_execution_context_t * volatile ec = GET_EC();
+    rb_execution_context_t *volatile ec = GET_EC();
     rb_control_frame_t *volatile cfp = ec->cfp;
     volatile VALUE result = Qfalse;
     volatile VALUE e_info = ec->errinfo;
 
     EC_PUSH_TAG(ec);
     if ((state = EC_EXEC_TAG()) == TAG_NONE) {
-      retry_entry:
-        result = (*b_proc) (data1);
+    retry_entry:
+        result = (*b_proc)(data1);
     }
     else if (result) {
         /* escape from r_proc */
@@ -947,7 +952,7 @@ rb_vrescue2(VALUE (* b_proc) (VALUE), VALUE data1,
             if (handle) {
                 state = TAG_NONE;
                 if (r_proc) {
-                    result = (*r_proc) (data2, ec->errinfo);
+                    result = (*r_proc)(data2, ec->errinfo);
                 }
                 ec->errinfo = e_info;
             }
@@ -961,24 +966,24 @@ rb_vrescue2(VALUE (* b_proc) (VALUE), VALUE data1,
 }
 
 VALUE
-rb_rescue(VALUE (* b_proc)(VALUE), VALUE data1,
-          VALUE (* r_proc)(VALUE, VALUE), VALUE data2)
+rb_rescue(VALUE (*b_proc)(VALUE), VALUE data1,
+  VALUE (*r_proc)(VALUE, VALUE), VALUE data2)
 {
     return rb_rescue2(b_proc, data1, r_proc, data2, rb_eStandardError,
-                      (VALUE)0);
+      (VALUE)0);
 }
 
 VALUE
-rb_protect(VALUE (* proc) (VALUE), VALUE data, int *pstate)
+rb_protect(VALUE (*proc)(VALUE), VALUE data, int *pstate)
 {
     volatile VALUE result = Qnil;
     volatile enum ruby_tag_type state;
-    rb_execution_context_t * volatile ec = GET_EC();
+    rb_execution_context_t *volatile ec = GET_EC();
     rb_control_frame_t *volatile cfp = ec->cfp;
 
     EC_PUSH_TAG(ec);
     if ((state = EC_EXEC_TAG()) == TAG_NONE) {
-        SAVE_ROOT_JMPBUF(rb_ec_thread_ptr(ec), result = (*proc) (data));
+        SAVE_ROOT_JMPBUF(rb_ec_thread_ptr(ec), result = (*proc)(data));
     }
     else {
         rb_vm_rewind_cfp(ec, cfp);
@@ -995,7 +1000,7 @@ rb_ensure(VALUE (*b_proc)(VALUE), VALUE data1, VALUE (*e_proc)(VALUE), VALUE dat
     int state;
     volatile VALUE result = Qnil;
     VALUE errinfo;
-    rb_execution_context_t * volatile ec = GET_EC();
+    rb_execution_context_t *volatile ec = GET_EC();
     rb_ensure_list_t ensure_list;
     ensure_list.entry.marker = 0;
     ensure_list.entry.e_proc = e_proc;
@@ -1004,14 +1009,14 @@ rb_ensure(VALUE (*b_proc)(VALUE), VALUE data1, VALUE (*e_proc)(VALUE), VALUE dat
     ec->ensure_list = &ensure_list;
     EC_PUSH_TAG(ec);
     if ((state = EC_EXEC_TAG()) == TAG_NONE) {
-        result = (*b_proc) (data1);
+        result = (*b_proc)(data1);
     }
     EC_POP_TAG();
     errinfo = ec->errinfo;
     if (!NIL_P(errinfo) && !RB_TYPE_P(errinfo, T_OBJECT)) {
         ec->errinfo = Qnil;
     }
-    ec->ensure_list=ensure_list.next;
+    ec->ensure_list = ensure_list.next;
     (*ensure_list.entry.e_proc)(ensure_list.entry.data2);
     ec->errinfo = errinfo;
     if (state)
@@ -1098,8 +1103,9 @@ rb_frame_last_func(void)
     ID mid;
 
     while (!(mid = frame_func_id(cfp)) &&
-           (cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp),
-            !RUBY_VM_CONTROL_FRAME_STACK_OVERFLOW_P(ec, cfp)));
+      (cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp),
+        !RUBY_VM_CONTROL_FRAME_STACK_OVERFLOW_P(ec, cfp)))
+        ;
     return mid;
 }
 
@@ -1222,8 +1228,8 @@ ensure_class_or_module(VALUE obj)
 {
     if (!RB_TYPE_P(obj, T_CLASS) && !RB_TYPE_P(obj, T_MODULE)) {
         rb_raise(rb_eTypeError,
-                 "wrong argument type %"PRIsVALUE" (expected Class or Module)",
-                 rb_obj_class(obj));
+          "wrong argument type %" PRIsVALUE " (expected Class or Module)",
+          rb_obj_class(obj));
     }
 }
 
@@ -1295,7 +1301,7 @@ rb_using_refinement(rb_cref_t *cref, VALUE klass, VALUE module)
 static int
 using_refinement(VALUE klass, VALUE module, VALUE arg)
 {
-    rb_cref_t *cref = (rb_cref_t *) arg;
+    rb_cref_t *cref = (rb_cref_t *)arg;
 
     rb_using_refinement(cref, klass, module);
     return ST_CONTINUE;
@@ -1312,23 +1318,23 @@ using_module_recursive(const rb_cref_t *cref, VALUE klass)
         using_module_recursive(cref, super);
     }
     switch (BUILTIN_TYPE(klass)) {
-      case T_MODULE:
-        module = klass;
-        break;
+        case T_MODULE:
+            module = klass;
+            break;
 
-      case T_ICLASS:
-        module = RBASIC(klass)->klass;
-        break;
+        case T_ICLASS:
+            module = RBASIC(klass)->klass;
+            break;
 
-      default:
-        rb_raise(rb_eTypeError, "wrong argument type %s (expected Module)",
-                 rb_obj_classname(klass));
-        break;
+        default:
+            rb_raise(rb_eTypeError, "wrong argument type %s (expected Module)",
+              rb_obj_classname(klass));
+            break;
     }
     CONST_ID(id_refinements, "__refinements__");
     refinements = rb_attr_get(module, id_refinements);
     if (NIL_P(refinements)) return;
-    rb_hash_foreach(refinements, using_refinement, (VALUE) cref);
+    rb_hash_foreach(refinements, using_refinement, (VALUE)cref);
 }
 
 /*!
@@ -1359,7 +1365,7 @@ rb_refinement_module_get_refined_class(VALUE module)
 
 static void
 add_activated_refinement(VALUE activated_refinements,
-                         VALUE klass, VALUE refinement)
+  VALUE klass, VALUE refinement)
 {
     VALUE iclass, c, superclass = klass;
 
@@ -1399,7 +1405,7 @@ rb_mod_refine(VALUE module, VALUE klass)
 {
     VALUE refinement;
     ID id_refinements, id_activated_refinements,
-       id_refined_class, id_defined_at;
+      id_refined_class, id_defined_at;
     VALUE refinements, activated_refinements;
     rb_thread_t *th = GET_THREAD();
     VALUE block_handler = rb_vm_frame_block_handler(th->ec->cfp);
@@ -1423,7 +1429,7 @@ rb_mod_refine(VALUE module, VALUE klass)
     if (NIL_P(activated_refinements)) {
         activated_refinements = hidden_identity_hash_new();
         rb_ivar_set(module, id_activated_refinements,
-                    activated_refinements);
+          activated_refinements);
     }
     refinement = rb_hash_lookup(refinements, klass);
     if (NIL_P(refinement)) {
@@ -1451,7 +1457,10 @@ ignored_block(VALUE module, const char *klass)
     if (!RTEST(rb_search_class_path(module))) {
         anon = ", maybe for Module.new";
     }
-    rb_warn("%s""using doesn't call the given block""%s.", klass, anon);
+    rb_warn("%s"
+            "using doesn't call the given block"
+            "%s.",
+      klass, anon);
 }
 
 /*
@@ -1469,7 +1478,7 @@ mod_using(VALUE self, VALUE module)
 
     if (prev_frame_func()) {
         rb_raise(rb_eRuntimeError,
-                 "Module#using is not permitted in methods");
+          "Module#using is not permitted in methods");
     }
     if (prev_cfp && prev_cfp->self != self) {
         rb_raise(rb_eRuntimeError, "Module#using is not called on self");
@@ -1480,7 +1489,6 @@ mod_using(VALUE self, VALUE module)
     rb_using_module(rb_vm_cref_replace_with_duplicated_cref(), module);
     return self;
 }
-
 
 /*
  *  call-seq:
@@ -1636,7 +1644,7 @@ refinement_import_methods_i(ID key, VALUE value, void *data)
     struct refinement_import_methods_arg *arg = (struct refinement_import_methods_arg *)data;
 
     if (me->def->type != VM_METHOD_TYPE_ISEQ) {
-        rb_raise(rb_eArgError, "Can't import method which is not defined with Ruby code: %"PRIsVALUE"#%"PRIsVALUE, rb_class_path(arg->module), rb_id2str(key));
+        rb_raise(rb_eArgError, "Can't import method which is not defined with Ruby code: %" PRIsVALUE "#%" PRIsVALUE, rb_class_path(arg->module), rb_id2str(key));
     }
     rb_cref_t *new_cref = rb_vm_cref_dup_without_refinements(me->def->body.iseq.cref);
     CREF_REFINEMENTS_SET(new_cref, CREF_REFINEMENTS(arg->cref));
@@ -1658,7 +1666,7 @@ refinement_import_methods(int argc, VALUE *argv, VALUE refinement)
     for (i = 0; i < argc; i++) {
         Check_Type(argv[i], T_MODULE);
         if (RCLASS_SUPER(argv[i])) {
-            rb_warn("%"PRIsVALUE" has ancestors, but Refinement#import_methods doesn't import their methods", rb_class_path(argv[i]));
+            rb_warn("%" PRIsVALUE " has ancestors, but Refinement#import_methods doesn't import their methods", rb_class_path(argv[i]));
         }
     }
     arg.cref = rb_vm_cref_replace_with_duplicated_cref();
@@ -1805,12 +1813,13 @@ top_include(int argc, VALUE *argv, VALUE self)
 static VALUE
 top_using(VALUE self, VALUE module)
 {
-    const rb_cref_t *cref = CREF_NEXT(rb_vm_cref());;
+    const rb_cref_t *cref = CREF_NEXT(rb_vm_cref());
+    ;
     rb_control_frame_t *prev_cfp = previous_frame(GET_EC());
     rb_thread_t *th = GET_THREAD();
 
     if ((th->top_wrapper ? CREF_NEXT(cref) : cref) ||
-        (prev_cfp && rb_vm_frame_method_entry(prev_cfp))) {
+      (prev_cfp && rb_vm_frame_method_entry(prev_cfp))) {
         rb_raise(rb_eRuntimeError, "main.using is permitted only at toplevel");
     }
     if (rb_block_given_p()) {
@@ -1832,8 +1841,8 @@ errinfo_place(const rb_execution_context_t *ec)
                 return &cfp->ep[VM_ENV_INDEX_LAST_LVAR];
             }
             else if (ISEQ_BODY(cfp->iseq)->type == ISEQ_TYPE_ENSURE &&
-                     !THROW_DATA_P(cfp->ep[VM_ENV_INDEX_LAST_LVAR]) &&
-                     !FIXNUM_P(cfp->ep[VM_ENV_INDEX_LAST_LVAR])) {
+              !THROW_DATA_P(cfp->ep[VM_ENV_INDEX_LAST_LVAR]) &&
+              !FIXNUM_P(cfp->ep[VM_ENV_INDEX_LAST_LVAR])) {
                 return &cfp->ep[VM_ENV_INDEX_LAST_LVAR];
             }
         }
@@ -2060,9 +2069,9 @@ Init_eval(void)
     rb_define_private_method(rb_cModule, "using", mod_using, 1);
     rb_define_method(rb_cModule, "refinements", mod_refinements, 0);
     rb_define_singleton_method(rb_cModule, "used_modules",
-                               rb_mod_s_used_modules, 0);
+      rb_mod_s_used_modules, 0);
     rb_define_singleton_method(rb_cModule, "used_refinements",
-                               rb_mod_s_used_refinements, 0);
+      rb_mod_s_used_refinements, 0);
     rb_undef_method(rb_cClass, "refine");
     rb_define_private_method(rb_cRefinement, "import_methods", refinement_import_methods, -1);
     rb_define_method(rb_cRefinement, "refined_class", rb_refinement_module_get_refined_class, 0);
@@ -2079,9 +2088,9 @@ Init_eval(void)
     rb_define_singleton_method(rb_cModule, "constants", rb_mod_s_constants, -1);
 
     rb_define_private_method(rb_singleton_class(rb_vm_top_self()),
-                             "include", top_include, -1);
+      "include", top_include, -1);
     rb_define_private_method(rb_singleton_class(rb_vm_top_self()),
-                             "using", top_using, 1);
+      "using", top_using, 1);
 
     rb_define_method(rb_mKernel, "extend", rb_obj_extend, -1);
 

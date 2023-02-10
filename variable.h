@@ -1,4 +1,4 @@
-#ifndef RUBY_TOPLEVEL_VARIABLE_H                         /*-*-C-*-vi:se ft=c:*/
+#ifndef RUBY_TOPLEVEL_VARIABLE_H /*-*-C-*-vi:se ft=c:*/
 #define RUBY_TOPLEVEL_VARIABLE_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -24,6 +24,5 @@ int rb_ivar_generic_ivtbl_lookup(VALUE obj, struct gen_ivtbl **);
 #if !SHAPE_IN_BASIC_FLAGS
 shape_id_t rb_generic_shape_id(VALUE obj);
 #endif
-
 
 #endif /* RUBY_TOPLEVEL_VARIABLE_H */

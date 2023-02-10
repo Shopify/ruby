@@ -1,4 +1,4 @@
-#ifndef RBIMPL_CAST_H                                /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_CAST_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_CAST_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -27,7 +27,7 @@
 #include "ruby/internal/has/warning.h"
 #include "ruby/internal/warning_push.h"
 
-#if ! defined(__cplusplus)
+#if !defined(__cplusplus)
 # define RBIMPL_CAST(expr) (expr)
 
 #elif RBIMPL_COMPILER_SINCE(GCC, 4, 6, 0)
@@ -36,12 +36,15 @@
 # define RBIMPL_CAST(expr) (expr)
 # pragma GCC diagnostic ignored "-Wold-style-cast"
 
+// clang-format off
+// There's no way to tell clang format to not add spaces around binary operators.
 #elif RBIMPL_HAS_WARNING("-Wold-style-cast")
-# define RBIMPL_CAST(expr)                   \
-    RBIMPL_WARNING_PUSH()                    \
-    RBIMPL_WARNING_IGNORED(-Wold-style-cast) \
-    (expr)                                  \
+# define RBIMPL_CAST(expr) \
+  RBIMPL_WARNING_PUSH() \
+  RBIMPL_WARNING_IGNORED(-Wold-style-cast) \
+  (expr) \
     RBIMPL_WARNING_POP()
+// clang-format on
 
 #else
 # define RBIMPL_CAST(expr) (expr)

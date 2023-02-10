@@ -1,4 +1,4 @@
-#ifndef RBIMPL_INTERN_RATIONAL_H                     /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_INTERN_RATIONAL_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_INTERN_RATIONAL_H
 /**
  * @file
@@ -51,7 +51,7 @@ VALUE rb_rational_raw(VALUE num, VALUE den);
 #define rb_rational_raw1(x) rb_rational_raw((x), INT2FIX(1))
 
 /** @alias{rb_rational_raw} */
-#define rb_rational_raw2(x,y) rb_rational_raw((x), (y))
+#define rb_rational_raw2(x, y) rb_rational_raw((x), (y))
 
 /**
  * Constructs a Rational,  with reduction.  This returns  for instance `(2/3)r`
@@ -74,7 +74,7 @@ VALUE rb_rational_new(VALUE num, VALUE den);
 #define rb_rational_new1(x) rb_rational_new((x), INT2FIX(1))
 
 /** @alias{rb_rational_new} */
-#define rb_rational_new2(x,y) rb_rational_new((x), (y))
+#define rb_rational_new2(x, y) rb_rational_new((x), (y))
 
 /**
  * Converts various values into a Rational.  This function accepts:
@@ -116,7 +116,7 @@ VALUE rb_Rational(VALUE num, VALUE den);
 #define rb_Rational1(x) rb_Rational((x), INT2FIX(1))
 
 /** @alias{rb_Rational} */
-#define rb_Rational2(x,y) rb_Rational((x), (y))
+#define rb_Rational2(x, y) rb_Rational((x), (y))
 
 RBIMPL_ATTR_PURE()
 /**

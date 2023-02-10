@@ -205,7 +205,8 @@ rb_fiber_scheduler_current(void)
     return rb_fiber_scheduler_current_for_threadptr(GET_THREAD());
 }
 
-VALUE rb_fiber_scheduler_current_for_thread(VALUE thread)
+VALUE
+rb_fiber_scheduler_current_for_thread(VALUE thread)
 {
     return rb_fiber_scheduler_current_for_threadptr(rb_thread_ptr(thread));
 }
@@ -270,7 +271,7 @@ rb_fiber_scheduler_kernel_sleep(VALUE scheduler, VALUE timeout)
 }
 
 VALUE
-rb_fiber_scheduler_kernel_sleepv(VALUE scheduler, int argc, VALUE * argv)
+rb_fiber_scheduler_kernel_sleepv(VALUE scheduler, int argc, VALUE *argv)
 {
     return rb_funcallv(scheduler, id_kernel_sleep, argc, argv);
 }
@@ -437,7 +438,8 @@ rb_fiber_scheduler_io_wait_writable(VALUE scheduler, VALUE io)
  *  Expected to return the 3-tuple of Array of IOs that are ready.
  *
  */
-VALUE rb_fiber_scheduler_io_select(VALUE scheduler, VALUE readables, VALUE writables, VALUE exceptables, VALUE timeout)
+VALUE
+rb_fiber_scheduler_io_select(VALUE scheduler, VALUE readables, VALUE writables, VALUE exceptables, VALUE timeout)
 {
     VALUE arguments[] = {
         readables, writables, exceptables, timeout
@@ -446,7 +448,8 @@ VALUE rb_fiber_scheduler_io_select(VALUE scheduler, VALUE readables, VALUE writa
     return rb_fiber_scheduler_io_selectv(scheduler, 4, arguments);
 }
 
-VALUE rb_fiber_scheduler_io_selectv(VALUE scheduler, int argc, VALUE *argv)
+VALUE
+rb_fiber_scheduler_io_selectv(VALUE scheduler, int argc, VALUE *argv)
 {
     // I wondered about extracting argv, and checking if there is only a single
     // IO instance, and instead calling `io_wait`. However, it would require a
@@ -492,7 +495,6 @@ rb_fiber_scheduler_io_read(VALUE scheduler, VALUE io, VALUE buffer, size_t lengt
 
     return rb_check_funcall(scheduler, id_io_read, 4, arguments);
 }
-
 
 /*
  *  Document-method: Fiber::Scheduler#io_read
@@ -581,7 +583,7 @@ rb_fiber_scheduler_io_read_memory(VALUE scheduler, VALUE io, void *base, size_t 
 VALUE
 rb_fiber_scheduler_io_write_memory(VALUE scheduler, VALUE io, const void *base, size_t size, size_t length)
 {
-    VALUE buffer = rb_io_buffer_new((void*)base, size, RB_IO_BUFFER_LOCKED|RB_IO_BUFFER_READONLY);
+    VALUE buffer = rb_io_buffer_new((void *)base, size, RB_IO_BUFFER_LOCKED | RB_IO_BUFFER_READONLY);
 
     VALUE result = rb_fiber_scheduler_io_write(scheduler, io, buffer, length, 0);
 
@@ -594,7 +596,7 @@ rb_fiber_scheduler_io_write_memory(VALUE scheduler, VALUE io, const void *base, 
 VALUE
 rb_fiber_scheduler_io_close(VALUE scheduler, VALUE io)
 {
-    VALUE arguments[] = {io};
+    VALUE arguments[] = { io };
 
     return rb_check_funcall(scheduler, id_io_close, 1, arguments);
 }

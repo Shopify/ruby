@@ -9,9 +9,9 @@
 
 #if defined(__cplusplus)
 extern "C" {
-#if 0
+# if 0
 } /* satisfy cc-mode */
-#endif
+# endif
 #endif
 
 #include "ruby/defines.h"
@@ -23,7 +23,7 @@ typedef unsigned long st_data_t;
 #elif SIZEOF_LONG_LONG == SIZEOF_VOIDP
 typedef unsigned LONG_LONG st_data_t;
 #else
-# error ---->> st.c requires sizeof(void*) == sizeof(long) or sizeof(LONG_LONG) to be compiled. <<----
+# error---->> st.c requires sizeof(void*) == sizeof(long) or sizeof(LONG_LONG) to be compiled. <<----
 #endif
 #define ST_DATA_T_DEFINED
 
@@ -39,9 +39,9 @@ typedef unsigned LONG_LONG st_data_t;
 #endif
 #ifndef ANYARGS
 # ifdef __cplusplus
-#   define ANYARGS ...
+#  define ANYARGS ...
 # else
-#   define ANYARGS
+#  define ANYARGS
 # endif
 #endif
 
@@ -50,7 +50,7 @@ typedef struct st_table st_table;
 typedef st_data_t st_index_t;
 
 /* Maximal value of unsigned integer type st_index_t.  */
-#define MAX_ST_INDEX_VAL (~(st_index_t) 0)
+#define MAX_ST_INDEX_VAL (~(st_index_t)0)
 
 typedef int st_compare_func(st_data_t, st_data_t);
 typedef st_index_t st_hash_func(st_data_t);
@@ -60,14 +60,14 @@ typedef char st_check_for_sizeof_st_index_t[SIZEOF_VOIDP == (int)sizeof(st_index
 
 struct st_hash_type {
     int (*compare)(st_data_t, st_data_t); /* st_compare_func* */
-    st_index_t (*hash)(st_data_t);        /* st_hash_func* */
+    st_index_t (*hash)(st_data_t); /* st_hash_func* */
 };
 
 #define ST_INDEX_BITS (SIZEOF_ST_INDEX_T * CHAR_BIT)
 
 #if defined(HAVE_BUILTIN___BUILTIN_CHOOSE_EXPR) && defined(HAVE_BUILTIN___BUILTIN_TYPES_COMPATIBLE_P)
 # define ST_DATA_COMPATIBLE_P(type) \
-   __builtin_choose_expr(__builtin_types_compatible_p(type, st_data_t), 1, 0)
+  __builtin_choose_expr(__builtin_types_compatible_p(type, st_data_t), 1, 0)
 #else
 # define ST_DATA_COMPATIBLE_P(type) 0
 #endif
@@ -94,9 +94,13 @@ struct st_table {
     st_table_entry *entries;
 };
 
-#define st_is_member(table,key) st_lookup((table),(key),(st_data_t *)0)
+#define st_is_member(table, key) st_lookup((table), (key), (st_data_t *)0)
 
-enum st_retval {ST_CONTINUE, ST_STOP, ST_DELETE, ST_CHECK, ST_REPLACE};
+enum st_retval { ST_CONTINUE,
+    ST_STOP,
+    ST_DELETE,
+    ST_CHECK,
+    ST_REPLACE };
 
 st_table *rb_st_init_table(const struct st_hash_type *);
 #define st_init_table rb_st_init_table
@@ -188,10 +192,10 @@ void rb_hash_bulk_insert_into_st_table(long, const VALUE *, VALUE);
 RUBY_SYMBOL_EXPORT_END
 
 #if defined(__cplusplus)
-#if 0
+# if 0
 { /* satisfy cc-mode */
-#endif
-}  /* extern "C" { */
+# endif
+} /* extern "C" { */
 #endif
 
 #endif /* RUBY_ST_H */

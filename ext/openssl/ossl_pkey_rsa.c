@@ -11,17 +11,19 @@
 
 #if !defined(OPENSSL_NO_RSA)
 
-#define GetPKeyRSA(obj, pkey) do { \
-    GetPKey((obj), (pkey)); \
-    if (EVP_PKEY_base_id(pkey) != EVP_PKEY_RSA) { /* PARANOIA? */ \
-	ossl_raise(rb_eRuntimeError, "THIS IS NOT A RSA!") ; \
-    } \
-} while (0)
-#define GetRSA(obj, rsa) do { \
-    EVP_PKEY *_pkey; \
-    GetPKeyRSA((obj), _pkey); \
-    (rsa) = EVP_PKEY_get0_RSA(_pkey); \
-} while (0)
+# define GetPKeyRSA(obj, pkey) \
+  do { \
+   GetPKey((obj), (pkey)); \
+   if (EVP_PKEY_base_id(pkey) != EVP_PKEY_RSA) { /* PARANOIA? */ \
+    ossl_raise(rb_eRuntimeError, "THIS IS NOT A RSA!"); \
+   } \
+  } while (0)
+# define GetRSA(obj, rsa) \
+  do { \
+   EVP_PKEY *_pkey; \
+   GetPKeyRSA((obj), _pkey); \
+   (rsa) = EVP_PKEY_get0_RSA(_pkey); \
+  } while (0)
 
 static inline int
 RSA_HAS_PRIVATE(OSSL_3_const RSA *rsa)
@@ -89,7 +91,7 @@ ossl_rsa_initialize(int argc, VALUE *argv, VALUE self)
     /* The RSA.new(size, generator) form is handled by lib/openssl/pkey.rb */
     rb_scan_args(argc, argv, "02", &arg, &pass);
     if (argc == 0) {
-	rsa = RSA_new();
+        rsa = RSA_new();
         if (!rsa)
             ossl_raise(eRSAError, "RSA_new");
         goto legacy;
@@ -123,7 +125,7 @@ ossl_rsa_initialize(int argc, VALUE *argv, VALUE self)
     RTYPEDDATA_DATA(self) = pkey;
     return self;
 
-  legacy:
+legacy:
     BIO_free(in);
     pkey = EVP_PKEY_new();
     if (!pkey || EVP_PKEY_assign_RSA(pkey, rsa) != 1) {
@@ -135,7 +137,7 @@ ossl_rsa_initialize(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
-#ifndef HAVE_EVP_PKEY_DUP
+# ifndef HAVE_EVP_PKEY_DUP
 static VALUE
 ossl_rsa_initialize_copy(VALUE self, VALUE other)
 {
@@ -148,10 +150,10 @@ ossl_rsa_initialize_copy(VALUE self, VALUE other)
     GetRSA(other, rsa);
 
     rsa_new = (RSA *)ASN1_dup((i2d_of_void *)i2d_RSAPrivateKey,
-                              (d2i_of_void *)d2i_RSAPrivateKey,
-                              (char *)rsa);
+      (d2i_of_void *)d2i_RSAPrivateKey,
+      (char *)rsa);
     if (!rsa_new)
-	ossl_raise(eRSAError, "ASN1_dup");
+        ossl_raise(eRSAError, "ASN1_dup");
 
     pkey = EVP_PKEY_new();
     if (!pkey || EVP_PKEY_assign_RSA(pkey, rsa_new) != 1) {
@@ -162,7 +164,7 @@ ossl_rsa_initialize_copy(VALUE self, VALUE other)
 
     return self;
 }
-#endif
+# endif
 
 /*
  * call-seq:
@@ -295,17 +297,17 @@ ossl_rsa_sign_pss(int argc, VALUE *argv, VALUE self)
     int salt_len;
 
     if (!kwargs_ids[0]) {
-	kwargs_ids[0] = rb_intern_const("salt_length");
-	kwargs_ids[1] = rb_intern_const("mgf1_hash");
+        kwargs_ids[0] = rb_intern_const("salt_length");
+        kwargs_ids[1] = rb_intern_const("mgf1_hash");
     }
     rb_scan_args(argc, argv, "2:", &digest, &data, &options);
     rb_get_kwargs(options, kwargs_ids, 2, 0, kwargs);
     if (kwargs[0] == ID2SYM(rb_intern("max")))
-	salt_len = -2; /* RSA_PSS_SALTLEN_MAX_SIGN */
+        salt_len = -2; /* RSA_PSS_SALTLEN_MAX_SIGN */
     else if (kwargs[0] == ID2SYM(rb_intern("digest")))
-	salt_len = -1; /* RSA_PSS_SALTLEN_DIGEST */
+        salt_len = -1; /* RSA_PSS_SALTLEN_DIGEST */
     else
-	salt_len = NUM2INT(kwargs[0]);
+        salt_len = NUM2INT(kwargs[0]);
     mgf1md = ossl_evp_get_digestbyname(kwargs[1]);
 
     pkey = GetPrivPKeyPtr(self);
@@ -316,32 +318,32 @@ ossl_rsa_sign_pss(int argc, VALUE *argv, VALUE self)
 
     md_ctx = EVP_MD_CTX_new();
     if (!md_ctx)
-	goto err;
+        goto err;
 
     if (EVP_DigestSignInit(md_ctx, &pkey_ctx, md, NULL, pkey) != 1)
-	goto err;
+        goto err;
 
     if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) != 1)
-	goto err;
+        goto err;
 
     if (EVP_PKEY_CTX_set_rsa_pss_saltlen(pkey_ctx, salt_len) != 1)
-	goto err;
+        goto err;
 
     if (EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, mgf1md) != 1)
-	goto err;
+        goto err;
 
     if (EVP_DigestSignUpdate(md_ctx, RSTRING_PTR(data), RSTRING_LEN(data)) != 1)
-	goto err;
+        goto err;
 
     if (EVP_DigestSignFinal(md_ctx, (unsigned char *)RSTRING_PTR(signature), &buf_len) != 1)
-	goto err;
+        goto err;
 
     rb_str_set_len(signature, (long)buf_len);
 
     EVP_MD_CTX_free(md_ctx);
     return signature;
 
-  err:
+err:
     EVP_MD_CTX_free(md_ctx);
     ossl_raise(eRSAError, NULL);
 }
@@ -381,17 +383,17 @@ ossl_rsa_verify_pss(int argc, VALUE *argv, VALUE self)
     int result, salt_len;
 
     if (!kwargs_ids[0]) {
-	kwargs_ids[0] = rb_intern_const("salt_length");
-	kwargs_ids[1] = rb_intern_const("mgf1_hash");
+        kwargs_ids[0] = rb_intern_const("salt_length");
+        kwargs_ids[1] = rb_intern_const("mgf1_hash");
     }
     rb_scan_args(argc, argv, "3:", &digest, &signature, &data, &options);
     rb_get_kwargs(options, kwargs_ids, 2, 0, kwargs);
     if (kwargs[0] == ID2SYM(rb_intern("auto")))
-	salt_len = -2; /* RSA_PSS_SALTLEN_AUTO */
+        salt_len = -2; /* RSA_PSS_SALTLEN_AUTO */
     else if (kwargs[0] == ID2SYM(rb_intern("digest")))
-	salt_len = -1; /* RSA_PSS_SALTLEN_DIGEST */
+        salt_len = -1; /* RSA_PSS_SALTLEN_DIGEST */
     else
-	salt_len = NUM2INT(kwargs[0]);
+        salt_len = NUM2INT(kwargs[0]);
     mgf1md = ossl_evp_get_digestbyname(kwargs[1]);
 
     GetPKey(self, pkey);
@@ -401,40 +403,40 @@ ossl_rsa_verify_pss(int argc, VALUE *argv, VALUE self)
 
     md_ctx = EVP_MD_CTX_new();
     if (!md_ctx)
-	goto err;
+        goto err;
 
     if (EVP_DigestVerifyInit(md_ctx, &pkey_ctx, md, NULL, pkey) != 1)
-	goto err;
+        goto err;
 
     if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) != 1)
-	goto err;
+        goto err;
 
     if (EVP_PKEY_CTX_set_rsa_pss_saltlen(pkey_ctx, salt_len) != 1)
-	goto err;
+        goto err;
 
     if (EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, mgf1md) != 1)
-	goto err;
+        goto err;
 
     if (EVP_DigestVerifyUpdate(md_ctx, RSTRING_PTR(data), RSTRING_LEN(data)) != 1)
-	goto err;
+        goto err;
 
     result = EVP_DigestVerifyFinal(md_ctx,
-				   (unsigned char *)RSTRING_PTR(signature),
-				   RSTRING_LEN(signature));
+      (unsigned char *)RSTRING_PTR(signature),
+      RSTRING_LEN(signature));
 
     switch (result) {
-      case 0:
-	ossl_clear_error();
-	EVP_MD_CTX_free(md_ctx);
-	return Qfalse;
-      case 1:
-	EVP_MD_CTX_free(md_ctx);
-	return Qtrue;
-      default:
-	goto err;
+        case 0:
+            ossl_clear_error();
+            EVP_MD_CTX_free(md_ctx);
+            return Qfalse;
+        case 1:
+            EVP_MD_CTX_free(md_ctx);
+            return Qtrue;
+        default:
+            goto err;
     }
 
-  err:
+err:
     EVP_MD_CTX_free(md_ctx);
     ossl_raise(eRSAError, NULL);
 }
@@ -505,16 +507,16 @@ OSSL_PKEY_BN_DEF3(rsa, RSA, crt_params, dmp1, dmq1, iqmp)
 /*
  * INIT
  */
-#define DefRSAConst(x) rb_define_const(cRSA, #x, INT2NUM(RSA_##x))
+# define DefRSAConst(x) rb_define_const(cRSA, # x, INT2NUM(RSA_##x))
 
 void
 Init_ossl_rsa(void)
 {
-#if 0
+# if 0
     mPKey = rb_define_module_under(mOSSL, "PKey");
     cPKey = rb_define_class_under(mPKey, "PKey", rb_cObject);
     ePKeyError = rb_define_class_under(mPKey, "PKeyError", eOSSLError);
-#endif
+# endif
 
     /* Document-class: OpenSSL::PKey::RSAError
      *
@@ -537,9 +539,9 @@ Init_ossl_rsa(void)
     cRSA = rb_define_class_under(mPKey, "RSA", cPKey);
 
     rb_define_method(cRSA, "initialize", ossl_rsa_initialize, -1);
-#ifndef HAVE_EVP_PKEY_DUP
+# ifndef HAVE_EVP_PKEY_DUP
     rb_define_method(cRSA, "initialize_copy", ossl_rsa_initialize_copy, 1);
-#endif
+# endif
 
     rb_define_method(cRSA, "public?", ossl_rsa_is_public, 0);
     rb_define_method(cRSA, "private?", ossl_rsa_is_private, 0);
@@ -564,7 +566,7 @@ Init_ossl_rsa(void)
 
     rb_define_method(cRSA, "params", ossl_rsa_get_params, 0);
 
-/*
+    /*
  * TODO: Test it
     rb_define_method(cRSA, "blinding_on!", ossl_rsa_blinding_on, 0);
     rb_define_method(cRSA, "blinding_off!", ossl_rsa_blinding_off, 0);

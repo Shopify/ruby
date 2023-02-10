@@ -1,4 +1,4 @@
-#ifndef INTERNAL_RATIONAL_H                              /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_RATIONAL_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_RATIONAL_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -8,10 +8,10 @@
  *             file COPYING are met.  Consult the file for details.
  * @brief      Internal header for Rational.
  */
-#include "ruby/internal/config.h"      /* for HAVE_LIBGMP */
-#include "ruby/ruby.h"          /* for struct RBasic */
-#include "internal/numeric.h"   /* for INT_POSITIVE_P */
-#include "ruby_assert.h"        /* for assert */
+#include "ruby/internal/config.h" /* for HAVE_LIBGMP */
+#include "ruby/ruby.h" /* for struct RBasic */
+#include "internal/numeric.h" /* for INT_POSITIVE_P */
+#include "ruby_assert.h" /* for assert */
 
 struct RRational {
     struct RBasic basic;

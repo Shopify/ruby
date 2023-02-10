@@ -53,8 +53,8 @@ static const rb_random_interface_t random_version_zero_if;
 static rb_random_data_type_t version_zero_type = {
     "random/version_zero",
     {
-        rb_random_mark,
-        RUBY_TYPED_DEFAULT_FREE,
+      rb_random_mark,
+      RUBY_TYPED_DEFAULT_FREE,
     },
     RB_RANDOM_PARENT,
     (void *)&random_version_zero_if,
@@ -81,8 +81,8 @@ static const rb_random_interface_t random_version_max_if;
 static rb_random_data_type_t version_max_type = {
     "random/version_max",
     {
-        rb_random_mark,
-        RUBY_TYPED_DEFAULT_FREE,
+      rb_random_mark,
+      RUBY_TYPED_DEFAULT_FREE,
     },
     RB_RANDOM_PARENT,
     (void *)&random_version_max_if,
@@ -126,10 +126,10 @@ static const rb_random_interface_t random_version_zero_if = {
 #undef RUBY_RANDOM_INTERFACE_VERSION_MAJOR
 
 #if DEFINE_VERSION_MAX
-#define RUBY_RANDOM_INTERFACE_VERSION_MAJOR RUBY_RANDOM_INTERFACE_VERSION_MAJOR_MAX
+# define RUBY_RANDOM_INTERFACE_VERSION_MAJOR RUBY_RANDOM_INTERFACE_VERSION_MAJOR_MAX
 static const rb_random_interface_t random_version_max_if = {
     0,
     RB_RANDOM_INTERFACE_DEFINE(bad_version)
 };
-#undef RUBY_RANDOM_INTERFACE_VERSION_MAJOR
+# undef RUBY_RANDOM_INTERFACE_VERSION_MAJOR
 #endif

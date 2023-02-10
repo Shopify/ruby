@@ -1,4 +1,4 @@
-#ifndef RUBY_FIBER_SCHEDULER_H                       /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_FIBER_SCHEDULER_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_FIBER_SCHEDULER_H
 /**
  * @file
@@ -14,7 +14,7 @@
 #include <errno.h>
 
 #ifdef STDC_HEADERS
-#include <stddef.h> /* size_t */
+# include <stddef.h> /* size_t */
 #endif
 
 #include "ruby/ruby.h"
@@ -164,7 +164,7 @@ VALUE rb_fiber_scheduler_kernel_sleep(VALUE scheduler, VALUE duration);
  * @param[in]  argv       Passed as-is to `scheduler.kernel_sleep`
  * @return     What `scheduler.kernel_sleep` returns.
  */
-VALUE rb_fiber_scheduler_kernel_sleepv(VALUE scheduler, int argc, VALUE * argv);
+VALUE rb_fiber_scheduler_kernel_sleepv(VALUE scheduler, int argc, VALUE *argv);
 
 /* Description TBW */
 #if 0

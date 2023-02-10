@@ -2,7 +2,7 @@
 #include <ruby/encoding.h>
 #include <windows.h>
 #ifndef NTDDI_VERSION
-#define NTDDI_VERSION 0x06000000
+# define NTDDI_VERSION 0x06000000
 #endif
 #include <iphlpapi.h>
 

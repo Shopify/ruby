@@ -1,12 +1,12 @@
 #include "internal.h"
 #include "internal/missing.h"
 #if defined HAVE_DLADDR
-#include <dlfcn.h>
+# include <dlfcn.h>
 #endif
 #if defined HAVE_SYS_PARAM_H
-#include <sys/param.h>
+# include <sys/param.h>
 #endif
-static void* stub_options(int argc, char **argv);
+static void *stub_options(int argc, char **argv);
 #define ruby_options stub_options
 #include <main.c>
 #undef ruby_options
@@ -15,7 +15,7 @@ void *
 stub_options(int argc, char **argv)
 {
     char xflag[] = "-x";
-    char *xargv[4] = {NULL, xflag};
+    char *xargv[4] = { NULL, xflag };
     char *cmd = argv[0];
     void *ret;
 

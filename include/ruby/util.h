@@ -1,4 +1,4 @@
-#ifndef RUBY_UTIL_H                                  /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_UTIL_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_UTIL_H 1
 /**
  * @file
@@ -16,11 +16,11 @@
 #include "ruby/internal/config.h"
 
 #ifdef STDC_HEADERS
-# include <stddef.h>                       /* size_t */
+# include <stddef.h> /* size_t */
 #endif
 
 #ifdef HAVE_SYS_TYPES_H
-# include <sys/types.h>                    /* ssize_t */
+# include <sys/types.h> /* ssize_t */
 #endif
 
 #include "ruby/internal/attr/noalias.h"
@@ -34,7 +34,7 @@
 RBIMPL_SYMBOL_EXPORT_BEGIN()
 
 /** an approximation of ceil(n * log10(2)), up to 65536 at least */
-#define DECIMAL_SIZE_OF_BITS(n) (((n) * 3010 + 9998) / 9999)
+#define DECIMAL_SIZE_OF_BITS(n) (((n)*3010 + 9998) / 9999)
 
 /**
  * Character to  number mapping  like `'a'`  -> `10`, `'b'`  -> `11`  etc.  For
@@ -71,7 +71,7 @@ RUBY_EXTERN const char ruby_hexdigits[];
 unsigned long ruby_scan_digits(const char *str, ssize_t len, int base, size_t *retlen, int *overflow);
 
 /** @old{ruby_scan_oct} */
-#define scan_oct(s,l,e) ((int)ruby_scan_oct((s),(l),(e)))
+#define scan_oct(s, l, e) ((int)ruby_scan_oct((s), (l), (e)))
 
 RBIMPL_ATTR_NOALIAS()
 RBIMPL_ATTR_NONNULL(())
@@ -94,7 +94,7 @@ RBIMPL_ATTR_NONNULL(())
 unsigned long ruby_scan_oct(const char *str, size_t len, size_t *consumed);
 
 /** @old{ruby_scan_hex} */
-#define scan_hex(s,l,e) ((int)ruby_scan_hex((s),(l),(e)))
+#define scan_hex(s, l, e) ((int)ruby_scan_hex((s), (l), (e)))
 
 RBIMPL_ATTR_NONNULL(())
 /**
@@ -124,7 +124,7 @@ unsigned long ruby_scan_hex(const char *str, size_t len, size_t *ret);
 # define ruby_qsort qsort_r
 #else
 void ruby_qsort(void *, const size_t, const size_t,
-                int (*)(const void *, const void *, void *), void *);
+  int (*)(const void *, const void *, void *), void *);
 #endif
 
 RBIMPL_ATTR_NONNULL((1))
@@ -209,7 +209,7 @@ double ruby_strtod(const char *str, char **endptr);
 
 #undef strtod
 /** @alias{ruby_strtod} */
-#define strtod(s,e) ruby_strtod((s),(e))
+#define strtod(s, e) ruby_strtod((s), (e))
 
 RBIMPL_ATTR_NONNULL((2))
 /**

@@ -3,35 +3,35 @@
 static VALUE
 rb_integer_pack_raw_m(VALUE klass, VALUE val, VALUE buf, VALUE numwords_arg, VALUE wordsize_arg, VALUE nails, VALUE flags)
 {
-  int sign;
-  size_t numwords = 0;
-  size_t wordsize = NUM2SIZET(wordsize_arg);
+    int sign;
+    size_t numwords = 0;
+    size_t wordsize = NUM2SIZET(wordsize_arg);
 
-  StringValue(buf);
-  rb_str_modify(buf);
-  sign = rb_integer_pack(val,
+    StringValue(buf);
+    rb_str_modify(buf);
+    sign = rb_integer_pack(val,
       RSTRING_PTR(buf), NUM2SIZET(numwords_arg),
       NUM2SIZET(wordsize_arg), NUM2SIZET(nails), NUM2INT(flags));
 
-  return rb_ary_new_from_args(2, INT2NUM(sign), rb_str_new(RSTRING_PTR(buf), wordsize * numwords));
+    return rb_ary_new_from_args(2, INT2NUM(sign), rb_str_new(RSTRING_PTR(buf), wordsize * numwords));
 }
 
 static VALUE
 rb_integer_pack_m(VALUE klass, VALUE val, VALUE numwords_arg, VALUE wordsize_arg, VALUE nails, VALUE flags)
 {
-  int sign;
-  size_t numwords = NUM2SIZET(numwords_arg);
-  size_t wordsize = NUM2SIZET(wordsize_arg);
-  VALUE buf;
+    int sign;
+    size_t numwords = NUM2SIZET(numwords_arg);
+    size_t wordsize = NUM2SIZET(wordsize_arg);
+    VALUE buf;
 
-  if (numwords != 0 && wordsize != 0 && LONG_MAX / wordsize < numwords)
-      rb_raise(rb_eArgError, "too big numwords * wordsize");
-  buf = rb_str_new(NULL, numwords * wordsize);
-  sign = rb_integer_pack(val,
+    if (numwords != 0 && wordsize != 0 && LONG_MAX / wordsize < numwords)
+        rb_raise(rb_eArgError, "too big numwords * wordsize");
+    buf = rb_str_new(NULL, numwords * wordsize);
+    sign = rb_integer_pack(val,
       RSTRING_PTR(buf), numwords,
       wordsize, NUM2SIZET(nails), NUM2INT(flags));
 
-  return rb_assoc_new(INT2NUM(sign), buf);
+    return rb_assoc_new(INT2NUM(sign), buf);
 }
 
 static VALUE
@@ -40,28 +40,28 @@ rb_integer_unpack_m(VALUE klass, VALUE buf, VALUE numwords, VALUE wordsize, VALU
     StringValue(buf);
 
     return rb_integer_unpack(RSTRING_PTR(buf),
-            NUM2SIZET(numwords), NUM2SIZET(wordsize),
-            NUM2SIZET(nails), NUM2INT(flags));
+      NUM2SIZET(numwords), NUM2SIZET(wordsize),
+      NUM2SIZET(nails), NUM2INT(flags));
 }
 
 static VALUE
 rb_integer_test_numbits_2comp_without_sign(VALUE klass, VALUE val)
 {
-  size_t size;
-  int neg = FIXNUM_P(val) ? FIX2LONG(val) < 0 : BIGNUM_NEGATIVE_P(val);
-  size = rb_absint_numwords(val, 1, NULL) - (neg && rb_absint_singlebit_p(val));
-  return SIZET2NUM(size);
+    size_t size;
+    int neg = FIXNUM_P(val) ? FIX2LONG(val) < 0 : BIGNUM_NEGATIVE_P(val);
+    size = rb_absint_numwords(val, 1, NULL) - (neg && rb_absint_singlebit_p(val));
+    return SIZET2NUM(size);
 }
 
 static VALUE
 rb_integer_test_numbytes_2comp_with_sign(VALUE klass, VALUE val)
 {
-  int neg = FIXNUM_P(val) ? FIX2LONG(val) < 0 : BIGNUM_NEGATIVE_P(val);
-  int nlz_bits;
-  size_t size = rb_absint_size(val, &nlz_bits);
-  if (nlz_bits == 0 && !(neg && rb_absint_singlebit_p(val)))
-    size++;
-  return SIZET2NUM(size);
+    int neg = FIXNUM_P(val) ? FIX2LONG(val) < 0 : BIGNUM_NEGATIVE_P(val);
+    int nlz_bits;
+    size_t size = rb_absint_size(val, &nlz_bits);
+    if (nlz_bits == 0 && !(neg && rb_absint_singlebit_p(val)))
+        size++;
+    return SIZET2NUM(size);
 }
 
 void

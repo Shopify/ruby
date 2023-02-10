@@ -11,7 +11,7 @@
 **********************************************************************/
 
 #ifdef HAVE_PTHREAD_NP_H
-#include <pthread_np.h>
+# include <pthread_np.h>
 #endif
 
 #define RB_NATIVETHREAD_LOCK_INIT PTHREAD_MUTEX_INITIALIZER
@@ -46,7 +46,7 @@ struct rb_native_thread {
      */
     struct
 #endif
-      {
+    {
         rb_nativethread_cond_t intr; /* th->interrupt_lock */
         rb_nativethread_cond_t readyq; /* use sched->lock */
     } cond;
@@ -92,10 +92,10 @@ struct rb_thread_sched {
 
 #ifndef RB_THREAD_LOCAL_SPECIFIER_IS_UNSUPPORTED
 # if __STDC_VERSION__ >= 201112
-#   define RB_THREAD_LOCAL_SPECIFIER _Thread_local
+#  define RB_THREAD_LOCAL_SPECIFIER _Thread_local
 # elif defined(__GNUC__)
-  /* note that ICC (linux) and Clang are covered by __GNUC__ */
-#   define RB_THREAD_LOCAL_SPECIFIER __thread
+/* note that ICC (linux) and Clang are covered by __GNUC__ */
+#  define RB_THREAD_LOCAL_SPECIFIER __thread
 # endif
 #endif
 

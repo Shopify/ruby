@@ -1,4 +1,4 @@
-#ifndef RBIMPL_RGENGC_H                              /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_RGENGC_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_RGENGC_H
 /**
  * @file
@@ -218,7 +218,7 @@
  * @param[out]  young  A young object.
  */
 #define RB_OBJ_WRITE(old, slot, young) \
-    RBIMPL_CAST(rb_obj_write((VALUE)(old), (VALUE *)(slot), (VALUE)(young), __FILE__, __LINE__))
+ RBIMPL_CAST(rb_obj_write((VALUE)(old), (VALUE *)(slot), (VALUE)(young), __FILE__, __LINE__))
 
 /**
  * Identical to #RB_OBJ_WRITE(), except it doesn't write any values, but only a
@@ -230,11 +230,11 @@
  * @param[out]  young  A young object.
  */
 #define RB_OBJ_WRITTEN(old, oldv, young) \
-    RBIMPL_CAST(rb_obj_written((VALUE)(old), (VALUE)(oldv), (VALUE)(young), __FILE__, __LINE__))
+ RBIMPL_CAST(rb_obj_written((VALUE)(old), (VALUE)(oldv), (VALUE)(young), __FILE__, __LINE__))
 /** @} */
 
 #define OBJ_PROMOTED_RAW RB_OBJ_PROMOTED_RAW /**< @old{RB_OBJ_PROMOTED_RAW} */
-#define OBJ_PROMOTED     RB_OBJ_PROMOTED     /**< @old{RB_OBJ_PROMOTED} */
+#define OBJ_PROMOTED RB_OBJ_PROMOTED /**< @old{RB_OBJ_PROMOTED} */
 #define OBJ_WB_UNPROTECT RB_OBJ_WB_UNPROTECT /**< @old{RB_OBJ_WB_UNPROTECT} */
 
 /**
@@ -258,7 +258,7 @@
  * @shyouhei doesn't understand why this has to be visible from extensions.
  */
 #define RB_OBJ_WB_UNPROTECT_FOR(type, obj) \
-    (RGENGC_WB_PROTECTED_##type ? OBJ_WB_UNPROTECT(obj) : obj)
+ (RGENGC_WB_PROTECTED_##type ? OBJ_WB_UNPROTECT(obj) : obj)
 
 /**
  * @private
@@ -270,7 +270,7 @@
 
 /** @cond INTERNAL_MACRO */
 #define RB_OBJ_PROMOTED_RAW RB_OBJ_PROMOTED_RAW
-#define RB_OBJ_PROMOTED     RB_OBJ_PROMOTED
+#define RB_OBJ_PROMOTED RB_OBJ_PROMOTED
 /** @endcond */
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
@@ -323,7 +323,7 @@ static inline bool
 RB_OBJ_PROMOTED_RAW(VALUE obj)
 {
     RBIMPL_ASSERT_OR_ASSUME(RB_FL_ABLE(obj));
-    return RB_FL_ANY_RAW(obj,  RUBY_FL_PROMOTED);
+    return RB_FL_ANY_RAW(obj, RUBY_FL_PROMOTED);
 }
 
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()
@@ -342,7 +342,7 @@ RBIMPL_ATTR_ARTIFICIAL()
 static inline bool
 RB_OBJ_PROMOTED(VALUE obj)
 {
-    if (! RB_FL_ABLE(obj)) {
+    if (!RB_FL_ABLE(obj)) {
         return false;
     }
     else {
@@ -361,11 +361,10 @@ RB_OBJ_PROMOTED(VALUE obj)
  */
 static inline VALUE
 rb_obj_wb_unprotect(
-    VALUE x,
-    RBIMPL_ATTR_MAYBE_UNUSED()
+  VALUE x,
+  RBIMPL_ATTR_MAYBE_UNUSED()
     const char *filename,
-    RBIMPL_ATTR_MAYBE_UNUSED()
-    int line)
+  RBIMPL_ATTR_MAYBE_UNUSED() int line)
 {
 #if USE_RGENGC_LOGGING_WB_UNPROTECT
     RGENGC_LOGGING_WB_UNPROTECT(RBIMPL_CAST((void *)x), filename, line);
@@ -389,14 +388,13 @@ rb_obj_wb_unprotect(
  */
 static inline VALUE
 rb_obj_written(
-    VALUE a,
-    RBIMPL_ATTR_MAYBE_UNUSED()
+  VALUE a,
+  RBIMPL_ATTR_MAYBE_UNUSED()
     VALUE oldv,
-    VALUE b,
-    RBIMPL_ATTR_MAYBE_UNUSED()
+  VALUE b,
+  RBIMPL_ATTR_MAYBE_UNUSED()
     const char *filename,
-    RBIMPL_ATTR_MAYBE_UNUSED()
-    int line)
+  RBIMPL_ATTR_MAYBE_UNUSED() int line)
 {
 #if USE_RGENGC_LOGGING_WB_UNPROTECT
     RGENGC_LOGGING_OBJ_WRITTEN(a, oldv, b, filename, line);
@@ -424,11 +422,10 @@ rb_obj_written(
  */
 static inline VALUE
 rb_obj_write(
-    VALUE a, VALUE *slot, VALUE b,
-    RBIMPL_ATTR_MAYBE_UNUSED()
+  VALUE a, VALUE *slot, VALUE b,
+  RBIMPL_ATTR_MAYBE_UNUSED()
     const char *filename,
-    RBIMPL_ATTR_MAYBE_UNUSED()
-    int line)
+  RBIMPL_ATTR_MAYBE_UNUSED() int line)
 {
 #ifdef RGENGC_LOGGING_WRITE
     RGENGC_LOGGING_WRITE(a, slot, b, filename, line);

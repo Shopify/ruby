@@ -1,4 +1,4 @@
-#ifndef RBIMPL_RHASH_H                               /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_RHASH_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_RHASH_H
 /**
  * @file
@@ -43,7 +43,7 @@
  *             storage  engines.   `h`'s backend  is  not  guaranteed to  be  a
  *             st_table.  This function creates one when necessary.
  */
-#define RHASH_TBL(h)                rb_hash_tbl(h, __FILE__, __LINE__)
+#define RHASH_TBL(h) rb_hash_tbl(h, __FILE__, __LINE__)
 
 /**
  * @private
@@ -56,7 +56,7 @@
  *
  * Declaration of rb_hash_ifnone() is at include/ruby/backward.h.
  */
-#define RHASH_IFNONE(h)             rb_hash_ifnone(h)
+#define RHASH_IFNONE(h) rb_hash_ifnone(h)
 
 /**
  * Queries the size of  the hash.  Size here means the number  of keys that the
@@ -66,7 +66,7 @@
  * @pre        `h` must be of ::RUBY_T_HASH.
  * @return     The size of the hash.
  */
-#define RHASH_SIZE(h)               rb_hash_size_num(h)
+#define RHASH_SIZE(h) rb_hash_size_num(h)
 
 /**
  * Checks if the hash is empty.
@@ -76,7 +76,7 @@
  * @retval     true   It is.
  * @retval     false  It isn't.
  */
-#define RHASH_EMPTY_P(h)            (RHASH_SIZE(h) == 0)
+#define RHASH_EMPTY_P(h) (RHASH_SIZE(h) == 0)
 
 /**
  * Destructively updates the default value of the hash.
@@ -91,7 +91,7 @@
  */
 #define RHASH_SET_IFNONE(h, ifnone) rb_hash_set_ifnone((VALUE)h, ifnone)
 
-struct st_table;  /* in ruby/st.h */
+struct st_table; /* in ruby/st.h */
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
 

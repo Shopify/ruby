@@ -1,4 +1,4 @@
-#ifndef RBIMPL_RSTRUCT_H                             /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_RSTRUCT_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_RSTRUCT_H
 /**
  * @file

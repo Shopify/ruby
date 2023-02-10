@@ -1,4 +1,4 @@
-#ifndef RBIMPL_CONFIG_H                              /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_CONFIG_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_CONFIG_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -27,17 +27,17 @@
 
 #include "ruby/internal/compiler_since.h"
 
-#undef  HAVE_PROTOTYPES
+#undef HAVE_PROTOTYPES
 #define HAVE_PROTOTYPES 1
 
-#undef  HAVE_STDARG_PROTOTYPES
+#undef HAVE_STDARG_PROTOTYPES
 #define HAVE_STDARG_PROTOTYPES 1
 
-#undef  TOKEN_PASTE
-#define TOKEN_PASTE(x,y) x##y
+#undef TOKEN_PASTE
+#define TOKEN_PASTE(x, y) x##y
 
 #if defined(__cplusplus)
-#/* __builtin_choose_expr and __builtin_types_compatible aren't available
+# /* __builtin_choose_expr and __builtin_types_compatible aren't available
 # * on C++.  See https://gcc.gnu.org/onlinedocs/gcc/Other-Builtins.html */
 # undef HAVE_BUILTIN___BUILTIN_CHOOSE_EXPR_CONSTANT_P
 # undef HAVE_BUILTIN___BUILTIN_TYPES_COMPATIBLE_P
@@ -79,7 +79,7 @@
 
 #ifndef STRINGIZE0
 # define STRINGIZE(expr) STRINGIZE0(expr)
-# define STRINGIZE0(expr) #expr
+# define STRINGIZE0(expr) # expr
 #endif
 
 #ifdef AC_APPLE_UNIVERSAL_BUILD
@@ -124,7 +124,7 @@
 #endif
 
 /* Detection of __VA_OPT__ */
-#if ! defined(HAVE_VA_ARGS_MACRO)
+#if !defined(HAVE_VA_ARGS_MACRO)
 # undef HAVE___VA_OPT__
 
 #elif defined(__cplusplus)
@@ -136,8 +136,8 @@
 #else
 # /* Idea taken from: https://stackoverflow.com/a/48045656 */
 # define RBIMPL_TEST3(q, w, e, ...) e
-# define RBIMPL_TEST2(...)          RBIMPL_TEST3(__VA_OPT__(,),1,0,0)
-# define RBIMPL_TEST1()             RBIMPL_TEST2("ruby")
+# define RBIMPL_TEST2(...) RBIMPL_TEST3(__VA_OPT__(, ), 1, 0, 0)
+# define RBIMPL_TEST1() RBIMPL_TEST2("ruby")
 # if RBIMPL_TEST1()
 #  define HAVE___VA_OPT__
 # else

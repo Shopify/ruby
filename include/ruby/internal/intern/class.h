@@ -1,4 +1,4 @@
-#ifndef RBIMPL_INTERN_CLASS_H                        /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_INTERN_CLASS_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_INTERN_CLASS_H
 /**
  * @file
@@ -100,7 +100,6 @@ VALUE rb_define_class_id_under(VALUE outer, ID id, VALUE super);
  */
 VALUE rb_module_new(void);
 
-
 /**
  * Creates a new, anonymous refinement.
  *
@@ -199,7 +198,6 @@ VALUE rb_class_descendants(VALUE klass);
  * @internal
  */
 VALUE rb_class_subclasses(VALUE klass);
-
 
 /**
  *  Returns the attached object for a singleton class.
@@ -362,7 +360,7 @@ RBIMPL_ATTR_NONNULL(())
  * @note        There are in fact 18 different prototypes for func.
  * @see         ::ruby::backward::cxxanyargs::define_method::rb_define_singleton_method
  */
-void rb_define_singleton_method(VALUE obj, const char *mid, VALUE(*func)(ANYARGS), int arity);
+void rb_define_singleton_method(VALUE obj, const char *mid, VALUE (*func)(ANYARGS), int arity);
 
 /**
  * Finds or creates the singleton class of the passed object.

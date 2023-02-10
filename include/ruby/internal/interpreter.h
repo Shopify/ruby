@@ -1,4 +1,4 @@
-#ifndef RBIMPL_INTERPRETER_H                         /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_INTERPRETER_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_INTERPRETER_H
 /**
  * @file
@@ -89,7 +89,7 @@ void ruby_init(void);
  *             value.  Pass it to ruby_executable_node() to detect which.
  * @see        ruby_executable_node
  */
-void* ruby_options(int argc, char** argv);
+void *ruby_options(int argc, char **argv);
 
 /**
  * Checks the return value of ruby_options().
@@ -129,8 +129,8 @@ void ruby_show_copyright(void);
  * Must be placed just after variable declarations.
  */
 #define RUBY_INIT_STACK \
-    VALUE variable_in_this_stack_frame; \
-    ruby_init_stack(&variable_in_this_stack_frame);
+ VALUE variable_in_this_stack_frame; \
+ ruby_init_stack(&variable_in_this_stack_frame);
 /** @} */
 
 /**
@@ -237,7 +237,7 @@ int ruby_exec_node(void *n);
  *
  * @param[in]  name  File name to set.
  */
-void ruby_script(const char* name);
+void ruby_script(const char *name);
 
 /**
  * Identical to ruby_script(), except it takes the name as a Ruby String

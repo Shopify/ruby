@@ -12,10 +12,10 @@
 /* GCC warns about unknown sanitizer, which is annoying. */
 # undef NO_SANITIZE
 # define NO_SANITIZE(x, y) \
-    _Pragma("GCC diagnostic push") \
+  _Pragma("GCC diagnostic push") \
     _Pragma("GCC diagnostic ignored \"-Wattributes\"") \
-    __attribute__((__no_sanitize__(x))) y; \
-    _Pragma("GCC diagnostic pop")
+      __attribute__((__no_sanitize__(x))) y; \
+  _Pragma("GCC diagnostic pop")
 #endif
 
 #undef strtod

@@ -1,4 +1,4 @@
-#ifndef INTERNAL_STRUCT_H                                /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_STRUCT_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_STRUCT_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -8,13 +8,13 @@
  *             file COPYING are met.  Consult the file for details.
  * @brief      Internal header for Struct.
  */
-#include "ruby/internal/stdbool.h"     /* for bool */
-#include "ruby/ruby.h"          /* for struct RBasic */
+#include "ruby/internal/stdbool.h" /* for bool */
+#include "ruby/ruby.h" /* for struct RBasic */
 
 enum {
     RSTRUCT_EMBED_LEN_MAX = RVALUE_EMBED_LEN_MAX,
-    RSTRUCT_EMBED_LEN_MASK = (RUBY_FL_USER2|RUBY_FL_USER1),
-    RSTRUCT_EMBED_LEN_SHIFT = (RUBY_FL_USHIFT+1),
+    RSTRUCT_EMBED_LEN_MASK = (RUBY_FL_USER2 | RUBY_FL_USER1),
+    RSTRUCT_EMBED_LEN_SHIFT = (RUBY_FL_USHIFT + 1),
     RSTRUCT_TRANSIENT_FLAG = FL_USER3,
 };
 
@@ -131,7 +131,7 @@ RSTRUCT_CONST_PTR(VALUE st)
 }
 
 static inline void
-RSTRUCT_SET(VALUE st, long k,  VALUE v)
+RSTRUCT_SET(VALUE st, long k, VALUE v)
 {
     RB_OBJ_WRITE(st, &RSTRUCT_CONST_PTR(st)[k], v);
 }

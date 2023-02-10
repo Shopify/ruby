@@ -15,9 +15,14 @@ numhash_memsize(const void *ptr)
 
 static const rb_data_type_t numhash_type = {
     "numhash",
-    {0, numhash_free, numhash_memsize,},
-    0, 0,
-    RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED,
+    {
+      0,
+      numhash_free,
+      numhash_memsize,
+    },
+    0,
+    0,
+    RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
 };
 
 static VALUE
@@ -78,13 +83,13 @@ update_func(st_data_t *key, st_data_t *value, st_data_t arg, int existing)
 {
     VALUE ret = rb_yield_values(existing ? 2 : 1, (VALUE)*key, (VALUE)*value);
     switch (ret) {
-      case Qfalse:
-        return ST_STOP;
-      case Qnil:
-        return ST_DELETE;
-      default:
-        *value = ret;
-        return ST_CONTINUE;
+        case Qfalse:
+            return ST_STOP;
+        case Qnil:
+            return ST_DELETE;
+        default:
+            *value = ret;
+            return ST_CONTINUE;
     }
 }
 

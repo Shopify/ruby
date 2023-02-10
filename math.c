@@ -32,11 +32,11 @@ VALUE rb_eMathDomainError;
 #define Get_Double(x) rb_num_to_dbl(x)
 
 #define domain_error(msg) \
-    rb_raise(rb_eMathDomainError, "Numerical argument is out of domain - " msg)
+ rb_raise(rb_eMathDomainError, "Numerical argument is out of domain - " msg)
 #define domain_check_min(val, min, msg) \
-    ((val) < (min) ? domain_error(msg) : (void)0)
+ ((val) < (min) ? domain_error(msg) : (void)0)
 #define domain_check_range(val, min, max, msg) \
-    ((val) < (min) || (max) < (val) ? domain_error(msg) : (void)0)
+ ((val) < (min) || (max) < (val) ? domain_error(msg) : (void)0)
 
 /*
  *  call-seq:
@@ -86,7 +86,6 @@ math_atan2(VALUE unused_obj, VALUE y, VALUE x)
 #endif
     return DBL2NUM(atan2(dy, dx));
 }
-
 
 /*
  *  call-seq:
@@ -141,7 +140,6 @@ math_sin(VALUE unused_obj, VALUE x)
 {
     return DBL2NUM(sin(Get_Double(x)));
 }
-
 
 /*
  *  call-seq:
@@ -323,7 +321,7 @@ tanh(double x)
     const double c = cosh(x);
     if (!isinf(c)) return sinh(x) / c;
 # else
-    const double e = exp(x+x);
+    const double e = exp(x + x);
     if (!isinf(e)) return (e - 1) / (e + 1);
 # endif
     return x > 0 ? 1.0 : -1.0;
@@ -531,7 +529,7 @@ get_double_rshift(VALUE x, size_t *pnumbits)
     size_t numbits;
 
     if (RB_BIGNUM_TYPE_P(x) && BIGNUM_POSITIVE_P(x) &&
-            DBL_MAX_EXP <= (numbits = rb_absint_numwords(x, 1, NULL))) {
+      DBL_MAX_EXP <= (numbits = rb_absint_numwords(x, 1, NULL))) {
         numbits -= DBL_MANT_DIG;
         x = rb_big_rshift(x, SIZET2NUM(numbits));
     }
@@ -556,15 +554,15 @@ math_log1(VALUE x)
 }
 
 #ifndef log2
-#ifndef HAVE_LOG2
+# ifndef HAVE_LOG2
 double
 log2(double x)
 {
-    return log10(x)/log10(2.0);
+    return log10(x) / log10(2.0);
 }
-#else
+# else
 extern double log2(double);
-#endif
+# endif
 #endif
 
 /*
@@ -940,7 +938,7 @@ math_gamma(VALUE unused_obj, VALUE x)
          * impossible to represent exactly in IEEE 754 double which have
          * 53bit mantissa. */
     };
-    enum {NFACT_TABLE = numberof(fact_table)};
+    enum { NFACT_TABLE = numberof(fact_table) };
     double d;
     d = Get_Double(x);
     /* check for domain error */
@@ -1002,7 +1000,7 @@ static VALUE
 math_lgamma(VALUE unused_obj, VALUE x)
 {
     double d;
-    int sign=1;
+    int sign = 1;
     VALUE v;
     d = Get_Double(x);
     /* check for domain error */
@@ -1018,34 +1016,32 @@ math_lgamma(VALUE unused_obj, VALUE x)
     return rb_assoc_new(v, INT2FIX(sign));
 }
 
-
 #define exp1(n) \
-VALUE \
-rb_math_##n(VALUE x)\
-{\
-    return math_##n(0, x);\
-}
+ VALUE \
+ rb_math_##n(VALUE x) \
+ { \
+  return math_##n(0, x); \
+ }
 
 #define exp2(n) \
-VALUE \
-rb_math_##n(VALUE x, VALUE y)\
-{\
-    return math_##n(0, x, y);\
-}
+ VALUE \
+ rb_math_##n(VALUE x, VALUE y) \
+ { \
+  return math_##n(0, x, y); \
+ }
 
 exp2(atan2)
-exp1(cos)
-exp1(cosh)
-exp1(exp)
-exp2(hypot)
-exp1(sin)
-exp1(sinh)
+  exp1(cos)
+    exp1(cosh)
+      exp1(exp)
+        exp2(hypot)
+          exp1(sin)
+            exp1(sinh)
 #if 0
 exp1(sqrt)
 #endif
 
-
-/*
+  /*
  *  Document-class: Math::DomainError
  *
  *  Raised when a mathematical function is evaluated outside of its
@@ -1061,16 +1057,14 @@ exp1(sqrt)
  *     Math::DomainError: Numerical argument is out of domain - "acos"
  */
 
-/*
+  /*
  *  Document-class: Math
  *
  *  :include: doc/math/math.rdoc
  *
  */
 
-
-void
-InitVM_Math(void)
+  void InitVM_Math(void)
 {
     rb_mMath = rb_define_module("Math");
     rb_eMathDomainError = rb_define_class_under(rb_mMath, "DomainError", rb_eStandardError);
@@ -1114,7 +1108,7 @@ InitVM_Math(void)
 
     rb_define_module_function(rb_mMath, "hypot", math_hypot, 2);
 
-    rb_define_module_function(rb_mMath, "erf",  math_erf,  1);
+    rb_define_module_function(rb_mMath, "erf", math_erf, 1);
     rb_define_module_function(rb_mMath, "erfc", math_erfc, 1);
 
     rb_define_module_function(rb_mMath, "gamma", math_gamma, 1);

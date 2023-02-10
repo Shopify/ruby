@@ -1,4 +1,4 @@
-#ifndef RBIMPL_MEMORY_H                              /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_MEMORY_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_MEMORY_H
 /**
  * @file
@@ -158,17 +158,19 @@ typedef uint128_t DSIZE_T;
  * @post   `v` is still alive.
  */
 #ifdef __GNUC__
-#define RB_GC_GUARD(v) \
-    (*__extension__ ({ \
-        volatile VALUE *rb_gc_guarded_ptr = &(v); \
-        __asm__("" : : "m"(rb_gc_guarded_ptr)); \
-        rb_gc_guarded_ptr; \
-    }))
+# define RB_GC_GUARD(v) \
+  (*__extension__({ \
+volatile VALUE *rb_gc_guarded_ptr = &(v); \
+__asm__("" \
+:  \
+: "m"(rb_gc_guarded_ptr)); \
+rb_gc_guarded_ptr; \
+  }))
 #elif defined _MSC_VER
-#define RB_GC_GUARD(v) (*rb_gc_guarded_ptr(&(v)))
+# define RB_GC_GUARD(v) (*rb_gc_guarded_ptr(&(v)))
 #else
-#define HAVE_RB_GC_GUARDED_PTR_VAL 1
-#define RB_GC_GUARD(v) (*rb_gc_guarded_ptr_val(&(v),(v)))
+# define HAVE_RB_GC_GUARDED_PTR_VAL 1
+# define RB_GC_GUARD(v) (*rb_gc_guarded_ptr_val(&(v), (v)))
 #endif
 
 /* Casts needed because void* is NOT compatible with others in C++. */
@@ -190,7 +192,7 @@ typedef uint128_t DSIZE_T;
  *             failure to pass it to system free(), because the system and Ruby
  *             might or might not share the same malloc() implementation.
  */
-#define RB_ALLOC_N(type,n)  RBIMPL_CAST((type *)ruby_xmalloc2((n), sizeof(type)))
+#define RB_ALLOC_N(type, n) RBIMPL_CAST((type *)ruby_xmalloc2((n), sizeof(type)))
 
 /**
  * Shorthand of #RB_ALLOC_N with `n=1`.
@@ -204,7 +206,7 @@ typedef uint128_t DSIZE_T;
  *             failure to pass it to system free(), because the system and Ruby
  *             might or might not share the same malloc() implementation.
  */
-#define RB_ALLOC(type)      RBIMPL_CAST((type *)ruby_xmalloc(sizeof(type)))
+#define RB_ALLOC(type) RBIMPL_CAST((type *)ruby_xmalloc(sizeof(type)))
 
 /**
  * Identical to  #RB_ALLOC_N() but also  nullifies the allocated  region before
@@ -225,7 +227,7 @@ typedef uint128_t DSIZE_T;
  *             failure to pass it to system free(), because the system and Ruby
  *             might or might not share the same malloc() implementation.
  */
-#define RB_ZALLOC_N(type,n) RBIMPL_CAST((type *)ruby_xcalloc((n), sizeof(type)))
+#define RB_ZALLOC_N(type, n) RBIMPL_CAST((type *)ruby_xcalloc((n), sizeof(type)))
 
 /**
  * Shorthand of #RB_ZALLOC_N with `n=1`.
@@ -240,7 +242,7 @@ typedef uint128_t DSIZE_T;
  *             failure to pass it to system free(), because the system and Ruby
  *             might or might not share the same malloc() implementation.
  */
-#define RB_ZALLOC(type)     (RB_ZALLOC_N(type, 1))
+#define RB_ZALLOC(type) (RB_ZALLOC_N(type, 1))
 
 /**
  * Convenient macro that reallocates an array with a new size.
@@ -273,8 +275,8 @@ typedef uint128_t DSIZE_T;
  *             failure to pass it to system free(), because the system and Ruby
  *             might or might not share the same malloc() implementation.
  */
-#define RB_REALLOC_N(var,type,n) \
-    ((var) = RBIMPL_CAST((type *)ruby_xrealloc2((void *)(var), (n), sizeof(type))))
+#define RB_REALLOC_N(var, type, n) \
+ ((var) = RBIMPL_CAST((type *)ruby_xrealloc2((void *)(var), (n), sizeof(type))))
 
 /**
  * @deprecated  This  macro is  dangerous (does  not bother  stack overflow  at
@@ -283,8 +285,8 @@ typedef uint128_t DSIZE_T;
  * @param       n     Length of the array.
  * @return      A pointer on stack.
  */
-#define ALLOCA_N(type,n) \
-    RBIMPL_CAST((type *)alloca(rbimpl_size_mul_or_raise(sizeof(type), (n))))
+#define ALLOCA_N(type, n) \
+ RBIMPL_CAST((type *)alloca(rbimpl_size_mul_or_raise(sizeof(type), (n))))
 
 /**
  * Identical to #RB_ALLOCV_N(), except that it allocates a number of bytes and
@@ -295,9 +297,9 @@ typedef uint128_t DSIZE_T;
  * @return  A void pointer to `n` bytes storage.
  * @note    `n` may be evaluated twice.
  */
-#define RB_ALLOCV(v, n)        \
-    ((n) < RUBY_ALLOCV_LIMIT ? \
-     ((v) = 0, alloca(n)) :    \
+#define RB_ALLOCV(v, n) \
+ ((n) < RUBY_ALLOCV_LIMIT ? \
+     ((v) = 0, alloca(n)) : \
      rb_alloc_tmp_buffer(&(v), (n)))
 
 /**
@@ -327,11 +329,10 @@ typedef uint128_t DSIZE_T;
  * @return  An array of `n` elements of `type`.
  * @note    `n` may be evaluated twice.
  */
-#define RB_ALLOCV_N(type, v, n)                             \
-    RBIMPL_CAST((type *)                                     \
-        (((size_t)(n) < RUBY_ALLOCV_LIMIT / sizeof(type)) ? \
-         ((v) = 0, alloca((n) * sizeof(type))) :            \
-         rb_alloc_tmp_buffer2(&(v), (n), sizeof(type))))
+#define RB_ALLOCV_N(type, v, n) \
+ RBIMPL_CAST((type *)(((size_t)(n) < RUBY_ALLOCV_LIMIT / sizeof(type)) ? \
+     ((v) = 0, alloca((n) * sizeof(type))) : \
+     rb_alloc_tmp_buffer2(&(v), (n), sizeof(type))))
 
 /**
  * Polite way to declare that the given  array is not used any longer.  Calling
@@ -351,7 +352,7 @@ typedef uint128_t DSIZE_T;
  * @return  `p`.
  * @post    First `n` elements of `p` are squashed.
  */
-#define MEMZERO(p,type,n) memset((p), 0, rbimpl_size_mul_or_raise(sizeof(type), (n)))
+#define MEMZERO(p, type, n) memset((p), 0, rbimpl_size_mul_or_raise(sizeof(type), (n)))
 
 /**
  * Handy macro to call memcpy.
@@ -363,7 +364,7 @@ typedef uint128_t DSIZE_T;
  * @return  `p1`.
  * @post    First `n` elements of `p2` are copied into `p1`.
  */
-#define MEMCPY(p1,p2,type,n) ruby_nonempty_memcpy((p1), (p2), rbimpl_size_mul_or_raise(sizeof(type), (n)))
+#define MEMCPY(p1, p2, type, n) ruby_nonempty_memcpy((p1), (p2), rbimpl_size_mul_or_raise(sizeof(type), (n)))
 
 /**
  * Handy macro to call memmove.
@@ -375,7 +376,7 @@ typedef uint128_t DSIZE_T;
  * @return `p1`.
  * @post   First `n` elements of `p2` are copied into `p1`.
  */
-#define MEMMOVE(p1,p2,type,n) memmove((p1), (p2), rbimpl_size_mul_or_raise(sizeof(type), (n)))
+#define MEMMOVE(p1, p2, type, n) memmove((p1), (p2), rbimpl_size_mul_or_raise(sizeof(type), (n)))
 
 /**
  * Handy macro to call memcmp
@@ -388,15 +389,15 @@ typedef uint128_t DSIZE_T;
  * @retval  0     `p1` is equal to `p2`.
  * @retval  >0    `p1` is "greater" than `p2`.
  */
-#define MEMCMP(p1,p2,type,n) memcmp((p1), (p2), rbimpl_size_mul_or_raise(sizeof(type), (n)))
+#define MEMCMP(p1, p2, type, n) memcmp((p1), (p2), rbimpl_size_mul_or_raise(sizeof(type), (n)))
 
-#define ALLOC_N    RB_ALLOC_N    /**< @old{RB_ALLOC_N} */
-#define ALLOC      RB_ALLOC      /**< @old{RB_ALLOC} */
-#define ZALLOC_N   RB_ZALLOC_N   /**< @old{RB_ZALLOC_N} */
-#define ZALLOC     RB_ZALLOC     /**< @old{RB_ZALLOC} */
-#define REALLOC_N  RB_REALLOC_N  /**< @old{RB_REALLOC_N} */
-#define ALLOCV     RB_ALLOCV     /**< @old{RB_ALLOCV} */
-#define ALLOCV_N   RB_ALLOCV_N   /**< @old{RB_ALLOCV_N} */
+#define ALLOC_N RB_ALLOC_N /**< @old{RB_ALLOC_N} */
+#define ALLOC RB_ALLOC /**< @old{RB_ALLOC} */
+#define ZALLOC_N RB_ZALLOC_N /**< @old{RB_ZALLOC_N} */
+#define ZALLOC RB_ZALLOC /**< @old{RB_ZALLOC} */
+#define REALLOC_N RB_REALLOC_N /**< @old{RB_REALLOC_N} */
+#define ALLOCV RB_ALLOCV /**< @old{RB_ALLOCV} */
+#define ALLOCV_N RB_ALLOCV_N /**< @old{RB_ALLOCV_N} */
 #define ALLOCV_END RB_ALLOCV_END /**< @old{RB_ALLOCV_END} */
 
 /**
@@ -411,8 +412,8 @@ typedef uint128_t DSIZE_T;
  * reality is we cannot.
  */
 struct rbimpl_size_mul_overflow_tag {
-    bool left;                  /**< Whether overflow happened or not. */
-    size_t right;               /**< Multiplication result. */
+    bool left; /**< Whether overflow happened or not. */
+    size_t right; /**< Multiplication result. */
 };
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
@@ -435,7 +436,7 @@ void *rb_alloc_tmp_buffer(volatile VALUE *store, long len);
 
 RBIMPL_ATTR_RESTRICT()
 RBIMPL_ATTR_RETURNS_NONNULL()
-RBIMPL_ATTR_ALLOC_SIZE((2,3))
+RBIMPL_ATTR_ALLOC_SIZE((2, 3))
 RBIMPL_ATTR_NONNULL(())
 /**
  * @private
@@ -454,7 +455,7 @@ RBIMPL_ATTR_NONNULL(())
  * Although  the  meaning  of  `count` variable  is  clear,  @shyouhei  doesn't
  * understand its needs.
  */
-void *rb_alloc_tmp_buffer_with_count(volatile VALUE *store, size_t len,size_t count);
+void *rb_alloc_tmp_buffer_with_count(volatile VALUE *store, size_t len, size_t count);
 
 /**
  * @private
@@ -565,7 +566,10 @@ RBIMPL_ATTR_CONST()
 static inline struct rbimpl_size_mul_overflow_tag
 rbimpl_size_mul_overflow(size_t x, size_t y)
 {
-    struct rbimpl_size_mul_overflow_tag ret = { false,  0, };
+    struct rbimpl_size_mul_overflow_tag ret = {
+        false,
+        0,
+    };
 
 #if RBIMPL_HAS_BUILTIN(__builtin_mul_overflow)
     ret.left = __builtin_mul_overflow(x, y, &ret.right);
@@ -574,18 +578,18 @@ rbimpl_size_mul_overflow(size_t x, size_t y)
     RB_GNUC_EXTENSION DSIZE_T dx = x;
     RB_GNUC_EXTENSION DSIZE_T dy = y;
     RB_GNUC_EXTENSION DSIZE_T dz = dx * dy;
-    ret.left  = dz > SIZE_MAX;
+    ret.left = dz > SIZE_MAX;
     ret.right = RBIMPL_CAST((size_t)dz);
 
 #elif defined(_MSC_VER) && defined(_WIN64)
     unsigned __int64 dp = 0;
     unsigned __int64 dz = _umul128(x, y, &dp);
-    ret.left  = RBIMPL_CAST((bool)dp);
+    ret.left = RBIMPL_CAST((bool)dp);
     ret.right = RBIMPL_CAST((size_t)dz);
 
 #else
     /* https://wiki.sei.cmu.edu/confluence/display/c/INT30-C.+Ensure+that+unsigned+integer+operations+do+not+wrap */
-    ret.left  = (y != 0) && (x > SIZE_MAX / y);
+    ret.left = (y != 0) && (x > SIZE_MAX / y);
     ret.right = x * y;
 #endif
 
@@ -611,9 +615,9 @@ static inline size_t
 rbimpl_size_mul_or_raise(size_t x, size_t y)
 {
     struct rbimpl_size_mul_overflow_tag size =
-        rbimpl_size_mul_overflow(x, y);
+      rbimpl_size_mul_overflow(x, y);
 
-    if (RB_LIKELY(! size.left)) {
+    if (RB_LIKELY(!size.left)) {
         return size.right;
     }
     else {

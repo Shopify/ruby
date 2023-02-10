@@ -22,20 +22,20 @@ static VALUE
 ip_cmsg_type_to_sym(int level, int cmsg_type)
 {
     switch (level) {
-      case SOL_SOCKET:
-        return constant_to_sym(cmsg_type, rsock_intern_scm_optname);
-      case IPPROTO_IP:
-        return constant_to_sym(cmsg_type, rsock_intern_ip_optname);
-#ifdef IPPROTO_IPV6
-      case IPPROTO_IPV6:
-        return constant_to_sym(cmsg_type, rsock_intern_ipv6_optname);
-#endif
-      case IPPROTO_TCP:
-        return constant_to_sym(cmsg_type, rsock_intern_tcp_optname);
-      case IPPROTO_UDP:
-        return constant_to_sym(cmsg_type, rsock_intern_udp_optname);
-      default:
-        return INT2NUM(cmsg_type);
+        case SOL_SOCKET:
+            return constant_to_sym(cmsg_type, rsock_intern_scm_optname);
+        case IPPROTO_IP:
+            return constant_to_sym(cmsg_type, rsock_intern_ip_optname);
+# ifdef IPPROTO_IPV6
+        case IPPROTO_IPV6:
+            return constant_to_sym(cmsg_type, rsock_intern_ipv6_optname);
+# endif
+        case IPPROTO_TCP:
+            return constant_to_sym(cmsg_type, rsock_intern_tcp_optname);
+        case IPPROTO_UDP:
+            return constant_to_sym(cmsg_type, rsock_intern_udp_optname);
+        default:
+            return INT2NUM(cmsg_type);
     }
 }
 
@@ -177,7 +177,7 @@ ancillary_data(VALUE self)
     return v;
 }
 
-#ifdef SCM_RIGHTS
+# ifdef SCM_RIGHTS
 /*
  * call-seq:
  *   Socket::AncillaryData.unix_rights(io1, io2, ...) => ancillarydata
@@ -195,7 +195,7 @@ ancillary_s_unix_rights(int argc, VALUE *argv, VALUE klass)
 
     ary = rb_ary_new();
 
-    for (i = 0 ; i < argc; i++) {
+    for (i = 0; i < argc; i++) {
         VALUE obj = argv[i];
         if (!RB_TYPE_P(obj, T_FILE)) {
             rb_raise(rb_eTypeError, "IO expected");
@@ -205,7 +205,7 @@ ancillary_s_unix_rights(int argc, VALUE *argv, VALUE klass)
 
     str = rb_str_buf_new(sizeof(int) * argc);
 
-    for (i = 0 ; i < argc; i++) {
+    for (i = 0; i < argc; i++) {
         VALUE obj = RARRAY_AREF(ary, i);
         rb_io_t *fptr;
         int fd;
@@ -218,11 +218,11 @@ ancillary_s_unix_rights(int argc, VALUE *argv, VALUE klass)
     rb_ivar_set(result, rb_intern("unix_rights"), ary);
     return result;
 }
-#else
-#define ancillary_s_unix_rights rb_f_notimplement
-#endif
+# else
+#  define ancillary_s_unix_rights rb_f_notimplement
+# endif
 
-#ifdef SCM_RIGHTS
+# ifdef SCM_RIGHTS
 /*
  * call-seq:
  *   ancillarydata.unix_rights => array-of-IOs or nil
@@ -266,11 +266,11 @@ ancillary_unix_rights(VALUE self)
 
     return rb_attr_get(self, rb_intern("unix_rights"));
 }
-#else
-#define ancillary_unix_rights rb_f_notimplement
-#endif
+# else
+#  define ancillary_unix_rights rb_f_notimplement
+# endif
 
-#if defined(SCM_TIMESTAMP) || defined(SCM_TIMESTAMPNS) || defined(SCM_BINTIME)
+# if defined(SCM_TIMESTAMP) || defined(SCM_TIMESTAMPNS) || defined(SCM_BINTIME)
 /*
  * call-seq:
  *   ancillarydata.timestamp => time
@@ -307,49 +307,49 @@ ancillary_timestamp(VALUE self)
     type = ancillary_type(self);
     data = ancillary_data(self);
 
-# ifdef SCM_TIMESTAMP
+#  ifdef SCM_TIMESTAMP
     if (level == SOL_SOCKET && type == SCM_TIMESTAMP &&
-        RSTRING_LEN(data) == sizeof(struct timeval)) {
+      RSTRING_LEN(data) == sizeof(struct timeval)) {
         struct timeval tv;
-        memcpy((char*)&tv, RSTRING_PTR(data), sizeof(tv));
+        memcpy((char *)&tv, RSTRING_PTR(data), sizeof(tv));
         result = rb_time_new(tv.tv_sec, tv.tv_usec);
     }
-# endif
+#  endif
 
-# ifdef SCM_TIMESTAMPNS
+#  ifdef SCM_TIMESTAMPNS
     if (level == SOL_SOCKET && type == SCM_TIMESTAMPNS &&
-        RSTRING_LEN(data) == sizeof(struct timespec)) {
+      RSTRING_LEN(data) == sizeof(struct timespec)) {
         struct timespec ts;
-        memcpy((char*)&ts, RSTRING_PTR(data), sizeof(ts));
+        memcpy((char *)&ts, RSTRING_PTR(data), sizeof(ts));
         result = rb_time_nano_new(ts.tv_sec, ts.tv_nsec);
     }
-# endif
+#  endif
 
-#define add(x,y) (rb_funcall((x), '+', 1, (y)))
-#define mul(x,y) (rb_funcall((x), '*', 1, (y)))
-#define quo(x,y) (rb_funcall((x), rb_intern("quo"), 1, (y)))
+#  define add(x, y) (rb_funcall((x), '+', 1, (y)))
+#  define mul(x, y) (rb_funcall((x), '*', 1, (y)))
+#  define quo(x, y) (rb_funcall((x), rb_intern("quo"), 1, (y)))
 
-# ifdef SCM_BINTIME
+#  ifdef SCM_BINTIME
     if (level == SOL_SOCKET && type == SCM_BINTIME &&
-        RSTRING_LEN(data) == sizeof(struct bintime)) {
+      RSTRING_LEN(data) == sizeof(struct bintime)) {
         struct bintime bt;
         VALUE d, timev;
-        memcpy((char*)&bt, RSTRING_PTR(data), sizeof(bt));
+        memcpy((char *)&bt, RSTRING_PTR(data), sizeof(bt));
         d = ULL2NUM(0x100000000ULL);
-        d = mul(d,d);
+        d = mul(d, d);
         timev = add(TIMET2NUM(bt.sec), quo(ULL2NUM(bt.frac), d));
         result = rb_time_num_new(timev, Qnil);
     }
-# endif
+#  endif
 
     if (result == Qnil)
         rb_raise(rb_eTypeError, "timestamp ancillary data expected");
 
     return result;
 }
-#else
-#define ancillary_timestamp rb_f_notimplement
-#endif
+# else
+#  define ancillary_timestamp rb_f_notimplement
+# endif
 
 /*
  * call-seq:
@@ -371,7 +371,7 @@ ancillary_s_int(VALUE klass, VALUE vfamily, VALUE vlevel, VALUE vtype, VALUE int
     int level = rsock_level_arg(family, vlevel);
     int type = rsock_cmsg_type_arg(family, level, vtype);
     int i = NUM2INT(integer);
-    return ancdata_new(family, level, type, rb_str_new((char*)&i, sizeof(i)));
+    return ancdata_new(family, level, type, rb_str_new((char *)&i, sizeof(i)));
 }
 
 /*
@@ -393,11 +393,11 @@ ancillary_int(VALUE self)
     data = ancillary_data(self);
     if (RSTRING_LEN(data) != sizeof(int))
         rb_raise(rb_eTypeError, "size differ.  expected as sizeof(int)=%d but %ld", (int)sizeof(int), (long)RSTRING_LEN(data));
-    memcpy((char*)&i, RSTRING_PTR(data), sizeof(int));
+    memcpy((char *)&i, RSTRING_PTR(data), sizeof(int));
     return INT2NUM(i);
 }
 
-#if defined(IPPROTO_IP) && defined(IP_PKTINFO) && defined(HAVE_STRUCT_IN_PKTINFO_IPI_SPEC_DST) /* GNU/Linux */
+# if defined(IPPROTO_IP) && defined(IP_PKTINFO) && defined(HAVE_STRUCT_IN_PKTINFO_IPI_SPEC_DST) /* GNU/Linux */
 /*
  * call-seq:
  *   Socket::AncillaryData.ip_pktinfo(addr, ifindex) => ancdata
@@ -457,11 +457,11 @@ ancillary_s_ip_pktinfo(int argc, VALUE *argv, VALUE self)
 
     return ancdata_new(AF_INET, IPPROTO_IP, IP_PKTINFO, rb_str_new((char *)&pktinfo, sizeof(pktinfo)));
 }
-#else
-#define ancillary_s_ip_pktinfo rb_f_notimplement
-#endif
+# else
+#  define ancillary_s_ip_pktinfo rb_f_notimplement
+# endif
 
-#if defined(IPPROTO_IP) && defined(IP_PKTINFO) && defined(HAVE_STRUCT_IN_PKTINFO_IPI_SPEC_DST) /* GNU/Linux */
+# if defined(IPPROTO_IP) && defined(IP_PKTINFO) && defined(HAVE_STRUCT_IN_PKTINFO_IPI_SPEC_DST) /* GNU/Linux */
 /*
  * call-seq:
  *   ancdata.ip_pktinfo => [addr, ifindex, spec_dst]
@@ -495,7 +495,7 @@ ancillary_ip_pktinfo(VALUE self)
     data = ancillary_data(self);
 
     if (level != IPPROTO_IP || type != IP_PKTINFO ||
-        RSTRING_LEN(data) != sizeof(struct in_pktinfo)) {
+      RSTRING_LEN(data) != sizeof(struct in_pktinfo)) {
         rb_raise(rb_eTypeError, "IP_PKTINFO ancillary data expected");
     }
 
@@ -512,11 +512,11 @@ ancillary_ip_pktinfo(VALUE self)
 
     return rb_ary_new3(3, v_addr, UINT2NUM(pktinfo.ipi_ifindex), v_spec_dst);
 }
-#else
-#define ancillary_ip_pktinfo rb_f_notimplement
-#endif
+# else
+#  define ancillary_ip_pktinfo rb_f_notimplement
+# endif
 
-#if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
+# if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
 /*
  * call-seq:
  *   Socket::AncillaryData.ipv6_pktinfo(addr, ifindex) => ancdata
@@ -555,11 +555,11 @@ ancillary_s_ipv6_pktinfo(VALUE self, VALUE v_addr, VALUE v_ifindex)
 
     return ancdata_new(AF_INET6, IPPROTO_IPV6, IPV6_PKTINFO, rb_str_new((char *)&pktinfo, sizeof(pktinfo)));
 }
-#else
-#define ancillary_s_ipv6_pktinfo rb_f_notimplement
-#endif
+# else
+#  define ancillary_s_ipv6_pktinfo rb_f_notimplement
+# endif
 
-#if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
+# if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
 static void
 extract_ipv6_pktinfo(VALUE self, struct in6_pktinfo *pktinfo_ptr, struct sockaddr_in6 *sa_ptr)
 {
@@ -571,7 +571,7 @@ extract_ipv6_pktinfo(VALUE self, struct in6_pktinfo *pktinfo_ptr, struct sockadd
     data = ancillary_data(self);
 
     if (level != IPPROTO_IPV6 || type != IPV6_PKTINFO ||
-        RSTRING_LEN(data) != sizeof(struct in6_pktinfo)) {
+      RSTRING_LEN(data) != sizeof(struct in6_pktinfo)) {
         rb_raise(rb_eTypeError, "IPV6_PKTINFO ancillary data expected");
     }
 
@@ -582,9 +582,9 @@ extract_ipv6_pktinfo(VALUE self, struct in6_pktinfo *pktinfo_ptr, struct sockadd
     if (IN6_IS_ADDR_LINKLOCAL(&sa_ptr->sin6_addr))
         sa_ptr->sin6_scope_id = pktinfo_ptr->ipi6_ifindex;
 }
-#endif
+# endif
 
-#if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
+# if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
 /*
  * call-seq:
  *   ancdata.ipv6_pktinfo => [addr, ifindex]
@@ -610,11 +610,11 @@ ancillary_ipv6_pktinfo(VALUE self)
     v_addr = rsock_addrinfo_new((struct sockaddr *)&sa, (socklen_t)sizeof(sa), PF_INET6, 0, 0, Qnil, Qnil);
     return rb_ary_new3(2, v_addr, UINT2NUM(pktinfo.ipi6_ifindex));
 }
-#else
-#define ancillary_ipv6_pktinfo rb_f_notimplement
-#endif
+# else
+#  define ancillary_ipv6_pktinfo rb_f_notimplement
+# endif
 
-#if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
+# if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
 /*
  * call-seq:
  *   ancdata.ipv6_pktinfo_addr => addr
@@ -637,11 +637,11 @@ ancillary_ipv6_pktinfo_addr(VALUE self)
     extract_ipv6_pktinfo(self, &pktinfo, &sa);
     return rsock_addrinfo_new((struct sockaddr *)&sa, (socklen_t)sizeof(sa), PF_INET6, 0, 0, Qnil, Qnil);
 }
-#else
-#define ancillary_ipv6_pktinfo_addr rb_f_notimplement
-#endif
+# else
+#  define ancillary_ipv6_pktinfo_addr rb_f_notimplement
+# endif
 
-#if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
+# if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) /* IPv6 RFC3542 */
 /*
  * call-seq:
  *   ancdata.ipv6_pktinfo_ifindex => addr
@@ -664,20 +664,20 @@ ancillary_ipv6_pktinfo_ifindex(VALUE self)
     extract_ipv6_pktinfo(self, &pktinfo, &sa);
     return UINT2NUM(pktinfo.ipi6_ifindex);
 }
-#else
-#define ancillary_ipv6_pktinfo_ifindex rb_f_notimplement
-#endif
+# else
+#  define ancillary_ipv6_pktinfo_ifindex rb_f_notimplement
+# endif
 
-#if defined(SOL_SOCKET) && defined(SCM_RIGHTS) /* 4.4BSD */
+# if defined(SOL_SOCKET) && defined(SCM_RIGHTS) /* 4.4BSD */
 static int
 anc_inspect_socket_rights(int level, int type, VALUE data, VALUE ret)
 {
     if (level == SOL_SOCKET && type == SCM_RIGHTS &&
-        0 < RSTRING_LEN(data) && (RSTRING_LEN(data) % sizeof(int) == 0)) {
+      0 < RSTRING_LEN(data) && (RSTRING_LEN(data) % sizeof(int) == 0)) {
         long off;
         for (off = 0; off < RSTRING_LEN(data); off += sizeof(int)) {
             int fd;
-            memcpy((char*)&fd, RSTRING_PTR(data)+off, sizeof(int));
+            memcpy((char *)&fd, RSTRING_PTR(data) + off, sizeof(int));
             rb_str_catf(ret, " %d", fd);
         }
         return 1;
@@ -686,14 +686,14 @@ anc_inspect_socket_rights(int level, int type, VALUE data, VALUE ret)
         return 0;
     }
 }
-#endif
+# endif
 
-#if defined(SCM_CREDENTIALS) /* GNU/Linux */
+# if defined(SCM_CREDENTIALS) /* GNU/Linux */
 static int
 anc_inspect_passcred_credentials(int level, int type, VALUE data, VALUE ret)
 {
     if (level == SOL_SOCKET && type == SCM_CREDENTIALS &&
-        RSTRING_LEN(data) == sizeof(struct ucred)) {
+      RSTRING_LEN(data) == sizeof(struct ucred)) {
         struct ucred cred;
         memcpy(&cred, RSTRING_PTR(data), sizeof(struct ucred));
         rb_str_catf(ret, " pid=%u uid=%u gid=%u", cred.pid, cred.uid, cred.gid);
@@ -704,17 +704,17 @@ anc_inspect_passcred_credentials(int level, int type, VALUE data, VALUE ret)
         return 0;
     }
 }
-#endif
+# endif
 
-#if defined(SCM_CREDS)
-#define INSPECT_SCM_CREDS
+# if defined(SCM_CREDS)
+#  define INSPECT_SCM_CREDS
 static int
 anc_inspect_socket_creds(int level, int type, VALUE data, VALUE ret)
 {
     if (level != SOL_SOCKET && type != SCM_CREDS)
         return 0;
 
-    /*
+        /*
      * FreeBSD has struct cmsgcred and struct sockcred.
      * They use both SOL_SOCKET/SCM_CREDS in the ancillary message.
      * They are not ambiguous from the view of the caller
@@ -725,7 +725,7 @@ anc_inspect_socket_creds(int level, int type, VALUE data, VALUE ret)
      * This heuristics works well except when sc_ngroups == CMGROUP_MAX.
      */
 
-#if defined(HAVE_TYPE_STRUCT_CMSGCRED) /* FreeBSD */
+#  if defined(HAVE_TYPE_STRUCT_CMSGCRED) /* FreeBSD */
     if (RSTRING_LEN(data) == sizeof(struct cmsgcred)) {
         struct cmsgcred cred;
         memcpy(&cred, RSTRING_PTR(data), sizeof(struct cmsgcred));
@@ -744,8 +744,8 @@ anc_inspect_socket_creds(int level, int type, VALUE data, VALUE ret)
         rb_str_cat2(ret, " (cmsgcred)");
         return 1;
     }
-#endif
-#if defined(HAVE_TYPE_STRUCT_SOCKCRED) /* FreeBSD, NetBSD */
+#  endif
+#  if defined(HAVE_TYPE_STRUCT_SOCKCRED) /* FreeBSD, NetBSD */
     if ((size_t)RSTRING_LEN(data) >= SOCKCREDSIZE(0)) {
         struct sockcred cred0, *cred;
         memcpy(&cred0, RSTRING_PTR(data), SOCKCREDSIZE(0));
@@ -768,17 +768,17 @@ anc_inspect_socket_creds(int level, int type, VALUE data, VALUE ret)
             return 1;
         }
     }
-#endif
+#  endif
     return 0;
 }
-#endif
+# endif
 
-#if defined(IPPROTO_IP) && defined(IP_RECVDSTADDR) /* 4.4BSD */
+# if defined(IPPROTO_IP) && defined(IP_RECVDSTADDR) /* 4.4BSD */
 static int
 anc_inspect_ip_recvdstaddr(int level, int type, VALUE data, VALUE ret)
 {
     if (level == IPPROTO_IP && type == IP_RECVDSTADDR &&
-        RSTRING_LEN(data) == sizeof(struct in_addr)) {
+      RSTRING_LEN(data) == sizeof(struct in_addr)) {
         struct in_addr addr;
         char addrbuf[INET_ADDRSTRLEN];
         memcpy(&addr, RSTRING_PTR(data), sizeof(addr));
@@ -792,14 +792,14 @@ anc_inspect_ip_recvdstaddr(int level, int type, VALUE data, VALUE ret)
         return 0;
     }
 }
-#endif
+# endif
 
-#if defined(IPPROTO_IP) && defined(IP_PKTINFO) && defined(HAVE_STRUCT_IN_PKTINFO_IPI_SPEC_DST) /* GNU/Linux */
+# if defined(IPPROTO_IP) && defined(IP_PKTINFO) && defined(HAVE_STRUCT_IN_PKTINFO_IPI_SPEC_DST) /* GNU/Linux */
 static int
 anc_inspect_ip_pktinfo(int level, int type, VALUE data, VALUE ret)
 {
     if (level == IPPROTO_IP && type == IP_PKTINFO &&
-        RSTRING_LEN(data) == sizeof(struct in_pktinfo)) {
+      RSTRING_LEN(data) == sizeof(struct in_pktinfo)) {
         struct in_pktinfo pktinfo;
         char buf[INET_ADDRSTRLEN > IFNAMSIZ ? INET_ADDRSTRLEN : IFNAMSIZ];
         memcpy(&pktinfo, RSTRING_PTR(data), sizeof(pktinfo));
@@ -821,14 +821,14 @@ anc_inspect_ip_pktinfo(int level, int type, VALUE data, VALUE ret)
         return 0;
     }
 }
-#endif
+# endif
 
-#if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) && defined(HAVE_TYPE_STRUCT_IN6_PKTINFO) /* IPv6 RFC3542 */
+# if defined(IPPROTO_IPV6) && defined(IPV6_PKTINFO) && defined(HAVE_TYPE_STRUCT_IN6_PKTINFO) /* IPv6 RFC3542 */
 static int
 anc_inspect_ipv6_pktinfo(int level, int type, VALUE data, VALUE ret)
 {
     if (level == IPPROTO_IPV6 && type == IPV6_PKTINFO &&
-        RSTRING_LEN(data) == sizeof(struct in6_pktinfo)) {
+      RSTRING_LEN(data) == sizeof(struct in6_pktinfo)) {
         struct in6_pktinfo *pktinfo = (struct in6_pktinfo *)RSTRING_PTR(data);
         struct in6_addr addr;
         unsigned int ifindex;
@@ -849,15 +849,15 @@ anc_inspect_ipv6_pktinfo(int level, int type, VALUE data, VALUE ret)
         return 0;
     }
 }
-#endif
+# endif
 
-#ifdef HAVE_GMTIME_R
-# define LOCALTIME(time, tm) localtime_r(&(time), &(tm))
-#else
-# define LOCALTIME(time, tm) ((tm) = *localtime(&(time)))
-#endif
+# ifdef HAVE_GMTIME_R
+#  define LOCALTIME(time, tm) localtime_r(&(time), &(tm))
+# else
+#  define LOCALTIME(time, tm) ((tm) = *localtime(&(time)))
+# endif
 
-#if defined(SCM_TIMESTAMP) /* GNU/Linux, FreeBSD, NetBSD, OpenBSD, MacOS X, Solaris */
+# if defined(SCM_TIMESTAMP) /* GNU/Linux, FreeBSD, NetBSD, OpenBSD, MacOS X, Solaris */
 static int
 inspect_timeval_as_abstime(int level, int optname, VALUE data, VALUE ret)
 {
@@ -866,7 +866,7 @@ inspect_timeval_as_abstime(int level, int optname, VALUE data, VALUE ret)
         time_t time;
         struct tm tm;
         char buf[32];
-        memcpy((char*)&tv, RSTRING_PTR(data), sizeof(tv));
+        memcpy((char *)&tv, RSTRING_PTR(data), sizeof(tv));
         time = tv.tv_sec;
         LOCALTIME(time, tm);
         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
@@ -877,9 +877,9 @@ inspect_timeval_as_abstime(int level, int optname, VALUE data, VALUE ret)
         return 0;
     }
 }
-#endif
+# endif
 
-#if defined(SCM_TIMESTAMPNS) /* GNU/Linux */
+# if defined(SCM_TIMESTAMPNS) /* GNU/Linux */
 static int
 inspect_timespec_as_abstime(int level, int optname, VALUE data, VALUE ret)
 {
@@ -887,7 +887,7 @@ inspect_timespec_as_abstime(int level, int optname, VALUE data, VALUE ret)
         struct timespec ts;
         struct tm tm;
         char buf[32];
-        memcpy((char*)&ts, RSTRING_PTR(data), sizeof(ts));
+        memcpy((char *)&ts, RSTRING_PTR(data), sizeof(ts));
         LOCALTIME(ts.tv_sec, tm);
         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
         rb_str_catf(ret, " %s.%09ld", buf, (long)ts.tv_nsec);
@@ -897,9 +897,9 @@ inspect_timespec_as_abstime(int level, int optname, VALUE data, VALUE ret)
         return 0;
     }
 }
-#endif
+# endif
 
-#if defined(SCM_BINTIME) /* FreeBSD */
+# if defined(SCM_BINTIME) /* FreeBSD */
 static int
 inspect_bintime_as_abstime(int level, int optname, VALUE data, VALUE ret)
 {
@@ -911,7 +911,7 @@ inspect_bintime_as_abstime(int level, int optname, VALUE data, VALUE ret)
         uint64_t tmp1, tmp2;
         uint64_t res_h, res_l;
         char buf[32];
-        memcpy((char*)&bt, RSTRING_PTR(data), sizeof(bt));
+        memcpy((char *)&bt, RSTRING_PTR(data), sizeof(bt));
         LOCALTIME(bt.sec, tm);
         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
 
@@ -938,14 +938,14 @@ inspect_bintime_as_abstime(int level, int optname, VALUE data, VALUE ret)
         res_l += tmp1 & 0xffffffff;
         if (res_l < tmp2) res_h++;
 
-        rb_str_catf(ret, " %s.%019"PRIu64, buf, res_h);
+        rb_str_catf(ret, " %s.%019" PRIu64, buf, res_h);
         return 1;
     }
     else {
         return 0;
     }
 }
-#endif
+# endif
 
 /*
  * call-seq:
@@ -997,7 +997,7 @@ ancillary_inspect(VALUE self)
 
         vtype = ip_cmsg_type_to_sym(level, type);
         if (SYMBOL_P(vtype))
-            rb_str_catf(ret, " %"PRIsVALUE, rb_sym2str(vtype));
+            rb_str_catf(ret, " %" PRIsVALUE, rb_sym2str(vtype));
         else
             rb_str_catf(ret, " cmsg_type:%d", type);
     }
@@ -1012,64 +1012,64 @@ ancillary_inspect(VALUE self)
         family = AF_UNSPEC;
 
     switch (family) {
-      case AF_UNSPEC:
-        switch (level) {
-#        if defined(SOL_SOCKET)
-          case SOL_SOCKET:
-            switch (type) {
-#            if defined(SCM_TIMESTAMP) /* GNU/Linux, FreeBSD, NetBSD, OpenBSD, MacOS X, Solaris */
-              case SCM_TIMESTAMP: inspected = inspect_timeval_as_abstime(level, type, data, ret); break;
-#            endif
-#            if defined(SCM_TIMESTAMPNS) /* GNU/Linux */
-              case SCM_TIMESTAMPNS: inspected = inspect_timespec_as_abstime(level, type, data, ret); break;
-#            endif
-#            if defined(SCM_BINTIME) /* FreeBSD */
-              case SCM_BINTIME: inspected = inspect_bintime_as_abstime(level, type, data, ret); break;
-#            endif
-#            if defined(SCM_RIGHTS) /* 4.4BSD */
-              case SCM_RIGHTS: inspected = anc_inspect_socket_rights(level, type, data, ret); break;
-#            endif
-#            if defined(SCM_CREDENTIALS) /* GNU/Linux */
-              case SCM_CREDENTIALS: inspected = anc_inspect_passcred_credentials(level, type, data, ret); break;
-#            endif
-#            if defined(INSPECT_SCM_CREDS) /* NetBSD */
-              case SCM_CREDS: inspected = anc_inspect_socket_creds(level, type, data, ret); break;
-#            endif
+        case AF_UNSPEC:
+            switch (level) {
+# if defined(SOL_SOCKET)
+                case SOL_SOCKET:
+                    switch (type) {
+#  if defined(SCM_TIMESTAMP) /* GNU/Linux, FreeBSD, NetBSD, OpenBSD, MacOS X, Solaris */
+                        case SCM_TIMESTAMP: inspected = inspect_timeval_as_abstime(level, type, data, ret); break;
+#  endif
+#  if defined(SCM_TIMESTAMPNS) /* GNU/Linux */
+                        case SCM_TIMESTAMPNS: inspected = inspect_timespec_as_abstime(level, type, data, ret); break;
+#  endif
+#  if defined(SCM_BINTIME) /* FreeBSD */
+                        case SCM_BINTIME: inspected = inspect_bintime_as_abstime(level, type, data, ret); break;
+#  endif
+#  if defined(SCM_RIGHTS) /* 4.4BSD */
+                        case SCM_RIGHTS: inspected = anc_inspect_socket_rights(level, type, data, ret); break;
+#  endif
+#  if defined(SCM_CREDENTIALS) /* GNU/Linux */
+                        case SCM_CREDENTIALS: inspected = anc_inspect_passcred_credentials(level, type, data, ret); break;
+#  endif
+#  if defined(INSPECT_SCM_CREDS) /* NetBSD */
+                        case SCM_CREDS: inspected = anc_inspect_socket_creds(level, type, data, ret); break;
+#  endif
+                    }
+                    break;
+# endif
             }
             break;
-#        endif
-        }
-        break;
 
-      case AF_INET:
-#ifdef INET6
-      case AF_INET6:
-#endif
-        switch (level) {
-#        if defined(IPPROTO_IP)
-          case IPPROTO_IP:
-            switch (type) {
-#            if defined(IP_RECVDSTADDR) /* 4.4BSD */
-              case IP_RECVDSTADDR: inspected = anc_inspect_ip_recvdstaddr(level, type, data, ret); break;
-#            endif
-#            if defined(IP_PKTINFO) && defined(HAVE_STRUCT_IN_PKTINFO_IPI_SPEC_DST) /* GNU/Linux */
-              case IP_PKTINFO: inspected = anc_inspect_ip_pktinfo(level, type, data, ret); break;
-#            endif
-            }
-            break;
-#        endif
+        case AF_INET:
+# ifdef INET6
+        case AF_INET6:
+# endif
+            switch (level) {
+# if defined(IPPROTO_IP)
+                case IPPROTO_IP:
+                    switch (type) {
+#  if defined(IP_RECVDSTADDR) /* 4.4BSD */
+                        case IP_RECVDSTADDR: inspected = anc_inspect_ip_recvdstaddr(level, type, data, ret); break;
+#  endif
+#  if defined(IP_PKTINFO) && defined(HAVE_STRUCT_IN_PKTINFO_IPI_SPEC_DST) /* GNU/Linux */
+                        case IP_PKTINFO: inspected = anc_inspect_ip_pktinfo(level, type, data, ret); break;
+#  endif
+                    }
+                    break;
+# endif
 
-#        if defined(IPPROTO_IPV6)
-          case IPPROTO_IPV6:
-            switch (type) {
-#            if defined(IPV6_PKTINFO) && defined(HAVE_TYPE_STRUCT_IN6_PKTINFO) /* RFC 3542 */
-              case IPV6_PKTINFO: inspected = anc_inspect_ipv6_pktinfo(level, type, data, ret); break;
-#            endif
+# if defined(IPPROTO_IPV6)
+                case IPPROTO_IPV6:
+                    switch (type) {
+#  if defined(IPV6_PKTINFO) && defined(HAVE_TYPE_STRUCT_IN6_PKTINFO) /* RFC 3542 */
+                        case IPV6_PKTINFO: inspected = anc_inspect_ipv6_pktinfo(level, type, data, ret); break;
+#  endif
+                    }
+                    break;
+# endif
             }
             break;
-#        endif
-        }
-        break;
     }
 
     if (!inspected) {
@@ -1102,7 +1102,7 @@ ancillary_cmsg_is_p(VALUE self, VALUE vlevel, VALUE vtype)
     int type = rsock_cmsg_type_arg(family, level, vtype);
 
     if (ancillary_level(self) == level &&
-        ancillary_type(self) == type)
+      ancillary_type(self) == type)
         return Qtrue;
     else
         return Qfalse;
@@ -1136,25 +1136,25 @@ rb_sendmsg(int fd, const struct msghdr *msg, int flags)
 
 static VALUE
 bsock_sendmsg_internal(VALUE sock, VALUE data, VALUE vflags,
-                       VALUE dest_sockaddr, VALUE controls, VALUE ex,
-                       int nonblock)
+  VALUE dest_sockaddr, VALUE controls, VALUE ex,
+  int nonblock)
 {
     rb_io_t *fptr;
     struct msghdr mh;
     struct iovec iov;
     VALUE tmp;
     int controls_num;
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     VALUE controls_str = 0;
     int family;
-#endif
+# endif
     int flags;
     ssize_t ss;
 
     GetOpenFile(sock, fptr);
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     family = rsock_getfamily(fptr);
-#endif
+# endif
 
     StringValue(data);
     tmp = rb_str_tmp_frozen_acquire(data);
@@ -1165,14 +1165,14 @@ bsock_sendmsg_internal(VALUE sock, VALUE data, VALUE vflags,
     controls_num = RARRAY_LENINT(controls);
 
     if (controls_num) {
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
         int i;
         size_t last_pad = 0;
         const VALUE *controls_ptr = RARRAY_CONST_PTR(controls);
-#if defined(__NetBSD__)
+#  if defined(__NetBSD__)
         int last_level = 0;
         int last_type = 0;
-#endif
+#  endif
         controls_str = rb_str_tmp_new(0);
         for (i = 0; i < controls_num; i++) {
             VALUE elt = controls_ptr[i], v;
@@ -1203,18 +1203,18 @@ bsock_sendmsg_internal(VALUE sock, VALUE data, VALUE vflags,
             oldlen = RSTRING_LEN(controls_str);
             cspace = CMSG_SPACE(RSTRING_LEN(cdata));
             rb_str_resize(controls_str, oldlen + cspace);
-            cmsg = RSTRING_PTR(controls_str)+oldlen;
+            cmsg = RSTRING_PTR(controls_str) + oldlen;
             memset((char *)cmsg, 0, cspace);
             memset((char *)&cmh, 0, sizeof(cmh));
             cmh.cmsg_level = level;
             cmh.cmsg_type = type;
             cmh.cmsg_len = (socklen_t)CMSG_LEN(RSTRING_LEN(cdata));
             MEMCPY(cmsg, &cmh, char, sizeof(cmh));
-            MEMCPY(cmsg+((char*)CMSG_DATA(&cmh)-(char*)&cmh), RSTRING_PTR(cdata), char, RSTRING_LEN(cdata));
-#if defined(__NetBSD__)
+            MEMCPY(cmsg + ((char *)CMSG_DATA(&cmh) - (char *)&cmh), RSTRING_PTR(cdata), char, RSTRING_LEN(cdata));
+#  if defined(__NetBSD__)
             last_level = cmh.cmsg_level;
             last_type = cmh.cmsg_type;
-#endif
+#  endif
             last_pad = cspace - cmh.cmsg_len;
         }
         if (last_pad) {
@@ -1238,29 +1238,29 @@ bsock_sendmsg_internal(VALUE sock, VALUE data, VALUE vflags,
              * Basically, msg_controllen should contains the padding.
              * So the padding is removed only if a problem really exists.
              */
-#if defined(__NetBSD__)
+#  if defined(__NetBSD__)
             if (last_level == SOL_SOCKET && last_type == SCM_RIGHTS)
-                rb_str_set_len(controls_str, RSTRING_LEN(controls_str)-last_pad);
-#endif
+                rb_str_set_len(controls_str, RSTRING_LEN(controls_str) - last_pad);
+#  endif
         }
         RB_GC_GUARD(controls);
-#else
+# else
         rb_raise(rb_eNotImpError, "control message for sendmsg is unimplemented");
-#endif
+# endif
     }
 
     flags = NIL_P(vflags) ? 0 : NUM2INT(vflags);
-#ifdef MSG_DONTWAIT
+# ifdef MSG_DONTWAIT
     if (nonblock)
         flags |= MSG_DONTWAIT;
-#endif
+# endif
 
     if (!NIL_P(dest_sockaddr))
         SockAddrStringValue(dest_sockaddr);
 
     rb_io_check_closed(fptr);
 
-  retry:
+retry:
     memset(&mh, 0, sizeof(mh));
     if (!NIL_P(dest_sockaddr)) {
         mh.msg_name = RSTRING_PTR(dest_sockaddr);
@@ -1270,12 +1270,12 @@ bsock_sendmsg_internal(VALUE sock, VALUE data, VALUE vflags,
     mh.msg_iov = &iov;
     iov.iov_base = RSTRING_PTR(tmp);
     iov.iov_len = RSTRING_LEN(tmp);
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     if (controls_str) {
         mh.msg_control = RSTRING_PTR(controls_str);
         mh.msg_controllen = RSTRING_SOCKLEN(controls_str);
     }
-#endif
+# endif
 
     rb_io_check_closed(fptr);
     if (nonblock && !MSG_DONTWAIT_RELIABLE)
@@ -1295,13 +1295,13 @@ bsock_sendmsg_internal(VALUE sock, VALUE data, VALUE vflags,
                 return sym_wait_writable;
             }
             rb_readwrite_syserr_fail(RB_IO_WAIT_WRITABLE, e,
-                                     "sendmsg(2) would block");
+              "sendmsg(2) would block");
         }
         rb_syserr_fail(e, "sendmsg(2)");
     }
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     RB_GC_GUARD(controls_str);
-#endif
+# endif
     rb_str_tmp_frozen_release(data, tmp);
 
     return SSIZET2NUM(ss);
@@ -1311,20 +1311,20 @@ bsock_sendmsg_internal(VALUE sock, VALUE data, VALUE vflags,
 #if defined(HAVE_SENDMSG)
 VALUE
 rsock_bsock_sendmsg(VALUE sock, VALUE data, VALUE flags, VALUE dest_sockaddr,
-                    VALUE controls)
+  VALUE controls)
 {
     return bsock_sendmsg_internal(sock, data, flags, dest_sockaddr, controls,
-                                  Qtrue, 0);
+      Qtrue, 0);
 }
 #endif
 
 #if defined(HAVE_SENDMSG)
 VALUE
 rsock_bsock_sendmsg_nonblock(VALUE sock, VALUE data, VALUE flags,
-                             VALUE dest_sockaddr, VALUE controls, VALUE ex)
+  VALUE dest_sockaddr, VALUE controls, VALUE ex)
 {
     return bsock_sendmsg_internal(sock, data, flags, dest_sockaddr,
-                                  controls, ex, 1);
+      controls, ex, 1);
 }
 #endif
 
@@ -1340,10 +1340,10 @@ rsock_recvmsg(int socket, struct msghdr *message, int flags)
 {
     ssize_t ret;
     socklen_t len0;
-#ifdef MSG_CMSG_CLOEXEC
+# ifdef MSG_CMSG_CLOEXEC
     /* MSG_CMSG_CLOEXEC is available since Linux 2.6.23.  Linux 2.6.18 silently ignore it. */
     flags |= MSG_CMSG_CLOEXEC;
-#endif
+# endif
     len0 = message->msg_namelen;
     ret = recvmsg(socket, message, flags);
     if (ret != -1 && len0 < message->msg_namelen)
@@ -1369,11 +1369,11 @@ rb_recvmsg(int fd, struct msghdr *msg, int flags)
     return (ssize_t)rb_thread_call_without_gvl(nogvl_recvmsg_func, &args, RUBY_UBF_IO, 0);
 }
 
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
 static void
 discard_cmsg(struct cmsghdr *cmh, char *msg_end, int msg_peek_p)
 {
-# if !defined(FD_PASSING_WORK_WITH_RECVMSG_MSG_PEEK)
+#  if !defined(FD_PASSING_WORK_WITH_RECVMSG_MSG_PEEK)
     /*
      * FreeBSD 8.2.0, NetBSD 5 and MacOS X Snow Leopard doesn't
      * allocate fds by recvmsg with MSG_PEEK.
@@ -1384,24 +1384,24 @@ discard_cmsg(struct cmsghdr *cmh, char *msg_end, int msg_peek_p)
      */
     if (msg_peek_p)
         return;
-# endif
+#  endif
     if (cmh->cmsg_level == SOL_SOCKET && cmh->cmsg_type == SCM_RIGHTS) {
         int *fdp = (int *)CMSG_DATA(cmh);
         int *end = (int *)((char *)cmh + cmh->cmsg_len);
         while ((char *)fdp + sizeof(int) <= (char *)end &&
-               (char *)fdp + sizeof(int) <= msg_end) {
+          (char *)fdp + sizeof(int) <= msg_end) {
             rb_update_max_fd(*fdp);
             close(*fdp);
             fdp++;
         }
     }
 }
-#endif
+# endif
 
 void
 rsock_discard_cmsg_resource(struct msghdr *mh, int msg_peek_p)
 {
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     struct cmsghdr *cmh;
     char *msg_end;
 
@@ -1413,10 +1413,10 @@ rsock_discard_cmsg_resource(struct msghdr *mh, int msg_peek_p)
     for (cmh = CMSG_FIRSTHDR(mh); cmh != NULL; cmh = CMSG_NXTHDR(mh, cmh)) {
         discard_cmsg(cmh, msg_end, msg_peek_p);
     }
-#endif
+# endif
 }
 
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
 static void
 make_io_for_unix_rights(VALUE ctl, struct cmsghdr *cmh, char *msg_end)
 {
@@ -1427,7 +1427,7 @@ make_io_for_unix_rights(VALUE ctl, struct cmsghdr *cmh, char *msg_end)
         fdp = (int *)CMSG_DATA(cmh);
         end = (int *)((char *)cmh + cmh->cmsg_len);
         while ((char *)fdp + sizeof(int) <= (char *)end &&
-               (char *)fdp + sizeof(int) <= msg_end) {
+          (char *)fdp + sizeof(int) <= msg_end) {
             int fd = *fdp;
             struct stat stbuf;
             VALUE io;
@@ -1446,12 +1446,12 @@ make_io_for_unix_rights(VALUE ctl, struct cmsghdr *cmh, char *msg_end)
         OBJ_FREEZE(ary);
     }
 }
-#endif
+# endif
 
 static VALUE
 bsock_recvmsg_internal(VALUE sock,
-                VALUE vmaxdatlen, VALUE vflags, VALUE vmaxctllen,
-                VALUE scm_rights, VALUE ex, int nonblock)
+  VALUE vmaxdatlen, VALUE vflags, VALUE vmaxctllen,
+  VALUE scm_rights, VALUE ex, int nonblock)
 {
     rb_io_t *fptr;
     int grow_buffer;
@@ -1465,27 +1465,27 @@ bsock_recvmsg_internal(VALUE sock,
     VALUE ret;
     ssize_t ss;
     int request_scm_rights;
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     struct cmsghdr *cmh;
     size_t maxctllen;
     char *ctlbuf;
     VALUE ctl_str = Qnil;
     int family;
     int gc_done = 0;
-#endif
+# endif
 
     maxdatlen = NIL_P(vmaxdatlen) ? 4096 : NUM2SIZET(vmaxdatlen);
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     maxctllen = NIL_P(vmaxctllen) ? 4096 : NUM2SIZET(vmaxctllen);
-#else
+# else
     if (!NIL_P(vmaxctllen))
         rb_raise(rb_eArgError, "control message not supported");
-#endif
+# endif
     flags = NUM2INT(vflags);
-#ifdef MSG_DONTWAIT
+# ifdef MSG_DONTWAIT
     if (nonblock)
         flags |= MSG_DONTWAIT;
-#endif
+# endif
     orig_flags = flags;
 
     grow_buffer = NIL_P(vmaxdatlen) || NIL_P(vmaxctllen);
@@ -1493,42 +1493,42 @@ bsock_recvmsg_internal(VALUE sock,
     request_scm_rights = 0;
     if (RTEST(scm_rights))
         request_scm_rights = 1;
-#if !defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if !defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     if (request_scm_rights)
         rb_raise(rb_eNotImpError, "control message for recvmsg is unimplemented");
-#endif
+# endif
 
     GetOpenFile(sock, fptr);
     if (rb_io_read_pending(fptr)) {
         rb_raise(rb_eIOError, "recvmsg for buffered IO");
     }
 
-#if !defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if !defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     if (grow_buffer) {
         int socktype;
         socklen_t optlen = (socklen_t)sizeof(socktype);
-        if (getsockopt(fptr->fd, SOL_SOCKET, SO_TYPE, (void*)&socktype, &optlen) == -1) {
+        if (getsockopt(fptr->fd, SOL_SOCKET, SO_TYPE, (void *)&socktype, &optlen) == -1) {
             rb_sys_fail("getsockopt(SO_TYPE)");
         }
         if (socktype == SOCK_STREAM)
             grow_buffer = 0;
     }
-#endif
+# endif
 
-  retry:
+retry:
     if (NIL_P(dat_str))
         dat_str = rb_str_tmp_new(maxdatlen);
     else
         rb_str_resize(dat_str, maxdatlen);
     datbuf = RSTRING_PTR(dat_str);
 
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     if (NIL_P(ctl_str))
         ctl_str = rb_str_tmp_new(maxctllen);
     else
         rb_str_resize(ctl_str, maxctllen);
     ctlbuf = RSTRING_PTR(ctl_str);
-#endif
+# endif
 
     memset(&mh, 0, sizeof(mh));
 
@@ -1541,10 +1541,10 @@ bsock_recvmsg_internal(VALUE sock,
     iov.iov_base = datbuf;
     iov.iov_len = maxdatlen;
 
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     mh.msg_control = ctlbuf;
     mh.msg_controllen = (socklen_t)maxctllen;
-#endif
+# endif
 
     if (grow_buffer)
         flags |= MSG_PEEK;
@@ -1568,40 +1568,40 @@ bsock_recvmsg_internal(VALUE sock,
             }
             rb_readwrite_syserr_fail(RB_IO_WAIT_READABLE, e, "recvmsg(2) would block");
         }
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
         if (!gc_done && (e == EMFILE || e == EMSGSIZE)) {
-          /*
+        /*
            * When SCM_RIGHTS hit the file descriptors limit:
            * - Linux 2.6.18 causes success with MSG_CTRUNC
            * - MacOS X 10.4 causes EMSGSIZE (and lost file descriptors?)
            * - Solaris 11 causes EMFILE
            */
-          gc_and_retry:
+        gc_and_retry:
             rb_gc();
             gc_done = 1;
             goto retry;
         }
-#else
+# else
         if (NIL_P(vmaxdatlen) && grow_buffer && e == EMSGSIZE)
             ss = (ssize_t)iov.iov_len;
         else
-#endif
+# endif
         rb_syserr_fail(e, "recvmsg(2)");
     }
 
     if (grow_buffer) {
         int grown = 0;
         if (NIL_P(vmaxdatlen) && ss != -1 && ss == (ssize_t)iov.iov_len) {
-            if (SIZE_MAX/2 < maxdatlen)
+            if (SIZE_MAX / 2 < maxdatlen)
                 rb_raise(rb_eArgError, "max data length too big");
             maxdatlen *= 2;
             grown = 1;
         }
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
         if (NIL_P(vmaxctllen) && (mh.msg_flags & MSG_CTRUNC)) {
-#define BIG_ENOUGH_SPACE 65536
+#  define BIG_ENOUGH_SPACE 65536
             if (BIG_ENOUGH_SPACE < maxctllen &&
-                (socklen_t)mh.msg_controllen < (socklen_t)(maxctllen - BIG_ENOUGH_SPACE)) {
+              (socklen_t)mh.msg_controllen < (socklen_t)(maxctllen - BIG_ENOUGH_SPACE)) {
                 /* there are big space bug truncated.
                  * file descriptors limit? */
                 if (!gc_done) {
@@ -1610,14 +1610,14 @@ bsock_recvmsg_internal(VALUE sock,
                 }
             }
             else {
-                if (SIZE_MAX/2 < maxctllen)
+                if (SIZE_MAX / 2 < maxctllen)
                     rb_raise(rb_eArgError, "max control message length too big");
                 maxctllen *= 2;
                 grown = 1;
             }
-#undef BIG_ENOUGH_SPACE
+#  undef BIG_ENOUGH_SPACE
         }
-#endif
+# endif
         if (grown) {
             rsock_discard_cmsg_resource(&mh, (flags & MSG_PEEK) != 0);
             goto retry;
@@ -1640,15 +1640,15 @@ bsock_recvmsg_internal(VALUE sock,
     }
 
     ret = rb_ary_new3(3, dat_str,
-                         rsock_io_socket_addrinfo(sock, mh.msg_name, mh.msg_namelen),
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
-                         INT2NUM(mh.msg_flags)
-#else
-                         Qnil
-#endif
-                         );
+      rsock_io_socket_addrinfo(sock, mh.msg_name, mh.msg_namelen),
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+      INT2NUM(mh.msg_flags)
+# else
+      Qnil
+# endif
+    );
 
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL)
     family = rsock_getfamily(fptr);
     if (mh.msg_controllen) {
         char *msg_end = (char *)mh.msg_control + mh.msg_controllen;
@@ -1659,9 +1659,9 @@ bsock_recvmsg_internal(VALUE sock,
             if (cmh->cmsg_len == 0) {
                 rb_raise(rb_eTypeError, "invalid control message (cmsg_len == 0)");
             }
-            ctl_end = (char*)cmh + cmh->cmsg_len;
-            clen = (ctl_end <= msg_end ? ctl_end : msg_end) - (char*)CMSG_DATA(cmh);
-            ctl = ancdata_new(family, cmh->cmsg_level, cmh->cmsg_type, rb_str_new((char*)CMSG_DATA(cmh), clen));
+            ctl_end = (char *)cmh + cmh->cmsg_len;
+            clen = (ctl_end <= msg_end ? ctl_end : msg_end) - (char *)CMSG_DATA(cmh);
+            ctl = ancdata_new(family, cmh->cmsg_level, cmh->cmsg_type, rb_str_new((char *)CMSG_DATA(cmh), clen));
             if (request_scm_rights)
                 make_io_for_unix_rights(ctl, cmh, msg_end);
             else
@@ -1670,7 +1670,7 @@ bsock_recvmsg_internal(VALUE sock,
         }
         RB_GC_GUARD(ctl_str);
     }
-#endif
+# endif
 
     return ret;
 }
@@ -1679,7 +1679,7 @@ bsock_recvmsg_internal(VALUE sock,
 #if defined(HAVE_RECVMSG)
 VALUE
 rsock_bsock_recvmsg(VALUE sock, VALUE dlen, VALUE flags, VALUE clen,
-                    VALUE scm_rights)
+  VALUE scm_rights)
 {
     VALUE ex = Qtrue;
     return bsock_recvmsg_internal(sock, dlen, flags, clen, scm_rights, ex, 0);
@@ -1689,7 +1689,7 @@ rsock_bsock_recvmsg(VALUE sock, VALUE dlen, VALUE flags, VALUE clen,
 #if defined(HAVE_RECVMSG)
 VALUE
 rsock_bsock_recvmsg_nonblock(VALUE sock, VALUE dlen, VALUE flags, VALUE clen,
-                             VALUE scm_rights, VALUE ex)
+  VALUE scm_rights, VALUE ex)
 {
     return bsock_recvmsg_internal(sock, dlen, flags, clen, scm_rights, ex, 1);
 }

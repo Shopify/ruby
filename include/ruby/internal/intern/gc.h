@@ -1,4 +1,4 @@
-#ifndef RBIMPL_INTERN_GC_H                           /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_INTERN_GC_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_INTERN_GC_H
 /**
  * @file
@@ -23,11 +23,11 @@
 #include "ruby/internal/config.h"
 
 #ifdef STDC_HEADERS
-# include <stddef.h>                       /* size_t */
+# include <stddef.h> /* size_t */
 #endif
 
 #ifdef HAVE_SYS_TYPES_H
-# include <sys/types.h>                    /* ssize_t */
+# include <sys/types.h> /* ssize_t */
 #endif
 
 #include "ruby/internal/attr/cold.h"

@@ -10,7 +10,7 @@ enum {
 };
 /* License: Ruby's */
 typedef struct {
-    ULONG  ReparseTag;
+    ULONG ReparseTag;
     USHORT ReparseDataLength;
     USHORT Reserved;
     union {
@@ -19,25 +19,25 @@ typedef struct {
             USHORT SubstituteNameLength;
             USHORT PrintNameOffset;
             USHORT PrintNameLength;
-            ULONG  Flags;
-            WCHAR  PathBuffer[MINIMUM_REPARSE_BUFFER_PATH_LEN];
+            ULONG Flags;
+            WCHAR PathBuffer[MINIMUM_REPARSE_BUFFER_PATH_LEN];
         } SymbolicLinkReparseBuffer;
         struct {
             USHORT SubstituteNameOffset;
             USHORT SubstituteNameLength;
             USHORT PrintNameOffset;
             USHORT PrintNameLength;
-            WCHAR  PathBuffer[MINIMUM_REPARSE_BUFFER_PATH_LEN];
+            WCHAR PathBuffer[MINIMUM_REPARSE_BUFFER_PATH_LEN];
         } MountPointReparseBuffer;
     };
 } rb_w32_reparse_buffer_t;
 
 #define rb_w32_reparse_buffer_size(n) \
-    (sizeof(rb_w32_reparse_buffer_t) + \
-     sizeof(WCHAR)*((n)-MINIMUM_REPARSE_BUFFER_PATH_LEN))
+ (sizeof(rb_w32_reparse_buffer_t) + \
+   sizeof(WCHAR) * ((n)-MINIMUM_REPARSE_BUFFER_PATH_LEN))
 
 int rb_w32_read_reparse_point(const WCHAR *path, rb_w32_reparse_buffer_t *rp,
-                              size_t bufsize, WCHAR **result, DWORD *len);
+  size_t bufsize, WCHAR **result, DWORD *len);
 
 int lchown(const char *path, int owner, int group);
 int rb_w32_ulchown(const char *path, int owner, int group);
@@ -47,4 +47,4 @@ int fchmod(int fd, int mode);
 UINT rb_w32_filecp(void);
 WCHAR *rb_w32_home_dir(void);
 
-#endif	/* RUBY_WIN32_FILE_H */
+#endif /* RUBY_WIN32_FILE_H */

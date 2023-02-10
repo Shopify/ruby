@@ -1,4 +1,4 @@
-#ifndef RBIMPL_RBASIC_H                              /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_RBASIC_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_RBASIC_H
 /**
  * @file
@@ -37,13 +37,13 @@
  * @param   obj  Arbitrary Ruby object.
  * @return  The passed object casted to ::RBasic.
  */
-#define RBASIC(obj)                 RBIMPL_CAST((struct RBasic *)(obj))
+#define RBASIC(obj) RBIMPL_CAST((struct RBasic *)(obj))
 /** @cond INTERNAL_MACRO */
-#define RBASIC_CLASS                RBASIC_CLASS
+#define RBASIC_CLASS RBASIC_CLASS
 #define RBIMPL_RVALUE_EMBED_LEN_MAX 3
-#define RVALUE_EMBED_LEN_MAX        RVALUE_EMBED_LEN_MAX
+#define RVALUE_EMBED_LEN_MAX RVALUE_EMBED_LEN_MAX
 #define RBIMPL_EMBED_LEN_MAX_OF(T) \
-    RBIMPL_CAST((int)(sizeof(VALUE[RBIMPL_RVALUE_EMBED_LEN_MAX]) / (sizeof(T))))
+ RBIMPL_CAST((int)(sizeof(VALUE[RBIMPL_RVALUE_EMBED_LEN_MAX]) / (sizeof(T))))
 /** @endcond */
 
 /**
@@ -60,8 +60,8 @@ enum ruby_rvalue_flags {
  * common.
  */
 struct
-RUBY_ALIGNAS(SIZEOF_VALUE)
-RBasic {
+  RUBY_ALIGNAS(SIZEOF_VALUE)
+    RBasic {
 
     /**
      * Per-object  flags.  Each  ruby  objects have  their own  characteristics
@@ -88,7 +88,7 @@ RBasic {
     const VALUE klass;
 
 #ifdef __cplusplus
-  public:
+public:
     RBIMPL_ATTR_CONSTEXPR(CXX11)
     RBIMPL_ATTR_ARTIFICIAL()
     RBIMPL_ATTR_FORCEINLINE()
@@ -99,9 +99,9 @@ RBasic {
      * constructor as "deleted"  (as of C++11) --  No way but to  define one by
      * ourselves.
      */
-    RBasic() :
-        flags(RBIMPL_VALUE_NULL),
-        klass(RBIMPL_VALUE_NULL)
+    RBasic()
+        : flags(RBIMPL_VALUE_NULL)
+        , klass(RBIMPL_VALUE_NULL)
     {
     }
 #endif
@@ -151,7 +151,7 @@ RBIMPL_ATTR_ARTIFICIAL()
 static inline VALUE
 RBASIC_CLASS(VALUE obj)
 {
-    RBIMPL_ASSERT_OR_ASSUME(! RB_SPECIAL_CONST_P(obj));
+    RBIMPL_ASSERT_OR_ASSUME(!RB_SPECIAL_CONST_P(obj));
     return RBASIC(obj)->klass;
 }
 

@@ -17,7 +17,7 @@ profile_frames(VALUE self, VALUE start_v, VALUE num_v)
 
     collected_size = rb_profile_frames(start, buff_size, buff, lines);
 
-    for (i=0; i<collected_size; i++) {
+    for (i = 0; i < collected_size; i++) {
         VALUE ary = rb_ary_new();
         rb_ary_push(ary, rb_profile_frame_path(buff[i]));
         rb_ary_push(ary, rb_profile_frame_absolute_path(buff[i]));

@@ -1,4 +1,4 @@
-#ifndef RUBY_MISSING_H                               /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_MISSING_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_MISSING_H 1
 /**
  * @author     $Author$
@@ -56,13 +56,13 @@
 # define M_PI 3.14159265358979323846
 #endif
 #ifndef M_PI_2
-# define M_PI_2 (M_PI/2)
+# define M_PI_2 (M_PI / 2)
 #endif
 
 #if !defined(HAVE_STRUCT_TIMEVAL)
 struct timeval {
-    time_t tv_sec;	/* seconds */
-    long tv_usec;	/* microseconds */
+    time_t tv_sec; /* seconds */
+    long tv_usec; /* microseconds */
 };
 #endif /* HAVE_STRUCT_TIMEVAL */
 
@@ -72,8 +72,8 @@ struct timeval {
  * could expect  something other  than just `long`  (results stack  smashing if
  * that happens).  See also https://ewontfix.com/19/ */
 struct timespec {
-    time_t tv_sec;	/* seconds */
-    long tv_nsec;	/* nanoseconds */
+    time_t tv_sec; /* seconds */
+    long tv_nsec; /* nanoseconds */
 };
 #endif
 
@@ -97,11 +97,11 @@ RUBY_EXTERN char *crypt(const char *, const char *);
 #endif
 
 #ifndef HAVE_EACCESS
-RUBY_EXTERN int eaccess(const char*, int);
+RUBY_EXTERN int eaccess(const char *, int);
 #endif
 
 #ifndef HAVE_ROUND
-RUBY_EXTERN double round(double);	/* numeric.c */
+RUBY_EXTERN double round(double); /* numeric.c */
 #endif
 
 #ifndef HAVE_FLOCK
@@ -137,8 +137,8 @@ RUBY_EXTERN double cbrt(double);
 
 #if !defined(INFINITY) || !defined(NAN)
 union bytesequence4_or_float {
-  unsigned char bytesequence[4];
-  float float_value;
+    unsigned char bytesequence[4];
+    float float_value;
 };
 #endif
 
@@ -203,11 +203,11 @@ RUBY_EXTERN char *strstr(const char *, const char *);
 #endif
 
 #ifndef HAVE_STRLCPY
-RUBY_EXTERN size_t strlcpy(char *, const char*, size_t);
+RUBY_EXTERN size_t strlcpy(char *, const char *, size_t);
 #endif
 
 #ifndef HAVE_STRLCAT
-RUBY_EXTERN size_t strlcat(char *, const char*, size_t);
+RUBY_EXTERN size_t strlcat(char *, const char *, size_t);
 #endif
 
 #ifndef HAVE_FFS
@@ -289,7 +289,7 @@ RUBY_EXTERN FILE *popen(const char *, const char *);
 #endif
 
 #ifndef HAVE_PIPE
-RUBY_EXTERN int pipe(int [2]);
+RUBY_EXTERN int pipe(int[2]);
 #endif
 
 #ifndef HAVE_DUP
@@ -313,11 +313,11 @@ RUBY_EXTERN int execle(const char *, const char *, ...);
 #endif
 
 #ifndef HAVE_EXECV
-RUBY_EXTERN int execv(const char *, char *const []);
+RUBY_EXTERN int execv(const char *, char *const[]);
 #endif
 
 #ifndef HAVE_EXECVE
-RUBY_EXTERN int execve(const char *, char *const [], char *const []);
+RUBY_EXTERN int execve(const char *, char *const[], char *const[]);
 #endif
 
 #ifndef HAVE_SHUTDOWN

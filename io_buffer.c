@@ -30,8 +30,8 @@ size_t RUBY_IO_BUFFER_DEFAULT_SIZE;
 
 #ifdef _WIN32
 #else
-#include <unistd.h>
-#include <sys/mman.h>
+# include <unistd.h>
+# include <sys/mman.h>
 #endif
 
 struct rb_io_buffer {
@@ -50,7 +50,7 @@ static inline void *
 io_buffer_map_memory(size_t size, int flags)
 {
 #if defined(_WIN32)
-    void * base = VirtualAlloc(0, size, MEM_COMMIT, PAGE_READWRITE);
+    void *base = VirtualAlloc(0, size, MEM_COMMIT, PAGE_READWRITE);
 
     if (!base) {
         rb_sys_fail("io_buffer_map_memory:VirtualAlloc");
@@ -59,11 +59,12 @@ io_buffer_map_memory(size_t size, int flags)
     int mmap_flags = MAP_ANONYMOUS;
     if (flags & RB_IO_BUFFER_SHARED) {
         mmap_flags |= MAP_SHARED;
-    } else {
+    }
+    else {
         mmap_flags |= MAP_PRIVATE;
     }
 
-    void * base = mmap(NULL, size, PROT_READ | PROT_WRITE, mmap_flags, -1, 0);
+    void *base = mmap(NULL, size, PROT_READ | PROT_WRITE, mmap_flags, -1, 0);
 
     if (base == MAP_FAILED) {
         rb_sys_fail("io_buffer_map_memory:mmap");
@@ -145,7 +146,7 @@ io_buffer_map_file(struct rb_io_buffer *data, int descriptor, size_t size, rb_of
 }
 
 static inline void
-io_buffer_unmap(void* base, size_t size)
+io_buffer_unmap(void *base, size_t size)
 {
 #ifdef _WIN32
     VirtualFree(base, 0, MEM_RELEASE);
@@ -165,8 +166,7 @@ io_buffer_experimental(void)
 
     if (rb_warning_category_enabled_p(RB_WARN_CATEGORY_EXPERIMENTAL)) {
         rb_category_warn(RB_WARN_CATEGORY_EXPERIMENTAL,
-          "IO::Buffer is experimental and both the Ruby and C interface may change in the future!"
-        );
+          "IO::Buffer is experimental and both the Ruby and C interface may change in the future!");
     }
 }
 
@@ -280,9 +280,9 @@ rb_io_buffer_type_size(const void *_data)
 static const rb_data_type_t rb_io_buffer_type = {
     .wrap_struct_name = "IO::Buffer",
     .function = {
-        .dmark = rb_io_buffer_type_mark,
-        .dfree = rb_io_buffer_type_free,
-        .dsize = rb_io_buffer_type_size,
+      .dmark = rb_io_buffer_type_mark,
+      .dfree = rb_io_buffer_type_free,
+      .dsize = rb_io_buffer_type_size,
     },
     .data = NULL,
     .flags = RUBY_TYPED_FREE_IMMEDIATELY,
@@ -606,8 +606,8 @@ io_buffer_validate_slice(VALUE source, void *base, size_t size)
     // Base is out of range:
     if (base < source_base) return 0;
 
-    const void *source_end = (char*)source_base + source_size;
-    const void *end = (char*)base + size;
+    const void *source_end = (char *)source_base + source_size;
+    const void *end = (char *)base + size;
 
     // End is out of range:
     if (end > source_end) return 0;
@@ -646,7 +646,7 @@ rb_io_buffer_to_s(VALUE self)
     VALUE result = rb_str_new_cstr("#<");
 
     rb_str_append(result, rb_class_name(CLASS_OF(self)));
-    rb_str_catf(result, " %p+%"PRIdSIZE, data->base, data->size);
+    rb_str_catf(result, " %p+%" PRIdSIZE, data->base, data->size);
 
     if (data->base == NULL) {
         rb_str_cat2(result, " NULL");
@@ -690,7 +690,7 @@ rb_io_buffer_to_s(VALUE self)
 static VALUE
 io_buffer_hexdump(VALUE string, size_t width, char *base, size_t size, int first)
 {
-    char *text = alloca(width+1);
+    char *text = alloca(width + 1);
     text[width] = '\0';
 
     for (size_t offset = 0; offset < size; offset += width) {
@@ -704,8 +704,8 @@ io_buffer_hexdump(VALUE string, size_t width, char *base, size_t size, int first
         }
 
         for (size_t i = 0; i < width; i += 1) {
-            if (offset+i < size) {
-                unsigned char value = ((unsigned char*)base)[offset+i];
+            if (offset + i < size) {
+                unsigned char value = ((unsigned char *)base)[offset + i];
 
                 if (value < 127 && isprint(value)) {
                     text[i] = (char)value;
@@ -736,7 +736,7 @@ rb_io_buffer_hexdump(VALUE self)
     VALUE result = Qnil;
 
     if (io_buffer_validate(data) && data->base) {
-        result = rb_str_buf_new(data->size*3 + (data->size/16)*12 + 1);
+        result = rb_str_buf_new(data->size * 3 + (data->size / 16) * 12 + 1);
 
         io_buffer_hexdump(result, 16, data->base, data->size, 1);
     }
@@ -1112,7 +1112,7 @@ rb_io_buffer_slice(struct rb_io_buffer *data, VALUE self, size_t offset, size_t 
     struct rb_io_buffer *slice = NULL;
     TypedData_Get_Struct(instance, struct rb_io_buffer, &rb_io_buffer_type, slice);
 
-    slice->base = (char*)data->base + offset;
+    slice->base = (char *)data->base + offset;
     slice->size = length;
 
     // The source should be the root buffer:
@@ -1204,7 +1204,8 @@ io_buffer_slice(int argc, VALUE *argv, VALUE self)
         }
 
         length = NUM2SIZET(argv[1]);
-    } else {
+    }
+    else {
         length = data->size - offset;
     }
 
@@ -1328,10 +1329,10 @@ rb_io_buffer_transfer(VALUE self)
 }
 
 static void
-io_buffer_resize_clear(struct rb_io_buffer *data, void* base, size_t size)
+io_buffer_resize_clear(struct rb_io_buffer *data, void *base, size_t size)
 {
     if (size > data->size) {
-        memset((unsigned char*)base+data->size, 0, size - data->size);
+        memset((unsigned char *)base + data->size, 0, size - data->size);
     }
 }
 
@@ -1464,7 +1465,7 @@ static void
 io_buffer_validate_type(size_t size, size_t offset)
 {
     if (offset > size) {
-        rb_raise(rb_eArgError, "Type extends beyond end of buffer! (offset=%"PRIdSIZE" > size=%"PRIdSIZE")", offset, size);
+        rb_raise(rb_eArgError, "Type extends beyond end of buffer! (offset=%" PRIdSIZE " > size=%" PRIdSIZE ")", offset, size);
     }
 }
 
@@ -1496,7 +1497,7 @@ union swapf32 {
 static float
 ruby_swapf32(float value)
 {
-    union swapf32 swap = {.value = value};
+    union swapf32 swap = { .value = value };
     swap.integral = ruby_swap32(swap.integral);
     return swap.value;
 }
@@ -1509,38 +1510,38 @@ union swapf64 {
 static double
 ruby_swapf64(double value)
 {
-    union swapf64 swap = {.value = value};
+    union swapf64 swap = { .value = value };
     swap.integral = ruby_swap64(swap.integral);
     return swap.value;
 }
 
 #define IO_BUFFER_DECLARE_TYPE(name, type, endian, wrap, unwrap, swap) \
-static ID RB_IO_BUFFER_DATA_TYPE_##name; \
+ static ID RB_IO_BUFFER_DATA_TYPE_##name; \
 \
-static VALUE \
-io_buffer_read_##name(const void* base, size_t size, size_t *offset) \
-{ \
-    io_buffer_validate_type(size, *offset + sizeof(type)); \
-    type value; \
-    memcpy(&value, (char*)base + *offset, sizeof(type)); \
-    if (endian != RB_IO_BUFFER_HOST_ENDIAN) value = swap(value); \
-    *offset += sizeof(type); \
-    return wrap(value); \
-} \
+ static VALUE \
+   io_buffer_read_##name(const void *base, size_t size, size_t *offset) \
+ { \
+  io_buffer_validate_type(size, *offset + sizeof(type)); \
+  type value; \
+  memcpy(&value, (char *)base + *offset, sizeof(type)); \
+  if (endian != RB_IO_BUFFER_HOST_ENDIAN) value = swap(value); \
+  *offset += sizeof(type); \
+  return wrap(value); \
+ } \
 \
-static void \
-io_buffer_write_##name(const void* base, size_t size, size_t *offset, VALUE _value) \
-{ \
-    io_buffer_validate_type(size, *offset + sizeof(type)); \
-    type value = unwrap(_value); \
-    if (endian != RB_IO_BUFFER_HOST_ENDIAN) value = swap(value); \
-    memcpy((char*)base + *offset, &value, sizeof(type)); \
-    *offset += sizeof(type); \
-} \
+ static void \
+   io_buffer_write_##name(const void *base, size_t size, size_t *offset, VALUE _value) \
+ { \
+  io_buffer_validate_type(size, *offset + sizeof(type)); \
+  type value = unwrap(_value); \
+  if (endian != RB_IO_BUFFER_HOST_ENDIAN) value = swap(value); \
+  memcpy((char *)base + *offset, &value, sizeof(type)); \
+  *offset += sizeof(type); \
+ } \
 \
-enum { \
-    RB_IO_BUFFER_DATA_TYPE_##name##_SIZE = sizeof(type) \
-};
+ enum { \
+     RB_IO_BUFFER_DATA_TYPE_##name##_SIZE = sizeof(type) \
+ };
 
 IO_BUFFER_DECLARE_TYPE(U8, uint8_t, RB_IO_BUFFER_BIG_ENDIAN, RB_UINT2NUM, RB_NUM2UINT, ruby_swap8)
 IO_BUFFER_DECLARE_TYPE(S8, int8_t, RB_IO_BUFFER_BIG_ENDIAN, RB_INT2NUM, RB_NUM2INT, ruby_swap8)
@@ -1569,7 +1570,8 @@ IO_BUFFER_DECLARE_TYPE(F64, double, RB_IO_BUFFER_BIG_ENDIAN, DBL2NUM, NUM2DBL, r
 static inline size_t
 io_buffer_data_type_size(ID data_type)
 {
-#define IO_BUFFER_DATA_TYPE_SIZE(name) if (data_type == RB_IO_BUFFER_DATA_TYPE_##name) return RB_IO_BUFFER_DATA_TYPE_##name##_SIZE;
+#define IO_BUFFER_DATA_TYPE_SIZE(name) \
+ if (data_type == RB_IO_BUFFER_DATA_TYPE_##name) return RB_IO_BUFFER_DATA_TYPE_##name##_SIZE;
     IO_BUFFER_DATA_TYPE_SIZE(U8)
     IO_BUFFER_DATA_TYPE_SIZE(S8)
     IO_BUFFER_DATA_TYPE_SIZE(u16)
@@ -1614,15 +1616,17 @@ io_buffer_size_of(VALUE klass, VALUE data_type)
             total += io_buffer_data_type_size(RB_SYM2ID(RARRAY_AREF(data_type, i)));
         }
         return SIZET2NUM(total);
-    } else {
+    }
+    else {
         return SIZET2NUM(io_buffer_data_type_size(RB_SYM2ID(data_type)));
     }
 }
 
 static inline VALUE
-rb_io_buffer_get_value(const void* base, size_t size, ID data_type, size_t *offset)
+rb_io_buffer_get_value(const void *base, size_t size, ID data_type, size_t *offset)
 {
-#define IO_BUFFER_GET_VALUE(name) if (data_type == RB_IO_BUFFER_DATA_TYPE_##name) return io_buffer_read_##name(base, size, offset);
+#define IO_BUFFER_GET_VALUE(name) \
+ if (data_type == RB_IO_BUFFER_DATA_TYPE_##name) return io_buffer_read_##name(base, size, offset);
     IO_BUFFER_GET_VALUE(U8)
     IO_BUFFER_GET_VALUE(S8)
 
@@ -1765,21 +1769,24 @@ io_buffer_each(int argc, VALUE *argv, VALUE self)
     ID data_type;
     if (argc >= 1) {
         data_type = RB_SYM2ID(argv[0]);
-    } else {
+    }
+    else {
         data_type = RB_IO_BUFFER_DATA_TYPE_U8;
     }
 
     size_t offset;
     if (argc >= 2) {
         offset = NUM2SIZET(argv[1]);
-    } else {
+    }
+    else {
         offset = 0;
     }
 
     size_t count;
     if (argc >= 3) {
         count = NUM2SIZET(argv[2]);
-    } else {
+    }
+    else {
         count = (size - offset) / io_buffer_data_type_size(data_type);
     }
 
@@ -1815,21 +1822,24 @@ io_buffer_values(int argc, VALUE *argv, VALUE self)
     ID data_type;
     if (argc >= 1) {
         data_type = RB_SYM2ID(argv[0]);
-    } else {
+    }
+    else {
         data_type = RB_IO_BUFFER_DATA_TYPE_U8;
     }
 
     size_t offset;
     if (argc >= 2) {
         offset = NUM2SIZET(argv[1]);
-    } else {
+    }
+    else {
         offset = 0;
     }
 
     size_t count;
     if (argc >= 3) {
         count = NUM2SIZET(argv[2]);
-    } else {
+    }
+    else {
         count = (size - offset) / io_buffer_data_type_size(data_type);
     }
 
@@ -1873,14 +1883,16 @@ io_buffer_each_byte(int argc, VALUE *argv, VALUE self)
     size_t offset;
     if (argc >= 2) {
         offset = NUM2SIZET(argv[1]);
-    } else {
+    }
+    else {
         offset = 0;
     }
 
     size_t count;
     if (argc >= 3) {
         count = NUM2SIZET(argv[2]);
-    } else {
+    }
+    else {
         count = (size - offset);
     }
 
@@ -1893,9 +1905,13 @@ io_buffer_each_byte(int argc, VALUE *argv, VALUE self)
 }
 
 static inline void
-rb_io_buffer_set_value(const void* base, size_t size, ID data_type, size_t *offset, VALUE value)
+rb_io_buffer_set_value(const void *base, size_t size, ID data_type, size_t *offset, VALUE value)
 {
-#define IO_BUFFER_SET_VALUE(name) if (data_type == RB_IO_BUFFER_DATA_TYPE_##name) {io_buffer_write_##name(base, size, offset, value); return;}
+#define IO_BUFFER_SET_VALUE(name) \
+ if (data_type == RB_IO_BUFFER_DATA_TYPE_##name) { \
+  io_buffer_write_##name(base, size, offset, value); \
+  return; \
+ }
     IO_BUFFER_SET_VALUE(U8);
     IO_BUFFER_SET_VALUE(S8);
 
@@ -2026,7 +2042,7 @@ io_buffer_memcpy(struct rb_io_buffer *data, size_t offset, const void *source_ba
         rb_raise(rb_eArgError, "The computed source range exceeds the size of the source!");
     }
 
-    memcpy((unsigned char*)base+offset, (unsigned char*)source_base+source_offset, length);
+    memcpy((unsigned char *)base + offset, (unsigned char *)source_base + source_offset, length);
 }
 
 // (offset, length, source_offset) -> length
@@ -2172,7 +2188,7 @@ io_buffer_copy(int argc, VALUE *argv, VALUE self)
 
     rb_io_buffer_get_bytes_for_reading(source, &source_base, &source_size);
 
-    return io_buffer_copy_from(data, source_base, source_size, argc-1, argv+1);
+    return io_buffer_copy_from(data, source_base, source_size, argc - 1, argv + 1);
 }
 
 /*
@@ -2222,7 +2238,7 @@ io_buffer_get_string(int argc, VALUE *argv, VALUE self)
 
     io_buffer_validate_range(data, offset, length);
 
-    return rb_enc_str_new((const char*)base + offset, length, encoding);
+    return rb_enc_str_new((const char *)base + offset, length, encoding);
 }
 
 /*
@@ -2261,7 +2277,7 @@ io_buffer_set_string(int argc, VALUE *argv, VALUE self)
     const void *source_base = RSTRING_PTR(string);
     size_t source_size = RSTRING_LEN(string);
 
-    return io_buffer_copy_from(data, source_base, source_size, argc-1, argv+1);
+    return io_buffer_copy_from(data, source_base, source_size, argc - 1, argv + 1);
 }
 
 void
@@ -2276,7 +2292,7 @@ rb_io_buffer_clear(VALUE self, uint8_t value, size_t offset, size_t length)
         rb_raise(rb_eArgError, "The given offset + length out of bounds!");
     }
 
-    memset((char*)base + offset, value, length);
+    memset((char *)base + offset, value, length);
 }
 
 /*
@@ -2345,7 +2361,7 @@ static size_t
 io_buffer_default_size(size_t page_size)
 {
     // Platform agnostic default size, based on empirical performance observation:
-    const size_t platform_agnostic_default_size = 64*1024;
+    const size_t platform_agnostic_default_size = 64 * 1024;
 
     // Allow user to specify custom default buffer size:
     const char *default_size = getenv("RUBY_IO_BUFFER_DEFAULT_SIZE");
@@ -2399,11 +2415,11 @@ rb_io_buffer_read(VALUE self, VALUE io, size_t length, size_t offset)
 
     int descriptor = rb_io_descriptor(io);
 
-    void * base;
+    void *base;
     size_t size;
     io_buffer_get_bytes_for_writing(data, &base, &size);
 
-    base = (unsigned char*)base + offset;
+    base = (unsigned char *)base + offset;
 
     struct io_buffer_read_internal_argument argument = {
         .descriptor = descriptor,
@@ -2519,7 +2535,7 @@ rb_io_buffer_pread(VALUE self, VALUE io, rb_off_t from, size_t length, size_t of
 
     int descriptor = rb_io_descriptor(io);
 
-    void * base;
+    void *base;
     size_t size;
     io_buffer_get_bytes_for_writing(data, &base, &size);
 
@@ -2527,7 +2543,7 @@ rb_io_buffer_pread(VALUE self, VALUE io, rb_off_t from, size_t length, size_t of
         .descriptor = descriptor,
 
         // Move the base pointer to the offset:
-        .base = (unsigned char*)base + offset,
+        .base = (unsigned char *)base + offset,
 
         // And the size to the length of data we want to read:
         .size = length,
@@ -2624,7 +2640,7 @@ rb_io_buffer_write(VALUE self, VALUE io, size_t length, size_t offset)
 
     int descriptor = rb_io_descriptor(io);
 
-    const void * base;
+    const void *base;
     size_t size;
     io_buffer_get_bytes_for_reading(data, &base, &size);
 
@@ -2732,7 +2748,7 @@ rb_io_buffer_pwrite(VALUE self, VALUE io, rb_off_t from, size_t length, size_t o
 
     int descriptor = rb_io_descriptor(io);
 
-    const void * base;
+    const void *base;
     size_t size;
     io_buffer_get_bytes_for_reading(data, &base, &size);
 
@@ -2802,7 +2818,7 @@ io_buffer_check_mask(const struct rb_io_buffer *buffer)
 }
 
 static void
-memory_and(unsigned char * restrict output, unsigned char * restrict base, size_t size, unsigned char * restrict mask, size_t mask_size)
+memory_and(unsigned char *restrict output, unsigned char *restrict base, size_t size, unsigned char *restrict mask, size_t mask_size)
 {
     for (size_t offset = 0; offset < size; offset += 1) {
         output[offset] = base[offset] & mask[offset % mask_size];
@@ -2842,7 +2858,7 @@ io_buffer_and(VALUE self, VALUE mask)
 }
 
 static void
-memory_or(unsigned char * restrict output, unsigned char * restrict base, size_t size, unsigned char * restrict mask, size_t mask_size)
+memory_or(unsigned char *restrict output, unsigned char *restrict base, size_t size, unsigned char *restrict mask, size_t mask_size)
 {
     for (size_t offset = 0; offset < size; offset += 1) {
         output[offset] = base[offset] | mask[offset % mask_size];
@@ -2882,7 +2898,7 @@ io_buffer_or(VALUE self, VALUE mask)
 }
 
 static void
-memory_xor(unsigned char * restrict output, unsigned char * restrict base, size_t size, unsigned char * restrict mask, size_t mask_size)
+memory_xor(unsigned char *restrict output, unsigned char *restrict base, size_t size, unsigned char *restrict mask, size_t mask_size)
 {
     for (size_t offset = 0; offset < size; offset += 1) {
         output[offset] = base[offset] ^ mask[offset % mask_size];
@@ -2922,7 +2938,7 @@ io_buffer_xor(VALUE self, VALUE mask)
 }
 
 static void
-memory_not(unsigned char * restrict output, unsigned char * restrict base, size_t size)
+memory_not(unsigned char *restrict output, unsigned char *restrict base, size_t size)
 {
     for (size_t offset = 0; offset < size; offset += 1) {
         output[offset] = ~base[offset];
@@ -2963,7 +2979,7 @@ io_buffer_overlaps(const struct rb_io_buffer *a, const struct rb_io_buffer *b)
         return io_buffer_overlaps(b, a);
     }
 
-    return (b->base >= a->base) && (b->base <= (void*)((unsigned char *)a->base + a->size));
+    return (b->base >= a->base) && (b->base <= (void *)((unsigned char *)a->base + a->size));
 }
 
 static inline void
@@ -2974,7 +2990,7 @@ io_buffer_check_overlaps(struct rb_io_buffer *a, struct rb_io_buffer *b)
 }
 
 static void
-memory_and_inplace(unsigned char * restrict base, size_t size, unsigned char * restrict mask, size_t mask_size)
+memory_and_inplace(unsigned char *restrict base, size_t size, unsigned char *restrict mask, size_t mask_size)
 {
     for (size_t offset = 0; offset < size; offset += 1) {
         base[offset] &= mask[offset % mask_size];
@@ -3020,7 +3036,7 @@ io_buffer_and_inplace(VALUE self, VALUE mask)
 }
 
 static void
-memory_or_inplace(unsigned char * restrict base, size_t size, unsigned char * restrict mask, size_t mask_size)
+memory_or_inplace(unsigned char *restrict base, size_t size, unsigned char *restrict mask, size_t mask_size)
 {
     for (size_t offset = 0; offset < size; offset += 1) {
         base[offset] |= mask[offset % mask_size];
@@ -3066,7 +3082,7 @@ io_buffer_or_inplace(VALUE self, VALUE mask)
 }
 
 static void
-memory_xor_inplace(unsigned char * restrict base, size_t size, unsigned char * restrict mask, size_t mask_size)
+memory_xor_inplace(unsigned char *restrict base, size_t size, unsigned char *restrict mask, size_t mask_size)
 {
     for (size_t offset = 0; offset < size; offset += 1) {
         base[offset] ^= mask[offset % mask_size];
@@ -3112,7 +3128,7 @@ io_buffer_xor_inplace(VALUE self, VALUE mask)
 }
 
 static void
-memory_not_inplace(unsigned char * restrict base, size_t size)
+memory_not_inplace(unsigned char *restrict base, size_t size)
 {
     for (size_t offset = 0; offset < size; offset += 1) {
         base[offset] = ~base[offset];

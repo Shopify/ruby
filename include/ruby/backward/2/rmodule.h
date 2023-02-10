@@ -1,4 +1,4 @@
-#ifndef RUBY_BACKWARD2_RMODULE_H                     /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_BACKWARD2_RMODULE_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_BACKWARD2_RMODULE_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>

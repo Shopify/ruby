@@ -17,12 +17,12 @@
 #if USE_DEBUG_COUNTER
 
 const char *const rb_debug_counter_names[] = {
-#define DEBUG_COUNTER_NAME_EMPTY "" /* Suppress -Wstring-concatenation */
+# define DEBUG_COUNTER_NAME_EMPTY "" /* Suppress -Wstring-concatenation */
     DEBUG_COUNTER_NAME_EMPTY
-#undef DEBUG_COUNTER_NAME_EMPTY
-#define RB_DEBUG_COUNTER(name) #name,
-#include "debug_counter.h"
-#undef RB_DEBUG_COUNTER
+# undef DEBUG_COUNTER_NAME_EMPTY
+# define RB_DEBUG_COUNTER(name) # name,
+# include "debug_counter.h"
+# undef RB_DEBUG_COUNTER
 };
 
 MJIT_SYMBOL_EXPORT_BEGIN
@@ -32,8 +32,7 @@ MJIT_SYMBOL_EXPORT_END
 
 static rb_nativethread_lock_t debug_counter_lock;
 
-__attribute__((constructor))
-static void
+__attribute__((constructor)) static void
 debug_counter_setup(void)
 {
     rb_nativethread_lock_initialize(&debug_counter_lock);
@@ -66,12 +65,12 @@ ruby_debug_counter_get(const char **names_ptr, size_t *counters_ptr)
 {
     int i;
     if (names_ptr != NULL) {
-        for (i=0; i<RB_DEBUG_COUNTER_MAX; i++) {
+        for (i = 0; i < RB_DEBUG_COUNTER_MAX; i++) {
             names_ptr[i] = rb_debug_counter_names[i];
         }
     }
     if (counters_ptr != NULL) {
-        for (i=0; i<RB_DEBUG_COUNTER_MAX; i++) {
+        for (i = 0; i < RB_DEBUG_COUNTER_MAX; i++) {
             counters_ptr[i] = rb_debug_counter[i];
         }
     }
@@ -95,10 +94,10 @@ rb_debug_counter_show_results(const char *msg)
     if (env == NULL || strcmp("1", env) != 0) {
         int i;
         fprintf(stderr, "[RUBY_DEBUG_COUNTER]\t%d %s\n", getpid(), msg);
-        for (i=0; i<RB_DEBUG_COUNTER_MAX; i++) {
-            fprintf(stderr, "[RUBY_DEBUG_COUNTER]\t%-30s\t%'14"PRIuSIZE"\n",
-                    rb_debug_counter_names[i],
-                    rb_debug_counter[i]);
+        for (i = 0; i < RB_DEBUG_COUNTER_MAX; i++) {
+            fprintf(stderr, "[RUBY_DEBUG_COUNTER]\t%-30s\t%'14" PRIuSIZE "\n",
+              rb_debug_counter_names[i],
+              rb_debug_counter[i]);
         }
     }
 }
@@ -118,8 +117,7 @@ rb_debug_counter_reset(RB_UNUSED_VAR(VALUE klass))
     return Qnil;
 }
 
-__attribute__((destructor))
-static void
+__attribute__((destructor)) static void
 debug_counter_show_results_at_exit(void)
 {
     if (debug_counter_disable_show_at_exit == 0) {

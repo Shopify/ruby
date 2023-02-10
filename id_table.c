@@ -3,12 +3,12 @@
 #include "id_table.h"
 
 #ifndef ID_TABLE_DEBUG
-#define ID_TABLE_DEBUG 0
+# define ID_TABLE_DEBUG 0
 #endif
 
 #if ID_TABLE_DEBUG == 0
-#undef NDEBUG
-#define NDEBUG
+# undef NDEBUG
+# define NDEBUG
 #endif
 #include "ruby_assert.h"
 
@@ -33,9 +33,9 @@ id2key(ID id)
 typedef struct rb_id_item {
     id_key_t key;
 #if SIZEOF_VALUE == 8
-    int      collision;
+    int collision;
 #endif
-    VALUE    val;
+    VALUE val;
 } item_t;
 
 struct rb_id_table {
@@ -46,20 +46,20 @@ struct rb_id_table {
 };
 
 #if SIZEOF_VALUE == 8
-#define ITEM_GET_KEY(tbl, i) ((tbl)->items[i].key)
-#define ITEM_KEY_ISSET(tbl, i) ((tbl)->items[i].key)
-#define ITEM_COLLIDED(tbl, i) ((tbl)->items[i].collision)
-#define ITEM_SET_COLLIDED(tbl, i) ((tbl)->items[i].collision = 1)
+# define ITEM_GET_KEY(tbl, i) ((tbl)->items[i].key)
+# define ITEM_KEY_ISSET(tbl, i) ((tbl)->items[i].key)
+# define ITEM_COLLIDED(tbl, i) ((tbl)->items[i].collision)
+# define ITEM_SET_COLLIDED(tbl, i) ((tbl)->items[i].collision = 1)
 static inline void
 ITEM_SET_KEY(struct rb_id_table *tbl, int i, id_key_t key)
 {
     tbl->items[i].key = key;
 }
 #else
-#define ITEM_GET_KEY(tbl, i) ((tbl)->items[i].key >> 1)
-#define ITEM_KEY_ISSET(tbl, i) ((tbl)->items[i].key > 1)
-#define ITEM_COLLIDED(tbl, i) ((tbl)->items[i].key & 1)
-#define ITEM_SET_COLLIDED(tbl, i) ((tbl)->items[i].key |= 1)
+# define ITEM_GET_KEY(tbl, i) ((tbl)->items[i].key >> 1)
+# define ITEM_KEY_ISSET(tbl, i) ((tbl)->items[i].key > 1)
+# define ITEM_COLLIDED(tbl, i) ((tbl)->items[i].key & 1)
+# define ITEM_SET_COLLIDED(tbl, i) ((tbl)->items[i].key |= 1)
 static inline void
 ITEM_SET_KEY(struct rb_id_table *tbl, int i, id_key_t key)
 {
@@ -127,7 +127,7 @@ rb_id_table_memsize(const struct rb_id_table *tbl)
 }
 
 static int
-hash_table_index(struct rb_id_table* tbl, id_key_t key)
+hash_table_index(struct rb_id_table *tbl, id_key_t key)
 {
     if (tbl->capa > 0) {
         int mask = tbl->capa - 1;
@@ -182,13 +182,13 @@ hash_delete_index(struct rb_id_table *tbl, int ix)
 }
 
 static void
-hash_table_extend(struct rb_id_table* tbl)
+hash_table_extend(struct rb_id_table *tbl)
 {
     if (tbl->used + (tbl->used >> 1) >= tbl->capa) {
         int new_cap = round_capa(tbl->num + (tbl->num >> 1));
         int i;
-        item_t* old;
-        struct rb_id_table tmp_tbl = {0, 0, 0};
+        item_t *old;
+        struct rb_id_table tmp_tbl = { 0, 0, 0 };
         if (new_cap < tbl->capa) {
             new_cap = round_capa(tbl->used + (tbl->used >> 1));
         }
@@ -215,7 +215,7 @@ hash_table_show(struct rb_id_table *tbl)
     int i;
 
     fprintf(stderr, "tbl: %p (capa: %d, num: %d, used: %d)\n", tbl, tbl->capa, tbl->num, tbl->used);
-    for (i=0; i<capa; i++) {
+    for (i = 0; i < capa; i++) {
         if (ITEM_KEY_ISSET(tbl, i)) {
             fprintf(stderr, " -> [%d] %s %d\n", i, rb_id2name(key2id(keys[i])), (int)keys[i]);
         }
@@ -272,7 +272,7 @@ rb_id_table_foreach(struct rb_id_table *tbl, rb_id_table_foreach_func_t *func, v
 {
     int i, capa = tbl->capa;
 
-    for (i=0; i<capa; i++) {
+    for (i = 0; i < capa; i++) {
         if (ITEM_KEY_ISSET(tbl, i)) {
             const id_key_t key = ITEM_GET_KEY(tbl, i);
             enum rb_id_table_iterator_result ret = (*func)(key2id(key), tbl->items[i].val, data);
@@ -291,7 +291,7 @@ rb_id_table_foreach_values(struct rb_id_table *tbl, rb_id_table_foreach_values_f
 {
     int i, capa = tbl->capa;
 
-    for (i=0; i<capa; i++) {
+    for (i = 0; i < capa; i++) {
         if (ITEM_KEY_ISSET(tbl, i)) {
             enum rb_id_table_iterator_result ret = (*func)(tbl->items[i].val, data);
 
@@ -323,4 +323,3 @@ rb_id_table_foreach_values_with_replace(struct rb_id_table *tbl, rb_id_table_for
         }
     }
 }
-

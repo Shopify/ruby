@@ -1,4 +1,4 @@
-#ifndef RBIMPL_INTERN_ENUMERATOR_H                   /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_INTERN_ENUMERATOR_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_INTERN_ENUMERATOR_H
 /**
  * @file
@@ -23,7 +23,7 @@
 #include "ruby/internal/attr/nonnull.h"
 #include "ruby/internal/dllexport.h"
 #include "ruby/internal/intern/eval.h" /* rb_frame_this_func */
-#include "ruby/internal/iterator.h"    /* rb_block_given_p */
+#include "ruby/internal/iterator.h" /* rb_block_given_p */
 #include "ruby/internal/symbol.h"
 #include "ruby/internal/value.h"
 
@@ -51,10 +51,10 @@ typedef VALUE rb_enumerator_size_func(VALUE recv, VALUE argv, VALUE eobj);
  * you can obtain a decomposed one using rb_arithmetic_sequence_extract().
  */
 typedef struct {
-    VALUE begin;          /**< "Left" or "lowest" endpoint of the sequence. */
-    VALUE end;            /**< "Right" or "highest" endpoint of the sequence.*/
-    VALUE step;           /**< Step between a sequence. */
-    int exclude_end;      /**< Whether the endpoint is open or closed.  */
+    VALUE begin; /**< "Left" or "lowest" endpoint of the sequence. */
+    VALUE end; /**< "Right" or "highest" endpoint of the sequence.*/
+    VALUE step; /**< Step between a sequence. */
+    int exclude_end; /**< Whether the endpoint is open or closed.  */
 } rb_arithmetic_sequence_components_t;
 
 /* enumerator.c */
@@ -154,9 +154,9 @@ RBIMPL_SYMBOL_EXPORT_END()
 /** @cond INTERNAL_MACRO */
 #ifndef RUBY_EXPORT
 # define rb_enumeratorize_with_size(obj, id, argc, argv, size_fn) \
-    rb_enumeratorize_with_size(obj, id, argc, argv, (rb_enumerator_size_func *)(size_fn))
+  rb_enumeratorize_with_size(obj, id, argc, argv, (rb_enumerator_size_func *)(size_fn))
 # define rb_enumeratorize_with_size_kw(obj, id, argc, argv, size_fn, kw_splat) \
-    rb_enumeratorize_with_size_kw(obj, id, argc, argv, (rb_enumerator_size_func *)(size_fn), kw_splat)
+  rb_enumeratorize_with_size_kw(obj, id, argc, argv, (rb_enumerator_size_func *)(size_fn), kw_splat)
 #endif
 /** @endcond */
 
@@ -171,9 +171,9 @@ RBIMPL_SYMBOL_EXPORT_END()
  * @return     A  new   instance  of  ::rb_cEnumerator  which,   when  yielded,
  *             enumerates by calling the current method on `recv` with `argv`.
  */
-#define SIZED_ENUMERATOR(obj, argc, argv, size_fn)                  \
-    rb_enumeratorize_with_size((obj), ID2SYM(rb_frame_this_func()), \
-                               (argc), (argv), (size_fn))
+#define SIZED_ENUMERATOR(obj, argc, argv, size_fn) \
+ rb_enumeratorize_with_size((obj), ID2SYM(rb_frame_this_func()), \
+   (argc), (argv), (size_fn))
 
 /**
  * This  is an  implementation  detail  of #RETURN_SIZED_ENUMERATOR_KW().   You
@@ -190,9 +190,9 @@ RBIMPL_SYMBOL_EXPORT_END()
  * @return     A  new   instance  of  ::rb_cEnumerator  which,   when  yielded,
  *             enumerates by calling the current method on `recv` with `argv`.
  */
-#define SIZED_ENUMERATOR_KW(obj, argc, argv, size_fn, kw_splat)        \
-    rb_enumeratorize_with_size_kw((obj), ID2SYM(rb_frame_this_func()), \
-                                  (argc), (argv), (size_fn), (kw_splat))
+#define SIZED_ENUMERATOR_KW(obj, argc, argv, size_fn, kw_splat) \
+ rb_enumeratorize_with_size_kw((obj), ID2SYM(rb_frame_this_func()), \
+   (argc), (argv), (size_fn), (kw_splat))
 
 /**
  * This roughly resembles `return enum_for(__callee__) unless block_given?`.
@@ -203,11 +203,11 @@ RBIMPL_SYMBOL_EXPORT_END()
  * @param[in]  size_fn  Size calculator.
  * @note       This macro may return inside.
  */
-#define RETURN_SIZED_ENUMERATOR(obj, argc, argv, size_fn) do {          \
-        if (!rb_block_given_p())                                        \
-            return SIZED_ENUMERATOR(obj, argc, argv, size_fn);          \
-    } while (0)
-
+#define RETURN_SIZED_ENUMERATOR(obj, argc, argv, size_fn) \
+ do { \
+  if (!rb_block_given_p()) \
+   return SIZED_ENUMERATOR(obj, argc, argv, size_fn); \
+ } while (0)
 
 /**
  * Identical  to  #RETURN_SIZED_ENUMERATOR(), except  you  can  specify how  to
@@ -223,10 +223,11 @@ RBIMPL_SYMBOL_EXPORT_END()
  *   - RB_PASS_CALLED_KEYWORDS  it depends if there is a passed block.
  * @note       This macro may return inside.
  */
-#define RETURN_SIZED_ENUMERATOR_KW(obj, argc, argv, size_fn, kw_splat) do { \
-        if (!rb_block_given_p())                                            \
-            return SIZED_ENUMERATOR_KW(obj, argc, argv, size_fn, kw_splat);              \
-    } while (0)
+#define RETURN_SIZED_ENUMERATOR_KW(obj, argc, argv, size_fn, kw_splat) \
+ do { \
+  if (!rb_block_given_p()) \
+   return SIZED_ENUMERATOR_KW(obj, argc, argv, size_fn, kw_splat); \
+ } while (0)
 
 /**
  * Identical to #RETURN_SIZED_ENUMERATOR(), except its size is unknown.
@@ -237,7 +238,7 @@ RBIMPL_SYMBOL_EXPORT_END()
  * @note       This macro may return inside.
  */
 #define RETURN_ENUMERATOR(obj, argc, argv) \
-    RETURN_SIZED_ENUMERATOR(obj, argc, argv, 0)
+ RETURN_SIZED_ENUMERATOR(obj, argc, argv, 0)
 
 /**
  * Identical to #RETURN_SIZED_ENUMERATOR_KW(), except  its size is unknown.  It
@@ -254,6 +255,6 @@ RBIMPL_SYMBOL_EXPORT_END()
  * @note       This macro may return inside.
  */
 #define RETURN_ENUMERATOR_KW(obj, argc, argv, kw_splat) \
-    RETURN_SIZED_ENUMERATOR_KW(obj, argc, argv, 0, kw_splat)
+ RETURN_SIZED_ENUMERATOR_KW(obj, argc, argv, 0, kw_splat)
 
 #endif /* RBIMPL_INTERN_ENUMERATOR_H */

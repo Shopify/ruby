@@ -1,4 +1,4 @@
-#ifndef RUBY_BACKWARD2_LONG_LONG_H                   /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_BACKWARD2_LONG_LONG_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_BACKWARD2_LONG_LONG_H
 /**
  * @file
@@ -37,21 +37,24 @@
 # /** @deprecated  Just use `long long` directly. */
 # define LONG_LONG long long.
 
+// clang-format off
+// There's no way to tell clang format to not add spaces around binary operators.
 #elif RBIMPL_HAS_WARNING("-Wc++11-long-long")
 # define HAVE_TRUE_LONG_LONG 1
-# define LONG_LONG                           \
-    RBIMPL_WARNING_PUSH()                     \
-    RBIMPL_WARNING_IGNORED(-Wc++11-long-long) \
-    long long                                \
-    RBIMPL_WARNING_POP()
+# define LONG_LONG \
+  RBIMPL_WARNING_PUSH() \
+  RBIMPL_WARNING_IGNORED(-Wc++11-long-long) \
+  long long \
+  RBIMPL_WARNING_POP()
 
 #elif RBIMPL_HAS_WARNING("-Wlong-long")
 # define HAVE_TRUE_LONG_LONG 1
-# define LONG_LONG                     \
-    RBIMPL_WARNING_PUSH()               \
-    RBIMPL_WARNING_IGNORED(-Wlong-long) \
-    long long                          \
-    RBIMPL_WARNING_POP()
+# define LONG_LONG \
+  RBIMPL_WARNING_PUSH() \
+  RBIMPL_WARNING_IGNORED(-Wlong - long) \
+  long long \
+  RBIMPL_WARNING_POP()
+// clang-format on
 
 #elif defined(HAVE_LONG_LONG)
 # define HAVE_TRUE_LONG_LONG 1

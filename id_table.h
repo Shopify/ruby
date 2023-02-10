@@ -9,9 +9,9 @@ struct rb_id_table;
 /* compatible with ST_* */
 enum rb_id_table_iterator_result {
     ID_TABLE_CONTINUE = ST_CONTINUE,
-    ID_TABLE_STOP     = ST_STOP,
-    ID_TABLE_DELETE   = ST_DELETE,
-    ID_TABLE_REPLACE  = ST_REPLACE,
+    ID_TABLE_STOP = ST_STOP,
+    ID_TABLE_DELETE = ST_DELETE,
+    ID_TABLE_REPLACE = ST_REPLACE,
     ID_TABLE_ITERATOR_RESULT_END
 };
 
@@ -36,4 +36,4 @@ RUBY_SYMBOL_EXPORT_BEGIN
 size_t rb_id_table_size(const struct rb_id_table *tbl);
 RUBY_SYMBOL_EXPORT_END
 
-#endif	/* RUBY_ID_TABLE_H */
+#endif /* RUBY_ID_TABLE_H */

@@ -1,4 +1,4 @@
-#ifndef RUBY_BACKWARD2_LIMITS_H                      /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_BACKWARD2_LIMITS_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_BACKWARD2_LIMITS_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -36,7 +36,7 @@
 #endif
 
 #ifndef LONG_MIN
-# define LONG_MIN (-LONG_MAX-1)
+# define LONG_MIN (-LONG_MAX - 1)
 #endif
 
 #ifndef CHAR_BIT
@@ -46,7 +46,7 @@
 #ifdef LLONG_MAX
 # /* Take that. */
 #elif defined(LONG_LONG_MAX)
-# define LLONG_MAX  LONG_LONG_MAX
+# define LLONG_MAX LONG_LONG_MAX
 #elif defined(_I64_MAX)
 # define LLONG_MAX _I64_MAX
 #else
@@ -57,11 +57,11 @@
 #ifdef LLONG_MIN
 # /* Take that. */
 #elif defined(LONG_LONG_MIN)
-# define LLONG_MIN  LONG_LONG_MIN
+# define LLONG_MIN LONG_LONG_MIN
 #elif defined(_I64_MAX)
 # define LLONG_MIN _I64_MIN
 #else
-# define LLONG_MIN (-LLONG_MAX-1)
+# define LLONG_MIN (-LLONG_MAX - 1)
 #endif
 
 #ifdef SIZE_MAX

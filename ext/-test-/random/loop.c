@@ -24,15 +24,14 @@ random_loop_memsize(const void *ptr)
 static rb_random_data_type_t random_loop_type = {
     "random/loop",
     {
-        rb_random_mark,
-        RUBY_TYPED_DEFAULT_FREE,
-        random_loop_memsize,
+      rb_random_mark,
+      RUBY_TYPED_DEFAULT_FREE,
+      random_loop_memsize,
     },
     RB_RANDOM_PARENT,
     (void *)&random_loop_if,
     RUBY_TYPED_FREE_IMMEDIATELY
 };
-
 
 static VALUE
 loop_alloc(VALUE klass)
@@ -61,21 +60,21 @@ loop_get_bytes(rb_random_t *rnd, void *p, size_t n)
     while (n > 0) {
         uint32_t x = loop_get_int32(rnd);
         switch (n % 4) {
-          case 0:
-            *buf++ = (uint8_t)x;
-            n--;
-            /* FALLTHROUGH */
-          case 3:
-            *buf++ = (uint8_t)x;
-            n--;
-            /* FALLTHROUGH */
-          case 2:
-            *buf++ = (uint8_t)x;
-            n--;
-            /* FALLTHROUGH */
-          case 1:
-            *buf++ = (uint8_t)x;
-            n--;
+            case 0:
+                *buf++ = (uint8_t)x;
+                n--;
+                /* FALLTHROUGH */
+            case 3:
+                *buf++ = (uint8_t)x;
+                n--;
+                /* FALLTHROUGH */
+            case 2:
+                *buf++ = (uint8_t)x;
+                n--;
+                /* FALLTHROUGH */
+            case 1:
+                *buf++ = (uint8_t)x;
+                n--;
         }
     }
 }

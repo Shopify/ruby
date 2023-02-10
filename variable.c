@@ -66,7 +66,7 @@ static st_table *generic_iv_tbl_;
 struct ivar_update {
     struct gen_ivtbl *ivtbl;
     uint32_t iv_index;
-    rb_shape_t* shape;
+    rb_shape_t *shape;
 };
 
 void
@@ -90,8 +90,9 @@ rb_namespace_p(VALUE obj)
 {
     if (RB_SPECIAL_CONST_P(obj)) return false;
     switch (RB_BUILTIN_TYPE(obj)) {
-      case T_MODULE: case T_CLASS: return true;
-      default: break;
+        case T_MODULE:
+        case T_CLASS: return true;
+        default: break;
     }
     return false;
 }
@@ -136,15 +137,15 @@ make_temporary_path(VALUE obj, VALUE klass)
 {
     VALUE path;
     switch (klass) {
-      case Qnil:
-        path = rb_sprintf("#<Class:%p>", (void*)obj);
-        break;
-      case Qfalse:
-        path = rb_sprintf("#<Module:%p>", (void*)obj);
-        break;
-      default:
-        path = rb_sprintf("#<%"PRIsVALUE":%p>", klass, (void*)obj);
-        break;
+        case Qnil:
+            path = rb_sprintf("#<Class:%p>", (void *)obj);
+            break;
+        case Qfalse:
+            path = rb_sprintf("#<Module:%p>", (void *)obj);
+            break;
+        default:
+            path = rb_sprintf("#<%" PRIsVALUE ":%p>", klass, (void *)obj);
+            break;
     }
     OBJ_FREEZE(path);
     return path;
@@ -257,12 +258,12 @@ rb_path_to_class(VALUE pathname)
     pbeg = p = path;
     pend = path + RSTRING_LEN(pathname);
     if (path == pend || path[0] == '#') {
-        rb_raise(rb_eArgError, "can't retrieve anonymous class %"PRIsVALUE,
-                 QUOTE(pathname));
+        rb_raise(rb_eArgError, "can't retrieve anonymous class %" PRIsVALUE,
+          QUOTE(pathname));
     }
     while (p < pend) {
         while (p < pend && *p != ':') p++;
-        id = rb_check_id_cstr(pbeg, p-pbeg, enc);
+        id = rb_check_id_cstr(pbeg, p - pbeg, enc);
         if (p < pend && p[0] == ':') {
             if ((size_t)(pend - p) < 2 || p[1] != ':') goto undefined_class;
             p += 2;
@@ -274,17 +275,17 @@ rb_path_to_class(VALUE pathname)
         c = rb_const_search(c, id, TRUE, FALSE, FALSE);
         if (UNDEF_P(c)) goto undefined_class;
         if (!rb_namespace_p(c)) {
-            rb_raise(rb_eTypeError, "%"PRIsVALUE" does not refer to class/module",
-                     pathname);
+            rb_raise(rb_eTypeError, "%" PRIsVALUE " does not refer to class/module",
+              pathname);
         }
     }
     RB_GC_GUARD(pathname);
 
     return c;
 
-  undefined_class:
-    rb_raise(rb_eArgError, "undefined class/module % "PRIsVALUE,
-             rb_str_subseq(pathname, 0, p-path));
+undefined_class:
+    rb_raise(rb_eArgError, "undefined class/module % " PRIsVALUE,
+      rb_str_subseq(pathname, 0, p - path));
     UNREACHABLE_RETURN(Qundef);
 }
 
@@ -339,7 +340,7 @@ struct rb_global_entry {
     bool ractor_local;
 };
 
-static struct rb_global_entry*
+static struct rb_global_entry *
 rb_find_global_entry(ID id)
 {
     struct rb_global_entry *entry;
@@ -372,7 +373,7 @@ rb_gvar_undef_compactor(void *var)
 {
 }
 
-static struct rb_global_entry*
+static struct rb_global_entry *
 rb_global_entry(ID id)
 {
     struct rb_global_entry *entry = rb_find_global_entry(id);
@@ -400,7 +401,7 @@ rb_global_entry(ID id)
 VALUE
 rb_gvar_undef_getter(ID id, VALUE *_)
 {
-    rb_warning("global variable `%"PRIsVALUE"' not initialized", QUOTE_ID(id));
+    rb_warning("global variable `%" PRIsVALUE "' not initialized", QUOTE_ID(id));
 
     return Qnil;
 }
@@ -415,7 +416,7 @@ rb_gvar_val_compactor(void *_var)
     if (obj) {
         VALUE new = rb_gc_location(obj);
         if (new != obj) {
-            var->data = (void*)new;
+            var->data = (void *)new;
         }
     }
 }
@@ -429,7 +430,7 @@ rb_gvar_undef_setter(VALUE val, ID id, VALUE *_)
     var->marker = rb_gvar_val_marker;
     var->compactor = rb_gvar_val_compactor;
 
-    var->data = (void*)val;
+    var->data = (void *)val;
 }
 
 void
@@ -447,7 +448,7 @@ void
 rb_gvar_val_setter(VALUE val, ID id, VALUE *_)
 {
     struct rb_global_variable *var = rb_global_entry(id)->var;
-    var->data = (void*)val;
+    var->data = (void *)val;
 }
 
 void
@@ -479,7 +480,7 @@ rb_gvar_var_marker(VALUE *var)
 void
 rb_gvar_readonly_setter(VALUE v, ID id, VALUE *_)
 {
-    rb_name_error(id, "%"PRIsVALUE" is a read-only variable", QUOTE_ID(id));
+    rb_name_error(id, "%" PRIsVALUE " is a read-only variable", QUOTE_ID(id));
 }
 
 static enum rb_id_table_iterator_result
@@ -529,14 +530,15 @@ global_id(const char *name)
 {
     ID id;
 
-    if (name[0] == '$') id = rb_intern(name);
+    if (name[0] == '$')
+        id = rb_intern(name);
     else {
         size_t len = strlen(name);
         VALUE vbuf = 0;
-        char *buf = ALLOCV_N(char, vbuf, len+1);
+        char *buf = ALLOCV_N(char, vbuf, len + 1);
         buf[0] = '$';
-        memcpy(buf+1, name, len);
-        id = rb_intern2(buf, len+1);
+        memcpy(buf + 1, name, len);
+        id = rb_intern2(buf, len + 1);
         ALLOCV_END(vbuf);
     }
     return id;
@@ -553,10 +555,10 @@ find_global_id(const char *name)
     }
     else {
         VALUE vbuf = 0;
-        char *buf = ALLOCV_N(char, vbuf, len+1);
+        char *buf = ALLOCV_N(char, vbuf, len + 1);
         buf[0] = '$';
-        memcpy(buf+1, name, len);
-        id = rb_check_id_cstr(buf, len+1, NULL);
+        memcpy(buf + 1, name, len);
+        id = rb_check_id_cstr(buf, len + 1, NULL);
         ALLOCV_END(vbuf);
     }
 
@@ -565,16 +567,16 @@ find_global_id(const char *name)
 
 void
 rb_define_hooked_variable(
-    const char *name,
-    VALUE *var,
-    rb_gvar_getter_t *getter,
-    rb_gvar_setter_t *setter)
+  const char *name,
+  VALUE *var,
+  rb_gvar_getter_t *getter,
+  rb_gvar_setter_t *setter)
 {
     volatile VALUE tmp = var ? *var : Qnil;
     ID id = global_id(name);
     struct rb_global_variable *gvar = rb_global_entry(id)->var;
 
-    gvar->data = (void*)var;
+    gvar->data = (void *)var;
     gvar->getter = getter ? (rb_gvar_getter_t *)getter : rb_gvar_var_getter;
     gvar->setter = setter ? (rb_gvar_setter_t *)setter : rb_gvar_var_setter;
     gvar->marker = rb_gvar_var_marker;
@@ -596,9 +598,9 @@ rb_define_readonly_variable(const char *name, const VALUE *var)
 
 void
 rb_define_virtual_variable(
-    const char *name,
-    rb_gvar_getter_t *getter,
-    rb_gvar_setter_t *setter)
+  const char *name,
+  rb_gvar_getter_t *getter,
+  rb_gvar_setter_t *setter)
 {
     if (!getter) getter = rb_gvar_val_getter;
     if (!setter) setter = rb_gvar_readonly_setter;
@@ -668,10 +670,10 @@ rb_f_untrace_var(int argc, const VALUE *argv)
     rb_scan_args(argc, argv, "11", &var, &cmd);
     id = rb_check_id(&var);
     if (!id) {
-        rb_name_error_str(var, "undefined global variable %"PRIsVALUE"", QUOTE(var));
+        rb_name_error_str(var, "undefined global variable %" PRIsVALUE "", QUOTE(var));
     }
     if ((entry = rb_find_global_entry(id)) == NULL) {
-        rb_name_error(id, "undefined global variable %"PRIsVALUE"", QUOTE_ID(id));
+        rb_name_error(id, "undefined global variable %" PRIsVALUE "", QUOTE_ID(id));
     }
 
     trace = entry->var->trace;
@@ -726,7 +728,7 @@ trace_en(VALUE v)
     struct rb_global_variable *var = (void *)v;
     var->block_trace = 0;
     remove_trace(var);
-    return Qnil;		/* not reached */
+    return Qnil; /* not reached */
 }
 
 static VALUE
@@ -894,19 +896,19 @@ IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(ID id)
 }
 
 #define CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() \
-  if (UNLIKELY(!rb_ractor_main_p())) { \
-      rb_raise(rb_eRactorIsolationError, "can not access class variables from non-main Ractors"); \
-  }
+ if (UNLIKELY(!rb_ractor_main_p())) { \
+  rb_raise(rb_eRactorIsolationError, "can not access class variables from non-main Ractors"); \
+ }
 
 static inline struct st_table *
 generic_ivtbl(VALUE obj, ID id, bool force_check_ractor)
 {
     ASSERT_vm_locking();
 
-    if ((force_check_ractor || LIKELY(rb_is_instance_id(id)) /* not internal ID */ )  &&
-        !RB_OBJ_FROZEN_RAW(obj) &&
-        UNLIKELY(!rb_ractor_main_p()) &&
-        UNLIKELY(rb_ractor_shareable_p(obj))) {
+    if ((force_check_ractor || LIKELY(rb_is_instance_id(id)) /* not internal ID */) &&
+      !RB_OBJ_FROZEN_RAW(obj) &&
+      UNLIKELY(!rb_ractor_main_p()) &&
+      UNLIKELY(rb_ractor_shareable_p(obj))) {
 
         rb_raise(rb_eRactorIsolationError, "can not access instance variables of shareable objects from non-main Ractors");
     }
@@ -1077,7 +1079,7 @@ rb_generic_shape_id(VALUE obj)
 
     RB_VM_LOCK_ENTER();
     {
-        st_table* global_iv_table = generic_ivtbl(obj, 0, false);
+        st_table *global_iv_table = generic_ivtbl(obj, 0, false);
 
         if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
             shape_id = ivtbl->shape_id;
@@ -1113,84 +1115,84 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
     if (SPECIAL_CONST_P(obj)) return undef;
 
     shape_id_t shape_id;
-    VALUE * ivar_list;
-    rb_shape_t * shape;
+    VALUE *ivar_list;
+    rb_shape_t *shape;
 
 #if SHAPE_IN_BASIC_FLAGS
     shape_id = RBASIC_SHAPE_ID(obj);
 #endif
 
     switch (BUILTIN_TYPE(obj)) {
-      case T_CLASS:
-      case T_MODULE:
-        {
-            bool found;
-            VALUE val;
+        case T_CLASS:
+        case T_MODULE:
+            {
+                bool found;
+                VALUE val;
 
-            RB_VM_LOCK_ENTER();
+                RB_VM_LOCK_ENTER();
+                {
+#if !SHAPE_IN_BASIC_FLAGS
+                    shape_id = RCLASS_SHAPE_ID(obj);
+#endif
+
+                    attr_index_t index = 0;
+                    shape = rb_shape_get_shape_by_id(shape_id);
+                    found = rb_shape_get_iv_index(shape, id, &index);
+
+                    if (found) {
+                        ivar_list = RCLASS_IVPTR(obj);
+                        RUBY_ASSERT(ivar_list);
+
+                        val = ivar_list[index];
+                    }
+                    else {
+                        val = undef;
+                    }
+                }
+                RB_VM_LOCK_LEAVE();
+
+                if (found &&
+                  rb_is_instance_id(id) &&
+                  UNLIKELY(!rb_ractor_main_p()) &&
+                  !rb_ractor_shareable_p(val)) {
+                    rb_raise(rb_eRactorIsolationError,
+                      "can not get unshareable values from instance variables of classes/modules from non-main Ractors");
+                }
+                return val;
+            }
+        case T_OBJECT:
             {
 #if !SHAPE_IN_BASIC_FLAGS
-                shape_id = RCLASS_SHAPE_ID(obj);
+                shape_id = ROBJECT_SHAPE_ID(obj);
 #endif
-
-                attr_index_t index = 0;
-                shape = rb_shape_get_shape_by_id(shape_id);
-                found = rb_shape_get_iv_index(shape, id, &index);
-
-                if (found) {
-                    ivar_list = RCLASS_IVPTR(obj);
-                    RUBY_ASSERT(ivar_list);
-
-                    val = ivar_list[index];
+                if (rb_shape_obj_too_complex(obj)) {
+                    struct rb_id_table *iv_table = ROBJECT_IV_HASH(obj);
+                    VALUE val;
+                    if (rb_id_table_lookup(iv_table, id, &val)) {
+                        return val;
+                    }
+                    else {
+                        return undef;
+                    }
                 }
-                else {
-                    val = undef;
-                }
-            }
-            RB_VM_LOCK_LEAVE();
 
-            if (found &&
-                    rb_is_instance_id(id) &&
-                    UNLIKELY(!rb_ractor_main_p()) &&
-                    !rb_ractor_shareable_p(val)) {
-                rb_raise(rb_eRactorIsolationError,
-                        "can not get unshareable values from instance variables of classes/modules from non-main Ractors");
+                RUBY_ASSERT(!rb_shape_obj_too_complex(obj));
+                ivar_list = ROBJECT_IVPTR(obj);
+                break;
             }
-            return val;
-        }
-      case T_OBJECT:
-        {
+        default:
+            if (FL_TEST_RAW(obj, FL_EXIVAR)) {
+                struct gen_ivtbl *ivtbl;
+                rb_gen_ivtbl_get(obj, id, &ivtbl);
 #if !SHAPE_IN_BASIC_FLAGS
-            shape_id = ROBJECT_SHAPE_ID(obj);
+                shape_id = ivtbl->shape_id;
 #endif
-            if (rb_shape_obj_too_complex(obj)) {
-                struct rb_id_table * iv_table = ROBJECT_IV_HASH(obj);
-                VALUE val;
-                if (rb_id_table_lookup(iv_table, id, &val)) {
-                    return val;
-                }
-                else {
-                    return undef;
-                }
+                ivar_list = ivtbl->ivptr;
             }
-
-            RUBY_ASSERT(!rb_shape_obj_too_complex(obj));
-            ivar_list = ROBJECT_IVPTR(obj);
+            else {
+                return undef;
+            }
             break;
-        }
-      default:
-        if (FL_TEST_RAW(obj, FL_EXIVAR)) {
-            struct gen_ivtbl *ivtbl;
-            rb_gen_ivtbl_get(obj, id, &ivtbl);
-#if !SHAPE_IN_BASIC_FLAGS
-            shape_id = ivtbl->shape_id;
-#endif
-            ivar_list = ivtbl->ivptr;
-        }
-        else {
-            return undef;
-        }
-        break;
     }
 
     attr_index_t index = 0;
@@ -1222,30 +1224,32 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
     rb_check_frozen(obj);
 
     VALUE val = undef;
-    rb_shape_t * shape = rb_shape_get_shape(obj);
+    rb_shape_t *shape = rb_shape_get_shape(obj);
 
     switch (BUILTIN_TYPE(obj)) {
-      case T_CLASS:
-      case T_MODULE:
-        IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
+        case T_CLASS:
+        case T_MODULE:
+            IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
 
-        RB_VM_LOCK_ENTER();
-        {
-            rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
-        }
-        RB_VM_LOCK_LEAVE();
+            RB_VM_LOCK_ENTER();
+            {
+                rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
+            }
+            RB_VM_LOCK_LEAVE();
 
-        break;
-      case T_OBJECT: {
-        rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
+            break;
+        case T_OBJECT:
+            {
+                rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
 
-        break;
-      }
-      default: {
-        rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
+                break;
+            }
+        default:
+            {
+                rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
 
-        break;
-      }
+                break;
+            }
     }
 
     return val;
@@ -1317,7 +1321,7 @@ obj_ivar_heap_realloc(VALUE obj, int32_t len, size_t newsize)
 
         assert(newptr);
         ROBJECT(obj)->as.heap.ivptr = newptr;
-        for (i=0; i<(int)len; i++) {
+        for (i = 0; i < (int)len; i++) {
             newptr[i] = orig_ptr[i];
         }
     }
@@ -1375,7 +1379,7 @@ rb_ensure_iv_list_size(VALUE obj, uint32_t current_capacity, uint32_t new_capaci
 struct gen_ivtbl *
 rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize)
 {
-    struct gen_ivtbl * ivtbl = 0;
+    struct gen_ivtbl *ivtbl = 0;
 
     RB_VM_LOCK_ENTER();
     {
@@ -1396,12 +1400,12 @@ rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize)
 rb_shape_t *
 rb_grow_iv_list(VALUE obj)
 {
-    rb_shape_t * initial_shape = rb_shape_get_shape(obj);
+    rb_shape_t *initial_shape = rb_shape_get_shape(obj);
     uint32_t len = initial_shape->capacity;
     RUBY_ASSERT(len > 0);
     uint32_t newsize = (uint32_t)(len * 2);
 
-    rb_shape_t * res = rb_shape_transition_shape_capa(initial_shape, newsize);
+    rb_shape_t *res = rb_shape_transition_shape_capa(initial_shape, newsize);
 
     rb_ensure_iv_list_size(obj, len, newsize);
 
@@ -1426,7 +1430,7 @@ rb_obj_ivar_set(VALUE obj, ID id, VALUE val)
     uint32_t num_iv = shape->capacity;
 
     if (rb_shape_obj_too_complex(obj)) {
-        struct rb_id_table * table = ROBJECT_IV_HASH(obj);
+        struct rb_id_table *table = ROBJECT_IV_HASH(obj);
         rb_id_table_insert(table, id, val);
         RB_OBJ_WRITTEN(obj, Qundef, val);
         return 0;
@@ -1450,7 +1454,7 @@ rb_obj_ivar_set(VALUE obj, ID id, VALUE val)
         rb_shape_t *next_shape = rb_shape_get_next(shape, obj, id);
 
         if (next_shape->type == SHAPE_OBJ_TOO_COMPLEX) {
-            struct rb_id_table * table = rb_id_table_create(shape->next_iv_index);
+            struct rb_id_table *table = rb_id_table_create(shape->next_iv_index);
 
             // Evacuate all previous values from shape into id_table
             rb_ivar_foreach(obj, rb_obj_evacuate_ivs_to_hash_table, (st_data_t)table);
@@ -1509,29 +1513,29 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
     RBASIC_SET_SHAPE_ID(obj, shape_id);
 #else
     switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-        ROBJECT_SET_SHAPE_ID(obj, shape_id);
-        break;
-      case T_CLASS:
-      case T_MODULE:
-        RCLASS_EXT(obj)->shape_id = shape_id;
-        break;
-      default:
-        if (shape_id != SPECIAL_CONST_SHAPE_ID) {
-            struct gen_ivtbl *ivtbl = 0;
-            RB_VM_LOCK_ENTER();
-            {
-                st_table* global_iv_table = generic_ivtbl(obj, 0, false);
+        case T_OBJECT:
+            ROBJECT_SET_SHAPE_ID(obj, shape_id);
+            break;
+        case T_CLASS:
+        case T_MODULE:
+            RCLASS_EXT(obj)->shape_id = shape_id;
+            break;
+        default:
+            if (shape_id != SPECIAL_CONST_SHAPE_ID) {
+                struct gen_ivtbl *ivtbl = 0;
+                RB_VM_LOCK_ENTER();
+                {
+                    st_table *global_iv_table = generic_ivtbl(obj, 0, false);
 
-                if (st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
-                    ivtbl->shape_id = shape_id;
+                    if (st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
+                        ivtbl->shape_id = shape_id;
+                    }
+                    else {
+                        rb_bug("Expected shape_id entry in global iv table");
+                    }
                 }
-                else {
-                    rb_bug("Expected shape_id entry in global iv table");
-                }
+                RB_VM_LOCK_LEAVE();
             }
-            RB_VM_LOCK_LEAVE();
-        }
     }
 #endif
 
@@ -1544,7 +1548,8 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
  *
  * @param[out]  x  Object in question.
  */
-void rb_obj_freeze_inline(VALUE x)
+void
+rb_obj_freeze_inline(VALUE x)
 {
     if (RB_FL_ABLE(x)) {
         RB_OBJ_FREEZE_RAW(x);
@@ -1563,20 +1568,20 @@ ivar_set(VALUE obj, ID id, VALUE val)
     RB_DEBUG_COUNTER_INC(ivar_set_base);
 
     switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-      {
-          rb_obj_ivar_set(obj, id, val);
-          break;
-      }
-      case T_CLASS:
-      case T_MODULE:
-        IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
-        rb_class_ivar_set(obj, id, val);
+        case T_OBJECT:
+            {
+                rb_obj_ivar_set(obj, id, val);
+                break;
+            }
+        case T_CLASS:
+        case T_MODULE:
+            IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
+            rb_class_ivar_set(obj, id, val);
 
-        break;
-      default:
-        generic_ivar_set(obj, id, val);
-        break;
+            break;
+        default:
+            generic_ivar_set(obj, id, val);
+            break;
     }
 }
 
@@ -1621,53 +1626,53 @@ st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 struct iv_itr_data {
     VALUE obj;
-    struct gen_ivtbl * ivtbl;
+    struct gen_ivtbl *ivtbl;
     st_data_t arg;
     rb_ivar_foreach_callback_func *func;
 };
 
 static void
-iterate_over_shapes_with_callback(rb_shape_t *shape, rb_ivar_foreach_callback_func *callback, struct iv_itr_data * itr_data)
+iterate_over_shapes_with_callback(rb_shape_t *shape, rb_ivar_foreach_callback_func *callback, struct iv_itr_data *itr_data)
 {
     switch ((enum shape_type)shape->type) {
-      case SHAPE_ROOT:
-        return;
-      case SHAPE_IVAR:
-        iterate_over_shapes_with_callback(rb_shape_get_parent(shape), callback, itr_data);
-        VALUE * iv_list;
-        switch (BUILTIN_TYPE(itr_data->obj)) {
-          case T_OBJECT:
-            RUBY_ASSERT(!rb_shape_obj_too_complex(itr_data->obj));
-            iv_list = ROBJECT_IVPTR(itr_data->obj);
-            break;
-          case T_CLASS:
-          case T_MODULE:
-            iv_list = RCLASS_IVPTR(itr_data->obj);
-            break;
-          default:
-            iv_list = itr_data->ivtbl->ivptr;
-            break;
-        }
-        VALUE val = iv_list[shape->next_iv_index - 1];
-        if (!UNDEF_P(val)) {
-            callback(shape->edge_name, val, itr_data->arg);
-        }
-        return;
-      case SHAPE_INITIAL_CAPACITY:
-      case SHAPE_CAPACITY_CHANGE:
-      case SHAPE_FROZEN:
-      case SHAPE_T_OBJECT:
-        iterate_over_shapes_with_callback(rb_shape_get_parent(shape), callback, itr_data);
-        return;
-      case SHAPE_OBJ_TOO_COMPLEX:
-        rb_bug("Unreachable\n");
+        case SHAPE_ROOT:
+            return;
+        case SHAPE_IVAR:
+            iterate_over_shapes_with_callback(rb_shape_get_parent(shape), callback, itr_data);
+            VALUE *iv_list;
+            switch (BUILTIN_TYPE(itr_data->obj)) {
+                case T_OBJECT:
+                    RUBY_ASSERT(!rb_shape_obj_too_complex(itr_data->obj));
+                    iv_list = ROBJECT_IVPTR(itr_data->obj);
+                    break;
+                case T_CLASS:
+                case T_MODULE:
+                    iv_list = RCLASS_IVPTR(itr_data->obj);
+                    break;
+                default:
+                    iv_list = itr_data->ivtbl->ivptr;
+                    break;
+            }
+            VALUE val = iv_list[shape->next_iv_index - 1];
+            if (!UNDEF_P(val)) {
+                callback(shape->edge_name, val, itr_data->arg);
+            }
+            return;
+        case SHAPE_INITIAL_CAPACITY:
+        case SHAPE_CAPACITY_CHANGE:
+        case SHAPE_FROZEN:
+        case SHAPE_T_OBJECT:
+            iterate_over_shapes_with_callback(rb_shape_get_parent(shape), callback, itr_data);
+            return;
+        case SHAPE_OBJ_TOO_COMPLEX:
+            rb_bug("Unreachable\n");
     }
 }
 
 static enum rb_id_table_iterator_result
 each_hash_iv(ID id, VALUE val, void *data)
 {
-    struct iv_itr_data * itr_data = (struct iv_itr_data *)data;
+    struct iv_itr_data *itr_data = (struct iv_itr_data *)data;
     rb_ivar_foreach_callback_func *callback = itr_data->func;
     return callback(id, val, itr_data->arg);
 }
@@ -1675,7 +1680,7 @@ each_hash_iv(ID id, VALUE val, void *data)
 static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
-    rb_shape_t* shape = rb_shape_get_shape(obj);
+    rb_shape_t *shape = rb_shape_get_shape(obj);
     struct iv_itr_data itr_data;
     itr_data.obj = obj;
     itr_data.arg = arg;
@@ -1707,7 +1712,7 @@ class_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
 
-    rb_shape_t* shape = rb_shape_get_shape(obj);
+    rb_shape_t *shape = rb_shape_get_shape(obj);
     struct iv_itr_data itr_data;
     itr_data.obj = obj;
     itr_data.arg = arg;
@@ -1733,7 +1738,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
         new_ivtbl = gen_ivtbl_resize(0, obj_ivtbl->numiv);
         FL_SET(clone, FL_EXIVAR);
 
-        for (uint32_t i=0; i<obj_ivtbl->numiv; i++) {
+        for (uint32_t i = 0; i < obj_ivtbl->numiv; i++) {
             new_ivtbl->ivptr[i] = obj_ivtbl->ivptr[i];
             RB_OBJ_WRITTEN(clone, Qundef, &new_ivtbl[i]);
         }
@@ -1749,7 +1754,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
         }
         RB_VM_LOCK_LEAVE();
 
-        rb_shape_t * obj_shape = rb_shape_get_shape(obj);
+        rb_shape_t *obj_shape = rb_shape_get_shape(obj);
         if (rb_shape_frozen_shape_p(obj_shape)) {
             rb_shape_set_shape_id(clone, obj_shape->parent_id);
         }
@@ -1759,7 +1764,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
     }
     return;
 
-  clear:
+clear:
     if (FL_TEST(clone, FL_EXIVAR)) {
         rb_free_generic_ivar(clone);
         FL_UNSET(clone, FL_EXIVAR);
@@ -1792,23 +1797,23 @@ rb_ivar_foreach(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     if (SPECIAL_CONST_P(obj)) return;
     switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-        obj_ivar_each(obj, func, arg);
-        break;
-      case T_CLASS:
-      case T_MODULE:
-        IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(0);
-        RB_VM_LOCK_ENTER();
-        {
-            class_ivar_each(obj, func, arg);
-        }
-        RB_VM_LOCK_LEAVE();
-        break;
-      default:
-        if (FL_TEST(obj, FL_EXIVAR)) {
-            gen_ivar_each(obj, func, arg);
-        }
-        break;
+        case T_OBJECT:
+            obj_ivar_each(obj, func, arg);
+            break;
+        case T_CLASS:
+        case T_MODULE:
+            IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(0);
+            RB_VM_LOCK_ENTER();
+            {
+                class_ivar_each(obj, func, arg);
+            }
+            RB_VM_LOCK_LEAVE();
+            break;
+        default:
+            if (FL_TEST(obj, FL_EXIVAR)) {
+                gen_ivar_each(obj, func, arg);
+            }
+            break;
     }
 }
 
@@ -1818,51 +1823,51 @@ rb_ivar_count(VALUE obj)
     if (SPECIAL_CONST_P(obj)) return 0;
 
     switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-        if (rb_shape_obj_too_complex(obj)) {
-            return ROBJECT_IV_COUNT(obj);
-        }
-
-        if (rb_shape_get_shape(obj)->next_iv_index > 0) {
-            st_index_t i, count, num = ROBJECT_IV_COUNT(obj);
-            const VALUE *const ivptr = ROBJECT_IVPTR(obj);
-            for (i = count = 0; i < num; ++i) {
-                if (!UNDEF_P(ivptr[i])) {
-                    count++;
-                }
+        case T_OBJECT:
+            if (rb_shape_obj_too_complex(obj)) {
+                return ROBJECT_IV_COUNT(obj);
             }
-            return count;
-        }
-        break;
-      case T_CLASS:
-      case T_MODULE:
-        if (rb_shape_get_shape(obj)->next_iv_index > 0) {
-            st_index_t count = 0;
 
-            RB_VM_LOCK_ENTER();
-            {
-                st_index_t i, num = rb_shape_get_shape(obj)->next_iv_index;
-                const VALUE *const ivptr = RCLASS_IVPTR(obj);
+            if (rb_shape_get_shape(obj)->next_iv_index > 0) {
+                st_index_t i, count, num = ROBJECT_IV_COUNT(obj);
+                const VALUE *const ivptr = ROBJECT_IVPTR(obj);
                 for (i = count = 0; i < num; ++i) {
                     if (!UNDEF_P(ivptr[i])) {
                         count++;
                     }
                 }
+                return count;
             }
-            RB_VM_LOCK_LEAVE();
+            break;
+        case T_CLASS:
+        case T_MODULE:
+            if (rb_shape_get_shape(obj)->next_iv_index > 0) {
+                st_index_t count = 0;
 
-            return count;
-        }
-        break;
-      default:
-        if (FL_TEST(obj, FL_EXIVAR)) {
-            struct gen_ivtbl *ivtbl;
+                RB_VM_LOCK_ENTER();
+                {
+                    st_index_t i, num = rb_shape_get_shape(obj)->next_iv_index;
+                    const VALUE *const ivptr = RCLASS_IVPTR(obj);
+                    for (i = count = 0; i < num; ++i) {
+                        if (!UNDEF_P(ivptr[i])) {
+                            count++;
+                        }
+                    }
+                }
+                RB_VM_LOCK_LEAVE();
 
-            if (rb_gen_ivtbl_get(obj, 0, &ivtbl)) {
-                return gen_ivtbl_count(ivtbl);
+                return count;
             }
-        }
-        break;
+            break;
+        default:
+            if (FL_TEST(obj, FL_EXIVAR)) {
+                struct gen_ivtbl *ivtbl;
+
+                if (rb_gen_ivtbl_get(obj, 0, &ivtbl)) {
+                    return gen_ivtbl_count(ivtbl);
+                }
+            }
+            break;
     }
     return 0;
 }
@@ -1909,20 +1914,20 @@ rb_obj_instance_variables(VALUE obj)
 #define rb_is_constant_id rb_is_const_id
 #define rb_is_constant_name rb_is_const_name
 #define id_for_var(obj, name, part, type) \
-    id_for_var_message(obj, name, type, "`%1$s' is not allowed as "#part" "#type" variable name")
+ id_for_var_message(obj, name, type, "`%1$s' is not allowed as " #part " " #type " variable name")
 #define id_for_var_message(obj, name, type, message) \
-    check_id_type(obj, &(name), rb_is_##type##_id, rb_is_##type##_name, message, strlen(message))
+ check_id_type(obj, &(name), rb_is_##type##_id, rb_is_##type##_name, message, strlen(message))
 static ID
 check_id_type(VALUE obj, VALUE *pname,
-              int (*valid_id_p)(ID), int (*valid_name_p)(VALUE),
-              const char *message, size_t message_len)
+  int (*valid_id_p)(ID), int (*valid_name_p)(VALUE),
+  const char *message, size_t message_len)
 {
     ID id = rb_check_id(pname);
     VALUE name = *pname;
 
     if (id ? !valid_id_p(id) : !valid_name_p(name)) {
         rb_name_err_raise_str(rb_fstring_new(message, message_len),
-                              obj, name);
+          obj, name);
     }
     return id;
 }
@@ -1965,38 +1970,40 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
         goto not_defined;
     }
 
-    rb_shape_t * shape = rb_shape_get_shape(obj);
+    rb_shape_t *shape = rb_shape_get_shape(obj);
 
     switch (BUILTIN_TYPE(obj)) {
-      case T_CLASS:
-      case T_MODULE:
-        IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
-        rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
-        break;
-      case T_OBJECT: {
-        if (rb_shape_obj_too_complex(obj)) {
-            if (rb_id_table_lookup(ROBJECT_IV_HASH(obj), id, &val)) {
-                rb_id_table_delete(ROBJECT_IV_HASH(obj), id);
-            }
-        }
-        else {
+        case T_CLASS:
+        case T_MODULE:
+            IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
             rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
-        }
-        break;
-      }
-      default: {
-        rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
-        break;
-      }
+            break;
+        case T_OBJECT:
+            {
+                if (rb_shape_obj_too_complex(obj)) {
+                    if (rb_id_table_lookup(ROBJECT_IV_HASH(obj), id, &val)) {
+                        rb_id_table_delete(ROBJECT_IV_HASH(obj), id);
+                    }
+                }
+                else {
+                    rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
+                }
+                break;
+            }
+        default:
+            {
+                rb_shape_transition_shape_remove_ivar(obj, id, shape, &val);
+                break;
+            }
     }
 
     if (val != Qundef) {
         return val;
     }
 
-  not_defined:
+not_defined:
     rb_name_err_raise("instance variable %1$s not defined",
-                      obj, name);
+      obj, name);
     UNREACHABLE_RETURN(Qnil);
 }
 
@@ -2006,10 +2013,10 @@ uninitialized_constant(VALUE klass, VALUE name)
 {
     if (klass && rb_class_real(klass) != rb_cObject)
         rb_name_err_raise("uninitialized constant %2$s::%1$s",
-                          klass, name);
+          klass, name);
     else
         rb_name_err_raise("uninitialized constant %1$s",
-                          klass, name);
+          klass, name);
 }
 
 VALUE
@@ -2019,7 +2026,6 @@ rb_const_missing(VALUE klass, VALUE name)
     rb_vm_inc_const_missing_count();
     return value;
 }
-
 
 /*
  * call-seq:
@@ -2064,7 +2070,7 @@ rb_mod_const_missing(VALUE klass, VALUE name)
     rb_vm_pop_cfunc_frame();
     if (ref) {
         rb_name_err_raise("private constant %2$s::%1$s referenced",
-                          ref, name);
+          ref, name);
     }
     uninitialized_constant(klass, name);
 
@@ -2098,12 +2104,17 @@ autoload_table_compact(void *ptr)
 
 static const rb_data_type_t autoload_table_type = {
     "autoload_table",
-    {autoload_table_mark, autoload_table_free, autoload_table_memsize, autoload_table_compact,},
+    {
+      autoload_table_mark,
+      autoload_table_free,
+      autoload_table_memsize,
+      autoload_table_compact,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
 #define check_autoload_table(av) \
-    (struct st_table *)rb_check_typeddata((av), &autoload_table_type)
+ (struct st_table *)rb_check_typeddata((av), &autoload_table_type)
 
 static VALUE
 autoload_data(VALUE mod, ID id)
@@ -2211,7 +2222,7 @@ autoload_data_memsize(const void *ptr)
 
 static const rb_data_type_t autoload_data_type = {
     "autoload_data",
-    {autoload_data_mark, autoload_data_free, autoload_data_memsize, autoload_data_compact},
+    { autoload_data_mark, autoload_data_free, autoload_data_memsize, autoload_data_compact },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -2254,7 +2265,12 @@ autoload_const_free(void *ptr)
 
 static const rb_data_type_t autoload_const_type = {
     "autoload_const",
-    {autoload_const_mark, autoload_const_free, autoload_const_memsize, autoload_const_compact,},
+    {
+      autoload_const_mark,
+      autoload_const_free,
+      autoload_const_memsize,
+      autoload_const_compact,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -2376,7 +2392,7 @@ void
 rb_autoload_str(VALUE module, ID name, VALUE feature)
 {
     if (!rb_is_const_id(name)) {
-        rb_raise(rb_eNameError, "autoload must be constant name: %"PRIsVALUE"", QUOTE_ID(name));
+        rb_raise(rb_eNameError, "autoload must be constant name: %" PRIsVALUE "", QUOTE_ID(name));
     }
 
     Check_Type(feature, T_STRING);
@@ -2487,7 +2503,7 @@ check_autoload_required(VALUE mod, ID id, const char **loadingpath)
 static struct autoload_const *autoloading_const_entry(VALUE mod, ID id);
 
 MJIT_FUNC_EXPORTED int
-rb_autoloading_value(VALUE mod, ID id, VALUE* value, rb_const_flag_t *flag)
+rb_autoloading_value(VALUE mod, ID id, VALUE *value, rb_const_flag_t *flag)
 {
     struct autoload_const *ac = autoloading_const_entry(mod, id);
     if (!ac) return FALSE;
@@ -2583,7 +2599,7 @@ autoload_const_set(struct autoload_const *ac)
 static VALUE
 autoload_load_needed(VALUE _arguments)
 {
-    struct autoload_load_arguments *arguments = (struct autoload_load_arguments*)_arguments;
+    struct autoload_load_arguments *arguments = (struct autoload_load_arguments *)_arguments;
 
     const char *loading = 0, *src;
 
@@ -2626,7 +2642,7 @@ autoload_apply_constants(VALUE _arguments)
 {
     RUBY_ASSERT_CRITICAL_SECTION_ENTER();
 
-    struct autoload_load_arguments *arguments = (struct autoload_load_arguments*)_arguments;
+    struct autoload_load_arguments *arguments = (struct autoload_load_arguments *)_arguments;
 
     struct autoload_const *autoload_const = 0; // for ccan_container_off_var()
     struct autoload_const *next;
@@ -2636,7 +2652,8 @@ autoload_apply_constants(VALUE _arguments)
     // the `autoload_data->constants` linked list is empty, we can remove it.
 
     // Iterate over all constants and assign them:
-    ccan_list_for_each_safe(&arguments->autoload_data->constants, autoload_const, next, cnode) {
+    ccan_list_for_each_safe(&arguments->autoload_data->constants, autoload_const, next, cnode)
+    {
         if (!UNDEF_P(autoload_const->value)) {
             autoload_const_set(autoload_const);
         }
@@ -2650,7 +2667,7 @@ autoload_apply_constants(VALUE _arguments)
 static VALUE
 autoload_feature_require(VALUE _arguments)
 {
-    struct autoload_load_arguments *arguments = (struct autoload_load_arguments*)_arguments;
+    struct autoload_load_arguments *arguments = (struct autoload_load_arguments *)_arguments;
 
     struct autoload_const *autoload_const = arguments->autoload_const;
 
@@ -2669,7 +2686,7 @@ autoload_feature_require(VALUE _arguments)
 static VALUE
 autoload_try_load(VALUE _arguments)
 {
-    struct autoload_load_arguments *arguments = (struct autoload_load_arguments*)_arguments;
+    struct autoload_load_arguments *arguments = (struct autoload_load_arguments *)_arguments;
 
     VALUE result = autoload_feature_require(_arguments);
 
@@ -2683,18 +2700,16 @@ autoload_try_load(VALUE _arguments)
 
         if (arguments->module == rb_cObject) {
             rb_warning(
-                "Expected %"PRIsVALUE" to define %"PRIsVALUE" but it didn't",
-                arguments->autoload_data->feature,
-                ID2SYM(arguments->name)
-            );
+              "Expected %" PRIsVALUE " to define %" PRIsVALUE " but it didn't",
+              arguments->autoload_data->feature,
+              ID2SYM(arguments->name));
         }
         else {
             rb_warning(
-                "Expected %"PRIsVALUE" to define %"PRIsVALUE"::%"PRIsVALUE" but it didn't",
-                arguments->autoload_data->feature,
-                arguments->module,
-                ID2SYM(arguments->name)
-            );
+              "Expected %" PRIsVALUE " to define %" PRIsVALUE "::%" PRIsVALUE " but it didn't",
+              arguments->autoload_data->feature,
+              arguments->module,
+              ID2SYM(arguments->name));
         }
     }
     else {
@@ -2721,7 +2736,7 @@ rb_autoload_load(VALUE module, ID name)
     }
 
     // This state is stored on thes stack and is used during the autoload process.
-    struct autoload_load_arguments arguments = {.module = module, .name = name, .mutex = Qnil};
+    struct autoload_load_arguments arguments = { .module = module, .name = name, .mutex = Qnil };
 
     // Figure out whether we can autoload the named constant:
     VALUE autoload_const_value = rb_mutex_synchronize(autoload_mutex, autoload_load_needed, (VALUE)&arguments);
@@ -2769,13 +2784,13 @@ MJIT_FUNC_EXPORTED void
 rb_const_warn_if_deprecated(const rb_const_entry_t *ce, VALUE klass, ID id)
 {
     if (RB_CONST_DEPRECATED_P(ce) &&
-        rb_warning_category_enabled_p(RB_WARN_CATEGORY_DEPRECATED)) {
+      rb_warning_category_enabled_p(RB_WARN_CATEGORY_DEPRECATED)) {
         if (klass == rb_cObject) {
-            rb_category_warn(RB_WARN_CATEGORY_DEPRECATED, "constant ::%"PRIsVALUE" is deprecated", QUOTE_ID(id));
+            rb_category_warn(RB_WARN_CATEGORY_DEPRECATED, "constant ::%" PRIsVALUE " is deprecated", QUOTE_ID(id));
         }
         else {
-            rb_category_warn(RB_WARN_CATEGORY_DEPRECATED, "constant %"PRIsVALUE"::%"PRIsVALUE" is deprecated",
-                    rb_class_name(klass), QUOTE_ID(id));
+            rb_category_warn(RB_WARN_CATEGORY_DEPRECATED, "constant %" PRIsVALUE "::%" PRIsVALUE " is deprecated",
+              rb_class_name(klass), QUOTE_ID(id));
         }
     }
 }
@@ -2787,7 +2802,7 @@ rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
     if (!UNDEF_P(c)) {
         if (UNLIKELY(!rb_ractor_main_p())) {
             if (!rb_ractor_shareable_p(c)) {
-                rb_raise(rb_eRactorIsolationError, "can not access non-shareable objects in constant %"PRIsVALUE"::%s by non-main Ractor.", rb_class_path(klass), rb_id2name(id));
+                rb_raise(rb_eRactorIsolationError, "can not access non-shareable objects in constant %" PRIsVALUE "::%s by non-main Ractor.", rb_class_path(klass), rb_id2name(id));
             }
         }
         return c;
@@ -2802,8 +2817,8 @@ rb_const_search_from(VALUE klass, ID id, int exclude, int recurse, int visibilit
     bool first_iteration = true;
 
     for (current = klass;
-            RTEST(current);
-            current = RCLASS_SUPER(current), first_iteration = false) {
+         RTEST(current);
+         current = RCLASS_SUPER(current), first_iteration = false) {
         VALUE tmp;
         VALUE am = 0;
         rb_const_entry_t *ce;
@@ -2845,7 +2860,7 @@ rb_const_search_from(VALUE klass, ID id, int exclude, int recurse, int visibilit
         if (!recurse) break;
     }
 
-  not_found:
+not_found:
     GET_EC()->private_const_reference = 0;
     return Qundef;
 }
@@ -2899,7 +2914,7 @@ static void
 undefined_constant(VALUE mod, VALUE name)
 {
     rb_name_err_raise("constant %2$s::%1$s not defined",
-                      mod, name);
+      mod, name);
 }
 
 static VALUE
@@ -2922,7 +2937,7 @@ rb_const_location_from(VALUE klass, ID id, int exclude, int recurse, int visibil
         klass = RCLASS_SUPER(klass);
     }
 
-  not_found:
+not_found:
     return Qnil;
 }
 
@@ -3051,7 +3066,7 @@ rb_local_constants(VALUE mod)
     return ary;
 }
 
-void*
+void *
 rb_mod_const_at(VALUE mod, void *data)
 {
     st_table *tbl = data;
@@ -3068,7 +3083,7 @@ rb_mod_const_at(VALUE mod, void *data)
     return tbl;
 }
 
-void*
+void *
 rb_mod_const_of(VALUE mod, void *data)
 {
     VALUE tmp = mod;
@@ -3145,14 +3160,14 @@ rb_const_defined_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
     rb_const_entry_t *ce;
 
     tmp = klass;
-  retry:
+retry:
     while (tmp) {
         if ((ce = rb_const_lookup(tmp, id))) {
             if (visibility && RB_CONST_PRIVATE_P(ce)) {
                 return (int)Qfalse;
             }
             if (UNDEF_P(ce->value) && !check_autoload_required(tmp, id, 0) &&
-                !rb_autoloading_value(tmp, id, NULL, NULL))
+              !rb_autoloading_value(tmp, id, NULL, NULL))
                 return (int)Qfalse;
 
             if (exclude && tmp == rb_cObject && klass != rb_cObject) {
@@ -3209,7 +3224,7 @@ set_namespace_path_i(ID id, VALUE v, void *payload)
 {
     rb_const_entry_t *ce = (rb_const_entry_t *)v;
     VALUE value = ce->value;
-    VALUE parental_path = *((VALUE *) payload);
+    VALUE parental_path = *((VALUE *)payload);
     if (!rb_is_const_id(id) || !rb_namespace_p(value)) {
         return ID_TABLE_CONTINUE;
     }
@@ -3264,8 +3279,8 @@ const_set(VALUE klass, ID id, VALUE val)
     rb_const_entry_t *ce;
 
     if (NIL_P(klass)) {
-        rb_raise(rb_eTypeError, "no class/module to define constant %"PRIsVALUE"",
-                 QUOTE_ID(id));
+        rb_raise(rb_eTypeError, "no class/module to define constant %" PRIsVALUE "",
+          QUOTE_ID(id));
     }
 
     if (!rb_ractor_main_p() && !rb_ractor_shareable_p(val)) {
@@ -3286,8 +3301,7 @@ const_set(VALUE klass, ID id, VALUE val)
         }
         else {
             struct autoload_const ac = {
-                .module = klass, .name = id,
-                .value = val, .flag = CONST_PUBLIC,
+                .module = klass, .name = id, .value = val, .flag = CONST_PUBLIC,
                 /* fill the rest with 0 */
             };
             ac.file = rb_source_location(&ac.line);
@@ -3389,13 +3403,13 @@ const_tbl_update(struct autoload_const *ac, int autoload_force)
             VALUE name = QUOTE_ID(id);
             visibility = ce->flag;
             if (klass == rb_cObject)
-                rb_warn("already initialized constant %"PRIsVALUE"", name);
+                rb_warn("already initialized constant %" PRIsVALUE "", name);
             else
-                rb_warn("already initialized constant %"PRIsVALUE"::%"PRIsVALUE"",
-                        rb_class_name(klass), name);
+                rb_warn("already initialized constant %" PRIsVALUE "::%" PRIsVALUE "",
+                  rb_class_name(klass), name);
             if (!NIL_P(ce->file) && ce->line) {
                 rb_compile_warn(RSTRING_PTR(ce->file), ce->line,
-                                "previous definition of %"PRIsVALUE" was here", name);
+                  "previous definition of %" PRIsVALUE " was here", name);
             }
         }
         rb_clear_constant_cache_for_id(id);
@@ -3412,7 +3426,7 @@ const_tbl_update(struct autoload_const *ac, int autoload_force)
 
 static void
 setup_const_entry(rb_const_entry_t *ce, VALUE klass, VALUE val,
-                  rb_const_flag_t visibility)
+  rb_const_flag_t visibility)
 {
     ce->flag = visibility;
     RB_OBJ_WRITE(klass, &ce->value, val);
@@ -3439,7 +3453,7 @@ rb_define_global_const(const char *name, VALUE val)
 
 static void
 set_const_visibility(VALUE mod, int argc, const VALUE *argv,
-                     rb_const_flag_t flag, rb_const_flag_t mask)
+  rb_const_flag_t flag, rb_const_flag_t mask)
 {
     int i;
     rb_const_entry_t *ce;
@@ -3447,8 +3461,8 @@ set_const_visibility(VALUE mod, int argc, const VALUE *argv,
 
     rb_class_modify_check(mod);
     if (argc == 0) {
-        rb_warning("%"PRIsVALUE" with no argument is just ignored",
-                   QUOTE_ID(rb_frame_callee()));
+        rb_warning("%" PRIsVALUE " with no argument is just ignored",
+          QUOTE_ID(rb_frame_callee()));
         return;
     }
 
@@ -3471,7 +3485,7 @@ set_const_visibility(VALUE mod, int argc, const VALUE *argv,
                     ac->flag |= flag;
                 }
             }
-        rb_clear_constant_cache_for_id(id);
+            rb_clear_constant_cache_for_id(id);
         }
         else {
             undefined_constant(mod, ID2SYM(id));
@@ -3596,9 +3610,9 @@ cvar_overtaken(VALUE front, VALUE target, ID id)
     if (front && target != front) {
         if (original_module(front) != original_module(target)) {
             rb_raise(rb_eRuntimeError,
-                     "class variable % "PRIsVALUE" of %"PRIsVALUE" is overtaken by %"PRIsVALUE"",
-                       ID2SYM(id), rb_class_name(original_module(front)),
-                       rb_class_name(original_module(target)));
+              "class variable % " PRIsVALUE " of %" PRIsVALUE " is overtaken by %" PRIsVALUE "",
+              ID2SYM(id), rb_class_name(original_module(front)),
+              rb_class_name(original_module(target)));
         }
         if (BUILTIN_TYPE(front) == T_CLASS) {
             rb_ivar_delete(front, id, Qundef);
@@ -3607,7 +3621,7 @@ cvar_overtaken(VALUE front, VALUE target, ID id)
 }
 
 static VALUE
-find_cvar(VALUE klass, VALUE * front, VALUE * target, ID id)
+find_cvar(VALUE klass, VALUE *front, VALUE *target, ID id)
 {
     VALUE v = Qundef;
     CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR();
@@ -3631,17 +3645,20 @@ find_cvar(VALUE klass, VALUE * front, VALUE * target, ID id)
 }
 
 #define CVAR_FOREACH_ANCESTORS(klass, v, r) \
-    for (klass = cvar_front_klass(klass); klass; klass = RCLASS_SUPER(klass)) { \
-        if (cvar_lookup_at(klass, id, (v))) { \
-            r; \
-        } \
-    }
+ for (klass = cvar_front_klass(klass); klass; klass = RCLASS_SUPER(klass)) { \
+  if (cvar_lookup_at(klass, id, (v))) { \
+   r; \
+  } \
+ }
 
-#define CVAR_LOOKUP(v,r) do {\
-    CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(); \
-    if (cvar_lookup_at(klass, id, (v))) {r;}\
-    CVAR_FOREACH_ANCESTORS(klass, v, r);\
-} while(0)
+#define CVAR_LOOKUP(v, r) \
+ do { \
+  CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(); \
+  if (cvar_lookup_at(klass, id, (v))) { \
+   r; \
+  } \
+  CVAR_FOREACH_ANCESTORS(klass, v, r); \
+ } while (0)
 
 static void
 check_for_cvar_table(VALUE subclass, VALUE key)
@@ -3662,7 +3679,7 @@ rb_cvar_set(VALUE klass, ID id, VALUE val)
     VALUE tmp, front = 0, target = 0;
 
     tmp = klass;
-    CVAR_LOOKUP(0, {if (!front) front = klass; target = klass;});
+    CVAR_LOOKUP(0, {if (!front) front = klass; target = klass; });
     if (target) {
         cvar_overtaken(front, target, id);
     }
@@ -3719,7 +3736,7 @@ rb_cvar_find(VALUE klass, ID id, VALUE *front)
     value = find_cvar(klass, front, &target, id);
     if (!target) {
         rb_name_err_raise("uninitialized class variable %1$s in %2$s",
-                          klass, ID2SYM(id));
+          klass, ID2SYM(id));
     }
     cvar_overtaken(*front, target, id);
     return (VALUE)value;
@@ -3736,7 +3753,7 @@ VALUE
 rb_cvar_defined(VALUE klass, ID id)
 {
     if (!klass) return Qfalse;
-    CVAR_LOOKUP(0,return Qtrue);
+    CVAR_LOOKUP(0, return Qtrue);
     return Qfalse;
 }
 
@@ -3746,7 +3763,7 @@ cv_intern(VALUE klass, const char *name)
     ID id = rb_intern(name);
     if (!rb_is_class_id(id)) {
         rb_name_err_raise("wrong class variable name %1$s",
-                          klass, rb_str_new_cstr(name));
+          klass, rb_str_new_cstr(name));
     }
     return id;
 }
@@ -3783,7 +3800,7 @@ cv_i(st_data_t k, st_data_t v, st_data_t a)
     return ST_CONTINUE;
 }
 
-static void*
+static void *
 mod_cvar_at(VALUE mod, void *data)
 {
     st_table *tbl = data;
@@ -3796,7 +3813,7 @@ mod_cvar_at(VALUE mod, void *data)
     return tbl;
 }
 
-static void*
+static void *
 mod_cvar_of(VALUE mod, void *data)
 {
     VALUE tmp = mod;
@@ -3908,9 +3925,9 @@ rb_mod_remove_cvar(VALUE mod, VALUE name)
     if (rb_cvar_defined(mod, id)) {
         rb_name_err_raise("cannot remove %1$s for %2$s", mod, ID2SYM(id));
     }
-  not_defined:
+not_defined:
     rb_name_err_raise("class variable %1$s not defined for %2$s",
-                      mod, name);
+      mod, name);
     UNREACHABLE_RETURN(Qundef);
 }
 
@@ -3943,7 +3960,7 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
 
     RB_VM_LOCK_ENTER();
     {
-        rb_shape_t * shape = rb_shape_get_shape(obj);
+        rb_shape_t *shape = rb_shape_get_shape(obj);
         attr_index_t idx;
         found = rb_shape_get_iv_index(shape, key, &idx);
 
@@ -3951,7 +3968,8 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
             // Changing an existing instance variable
             RUBY_ASSERT(RCLASS_IVPTR(obj));
 
-            RCLASS_IVPTR(obj)[idx] = value;
+            RCLASS_IVPTR(obj)
+            [idx] = value;
             RB_OBJ_WRITTEN(obj, Qundef, value);
         }
         else {

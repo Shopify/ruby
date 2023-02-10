@@ -8,9 +8,9 @@ static ID id_escapeHTML;
 
 static const struct {
     uint8_t len;
-    char str[HTML_ESCAPE_MAX_LEN+1];
-} html_escape_table[UCHAR_MAX+1] = {
-#define HTML_ESCAPE(c, str) [c] = {rb_strlen_lit(str), str}
+    char str[HTML_ESCAPE_MAX_LEN + 1];
+} html_escape_table[UCHAR_MAX + 1] = {
+#define HTML_ESCAPE(c, str) [c] = { rb_strlen_lit(str), str }
     HTML_ESCAPE('\'', "&#39;"),
     HTML_ESCAPE('&', "&amp;"),
     HTML_ESCAPE('"', "&quot;"),

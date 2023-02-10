@@ -1,7 +1,7 @@
 #include "ruby/ruby.h"
 #include "ruby/thread.h"
 
-static void*
+static void *
 native_sleep_callback(void *data)
 {
     struct timeval *timeval = data;
@@ -9,7 +9,6 @@ native_sleep_callback(void *data)
 
     return NULL;
 }
-
 
 static VALUE
 thread_runnable_sleep(VALUE thread, VALUE timeout)

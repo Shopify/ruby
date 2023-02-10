@@ -1,4 +1,4 @@
-#ifndef INTERNAL_SANITIZERS_H                            /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_SANITIZERS_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_SANITIZERS_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -25,22 +25,22 @@
 # endif
 #endif
 
-#include "ruby/internal/stdbool.h"     /* for bool */
-#include "ruby/ruby.h"          /* for VALUE */
+#include "ruby/internal/stdbool.h" /* for bool */
+#include "ruby/ruby.h" /* for VALUE */
 
 #if 0
 #elif __has_feature(memory_sanitizer) && __has_feature(address_sanitizer)
 # define ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS(x) \
-    __attribute__((__no_sanitize__("memory, address"), __noinline__)) x
+  __attribute__((__no_sanitize__("memory, address"), __noinline__)) x
 #elif __has_feature(address_sanitizer)
 # define ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS(x) \
-    __attribute__((__no_sanitize__("address"), __noinline__)) x
+  __attribute__((__no_sanitize__("address"), __noinline__)) x
 #elif defined(NO_SANITIZE_ADDRESS)
 # define ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS(x) \
-    NO_SANITIZE_ADDRESS(NOINLINE(x))
+  NO_SANITIZE_ADDRESS(NOINLINE(x))
 #elif defined(NO_ADDRESS_SAFETY_ANALYSIS)
 # define ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS(x) \
-    NO_ADDRESS_SAFETY_ANALYSIS(NOINLINE(x))
+  NO_ADDRESS_SAFETY_ANALYSIS(NOINLINE(x))
 #else
 # define ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS(x) x
 #endif
@@ -50,10 +50,10 @@
 # include "internal/warnings.h"
 # undef NO_SANITIZE
 # define NO_SANITIZE(x, y) \
-    COMPILER_WARNING_PUSH; \
-    COMPILER_WARNING_IGNORED(-Wattributes); \
-    __attribute__((__no_sanitize__(x))) y; \
-    COMPILER_WARNING_POP
+  COMPILER_WARNING_PUSH; \
+  COMPILER_WARNING_IGNORED(-Wattributes); \
+  __attribute__((__no_sanitize__(x))) y; \
+  COMPILER_WARNING_POP
 #endif
 
 #ifndef NO_SANITIZE
@@ -119,17 +119,19 @@ asan_poison_memory_region(const volatile void *ptr, size_t size)
 static inline void
 asan_poison_object(VALUE obj)
 {
-    MAYBE_UNUSED(struct RVALUE *) ptr = (void *)obj;
+    MAYBE_UNUSED(struct RVALUE *)
+    ptr = (void *)obj;
     asan_poison_memory_region(ptr, SIZEOF_VALUE);
 }
 
-#if !__has_feature(address_sanitizer)
-#define asan_poison_object_if(ptr, obj) ((void)(ptr), (void)(obj))
-#else
-#define asan_poison_object_if(ptr, obj) do { \
-        if (ptr) asan_poison_object(obj); \
-    } while (0)
-#endif
+# if !__has_feature(address_sanitizer)
+#  define asan_poison_object_if(ptr, obj) ((void)(ptr), (void)(obj))
+# else
+#  define asan_poison_object_if(ptr, obj) \
+   do { \
+    if (ptr) asan_poison_object(obj); \
+   } while (0)
+# endif
 
 /*!
  * This function predicates if the given object is fully addressable or not.
@@ -141,7 +143,8 @@ asan_poison_object(VALUE obj)
 static inline void *
 asan_poisoned_object_p(VALUE obj)
 {
-    MAYBE_UNUSED(struct RVALUE *) ptr = (void *)obj;
+    MAYBE_UNUSED(struct RVALUE *)
+    ptr = (void *)obj;
     return __asan_region_is_poisoned(ptr, SIZEOF_VALUE);
 }
 
@@ -181,7 +184,8 @@ asan_unpoison_memory_region(const volatile void *ptr, size_t size, bool malloc_p
 static inline void
 asan_unpoison_object(VALUE obj, bool newobj_p)
 {
-    MAYBE_UNUSED(struct RVALUE *) ptr = (void *)obj;
+    MAYBE_UNUSED(struct RVALUE *)
+    ptr = (void *)obj;
     asan_unpoison_memory_region(ptr, SIZEOF_VALUE, newobj_p);
 }
 

@@ -1,4 +1,4 @@
-#ifndef RUBY_BACKWARD2_ASSUME_H                      /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_BACKWARD2_ASSUME_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_BACKWARD2_ASSUME_H
 /**
  * @file
@@ -24,8 +24,8 @@
 #include "ruby/internal/assume.h"
 #include "ruby/internal/has/builtin.h"
 
-#define ASSUME             RBIMPL_ASSUME             /**< @old{RBIMPL_ASSUME} */
-#define UNREACHABLE        RBIMPL_UNREACHABLE()      /**< @old{RBIMPL_UNREACHABLE} */
+#define ASSUME RBIMPL_ASSUME /**< @old{RBIMPL_ASSUME} */
+#define UNREACHABLE RBIMPL_UNREACHABLE() /**< @old{RBIMPL_UNREACHABLE} */
 #define UNREACHABLE_RETURN RBIMPL_UNREACHABLE_RETURN /**< @old{RBIMPL_UNREACHABLE_RETURN} */
 
 /* likely */
@@ -40,7 +40,7 @@
  *        smarter than  mare mortals like  us today.  Their  branch predictions
  *        highly expectedly outperform your use of this macro.
  */
-# define RB_LIKELY(x)   (__builtin_expect(!!(x), 1))
+# define RB_LIKELY(x) (__builtin_expect(!!(x), 1))
 
 /**
  * Asserts that the given Boolean expression likely doesn't hold.
@@ -49,7 +49,7 @@
  */
 # define RB_UNLIKELY(x) (__builtin_expect(!!(x), 0))
 #else
-# define RB_LIKELY(x)   (x)
+# define RB_LIKELY(x) (x)
 # define RB_UNLIKELY(x) (x)
 #endif
 

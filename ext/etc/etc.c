@@ -13,25 +13,25 @@
 
 #include <sys/types.h>
 #ifdef HAVE_UNISTD_H
-#include <unistd.h>
+# include <unistd.h>
 #endif
 
 #ifdef HAVE_GETPWENT
-#include <pwd.h>
+# include <pwd.h>
 #endif
 
 #ifdef HAVE_GETGRENT
-#include <grp.h>
+# include <grp.h>
 #endif
 
 #include <errno.h>
 
 #ifdef HAVE_SYS_UTSNAME_H
-#include <sys/utsname.h>
+# include <sys/utsname.h>
 #endif
 
 #ifdef HAVE_SCHED_GETAFFINITY
-#include <sched.h>
+# include <sched.h>
 #endif
 
 static VALUE sPasswd;
@@ -40,11 +40,11 @@ static VALUE sGroup;
 #endif
 
 #ifdef _WIN32
-#include <shlobj.h>
-#ifndef CSIDL_COMMON_APPDATA
-#define CSIDL_COMMON_APPDATA 35
-#endif
-#define HAVE_UNAME 1
+# include <shlobj.h>
+# ifndef CSIDL_COMMON_APPDATA
+#  define CSIDL_COMMON_APPDATA 35
+# endif
+# define HAVE_UNAME 1
 #endif
 
 #ifdef STDC_HEADERS
@@ -61,7 +61,7 @@ char *getlogin();
 #ifdef HAVE_RB_DEPRECATE_CONSTANT
 void rb_deprecate_constant(VALUE mod, const char *name);
 #else
-# define rb_deprecate_constant(mod,name) ((void)(mod),(void)(name))
+# define rb_deprecate_constant(mod, name) ((void)(mod), (void)(name))
 #endif
 
 #include "constdefs.h"
@@ -71,9 +71,9 @@ void rb_deprecate_constant(VALUE mod, const char *name);
 #else
 typedef int rb_atomic_t;
 # define RUBY_ATOMIC_CAS(var, oldval, newval) \
-    ((var) == (oldval) ? ((var) = (newval), (oldval)) : (var))
+  ((var) == (oldval) ? ((var) = (newval), (oldval)) : (var))
 # define RUBY_ATOMIC_EXCHANGE(var, newval) \
-    atomic_exchange(&var, newval)
+  atomic_exchange(&var, newval)
 static inline rb_atomic_t
 atomic_exchange(volatile rb_atomic_t *var, rb_atomic_t newval)
 {
@@ -112,11 +112,11 @@ etc_getlogin(VALUE obj)
 
     if (login) {
 #ifdef _WIN32
-	rb_encoding *extenc = rb_utf8_encoding();
+        rb_encoding *extenc = rb_utf8_encoding();
 #else
-	rb_encoding *extenc = rb_locale_encoding();
+        rb_encoding *extenc = rb_locale_encoding();
 #endif
-	return rb_external_str_new_with_enc(login, strlen(login), extenc);
+        return rb_external_str_new_with_enc(login, strlen(login), extenc);
     }
 
     return Qnil;
@@ -147,9 +147,9 @@ safe_setup_filesystem_str(const char *str)
 
 #ifdef HAVE_GETPWENT
 # ifdef __APPLE__
-#   define PW_TIME2VAL(t) INT2NUM((int)(t))
+#  define PW_TIME2VAL(t) INT2NUM((int)(t))
 # else
-#   define PW_TIME2VAL(t) TIMET2NUM(t)
+#  define PW_TIME2VAL(t) TIMET2NUM(t)
 # endif
 
 static VALUE
@@ -157,37 +157,37 @@ setup_passwd(struct passwd *pwd)
 {
     if (pwd == 0) rb_sys_fail("/etc/passwd");
     return rb_struct_new(sPasswd,
-			 safe_setup_locale_str(pwd->pw_name),
-#ifdef HAVE_STRUCT_PASSWD_PW_PASSWD
-			 safe_setup_str(pwd->pw_passwd),
-#endif
-			 UIDT2NUM(pwd->pw_uid),
-			 GIDT2NUM(pwd->pw_gid),
-#ifdef HAVE_STRUCT_PASSWD_PW_GECOS
-			 safe_setup_locale_str(pwd->pw_gecos),
-#endif
-			 safe_setup_filesystem_str(pwd->pw_dir),
-			 safe_setup_filesystem_str(pwd->pw_shell),
-#ifdef HAVE_STRUCT_PASSWD_PW_CHANGE
-			 PW_TIME2VAL(pwd->pw_change),
-#endif
-#ifdef HAVE_STRUCT_PASSWD_PW_QUOTA
-			 INT2NUM(pwd->pw_quota),
-#endif
-#ifdef HAVE_STRUCT_PASSWD_PW_AGE
-			 PW_AGE2VAL(pwd->pw_age),
-#endif
-#ifdef HAVE_STRUCT_PASSWD_PW_CLASS
-			 safe_setup_locale_str(pwd->pw_class),
-#endif
-#ifdef HAVE_STRUCT_PASSWD_PW_COMMENT
-			 safe_setup_locale_str(pwd->pw_comment),
-#endif
-#ifdef HAVE_STRUCT_PASSWD_PW_EXPIRE
-			 PW_TIME2VAL(pwd->pw_expire),
-#endif
-			 0		/*dummy*/
-	);
+      safe_setup_locale_str(pwd->pw_name),
+# ifdef HAVE_STRUCT_PASSWD_PW_PASSWD
+      safe_setup_str(pwd->pw_passwd),
+# endif
+      UIDT2NUM(pwd->pw_uid),
+      GIDT2NUM(pwd->pw_gid),
+# ifdef HAVE_STRUCT_PASSWD_PW_GECOS
+      safe_setup_locale_str(pwd->pw_gecos),
+# endif
+      safe_setup_filesystem_str(pwd->pw_dir),
+      safe_setup_filesystem_str(pwd->pw_shell),
+# ifdef HAVE_STRUCT_PASSWD_PW_CHANGE
+      PW_TIME2VAL(pwd->pw_change),
+# endif
+# ifdef HAVE_STRUCT_PASSWD_PW_QUOTA
+      INT2NUM(pwd->pw_quota),
+# endif
+# ifdef HAVE_STRUCT_PASSWD_PW_AGE
+      PW_AGE2VAL(pwd->pw_age),
+# endif
+# ifdef HAVE_STRUCT_PASSWD_PW_CLASS
+      safe_setup_locale_str(pwd->pw_class),
+# endif
+# ifdef HAVE_STRUCT_PASSWD_PW_COMMENT
+      safe_setup_locale_str(pwd->pw_comment),
+# endif
+# ifdef HAVE_STRUCT_PASSWD_PW_EXPIRE
+      PW_TIME2VAL(pwd->pw_expire),
+# endif
+      0 /*dummy*/
+    );
 }
 #endif
 
@@ -218,10 +218,10 @@ etc_getpwuid(int argc, VALUE *argv, VALUE obj)
     struct passwd *pwd;
 
     if (rb_scan_args(argc, argv, "01", &id) == 1) {
-	uid = NUM2UIDT(id);
+        uid = NUM2UIDT(id);
     }
     else {
-	uid = getuid();
+        uid = getuid();
     }
     pwd = getpwuid(uid);
     if (pwd == 0) rb_raise(rb_eArgError, "can't find user for %d", (int)uid);
@@ -254,7 +254,7 @@ etc_getpwnam(VALUE obj, VALUE nam)
     const char *p = StringValueCStr(nam);
 
     pwd = getpwnam(p);
-    if (pwd == 0) rb_raise(rb_eArgError, "can't find user for %"PRIsVALUE, nam);
+    if (pwd == 0) rb_raise(rb_eArgError, "can't find user for %" PRIsVALUE, nam);
     return setup_passwd(pwd);
 #else
     return Qnil;
@@ -268,7 +268,7 @@ passwd_ensure(VALUE _)
 {
     endpwent();
     if (RUBY_ATOMIC_EXCHANGE(passwd_blocking, 0) != 1) {
-	rb_raise(rb_eRuntimeError, "unexpected passwd_blocking");
+        rb_raise(rb_eRuntimeError, "unexpected passwd_blocking");
     }
     return Qnil;
 }
@@ -280,7 +280,7 @@ passwd_iterate(VALUE _)
 
     setpwent();
     while ((pw = getpwent()) != 0) {
-	rb_yield(setup_passwd(pw));
+        rb_yield(setup_passwd(pw));
     }
     return Qnil;
 }
@@ -289,7 +289,7 @@ static void
 each_passwd(void)
 {
     if (RUBY_ATOMIC_CAS(passwd_blocking, 0, 1)) {
-	rb_raise(rb_eRuntimeError, "parallel passwd iteration");
+        rb_raise(rb_eRuntimeError, "parallel passwd iteration");
     }
     rb_ensure(passwd_iterate, 0, passwd_ensure, 0);
 }
@@ -322,10 +322,10 @@ etc_passwd(VALUE obj)
     struct passwd *pw;
 
     if (rb_block_given_p()) {
-	each_passwd();
+        each_passwd();
     }
     else if ((pw = getpwent()) != 0) {
-	return setup_passwd(pw);
+        return setup_passwd(pw);
     }
 #endif
     return Qnil;
@@ -408,7 +408,7 @@ etc_getpwent(VALUE obj)
     struct passwd *pw;
 
     if ((pw = getpwent()) != 0) {
-	return setup_passwd(pw);
+        return setup_passwd(pw);
     }
 #endif
     return Qnil;
@@ -424,16 +424,16 @@ setup_group(struct group *grp)
     mem = rb_ary_new();
     tbl = grp->gr_mem;
     while (*tbl) {
-	rb_ary_push(mem, safe_setup_locale_str(*tbl));
-	tbl++;
+        rb_ary_push(mem, safe_setup_locale_str(*tbl));
+        tbl++;
     }
     return rb_struct_new(sGroup,
-			 safe_setup_locale_str(grp->gr_name),
-#ifdef HAVE_STRUCT_GROUP_GR_PASSWD
-			 safe_setup_str(grp->gr_passwd),
-#endif
-			 GIDT2NUM(grp->gr_gid),
-			 mem);
+      safe_setup_locale_str(grp->gr_name),
+# ifdef HAVE_STRUCT_GROUP_GR_PASSWD
+      safe_setup_str(grp->gr_passwd),
+# endif
+      GIDT2NUM(grp->gr_gid),
+      mem);
 }
 #endif
 
@@ -462,10 +462,10 @@ etc_getgrgid(int argc, VALUE *argv, VALUE obj)
     struct group *grp;
 
     if (rb_scan_args(argc, argv, "01", &id) == 1) {
-	gid = NUM2GIDT(id);
+        gid = NUM2GIDT(id);
     }
     else {
-	gid = getgid();
+        gid = getgid();
     }
     grp = getgrgid(gid);
     if (grp == 0) rb_raise(rb_eArgError, "can't find group for %d", (int)gid);
@@ -499,7 +499,7 @@ etc_getgrnam(VALUE obj, VALUE nam)
     const char *p = StringValueCStr(nam);
 
     grp = getgrnam(p);
-    if (grp == 0) rb_raise(rb_eArgError, "can't find group for %"PRIsVALUE, nam);
+    if (grp == 0) rb_raise(rb_eArgError, "can't find group for %" PRIsVALUE, nam);
     return setup_group(grp);
 #else
     return Qnil;
@@ -513,11 +513,10 @@ group_ensure(VALUE _)
 {
     endgrent();
     if (RUBY_ATOMIC_EXCHANGE(group_blocking, 0) != 1) {
-	rb_raise(rb_eRuntimeError, "unexpected group_blocking");
+        rb_raise(rb_eRuntimeError, "unexpected group_blocking");
     }
     return Qnil;
 }
-
 
 static VALUE
 group_iterate(VALUE _)
@@ -526,7 +525,7 @@ group_iterate(VALUE _)
 
     setgrent();
     while ((pw = getgrent()) != 0) {
-	rb_yield(setup_group(pw));
+        rb_yield(setup_group(pw));
     }
     return Qnil;
 }
@@ -535,7 +534,7 @@ static void
 each_group(void)
 {
     if (RUBY_ATOMIC_CAS(group_blocking, 0, 1)) {
-	rb_raise(rb_eRuntimeError, "parallel group iteration");
+        rb_raise(rb_eRuntimeError, "parallel group iteration");
     }
     rb_ensure(group_iterate, 0, group_ensure, 0);
 }
@@ -564,10 +563,10 @@ etc_group(VALUE obj)
     struct group *grp;
 
     if (rb_block_given_p()) {
-	each_group();
+        each_group();
     }
     else if ((grp = getgrent()) != 0) {
-	return setup_group(grp);
+        return setup_group(grp);
     }
 #endif
     return Qnil;
@@ -647,7 +646,7 @@ etc_getgrent(VALUE obj)
     struct group *gr;
 
     if ((gr = getgrent()) != 0) {
-	return setup_group(gr);
+        return setup_group(gr);
     }
 #endif
     return Qnil;
@@ -698,22 +697,22 @@ etc_systmpdir(VALUE _)
     const char *tmpstr = default_tmp;
     size_t tmplen = strlen(default_tmp);
 # if defined _CS_DARWIN_USER_TEMP_DIR
-    #ifndef MAXPATHLEN
-    #define MAXPATHLEN 1024
-    #endif
+#  ifndef MAXPATHLEN
+#   define MAXPATHLEN 1024
+#  endif
     char path[MAXPATHLEN];
     size_t len;
     len = confstr(_CS_DARWIN_USER_TEMP_DIR, path, sizeof(path));
     if (len > 0) {
-	tmpstr = path;
-	tmplen = len - 1;
-	if (len > sizeof(path)) tmpstr = 0;
+        tmpstr = path;
+        tmplen = len - 1;
+        if (len > sizeof(path)) tmpstr = 0;
     }
 # endif
     tmpdir = rb_filesystem_str_new(tmpstr, tmplen);
 # if defined _CS_DARWIN_USER_TEMP_DIR
     if (!tmpstr) {
-	confstr(_CS_DARWIN_USER_TEMP_DIR, RSTRING_PTR(tmpdir), len);
+        confstr(_CS_DARWIN_USER_TEMP_DIR, RSTRING_PTR(tmpdir), len);
     }
 # endif
 #endif
@@ -747,7 +746,7 @@ etc_systmpdir(VALUE _)
 static VALUE
 etc_uname(VALUE obj)
 {
-#ifdef _WIN32
+# ifdef _WIN32
     OSVERSIONINFOW v;
     SYSTEM_INFO s;
     const char *sysname, *mach;
@@ -762,62 +761,62 @@ etc_uname(VALUE obj)
 
     result = rb_hash_new();
     switch (v.dwPlatformId) {
-      case VER_PLATFORM_WIN32s:
-	sysname = "Win32s";
-	break;
-      case VER_PLATFORM_WIN32_NT:
-	sysname = "Windows_NT";
-	break;
-      case VER_PLATFORM_WIN32_WINDOWS:
-      default:
-	sysname = "Windows";
-	break;
+        case VER_PLATFORM_WIN32s:
+            sysname = "Win32s";
+            break;
+        case VER_PLATFORM_WIN32_NT:
+            sysname = "Windows_NT";
+            break;
+        case VER_PLATFORM_WIN32_WINDOWS:
+        default:
+            sysname = "Windows";
+            break;
     }
     rb_hash_aset(result, ID2SYM(rb_intern("sysname")), rb_str_new_cstr(sysname));
     release = rb_sprintf("%lu.%lu.%lu", v.dwMajorVersion, v.dwMinorVersion, v.dwBuildNumber);
     rb_hash_aset(result, ID2SYM(rb_intern("release")), release);
-    version = rb_sprintf("%s Version %"PRIsVALUE": %"PRIsVALUE, sysname, release,
-			 rb_w32_conv_from_wchar(v.szCSDVersion, rb_utf8_encoding()));
+    version = rb_sprintf("%s Version %" PRIsVALUE ": %" PRIsVALUE, sysname, release,
+      rb_w32_conv_from_wchar(v.szCSDVersion, rb_utf8_encoding()));
     rb_hash_aset(result, ID2SYM(rb_intern("version")), version);
 
-# if defined _MSC_VER && _MSC_VER < 1300
+#  if defined _MSC_VER && _MSC_VER < 1300
 #   define GET_COMPUTER_NAME(ptr, plen) GetComputerNameW(ptr, plen)
-# else
+#  else
 #   define GET_COMPUTER_NAME(ptr, plen) GetComputerNameExW(ComputerNameDnsFullyQualified, ptr, plen)
-# endif
+#  endif
     GET_COMPUTER_NAME(NULL, &len);
     buf = ALLOCV_N(WCHAR, vbuf, len);
     if (GET_COMPUTER_NAME(buf, &len)) {
-	nodename = rb_w32_conv_from_wchar(buf, rb_utf8_encoding());
+        nodename = rb_w32_conv_from_wchar(buf, rb_utf8_encoding());
     }
     ALLOCV_END(vbuf);
     if (NIL_P(nodename)) nodename = rb_str_new(0, 0);
     rb_hash_aset(result, ID2SYM(rb_intern("nodename")), nodename);
 
-# ifndef PROCESSOR_ARCHITECTURE_AMD64
+#  ifndef PROCESSOR_ARCHITECTURE_AMD64
 #   define PROCESSOR_ARCHITECTURE_AMD64 9
-# endif
-# ifndef PROCESSOR_ARCHITECTURE_INTEL
+#  endif
+#  ifndef PROCESSOR_ARCHITECTURE_INTEL
 #   define PROCESSOR_ARCHITECTURE_INTEL 0
-# endif
+#  endif
     GetSystemInfo(&s);
     switch (s.wProcessorArchitecture) {
-      case PROCESSOR_ARCHITECTURE_AMD64:
-	mach = "x64";
-	break;
-      case PROCESSOR_ARCHITECTURE_ARM:
-	mach = "ARM";
-	break;
-      case PROCESSOR_ARCHITECTURE_INTEL:
-	mach = "x86";
-	break;
-      default:
-	mach = "unknown";
-	break;
+        case PROCESSOR_ARCHITECTURE_AMD64:
+            mach = "x64";
+            break;
+        case PROCESSOR_ARCHITECTURE_ARM:
+            mach = "ARM";
+            break;
+        case PROCESSOR_ARCHITECTURE_INTEL:
+            mach = "x86";
+            break;
+        default:
+            mach = "unknown";
+            break;
     }
 
     rb_hash_aset(result, ID2SYM(rb_intern("machine")), rb_str_new_cstr(mach));
-#else
+# else
     struct utsname u;
     int ret;
     VALUE result;
@@ -832,12 +831,12 @@ etc_uname(VALUE obj)
     rb_hash_aset(result, ID2SYM(rb_intern("release")), rb_str_new_cstr(u.release));
     rb_hash_aset(result, ID2SYM(rb_intern("version")), rb_str_new_cstr(u.version));
     rb_hash_aset(result, ID2SYM(rb_intern("machine")), rb_str_new_cstr(u.machine));
-#endif
+# endif
 
     return result;
 }
 #else
-#define etc_uname rb_f_notimplement
+# define etc_uname rb_f_notimplement
 #endif
 
 #ifdef HAVE_SYSCONF
@@ -871,7 +870,7 @@ etc_sysconf(VALUE obj, VALUE arg)
     return LONG2NUM(ret);
 }
 #else
-#define etc_sysconf rb_f_notimplement
+# define etc_sysconf rb_f_notimplement
 #endif
 
 #ifdef HAVE_CONFSTR
@@ -918,7 +917,7 @@ etc_confstr(VALUE obj, VALUE arg)
     return rb_str_new_cstr(buf);
 }
 #else
-#define etc_confstr rb_f_notimplement
+# define etc_confstr rb_f_notimplement
 #endif
 
 #ifdef HAVE_FPATHCONF
@@ -957,12 +956,12 @@ io_pathconf(VALUE io, VALUE arg)
     return LONG2NUM(ret);
 }
 #else
-#define io_pathconf rb_f_notimplement
+# define io_pathconf rb_f_notimplement
 #endif
 
 #if (defined(HAVE_SYSCONF) && defined(_SC_NPROCESSORS_ONLN)) || defined(_WIN32)
 
-#if defined(HAVE_SCHED_GETAFFINITY) && defined(CPU_ALLOC)
+# if defined(HAVE_SCHED_GETAFFINITY) && defined(CPU_ALLOC)
 static int
 etc_nprocessors_affin(void)
 {
@@ -989,33 +988,34 @@ etc_nprocessors_affin(void)
      * So, we use hardcode number for a workaround. Current linux kernel
      * (Linux 3.17) support 8192 cpus at maximum. Then 16384 must be enough.
      */
-    for (n=64; n <= 16384; n *= 2) {
-	size = CPU_ALLOC_SIZE(n);
-	if (size >= sizeof(cpuset_buff)) {
-	    cpuset = xcalloc(1, size);
-	    if (!cpuset)
-		return -1;
-	} else {
-	    cpuset = cpuset_buff;
-	}
+    for (n = 64; n <= 16384; n *= 2) {
+        size = CPU_ALLOC_SIZE(n);
+        if (size >= sizeof(cpuset_buff)) {
+            cpuset = xcalloc(1, size);
+            if (!cpuset)
+                return -1;
+        }
+        else {
+            cpuset = cpuset_buff;
+        }
 
-	ret = sched_getaffinity(0, size, cpuset);
-	if (ret == 0) {
-	    /* On success, count number of cpus. */
-	    ret = CPU_COUNT_S(size, cpuset);
-	}
+        ret = sched_getaffinity(0, size, cpuset);
+        if (ret == 0) {
+            /* On success, count number of cpus. */
+            ret = CPU_COUNT_S(size, cpuset);
+        }
 
-	if (size >= sizeof(cpuset_buff)) {
-	    xfree(cpuset);
-	}
-	if (ret > 0 || errno != EINVAL) {
-	    return ret;
-	}
+        if (size >= sizeof(cpuset_buff)) {
+            xfree(cpuset);
+        }
+        if (ret > 0 || errno != EINVAL) {
+            return ret;
+        }
     }
 
     return ret;
 }
-#endif
+# endif
 
 /*
  * Returns the number of online processors.
@@ -1046,32 +1046,32 @@ etc_nprocessors(VALUE obj)
 {
     long ret;
 
-#if !defined(_WIN32)
+# if !defined(_WIN32)
 
-#if defined(HAVE_SCHED_GETAFFINITY) && defined(CPU_ALLOC)
+#  if defined(HAVE_SCHED_GETAFFINITY) && defined(CPU_ALLOC)
     int ncpus;
 
     ncpus = etc_nprocessors_affin();
     if (ncpus != -1) {
-	return INT2NUM(ncpus);
+        return INT2NUM(ncpus);
     }
     /* fallback to _SC_NPROCESSORS_ONLN */
-#endif
+#  endif
 
     errno = 0;
     ret = sysconf(_SC_NPROCESSORS_ONLN);
     if (ret == -1) {
         rb_sys_fail("sysconf(_SC_NPROCESSORS_ONLN)");
     }
-#else
+# else
     SYSTEM_INFO si;
     GetSystemInfo(&si);
     ret = (long)si.dwNumberOfProcessors;
-#endif
+# endif
     return LONG2NUM(ret);
 }
 #else
-#define etc_nprocessors rb_f_notimplement
+# define etc_nprocessors rb_f_notimplement
 #endif
 
 /*
@@ -1136,37 +1136,37 @@ Init_etc(void)
     rb_define_method(rb_cIO, "pathconf", io_pathconf, 1);
     rb_define_module_function(mEtc, "nprocessors", etc_nprocessors, 0);
 
-    sPasswd =  rb_struct_define_under(mEtc, "Passwd",
-				      "name",
+    sPasswd = rb_struct_define_under(mEtc, "Passwd",
+      "name",
 #ifdef HAVE_STRUCT_PASSWD_PW_PASSWD
-				      "passwd",
+      "passwd",
 #endif
-				      "uid",
-				      "gid",
+      "uid",
+      "gid",
 #ifdef HAVE_STRUCT_PASSWD_PW_GECOS
-				      "gecos",
+      "gecos",
 #endif
-				      "dir",
-				      "shell",
+      "dir",
+      "shell",
 #ifdef HAVE_STRUCT_PASSWD_PW_CHANGE
-				      "change",
+      "change",
 #endif
 #ifdef HAVE_STRUCT_PASSWD_PW_QUOTA
-				      "quota",
+      "quota",
 #endif
 #ifdef HAVE_STRUCT_PASSWD_PW_AGE
-				      "age",
+      "age",
 #endif
 #ifdef HAVE_STRUCT_PASSWD_PW_CLASS
-				      "uclass",
+      "uclass",
 #endif
 #ifdef HAVE_STRUCT_PASSWD_PW_COMMENT
-				      "comment",
+      "comment",
 #endif
 #ifdef HAVE_STRUCT_PASSWD_PW_EXPIRE
-				      "expire",
+      "expire",
 #endif
-				      NULL);
+      NULL);
 #if 0
     /*
      * Passwd is a placeholder Struct for user database on Unix systems.
@@ -1215,12 +1215,12 @@ Init_etc(void)
 
 #ifdef HAVE_GETGRENT
     sGroup = rb_struct_define_under(mEtc, "Group", "name",
-#ifdef HAVE_STRUCT_GROUP_GR_PASSWD
-				    "passwd",
-#endif
-				    "gid", "mem", NULL);
+# ifdef HAVE_STRUCT_GROUP_GR_PASSWD
+      "passwd",
+# endif
+      "gid", "mem", NULL);
 
-#if 0
+# if 0
     /*
      * Group is a placeholder Struct for user group database on Unix systems.
      *
@@ -1241,7 +1241,7 @@ Init_etc(void)
      *	    members of the group.
      */
     sGroup = rb_define_class_under(mEtc, "Group", rb_cStruct);
-#endif
+# endif
     rb_extend_object(sGroup, rb_mEnumerable);
     rb_define_singleton_method(sGroup, "each", etc_each_group, 0);
 #endif

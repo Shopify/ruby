@@ -4,19 +4,19 @@
 static VALUE
 printf_test_s(VALUE self, VALUE obj)
 {
-    return rb_enc_sprintf(rb_usascii_encoding(), "<%"PRIsVALUE">", obj);
+    return rb_enc_sprintf(rb_usascii_encoding(), "<%" PRIsVALUE ">", obj);
 }
 
 static VALUE
 printf_test_v(VALUE self, VALUE obj)
 {
-    return rb_enc_sprintf(rb_usascii_encoding(), "{%+"PRIsVALUE"}", obj);
+    return rb_enc_sprintf(rb_usascii_encoding(), "{%+" PRIsVALUE "}", obj);
 }
 
 static VALUE
 printf_test_q(VALUE self, VALUE obj)
 {
-    return rb_enc_sprintf(rb_usascii_encoding(), "[% "PRIsVALUE"]", obj);
+    return rb_enc_sprintf(rb_usascii_encoding(), "[% " PRIsVALUE "]", obj);
 }
 
 static char *
@@ -43,13 +43,16 @@ printf_test_call(int argc, VALUE *argv, VALUE self)
     Check_Type(type, T_STRING);
     if (RSTRING_LEN(type) != 1) rb_raise(rb_eArgError, "wrong length(%ld)", RSTRING_LEN(type));
     switch (cnv = RSTRING_PTR(type)[0]) {
-      case 'd': case 'x': case 'o': case 'X':
-        n = NUM2INT(num);
-        break;
-      case 's':
-        s = StringValueCStr(num);
-        break;
-      default: rb_raise(rb_eArgError, "wrong conversion(%c)", cnv);
+        case 'd':
+        case 'x':
+        case 'o':
+        case 'X':
+            n = NUM2INT(num);
+            break;
+        case 's':
+            s = StringValueCStr(num);
+            break;
+        default: rb_raise(rb_eArgError, "wrong conversion(%c)", cnv);
     }
     *p++ = '%';
     if (!NIL_P(opt)) {

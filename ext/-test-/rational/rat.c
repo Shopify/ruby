@@ -9,7 +9,7 @@ big(VALUE x)
     if (RB_TYPE_P(x, T_BIGNUM))
         return x;
     rb_raise(rb_eTypeError, "can't convert %s to Bignum",
-            rb_obj_classname(x));
+      rb_obj_classname(x));
 }
 #endif
 
@@ -26,7 +26,7 @@ gcd_gmp(VALUE klass, VALUE x, VALUE y)
     return rb_big_norm(rb_gcd_gmp(big(x), big(y)));
 }
 #else
-#define gcd_gmp rb_f_notimplement
+# define gcd_gmp rb_f_notimplement
 #endif
 
 static VALUE

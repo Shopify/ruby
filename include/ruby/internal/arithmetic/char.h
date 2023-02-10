@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ARITHMETIC_CHAR_H                     /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ARITHMETIC_CHAR_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ARITHMETIC_CHAR_H
 /**
  * @file
@@ -20,7 +20,7 @@
  *             extension libraries.  They could be written in C++98.
  * @brief      Arithmetic conversion between C's `char` and Ruby's.
  */
-#include "ruby/internal/arithmetic/int.h"  /* NUM2INT is here, but */
+#include "ruby/internal/arithmetic/int.h" /* NUM2INT is here, but */
 #include "ruby/internal/arithmetic/long.h" /* INT2FIX is here.*/
 #include "ruby/internal/attr/artificial.h"
 #include "ruby/internal/attr/const.h"
@@ -30,8 +30,8 @@
 #include "ruby/internal/value_type.h"
 
 #define RB_NUM2CHR rb_num2char_inline /**< @alias{rb_num2char_inline} */
-#define NUM2CHR    RB_NUM2CHR         /**< @old{RB_NUM2CHR} */
-#define CHR2FIX    RB_CHR2FIX         /**< @old{RB_CHR2FIX} */
+#define NUM2CHR RB_NUM2CHR /**< @old{RB_NUM2CHR} */
+#define CHR2FIX RB_CHR2FIX /**< @old{RB_CHR2FIX} */
 
 /** @cond INTERNAL_MACRO */
 #define RB_CHR2FIX RB_CHR2FIX
@@ -72,7 +72,7 @@ RB_CHR2FIX(unsigned char c)
 static inline char
 rb_num2char_inline(VALUE x)
 {
-    if (RB_TYPE_P(x, RUBY_T_STRING) && (RSTRING_LEN(x)>=1))
+    if (RB_TYPE_P(x, RUBY_T_STRING) && (RSTRING_LEN(x) >= 1))
         return RSTRING_PTR(x)[0];
     else
         return RBIMPL_CAST((char)RB_NUM2INT(x));

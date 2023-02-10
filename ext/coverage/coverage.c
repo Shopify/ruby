@@ -42,12 +42,11 @@ rb_coverage_supported(VALUE self, VALUE _mode)
     ID mode = RB_SYM2ID(_mode);
 
     return RBOOL(
-        mode == rb_intern("lines") ||
-        mode == rb_intern("oneshot_lines") ||
-        mode == rb_intern("branches") ||
-        mode == rb_intern("methods") ||
-        mode == rb_intern("eval")
-    );
+      mode == rb_intern("lines") ||
+      mode == rb_intern("oneshot_lines") ||
+      mode == rb_intern("branches") ||
+      mode == rb_intern("methods") ||
+      mode == rb_intern("eval"));
 }
 
 /*
@@ -169,8 +168,7 @@ rb_coverage_start(int argc, VALUE *argv, VALUE klass)
     return Qnil;
 }
 
-struct branch_coverage_result_builder
-{
+struct branch_coverage_result_builder {
     int id;
     VALUE result;
     VALUE children;
@@ -180,7 +178,7 @@ struct branch_coverage_result_builder
 static int
 branch_coverage_ii(VALUE _key, VALUE branch, VALUE v)
 {
-    struct branch_coverage_result_builder *b = (struct branch_coverage_result_builder *) v;
+    struct branch_coverage_result_builder *b = (struct branch_coverage_result_builder *)v;
 
     VALUE target_label = RARRAY_AREF(branch, 0);
     VALUE target_first_lineno = RARRAY_AREF(branch, 1);
@@ -196,7 +194,7 @@ branch_coverage_ii(VALUE _key, VALUE branch, VALUE v)
 static int
 branch_coverage_i(VALUE _key, VALUE branch_base, VALUE v)
 {
-    struct branch_coverage_result_builder *b = (struct branch_coverage_result_builder *) v;
+    struct branch_coverage_result_builder *b = (struct branch_coverage_result_builder *)v;
 
     VALUE base_type = RARRAY_AREF(branch_base, 0);
     VALUE base_first_lineno = RARRAY_AREF(branch_base, 1);
@@ -240,14 +238,14 @@ method_coverage_i(void *vstart, void *vend, size_t stride, void *data)
      *   }
      * }
      */
-    VALUE ncoverages = *(VALUE*)data, v;
+    VALUE ncoverages = *(VALUE *)data, v;
 
     for (v = (VALUE)vstart; v != (VALUE)vend; v += stride) {
         void *poisoned = asan_poisoned_object_p(v);
         asan_unpoison_object(v, false);
 
         if (RB_TYPE_P(v, T_IMEMO) && imemo_type(v) == imemo_ment) {
-            const rb_method_entry_t *me = (rb_method_entry_t *) v;
+            const rb_method_entry_t *me = (rb_method_entry_t *)v;
             VALUE path, first_lineno, first_column, last_lineno, last_column;
             VALUE data[5], ncoverage, methods;
             VALUE methods_id = ID2SYM(rb_intern("methods"));
@@ -270,7 +268,7 @@ method_coverage_i(void *vstart, void *vend, size_t stride, void *data)
 
             {
                 VALUE method_id = ID2SYM(me->def->original_id);
-                VALUE rcount = rb_hash_aref(me2counter, (VALUE) me);
+                VALUE rcount = rb_hash_aref(me2counter, (VALUE)me);
                 VALUE key = rb_ary_new_from_args(6, klass, method_id, first_lineno, first_column, last_lineno, last_column);
                 VALUE rcount2 = rb_hash_aref(methods, key);
 
@@ -363,7 +361,6 @@ rb_coverage_peek_result(VALUE klass)
     return ncoverages;
 }
 
-
 static int
 clear_me2counter_i(VALUE key, VALUE value, VALUE unused)
 {
@@ -435,7 +432,6 @@ rb_coverage_result(int argc, VALUE *argv, VALUE klass)
     }
     return ncoverages;
 }
-
 
 /*
  *  call-seq:

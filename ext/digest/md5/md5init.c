@@ -4,9 +4,9 @@
 #include <ruby/ruby.h>
 #include "../digest.h"
 #if defined(MD5_USE_COMMONDIGEST)
-#include "md5cc.h"
+# include "md5cc.h"
 #else
-#include "md5.h"
+# include "md5.h"
 #endif
 
 static const rb_digest_metadata_t md5 = {

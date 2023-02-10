@@ -1,4 +1,4 @@
-#ifndef RBIMPL_RMATCH_H                              /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_RMATCH_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_RMATCH_H
 /**
  * @file
@@ -40,7 +40,7 @@
 /** @endcond */
 
 struct re_patter_buffer; /* a.k.a. OnigRegexType, defined in onigmo.h */
-struct re_registers;     /* Also in onigmo.h */
+struct re_registers; /* Also in onigmo.h */
 
 /**
  * @old{re_pattern_buffer}
@@ -109,7 +109,7 @@ struct RMatch {
     /**
      * The expression of this match.
      */
-    VALUE regexp;  /* RRegexp */
+    VALUE regexp; /* RRegexp */
 };
 
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()

@@ -8,15 +8,15 @@ static int goruby_run_node(void *arg);
 #undef ruby_run_node
 
 #if defined _WIN32
-#include <io.h>
-#include <fcntl.h>
-#define pipe(p) _pipe(p, 32L, _O_NOINHERIT)
+# include <io.h>
+# include <fcntl.h>
+# define pipe(p) _pipe(p, 32L, _O_NOINHERIT)
 #elif defined HAVE_UNISTD_H
-#include <unistd.h>
+# include <unistd.h>
 #endif
 
 RUBY_EXTERN void *ruby_options(int argc, char **argv);
-RUBY_EXTERN int ruby_run_node(void*);
+RUBY_EXTERN int ruby_run_node(void *);
 RUBY_EXTERN void ruby_init_ext(const char *name, void (*init)(void));
 
 #include "golf_prelude.c"
@@ -53,7 +53,7 @@ goruby_options(int argc, char **argv)
         close(infd);
         return ret;
     }
-  no_irb:
+no_irb:
     return ruby_options(argc, argv);
 }
 

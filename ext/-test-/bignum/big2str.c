@@ -8,7 +8,7 @@ big(VALUE x)
     if (RB_TYPE_P(x, T_BIGNUM))
         return x;
     rb_raise(rb_eTypeError, "can't convert %s to Bignum",
-            rb_obj_classname(x));
+      rb_obj_classname(x));
 }
 
 static VALUE
@@ -20,7 +20,7 @@ big2str_generic(VALUE klass, VALUE x, VALUE vbase)
     return rb_big2str_generic(big(x), base);
 }
 
-#define POW2_P(x) (((x)&((x)-1))==0)
+#define POW2_P(x) (((x) & ((x)-1)) == 0)
 
 static VALUE
 big2str_poweroftwo(VALUE klass, VALUE x, VALUE vbase)
@@ -41,7 +41,7 @@ big2str_gmp(VALUE klass, VALUE x, VALUE vbase)
     return rb_big2str_gmp(big(x), base);
 }
 #else
-#define big2str_gmp rb_f_notimplement
+# define big2str_gmp rb_f_notimplement
 #endif
 
 void

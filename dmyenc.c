@@ -1,4 +1,4 @@
-#define require(name) ruby_require_internal(name, (unsigned int)sizeof(name)-1)
+#define require(name) ruby_require_internal(name, (unsigned int)sizeof(name) - 1)
 int ruby_require_internal(const char *, int);
 
 void

@@ -1,4 +1,4 @@
-#ifndef INTERNAL_THREAD_H                                /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_THREAD_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_THREAD_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -8,17 +8,17 @@
  *             file COPYING are met.  Consult the file for details.
  * @brief      Internal header for Thread.
  */
-#include "ruby/ruby.h"          /* for VALUE */
-#include "ruby/intern.h"        /* for rb_blocking_function_t */
+#include "ruby/ruby.h" /* for VALUE */
+#include "ruby/intern.h" /* for rb_blocking_function_t */
 
-struct rb_thread_struct;        /* in vm_core.h */
+struct rb_thread_struct; /* in vm_core.h */
 
 /* thread.c */
-#define COVERAGE_INDEX_LINES    0
+#define COVERAGE_INDEX_LINES 0
 #define COVERAGE_INDEX_BRANCHES 1
-#define COVERAGE_TARGET_LINES    1
+#define COVERAGE_TARGET_LINES 1
 #define COVERAGE_TARGET_BRANCHES 2
-#define COVERAGE_TARGET_METHODS  4
+#define COVERAGE_TARGET_METHODS 4
 #define COVERAGE_TARGET_ONESHOT_LINES 8
 #define COVERAGE_TARGET_EVAL 16
 
@@ -39,7 +39,7 @@ VALUE rb_uninterruptible(VALUE (*b_proc)(VALUE), VALUE data);
 VALUE rb_mutex_owned_p(VALUE self);
 VALUE rb_exec_recursive_outer_mid(VALUE (*f)(VALUE g, VALUE h, int r), VALUE g, VALUE h, ID mid);
 
-int rb_thread_wait_for_single_fd(int fd, int events, struct timeval * timeout);
+int rb_thread_wait_for_single_fd(int fd, int events, struct timeval *timeout);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* Temporary.  This API will be removed (renamed). */

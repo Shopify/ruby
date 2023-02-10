@@ -1,11 +1,12 @@
 #include "ruby.h"
 
 #ifdef HAVE_RUBY_MEMORY_VIEW_H
-#include "ruby/memory_view.h"
+# include "ruby/memory_view.h"
 
-#define STRUCT_ALIGNOF(T, result) do { \
-    (result) = RUBY_ALIGNOF(T); \
-} while(0)
+# define STRUCT_ALIGNOF(T, result) \
+  do { \
+   (result) = RUBY_ALIGNOF(T); \
+  } while (0)
 
 static ID id_str;
 static VALUE sym_format;
@@ -193,8 +194,8 @@ memory_view_get_ref_count(VALUE obj)
 
     st_table *table;
     TypedData_Get_Struct(rb_memory_view_exported_object_registry, st_table,
-                         &rb_memory_view_exported_object_registry_data_type,
-                         table);
+      &rb_memory_view_exported_object_registry_data_type,
+      table);
 
     st_data_t count;
     if (st_lookup(table, (st_data_t)obj, &count)) {
@@ -216,7 +217,7 @@ memory_view_ref_count_while_exporting_i(VALUE obj, long n)
         return Qnil;
     }
 
-    VALUE ref_count = memory_view_ref_count_while_exporting_i(obj, n-1);
+    VALUE ref_count = memory_view_ref_count_while_exporting_i(obj, n - 1);
     rb_memory_view_release(&view);
 
     return ref_count;
@@ -295,7 +296,7 @@ mdview_get_memory_view(VALUE obj, rb_memory_view_t *view, int flags)
         i = ndim - 1;
         strides[i] = item_size;
         for (; i > 0; --i) {
-            strides[i-1] = strides[i] * shape[i];
+            strides[i - 1] = strides[i] * shape[i];
         }
     }
 
@@ -421,17 +422,18 @@ Init_memory_view(void)
     sym_little_endian = ID2SYM(rb_intern_const("little_endian"));
     sym_big_endian = ID2SYM(rb_intern_const("big_endian"));
 
-#ifdef WORDS_BIGENDIAN
+# ifdef WORDS_BIGENDIAN
     rb_const_set(mMemoryViewTestUtils, rb_intern_const("NATIVE_ENDIAN"), sym_big_endian);
-#else
+# else
     rb_const_set(mMemoryViewTestUtils, rb_intern_const("NATIVE_ENDIAN"), sym_little_endian);
-#endif
+# endif
 
-#define DEF_ALIGNMENT_CONST(type, TYPE) do { \
-    int alignment; \
-    STRUCT_ALIGNOF(type, alignment); \
-    rb_const_set(mMemoryViewTestUtils, rb_intern_const(#TYPE "_ALIGNMENT"), INT2FIX(alignment)); \
-} while(0)
+# define DEF_ALIGNMENT_CONST(type, TYPE) \
+  do { \
+   int alignment; \
+   STRUCT_ALIGNOF(type, alignment); \
+   rb_const_set(mMemoryViewTestUtils, rb_intern_const(#TYPE "_ALIGNMENT"), INT2FIX(alignment)); \
+  } while (0)
 
     DEF_ALIGNMENT_CONST(short, SHORT);
     DEF_ALIGNMENT_CONST(int, INT);
@@ -444,7 +446,7 @@ Init_memory_view(void)
     DEF_ALIGNMENT_CONST(float, FLOAT);
     DEF_ALIGNMENT_CONST(double, DOUBLE);
 
-#undef DEF_ALIGNMENT_CONST
+# undef DEF_ALIGNMENT_CONST
 
 #endif /* HAVE_RUBY_MEMORY_VIEW_H */
 }

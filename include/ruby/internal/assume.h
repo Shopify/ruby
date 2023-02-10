@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ASSUME_H                              /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ASSUME_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ASSUME_H
 /**
  * @file
@@ -60,10 +60,10 @@
 #if RBIMPL_COMPILER_SINCE(Intel, 13, 0, 0)
 # /* icc warnings are false positives.  Ignore them. */
 # /* "warning #2261: __assume expression with side effects discarded" */
-# define RBIMPL_ASSUME(expr)     \
-    RBIMPL_WARNING_PUSH()        \
-    RBIMPL_WARNING_IGNORED(2261) \
-    __assume(expr)              \
+# define RBIMPL_ASSUME(expr) \
+  RBIMPL_WARNING_PUSH() \
+  RBIMPL_WARNING_IGNORED(2261) \
+  __assume(expr) \
     RBIMPL_WARNING_POP()
 
 #elif defined(RBIMPL_HAVE___ASSUME)
@@ -72,15 +72,15 @@
 #elif RBIMPL_HAS_BUILTIN(__builtin_assume)
 # define RBIMPL_ASSUME __builtin_assume
 
-#elif ! defined(RBIMPL_UNREACHABLE)
+#elif !defined(RBIMPL_UNREACHABLE)
 # define RBIMPL_ASSUME(_) RBIMPL_CAST((void)(_))
 
 #else
 # define RBIMPL_ASSUME(_) \
-    (RB_LIKELY(!!(_)) ? RBIMPL_CAST((void)0) : RBIMPL_UNREACHABLE())
+  (RB_LIKELY(!!(_)) ? RBIMPL_CAST((void)0) : RBIMPL_UNREACHABLE())
 #endif
 
-#if ! defined(RBIMPL_UNREACHABLE)
+#if !defined(RBIMPL_UNREACHABLE)
 # define RBIMPL_UNREACHABLE() RBIMPL_ASSUME(0)
 #endif
 

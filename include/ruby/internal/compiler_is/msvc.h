@@ -1,4 +1,4 @@
-#ifndef RBIMPL_COMPILER_IS_MSVC_H                    /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_COMPILER_IS_MSVC_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_COMPILER_IS_MSVC_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -22,7 +22,7 @@
 #include "ruby/internal/compiler_is/clang.h"
 #include "ruby/internal/compiler_is/intel.h"
 
-#if ! defined(_MSC_VER)
+#if !defined(_MSC_VER)
 # define RBIMPL_COMPILER_IS_MSVC 0
 
 #elif RBIMPL_COMPILER_IS(Clang)
@@ -36,14 +36,14 @@
 # /* _MSC_FULL_VER = XXYYZZZZZ */
 # define RBIMPL_COMPILER_VERSION_MAJOR (_MSC_FULL_VER / 10000000)
 # define RBIMPL_COMPILER_VERSION_MINOR (_MSC_FULL_VER % 10000000 / 100000)
-# define RBIMPL_COMPILER_VERSION_PATCH (_MSC_FULL_VER            % 100000)
+# define RBIMPL_COMPILER_VERSION_PATCH (_MSC_FULL_VER % 100000)
 
 #elif defined(_MSC_FULL_VER)
 # define RBIMPL_COMPILER_IS_MSVC 1
 # /* _MSC_FULL_VER = XXYYZZZZ */
 # define RBIMPL_COMPILER_VERSION_MAJOR (_MSC_FULL_VER / 1000000)
 # define RBIMPL_COMPILER_VERSION_MINOR (_MSC_FULL_VER % 1000000 / 10000)
-# define RBIMPL_COMPILER_VERSION_PATCH (_MSC_FULL_VER           % 10000)
+# define RBIMPL_COMPILER_VERSION_PATCH (_MSC_FULL_VER % 10000)
 
 #else
 # define RBIMPL_COMPILER_IS_MSVC 1

@@ -8,8 +8,8 @@
 #endif
 
 struct __rb_wasm_asyncify_fiber_ctx {
-    void* top;
-    void* end;
+    void *top;
+    void *end;
     char buffer[WASM_FIBER_STACK_BUFFER_SIZE];
 };
 
@@ -38,6 +38,6 @@ void rb_wasm_swapcontext(rb_wasm_fiber_context *old_fiber, rb_wasm_fiber_context
 // Returns the Asyncify buffer of next fiber if unwound for fiber context switch.
 // Used by the top level Asyncify handling in wasm/runtime.c
 void *rb_wasm_handle_fiber_unwind(void (**new_fiber_entry)(void *, void *),
-                                  void **arg0, void **arg1, bool *is_new_fiber_started);
+  void **arg0, void **arg1, bool *is_new_fiber_started);
 
 #endif

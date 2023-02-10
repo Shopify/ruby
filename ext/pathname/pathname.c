@@ -218,7 +218,7 @@ path_cmp(VALUE self, VALUE other)
 }
 
 #ifndef ST2FIX
-#define ST2FIX(h) LONG2FIX((long)(h))
+# define ST2FIX(h) LONG2FIX((long)(h))
 #endif
 
 /* :nodoc: */
@@ -249,7 +249,7 @@ path_inspect(VALUE self)
 {
     const char *c = rb_obj_classname(self);
     VALUE str = get_strpath(self);
-    return rb_sprintf("#<%s:%"PRIsVALUE">", c, str);
+    return rb_sprintf("#<%s:%" PRIsVALUE ">", c, str);
 }
 
 /*
@@ -300,7 +300,7 @@ path_sub_ext(VALUE self, VALUE repl)
     else if (extlen <= 1) {
         ext += extlen;
     }
-    str2 = rb_str_subseq(str, 0, ext-p);
+    str2 = rb_str_subseq(str, 0, ext - p);
     rb_str_append(str2, repl);
     return rb_class_new_instance(1, &str2, rb_obj_class(self));
 }
@@ -361,10 +361,10 @@ path_each_line(int argc, VALUE *argv, VALUE self)
     args[0] = get_strpath(self);
     n = rb_scan_args(argc, argv, "03", &args[1], &args[2], &args[3]);
     if (rb_block_given_p()) {
-        return rb_block_call_kw(rb_cFile, id_foreach, 1+n, args, 0, 0, RB_PASS_CALLED_KEYWORDS);
+        return rb_block_call_kw(rb_cFile, id_foreach, 1 + n, args, 0, 0, RB_PASS_CALLED_KEYWORDS);
     }
     else {
-        return rb_funcallv_kw(rb_cFile, id_foreach, 1+n, args, RB_PASS_CALLED_KEYWORDS);
+        return rb_funcallv_kw(rb_cFile, id_foreach, 1 + n, args, RB_PASS_CALLED_KEYWORDS);
     }
 }
 
@@ -386,7 +386,7 @@ path_read(int argc, VALUE *argv, VALUE self)
 
     args[0] = get_strpath(self);
     n = rb_scan_args(argc, argv, "03", &args[1], &args[2], &args[3]);
-    return rb_funcallv_kw(rb_cFile, id_read, 1+n, args, RB_PASS_CALLED_KEYWORDS);
+    return rb_funcallv_kw(rb_cFile, id_read, 1 + n, args, RB_PASS_CALLED_KEYWORDS);
 }
 
 /*
@@ -406,7 +406,7 @@ path_binread(int argc, VALUE *argv, VALUE self)
 
     args[0] = get_strpath(self);
     n = rb_scan_args(argc, argv, "02", &args[1], &args[2]);
-    return rb_funcallv(rb_cFile, id_binread, 1+n, args);
+    return rb_funcallv(rb_cFile, id_binread, 1 + n, args);
 }
 
 /*
@@ -427,7 +427,7 @@ path_write(int argc, VALUE *argv, VALUE self)
 
     args[0] = get_strpath(self);
     n = rb_scan_args(argc, argv, "03", &args[1], &args[2], &args[3]);
-    return rb_funcallv_kw(rb_cFile, id_write, 1+n, args, RB_PASS_CALLED_KEYWORDS);
+    return rb_funcallv_kw(rb_cFile, id_write, 1 + n, args, RB_PASS_CALLED_KEYWORDS);
 }
 
 /*
@@ -448,7 +448,7 @@ path_binwrite(int argc, VALUE *argv, VALUE self)
 
     args[0] = get_strpath(self);
     n = rb_scan_args(argc, argv, "03", &args[1], &args[2], &args[3]);
-    return rb_funcallv_kw(rb_cFile, id_binwrite, 1+n, args, RB_PASS_CALLED_KEYWORDS);
+    return rb_funcallv_kw(rb_cFile, id_binwrite, 1 + n, args, RB_PASS_CALLED_KEYWORDS);
 }
 
 /*
@@ -470,7 +470,7 @@ path_readlines(int argc, VALUE *argv, VALUE self)
 
     args[0] = get_strpath(self);
     n = rb_scan_args(argc, argv, "03", &args[1], &args[2], &args[3]);
-    return rb_funcallv_kw(rb_cFile, id_readlines, 1+n, args, RB_PASS_CALLED_KEYWORDS);
+    return rb_funcallv_kw(rb_cFile, id_readlines, 1 + n, args, RB_PASS_CALLED_KEYWORDS);
 }
 
 /*
@@ -488,7 +488,7 @@ path_sysopen(int argc, VALUE *argv, VALUE self)
 
     args[0] = get_strpath(self);
     n = rb_scan_args(argc, argv, "02", &args[1], &args[2]);
-    return rb_funcallv(rb_cIO, id_sysopen, 1+n, args);
+    return rb_funcallv(rb_cIO, id_sysopen, 1 + n, args);
 }
 
 /*
@@ -678,10 +678,10 @@ path_open(int argc, VALUE *argv, VALUE self)
     args[0] = get_strpath(self);
     n = rb_scan_args(argc, argv, "03", &args[1], &args[2], &args[3]);
     if (rb_block_given_p()) {
-        return rb_block_call_kw(rb_cFile, id_open, 1+n, args, 0, 0, RB_PASS_CALLED_KEYWORDS);
+        return rb_block_call_kw(rb_cFile, id_open, 1 + n, args, 0, 0, RB_PASS_CALLED_KEYWORDS);
     }
     else {
-        return rb_funcallv_kw(rb_cFile, id_open, 1+n, args, RB_PASS_CALLED_KEYWORDS);
+        return rb_funcallv_kw(rb_cFile, id_open, 1 + n, args, RB_PASS_CALLED_KEYWORDS);
     }
 }
 
@@ -1150,7 +1150,7 @@ path_glob(int argc, VALUE *argv, VALUE self)
 
     n = rb_scan_args(argc, argv, "11", &args[0], &args[1]);
     if (n == 1)
-      args[1] = INT2FIX(0);
+        args[1] = INT2FIX(0);
 
     args[2] = rb_hash_new();
     rb_hash_aset(args[2], ID2SYM(id_base), get_strpath(self));

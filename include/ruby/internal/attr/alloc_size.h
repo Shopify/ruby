@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ATTR_ALLOC_SIZE_H                     /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ATTR_ALLOC_SIZE_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ATTR_ALLOC_SIZE_H
 /**
  * @file

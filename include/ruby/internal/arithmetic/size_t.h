@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ARITHMETIC_SIZE_T_H                   /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ARITHMETIC_SIZE_T_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ARITHMETIC_SIZE_T_H
 /**
  * @file
@@ -58,8 +58,8 @@
 # define RB_NUM2SSIZE RB_NUM2INT
 #endif
 
-#define NUM2SIZET RB_NUM2SIZE   /**< @old{RB_NUM2SIZE} */
-#define SIZET2NUM RB_SIZE2NUM   /**< @old{RB_SIZE2NUM} */
+#define NUM2SIZET RB_NUM2SIZE /**< @old{RB_NUM2SIZE} */
+#define SIZET2NUM RB_SIZE2NUM /**< @old{RB_SIZE2NUM} */
 #define NUM2SSIZET RB_NUM2SSIZE /**< @old{RB_NUM2SSIZE} */
 #define SSIZET2NUM RB_SSIZE2NUM /**< @old{RB_SSIZE2NUM} */
 

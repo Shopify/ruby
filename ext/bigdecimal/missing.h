@@ -3,9 +3,9 @@
 
 #if defined(__cplusplus)
 extern "C" {
-#if 0
+# if 0
 } /* satisfy cc-mode */
-#endif
+# endif
 #endif
 
 #ifdef HAVE_STDLIB_H
@@ -27,7 +27,7 @@ extern "C" {
 #  define RB_UNUSED_VAR(x) x [[maybe_unused]]
 
 # elif defined(__GNUC__)
-#  define RB_UNUSED_VAR(x) x __attribute__ ((unused))
+#  define RB_UNUSED_VAR(x) x __attribute__((unused))
 
 # else
 #  define RB_UNUSED_VAR(x) x
@@ -49,7 +49,7 @@ extern "C" {
 #  define UNREACHABLE __assume(0)
 
 # else
-#  define UNREACHABLE		/* unreachable */
+#  define UNREACHABLE /* unreachable */
 # endif
 #endif /* UNREACHABLE */
 
@@ -64,7 +64,7 @@ extern "C" {
 #else
 typedef unsigned char _Bool;
 # define bool _Bool
-# define true  ((_Bool)+1)
+# define true ((_Bool) + 1)
 # define false ((_Bool)-1)
 # define __bool_true_false_are_defined
 #endif
@@ -126,11 +126,11 @@ char *BigDecimal_dtoa(double d_, int mode, int ndigits, int *decpt, int *sign, c
 static inline VALUE
 rb_rational_num(VALUE rat)
 {
-#ifdef RRATIONAL
+# ifdef RRATIONAL
     return RRATIONAL(rat)->num;
-#else
+# else
     return rb_funcall(rat, rb_intern("numerator"), 0);
-#endif
+# endif
 }
 #endif
 
@@ -138,11 +138,11 @@ rb_rational_num(VALUE rat)
 static inline VALUE
 rb_rational_den(VALUE rat)
 {
-#ifdef RRATIONAL
+# ifdef RRATIONAL
     return RRATIONAL(rat)->den;
-#else
+# else
     return rb_funcall(rat, rb_intern("denominator"), 0);
-#endif
+# endif
 }
 #endif
 
@@ -152,11 +152,11 @@ rb_rational_den(VALUE rat)
 static inline VALUE
 rb_complex_real(VALUE cmp)
 {
-#ifdef RCOMPLEX
-  return RCOMPLEX(cmp)->real;
-#else
-  return rb_funcall(cmp, rb_intern("real"), 0);
-#endif
+# ifdef RCOMPLEX
+    return RCOMPLEX(cmp)->real;
+# else
+    return rb_funcall(cmp, rb_intern("real"), 0);
+# endif
 }
 #endif
 
@@ -165,9 +165,9 @@ static inline VALUE
 rb_complex_imag(VALUE cmp)
 {
 # ifdef RCOMPLEX
-  return RCOMPLEX(cmp)->imag;
+    return RCOMPLEX(cmp)->imag;
 # else
-  return rb_funcall(cmp, rb_intern("imag"), 0);
+    return rb_funcall(cmp, rb_intern("imag"), 0);
 # endif
 }
 #endif
@@ -183,14 +183,14 @@ rb_complex_imag(VALUE cmp)
 /* warning */
 
 #if !defined(HAVE_RB_CATEGORY_WARN) || !defined(HAVE_CONST_RB_WARN_CATEGORY_DEPRECATED)
-#   define rb_category_warn(category, ...) rb_warn(__VA_ARGS__)
+# define rb_category_warn(category, ...) rb_warn(__VA_ARGS__)
 #endif
 
 #if defined(__cplusplus)
-#if 0
+# if 0
 { /* satisfy cc-mode */
-#endif
-}  /* extern "C" { */
+# endif
+} /* extern "C" { */
 #endif
 
 #endif /* MISSING_H */

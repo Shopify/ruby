@@ -33,7 +33,11 @@ static VALUE foletypelib_inspect(VALUE self);
 
 static const rb_data_type_t oletypelib_datatype = {
     "win32ole_typelib",
-    {NULL, oletypelib_free, oletypelib_size,},
+    {
+      NULL,
+      oletypelib_free,
+      oletypelib_size,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -72,7 +76,7 @@ oletypelib_path(VALUE guid, VALUE version)
     if (err != ERROR_SUCCESS) {
         return Qnil;
     }
-    for(k = 0; path == Qnil; k++) {
+    for (k = 0; path == Qnil; k++) {
         lang = reg_enum_key(hkey, k);
         if (lang == Qnil)
             break;
@@ -119,7 +123,7 @@ ole_typelib_from_itypeinfo(ITypeInfo *pTypeInfo)
     VALUE retval = Qnil;
 
     hr = pTypeInfo->lpVtbl->GetContainingTypeLib(pTypeInfo, &pTypeLib, &index);
-    if(FAILED(hr)) {
+    if (FAILED(hr)) {
         return Qnil;
     }
     retval = create_win32ole_typelib(pTypeLib);
@@ -157,21 +161,21 @@ foletypelib_s_typelibs(VALUE self)
     ITypeLib *pTypeLib;
 
     err = reg_open_key(HKEY_CLASSES_ROOT, "TypeLib", &htypelib);
-    if(err != ERROR_SUCCESS) {
+    if (err != ERROR_SUCCESS) {
         return typelibs;
     }
-    for(i = 0; ; i++) {
+    for (i = 0;; i++) {
         guid = reg_enum_key(htypelib, i);
         if (guid == Qnil)
             break;
         err = reg_open_vkey(htypelib, guid, &hguid);
         if (err != ERROR_SUCCESS)
             continue;
-        for(j = 0; ; j++) {
+        for (j = 0;; j++) {
             version = reg_enum_key(hguid, j);
             if (version == Qnil)
                 break;
-            if ( (name = reg_get_val2(hguid, StringValuePtr(version))) != Qnil ) {
+            if ((name = reg_get_val2(hguid, StringValuePtr(version))) != Qnil) {
                 hr = oletypelib_from_guid(guid, version, &pTypeLib);
                 if (SUCCEEDED(hr)) {
                     typelib = create_win32ole_typelib(pTypeLib);
@@ -241,17 +245,17 @@ oletypelib_search_registry(VALUE self, VALUE typelib)
     ITypeLib *pTypeLib;
 
     err = reg_open_key(HKEY_CLASSES_ROOT, "TypeLib", &htypelib);
-    if(err != ERROR_SUCCESS) {
+    if (err != ERROR_SUCCESS) {
         return Qfalse;
     }
-    for(i = 0; !found; i++) {
+    for (i = 0; !found; i++) {
         guid = reg_enum_key(htypelib, i);
         if (guid == Qnil)
             break;
         err = reg_open_vkey(htypelib, guid, &hguid);
         if (err != ERROR_SUCCESS)
             continue;
-        for(j = 0; found == Qfalse; j++) {
+        for (j = 0; found == Qfalse; j++) {
             ver = reg_enum_key(hguid, j);
             if (ver == Qnil)
                 break;
@@ -275,7 +279,7 @@ oletypelib_search_registry(VALUE self, VALUE typelib)
         RegCloseKey(hguid);
     }
     RegCloseKey(htypelib);
-    return  found;
+    return found;
 }
 
 static void
@@ -285,7 +289,7 @@ oletypelib_get_libattr(ITypeLib *pTypeLib, TLIBATTR **ppTLibAttr)
     hr = pTypeLib->lpVtbl->GetLibAttr(pTypeLib, ppTLibAttr);
     if (FAILED(hr)) {
         ole_raise(hr, eWIN32OLERuntimeError,
-                  "failed to get library attribute(TLIBATTR) from ITypeLib");
+          "failed to get library attribute(TLIBATTR) from ITypeLib");
     }
 }
 
@@ -309,7 +313,7 @@ oletypelib_search_registry2(VALUE self, VALUE args)
     version_str = make_version_str(rb_ary_entry(args, 1), rb_ary_entry(args, 2));
 
     err = reg_open_key(HKEY_CLASSES_ROOT, "TypeLib", &htypelib);
-    if(err != ERROR_SUCCESS) {
+    if (err != ERROR_SUCCESS) {
         return Qfalse;
     }
     err = reg_open_vkey(htypelib, guid, &hguid);
@@ -327,9 +331,10 @@ oletypelib_search_registry2(VALUE self, VALUE args)
             }
         }
         RegCloseKey(hversion);
-    } else {
+    }
+    else {
         fver = 0.0;
-        for(j = 0; ;j++) {
+        for (j = 0;; j++) {
             ver = reg_enum_key(hguid, j);
             if (ver == Qnil)
                 break;
@@ -360,7 +365,6 @@ oletypelib_search_registry2(VALUE self, VALUE args)
     }
     return found;
 }
-
 
 /*
  * call-seq:
@@ -394,7 +398,7 @@ foletypelib_initialize(VALUE self, VALUE args)
     VALUE found = Qfalse;
     VALUE typelib = Qnil;
     int len = 0;
-    OLECHAR * pbuf;
+    OLECHAR *pbuf;
     ITypeLib *pTypeLib;
     HRESULT hr = S_OK;
 
@@ -421,7 +425,7 @@ foletypelib_initialize(VALUE self, VALUE args)
 
     if (found == Qfalse) {
         rb_raise(eWIN32OLERuntimeError, "not found type library `%s`",
-                 StringValuePtr(typelib));
+          StringValuePtr(typelib));
     }
     return self;
 }
@@ -446,7 +450,7 @@ foletypelib_guid(VALUE self)
 
     pTypeLib = itypelib(self);
     oletypelib_get_libattr(pTypeLib, &pTLibAttr);
-    len = StringFromGUID2(&pTLibAttr->guid, bstr, sizeof(bstr)/sizeof(OLECHAR));
+    len = StringFromGUID2(&pTLibAttr->guid, bstr, sizeof(bstr) / sizeof(OLECHAR));
     if (len > 3) {
         guid = ole_wc2vstr(bstr, FALSE);
     }
@@ -472,7 +476,7 @@ foletypelib_name(VALUE self)
     VALUE name;
     pTypeLib = itypelib(self);
     hr = pTypeLib->lpVtbl->GetDocumentation(pTypeLib, -1,
-                                            NULL, &bstr, NULL, NULL);
+      NULL, &bstr, NULL, NULL);
 
     if (FAILED(hr)) {
         ole_raise(hr, eWIN32OLERuntimeError, "failed to get name from ITypeLib");
@@ -539,7 +543,7 @@ foletypelib_major_version(VALUE self)
     pTypeLib = itypelib(self);
     oletypelib_get_libattr(pTypeLib, &pTLibAttr);
 
-    major =  RB_INT2NUM(pTLibAttr->wMajorVerNum);
+    major = RB_INT2NUM(pTLibAttr->wMajorVerNum);
     pTypeLib->lpVtbl->ReleaseTLibAttr(pTypeLib, pTLibAttr);
     return major;
 }
@@ -561,7 +565,7 @@ foletypelib_minor_version(VALUE self)
     ITypeLib *pTypeLib;
     pTypeLib = itypelib(self);
     oletypelib_get_libattr(pTypeLib, &pTLibAttr);
-    minor =  RB_INT2NUM(pTLibAttr->wMinorVerNum);
+    minor = RB_INT2NUM(pTLibAttr->wMinorVerNum);
     pTypeLib->lpVtbl->ReleaseTLibAttr(pTypeLib, pTLibAttr);
     return minor;
 }
@@ -588,10 +592,10 @@ foletypelib_path(VALUE self)
     pTypeLib = itypelib(self);
     oletypelib_get_libattr(pTypeLib, &pTLibAttr);
     hr = QueryPathOfRegTypeLib(&pTLibAttr->guid,
-                               pTLibAttr->wMajorVerNum,
-                               pTLibAttr->wMinorVerNum,
-                               lcid,
-                               &bstr);
+      pTLibAttr->wMajorVerNum,
+      pTLibAttr->wMinorVerNum,
+      lcid,
+      &bstr);
     if (FAILED(hr)) {
         pTypeLib->lpVtbl->ReleaseTLibAttr(pTypeLib, pTLibAttr);
         ole_raise(hr, eWIN32OLERuntimeError, "failed to QueryPathOfRegTypeTypeLib");
@@ -626,8 +630,8 @@ foletypelib_visible(VALUE self)
     oletypelib_get_libattr(pTypeLib, &pTLibAttr);
 
     if ((pTLibAttr->wLibFlags == 0) ||
-        (pTLibAttr->wLibFlags & LIBFLAG_FRESTRICTED) ||
-        (pTLibAttr->wLibFlags & LIBFLAG_FHIDDEN)) {
+      (pTLibAttr->wLibFlags & LIBFLAG_FRESTRICTED) ||
+      (pTLibAttr->wLibFlags & LIBFLAG_FHIDDEN)) {
         visible = Qfalse;
     }
     pTypeLib->lpVtbl->ReleaseTLibAttr(pTypeLib, pTLibAttr);
@@ -654,7 +658,7 @@ foletypelib_library_name(VALUE self)
 
     pTypeLib = itypelib(self);
     hr = pTypeLib->lpVtbl->GetDocumentation(pTypeLib, -1,
-                                            &bstr, NULL, NULL, NULL);
+      &bstr, NULL, NULL, NULL);
     if (FAILED(hr)) {
         ole_raise(hr, eWIN32OLERuntimeError, "failed to get library name");
     }
@@ -675,7 +679,7 @@ ole_types_from_typelib(ITypeLib *pTypeLib, VALUE classes)
     count = pTypeLib->lpVtbl->GetTypeInfoCount(pTypeLib);
     for (i = 0; i < count; i++) {
         hr = pTypeLib->lpVtbl->GetDocumentation(pTypeLib, i,
-                                                &bstr, NULL, NULL, NULL);
+          &bstr, NULL, NULL, NULL);
         if (FAILED(hr))
             continue;
 
@@ -706,10 +710,10 @@ typelib_file_from_typelib(VALUE ole)
     VALUE lang;
 
     err = reg_open_key(HKEY_CLASSES_ROOT, "TypeLib", &htypelib);
-    if(err != ERROR_SUCCESS) {
+    if (err != ERROR_SUCCESS) {
         return Qnil;
     }
-    for(i = 0; !found; i++) {
+    for (i = 0; !found; i++) {
         clsid = reg_enum_key(htypelib, i);
         if (clsid == Qnil)
             break;
@@ -717,19 +721,19 @@ typelib_file_from_typelib(VALUE ole)
         if (err != ERROR_SUCCESS)
             continue;
         fver = 0;
-        for(j = 0; !found; j++) {
+        for (j = 0; !found; j++) {
             ver = reg_enum_key(hclsid, j);
             if (ver == Qnil)
                 break;
             err = reg_open_vkey(hclsid, ver, &hversion);
-                        if (err != ERROR_SUCCESS || fver > atof(StringValuePtr(ver)))
+            if (err != ERROR_SUCCESS || fver > atof(StringValuePtr(ver)))
                 continue;
             fver = atof(StringValuePtr(ver));
             typelib = reg_get_val(hversion, NULL);
             if (typelib == Qnil)
                 continue;
             if (rb_str_cmp(typelib, ole) == 0) {
-                for(k = 0; !found; k++) {
+                for (k = 0; !found; k++) {
                     lang = reg_enum_key(hversion, k);
                     if (lang == Qnil)
                         break;
@@ -746,7 +750,7 @@ typelib_file_from_typelib(VALUE ole)
         RegCloseKey(hclsid);
     }
     RegCloseKey(htypelib);
-    return  file;
+    return file;
 }
 
 static VALUE
@@ -786,7 +790,6 @@ typelib_file(VALUE ole)
     }
     return typelib_file_from_typelib(ole);
 }
-
 
 /*
  *  call-seq:

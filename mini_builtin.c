@@ -26,7 +26,7 @@ builtin_iseq_load(const char *feature_name, const struct rb_builtin_function *ta
     static const rb_compile_option_t optimization = {
         TRUE, /* int inline_const_cache; */
         TRUE, /* int peephole_optimization; */
-        FALSE,/* int tailcall_optimization; */
+        FALSE, /* int tailcall_optimization; */
         TRUE, /* int specialized_instruction; */
         TRUE, /* int operands_unification; */
         TRUE, /* int instructions_unification; */

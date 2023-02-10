@@ -1,4 +1,4 @@
-#ifndef INTERNAL_COMPAR_H                                /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_COMPAR_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_COMPAR_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -15,8 +15,9 @@
 #define CMP_OPTIMIZABLE(type) BASIC_OP_UNREDEFINED_P(BOP_CMP, type##_REDEFINED_OP_FLAG)
 
 #define OPTIMIZED_CMP(a, b) \
-    ((FIXNUM_P(a) && FIXNUM_P(b) && CMP_OPTIMIZABLE(INTEGER)) ? \
-     (((long)a > (long)b) ? 1 : ((long)a < (long)b) ? -1 : 0) : \
+ ((FIXNUM_P(a) && FIXNUM_P(b) && CMP_OPTIMIZABLE(INTEGER)) ? \
+     (((long)a > (long)b) ? 1 : ((long)a < (long)b) ? -1 : \
+                                                      0) : \
      (STRING_P(a) && STRING_P(b) && CMP_OPTIMIZABLE(STRING)) ? \
      rb_str_cmp(a, b) : \
      (RB_FLOAT_TYPE_P(a) && RB_FLOAT_TYPE_P(b) && CMP_OPTIMIZABLE(FLOAT)) ? \

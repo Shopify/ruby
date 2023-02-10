@@ -3,7 +3,8 @@
 
 #include "ruby.h"
 
-int ffs(int arg)
+int
+ffs(int arg)
 {
     unsigned int x = (unsigned int)arg;
     int r;

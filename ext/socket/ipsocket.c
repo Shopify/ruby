@@ -10,8 +10,7 @@
 
 #include "rubysocket.h"
 
-struct inetsock_arg
-{
+struct inetsock_arg {
     VALUE sock;
     struct {
         VALUE host, serv;
@@ -61,9 +60,8 @@ init_inetsock_internal(VALUE v)
     }
 
     arg->remote.res = rsock_addrinfo(arg->remote.host, arg->remote.serv,
-                                     family, SOCK_STREAM,
-                                     (type == INET_SERVER) ? AI_PASSIVE : 0);
-
+      family, SOCK_STREAM,
+      (type == INET_SERVER) ? AI_PASSIVE : 0);
 
     /*
      * Maybe also accept a local address
@@ -71,7 +69,7 @@ init_inetsock_internal(VALUE v)
 
     if (type != INET_SERVER && (!NIL_P(arg->local.host) || !NIL_P(arg->local.serv))) {
         arg->local.res = rsock_addrinfo(arg->local.host, arg->local.serv,
-                                        family, SOCK_STREAM, 0);
+          family, SOCK_STREAM, 0);
     }
 
     arg->fd = fd = -1;
@@ -94,7 +92,7 @@ init_inetsock_internal(VALUE v)
                 lres = arg->local.res->ai;
             }
         }
-        status = rsock_socket(res->ai_family,res->ai_socktype,res->ai_protocol);
+        status = rsock_socket(res->ai_family, res->ai_socktype, res->ai_protocol);
         syscall = "socket(2)";
         fd = status;
         if (fd < 0) {
@@ -106,7 +104,7 @@ init_inetsock_internal(VALUE v)
 #if !defined(_WIN32) && !defined(__CYGWIN__)
             status = 1;
             setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-                       (char*)&status, (socklen_t)sizeof(status));
+              (char *)&status, (socklen_t)sizeof(status));
 #endif
             status = bind(fd, res->ai_addr, res->ai_addrlen);
             syscall = "bind(2)";
@@ -116,7 +114,7 @@ init_inetsock_internal(VALUE v)
 #if !defined(_WIN32) && !defined(__CYGWIN__)
                 status = 1;
                 setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-                           (char*)&status, (socklen_t)sizeof(status));
+                  (char *)&status, (socklen_t)sizeof(status));
 #endif
                 status = bind(fd, lres->ai_addr, lres->ai_addrlen);
                 local = status;
@@ -125,7 +123,7 @@ init_inetsock_internal(VALUE v)
 
             if (status >= 0) {
                 status = rsock_connect(fd, res->ai_addr, res->ai_addrlen,
-                                       (type == INET_SOCKS), tv);
+                  (type == INET_SOCKS), tv);
                 syscall = "connect(2)";
             }
         }
@@ -135,7 +133,8 @@ init_inetsock_internal(VALUE v)
             close(fd);
             arg->fd = fd = -1;
             continue;
-        } else
+        }
+        else
             break;
     }
     if (status < 0) {
@@ -144,7 +143,8 @@ init_inetsock_internal(VALUE v)
         if (local < 0) {
             host = arg->local.host;
             port = arg->local.serv;
-        } else {
+        }
+        else {
             host = arg->remote.host;
             port = arg->remote.serv;
         }
@@ -169,8 +169,8 @@ init_inetsock_internal(VALUE v)
 
 VALUE
 rsock_init_inetsock(VALUE sock, VALUE remote_host, VALUE remote_serv,
-                    VALUE local_host, VALUE local_serv, int type,
-                    VALUE resolv_timeout, VALUE connect_timeout)
+  VALUE local_host, VALUE local_serv, int type,
+  VALUE resolv_timeout, VALUE connect_timeout)
 {
     struct inetsock_arg arg;
     arg.sock = sock;
@@ -185,7 +185,7 @@ rsock_init_inetsock(VALUE sock, VALUE remote_host, VALUE remote_serv,
     arg.resolv_timeout = resolv_timeout;
     arg.connect_timeout = connect_timeout;
     return rb_ensure(init_inetsock_internal, (VALUE)&arg,
-                     inetsock_cleanup, (VALUE)&arg);
+      inetsock_cleanup, (VALUE)&arg);
 }
 
 static ID id_numeric, id_hostname;
@@ -193,19 +193,23 @@ static ID id_numeric, id_hostname;
 int
 rsock_revlookup_flag(VALUE revlookup, int *norevlookup)
 {
-#define return_norevlookup(x) {*norevlookup = (x); return 1;}
+#define return_norevlookup(x) \
+ { \
+  *norevlookup = (x); \
+  return 1; \
+ }
     ID id;
 
     switch (revlookup) {
-      case Qtrue:  return_norevlookup(0);
-      case Qfalse: return_norevlookup(1);
-      case Qnil: break;
-      default:
-        Check_Type(revlookup, T_SYMBOL);
-        id = SYM2ID(revlookup);
-        if (id == id_numeric) return_norevlookup(1);
-        if (id == id_hostname) return_norevlookup(0);
-        rb_raise(rb_eArgError, "invalid reverse_lookup flag: :%s", rb_id2name(id));
+        case Qtrue: return_norevlookup(0);
+        case Qfalse: return_norevlookup(1);
+        case Qnil: break;
+        default:
+            Check_Type(revlookup, T_SYMBOL);
+            id = SYM2ID(revlookup);
+            if (id == id_numeric) return_norevlookup(1);
+            if (id == id_hostname) return_norevlookup(0);
+            rb_raise(rb_eArgError, "invalid reverse_lookup flag: :%s", rb_id2name(id));
     }
     return 0;
 #undef return_norevlookup
@@ -226,18 +230,19 @@ ip_inspect(VALUE sock)
     socklen_t len = (socklen_t)sizeof addr;
     ID id;
     if (fptr && fptr->fd >= 0 &&
-        getsockname(fptr->fd, &addr.addr, &len) >= 0 &&
-        (id = rsock_intern_family(addr.addr.sa_family)) != 0) {
+      getsockname(fptr->fd, &addr.addr, &len) >= 0 &&
+      (id = rsock_intern_family(addr.addr.sa_family)) != 0) {
         VALUE family = rb_id2str(id);
         char hbuf[1024], pbuf[1024];
         long slen = RSTRING_LEN(str);
         const char last = (slen > 1 && RSTRING_PTR(str)[slen - 1] == '>') ?
-            (--slen, '>') : 0;
+          (--slen, '>') :
+          0;
         str = rb_str_subseq(str, 0, slen);
         rb_str_cat_cstr(str, ", ");
         rb_str_append(str, family);
         if (!rb_getnameinfo(&addr.addr, len, hbuf, sizeof(hbuf),
-                            pbuf, sizeof(pbuf), NI_NUMERICHOST | NI_NUMERICSERV)) {
+              pbuf, sizeof(pbuf), NI_NUMERICHOST | NI_NUMERICSERV)) {
             rb_str_cat_cstr(str, ", ");
             rb_str_cat_cstr(str, hbuf);
             rb_str_cat_cstr(str, ", ");

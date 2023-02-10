@@ -13,7 +13,7 @@ NORETURN(static void argument_arity_error(rb_execution_context_t *ec, const rb_i
 NORETURN(static void argument_kw_error(rb_execution_context_t *ec, const rb_iseq_t *iseq, const char *error, const VALUE keys));
 VALUE rb_keyword_error_new(const char *error, VALUE keys); /* class.c */
 static VALUE method_missing(rb_execution_context_t *ec, VALUE obj, ID id, int argc, const VALUE *argv,
-                            enum method_missing_reason call_status, int kw_splat);
+  enum method_missing_reason call_status, int kw_splat);
 #if !defined(_MSC_VER) || !defined(MJIT_HEADER)
 MJIT_FUNC_EXPORTED
 #endif
@@ -65,12 +65,12 @@ args_extend(struct args_info *args, const int min_argc)
     if (args->rest) {
         arg_rest_dup(args);
         VM_ASSERT(args->rest_index == 0);
-        for (i=args->argc + RARRAY_LENINT(args->rest); i<min_argc; i++) {
+        for (i = args->argc + RARRAY_LENINT(args->rest); i < min_argc; i++) {
             rb_ary_push(args->rest, Qnil);
         }
     }
     else {
-        for (i=args->argc; i<min_argc; i++) {
+        for (i = args->argc; i < min_argc; i++) {
             args->argv[args->argc++] = Qnil;
         }
     }
@@ -195,11 +195,11 @@ args_kw_argv_to_hash(struct args_info *args)
     const int kw_len = kw_arg->keyword_len;
     VALUE h = rb_hash_new_with_size(kw_len);
     const int kw_start = args->argc - kw_len;
-    const VALUE * const kw_argv = args->argv + kw_start;
+    const VALUE *const kw_argv = args->argv + kw_start;
     int i;
 
     args->argc = kw_start + 1;
-    for (i=0; i<kw_len; i++) {
+    for (i = 0; i < kw_len; i++) {
         rb_hash_aset(h, passed_keywords[i], kw_argv[i]);
     }
 
@@ -220,7 +220,7 @@ args_setup_lead_parameters(struct args_info *args, int argc, VALUE *locals)
         int i, j;
         const VALUE *argv = args_rest_argv(args);
 
-        for (i=args->argc, j=0; i<argc; i++, j++) {
+        for (i = args->argc, j = 0; i < argc; i++, j++) {
             locals[i] = argv[j];
         }
         args->rest_index += argc - args->argc;
@@ -256,13 +256,13 @@ args_setup_opt_parameters(struct args_info *args, int opt_max, VALUE *locals)
             int len = RARRAY_LENINT(args->rest);
             const VALUE *argv = RARRAY_CONST_PTR_TRANSIENT(args->rest);
 
-            for (; i<opt_max && args->rest_index < len; i++, args->rest_index++) {
+            for (; i < opt_max && args->rest_index < len; i++, args->rest_index++) {
                 locals[i] = argv[args->rest_index];
             }
         }
 
         /* initialize by nil */
-        for (j=i; j<opt_max; j++) {
+        for (j = i; j < opt_max; j++) {
             locals[j] = Qnil;
         }
     }
@@ -282,7 +282,7 @@ make_unknown_kw_hash(const VALUE *passed_keywords, int passed_keyword_len, const
     int i;
     VALUE obj = rb_ary_hidden_new(1);
 
-    for (i=0; i<passed_keyword_len; i++) {
+    for (i = 0; i < passed_keyword_len; i++) {
         if (!UNDEF_P(kw_argv[i])) {
             rb_ary_push(obj, passed_keywords[i]);
         }
@@ -296,7 +296,7 @@ make_rest_kw_hash(const VALUE *passed_keywords, int passed_keyword_len, const VA
     int i;
     VALUE obj = rb_hash_new_with_size(passed_keyword_len);
 
-    for (i=0; i<passed_keyword_len; i++) {
+    for (i = 0; i < passed_keyword_len; i++) {
         if (!UNDEF_P(kw_argv[i])) {
             rb_hash_aset(obj, passed_keywords[i], kw_argv[i]);
         }
@@ -310,7 +310,7 @@ args_setup_kw_parameters_lookup(const ID key, VALUE *ptr, const VALUE *const pas
     int i;
     const VALUE keyname = ID2SYM(key);
 
-    for (i=0; i<passed_keyword_len; i++) {
+    for (i = 0; i < passed_keyword_len; i++) {
         if (keyname == passed_keywords[i]) {
             *ptr = passed_values[i];
             passed_values[i] = Qundef;
@@ -321,23 +321,23 @@ args_setup_kw_parameters_lookup(const ID key, VALUE *ptr, const VALUE *const pas
     return FALSE;
 }
 
-#define KW_SPECIFIED_BITS_MAX (32-1) /* TODO: 32 -> Fixnum's max bits */
+#define KW_SPECIFIED_BITS_MAX (32 - 1) /* TODO: 32 -> Fixnum's max bits */
 
 static void
 args_setup_kw_parameters(rb_execution_context_t *const ec, const rb_iseq_t *const iseq,
-                         VALUE *const passed_values, const int passed_keyword_len, const VALUE *const passed_keywords,
-                         VALUE *const locals)
+  VALUE *const passed_values, const int passed_keyword_len, const VALUE *const passed_keywords,
+  VALUE *const locals)
 {
     const ID *acceptable_keywords = ISEQ_BODY(iseq)->param.keyword->table;
     const int req_key_num = ISEQ_BODY(iseq)->param.keyword->required_num;
     const int key_num = ISEQ_BODY(iseq)->param.keyword->num;
-    const VALUE * const default_values = ISEQ_BODY(iseq)->param.keyword->default_values;
+    const VALUE *const default_values = ISEQ_BODY(iseq)->param.keyword->default_values;
     VALUE missing = 0;
     int i, di, found = 0;
     int unspecified_bits = 0;
     VALUE unspecified_bits_value = Qnil;
 
-    for (i=0; i<req_key_num; i++) {
+    for (i = 0; i < req_key_num; i++) {
         ID key = acceptable_keywords[i];
         if (args_setup_kw_parameters_lookup(key, &locals[i], passed_keywords, passed_values, passed_keyword_len)) {
             found++;
@@ -350,7 +350,7 @@ args_setup_kw_parameters(rb_execution_context_t *const ec, const rb_iseq_t *cons
 
     if (missing) argument_kw_error(ec, iseq, "missing", missing);
 
-    for (di=0; i<key_num; i++, di++) {
+    for (di = 0; i < key_num; i++, di++) {
         if (args_setup_kw_parameters_lookup(acceptable_keywords[i], &locals[i], passed_keywords, passed_values, passed_keyword_len)) {
             found++;
         }
@@ -367,7 +367,7 @@ args_setup_kw_parameters(rb_execution_context_t *const ec, const rb_iseq_t *cons
                         int j;
                         unspecified_bits_value = rb_hash_new();
 
-                        for (j=0; j<KW_SPECIFIED_BITS_MAX; j++) {
+                        for (j = 0; j < KW_SPECIFIED_BITS_MAX; j++) {
                             if (unspecified_bits & (0x01 << j)) {
                                 rb_hash_aset(unspecified_bits_value, INT2FIX(j), Qtrue);
                             }
@@ -435,28 +435,28 @@ fill_keys_values(st_data_t key, st_data_t val, st_data_t ptr)
 }
 
 static inline int
-ignore_keyword_hash_p(VALUE keyword_hash, const rb_iseq_t * const iseq, unsigned int * kw_flag, VALUE * converted_keyword_hash)
+ignore_keyword_hash_p(VALUE keyword_hash, const rb_iseq_t *const iseq, unsigned int *kw_flag, VALUE *converted_keyword_hash)
 {
     if (!RB_TYPE_P(keyword_hash, T_HASH)) {
         keyword_hash = rb_to_hash_type(keyword_hash);
     }
     if (!(*kw_flag & VM_CALL_KW_SPLAT_MUT) &&
-            (ISEQ_BODY(iseq)->param.flags.has_kwrest ||
-             ISEQ_BODY(iseq)->param.flags.ruby2_keywords)) {
+      (ISEQ_BODY(iseq)->param.flags.has_kwrest ||
+        ISEQ_BODY(iseq)->param.flags.ruby2_keywords)) {
         *kw_flag |= VM_CALL_KW_SPLAT_MUT;
         keyword_hash = rb_hash_dup(keyword_hash);
     }
     *converted_keyword_hash = keyword_hash;
     return !(ISEQ_BODY(iseq)->param.flags.has_kw) &&
-           !(ISEQ_BODY(iseq)->param.flags.has_kwrest) &&
-           RHASH_EMPTY_P(keyword_hash);
+      !(ISEQ_BODY(iseq)->param.flags.has_kwrest) &&
+      RHASH_EMPTY_P(keyword_hash);
 }
 
 static int
-setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * const iseq,
-                         struct rb_calling_info *const calling,
-                         const struct rb_callinfo *ci,
-                         VALUE * const locals, const enum arg_setup_type arg_setup_type)
+setup_parameters_complex(rb_execution_context_t *const ec, const rb_iseq_t *const iseq,
+  struct rb_calling_info *const calling,
+  const struct rb_callinfo *ci,
+  VALUE *const locals, const enum arg_setup_type arg_setup_type)
 {
     const int min_argc = ISEQ_BODY(iseq)->param.lead_num + ISEQ_BODY(iseq)->param.post_num;
     const int max_argc = (ISEQ_BODY(iseq)->param.flags.has_rest == FALSE) ? min_argc + ISEQ_BODY(iseq)->param.opt_num : UNLIMITED_ARGUMENTS;
@@ -465,7 +465,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
     int opt_pc = 0, allow_autosplat = !kw_flag;
     struct args_info args_body, *args;
     VALUE keyword_hash = Qnil;
-    VALUE * const orig_sp = ec->cfp->sp;
+    VALUE *const orig_sp = ec->cfp->sp;
     unsigned int i;
     VALUE flag_keyword_hash = 0;
     VALUE splat_flagged_keyword_hash = 0;
@@ -487,7 +487,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
      * <- ISEQ_BODY(iseq)->param.size------------>
      * ^ locals                             ^ sp
      */
-    for (i=calling->argc; i<ISEQ_BODY(iseq)->param.size; i++) {
+    for (i = calling->argc; i < ISEQ_BODY(iseq)->param.size; i++) {
         locals[i] = Qnil;
     }
     ec->cfp->sp = &locals[i];
@@ -530,7 +530,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
 
         if (!kw_flag && len > 0) {
             if (RB_TYPE_P(rest_last, T_HASH) &&
-                (((struct RHash *)rest_last)->basic.flags & RHASH_PASS_AS_KEYWORDS)) {
+              (((struct RHash *)rest_last)->basic.flags & RHASH_PASS_AS_KEYWORDS)) {
                 splat_flagged_keyword_hash = rest_last;
                 rest_last = rb_hash_dup(rest_last);
                 kw_flag |= VM_CALL_KW_SPLAT | VM_CALL_KW_SPLAT_MUT;
@@ -568,7 +568,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
     }
     else {
         if (kw_flag & VM_CALL_KW_SPLAT) {
-            VALUE last_arg = args->argv[args->argc-1];
+            VALUE last_arg = args->argv[args->argc - 1];
             if (ignore_keyword_hash_p(last_arg, iseq, &kw_flag, &converted_keyword_hash)) {
                 args->argc--;
                 given_argc--;
@@ -577,7 +577,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
             else {
                 if (last_arg != converted_keyword_hash) {
                     last_arg = converted_keyword_hash;
-                    args->argv[args->argc-1] = last_arg;
+                    args->argv[args->argc - 1] = last_arg;
                 }
 
                 if (ISEQ_BODY(iseq)->param.flags.ruby2_keywords) {
@@ -602,20 +602,20 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
     }
 
     switch (arg_setup_type) {
-      case arg_setup_method:
-        break; /* do nothing special */
-      case arg_setup_block:
-        if (given_argc == (NIL_P(keyword_hash) ? 1 : 2) &&
-            allow_autosplat &&
-            (min_argc > 0 || ISEQ_BODY(iseq)->param.opt_num > 1) &&
-            !ISEQ_BODY(iseq)->param.flags.ambiguous_param0 &&
-            !((ISEQ_BODY(iseq)->param.flags.has_kw ||
-               ISEQ_BODY(iseq)->param.flags.has_kwrest)
-               && max_argc == 1) &&
-            args_check_block_arg0(args)) {
-            given_argc = RARRAY_LENINT(args->rest);
-        }
-        break;
+        case arg_setup_method:
+            break; /* do nothing special */
+        case arg_setup_block:
+            if (given_argc == (NIL_P(keyword_hash) ? 1 : 2) &&
+              allow_autosplat &&
+              (min_argc > 0 || ISEQ_BODY(iseq)->param.opt_num > 1) &&
+              !ISEQ_BODY(iseq)->param.flags.ambiguous_param0 &&
+              !((ISEQ_BODY(iseq)->param.flags.has_kw ||
+                  ISEQ_BODY(iseq)->param.flags.has_kwrest) &&
+                max_argc == 1) &&
+              args_check_block_arg0(args)) {
+                given_argc = RARRAY_LENINT(args->rest);
+            }
+            break;
     }
 
     /* argc check */
@@ -645,7 +645,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
         args_setup_lead_parameters(args, ISEQ_BODY(iseq)->param.lead_num, locals + 0);
     }
 
-    if (ISEQ_BODY(iseq)->param.flags.has_rest || ISEQ_BODY(iseq)->param.flags.has_post){
+    if (ISEQ_BODY(iseq)->param.flags.has_rest || ISEQ_BODY(iseq)->param.flags.has_post) {
         args_copy(args);
     }
 
@@ -663,17 +663,17 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
         VALUE ary = *(locals + ISEQ_BODY(iseq)->param.rest_start);
         VALUE index = RARRAY_LEN(ary) - 1;
         if (splat_flagged_keyword_hash &&
-            !ISEQ_BODY(iseq)->param.flags.ruby2_keywords &&
-            !ISEQ_BODY(iseq)->param.flags.has_kw &&
-            !ISEQ_BODY(iseq)->param.flags.has_kwrest &&
-            RARRAY_AREF(ary, index) == splat_flagged_keyword_hash) {
+          !ISEQ_BODY(iseq)->param.flags.ruby2_keywords &&
+          !ISEQ_BODY(iseq)->param.flags.has_kw &&
+          !ISEQ_BODY(iseq)->param.flags.has_kwrest &&
+          RARRAY_AREF(ary, index) == splat_flagged_keyword_hash) {
             ((struct RHash *)rest_last)->basic.flags &= ~RHASH_PASS_AS_KEYWORDS;
             RARRAY_ASET(ary, index, rest_last);
         }
     }
 
     if (ISEQ_BODY(iseq)->param.flags.has_kw) {
-        VALUE * const klocals = locals + ISEQ_BODY(iseq)->param.keyword->bits_start - ISEQ_BODY(iseq)->param.keyword->num;
+        VALUE *const klocals = locals + ISEQ_BODY(iseq)->param.keyword->bits_start - ISEQ_BODY(iseq)->param.keyword->num;
 
         if (args->kw_argv != NULL) {
             const struct rb_callinfo_kwarg *kw_arg = args->kw_arg;
@@ -731,9 +731,9 @@ raise_argument_error(rb_execution_context_t *ec, const rb_iseq_t *iseq, const VA
 
     if (iseq) {
         vm_push_frame(ec, iseq, VM_FRAME_MAGIC_DUMMY | VM_ENV_FLAG_LOCAL, Qnil /* self */,
-                      VM_BLOCK_HANDLER_NONE /* specval*/, Qfalse /* me or cref */,
-                      ISEQ_BODY(iseq)->iseq_encoded,
-                      ec->cfp->sp, 0, 0 /* stack_max */);
+          VM_BLOCK_HANDLER_NONE /* specval*/, Qfalse /* me or cref */,
+          ISEQ_BODY(iseq)->iseq_encoded,
+          ec->cfp->sp, 0, 0 /* stack_max */);
         at = rb_ec_backtrace_object(ec);
         rb_backtrace_use_iseq_first_lineno_for_last_location(at);
         rb_vm_pop_frame(ec);
@@ -758,7 +758,7 @@ argument_arity_error(rb_execution_context_t *ec, const rb_iseq_t *iseq, const in
         if (req_key_num > 0) {
             static const char required[] = "; required keywords";
             VALUE mesg = rb_attr_get(exc, idMesg);
-            rb_str_resize(mesg, RSTRING_LEN(mesg)-1);
+            rb_str_resize(mesg, RSTRING_LEN(mesg) - 1);
             rb_str_cat(mesg, required, sizeof(required) - 1 - (req_key_num == 1));
             rb_str_cat_cstr(mesg, ":");
             do {
@@ -766,7 +766,8 @@ argument_arity_error(rb_execution_context_t *ec, const rb_iseq_t *iseq, const in
                 rb_str_append(mesg, rb_id2str(*keywords++));
                 rb_str_cat_cstr(mesg, ",");
             } while (--req_key_num);
-            RSTRING_PTR(mesg)[RSTRING_LEN(mesg)-1] = ')';
+            RSTRING_PTR(mesg)
+            [RSTRING_LEN(mesg) - 1] = ')';
         }
     }
     raise_argument_error(ec, iseq, exc);
@@ -783,7 +784,7 @@ vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calli
 {
     int argc = calling->argc;
     VALUE *argv = cfp->sp - argc;
-    VALUE ary = argv[argc-1];
+    VALUE ary = argv[argc - 1];
 
     vm_check_canary(GET_EC(), cfp->sp);
     cfp->sp--;
@@ -810,10 +811,10 @@ vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling,
     VALUE *sp = cfp->sp;
     int i;
 
-    for (i=0; i<kw_len; i++) {
+    for (i = 0; i < kw_len; i++) {
         rb_hash_aset(h, passed_keywords[i], (sp - kw_len)[i]);
     }
-    (sp-kw_len)[0] = h;
+    (sp - kw_len)[0] = h;
 
     cfp->sp -= kw_len - 1;
     calling->argc -= kw_len - 1;
@@ -826,7 +827,7 @@ vm_to_proc(VALUE proc)
     if (UNLIKELY(!rb_obj_is_proc(proc))) {
         VALUE b;
         const rb_callable_method_entry_t *me =
-            rb_callable_method_entry_with_refinements(CLASS_OF(proc), idTo_proc, NULL);
+          rb_callable_method_entry_with_refinements(CLASS_OF(proc), idTo_proc, NULL);
 
         if (me) {
             b = rb_vm_call0(GET_EC(), proc, idTo_proc, 0, NULL, me, RB_NO_KEYWORDS);
@@ -838,8 +839,8 @@ vm_to_proc(VALUE proc)
 
         if (NIL_P(b) || !rb_obj_is_proc(b)) {
             rb_raise(rb_eTypeError,
-                     "wrong argument type %s (expected Proc)",
-                     rb_obj_classname(proc));
+              "wrong argument type %s (expected Proc)",
+              rb_obj_classname(proc));
         }
         return b;
     }
@@ -886,7 +887,7 @@ refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
 
 static VALUE
 vm_caller_setup_arg_block(const rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
-                          const struct rb_callinfo *ci, const rb_iseq_t *blockiseq, const int is_super)
+  const struct rb_callinfo *ci, const rb_iseq_t *blockiseq, const int is_super)
 {
     if (vm_ci_flag(ci) & VM_CALL_ARGS_BLOCKARG) {
         VALUE block_code = *(--reg_cfp->sp);
@@ -897,7 +898,7 @@ vm_caller_setup_arg_block(const rb_execution_context_t *ec, rb_control_frame_t *
         else if (block_code == rb_block_param_proxy) {
             VM_ASSERT(!VM_CFP_IN_HEAP_P(GET_EC(), reg_cfp));
             VALUE handler = VM_CF_BLOCK_HANDLER(reg_cfp);
-            reg_cfp->block_code = (const void *) handler;
+            reg_cfp->block_code = (const void *)handler;
             return handler;
         }
         else if (SYMBOL_P(block_code) && rb_method_basic_definition_p(rb_cSymbol, idTo_proc)) {

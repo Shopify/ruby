@@ -15,7 +15,7 @@
 #include "ruby/internal/config.h"
 
 #ifdef HAVE_FLOAT_H
-#include <float.h>
+# include <float.h>
 #endif
 
 #include "id.h"
@@ -175,7 +175,7 @@ VALUE rb_eStopIteration;
 
 struct enumerator {
     VALUE obj;
-    ID    meth;
+    ID meth;
     VALUE args;
     VALUE fib;
     VALUE dst;
@@ -281,10 +281,10 @@ enumerator_memsize(const void *p)
 static const rb_data_type_t enumerator_data_type = {
     "enumerator",
     {
-        enumerator_mark,
-        enumerator_free,
-        enumerator_memsize,
-        enumerator_compact,
+      enumerator_mark,
+      enumerator_free,
+      enumerator_memsize,
+      enumerator_compact,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -328,10 +328,10 @@ proc_entry_memsize(const void *p)
 static const rb_data_type_t proc_entry_data_type = {
     "proc_entry",
     {
-        proc_entry_mark,
-        proc_entry_free,
-        proc_entry_memsize,
-        proc_entry_compact,
+      proc_entry_mark,
+      proc_entry_free,
+      proc_entry_memsize,
+      proc_entry_compact,
     },
 };
 
@@ -446,7 +446,7 @@ enumerator_init(VALUE enum_obj, VALUE obj, VALUE meth, int argc, const VALUE *ar
         rb_raise(rb_eArgError, "unallocated enumerator");
     }
 
-    ptr->obj  = obj;
+    ptr->obj = obj;
     ptr->meth = rb_to_id(meth);
     if (argc) ptr->args = rb_ary_new4(argc, argv);
     ptr->fib = 0;
@@ -533,14 +533,14 @@ enumerator_init_copy(VALUE obj, VALUE orig)
         rb_raise(rb_eArgError, "unallocated enumerator");
     }
 
-    ptr1->obj  = ptr0->obj;
+    ptr1->obj = ptr0->obj;
     ptr1->meth = ptr0->meth;
     ptr1->args = ptr0->args;
-    ptr1->fib  = 0;
-    ptr1->lookahead  = Qundef;
-    ptr1->feedvalue  = Qundef;
-    ptr1->size  = ptr0->size;
-    ptr1->size_fn  = ptr0->size_fn;
+    ptr1->fib = 0;
+    ptr1->lookahead = Qundef;
+    ptr1->feedvalue = Qundef;
+    ptr1->size = ptr0->size;
+    ptr1->size_fn = ptr0->size_fn;
 
     return obj;
 }
@@ -570,7 +570,7 @@ rb_enumeratorize_with_size_kw(VALUE obj, VALUE meth, int argc, const VALUE *argv
     }
 
     return enumerator_init(enumerator_allocate(base_class),
-                           obj, meth, argc, argv, size_fn, Qnil, kw_splat);
+      obj, meth, argc, argv, size_fn, Qnil, kw_splat);
 }
 
 VALUE
@@ -895,16 +895,16 @@ ary2sv(VALUE args, int dup)
         return args;
 
     switch (RARRAY_LEN(args)) {
-      case 0:
-        return Qnil;
+        case 0:
+            return Qnil;
 
-      case 1:
-        return RARRAY_AREF(args, 0);
+        case 1:
+            return RARRAY_AREF(args, 0);
 
-      default:
-        if (dup)
-            return rb_ary_dup(args);
-        return args;
+        default:
+            if (dup)
+                return rb_ary_dup(args);
+            return args;
     }
 }
 
@@ -1110,11 +1110,11 @@ inspect_enumerator(VALUE obj, VALUE dummy, int recur)
     cname = rb_obj_class(obj);
 
     if (!e || UNDEF_P(e->obj)) {
-        return rb_sprintf("#<%"PRIsVALUE": uninitialized>", rb_class_path(cname));
+        return rb_sprintf("#<%" PRIsVALUE ": uninitialized>", rb_class_path(cname));
     }
 
     if (recur) {
-        str = rb_sprintf("#<%"PRIsVALUE": ...>", rb_class_path(cname));
+        str = rb_sprintf("#<%" PRIsVALUE ": ...>", rb_class_path(cname));
         return str;
     }
 
@@ -1127,10 +1127,10 @@ inspect_enumerator(VALUE obj, VALUE dummy, int recur)
             str = rb_inspect(eobj);
         }
         else {
-            str = rb_sprintf("#<%"PRIsVALUE": %+"PRIsVALUE">", rb_class_path(cname), eobj);
+            str = rb_sprintf("#<%" PRIsVALUE ": %+" PRIsVALUE ">", rb_class_path(cname), eobj);
         }
         for (i = 0; i < RARRAY_LEN(e->procs); i++) {
-            str = rb_sprintf("#<%"PRIsVALUE": %"PRIsVALUE, cname, str);
+            str = rb_sprintf("#<%" PRIsVALUE ": %" PRIsVALUE, cname, str);
             append_method(RARRAY_AREF(e->procs, i), str, e->meth, e->args);
             rb_str_buf_cat2(str, ">");
         }
@@ -1143,7 +1143,7 @@ inspect_enumerator(VALUE obj, VALUE dummy, int recur)
     }
 
     /* (1..100).each_cons(2) => "#<Enumerator: 1..100:each_cons(2)>" */
-    str = rb_sprintf("#<%"PRIsVALUE": %+"PRIsVALUE, rb_class_path(cname), eobj);
+    str = rb_sprintf("#<%" PRIsVALUE ": %+" PRIsVALUE, rb_class_path(cname), eobj);
     append_method(obj, str, e->meth, e->args);
 
     rb_str_buf_cat2(str, ">");
@@ -1163,7 +1163,7 @@ static int
 kwd_append(VALUE key, VALUE val, VALUE str)
 {
     if (!SYMBOL_P(key)) rb_raise(rb_eRuntimeError, "non-symbol key inserted");
-    rb_str_catf(str, "% "PRIsVALUE": %"PRIsVALUE", ", key, val);
+    rb_str_catf(str, "% " PRIsVALUE ": %" PRIsVALUE ", ", key, val);
     return ST_CONTINUE;
 }
 
@@ -1190,7 +1190,7 @@ append_method(VALUE obj, VALUE str, ID default_method, VALUE default_args)
         eargs = default_args;
     }
     if (eargs != Qfalse) {
-        long   argc = RARRAY_LEN(eargs);
+        long argc = RARRAY_LEN(eargs);
         const VALUE *argv = RARRAY_CONST_PTR(eargs); /* WB: no new reference */
 
         if (argc > 0) {
@@ -1198,9 +1198,9 @@ append_method(VALUE obj, VALUE str, ID default_method, VALUE default_args)
 
             rb_str_buf_cat2(str, "(");
 
-            if (RB_TYPE_P(argv[argc-1], T_HASH) && !RHASH_EMPTY_P(argv[argc-1])) {
+            if (RB_TYPE_P(argv[argc - 1], T_HASH) && !RHASH_EMPTY_P(argv[argc - 1])) {
                 int all_key = TRUE;
-                rb_hash_foreach(argv[argc-1], key_symbol_p, (VALUE)&all_key);
+                rb_hash_foreach(argv[argc - 1], key_symbol_p, (VALUE)&all_key);
                 if (all_key) kwds = argv[--argc];
             }
 
@@ -1213,7 +1213,7 @@ append_method(VALUE obj, VALUE str, ID default_method, VALUE default_args)
             if (!NIL_P(kwds)) {
                 rb_hash_foreach(kwds, kwd_append, str);
             }
-            rb_str_set_len(str, RSTRING_LEN(str)-2);
+            rb_str_set_len(str, RSTRING_LEN(str) - 2);
             rb_str_buf_cat2(str, ")");
         }
     }
@@ -1310,10 +1310,10 @@ yielder_memsize(const void *p)
 static const rb_data_type_t yielder_data_type = {
     "yielder",
     {
-        yielder_mark,
-        yielder_free,
-        yielder_memsize,
-        yielder_compact,
+      yielder_mark,
+      yielder_free,
+      yielder_memsize,
+      yielder_compact,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -1450,10 +1450,10 @@ generator_memsize(const void *p)
 static const rb_data_type_t generator_data_type = {
     "generator",
     {
-        generator_mark,
-        generator_free,
-        generator_memsize,
-        generator_compact,
+      generator_mark,
+      generator_free,
+      generator_memsize,
+      generator_compact,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -1516,8 +1516,8 @@ generator_initialize(int argc, VALUE *argv, VALUE obj)
 
         if (!rb_obj_is_proc(proc))
             rb_raise(rb_eTypeError,
-                     "wrong argument type %"PRIsVALUE" (expected Proc)",
-                     rb_obj_class(proc));
+              "wrong argument type %" PRIsVALUE " (expected Proc)",
+              rb_obj_class(proc));
 
         if (rb_block_given_p()) {
             rb_warn("given block not used");
@@ -1608,7 +1608,7 @@ lazy_init_iterator(RB_BLOCK_CALL_FUNC_ARGLIST(val, m))
 static VALUE
 lazy_init_block_i(RB_BLOCK_CALL_FUNC_ARGLIST(val, m))
 {
-    rb_block_call(m, id_each, argc-1, argv+1, lazy_init_iterator, val);
+    rb_block_call(m, id_each, argc - 1, argv + 1, lazy_init_iterator, val);
     return Qnil;
 }
 
@@ -1635,7 +1635,7 @@ lazy_init_yielder(RB_BLOCK_CALL_FUNC_ARGLIST(_, m))
     struct MEMO *result;
 
     result = MEMO_NEW(m, rb_enum_values_pack(argc, argv),
-                      argc > 1 ? LAZY_MEMO_PACKED : 0);
+      argc > 1 ? LAZY_MEMO_PACKED : 0);
     return lazy_yielder_result(result, yielder, procs_array, memos, 0);
 }
 
@@ -1684,7 +1684,7 @@ lazy_init_block(RB_BLOCK_CALL_FUNC_ARGLIST(val, m))
 
     rb_ivar_set(val, id_memo, rb_ary_new2(RARRAY_LEN(procs)));
     rb_block_call(RARRAY_AREF(m, 0), id_each, 0, 0,
-                  lazy_init_yielder, rb_ary_new3(2, val, procs));
+      lazy_init_yielder, rb_ary_new3(2, val, procs));
     return Qnil;
 }
 
@@ -1707,7 +1707,7 @@ lazy_generator_init(VALUE enumerator, VALUE procs)
     generator = generator_allocate(rb_cGenerator);
 
     rb_block_call(generator, id_initialize, 0, 0,
-                  lazy_init_block, rb_ary_new3(2, obj, procs));
+      lazy_init_block, rb_ary_new3(2, obj, procs));
 
     gen_ptr = generator_ptr(generator);
     gen_ptr->obj = obj;
@@ -1884,7 +1884,7 @@ lazy_set_method(VALUE lazy, VALUE args, rb_enumerator_size_func *size_fn)
 
 static VALUE
 lazy_add_method(VALUE obj, int argc, VALUE *argv, VALUE args, VALUE memo,
-                const lazyenum_funcs *fn)
+  const lazyenum_funcs *fn)
 {
     struct enumerator *new_e;
     VALUE new_obj;
@@ -1893,7 +1893,7 @@ lazy_add_method(VALUE obj, int argc, VALUE *argv, VALUE args, VALUE memo,
     struct enumerator *e = enumerator_ptr(obj);
     struct proc_entry *entry;
     VALUE entry_obj = TypedData_Make_Struct(rb_cObject, struct proc_entry,
-                                            &proc_entry_data_type, entry);
+      &proc_entry_data_type, entry);
     if (rb_block_given_p()) {
         entry->proc = rb_block_proc();
     }
@@ -1964,7 +1964,7 @@ static VALUE
 lazy_to_enum_i(VALUE obj, VALUE meth, int argc, const VALUE *argv, rb_enumerator_size_func *size_fn, int kw_splat)
 {
     return enumerator_init(enumerator_allocate(rb_cLazy),
-                           obj, meth, argc, argv, size_fn, Qnil, kw_splat);
+      obj, meth, argc, argv, size_fn, Qnil, kw_splat);
 }
 
 /*
@@ -2026,7 +2026,7 @@ static VALUE
 lazy_eager(VALUE self)
 {
     return enumerator_init(enumerator_allocate(rb_cEnumerator),
-                           self, sym_each, 0, 0, lazy_eager_size, Qnil, 0);
+      self, sym_each, 0, 0, lazy_eager_size, Qnil, 0);
 }
 
 static VALUE
@@ -2066,7 +2066,8 @@ lazy_map_size(VALUE entry, VALUE receiver)
 }
 
 static const lazyenum_funcs lazy_map_funcs = {
-    lazy_map_proc, lazy_map_size,
+    lazy_map_proc,
+    lazy_map_size,
 };
 
 /*
@@ -2117,7 +2118,7 @@ lazy_flat_map_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo
         ary = value;
     }
     else if (rb_respond_to(value, id_force) && rb_respond_to(value, id_each)) {
-        struct flat_map_i_arg arg = {.result = result, .index = proc_index};
+        struct flat_map_i_arg arg = { .result = result, .index = proc_index };
         LAZY_MEMO_RESET_BREAK(result);
         rb_block_call(value, id_each, 0, 0, lazy_flat_map_i, (VALUE)&arg);
         if (break_p) LAZY_MEMO_SET_BREAK(result);
@@ -2141,7 +2142,8 @@ lazy_flat_map_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo
 }
 
 static const lazyenum_funcs lazy_flat_map_funcs = {
-    lazy_flat_map_proc, 0,
+    lazy_flat_map_proc,
+    0,
 };
 
 /*
@@ -2186,7 +2188,8 @@ lazy_select_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_i
 }
 
 static const lazyenum_funcs lazy_select_funcs = {
-    lazy_select_proc, 0,
+    lazy_select_proc,
+    0,
 };
 
 /*
@@ -2218,7 +2221,8 @@ lazy_filter_map_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long me
 }
 
 static const lazyenum_funcs lazy_filter_map_funcs = {
-    lazy_filter_map_proc, 0,
+    lazy_filter_map_proc,
+    0,
 };
 
 /*
@@ -2250,7 +2254,8 @@ lazy_reject_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_i
 }
 
 static const lazyenum_funcs lazy_reject_funcs = {
-    lazy_reject_proc, 0,
+    lazy_reject_proc,
+    0,
 };
 
 /*
@@ -2294,11 +2299,13 @@ lazy_grep_iter_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long mem
 }
 
 static const lazyenum_funcs lazy_grep_iter_funcs = {
-    lazy_grep_iter_proc, 0,
+    lazy_grep_iter_proc,
+    0,
 };
 
 static const lazyenum_funcs lazy_grep_funcs = {
-    lazy_grep_proc, 0,
+    lazy_grep_proc,
+    0,
 };
 
 /*
@@ -2313,7 +2320,8 @@ static VALUE
 lazy_grep(VALUE obj, VALUE pattern)
 {
     const lazyenum_funcs *const funcs = rb_block_given_p() ?
-        &lazy_grep_iter_funcs : &lazy_grep_funcs;
+      &lazy_grep_iter_funcs :
+      &lazy_grep_funcs;
     return lazy_add_method(obj, 0, 0, pattern, rb_ary_new3(1, pattern), funcs);
 }
 
@@ -2341,11 +2349,13 @@ lazy_grep_v_iter_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long m
 }
 
 static const lazyenum_funcs lazy_grep_v_iter_funcs = {
-    lazy_grep_v_iter_proc, 0,
+    lazy_grep_v_iter_proc,
+    0,
 };
 
 static const lazyenum_funcs lazy_grep_v_funcs = {
-    lazy_grep_v_proc, 0,
+    lazy_grep_v_proc,
+    0,
 };
 
 /*
@@ -2360,7 +2370,8 @@ static VALUE
 lazy_grep_v(VALUE obj, VALUE pattern)
 {
     const lazyenum_funcs *const funcs = rb_block_given_p() ?
-        &lazy_grep_v_iter_funcs : &lazy_grep_v_funcs;
+      &lazy_grep_v_iter_funcs :
+      &lazy_grep_v_funcs;
     return lazy_add_method(obj, 0, 0, pattern, rb_ary_new3(1, pattern), funcs);
 }
 
@@ -2416,7 +2427,7 @@ lazy_zip_func(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_inde
     rb_ary_push(ary, result->memo_value);
     for (i = 0; i < RARRAY_LEN(arg); i++) {
         v = rb_rescue2(call_next, RARRAY_AREF(arg, i), next_stopped, 0,
-                       rb_eStopIteration, (VALUE)0);
+          rb_eStopIteration, (VALUE)0);
         rb_ary_push(ary, v);
     }
     LAZY_MEMO_SET_VALUE(result, ary);
@@ -2425,8 +2436,14 @@ lazy_zip_func(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_inde
 }
 
 static const lazyenum_funcs lazy_zip_funcs[] = {
-    {lazy_zip_func, lazy_receiver_size,},
-    {lazy_zip_arrays_func, lazy_receiver_size,},
+    {
+      lazy_zip_func,
+      lazy_receiver_size,
+    },
+    {
+      lazy_zip_arrays_func,
+      lazy_receiver_size,
+    },
 };
 
 /*
@@ -2454,8 +2471,8 @@ lazy_zip(int argc, VALUE *argv, VALUE obj)
         if (NIL_P(v)) {
             for (; i < argc; i++) {
                 if (!rb_respond_to(argv[i], id_each)) {
-                    rb_raise(rb_eTypeError, "wrong argument type %"PRIsVALUE" (must respond to :each)",
-                             rb_obj_class(argv[i]));
+                    rb_raise(rb_eTypeError, "wrong argument type %" PRIsVALUE " (must respond to :each)",
+                      rb_obj_class(argv[i]));
                 }
             }
             ary = rb_ary_new4(argc, argv);
@@ -2502,7 +2519,9 @@ lazy_take_precheck(VALUE proc_entry)
 }
 
 static const lazyenum_funcs lazy_take_funcs = {
-    lazy_take_proc, lazy_take_size, lazy_take_precheck,
+    lazy_take_proc,
+    lazy_take_size,
+    lazy_take_precheck,
 };
 
 /*
@@ -2521,7 +2540,7 @@ lazy_take(VALUE obj, VALUE n)
         rb_raise(rb_eArgError, "attempt to take negative size");
     }
 
-    n = LONG2NUM(len);          /* no more conversion */
+    n = LONG2NUM(len); /* no more conversion */
 
     return lazy_add_method(obj, 0, 0, n, rb_ary_new3(1, n), &lazy_take_funcs);
 }
@@ -2538,7 +2557,8 @@ lazy_take_while_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long me
 }
 
 static const lazyenum_funcs lazy_take_while_funcs = {
-    lazy_take_while_proc, 0,
+    lazy_take_while_proc,
+    0,
 };
 
 /*
@@ -2592,7 +2612,8 @@ lazy_drop_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_ind
 }
 
 static const lazyenum_funcs lazy_drop_funcs = {
-    lazy_drop_proc, lazy_drop_size,
+    lazy_drop_proc,
+    lazy_drop_size,
 };
 
 /*
@@ -2618,7 +2639,7 @@ lazy_drop(VALUE obj, VALUE n)
 }
 
 static struct MEMO *
-lazy_drop_while_proc(VALUE proc_entry, struct MEMO* result, VALUE memos, long memo_index)
+lazy_drop_while_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_index)
 {
     struct proc_entry *entry = proc_entry_ptr(proc_entry);
     VALUE memo = rb_ary_entry(memos, memo_index);
@@ -2636,7 +2657,8 @@ lazy_drop_while_proc(VALUE proc_entry, struct MEMO* result, VALUE memos, long me
 }
 
 static const lazyenum_funcs lazy_drop_while_funcs = {
-    lazy_drop_while_proc, 0,
+    lazy_drop_while_proc,
+    0,
 };
 
 /*
@@ -2686,11 +2708,13 @@ lazy_uniq_iter_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long mem
 }
 
 static const lazyenum_funcs lazy_uniq_iter_funcs = {
-    lazy_uniq_iter_proc, 0,
+    lazy_uniq_iter_proc,
+    0,
 };
 
 static const lazyenum_funcs lazy_uniq_funcs = {
-    lazy_uniq_proc, 0,
+    lazy_uniq_proc,
+    0,
 };
 
 /*
@@ -2705,7 +2729,7 @@ static VALUE
 lazy_uniq(VALUE obj)
 {
     const lazyenum_funcs *const funcs =
-        rb_block_given_p() ? &lazy_uniq_iter_funcs : &lazy_uniq_funcs;
+      rb_block_given_p() ? &lazy_uniq_iter_funcs : &lazy_uniq_funcs;
     return lazy_add_method(obj, 0, 0, Qnil, Qnil, funcs);
 }
 
@@ -2717,7 +2741,8 @@ lazy_compact_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_
 }
 
 static const lazyenum_funcs lazy_compact_funcs = {
-    lazy_compact_proc, 0,
+    lazy_compact_proc,
+    0,
 };
 
 /*
@@ -2734,7 +2759,7 @@ lazy_compact(VALUE obj)
 }
 
 static struct MEMO *
-lazy_with_index_proc(VALUE proc_entry, struct MEMO* result, VALUE memos, long memo_index)
+lazy_with_index_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_index)
 {
     struct proc_entry *entry = proc_entry_ptr(proc_entry);
     VALUE memo = rb_ary_entry(memos, memo_index);
@@ -2765,7 +2790,8 @@ lazy_with_index_size(VALUE proc, VALUE receiver)
 }
 
 static const lazyenum_funcs lazy_with_index_funcs = {
-    lazy_with_index_proc, lazy_with_index_size,
+    lazy_with_index_proc,
+    lazy_with_index_size,
 };
 
 /*
@@ -2855,7 +2881,7 @@ static VALUE
 lazy_slice_when(VALUE self)
 {
 }
-# endif
+#endif
 
 static VALUE
 lazy_super(int argc, VALUE *argv, VALUE lazy)
@@ -2960,10 +2986,10 @@ producer_memsize(const void *p)
 static const rb_data_type_t producer_data_type = {
     "producer",
     {
-        producer_mark,
-        producer_free,
-        producer_memsize,
-        producer_compact,
+      producer_mark,
+      producer_free,
+      producer_memsize,
+      producer_compact,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -3146,10 +3172,10 @@ enum_chain_memsize(const void *p)
 static const rb_data_type_t enum_chain_data_type = {
     "chain",
     {
-        enum_chain_mark,
-        enum_chain_free,
-        enum_chain_memsize,
-        enum_chain_compact,
+      enum_chain_mark,
+      enum_chain_free,
+      enum_chain_memsize,
+      enum_chain_compact,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -3354,14 +3380,14 @@ inspect_enum_chain(VALUE obj, VALUE dummy, int recur)
     TypedData_Get_Struct(obj, struct enum_chain, &enum_chain_data_type, ptr);
 
     if (!ptr || UNDEF_P(ptr->enums)) {
-        return rb_sprintf("#<%"PRIsVALUE": uninitialized>", rb_class_path(klass));
+        return rb_sprintf("#<%" PRIsVALUE ": uninitialized>", rb_class_path(klass));
     }
 
     if (recur) {
-        return rb_sprintf("#<%"PRIsVALUE": ...>", rb_class_path(klass));
+        return rb_sprintf("#<%" PRIsVALUE ": ...>", rb_class_path(klass));
     }
 
-    return rb_sprintf("#<%"PRIsVALUE": %+"PRIsVALUE">", rb_class_path(klass), ptr->enums);
+    return rb_sprintf("#<%" PRIsVALUE ": %+" PRIsVALUE ">", rb_class_path(klass), ptr->enums);
 }
 
 /*
@@ -3468,10 +3494,10 @@ enum_product_memsize(const void *p)
 static const rb_data_type_t enum_product_data_type = {
     "product",
     {
-        enum_product_mark,
-        enum_product_free,
-        enum_product_memsize,
-        enum_product_compact,
+      enum_product_mark,
+      enum_product_free,
+      enum_product_memsize,
+      enum_product_compact,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -3596,11 +3622,11 @@ enum_product_enum_size(VALUE obj, VALUE args, VALUE eobj)
 }
 
 struct product_state {
-    VALUE  obj;
-    VALUE  block;
-    int    argc;
+    VALUE obj;
+    VALUE block;
+    int argc;
     VALUE *argv;
-    int    index;
+    int index;
 };
 
 static VALUE product_each(VALUE, struct product_state *);
@@ -3701,14 +3727,14 @@ inspect_enum_product(VALUE obj, VALUE dummy, int recur)
     TypedData_Get_Struct(obj, struct enum_product, &enum_product_data_type, ptr);
 
     if (!ptr || UNDEF_P(ptr->enums)) {
-        return rb_sprintf("#<%"PRIsVALUE": uninitialized>", rb_class_path(klass));
+        return rb_sprintf("#<%" PRIsVALUE ": uninitialized>", rb_class_path(klass));
     }
 
     if (recur) {
-        return rb_sprintf("#<%"PRIsVALUE": ...>", rb_class_path(klass));
+        return rb_sprintf("#<%" PRIsVALUE ": ...>", rb_class_path(klass));
     }
 
-    return rb_sprintf("#<%"PRIsVALUE": %+"PRIsVALUE">", rb_class_path(klass), ptr->enums);
+    return rb_sprintf("#<%" PRIsVALUE ": %+" PRIsVALUE ">", rb_class_path(klass), ptr->enums);
 }
 
 /*
@@ -3774,11 +3800,11 @@ enumerator_s_product(int argc, VALUE *argv, VALUE klass)
 
 VALUE
 rb_arith_seq_new(VALUE obj, VALUE meth, int argc, VALUE const *argv,
-                 rb_enumerator_size_func *size_fn,
-                 VALUE beg, VALUE end, VALUE step, int excl)
+  rb_enumerator_size_func *size_fn,
+  VALUE beg, VALUE end, VALUE step, int excl)
 {
     VALUE aseq = enumerator_init(enumerator_allocate(rb_cArithSeq),
-                                 obj, meth, argc, argv, size_fn, Qnil, rb_keyword_given_p());
+      obj, meth, argc, argv, size_fn, Qnil, rb_keyword_given_p());
     rb_ivar_set(aseq, id_begin, beg);
     rb_ivar_set(aseq, id_end, end);
     rb_ivar_set(aseq, id_step, step);
@@ -3843,13 +3869,13 @@ rb_arithmetic_sequence_extract(VALUE obj, rb_arithmetic_sequence_components_t *c
 {
     if (rb_obj_is_kind_of(obj, rb_cArithSeq)) {
         component->begin = arith_seq_begin(obj);
-        component->end   = arith_seq_end(obj);
-        component->step  = arith_seq_step(obj);
+        component->end = arith_seq_end(obj);
+        component->step = arith_seq_step(obj);
         component->exclude_end = arith_seq_exclude_end_p(obj);
         return 1;
     }
     else if (rb_range_values(obj, &component->begin, &component->end, &component->exclude_end)) {
-        component->step  = INT2FIX(1);
+        component->step = INT2FIX(1);
         return 1;
     }
 
@@ -3897,8 +3923,8 @@ rb_arithmetic_sequence_beg_len_step(VALUE obj, long *begp, long *lenp, long *ste
         return rb_range_component_beg_len(aseq.begin, aseq.end, aseq.exclude_end, begp, lenp, len, err);
     }
 
-  out_of_range:
-    rb_raise(rb_eRangeError, "%+"PRIsVALUE" out of range", obj);
+out_of_range:
+    rb_raise(rb_eRangeError, "%+" PRIsVALUE " out of range", obj);
     return Qnil;
 }
 
@@ -3956,7 +3982,7 @@ arith_seq_first(int argc, VALUE *argv, VALUE self)
         ary = rb_ary_new_capa(n);
         while (n > 0 && FIXABLE(i)) {
             rb_ary_push(ary, LONG2FIX(i));
-            i += unit;  // FIXABLE + FIXABLE never overflow;
+            i += unit; // FIXABLE + FIXABLE never overflow;
             --n;
         }
         if (n > 0) {
@@ -4008,7 +4034,7 @@ arith_seq_first(int argc, VALUE *argv, VALUE self)
 
         double unit = NUM2DBL(s);
         double beg = NUM2DBL(b);
-        double end = NIL_P(e) ? (unit < 0 ? -1 : 1)*HUGE_VAL : NUM2DBL(e);
+        double end = NIL_P(e) ? (unit < 0 ? -1 : 1) * HUGE_VAL : NUM2DBL(e);
         double len = ruby_float_step_size(beg, end, unit, x);
         long i;
 
@@ -4034,7 +4060,7 @@ arith_seq_first(int argc, VALUE *argv, VALUE self)
         else {
             ary = rb_ary_new_capa(n);
             for (i = 0; i < n; ++i) {
-                double d = i*unit+beg;
+                double d = i * unit + beg;
                 if (unit >= 0 ? end < d : d < end) d = end;
                 rb_ary_push(ary, DBL2NUM(d));
             }
@@ -4146,7 +4172,7 @@ arith_seq_last(int argc, VALUE *argv, VALUE self)
     e = arith_seq_end(self);
     if (NIL_P(e)) {
         rb_raise(rb_eRangeError,
-                 "cannot get the last element of endless arithmetic sequence");
+          "cannot get the last element of endless arithmetic sequence");
     }
 
     b = arith_seq_begin(self);
@@ -4220,7 +4246,7 @@ arith_seq_inspect(VALUE self)
     }
 
     range_p = RTEST(rb_obj_is_kind_of(eobj, rb_cRange));
-    str = rb_sprintf("(%s%"PRIsVALUE"%s.", range_p ? "(" : "", eobj, range_p ? ")" : "");
+    str = rb_sprintf("(%s%" PRIsVALUE "%s.", range_p ? "(" : "", eobj, range_p ? ")" : "");
 
     rb_str_buf_append(str, rb_id2str(e->meth));
 
@@ -4237,9 +4263,9 @@ arith_seq_inspect(VALUE self)
 
             rb_str_buf_cat2(str, "(");
 
-            if (RB_TYPE_P(argv[argc-1], T_HASH)) {
+            if (RB_TYPE_P(argv[argc - 1], T_HASH)) {
                 int all_key = TRUE;
-                rb_hash_foreach(argv[argc-1], key_symbol_p, (VALUE)&all_key);
+                rb_hash_foreach(argv[argc - 1], key_symbol_p, (VALUE)&all_key);
                 if (all_key) kwds = argv[--argc];
             }
 
@@ -4252,7 +4278,7 @@ arith_seq_inspect(VALUE self)
             if (!NIL_P(kwds)) {
                 rb_hash_foreach(kwds, kwd_append, str);
             }
-            rb_str_set_len(str, RSTRING_LEN(str)-2); /* drop the last ", " */
+            rb_str_set_len(str, RSTRING_LEN(str) - 2); /* drop the last ", " */
             rb_str_buf_cat2(str, ")");
         }
     }
@@ -4668,7 +4694,7 @@ InitVM_Enumerator(void)
     rb_define_method(rb_cArithSeq, "each", arith_seq_each, 0);
     rb_define_method(rb_cArithSeq, "size", arith_seq_size, 0);
 
-    rb_provide("enumerator.so");	/* for backward compatibility */
+    rb_provide("enumerator.so"); /* for backward compatibility */
 }
 #undef sym
 

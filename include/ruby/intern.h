@@ -1,4 +1,4 @@
-#ifndef RUBY_INTERN_H                                /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_INTERN_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_INTERN_H 1
 /**
  * @file

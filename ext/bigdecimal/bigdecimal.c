@@ -25,7 +25,7 @@
 #include <math.h>
 
 #ifdef HAVE_IEEEFP_H
-#include <ieeefp.h>
+# include <ieeefp.h>
 #endif
 
 #include "bits.h"
@@ -68,25 +68,30 @@ static struct {
 
 /* MACRO's to guard objects from GC by keeping them in stack */
 #ifdef RBIMPL_ATTR_MAYBE_UNUSED
-#define ENTER(n) RBIMPL_ATTR_MAYBE_UNUSED() volatile VALUE vStack[n];int iStack=0
+# define ENTER(n) \
+  RBIMPL_ATTR_MAYBE_UNUSED() \
+  volatile VALUE vStack[n]; \
+  int iStack = 0
 #else
-#define ENTER(n) volatile VALUE RB_UNUSED_VAR(vStack[n]);int iStack=0
+# define ENTER(n) \
+  volatile VALUE RB_UNUSED_VAR(vStack[n]); \
+  int iStack = 0
 #endif
-#define PUSH(x)  (vStack[iStack++] = (VALUE)(x))
-#define SAVE(p)  PUSH((p)->obj)
-#define GUARD_OBJ(p,y) ((p)=(y), SAVE(p))
+#define PUSH(x) (vStack[iStack++] = (VALUE)(x))
+#define SAVE(p) PUSH((p)->obj)
+#define GUARD_OBJ(p, y) ((p) = (y), SAVE(p))
 
-#define BASE_FIG  BIGDECIMAL_COMPONENT_FIGURES
-#define BASE      BIGDECIMAL_BASE
+#define BASE_FIG BIGDECIMAL_COMPONENT_FIGURES
+#define BASE BIGDECIMAL_BASE
 
-#define HALF_BASE (BASE/2)
-#define BASE1 (BASE/10)
+#define HALF_BASE (BASE / 2)
+#define BASE1 (BASE / 10)
 
 #define LOG10_2 0.3010299956639812
 
 #ifndef RRATIONAL_ZERO_P
 # define RRATIONAL_ZERO_P(x) (FIXNUM_P(rb_rational_num(x)) && \
-			      FIX2LONG(rb_rational_num(x)) == 0)
+   FIX2LONG(rb_rational_num(x)) == 0)
 #endif
 
 #ifndef RRATIONAL_NEGATIVE_P
@@ -94,7 +99,7 @@ static struct {
 #endif
 
 #ifndef DECIMAL_SIZE_OF_BITS
-#define DECIMAL_SIZE_OF_BITS(n) (((n) * 3010 + 9998) / 9999)
+# define DECIMAL_SIZE_OF_BITS(n) (((n)*3010 + 9998) / 9999)
 /* an approximation of ceil(n * log10(2)), upto 65536 at least */
 #endif
 
@@ -119,7 +124,7 @@ static struct {
  */
 
 #ifdef BIGDECIMAL_DEBUG
-static size_t rbd_allocation_count = 0;   /* Memory allocation counter */
+static size_t rbd_allocation_count = 0; /* Memory allocation counter */
 static inline void
 atomic_allocation_count_inc(void)
 {
@@ -138,9 +143,9 @@ check_allocation_count_nonzero(void)
     rb_bug("[bigdecimal][rbd_free_struct] Too many memory free calls");
 }
 #else
-#   define atomic_allocation_count_inc() /* nothing */
-#   define atomic_allocation_count_dec_nounderflow() /* nothing */
-#   define check_allocation_count_nonzero() /* nothing */
+# define atomic_allocation_count_inc() /* nothing */
+# define atomic_allocation_count_dec_nounderflow() /* nothing */
+# define check_allocation_count_nonzero() /* nothing */
 #endif /* BIGDECIMAL_DEBUG */
 
 PUREFUNC(static inline size_t rbd_struct_size(size_t const));
@@ -221,7 +226,7 @@ rbd_allocate_struct_zero(int sign, size_t const digits, bool limit_precision)
     return real;
 }
 
-MAYBE_UNUSED(static inline Real * rbd_allocate_struct_zero_limited(int sign, size_t const digits));
+MAYBE_UNUSED(static inline Real *rbd_allocate_struct_zero_limited(int sign, size_t const digits));
 #define NewZeroLimited rbd_allocate_struct_zero_limited
 static inline Real *
 rbd_allocate_struct_zero_limited(int sign, size_t const digits)
@@ -229,7 +234,7 @@ rbd_allocate_struct_zero_limited(int sign, size_t const digits)
     return rbd_allocate_struct_zero(sign, digits, true);
 }
 
-MAYBE_UNUSED(static inline Real * rbd_allocate_struct_zero_nolimit(int sign, size_t const digits));
+MAYBE_UNUSED(static inline Real *rbd_allocate_struct_zero_nolimit(int sign, size_t const digits));
 #define NewZeroNolimit rbd_allocate_struct_zero_nolimit
 static inline Real *
 rbd_allocate_struct_zero_nolimit(int sign, size_t const digits)
@@ -248,7 +253,7 @@ rbd_allocate_struct_one(int sign, size_t const digits, bool limit_precision)
     return real;
 }
 
-MAYBE_UNUSED(static inline Real * rbd_allocate_struct_one_limited(int sign, size_t const digits));
+MAYBE_UNUSED(static inline Real *rbd_allocate_struct_one_limited(int sign, size_t const digits));
 #define NewOneLimited rbd_allocate_struct_one_limited
 static inline Real *
 rbd_allocate_struct_one_limited(int sign, size_t const digits)
@@ -256,7 +261,7 @@ rbd_allocate_struct_one_limited(int sign, size_t const digits)
     return rbd_allocate_struct_one(sign, digits, true);
 }
 
-MAYBE_UNUSED(static inline Real * rbd_allocate_struct_one_nolimit(int sign, size_t const digits));
+MAYBE_UNUSED(static inline Real *rbd_allocate_struct_one_nolimit(int sign, size_t const digits));
 #define NewOneNolimit rbd_allocate_struct_one_nolimit
 static inline Real *
 rbd_allocate_struct_one_nolimit(int sign, size_t const digits)
@@ -267,19 +272,19 @@ rbd_allocate_struct_one_nolimit(int sign, size_t const digits)
 /*
  * ================== Ruby Interface part ==========================
  */
-#define DoSomeOne(x,y,f) rb_num_coerce_bin(x,y,f)
+#define DoSomeOne(x, y, f) rb_num_coerce_bin(x, y, f)
 
 /*
  *   VP routines used in BigDecimal part
  */
 static unsigned short VpGetException(void);
-static void  VpSetException(unsigned short f);
+static void VpSetException(unsigned short f);
 static void VpCheckException(Real *p, bool always);
 static VALUE VpCheckGetValue(Real *p);
-static void  VpInternalRound(Real *c, size_t ixDigit, DECDIG vPrev, DECDIG v);
-static int   VpLimitRound(Real *c, size_t ixDigit);
-static Real *VpCopy(Real *pv, Real const* const x);
-static int VPrint(FILE *fp,const char *cntl_chr,Real *a);
+static void VpInternalRound(Real *c, size_t ixDigit, DECDIG vPrev, DECDIG v);
+static int VpLimitRound(Real *c, size_t ixDigit);
+static Real *VpCopy(Real *pv, Real const *const x);
+static int VPrint(FILE *fp, const char *cntl_chr, Real *a);
 
 /*
  *  **** BigDecimal part ****
@@ -305,13 +310,17 @@ BigDecimal_memsize(const void *ptr)
 }
 
 #ifndef HAVE_RB_EXT_RACTOR_SAFE
-#   undef RUBY_TYPED_FROZEN_SHAREABLE
-#   define RUBY_TYPED_FROZEN_SHAREABLE 0
+# undef RUBY_TYPED_FROZEN_SHAREABLE
+# define RUBY_TYPED_FROZEN_SHAREABLE 0
 #endif
 
 static const rb_data_type_t BigDecimal_data_type = {
     "BigDecimal",
-    { 0, BigDecimal_delete, BigDecimal_memsize, },
+    {
+      0,
+      BigDecimal_delete,
+      BigDecimal_memsize,
+    },
 #ifdef RUBY_TYPED_FREE_IMMEDIATELY
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_FROZEN_SHAREABLE | RUBY_TYPED_WB_PROTECTED
 #endif
@@ -328,7 +337,7 @@ rbd_allocate_struct_zero_wrap_klass(VALUE klass, int sign, size_t const digits, 
     return real;
 }
 
-MAYBE_UNUSED(static inline Real * rbd_allocate_struct_zero_limited_wrap(int sign, size_t const digits));
+MAYBE_UNUSED(static inline Real *rbd_allocate_struct_zero_limited_wrap(int sign, size_t const digits));
 #define NewZeroWrapLimited rbd_allocate_struct_zero_limited_wrap
 static inline Real *
 rbd_allocate_struct_zero_limited_wrap(int sign, size_t const digits)
@@ -336,7 +345,7 @@ rbd_allocate_struct_zero_limited_wrap(int sign, size_t const digits)
     return rbd_allocate_struct_zero_wrap_klass(rb_cBigDecimal, sign, digits, true);
 }
 
-MAYBE_UNUSED(static inline Real * rbd_allocate_struct_zero_nolimit_wrap(int sign, size_t const digits));
+MAYBE_UNUSED(static inline Real *rbd_allocate_struct_zero_nolimit_wrap(int sign, size_t const digits));
 #define NewZeroWrapNolimit rbd_allocate_struct_zero_nolimit_wrap
 static inline Real *
 rbd_allocate_struct_zero_nolimit_wrap(int sign, size_t const digits)
@@ -355,7 +364,7 @@ rbd_allocate_struct_one_wrap_klass(VALUE klass, int sign, size_t const digits, b
     return real;
 }
 
-MAYBE_UNUSED(static inline Real * rbd_allocate_struct_one_limited_wrap(int sign, size_t const digits));
+MAYBE_UNUSED(static inline Real *rbd_allocate_struct_one_limited_wrap(int sign, size_t const digits));
 #define NewOneWrapLimited rbd_allocate_struct_one_limited_wrap
 static inline Real *
 rbd_allocate_struct_one_limited_wrap(int sign, size_t const digits)
@@ -363,7 +372,7 @@ rbd_allocate_struct_one_limited_wrap(int sign, size_t const digits)
     return rbd_allocate_struct_one_wrap_klass(rb_cBigDecimal, sign, digits, true);
 }
 
-MAYBE_UNUSED(static inline Real * rbd_allocate_struct_one_nolimit_wrap(int sign, size_t const digits));
+MAYBE_UNUSED(static inline Real *rbd_allocate_struct_one_nolimit_wrap(int sign, size_t const digits));
 #define NewOneWrapNolimit rbd_allocate_struct_one_nolimit_wrap
 static inline Real *
 rbd_allocate_struct_one_nolimit_wrap(int sign, size_t const digits)
@@ -385,10 +394,10 @@ cannot_be_coerced_into_BigDecimal(VALUE exc_class, VALUE v)
     VALUE str;
 
     if (rb_special_const_p(v)) {
-	str = rb_inspect(v);
+        str = rb_inspect(v);
     }
     else {
-	str = rb_class_name(rb_obj_class(v));
+        str = rb_class_name(rb_obj_class(v));
     }
 
     str = rb_str_cat2(rb_str_dup(str), " can't be coerced into BigDecimal");
@@ -402,50 +411,53 @@ static VALUE rb_rational_convert_to_BigDecimal(VALUE val, size_t digs, int raise
 static VALUE rb_cstr_convert_to_BigDecimal(const char *c_str, size_t digs, int raise_exception);
 static VALUE rb_convert_to_BigDecimal(VALUE val, size_t digs, int raise_exception);
 
-static Real*
+static Real *
 GetVpValueWithPrec(VALUE v, long prec, int must)
 {
     const size_t digs = prec < 0 ? SIZE_MAX : (size_t)prec;
 
-    switch(TYPE(v)) {
-      case T_FLOAT:
-        v = rb_float_convert_to_BigDecimal(v, digs, must);
-        break;
+    switch (TYPE(v)) {
+        case T_FLOAT:
+            v = rb_float_convert_to_BigDecimal(v, digs, must);
+            break;
 
-      case T_RATIONAL:
-        v = rb_rational_convert_to_BigDecimal(v, digs, must);
-        break;
+        case T_RATIONAL:
+            v = rb_rational_convert_to_BigDecimal(v, digs, must);
+            break;
 
-      case T_DATA:
-        if (!is_kind_of_BigDecimal(v)) {
-            goto SomeOneMayDoIt;
-        }
-        break;
+        case T_DATA:
+            if (!is_kind_of_BigDecimal(v)) {
+                goto SomeOneMayDoIt;
+            }
+            break;
 
-      case T_FIXNUM: {
-        char szD[128];
-        snprintf(szD, 128, "%ld", FIX2LONG(v));
-        v = rb_cstr_convert_to_BigDecimal(szD, VpBaseFig() * 2 + 1, must);
-        break;
-      }
+        case T_FIXNUM:
+            {
+                char szD[128];
+                snprintf(szD, 128, "%ld", FIX2LONG(v));
+                v = rb_cstr_convert_to_BigDecimal(szD, VpBaseFig() * 2 + 1, must);
+                break;
+            }
 
 #ifdef ENABLE_NUMERIC_STRING
-      case T_STRING: {
-        const char *c_str = StringValueCStr(v);
-        v = rb_cstr_convert_to_BigDecimal(c_str, RSTRING_LEN(v) + VpBaseFig() + 1, must);
-        break;
-      }
+        case T_STRING:
+            {
+                const char *c_str = StringValueCStr(v);
+                v = rb_cstr_convert_to_BigDecimal(c_str, RSTRING_LEN(v) + VpBaseFig() + 1, must);
+                break;
+            }
 #endif /* ENABLE_NUMERIC_STRING */
 
-      case T_BIGNUM: {
-	VALUE bg = rb_big2str(v, 10);
-        v = rb_cstr_convert_to_BigDecimal(RSTRING_PTR(bg), RSTRING_LEN(bg) + VpBaseFig() + 1, must);
-        RB_GC_GUARD(bg);
-        break;
-      }
+        case T_BIGNUM:
+            {
+                VALUE bg = rb_big2str(v, 10);
+                v = rb_cstr_convert_to_BigDecimal(RSTRING_PTR(bg), RSTRING_LEN(bg) + VpBaseFig() + 1, must);
+                RB_GC_GUARD(bg);
+                break;
+            }
 
-      default:
-	goto SomeOneMayDoIt;
+        default:
+            goto SomeOneMayDoIt;
     }
 
     Real *vp;
@@ -454,12 +466,12 @@ GetVpValueWithPrec(VALUE v, long prec, int must)
 
 SomeOneMayDoIt:
     if (must) {
-	cannot_be_coerced_into_BigDecimal(rb_eTypeError, v);
+        cannot_be_coerced_into_BigDecimal(rb_eTypeError, v);
     }
     return NULL; /* NULL means to coerce */
 }
 
-static inline Real*
+static inline Real *
 GetVpValue(VALUE v, int must)
 {
     return GetVpValueWithPrec(v, -1, must);
@@ -501,12 +513,12 @@ BigDecimal_prec(VALUE self)
     VALUE obj;
 
     rb_category_warn(RB_WARN_CATEGORY_DEPRECATED,
-                     "BigDecimal#precs is deprecated and will be removed in the future; "
-                     "use BigDecimal#precision instead.");
+      "BigDecimal#precs is deprecated and will be removed in the future; "
+      "use BigDecimal#precision instead.");
 
     GUARD_OBJ(p, GetVpValue(self, 1));
-    obj = rb_assoc_new(SIZET2NUM(p->Prec*VpBaseFig()),
-		       SIZET2NUM(p->MaxPrec*VpBaseFig()));
+    obj = rb_assoc_new(SIZET2NUM(p->Prec * VpBaseFig()),
+      SIZET2NUM(p->MaxPrec * VpBaseFig()));
     return obj;
 }
 
@@ -521,7 +533,7 @@ BigDecimal_count_precision_and_scale(VALUE self, ssize_t *out_precision, ssize_t
     Real *p;
     GUARD_OBJ(p, GetVpValue(self, 1));
     if (VpIsZero(p) || !VpIsDef(p)) {
-      zero:
+    zero:
         if (out_precision) *out_precision = 0;
         if (out_scale) *out_scale = 0;
         return;
@@ -530,14 +542,14 @@ BigDecimal_count_precision_and_scale(VALUE self, ssize_t *out_precision, ssize_t
     DECDIG x;
 
     ssize_t n = p->Prec; /* The length of frac without zeros. */
-    while (n > 0 && p->frac[n-1] == 0) --n;
+    while (n > 0 && p->frac[n - 1] == 0) --n;
     if (n == 0) goto zero;
 
     int nlz = BASE_FIG;
     for (x = p->frac[0]; x > 0; x /= 10) --nlz;
 
     int ntz = 0;
-    for (x = p->frac[n-1]; x > 0 && x % 10 == 0; x /= 10) ++ntz;
+    for (x = p->frac[n - 1]; x > 0 && x % 10 == 0; x /= 10) ++ntz;
 
     /*
      * Calculate the precision and the scale
@@ -580,14 +592,14 @@ BigDecimal_count_precision_and_scale(VALUE self, ssize_t *out_precision, ssize_t
     /* Count the number of decimal digits before frac[1]. */
     ssize_t n_digits_head = BASE_FIG;
     if (ex < 0) {
-      n_digits_head += (-ex) * BASE_FIG;  /* The number of leading zeros before frac[0]. */
-      ex = 0;
+        n_digits_head += (-ex) * BASE_FIG; /* The number of leading zeros before frac[0]. */
+        ex = 0;
     }
     else if (ex > 0) {
-      /* Count the number of decimal digits without the leading zeros in
+        /* Count the number of decimal digits without the leading zeros in
        * the most significant digit in the integral part.
        */
-      n_digits_head -= nlz;  /* Make the number of digits */
+        n_digits_head -= nlz; /* Make the number of digits */
     }
 
     if (out_precision) {
@@ -595,15 +607,15 @@ BigDecimal_count_precision_and_scale(VALUE self, ssize_t *out_precision, ssize_t
 
         /* Count the number of decimal digits after frac[0]. */
         if (ex > (ssize_t)n) {
-          /* In this case the number is an integer with some trailing zeros. */
-          precision += (ex - 1) * BASE_FIG;
+            /* In this case the number is an integer with some trailing zeros. */
+            precision += (ex - 1) * BASE_FIG;
         }
         else if (n > 0) {
-          precision += (n - 1) * BASE_FIG;
+            precision += (n - 1) * BASE_FIG;
 
-          if (ex < (ssize_t)n) {
-            precision -= ntz;
-          }
+            if (ex < (ssize_t)n) {
+                precision -= ntz;
+            }
         }
 
         *out_precision = precision;
@@ -717,8 +729,9 @@ BigDecimal_n_significant_digits(VALUE self)
         return INT2FIX(0);
     }
 
-    ssize_t n = p->Prec;  /* The length of frac without trailing zeros. */
-    for (n = p->Prec; n > 0 && p->frac[n-1] == 0; --n);
+    ssize_t n = p->Prec; /* The length of frac without trailing zeros. */
+    for (n = p->Prec; n > 0 && p->frac[n - 1] == 0; --n)
+        ;
     if (n == 0) return INT2FIX(0);
 
     DECDIG x;
@@ -726,9 +739,9 @@ BigDecimal_n_significant_digits(VALUE self)
     for (x = p->frac[0]; x > 0; x /= 10) --nlz;
 
     int ntz = 0;
-    for (x = p->frac[n-1]; x > 0 && x % 10 == 0; x /= 10) ++ntz;
+    for (x = p->frac[n - 1]; x > 0 && x % 10 == 0; x /= 10) ++ntz;
 
-    ssize_t n_significant_digits = BASE_FIG*n - nlz - ntz;
+    ssize_t n_significant_digits = BASE_FIG * n - nlz - ntz;
     return SSIZET2NUM(n_significant_digits);
 }
 
@@ -756,8 +769,8 @@ BigDecimal_hash(VALUE self)
     GUARD_OBJ(p, GetVpValue(self, 1));
     hash = (st_index_t)p->sign;
     /* hash!=2: the case for 0(1),NaN(0) or +-Infinity(3) is sign itself */
-    if(hash == 2 || hash == (st_index_t)-2) {
-        hash ^= rb_memhash(p->frac, sizeof(DECDIG)*p->Prec);
+    if (hash == 2 || hash == (st_index_t)-2) {
+        hash ^= rb_memhash(p->frac, sizeof(DECDIG) * p->Prec);
         hash += p->exponent;
     }
     return ST2FIX(hash);
@@ -786,12 +799,12 @@ BigDecimal_dump(int argc, VALUE *argv, VALUE self)
     size_t len;
 
     rb_scan_args(argc, argv, "01", &dummy);
-    GUARD_OBJ(vp,GetVpValue(self, 1));
-    dump = rb_str_new(0, VpNumOfChars(vp, "E")+50);
+    GUARD_OBJ(vp, GetVpValue(self, 1));
+    dump = rb_str_new(0, VpNumOfChars(vp, "E") + 50);
     psz = RSTRING_PTR(dump);
-    snprintf(psz, RSTRING_LEN(dump), "%"PRIuSIZE":", VpMaxPrec(vp)*VpBaseFig());
+    snprintf(psz, RSTRING_LEN(dump), "%" PRIuSIZE ":", VpMaxPrec(vp) * VpBaseFig());
     len = strlen(psz);
-    VpToString(vp, psz+len, RSTRING_LEN(dump)-len, 0, 0);
+    VpToString(vp, psz + len, RSTRING_LEN(dump) - len, 0, 0);
     rb_str_resize(dump, strlen(psz));
     return dump;
 }
@@ -806,21 +819,21 @@ BigDecimal_load(VALUE self, VALUE str)
     Real *pv;
     unsigned char *pch;
     unsigned char ch;
-    unsigned long m=0;
+    unsigned long m = 0;
 
     pch = (unsigned char *)StringValueCStr(str);
     /* First get max prec */
-    while((*pch) != (unsigned char)'\0' && (ch = *pch++) != (unsigned char)':') {
-        if(!ISDIGIT(ch)) {
+    while ((*pch) != (unsigned char)'\0' && (ch = *pch++) != (unsigned char)':') {
+        if (!ISDIGIT(ch)) {
             rb_raise(rb_eTypeError, "load failed: invalid character in the marshaled string");
         }
-        m = m*10 + (unsigned long)(ch-'0');
+        m = m * 10 + (unsigned long)(ch - '0');
     }
     if (m > VpBaseFig()) m -= VpBaseFig();
     GUARD_OBJ(pv, VpNewRbClass(m, (char *)pch, self, true, true));
     m /= VpBaseFig();
     if (m && pv->MaxPrec > m) {
-	pv->MaxPrec = m+1;
+        pv->MaxPrec = m + 1;
     }
     return VpCheckGetValue(pv);
 }
@@ -852,24 +865,24 @@ check_rounding_mode_option(VALUE const opts)
     s = RSTRING_PTR(mode);
     l = RSTRING_LEN(mode);
     switch (l) {
-      case 2:
-        if (strncasecmp(s, "up", 2) == 0)
-            return VP_ROUND_HALF_UP;
-        break;
-      case 4:
-        if (strncasecmp(s, "even", 4) == 0)
-            return VP_ROUND_HALF_EVEN;
-        else if (strncasecmp(s, "down", 4) == 0)
-            return VP_ROUND_HALF_DOWN;
-        break;
-      default:
-        break;
+        case 2:
+            if (strncasecmp(s, "up", 2) == 0)
+                return VP_ROUND_HALF_UP;
+            break;
+        case 4:
+            if (strncasecmp(s, "even", 4) == 0)
+                return VP_ROUND_HALF_EVEN;
+            else if (strncasecmp(s, "down", 4) == 0)
+                return VP_ROUND_HALF_DOWN;
+            break;
+        default:
+            break;
     }
 
-  invalid:
-    rb_raise(rb_eArgError, "invalid rounding mode (%"PRIsVALUE")", mode);
+invalid:
+    rb_raise(rb_eArgError, "invalid rounding mode (%" PRIsVALUE ")", mode);
 
-  no_opt:
+no_opt:
     return VpGetRoundMode();
 }
 
@@ -886,12 +899,12 @@ check_rounding_mode(VALUE const v)
                 return rbd_rounding_modes[i].mode;
             }
         }
-        rb_raise(rb_eArgError, "invalid rounding mode (%"PRIsVALUE")", v);
+        rb_raise(rb_eArgError, "invalid rounding mode (%" PRIsVALUE ")", v);
     }
     else {
         sw = NUM2USHORT(v);
         if (!VpIsRoundMode(sw)) {
-            rb_raise(rb_eArgError, "invalid rounding mode (%"PRIsVALUE")", v);
+            rb_raise(rb_eArgError, "invalid rounding mode (%" PRIsVALUE ")", v);
         }
         return sw;
     }
@@ -1064,49 +1077,49 @@ BigDecimal_mode(int argc, VALUE *argv, VALUE self)
 {
     VALUE which;
     VALUE val;
-    unsigned long f,fo;
+    unsigned long f, fo;
 
     rb_scan_args(argc, argv, "11", &which, &val);
     f = (unsigned long)NUM2INT(which);
 
     if (f & VP_EXCEPTION_ALL) {
-	/* Exception mode setting */
-	fo = VpGetException();
-	if (val == Qnil) return INT2FIX(fo);
-	if (val != Qfalse && val!=Qtrue) {
-	    rb_raise(rb_eArgError, "second argument must be true or false");
-	    return Qnil; /* Not reached */
-	}
-	if (f & VP_EXCEPTION_INFINITY) {
-	    VpSetException((unsigned short)((val == Qtrue) ? (fo | VP_EXCEPTION_INFINITY) :
-			(fo & (~VP_EXCEPTION_INFINITY))));
-	}
-	fo = VpGetException();
-	if (f & VP_EXCEPTION_NaN) {
-	    VpSetException((unsigned short)((val == Qtrue) ? (fo | VP_EXCEPTION_NaN) :
-			(fo & (~VP_EXCEPTION_NaN))));
-	}
-	fo = VpGetException();
-	if (f & VP_EXCEPTION_UNDERFLOW) {
-	    VpSetException((unsigned short)((val == Qtrue) ? (fo | VP_EXCEPTION_UNDERFLOW) :
-			(fo & (~VP_EXCEPTION_UNDERFLOW))));
-	}
-	fo = VpGetException();
-	if(f & VP_EXCEPTION_ZERODIVIDE) {
-	    VpSetException((unsigned short)((val == Qtrue) ? (fo | VP_EXCEPTION_ZERODIVIDE) :
-			(fo & (~VP_EXCEPTION_ZERODIVIDE))));
-	}
-	fo = VpGetException();
-	return INT2FIX(fo);
+        /* Exception mode setting */
+        fo = VpGetException();
+        if (val == Qnil) return INT2FIX(fo);
+        if (val != Qfalse && val != Qtrue) {
+            rb_raise(rb_eArgError, "second argument must be true or false");
+            return Qnil; /* Not reached */
+        }
+        if (f & VP_EXCEPTION_INFINITY) {
+            VpSetException((unsigned short)((val == Qtrue) ? (fo | VP_EXCEPTION_INFINITY) :
+                                                             (fo & (~VP_EXCEPTION_INFINITY))));
+        }
+        fo = VpGetException();
+        if (f & VP_EXCEPTION_NaN) {
+            VpSetException((unsigned short)((val == Qtrue) ? (fo | VP_EXCEPTION_NaN) :
+                                                             (fo & (~VP_EXCEPTION_NaN))));
+        }
+        fo = VpGetException();
+        if (f & VP_EXCEPTION_UNDERFLOW) {
+            VpSetException((unsigned short)((val == Qtrue) ? (fo | VP_EXCEPTION_UNDERFLOW) :
+                                                             (fo & (~VP_EXCEPTION_UNDERFLOW))));
+        }
+        fo = VpGetException();
+        if (f & VP_EXCEPTION_ZERODIVIDE) {
+            VpSetException((unsigned short)((val == Qtrue) ? (fo | VP_EXCEPTION_ZERODIVIDE) :
+                                                             (fo & (~VP_EXCEPTION_ZERODIVIDE))));
+        }
+        fo = VpGetException();
+        return INT2FIX(fo);
     }
     if (VP_ROUND_MODE == f) {
-	/* Rounding mode setting */
-	unsigned short sw;
-	fo = VpGetRoundMode();
-	if (NIL_P(val)) return INT2FIX(fo);
-	sw = check_rounding_mode(val);
-	fo = VpSetRoundMode(sw);
-	return INT2FIX(fo);
+        /* Rounding mode setting */
+        unsigned short sw;
+        fo = VpGetRoundMode();
+        if (NIL_P(val)) return INT2FIX(fo);
+        sw = check_rounding_mode(val);
+        fo = VpSetRoundMode(sw);
+        return INT2FIX(fo);
     }
     rb_raise(rb_eTypeError, "first argument for BigDecimal.mode invalid");
     return Qnil;
@@ -1122,13 +1135,13 @@ GetAddSubPrec(Real *a, Real *b)
     if (!VpIsDef(a) || !VpIsDef(b)) return (size_t)-1L;
     if (mx < b->Prec) mx = b->Prec;
     if (a->exponent != b->exponent) {
-	mxs = mx;
-	d = a->exponent - b->exponent;
-	if (d < 0) d = -d;
-	mx = mx + (size_t)d;
-	if (mx < mxs) {
-	    return VpException(VP_EXCEPTION_INFINITY, "Exponent overflow", 0);
-	}
+        mxs = mx;
+        d = a->exponent - b->exponent;
+        if (d < 0) d = -d;
+        mx = mx + (size_t)d;
+        if (mx < mxs) {
+            return VpException(VP_EXCEPTION_INFINITY, "Exponent overflow", 0);
+        }
     }
     return mx;
 }
@@ -1142,10 +1155,10 @@ check_int_precision(VALUE v)
 #elif SIZEOF_VALUE <= SIZEOF_LONG_LONG
     n = (SIGNED_VALUE)NUM2LL(v);
 #else
-#   error SIZEOF_VALUE is too large
+# error SIZEOF_VALUE is too large
 #endif
     if (n < 0) {
-	rb_raise(rb_eArgError, "negative precision");
+        rb_raise(rb_eArgError, "negative precision");
     }
     return n;
 }
@@ -1186,7 +1199,7 @@ VpCreateRbObject(size_t mx, const char *str, bool raise_exception)
 }
 
 static Real *
-VpCopy(Real *pv, Real const* const x)
+VpCopy(Real *pv, Real const *const x)
 {
     assert(x != NULL);
 
@@ -1206,7 +1219,7 @@ static VALUE
 BigDecimal_IsNaN(VALUE self)
 {
     Real *p = GetVpValue(self, 1);
-    if (VpIsNaN(p))  return Qtrue;
+    if (VpIsNaN(p)) return Qtrue;
     return Qfalse;
 }
 
@@ -1261,29 +1274,29 @@ BigDecimal_to_i(VALUE self)
         return LONG2NUM((long)(VpGetSign(p) * (DECDIG_DBL_SIGNED)p->frac[0]));
     }
     else {
-	VALUE a = BigDecimal_split(self);
-	VALUE digits = RARRAY_AREF(a, 1);
-	VALUE numerator = rb_funcall(digits, rb_intern("to_i"), 0);
-	VALUE ret;
-	ssize_t dpower = e - (ssize_t)RSTRING_LEN(digits);
+        VALUE a = BigDecimal_split(self);
+        VALUE digits = RARRAY_AREF(a, 1);
+        VALUE numerator = rb_funcall(digits, rb_intern("to_i"), 0);
+        VALUE ret;
+        ssize_t dpower = e - (ssize_t)RSTRING_LEN(digits);
 
-	if (BIGDECIMAL_NEGATIVE_P(p)) {
-	    numerator = rb_funcall(numerator, '*', 1, INT2FIX(-1));
-	}
-	if (dpower < 0) {
-	    ret = rb_funcall(numerator, rb_intern("div"), 1,
-			      rb_funcall(INT2FIX(10), rb_intern("**"), 1,
-					 INT2FIX(-dpower)));
-	}
-	else {
-	    ret = rb_funcall(numerator, '*', 1,
-			     rb_funcall(INT2FIX(10), rb_intern("**"), 1,
-					INT2FIX(dpower)));
-	}
-	if (RB_TYPE_P(ret, T_FLOAT)) {
-	    rb_raise(rb_eFloatDomainError, "Infinity");
-	}
-	return ret;
+        if (BIGDECIMAL_NEGATIVE_P(p)) {
+            numerator = rb_funcall(numerator, '*', 1, INT2FIX(-1));
+        }
+        if (dpower < 0) {
+            ret = rb_funcall(numerator, rb_intern("div"), 1,
+              rb_funcall(INT2FIX(10), rb_intern("**"), 1,
+                INT2FIX(-dpower)));
+        }
+        else {
+            ret = rb_funcall(numerator, '*', 1,
+              rb_funcall(INT2FIX(10), rb_intern("**"), 1,
+                INT2FIX(dpower)));
+        }
+        if (RB_TYPE_P(ret, T_FLOAT)) {
+            rb_raise(rb_eFloatDomainError, "Infinity");
+        }
+        return ret;
     }
 }
 
@@ -1303,11 +1316,11 @@ BigDecimal_to_f(VALUE self)
 
     GUARD_OBJ(p, GetVpValue(self, 1));
     if (VpVtoD(&d, &e, p) != 1)
-	return rb_float_new(d);
-    if (e > (SIGNED_VALUE)(DBL_MAX_10_EXP+BASE_FIG))
-	goto overflow;
-    if (e < (SIGNED_VALUE)(DBL_MIN_10_EXP-BASE_FIG))
-	goto underflow;
+        return rb_float_new(d);
+    if (e > (SIGNED_VALUE)(DBL_MAX_10_EXP + BASE_FIG))
+        goto overflow;
+    if (e < (SIGNED_VALUE)(DBL_MIN_10_EXP - BASE_FIG))
+        goto underflow;
 
     str = rb_str_new(0, VpNumOfChars(p, "E"));
     buf = RSTRING_PTR(str);
@@ -1315,26 +1328,25 @@ BigDecimal_to_f(VALUE self)
     errno = 0;
     d = strtod(buf, 0);
     if (errno == ERANGE) {
-	if (d == 0.0) goto underflow;
-	if (fabs(d) >= HUGE_VAL) goto overflow;
+        if (d == 0.0) goto underflow;
+        if (fabs(d) >= HUGE_VAL) goto overflow;
     }
     return rb_float_new(d);
 
 overflow:
     VpException(VP_EXCEPTION_OVERFLOW, "BigDecimal to Float conversion", 0);
     if (BIGDECIMAL_NEGATIVE_P(p))
-	return rb_float_new(VpGetDoubleNegInf());
+        return rb_float_new(VpGetDoubleNegInf());
     else
-	return rb_float_new(VpGetDoublePosInf());
+        return rb_float_new(VpGetDoublePosInf());
 
 underflow:
     VpException(VP_EXCEPTION_UNDERFLOW, "BigDecimal to Float conversion", 0);
     if (BIGDECIMAL_NEGATIVE_P(p))
-	return rb_float_new(-0.0);
+        return rb_float_new(-0.0);
     else
-	return rb_float_new(0.0);
+        return rb_float_new(0.0);
 }
-
 
 /* Converts a BigDecimal to a Rational.
  */
@@ -1356,17 +1368,17 @@ BigDecimal_to_r(VALUE self)
     numerator = rb_funcall(digits, rb_intern("to_i"), 0);
 
     if (sign < 0) {
-	numerator = rb_funcall(numerator, '*', 1, INT2FIX(-1));
+        numerator = rb_funcall(numerator, '*', 1, INT2FIX(-1));
     }
     if (denomi_power < 0) {
-	return rb_Rational(numerator,
-			   rb_funcall(INT2FIX(10), rb_intern("**"), 1,
-				      INT2FIX(-denomi_power)));
+        return rb_Rational(numerator,
+          rb_funcall(INT2FIX(10), rb_intern("**"), 1,
+            INT2FIX(-denomi_power)));
     }
     else {
-	return rb_Rational1(rb_funcall(numerator, '*', 1,
-				       rb_funcall(INT2FIX(10), rb_intern("**"), 1,
-						  INT2FIX(denomi_power))));
+        return rb_Rational1(rb_funcall(numerator, '*', 1,
+          rb_funcall(INT2FIX(10), rb_intern("**"), 1,
+            INT2FIX(denomi_power))));
     }
 }
 
@@ -1392,18 +1404,18 @@ BigDecimal_coerce(VALUE self, VALUE other)
     Real *b;
 
     if (RB_TYPE_P(other, T_FLOAT)) {
-	GUARD_OBJ(b, GetVpValueWithPrec(other, 0, 1));
+        GUARD_OBJ(b, GetVpValueWithPrec(other, 0, 1));
         obj = rb_assoc_new(VpCheckGetValue(b), self);
     }
     else {
-	if (RB_TYPE_P(other, T_RATIONAL)) {
-	    Real* pv = DATA_PTR(self);
-	    GUARD_OBJ(b, GetVpValueWithPrec(other, pv->Prec*VpBaseFig(), 1));
-	}
-	else {
-	    GUARD_OBJ(b, GetVpValue(other, 1));
-	}
-	obj = rb_assoc_new(b->obj, self);
+        if (RB_TYPE_P(other, T_RATIONAL)) {
+            Real *pv = DATA_PTR(self);
+            GUARD_OBJ(b, GetVpValueWithPrec(other, pv->Prec * VpBaseFig(), 1));
+        }
+        else {
+            GUARD_OBJ(b, GetVpValue(other, 1));
+        }
+        obj = rb_assoc_new(b->obj, self);
     }
 
     return obj;
@@ -1426,7 +1438,7 @@ BigDecimal_uplus(VALUE self)
     return self;
 }
 
- /*
+/*
   *  call-seq:
   *    self + value -> bigdecimal
   *
@@ -1451,16 +1463,16 @@ BigDecimal_add(VALUE self, VALUE r)
 
     GUARD_OBJ(a, GetVpValue(self, 1));
     if (RB_TYPE_P(r, T_FLOAT)) {
-	b = GetVpValueWithPrec(r, 0, 1);
+        b = GetVpValueWithPrec(r, 0, 1);
     }
     else if (RB_TYPE_P(r, T_RATIONAL)) {
-	b = GetVpValueWithPrec(r, a->Prec*VpBaseFig(), 1);
+        b = GetVpValueWithPrec(r, a->Prec * VpBaseFig(), 1);
     }
     else {
-	b = GetVpValue(r, 0);
+        b = GetVpValue(r, 0);
     }
 
-    if (!b) return DoSomeOne(self,r,'+');
+    if (!b) return DoSomeOne(self, r, '+');
     SAVE(b);
 
     if (VpIsNaN(b)) return b->obj;
@@ -1483,7 +1495,7 @@ BigDecimal_add(VALUE self, VALUE r)
     return VpCheckGetValue(c);
 }
 
- /*  call-seq:
+/*  call-seq:
   *    self - value -> bigdecimal
   *
   *  Returns the \BigDecimal difference of +self+ and +value+:
@@ -1504,32 +1516,32 @@ BigDecimal_sub(VALUE self, VALUE r)
     Real *c, *a, *b;
     size_t mx;
 
-    GUARD_OBJ(a, GetVpValue(self,1));
+    GUARD_OBJ(a, GetVpValue(self, 1));
     if (RB_TYPE_P(r, T_FLOAT)) {
-	b = GetVpValueWithPrec(r, 0, 1);
+        b = GetVpValueWithPrec(r, 0, 1);
     }
     else if (RB_TYPE_P(r, T_RATIONAL)) {
-	b = GetVpValueWithPrec(r, a->Prec*VpBaseFig(), 1);
+        b = GetVpValueWithPrec(r, a->Prec * VpBaseFig(), 1);
     }
     else {
-	b = GetVpValue(r,0);
+        b = GetVpValue(r, 0);
     }
 
-    if (!b) return DoSomeOne(self,r,'-');
+    if (!b) return DoSomeOne(self, r, '-');
     SAVE(b);
 
     if (VpIsNaN(b)) return b->obj;
     if (VpIsNaN(a)) return a->obj;
 
-    mx = GetAddSubPrec(a,b);
+    mx = GetAddSubPrec(a, b);
     if (mx == (size_t)-1L) {
         GUARD_OBJ(c, NewZeroWrapLimited(1, VpBaseFig() + 1));
         VpAddSub(c, a, b, -1);
     }
     else {
-        GUARD_OBJ(c, NewZeroWrapLimited(1, mx *(VpBaseFig() + 1)));
+        GUARD_OBJ(c, NewZeroWrapLimited(1, mx * (VpBaseFig() + 1)));
         if (!mx) {
-            VpSetInf(c,VpGetSign(a));
+            VpSetInf(c, VpGetSign(a));
         }
         else {
             VpAddSub(c, a, b, -1);
@@ -1539,92 +1551,92 @@ BigDecimal_sub(VALUE self, VALUE r)
 }
 
 static VALUE
-BigDecimalCmp(VALUE self, VALUE r,char op)
+BigDecimalCmp(VALUE self, VALUE r, char op)
 {
     ENTER(5);
     SIGNED_VALUE e;
-    Real *a, *b=0;
+    Real *a, *b = 0;
     GUARD_OBJ(a, GetVpValue(self, 1));
     switch (TYPE(r)) {
-    case T_DATA:
-	if (!is_kind_of_BigDecimal(r)) break;
-	/* fall through */
-    case T_FIXNUM:
-	/* fall through */
-    case T_BIGNUM:
-	GUARD_OBJ(b, GetVpValue(r, 0));
-	break;
+        case T_DATA:
+            if (!is_kind_of_BigDecimal(r)) break;
+        /* fall through */
+        case T_FIXNUM:
+        /* fall through */
+        case T_BIGNUM:
+            GUARD_OBJ(b, GetVpValue(r, 0));
+            break;
 
-    case T_FLOAT:
-	GUARD_OBJ(b, GetVpValueWithPrec(r, 0, 0));
-	break;
+        case T_FLOAT:
+            GUARD_OBJ(b, GetVpValueWithPrec(r, 0, 0));
+            break;
 
-    case T_RATIONAL:
-	GUARD_OBJ(b, GetVpValueWithPrec(r, a->Prec*VpBaseFig(), 0));
-	break;
+        case T_RATIONAL:
+            GUARD_OBJ(b, GetVpValueWithPrec(r, a->Prec * VpBaseFig(), 0));
+            break;
 
-    default:
-	break;
+        default:
+            break;
     }
     if (b == NULL) {
-	ID f = 0;
+        ID f = 0;
 
-	switch (op) {
-	case '*':
-	    return rb_num_coerce_cmp(self, r, rb_intern("<=>"));
+        switch (op) {
+            case '*':
+                return rb_num_coerce_cmp(self, r, rb_intern("<=>"));
 
-	case '=':
-	    return RTEST(rb_num_coerce_cmp(self, r, rb_intern("=="))) ? Qtrue : Qfalse;
+            case '=':
+                return RTEST(rb_num_coerce_cmp(self, r, rb_intern("=="))) ? Qtrue : Qfalse;
 
-	case 'G':
-	    f = rb_intern(">=");
-	    break;
+            case 'G':
+                f = rb_intern(">=");
+                break;
 
-	case 'L':
-	    f = rb_intern("<=");
-	    break;
+            case 'L':
+                f = rb_intern("<=");
+                break;
 
-	case '>':
-	    /* fall through */
-	case '<':
-	    f = (ID)op;
-	    break;
+            case '>':
+                /* fall through */
+            case '<':
+                f = (ID)op;
+                break;
 
-	default:
-	    break;
-	}
-	return rb_num_coerce_relop(self, r, f);
+            default:
+                break;
+        }
+        return rb_num_coerce_relop(self, r, f);
     }
     SAVE(b);
     e = VpComp(a, b);
     if (e == 999)
-	return (op == '*') ? Qnil : Qfalse;
+        return (op == '*') ? Qnil : Qfalse;
     switch (op) {
-    case '*':
-	return   INT2FIX(e); /* any op */
+        case '*':
+            return INT2FIX(e); /* any op */
 
-    case '=':
-	if (e == 0) return Qtrue;
-	return Qfalse;
+        case '=':
+            if (e == 0) return Qtrue;
+            return Qfalse;
 
-    case 'G':
-	if (e >= 0) return Qtrue;
-	return Qfalse;
+        case 'G':
+            if (e >= 0) return Qtrue;
+            return Qfalse;
 
-    case '>':
-	if (e >  0) return Qtrue;
-	return Qfalse;
+        case '>':
+            if (e > 0) return Qtrue;
+            return Qfalse;
 
-    case 'L':
-	if (e <= 0) return Qtrue;
-	return Qfalse;
+        case 'L':
+            if (e <= 0) return Qtrue;
+            return Qfalse;
 
-    case '<':
-	if (e <  0) return Qtrue;
-	return Qfalse;
+        case '<':
+            if (e < 0) return Qtrue;
+            return Qfalse;
 
-    default:
-	break;
+        default:
+            break;
     }
 
     rb_bug("Undefined operation in BigDecimalCmp()");
@@ -1773,7 +1785,7 @@ BigDecimal_neg(VALUE self)
     ENTER(5);
     Real *c, *a;
     GUARD_OBJ(a, GetVpValue(self, 1));
-    GUARD_OBJ(c, NewZeroWrapLimited(1, a->Prec *(VpBaseFig() + 1)));
+    GUARD_OBJ(c, NewZeroWrapLimited(1, a->Prec * (VpBaseFig() + 1)));
     VpAsgn(c, a, -1);
     return VpCheckGetValue(c);
 }
@@ -1790,10 +1802,10 @@ BigDecimal_mult(VALUE self, VALUE r)
         b = GetVpValueWithPrec(r, 0, 1);
     }
     else if (RB_TYPE_P(r, T_RATIONAL)) {
-	b = GetVpValueWithPrec(r, a->Prec*VpBaseFig(), 1);
+        b = GetVpValueWithPrec(r, a->Prec * VpBaseFig(), 1);
     }
     else {
-	b = GetVpValue(r,0);
+        b = GetVpValue(r, 0);
     }
 
     if (!b) return DoSomeOne(self, r, '*');
@@ -1828,7 +1840,7 @@ BigDecimal_divide(VALUE self, VALUE r, Real **c, Real **res, Real **div)
         rr = rb_float_convert_to_BigDecimal(r, 0, true);
     }
     else if (RB_TYPE_P(r, T_RATIONAL)) {
-        rr = rb_rational_convert_to_BigDecimal(r, a->Prec*BASE_FIG, true);
+        rr = rb_rational_convert_to_BigDecimal(r, a->Prec * BASE_FIG, true);
     }
 
     if (!is_kind_of_BigDecimal(rr)) {
@@ -1844,11 +1856,11 @@ BigDecimal_divide(VALUE self, VALUE r, Real **c, Real **res, Real **div)
     mx = (a_prec > b_prec) ? a_prec : b_prec;
     mx *= 2;
 
-    if (2*BIGDECIMAL_DOUBLE_FIGURES > mx)
-        mx = 2*BIGDECIMAL_DOUBLE_FIGURES;
+    if (2 * BIGDECIMAL_DOUBLE_FIGURES > mx)
+        mx = 2 * BIGDECIMAL_DOUBLE_FIGURES;
 
-    GUARD_OBJ((*c), NewZeroWrapNolimit(1, mx + 2*BASE_FIG));
-    GUARD_OBJ((*res), NewZeroWrapNolimit(1, (mx + 1)*2 + 2*BASE_FIG));
+    GUARD_OBJ((*c), NewZeroWrapNolimit(1, mx + 2 * BASE_FIG));
+    GUARD_OBJ((*res), NewZeroWrapNolimit(1, (mx + 1) * 2 + 2 * BASE_FIG));
     VpDivd(*c, *res, a, b);
 
     return Qnil;
@@ -1872,17 +1884,19 @@ BigDecimal_div(VALUE self, VALUE r)
 /* For c = self/r: with round operation */
 {
     ENTER(5);
-    Real *c=NULL, *res=NULL, *div = NULL;
+    Real *c = NULL, *res = NULL, *div = NULL;
     r = BigDecimal_divide(self, r, &c, &res, &div);
     if (!NIL_P(r)) return r; /* coerced by other */
-    SAVE(c); SAVE(res); SAVE(div);
+    SAVE(c);
+    SAVE(res);
+    SAVE(div);
     /* a/b = c + r/b */
     /* c xxxxx
        r 00000yyyyy  ==> (y/b)*BASE >= HALF_BASE
      */
     /* Round */
     if (VpHasVal(div)) { /* frac[0] must be zero for NaN,INF,Zero */
-        VpInternalRound(c, 0, c->frac[c->Prec-1], (DECDIG)(VpBaseVal() * (DECDIG_DBL)res->frac[0] / div->frac[0]));
+        VpInternalRound(c, 0, c->frac[c->Prec - 1], (DECDIG)(VpBaseVal() * (DECDIG_DBL)res->frac[0] / div->frac[0]));
     }
     return VpCheckGetValue(c);
 }
@@ -1934,7 +1948,7 @@ static VALUE
 BigDecimal_DoDivmod(VALUE self, VALUE r, Real **div, Real **mod)
 {
     ENTER(8);
-    Real *c=NULL, *d=NULL, *res=NULL;
+    Real *c = NULL, *d = NULL, *res = NULL;
     Real *a, *b;
     ssize_t a_prec, b_prec;
     size_t mx;
@@ -1953,7 +1967,7 @@ BigDecimal_DoDivmod(VALUE self, VALUE r, Real **div, Real **mod)
         rr = rb_float_convert_to_BigDecimal(r, 0, true);
     }
     else if (RB_TYPE_P(r, T_RATIONAL)) {
-        rr = rb_rational_convert_to_BigDecimal(r, a->Prec*BASE_FIG, true);
+        rr = rb_rational_convert_to_BigDecimal(r, a->Prec * BASE_FIG, true);
     }
 
     if (!is_kind_of_BigDecimal(rr)) {
@@ -2000,11 +2014,11 @@ BigDecimal_DoDivmod(VALUE self, VALUE r, Real **div, Real **mod)
     mx = (a_prec > b_prec) ? a_prec : b_prec;
     mx *= 2;
 
-    if (2*BIGDECIMAL_DOUBLE_FIGURES > mx)
-        mx = 2*BIGDECIMAL_DOUBLE_FIGURES;
+    if (2 * BIGDECIMAL_DOUBLE_FIGURES > mx)
+        mx = 2 * BIGDECIMAL_DOUBLE_FIGURES;
 
-    GUARD_OBJ(c, NewZeroWrapLimited(1, mx + 2*BASE_FIG));
-    GUARD_OBJ(res, NewZeroWrapNolimit(1, mx*2 + 2*BASE_FIG));
+    GUARD_OBJ(c, NewZeroWrapLimited(1, mx + 2 * BASE_FIG));
+    GUARD_OBJ(res, NewZeroWrapNolimit(1, mx * 2 + 2 * BASE_FIG));
     VpDivd(c, res, a, b);
 
     mx = c->Prec * BASE_FIG;
@@ -2019,7 +2033,7 @@ BigDecimal_DoDivmod(VALUE self, VALUE r, Real **div, Real **mod)
         res = rbd_reallocate_struct(res, d->MaxPrec);
         res->MaxPrec = d->MaxPrec;
         VpAddSub(res, d, VpOne(), -1);
-        GUARD_OBJ(d, NewZeroWrapLimited(1, GetAddSubPrec(c, b) * 2*BASE_FIG));
+        GUARD_OBJ(d, NewZeroWrapLimited(1, GetAddSubPrec(c, b) * 2 * BASE_FIG));
         VpAddSub(d, c, b, 1);
         *div = res;
         *mod = d;
@@ -2030,7 +2044,7 @@ BigDecimal_DoDivmod(VALUE self, VALUE r, Real **div, Real **mod)
     }
     return Qtrue;
 
-  NaN:
+NaN:
     {
         VALUE nan = BigDecimal_nan();
         TypedData_Get_Struct(nan, Real, &BigDecimal_data_type, *div);
@@ -2054,7 +2068,8 @@ BigDecimal_mod(VALUE self, VALUE r) /* %: a%b = a - (a.to_f/b).floor * b */
     Real *div = NULL, *mod = NULL;
 
     if (BigDecimal_DoDivmod(self, r, &div, &mod)) {
-	SAVE(div); SAVE(mod);
+        SAVE(div);
+        SAVE(mod);
         return VpCheckGetValue(mod);
     }
     return DoSomeOne(self, r, '%');
@@ -2070,27 +2085,27 @@ BigDecimal_divremain(VALUE self, VALUE r, Real **dv, Real **rv)
 
     GUARD_OBJ(a, GetVpValue(self, 1));
     if (RB_TYPE_P(r, T_FLOAT)) {
-	b = GetVpValueWithPrec(r, 0, 1);
+        b = GetVpValueWithPrec(r, 0, 1);
     }
     else if (RB_TYPE_P(r, T_RATIONAL)) {
-	b = GetVpValueWithPrec(r, a->Prec*VpBaseFig(), 1);
+        b = GetVpValueWithPrec(r, a->Prec * VpBaseFig(), 1);
     }
     else {
-	b = GetVpValue(r, 0);
+        b = GetVpValue(r, 0);
     }
 
     if (!b) return DoSomeOne(self, r, rb_intern("remainder"));
     SAVE(b);
 
-    mx = (a->MaxPrec + b->MaxPrec) *VpBaseFig();
-    GUARD_OBJ(c,   NewZeroWrapLimited(1, mx));
-    GUARD_OBJ(res, NewZeroWrapNolimit(1, (mx+1) * 2 + (VpBaseFig() + 1)));
-    GUARD_OBJ(rr,  NewZeroWrapNolimit(1, (mx+1) * 2 + (VpBaseFig() + 1)));
-    GUARD_OBJ(ff,  NewZeroWrapNolimit(1, (mx+1) * 2 + (VpBaseFig() + 1)));
+    mx = (a->MaxPrec + b->MaxPrec) * VpBaseFig();
+    GUARD_OBJ(c, NewZeroWrapLimited(1, mx));
+    GUARD_OBJ(res, NewZeroWrapNolimit(1, (mx + 1) * 2 + (VpBaseFig() + 1)));
+    GUARD_OBJ(rr, NewZeroWrapNolimit(1, (mx + 1) * 2 + (VpBaseFig() + 1)));
+    GUARD_OBJ(ff, NewZeroWrapNolimit(1, (mx + 1) * 2 + (VpBaseFig() + 1)));
 
     VpDivd(c, res, a, b);
 
-    mx = c->Prec *(VpBaseFig() + 1);
+    mx = c->Prec * (VpBaseFig() + 1);
 
     GUARD_OBJ(d, NewZeroWrapLimited(1, mx));
     GUARD_OBJ(f, NewZeroWrapLimited(1, mx));
@@ -2116,8 +2131,8 @@ BigDecimal_divremain(VALUE self, VALUE r, Real **dv, Real **rv)
 static VALUE
 BigDecimal_remainder(VALUE self, VALUE r) /* remainder */
 {
-    VALUE  f;
-    Real  *d, *rv = 0;
+    VALUE f;
+    Real *d, *rv = 0;
     f = BigDecimal_divremain(self, r, &d, &rv);
     if (!NIL_P(f)) return f;
     return VpCheckGetValue(rv);
@@ -2152,10 +2167,11 @@ BigDecimal_divmod(VALUE self, VALUE r)
     Real *div = NULL, *mod = NULL;
 
     if (BigDecimal_DoDivmod(self, r, &div, &mod)) {
-	SAVE(div); SAVE(mod);
+        SAVE(div);
+        SAVE(mod);
         return rb_assoc_new(VpCheckGetValue(div), VpCheckGetValue(mod));
     }
-    return DoSomeOne(self,r,rb_intern("divmod"));
+    return DoSomeOne(self, r, rb_intern("divmod"));
 }
 
 /*
@@ -2185,7 +2201,7 @@ BigDecimal_div2(VALUE self, VALUE b, VALUE n)
     else {
         Real *res = NULL;
         Real *av = NULL, *bv = NULL, *cv = NULL;
-        size_t mx = ix + VpBaseFig()*2;
+        size_t mx = ix + VpBaseFig() * 2;
         size_t b_prec = ix;
         size_t pl = VpSetPrecLimit(0);
 
@@ -2200,7 +2216,7 @@ BigDecimal_div2(VALUE self, VALUE b, VALUE n)
         GUARD_OBJ(bv, GetVpValueWithPrec(b, b_prec, 1));
         mx = av->Prec + bv->Prec + 2;
         if (mx <= cv->MaxPrec) mx = cv->MaxPrec + 1;
-        GUARD_OBJ(res, NewZeroWrapNolimit(1, (mx * 2  + 2)*VpBaseFig()));
+        GUARD_OBJ(res, NewZeroWrapNolimit(1, (mx * 2 + 2) * VpBaseFig()));
         VpDivd(cv, res, av, bv);
         VpSetPrecLimit(pl);
         VpLeftRound(cv, VpGetRoundMode(), ix);
@@ -2208,7 +2224,7 @@ BigDecimal_div2(VALUE self, VALUE b, VALUE n)
     }
 }
 
- /*
+/*
   * Document-method: BigDecimal#div
   *
   * call-seq:
@@ -2246,14 +2262,14 @@ BigDecimal_div2(VALUE self, VALUE b, VALUE n)
 static VALUE
 BigDecimal_div3(int argc, VALUE *argv, VALUE self)
 {
-    VALUE b,n;
+    VALUE b, n;
 
     rb_scan_args(argc, argv, "11", &b, &n);
 
     return BigDecimal_div2(self, b, n);
 }
 
- /*
+/*
   *  call-seq:
   *    add(value, ndigits) -> new_bigdecimal
   *
@@ -2284,13 +2300,14 @@ BigDecimal_add2(VALUE self, VALUE b, VALUE n)
     ENTER(2);
     Real *cv;
     SIGNED_VALUE mx = check_int_precision(n);
-    if (mx == 0) return BigDecimal_add(self, b);
+    if (mx == 0)
+        return BigDecimal_add(self, b);
     else {
-	size_t pl = VpSetPrecLimit(0);
-	VALUE   c = BigDecimal_add(self, b);
-	VpSetPrecLimit(pl);
-	GUARD_OBJ(cv, GetVpValue(c, 1));
-	VpLeftRound(cv, VpGetRoundMode(), mx);
+        size_t pl = VpSetPrecLimit(0);
+        VALUE c = BigDecimal_add(self, b);
+        VpSetPrecLimit(pl);
+        GUARD_OBJ(cv, GetVpValue(c, 1));
+        VpLeftRound(cv, VpGetRoundMode(), mx);
         return VpCheckGetValue(cv);
     }
 }
@@ -2314,18 +2331,19 @@ BigDecimal_sub2(VALUE self, VALUE b, VALUE n)
     ENTER(2);
     Real *cv;
     SIGNED_VALUE mx = check_int_precision(n);
-    if (mx == 0) return BigDecimal_sub(self, b);
+    if (mx == 0)
+        return BigDecimal_sub(self, b);
     else {
-	size_t pl = VpSetPrecLimit(0);
-	VALUE   c = BigDecimal_sub(self, b);
-	VpSetPrecLimit(pl);
-	GUARD_OBJ(cv, GetVpValue(c, 1));
-	VpLeftRound(cv, VpGetRoundMode(), mx);
+        size_t pl = VpSetPrecLimit(0);
+        VALUE c = BigDecimal_sub(self, b);
+        VpSetPrecLimit(pl);
+        GUARD_OBJ(cv, GetVpValue(c, 1));
+        VpLeftRound(cv, VpGetRoundMode(), mx);
         return VpCheckGetValue(cv);
     }
 }
 
- /*
+/*
   *  call-seq:
   *    mult(other, ndigits) -> bigdecimal
   *
@@ -2357,13 +2375,14 @@ BigDecimal_mult2(VALUE self, VALUE b, VALUE n)
     ENTER(2);
     Real *cv;
     SIGNED_VALUE mx = check_int_precision(n);
-    if (mx == 0) return BigDecimal_mult(self, b);
+    if (mx == 0)
+        return BigDecimal_mult(self, b);
     else {
-	size_t pl = VpSetPrecLimit(0);
-	VALUE   c = BigDecimal_mult(self, b);
-	VpSetPrecLimit(pl);
-	GUARD_OBJ(cv, GetVpValue(c, 1));
-	VpLeftRound(cv, VpGetRoundMode(), mx);
+        size_t pl = VpSetPrecLimit(0);
+        VALUE c = BigDecimal_mult(self, b);
+        VpSetPrecLimit(pl);
+        GUARD_OBJ(cv, GetVpValue(c, 1));
+        VpLeftRound(cv, VpGetRoundMode(), mx);
         return VpCheckGetValue(cv);
     }
 }
@@ -2387,7 +2406,7 @@ BigDecimal_abs(VALUE self)
     size_t mx;
 
     GUARD_OBJ(a, GetVpValue(self, 1));
-    mx = a->Prec *(VpBaseFig() + 1);
+    mx = a->Prec * (VpBaseFig() + 1);
     GUARD_OBJ(c, NewZeroWrapLimited(1, mx));
     VpAsgn(c, a, 1);
     VpChangeSign(c, 1);
@@ -2429,7 +2448,7 @@ BigDecimal_fix(VALUE self)
     size_t mx;
 
     GUARD_OBJ(a, GetVpValue(self, 1));
-    mx = a->Prec *(VpBaseFig() + 1);
+    mx = a->Prec * (VpBaseFig() + 1);
     GUARD_OBJ(c, NewZeroWrapLimited(1, mx));
     VpActiveRound(c, a, VP_ROUND_DOWN, 0); /* 0: round off */
     return VpCheckGetValue(c);
@@ -2464,40 +2483,40 @@ static VALUE
 BigDecimal_round(int argc, VALUE *argv, VALUE self)
 {
     ENTER(5);
-    Real   *c, *a;
-    int    iLoc = 0;
-    VALUE  vLoc;
-    VALUE  vRound;
-    int    round_to_int = 0;
+    Real *c, *a;
+    int iLoc = 0;
+    VALUE vLoc;
+    VALUE vRound;
+    int round_to_int = 0;
     size_t mx, pl;
 
     unsigned short sw = VpGetRoundMode();
 
     switch (rb_scan_args(argc, argv, "02", &vLoc, &vRound)) {
-      case 0:
-	iLoc = 0;
-        round_to_int = 1;
-	break;
-      case 1:
-        if (RB_TYPE_P(vLoc, T_HASH)) {
-	    sw = check_rounding_mode_option(vLoc);
-	}
-	else {
-	    iLoc = NUM2INT(vLoc);
-            if (iLoc < 1) round_to_int = 1;
-	}
-	break;
-      case 2:
-	iLoc = NUM2INT(vLoc);
-	if (RB_TYPE_P(vRound, T_HASH)) {
-	    sw = check_rounding_mode_option(vRound);
-	}
-	else {
-	    sw = check_rounding_mode(vRound);
-	}
-	break;
-      default:
-	break;
+        case 0:
+            iLoc = 0;
+            round_to_int = 1;
+            break;
+        case 1:
+            if (RB_TYPE_P(vLoc, T_HASH)) {
+                sw = check_rounding_mode_option(vLoc);
+            }
+            else {
+                iLoc = NUM2INT(vLoc);
+                if (iLoc < 1) round_to_int = 1;
+            }
+            break;
+        case 2:
+            iLoc = NUM2INT(vLoc);
+            if (RB_TYPE_P(vRound, T_HASH)) {
+                sw = check_rounding_mode_option(vRound);
+            }
+            else {
+                sw = check_rounding_mode(vRound);
+            }
+            break;
+        default:
+            break;
     }
 
     pl = VpSetPrecLimit(0);
@@ -2541,10 +2560,10 @@ BigDecimal_truncate(int argc, VALUE *argv, VALUE self)
     size_t mx, pl = VpSetPrecLimit(0);
 
     if (rb_scan_args(argc, argv, "01", &vLoc) == 0) {
-	iLoc = 0;
+        iLoc = 0;
     }
     else {
-	iLoc = NUM2INT(vLoc);
+        iLoc = NUM2INT(vLoc);
     }
 
     GUARD_OBJ(a, GetVpValue(self, 1));
@@ -2600,11 +2619,11 @@ BigDecimal_floor(int argc, VALUE *argv, VALUE self)
     VALUE vLoc;
     size_t mx, pl = VpSetPrecLimit(0);
 
-    if (rb_scan_args(argc, argv, "01", &vLoc)==0) {
-	iLoc = 0;
+    if (rb_scan_args(argc, argv, "01", &vLoc) == 0) {
+        iLoc = 0;
     }
     else {
-	iLoc = NUM2INT(vLoc);
+        iLoc = NUM2INT(vLoc);
     }
 
     GUARD_OBJ(a, GetVpValue(self, 1));
@@ -2648,9 +2667,10 @@ BigDecimal_ceil(int argc, VALUE *argv, VALUE self)
     size_t mx, pl = VpSetPrecLimit(0);
 
     if (rb_scan_args(argc, argv, "01", &vLoc) == 0) {
-	iLoc = 0;
-    } else {
-	iLoc = NUM2INT(vLoc);
+        iLoc = 0;
+    }
+    else {
+        iLoc = NUM2INT(vLoc);
     }
 
     GUARD_OBJ(a, GetVpValue(self, 1));
@@ -2701,68 +2721,68 @@ static VALUE
 BigDecimal_to_s(int argc, VALUE *argv, VALUE self)
 {
     ENTER(5);
-    int   fmt = 0;   /* 0: E format, 1: F format */
-    int   fPlus = 0; /* 0: default, 1: set ' ' before digits, 2: set '+' before digits. */
-    Real  *vp;
+    int fmt = 0; /* 0: E format, 1: F format */
+    int fPlus = 0; /* 0: default, 1: set ' ' before digits, 2: set '+' before digits. */
+    Real *vp;
     volatile VALUE str;
-    char  *psz;
-    char   ch;
+    char *psz;
+    char ch;
     size_t nc, mc = 0;
     SIGNED_VALUE m;
-    VALUE  f;
+    VALUE f;
 
     GUARD_OBJ(vp, GetVpValue(self, 1));
 
     if (rb_scan_args(argc, argv, "01", &f) == 1) {
-	if (RB_TYPE_P(f, T_STRING)) {
-	    psz = StringValueCStr(f);
-	    if (*psz == ' ') {
-		fPlus = 1;
-		psz++;
-	    }
-	    else if (*psz == '+') {
-		fPlus = 2;
-		psz++;
-	    }
-	    while ((ch = *psz++) != 0) {
-		if (ISSPACE(ch)) {
-		    continue;
-		}
-		if (!ISDIGIT(ch)) {
-		    if (ch == 'F' || ch == 'f') {
-			fmt = 1; /* F format */
-		    }
-		    break;
-		}
-		mc = mc*10 + ch - '0';
-	    }
-	}
-	else {
-	    m = NUM2INT(f);
-	    if (m <= 0) {
-		rb_raise(rb_eArgError, "argument must be positive");
-	    }
-	    mc = (size_t)m;
-	}
+        if (RB_TYPE_P(f, T_STRING)) {
+            psz = StringValueCStr(f);
+            if (*psz == ' ') {
+                fPlus = 1;
+                psz++;
+            }
+            else if (*psz == '+') {
+                fPlus = 2;
+                psz++;
+            }
+            while ((ch = *psz++) != 0) {
+                if (ISSPACE(ch)) {
+                    continue;
+                }
+                if (!ISDIGIT(ch)) {
+                    if (ch == 'F' || ch == 'f') {
+                        fmt = 1; /* F format */
+                    }
+                    break;
+                }
+                mc = mc * 10 + ch - '0';
+            }
+        }
+        else {
+            m = NUM2INT(f);
+            if (m <= 0) {
+                rb_raise(rb_eArgError, "argument must be positive");
+            }
+            mc = (size_t)m;
+        }
     }
     if (fmt) {
-	nc = VpNumOfChars(vp, "F");
+        nc = VpNumOfChars(vp, "F");
     }
     else {
-	nc = VpNumOfChars(vp, "E");
+        nc = VpNumOfChars(vp, "E");
     }
     if (mc > 0) {
-	nc += (nc + mc - 1) / mc + 1;
+        nc += (nc + mc - 1) / mc + 1;
     }
 
     str = rb_usascii_str_new(0, nc);
     psz = RSTRING_PTR(str);
 
     if (fmt) {
-	VpToFString(vp, psz, RSTRING_LEN(str), mc, fPlus);
+        VpToFString(vp, psz, RSTRING_LEN(str), mc, fPlus);
     }
     else {
-	VpToString (vp, psz, RSTRING_LEN(str), mc, fPlus);
+        VpToString(vp, psz, RSTRING_LEN(str), mc, fPlus);
     }
     rb_str_resize(str, strlen(psz));
     return str;
@@ -2797,7 +2817,7 @@ BigDecimal_split(VALUE self)
 {
     ENTER(5);
     Real *vp;
-    VALUE obj,str;
+    VALUE obj, str;
     ssize_t e, s;
     char *psz1;
 
@@ -2806,11 +2826,11 @@ BigDecimal_split(VALUE self)
     psz1 = RSTRING_PTR(str);
     VpSzMantissa(vp, psz1, RSTRING_LEN(str));
     s = 1;
-    if(psz1[0] == '-') {
-	size_t len = strlen(psz1 + 1);
+    if (psz1[0] == '-') {
+        size_t len = strlen(psz1 + 1);
 
-	memmove(psz1, psz1 + 1, len);
-	psz1[len] = '\0';
+        memmove(psz1, psz1 + 1, len);
+        psz1[len] = '\0';
         s = -1;
     }
     if (psz1[0] == 'N') s = 0; /* NaN */
@@ -2874,13 +2894,13 @@ inline static int
 is_negative(VALUE x)
 {
     if (FIXNUM_P(x)) {
-	return FIX2LONG(x) < 0;
+        return FIX2LONG(x) < 0;
     }
     else if (RB_TYPE_P(x, T_BIGNUM)) {
-	return FIX2INT(rb_big_cmp(x, INT2FIX(0))) < 0;
+        return FIX2INT(rb_big_cmp(x, INT2FIX(0))) < 0;
     }
     else if (RB_TYPE_P(x, T_FLOAT)) {
-	return RFLOAT_VALUE(x) < 0.0;
+        return RFLOAT_VALUE(x) < 0.0;
     }
     return RTEST(rb_funcall(x, '<', 1, INT2FIX(0)));
 }
@@ -2893,18 +2913,18 @@ is_zero(VALUE x)
     VALUE num;
 
     switch (TYPE(x)) {
-      case T_FIXNUM:
-	return FIX2LONG(x) == 0;
+        case T_FIXNUM:
+            return FIX2LONG(x) == 0;
 
-      case T_BIGNUM:
-	return Qfalse;
+        case T_BIGNUM:
+            return Qfalse;
 
-      case T_RATIONAL:
-	num = rb_rational_num(x);
-	return FIXNUM_P(num) && FIX2LONG(num) == 0;
+        case T_RATIONAL:
+            num = rb_rational_num(x);
+            return FIXNUM_P(num) && FIX2LONG(num) == 0;
 
-      default:
-	break;
+        default:
+            break;
     }
 
     return RTEST(rb_funcall(x, id_eq, 1, INT2FIX(0)));
@@ -2916,20 +2936,20 @@ is_one(VALUE x)
     VALUE num, den;
 
     switch (TYPE(x)) {
-      case T_FIXNUM:
-	return FIX2LONG(x) == 1;
+        case T_FIXNUM:
+            return FIX2LONG(x) == 1;
 
-      case T_BIGNUM:
-	return Qfalse;
+        case T_BIGNUM:
+            return Qfalse;
 
-      case T_RATIONAL:
-	num = rb_rational_num(x);
-	den = rb_rational_den(x);
-	return FIXNUM_P(den) && FIX2LONG(den) == 1 &&
-	       FIXNUM_P(num) && FIX2LONG(num) == 1;
+        case T_RATIONAL:
+            num = rb_rational_num(x);
+            den = rb_rational_den(x);
+            return FIXNUM_P(den) && FIX2LONG(den) == 1 &&
+              FIXNUM_P(num) && FIX2LONG(num) == 1;
 
-      default:
-	break;
+        default:
+            break;
     }
 
     return RTEST(rb_funcall(x, id_eq, 1, INT2FIX(1)));
@@ -2939,25 +2959,25 @@ inline static int
 is_even(VALUE x)
 {
     switch (TYPE(x)) {
-      case T_FIXNUM:
-	return (FIX2LONG(x) % 2) == 0;
+        case T_FIXNUM:
+            return (FIX2LONG(x) % 2) == 0;
 
-      case T_BIGNUM:
-        {
-            unsigned long l;
-            rb_big_pack(x, &l, 1);
-            return l % 2 == 0;
-        }
+        case T_BIGNUM:
+            {
+                unsigned long l;
+                rb_big_pack(x, &l, 1);
+                return l % 2 == 0;
+            }
 
-      default:
-	break;
+        default:
+            break;
     }
 
     return 0;
 }
 
 static VALUE
-bigdecimal_power_by_bigdecimal(Real const* x, Real const* exp, ssize_t const n)
+bigdecimal_power_by_bigdecimal(Real const *x, Real const *exp, ssize_t const n)
 {
     VALUE log_x, multiplied, y;
     volatile VALUE obj = exp->obj;
@@ -2966,8 +2986,8 @@ bigdecimal_power_by_bigdecimal(Real const* x, Real const* exp, ssize_t const n)
         return VpCheckGetValue(NewOneWrapLimited(1, n));
     }
 
-    log_x = BigMath_log(x->obj, SSIZET2NUM(n+1));
-    multiplied = BigDecimal_mult2(exp->obj, log_x, SSIZET2NUM(n+1));
+    log_x = BigMath_log(x->obj, SSIZET2NUM(n + 1));
+    multiplied = BigDecimal_mult2(exp->obj, log_x, SSIZET2NUM(n + 1));
     y = BigMath_exp(multiplied, SSIZET2NUM(n));
     RB_GC_GUARD(obj);
 
@@ -2985,11 +3005,11 @@ bigdecimal_power_by_bigdecimal(Real const* x, Real const* exp, ssize_t const n)
  * Also available as the operator **.
  */
 static VALUE
-BigDecimal_power(int argc, VALUE*argv, VALUE self)
+BigDecimal_power(int argc, VALUE *argv, VALUE self)
 {
     ENTER(5);
     VALUE vexp, prec;
-    Real* exp = NULL;
+    Real *exp = NULL;
     Real *x, *y;
     ssize_t mp, ma, n;
     SIGNED_VALUE int_exp;
@@ -2998,7 +3018,7 @@ BigDecimal_power(int argc, VALUE*argv, VALUE self)
     rb_scan_args(argc, argv, "11", &vexp, &prec);
 
     GUARD_OBJ(x, GetVpValue(self, 1));
-    n = NIL_P(prec) ? (ssize_t)(x->Prec*VpBaseFig()) : NUM2SSIZET(prec);
+    n = NIL_P(prec) ? (ssize_t)(x->Prec * VpBaseFig()) : NUM2SSIZET(prec);
 
     if (VpIsNaN(x)) {
         y = NewZeroWrapLimited(1, n);
@@ -3007,68 +3027,68 @@ BigDecimal_power(int argc, VALUE*argv, VALUE self)
         return VpCheckGetValue(y);
     }
 
-  retry:
+retry:
     switch (TYPE(vexp)) {
-      case T_FIXNUM:
-	break;
+        case T_FIXNUM:
+            break;
 
-      case T_BIGNUM:
-	break;
+        case T_BIGNUM:
+            break;
 
-      case T_FLOAT:
-	d = RFLOAT_VALUE(vexp);
-	if (d == round(d)) {
-	    if (FIXABLE(d)) {
-		vexp = LONG2FIX((long)d);
-	    }
-	    else {
-		vexp = rb_dbl2big(d);
-	    }
-	    goto retry;
-	}
-        if (NIL_P(prec)) {
-            n += BIGDECIMAL_DOUBLE_FIGURES;
-        }
-        exp = GetVpValueWithPrec(vexp, 0, 1);
-	break;
-
-      case T_RATIONAL:
-	if (is_zero(rb_rational_num(vexp))) {
-	    if (is_positive(vexp)) {
-		vexp = INT2FIX(0);
-		goto retry;
-	    }
-	}
-	else if (is_one(rb_rational_den(vexp))) {
-	    vexp = rb_rational_num(vexp);
-	    goto retry;
-	}
-	exp = GetVpValueWithPrec(vexp, n, 1);
-        if (NIL_P(prec)) {
-            n += n;
-        }
-	break;
-
-      case T_DATA:
-	if (is_kind_of_BigDecimal(vexp)) {
-	    VALUE zero = INT2FIX(0);
-	    VALUE rounded = BigDecimal_round(1, &zero, vexp);
-	    if (RTEST(BigDecimal_eq(vexp, rounded))) {
-		vexp = BigDecimal_to_i(vexp);
-		goto retry;
-	    }
-            if (NIL_P(prec)) {
-                GUARD_OBJ(y, GetVpValue(vexp, 1));
-                n += y->Prec*VpBaseFig();
+        case T_FLOAT:
+            d = RFLOAT_VALUE(vexp);
+            if (d == round(d)) {
+                if (FIXABLE(d)) {
+                    vexp = LONG2FIX((long)d);
+                }
+                else {
+                    vexp = rb_dbl2big(d);
+                }
+                goto retry;
             }
-	    exp = DATA_PTR(vexp);
-	    break;
-	}
-	/* fall through */
-      default:
-	rb_raise(rb_eTypeError,
-		 "wrong argument type %"PRIsVALUE" (expected scalar Numeric)",
-		 RB_OBJ_CLASSNAME(vexp));
+            if (NIL_P(prec)) {
+                n += BIGDECIMAL_DOUBLE_FIGURES;
+            }
+            exp = GetVpValueWithPrec(vexp, 0, 1);
+            break;
+
+        case T_RATIONAL:
+            if (is_zero(rb_rational_num(vexp))) {
+                if (is_positive(vexp)) {
+                    vexp = INT2FIX(0);
+                    goto retry;
+                }
+            }
+            else if (is_one(rb_rational_den(vexp))) {
+                vexp = rb_rational_num(vexp);
+                goto retry;
+            }
+            exp = GetVpValueWithPrec(vexp, n, 1);
+            if (NIL_P(prec)) {
+                n += n;
+            }
+            break;
+
+        case T_DATA:
+            if (is_kind_of_BigDecimal(vexp)) {
+                VALUE zero = INT2FIX(0);
+                VALUE rounded = BigDecimal_round(1, &zero, vexp);
+                if (RTEST(BigDecimal_eq(vexp, rounded))) {
+                    vexp = BigDecimal_to_i(vexp);
+                    goto retry;
+                }
+                if (NIL_P(prec)) {
+                    GUARD_OBJ(y, GetVpValue(vexp, 1));
+                    n += y->Prec * VpBaseFig();
+                }
+                exp = DATA_PTR(vexp);
+                break;
+            }
+            /* fall through */
+        default:
+            rb_raise(rb_eTypeError,
+              "wrong argument type %" PRIsVALUE " (expected scalar Numeric)",
+              RB_OBJ_CLASSNAME(vexp));
     }
 
     if (VpIsZero(x)) {
@@ -3148,7 +3168,7 @@ BigDecimal_power(int argc, VALUE*argv, VALUE self)
                 else {
                     /* TODO: support complex */
                     rb_raise(rb_eMathDomainError,
-                            "a non-integral exponent for a negative base");
+                      "a non-integral exponent for a negative base");
                 }
             }
             else {
@@ -3196,7 +3216,7 @@ BigDecimal_power(int argc, VALUE*argv, VALUE self)
 
     int_exp = FIX2LONG(vexp);
     ma = int_exp;
-    if (ma <  0) ma = -ma;
+    if (ma < 0) ma = -ma;
     if (ma == 0) ma = 1;
 
     if (VpIsDef(x)) {
@@ -3243,7 +3263,7 @@ BigDecimal_initialize_copy(VALUE self, VALUE other)
     Real *x = rb_check_typeddata(other, &BigDecimal_data_type);
 
     if (self != other) {
-	DATA_PTR(self) = VpCopy(pv, x);
+        DATA_PTR(self) = VpCopy(pv, x);
     }
     return self;
 }
@@ -3251,12 +3271,12 @@ BigDecimal_initialize_copy(VALUE self, VALUE other)
 static VALUE
 BigDecimal_clone(VALUE self)
 {
-  return self;
+    return self;
 }
 
 #ifdef HAVE_RB_OPTS_EXCEPTION_P
 int rb_opts_exception_p(VALUE opts, int default_value);
-#define opts_exception_p(opts) rb_opts_exception_p((opts), 1)
+# define opts_exception_p(opts) rb_opts_exception_p((opts), 1)
 #else
 static int
 opts_exception_p(VALUE opts)
@@ -3268,11 +3288,12 @@ opts_exception_p(VALUE opts)
     }
     if (!rb_get_kwargs(opts, kwds, 0, 1, &exception)) return 1;
     switch (exception) {
-      case Qtrue: case Qfalse:
-        break;
-      default:
-        rb_raise(rb_eArgError, "true or false is expected as exception: %+"PRIsVALUE,
-                 exception);
+        case Qtrue:
+        case Qfalse:
+            break;
+        default:
+            rb_raise(rb_eArgError, "true or false is expected as exception: %+" PRIsVALUE,
+              exception);
     }
     return exception != Qfalse;
 }
@@ -3313,7 +3334,9 @@ rb_uint64_convert_to_BigDecimal(uint64_t uval, RB_UNUSED_VAR(size_t digs), int r
         vp->frac[0] = (DECDIG)uval;
     }
     else {
-        DECDIG buf[BIGDECIMAL_INT64_MAX_LENGTH] = {0,};
+        DECDIG buf[BIGDECIMAL_INT64_MAX_LENGTH] = {
+            0,
+        };
         DECDIG r = uval % BASE;
         size_t len = 0, ntz = 0;
         if (r == 0) {
@@ -3345,7 +3368,7 @@ rb_uint64_convert_to_BigDecimal(uint64_t uval, RB_UNUSED_VAR(size_t digs), int r
 static VALUE
 rb_int64_convert_to_BigDecimal(int64_t ival, size_t digs, int raise_exception)
 {
-    const uint64_t uval = (ival < 0) ? (((uint64_t)-(ival+1))+1) : (uint64_t)ival;
+    const uint64_t uval = (ival < 0) ? (((uint64_t) - (ival + 1)) + 1) : (uint64_t)ival;
     VALUE bd = rb_uint64_convert_to_BigDecimal(uval, digs, raise_exception);
     if (ival < 0) {
         Real *vp;
@@ -3387,7 +3410,7 @@ rb_big_convert_to_BigDecimal(VALUE val, RB_UNUSED_VAR(size_t digs), int raise_ex
     else {
         VALUE str = rb_big2str(val, 10);
         Real *vp = VpCreateRbObject(RSTRING_LEN(str) + BASE_FIG + 1,
-                                    RSTRING_PTR(str), true);
+          RSTRING_PTR(str), true);
         RB_GC_GUARD(str);
         return check_exception(vp->obj);
     }
@@ -3427,7 +3450,7 @@ rb_float_convert_to_BigDecimal(VALUE val, size_t digs, int raise_exception)
         return check_exception(obj);
     }
     else if (d == 0.0) {
-        if (1/d < 0.0) {
+        if (1 / d < 0.0) {
             return BigDecimal_negative_zero();
         }
         else {
@@ -3439,8 +3462,8 @@ rb_float_convert_to_BigDecimal(VALUE val, size_t digs, int raise_exception)
         if (!raise_exception)
             return Qnil;
         rb_raise(rb_eArgError,
-                 "can't omit precision for a %"PRIsVALUE".",
-                 CLASS_OF(val));
+          "can't omit precision for a %" PRIsVALUE ".",
+          CLASS_OF(val));
     }
     else if (digs > BIGDECIMAL_DOUBLE_FIGURES) {
         if (!raise_exception)
@@ -3449,7 +3472,7 @@ rb_float_convert_to_BigDecimal(VALUE val, size_t digs, int raise_exception)
     }
 
     /* Use the same logic in flo_to_s to convert a float to a decimal string */
-    char buf[BIGDECIMAL_DOUBLE_FIGURES + BASE_FIG + 2 + 1];  /* sizeof(buf) == 28 in the typical case */
+    char buf[BIGDECIMAL_DOUBLE_FIGURES + BASE_FIG + 2 + 1]; /* sizeof(buf) == 28 in the typical case */
     int decpt, negative_p;
     char *e;
     const int mode = digs == 0 ? 0 : 2;
@@ -3574,8 +3597,8 @@ rb_rational_convert_to_BigDecimal(VALUE val, size_t digs, int raise_exception)
         if (!raise_exception)
             return Qnil;
         rb_raise(rb_eArgError,
-                 "can't omit precision for a %"PRIsVALUE".",
-                 CLASS_OF(val));
+          "can't omit precision for a %" PRIsVALUE ".",
+          CLASS_OF(val));
     }
 
     VALUE num = rb_inum_convert_to_BigDecimal(rb_rational_num(val), 0, raise_exception);
@@ -3606,21 +3629,21 @@ static VALUE
 rb_convert_to_BigDecimal(VALUE val, size_t digs, int raise_exception)
 {
     switch (val) {
-      case Qnil:
-      case Qtrue:
-      case Qfalse:
-        if (raise_exception) {
-            const char *cname = NIL_P(val)    ? "nil"   :
-                                val == Qtrue  ? "true"  :
-                                val == Qfalse ? "false" :
-                                NULL;
-            rb_raise(rb_eTypeError,
-                       "can't convert %s into BigDecimal", cname);
-        }
-        return Qnil;
+        case Qnil:
+        case Qtrue:
+        case Qfalse:
+            if (raise_exception) {
+                const char *cname = NIL_P(val) ? "nil" :
+                  val == Qtrue                 ? "true" :
+                  val == Qfalse                ? "false" :
+                                                 NULL;
+                rb_raise(rb_eTypeError,
+                  "can't convert %s into BigDecimal", cname);
+            }
+            return Qnil;
 
-      default:
-        break;
+        default:
+            break;
     }
 
     if (is_kind_of_BigDecimal(val)) {
@@ -3650,7 +3673,7 @@ rb_convert_to_BigDecimal(VALUE val, size_t digs, int raise_exception)
         if (!is_zero(im)) {
             /* TODO: handle raise_exception */
             rb_raise(rb_eArgError,
-                     "Unable to make a BigDecimal from non-zero imaginary number");
+              "Unable to make a BigDecimal from non-zero imaginary number");
         }
         return rb_convert_to_BigDecimal(rb_complex_real(val), digs, raise_exception);
     }
@@ -3665,7 +3688,7 @@ rb_convert_to_BigDecimal(VALUE val, size_t digs, int raise_exception)
     if (!RB_TYPE_P(str, T_STRING)) {
         if (raise_exception) {
             rb_raise(rb_eTypeError,
-                     "can't convert %"PRIsVALUE" into BigDecimal", rb_obj_class(val));
+              "can't convert %" PRIsVALUE " into BigDecimal", rb_obj_class(val));
         }
         return Qnil;
     }
@@ -3737,7 +3760,7 @@ f_BigDecimal(int argc, VALUE *argv, VALUE self)
         }
         else {
             if (RBIGNUM_NEGATIVE_P(digs_v)) {
-              negative_digs:
+            negative_digs:
                 if (!exception)
                     return Qnil;
                 rb_raise(rb_eArgError, "negative precision");
@@ -3760,7 +3783,7 @@ BigDecimal_s_interpret_loosely(VALUE klass, VALUE str)
         return VpCheckGetValue(vp);
 }
 
- /* call-seq:
+/* call-seq:
   * BigDecimal.limit(digits)
   *
   * Limit the number of significant digits in newly created BigDecimal
@@ -3775,17 +3798,17 @@ BigDecimal_s_interpret_loosely(VALUE klass, VALUE str)
 static VALUE
 BigDecimal_limit(int argc, VALUE *argv, VALUE self)
 {
-    VALUE  nFig;
-    VALUE  nCur = SIZET2NUM(VpGetPrecLimit());
+    VALUE nFig;
+    VALUE nCur = SIZET2NUM(VpGetPrecLimit());
 
     if (rb_scan_args(argc, argv, "01", &nFig) == 1) {
-	int nf;
-	if (NIL_P(nFig)) return nCur;
-	nf = NUM2INT(nFig);
-	if (nf < 0) {
-	    rb_raise(rb_eArgError, "argument must be positive");
-	}
-	VpSetPrecLimit(nf);
+        int nf;
+        if (NIL_P(nFig)) return nCur;
+        nf = NUM2INT(nFig);
+        if (nf < 0) {
+            rb_raise(rb_eArgError, "argument must be positive");
+        }
+        VpSetPrecLimit(nf);
     }
     return nCur;
 }
@@ -3908,7 +3931,7 @@ static VALUE
 BigMath_s_exp(VALUE klass, VALUE x, VALUE vprec)
 {
     ssize_t prec, n, i;
-    Real* vx = NULL;
+    Real *vx = NULL;
     VALUE one, d, y;
     int negative = 0;
     int infinite = 0;
@@ -3917,62 +3940,62 @@ BigMath_s_exp(VALUE klass, VALUE x, VALUE vprec)
 
     prec = NUM2SSIZET(vprec);
     if (prec <= 0) {
-	rb_raise(rb_eArgError, "Zero or negative precision for exp");
+        rb_raise(rb_eArgError, "Zero or negative precision for exp");
     }
 
     /* TODO: the following switch statement is almost same as one in the
      *       BigDecimalCmp function. */
     switch (TYPE(x)) {
-      case T_DATA:
-	if (!is_kind_of_BigDecimal(x)) break;
-	vx = DATA_PTR(x);
-	negative = BIGDECIMAL_NEGATIVE_P(vx);
-	infinite = VpIsPosInf(vx) || VpIsNegInf(vx);
-	nan = VpIsNaN(vx);
-	break;
+        case T_DATA:
+            if (!is_kind_of_BigDecimal(x)) break;
+            vx = DATA_PTR(x);
+            negative = BIGDECIMAL_NEGATIVE_P(vx);
+            infinite = VpIsPosInf(vx) || VpIsNegInf(vx);
+            nan = VpIsNaN(vx);
+            break;
 
-      case T_FIXNUM:
-	/* fall through */
-      case T_BIGNUM:
-	vx = GetVpValue(x, 0);
-	break;
+        case T_FIXNUM:
+            /* fall through */
+        case T_BIGNUM:
+            vx = GetVpValue(x, 0);
+            break;
 
-      case T_FLOAT:
-	flo = RFLOAT_VALUE(x);
-	negative = flo < 0;
-	infinite = isinf(flo);
-	nan = isnan(flo);
-	if (!infinite && !nan) {
-	    vx = GetVpValueWithPrec(x, 0, 0);
-	}
-	break;
+        case T_FLOAT:
+            flo = RFLOAT_VALUE(x);
+            negative = flo < 0;
+            infinite = isinf(flo);
+            nan = isnan(flo);
+            if (!infinite && !nan) {
+                vx = GetVpValueWithPrec(x, 0, 0);
+            }
+            break;
 
-      case T_RATIONAL:
-	vx = GetVpValueWithPrec(x, prec, 0);
-	break;
+        case T_RATIONAL:
+            vx = GetVpValueWithPrec(x, prec, 0);
+            break;
 
-      default:
-	break;
+        default:
+            break;
     }
     if (infinite) {
-	if (negative) {
+        if (negative) {
             return VpCheckGetValue(GetVpValueWithPrec(INT2FIX(0), prec, 1));
-	}
-	else {
-	    Real* vy = NewZeroWrapNolimit(1, prec);
-	    VpSetInf(vy, VP_SIGN_POSITIVE_INFINITE);
-	    RB_GC_GUARD(vy->obj);
+        }
+        else {
+            Real *vy = NewZeroWrapNolimit(1, prec);
+            VpSetInf(vy, VP_SIGN_POSITIVE_INFINITE);
+            RB_GC_GUARD(vy->obj);
             return VpCheckGetValue(vy);
-	}
+        }
     }
     else if (nan) {
-        Real* vy = NewZeroWrapNolimit(1, prec);
+        Real *vy = NewZeroWrapNolimit(1, prec);
         VpSetNaN(vy);
         RB_GC_GUARD(vy->obj);
         return VpCheckGetValue(vy);
     }
     else if (vx == NULL) {
-	cannot_be_coerced_into_BigDecimal(rb_eArgError, x);
+        cannot_be_coerced_into_BigDecimal(rb_eArgError, x);
     }
     x = vx->obj;
 
@@ -3983,40 +4006,40 @@ BigMath_s_exp(VALUE klass, VALUE x, VALUE vprec)
         VALUE x_copy = f_BigDecimal(1, &x_zero, klass);
         x = BigDecimal_initialize_copy(x_copy, x);
         vx = DATA_PTR(x);
-	VpSetSign(vx, 1);
+        VpSetSign(vx, 1);
     }
 
     one = VpCheckGetValue(NewOneWrapLimited(1, 1));
-    y   = one;
-    d   = y;
-    i   = 1;
+    y = one;
+    d = y;
+    i = 1;
 
-    while (!VpIsZero((Real*)DATA_PTR(d))) {
-	SIGNED_VALUE const ey = VpExponent10(DATA_PTR(y));
-	SIGNED_VALUE const ed = VpExponent10(DATA_PTR(d));
-	ssize_t m = n - vabs(ey - ed);
+    while (!VpIsZero((Real *)DATA_PTR(d))) {
+        SIGNED_VALUE const ey = VpExponent10(DATA_PTR(y));
+        SIGNED_VALUE const ed = VpExponent10(DATA_PTR(d));
+        ssize_t m = n - vabs(ey - ed);
 
-	rb_thread_check_ints();
+        rb_thread_check_ints();
 
-	if (m <= 0) {
-	    break;
-	}
-	else if ((size_t)m < BIGDECIMAL_DOUBLE_FIGURES) {
-	    m = BIGDECIMAL_DOUBLE_FIGURES;
-	}
+        if (m <= 0) {
+            break;
+        }
+        else if ((size_t)m < BIGDECIMAL_DOUBLE_FIGURES) {
+            m = BIGDECIMAL_DOUBLE_FIGURES;
+        }
 
-	d = BigDecimal_mult(d, x);                             /* d <- d * x */
-	d = BigDecimal_div2(d, SSIZET2NUM(i), SSIZET2NUM(m));  /* d <- d / i */
-	y = BigDecimal_add(y, d);                              /* y <- y + d  */
-	++i;                                                   /* i  <- i + 1 */
+        d = BigDecimal_mult(d, x); /* d <- d * x */
+        d = BigDecimal_div2(d, SSIZET2NUM(i), SSIZET2NUM(m)); /* d <- d / i */
+        y = BigDecimal_add(y, d); /* y <- y + d  */
+        ++i; /* i  <- i + 1 */
     }
 
     if (negative) {
-	return BigDecimal_div2(one, y, vprec);
+        return BigDecimal_div2(one, y, vprec);
     }
     else {
-	vprec = SSIZET2NUM(prec - VpExponent10(DATA_PTR(y)));
-	return BigDecimal_round(1, &vprec, y);
+        vprec = SSIZET2NUM(prec - VpExponent10(DATA_PTR(y)));
+        return BigDecimal_round(1, &vprec, y);
     }
 
     RB_GC_GUARD(one);
@@ -4042,7 +4065,7 @@ BigMath_s_log(VALUE klass, VALUE x, VALUE vprec)
 {
     ssize_t prec, n, i;
     SIGNED_VALUE expo;
-    Real* vx = NULL;
+    Real *vx = NULL;
     VALUE vn, one, two, w, x2, y, d;
     int zero = 0;
     int negative = 0;
@@ -4052,84 +4075,84 @@ BigMath_s_log(VALUE klass, VALUE x, VALUE vprec)
     long fix;
 
     if (!is_integer(vprec)) {
-	rb_raise(rb_eArgError, "precision must be an Integer");
+        rb_raise(rb_eArgError, "precision must be an Integer");
     }
 
     prec = NUM2SSIZET(vprec);
     if (prec <= 0) {
-	rb_raise(rb_eArgError, "Zero or negative precision for exp");
+        rb_raise(rb_eArgError, "Zero or negative precision for exp");
     }
 
     /* TODO: the following switch statement is almost same as one in the
      *       BigDecimalCmp function. */
     switch (TYPE(x)) {
-      case T_DATA:
-	  if (!is_kind_of_BigDecimal(x)) break;
-	  vx = DATA_PTR(x);
-	  zero = VpIsZero(vx);
-	  negative = BIGDECIMAL_NEGATIVE_P(vx);
-	  infinite = VpIsPosInf(vx) || VpIsNegInf(vx);
-	  nan = VpIsNaN(vx);
-	  break;
+        case T_DATA:
+            if (!is_kind_of_BigDecimal(x)) break;
+            vx = DATA_PTR(x);
+            zero = VpIsZero(vx);
+            negative = BIGDECIMAL_NEGATIVE_P(vx);
+            infinite = VpIsPosInf(vx) || VpIsNegInf(vx);
+            nan = VpIsNaN(vx);
+            break;
 
-      case T_FIXNUM:
-	fix = FIX2LONG(x);
-	zero = fix == 0;
-	negative = fix < 0;
-	goto get_vp_value;
+        case T_FIXNUM:
+            fix = FIX2LONG(x);
+            zero = fix == 0;
+            negative = fix < 0;
+            goto get_vp_value;
 
-      case T_BIGNUM:
-        i = FIX2INT(rb_big_cmp(x, INT2FIX(0)));
-	zero = i == 0;
-	negative = i < 0;
-get_vp_value:
-	if (zero || negative) break;
-	vx = GetVpValue(x, 0);
-	break;
+        case T_BIGNUM:
+            i = FIX2INT(rb_big_cmp(x, INT2FIX(0)));
+            zero = i == 0;
+            negative = i < 0;
+        get_vp_value:
+            if (zero || negative) break;
+            vx = GetVpValue(x, 0);
+            break;
 
-      case T_FLOAT:
-	flo = RFLOAT_VALUE(x);
-	zero = flo == 0;
-	negative = flo < 0;
-	infinite = isinf(flo);
-	nan = isnan(flo);
-	if (!zero && !negative && !infinite && !nan) {
-	    vx = GetVpValueWithPrec(x, 0, 1);
-	}
-	break;
+        case T_FLOAT:
+            flo = RFLOAT_VALUE(x);
+            zero = flo == 0;
+            negative = flo < 0;
+            infinite = isinf(flo);
+            nan = isnan(flo);
+            if (!zero && !negative && !infinite && !nan) {
+                vx = GetVpValueWithPrec(x, 0, 1);
+            }
+            break;
 
-      case T_RATIONAL:
-	zero = RRATIONAL_ZERO_P(x);
-	negative = RRATIONAL_NEGATIVE_P(x);
-	if (zero || negative) break;
-	vx = GetVpValueWithPrec(x, prec, 1);
-	break;
+        case T_RATIONAL:
+            zero = RRATIONAL_ZERO_P(x);
+            negative = RRATIONAL_NEGATIVE_P(x);
+            if (zero || negative) break;
+            vx = GetVpValueWithPrec(x, prec, 1);
+            break;
 
-      case T_COMPLEX:
-	rb_raise(rb_eMathDomainError,
-		 "Complex argument for BigMath.log");
+        case T_COMPLEX:
+            rb_raise(rb_eMathDomainError,
+              "Complex argument for BigMath.log");
 
-      default:
-	break;
+        default:
+            break;
     }
     if (infinite && !negative) {
         Real *vy = NewZeroWrapNolimit(1, prec);
-	RB_GC_GUARD(vy->obj);
-	VpSetInf(vy, VP_SIGN_POSITIVE_INFINITE);
+        RB_GC_GUARD(vy->obj);
+        VpSetInf(vy, VP_SIGN_POSITIVE_INFINITE);
         return VpCheckGetValue(vy);
     }
     else if (nan) {
-	Real* vy = NewZeroWrapNolimit(1, prec);
-	RB_GC_GUARD(vy->obj);
-	VpSetNaN(vy);
+        Real *vy = NewZeroWrapNolimit(1, prec);
+        RB_GC_GUARD(vy->obj);
+        VpSetNaN(vy);
         return VpCheckGetValue(vy);
     }
     else if (zero || negative) {
-	rb_raise(rb_eMathDomainError,
-		 "Zero or negative argument for log");
+        rb_raise(rb_eMathDomainError,
+          "Zero or negative argument for log");
     }
     else if (vx == NULL) {
-	cannot_be_coerced_into_BigDecimal(rb_eArgError, x);
+        cannot_be_coerced_into_BigDecimal(rb_eArgError, x);
     }
     x = VpCheckGetValue(vx);
 
@@ -4140,43 +4163,43 @@ get_vp_value:
     RB_GC_GUARD(vn) = SSIZET2NUM(n);
     expo = VpExponent10(vx);
     if (expo < 0 || expo >= 3) {
-	char buf[DECIMAL_SIZE_OF_BITS(SIZEOF_VALUE * CHAR_BIT) + 4];
-	snprintf(buf, sizeof(buf), "1E%"PRIdVALUE, -expo);
+        char buf[DECIMAL_SIZE_OF_BITS(SIZEOF_VALUE * CHAR_BIT) + 4];
+        snprintf(buf, sizeof(buf), "1E%" PRIdVALUE, -expo);
         x = BigDecimal_mult2(x, VpCheckGetValue(VpCreateRbObject(1, buf, true)), vn);
     }
     else {
-	expo = 0;
+        expo = 0;
     }
     w = BigDecimal_sub(x, one);
     x = BigDecimal_div2(w, BigDecimal_add(x, one), vn);
     RB_GC_GUARD(x2) = BigDecimal_mult2(x, x, vn);
-    RB_GC_GUARD(y)  = x;
-    RB_GC_GUARD(d)  = y;
+    RB_GC_GUARD(y) = x;
+    RB_GC_GUARD(d) = y;
     i = 1;
-    while (!VpIsZero((Real*)DATA_PTR(d))) {
-	SIGNED_VALUE const ey = VpExponent10(DATA_PTR(y));
-	SIGNED_VALUE const ed = VpExponent10(DATA_PTR(d));
-	ssize_t m = n - vabs(ey - ed);
-	if (m <= 0) {
-	    break;
-	}
-	else if ((size_t)m < BIGDECIMAL_DOUBLE_FIGURES) {
-	    m = BIGDECIMAL_DOUBLE_FIGURES;
-	}
+    while (!VpIsZero((Real *)DATA_PTR(d))) {
+        SIGNED_VALUE const ey = VpExponent10(DATA_PTR(y));
+        SIGNED_VALUE const ed = VpExponent10(DATA_PTR(d));
+        ssize_t m = n - vabs(ey - ed);
+        if (m <= 0) {
+            break;
+        }
+        else if ((size_t)m < BIGDECIMAL_DOUBLE_FIGURES) {
+            m = BIGDECIMAL_DOUBLE_FIGURES;
+        }
 
-	x = BigDecimal_mult2(x2, x, vn);
-	i += 2;
-	d = BigDecimal_div2(x, SSIZET2NUM(i), SSIZET2NUM(m));
-	y = BigDecimal_add(y, d);
+        x = BigDecimal_mult2(x2, x, vn);
+        i += 2;
+        d = BigDecimal_div2(x, SSIZET2NUM(i), SSIZET2NUM(m));
+        y = BigDecimal_add(y, d);
     }
 
     y = BigDecimal_mult(y, two);
     if (expo != 0) {
-	VALUE log10, vexpo, dy;
-	log10 = BigMath_s_log(klass, INT2FIX(10), vprec);
+        VALUE log10, vexpo, dy;
+        log10 = BigMath_s_log(klass, INT2FIX(10), vprec);
         vexpo = VpCheckGetValue(GetVpValue(SSIZET2NUM(expo), 1));
-	dy = BigDecimal_mult(log10, vexpo);
-	y = BigDecimal_add(y, dy);
+        dy = BigDecimal_mult(log10, vexpo);
+        y = BigDecimal_add(y, dy);
     }
 
     return y;
@@ -4588,10 +4611,10 @@ Init_bigdecimal(void)
     rb_define_method(rb_cBigDecimal, "inspect", BigDecimal_inspect, 0);
     rb_define_method(rb_cBigDecimal, "exponent", BigDecimal_exponent, 0);
     rb_define_method(rb_cBigDecimal, "sign", BigDecimal_sign, 0);
-    rb_define_method(rb_cBigDecimal, "nan?",      BigDecimal_IsNaN, 0);
+    rb_define_method(rb_cBigDecimal, "nan?", BigDecimal_IsNaN, 0);
     rb_define_method(rb_cBigDecimal, "infinite?", BigDecimal_IsInfinite, 0);
-    rb_define_method(rb_cBigDecimal, "finite?",   BigDecimal_IsFinite, 0);
-    rb_define_method(rb_cBigDecimal, "truncate",  BigDecimal_truncate, -1);
+    rb_define_method(rb_cBigDecimal, "finite?", BigDecimal_IsFinite, 0);
+    rb_define_method(rb_cBigDecimal, "truncate", BigDecimal_truncate, -1);
     rb_define_method(rb_cBigDecimal, "_dump", BigDecimal_dump, -1);
 
     rb_mBigMath = rb_define_module("BigMath");
@@ -4599,22 +4622,22 @@ Init_bigdecimal(void)
     rb_define_singleton_method(rb_mBigMath, "log", BigMath_s_log, 2);
 
 #define ROUNDING_MODE(i, name, value) \
-    id_##name = rb_intern_const(#name); \
-    rbd_rounding_modes[i].id   = id_##name; \
-    rbd_rounding_modes[i].mode = value;
+ id_##name = rb_intern_const(#name); \
+ rbd_rounding_modes[i].id = id_##name; \
+ rbd_rounding_modes[i].mode = value;
 
-    ROUNDING_MODE(0, up,        RBD_ROUND_UP);
-    ROUNDING_MODE(1, down,      RBD_ROUND_DOWN);
-    ROUNDING_MODE(2, half_up,   RBD_ROUND_HALF_UP);
+    ROUNDING_MODE(0, up, RBD_ROUND_UP);
+    ROUNDING_MODE(1, down, RBD_ROUND_DOWN);
+    ROUNDING_MODE(2, half_up, RBD_ROUND_HALF_UP);
     ROUNDING_MODE(3, half_down, RBD_ROUND_HALF_DOWN);
-    ROUNDING_MODE(4, ceil,      RBD_ROUND_CEIL);
-    ROUNDING_MODE(5, floor,     RBD_ROUND_FLOOR);
+    ROUNDING_MODE(4, ceil, RBD_ROUND_CEIL);
+    ROUNDING_MODE(5, floor, RBD_ROUND_FLOOR);
     ROUNDING_MODE(6, half_even, RBD_ROUND_HALF_EVEN);
 
-    ROUNDING_MODE(7,  default,   RBD_ROUND_DEFAULT);
-    ROUNDING_MODE(8,  truncate,  RBD_ROUND_TRUNCATE);
-    ROUNDING_MODE(9,  banker,    RBD_ROUND_BANKER);
-    ROUNDING_MODE(10, ceiling,   RBD_ROUND_CEILING);
+    ROUNDING_MODE(7, default, RBD_ROUND_DEFAULT);
+    ROUNDING_MODE(8, truncate, RBD_ROUND_TRUNCATE);
+    ROUNDING_MODE(9, banker, RBD_ROUND_BANKER);
+    ROUNDING_MODE(10, ceiling, RBD_ROUND_CEILING);
 
 #undef ROUNDING_MODE
 
@@ -4622,7 +4645,7 @@ Init_bigdecimal(void)
     id_eq = rb_intern_const("==");
     id_half = rb_intern_const("half");
 
-    (void)VPrint;  /* suppress unused warning */
+    (void)VPrint; /* suppress unused warning */
 }
 
 /*
@@ -4635,32 +4658,32 @@ Init_bigdecimal(void)
  *
  */
 #ifdef BIGDECIMAL_DEBUG
-static int gfDebug = 1;         /* Debug switch */
-#if 0
+static int gfDebug = 1; /* Debug switch */
+# if 0
 static int gfCheckVal = 1;      /* Value checking flag in VpNmlz()  */
-#endif
+# endif
 #endif /* BIGDECIMAL_DEBUG */
 
-static Real *VpConstOne;    /* constant 1.0 */
-static Real *VpConstPt5;    /* constant 0.5 */
-#define maxnr 100UL    /* Maximum iterations for calculating sqrt. */
-                /* used in VpSqrt() */
+static Real *VpConstOne; /* constant 1.0 */
+static Real *VpConstPt5; /* constant 0.5 */
+#define maxnr 100UL /* Maximum iterations for calculating sqrt. */
+/* used in VpSqrt() */
 
 /* ETC */
-#define MemCmp(x,y,z) memcmp(x,y,z)
-#define StrCmp(x,y)   strcmp(x,y)
+#define MemCmp(x, y, z) memcmp(x, y, z)
+#define StrCmp(x, y) strcmp(x, y)
 
 enum op_sw {
-    OP_SW_ADD = 1,  /* + */
-    OP_SW_SUB,      /* - */
-    OP_SW_MULT,     /* * */
-    OP_SW_DIV       /* / */
+    OP_SW_ADD = 1, /* + */
+    OP_SW_SUB, /* - */
+    OP_SW_MULT, /* * */
+    OP_SW_DIV /* / */
 };
 
 static int VpIsDefOP(Real *c, Real *a, Real *b, enum op_sw sw);
 static int AddExponent(Real *a, SIGNED_VALUE n);
-static DECDIG VpAddAbs(Real *a,Real *b,Real *c);
-static DECDIG VpSubAbs(Real *a,Real *b,Real *c);
+static DECDIG VpAddAbs(Real *a, Real *b, Real *c);
+static DECDIG VpSubAbs(Real *a, Real *b, Real *c);
 static size_t VpSetPTR(Real *a, Real *b, Real *c, size_t *a_pos, size_t *b_pos, size_t *c_pos, DECDIG *av, DECDIG *bv);
 static int VpNmlz(Real *a);
 static void VpFormatSt(char *psz, size_t fFmt);
@@ -4678,23 +4701,21 @@ static int gnAlloc = 0; /* Memory allocation counter */
  */
 
 #define bigdecimal_set_thread_local_exception_mode(mode) \
-    rb_thread_local_aset( \
-	rb_thread_current(), \
-	id_BigDecimal_exception_mode, \
-	INT2FIX((int)(mode)) \
-    )
+ rb_thread_local_aset( \
+   rb_thread_current(), \
+   id_BigDecimal_exception_mode, \
+   INT2FIX((int)(mode)))
 
 static unsigned short
-VpGetException (void)
+VpGetException(void)
 {
     VALUE const vmode = rb_thread_local_aref(
-	rb_thread_current(),
-	id_BigDecimal_exception_mode
-    );
+      rb_thread_current(),
+      id_BigDecimal_exception_mode);
 
     if (NIL_P(vmode)) {
-	bigdecimal_set_thread_local_exception_mode(BIGDECIMAL_EXCEPTION_MODE_DEFAULT);
-	return BIGDECIMAL_EXCEPTION_MODE_DEFAULT;
+        bigdecimal_set_thread_local_exception_mode(BIGDECIMAL_EXCEPTION_MODE_DEFAULT);
+        return BIGDECIMAL_EXCEPTION_MODE_DEFAULT;
     }
 
     return NUM2USHORT(vmode);
@@ -4732,11 +4753,10 @@ VpCheckGetValue(Real *p)
  */
 
 #define bigdecimal_set_thread_local_precision_limit(limit) \
-    rb_thread_local_aset( \
-	rb_thread_current(), \
-	id_BigDecimal_precision_limit, \
-	SIZET2NUM(limit) \
-    )
+ rb_thread_local_aset( \
+   rb_thread_current(), \
+   id_BigDecimal_precision_limit, \
+   SIZET2NUM(limit))
 #define BIGDECIMAL_PRECISION_LIMIT_DEFAULT ((size_t)0)
 
 /* These 2 functions added at v1.1.7 */
@@ -4744,13 +4764,12 @@ VP_EXPORT size_t
 VpGetPrecLimit(void)
 {
     VALUE const vlimit = rb_thread_local_aref(
-	rb_thread_current(),
-	id_BigDecimal_precision_limit
-    );
+      rb_thread_current(),
+      id_BigDecimal_precision_limit);
 
     if (NIL_P(vlimit)) {
-	bigdecimal_set_thread_local_precision_limit(BIGDECIMAL_PRECISION_LIMIT_DEFAULT);
-	return BIGDECIMAL_PRECISION_LIMIT_DEFAULT;
+        bigdecimal_set_thread_local_precision_limit(BIGDECIMAL_PRECISION_LIMIT_DEFAULT);
+        return BIGDECIMAL_PRECISION_LIMIT_DEFAULT;
     }
 
     return NUM2SIZET(vlimit);
@@ -4769,23 +4788,21 @@ VpSetPrecLimit(size_t n)
  */
 
 #define bigdecimal_set_thread_local_rounding_mode(mode) \
-    rb_thread_local_aset( \
-	rb_thread_current(), \
-	id_BigDecimal_rounding_mode, \
-	INT2FIX((int)(mode)) \
-    )
+ rb_thread_local_aset( \
+   rb_thread_current(), \
+   id_BigDecimal_rounding_mode, \
+   INT2FIX((int)(mode)))
 
 VP_EXPORT unsigned short
 VpGetRoundMode(void)
 {
     VALUE const vmode = rb_thread_local_aref(
-	rb_thread_current(),
-	id_BigDecimal_rounding_mode
-    );
+      rb_thread_current(),
+      id_BigDecimal_rounding_mode);
 
     if (NIL_P(vmode)) {
-	bigdecimal_set_thread_local_rounding_mode(BIGDECIMAL_ROUNDING_MODE_DEFAULT);
-	return BIGDECIMAL_ROUNDING_MODE_DEFAULT;
+        bigdecimal_set_thread_local_rounding_mode(BIGDECIMAL_ROUNDING_MODE_DEFAULT);
+        return BIGDECIMAL_ROUNDING_MODE_DEFAULT;
     }
 
     return NUM2USHORT(vmode);
@@ -4795,17 +4812,17 @@ VP_EXPORT int
 VpIsRoundMode(unsigned short n)
 {
     switch (n) {
-      case VP_ROUND_UP:
-      case VP_ROUND_DOWN:
-      case VP_ROUND_HALF_UP:
-      case VP_ROUND_HALF_DOWN:
-      case VP_ROUND_CEIL:
-      case VP_ROUND_FLOOR:
-      case VP_ROUND_HALF_EVEN:
-	return 1;
+        case VP_ROUND_UP:
+        case VP_ROUND_DOWN:
+        case VP_ROUND_HALF_UP:
+        case VP_ROUND_HALF_DOWN:
+        case VP_ROUND_CEIL:
+        case VP_ROUND_FLOOR:
+        case VP_ROUND_HALF_EVEN:
+            return 1;
 
-      default:
-	return 0;
+        default:
+            return 0;
     }
 }
 
@@ -4813,8 +4830,8 @@ VP_EXPORT unsigned short
 VpSetRoundMode(unsigned short n)
 {
     if (VpIsRoundMode(n)) {
-	bigdecimal_set_thread_local_rounding_mode(n);
-	return n;
+        bigdecimal_set_thread_local_rounding_mode(n);
+        return n;
     }
 
     return VpGetRoundMode();
@@ -4828,7 +4845,7 @@ VpSetRoundMode(unsigned short n)
  *    (to let the compiler know they may be changed in outside
  *    (... but not actually..)).
  */
-volatile const double gOne_ABCED9B4_CE73__00400511F31D  = 1.0;
+volatile const double gOne_ABCED9B4_CE73__00400511F31D = 1.0;
 
 static double
 One(void)
@@ -4872,11 +4889,11 @@ VP_EXPORT double
 VpGetDoubleNegZero(void) /* Returns the value of -0 */
 {
     static double nzero = 1000.0;
-    if (nzero != 0.0) nzero = (One()/VpGetDoubleNegInf());
+    if (nzero != 0.0) nzero = (One() / VpGetDoubleNegInf());
     return nzero;
 }
 
-#if 0  /* unused */
+#if 0 /* unused */
 VP_EXPORT int
 VpIsNegDoubleZero(double v)
 {
@@ -4886,25 +4903,25 @@ VpIsNegDoubleZero(double v)
 #endif
 
 VP_EXPORT int
-VpException(unsigned short f, const char *str,int always)
+VpException(unsigned short f, const char *str, int always)
 {
     unsigned short const exception_mode = VpGetException();
 
     if (f == VP_EXCEPTION_OP) always = 1;
 
     if (always || (exception_mode & f)) {
-	switch(f) {
-	  /* case VP_EXCEPTION_OVERFLOW: */
-	  case VP_EXCEPTION_ZERODIVIDE:
-	  case VP_EXCEPTION_INFINITY:
-	  case VP_EXCEPTION_NaN:
-	  case VP_EXCEPTION_UNDERFLOW:
-	  case VP_EXCEPTION_OP:
-	    rb_raise(rb_eFloatDomainError, "%s", str);
-	    break;
-	  default:
-	    rb_fatal("%s", str);
-	}
+        switch (f) {
+            /* case VP_EXCEPTION_OVERFLOW: */
+            case VP_EXCEPTION_ZERODIVIDE:
+            case VP_EXCEPTION_INFINITY:
+            case VP_EXCEPTION_NaN:
+            case VP_EXCEPTION_UNDERFLOW:
+            case VP_EXCEPTION_OP:
+                rb_raise(rb_eFloatDomainError, "%s", str);
+                break;
+            default:
+                rb_fatal("%s", str);
+        }
     }
     return 0; /* 0 Means VpException() raised no exception */
 }
@@ -4915,89 +4932,89 @@ static int
 VpIsDefOP(Real *c, Real *a, Real *b, enum op_sw sw)
 {
     if (VpIsNaN(a) || VpIsNaN(b)) {
-	/* at least a or b is NaN */
-	VpSetNaN(c);
-	goto NaN;
+        /* at least a or b is NaN */
+        VpSetNaN(c);
+        goto NaN;
     }
 
     if (VpIsInf(a)) {
-	if (VpIsInf(b)) {
-	    switch(sw) {
-	      case OP_SW_ADD: /* + */
-		if (VpGetSign(a) == VpGetSign(b)) {
-		    VpSetInf(c, VpGetSign(a));
-		    goto Inf;
-		}
-		else {
-		    VpSetNaN(c);
-		    goto NaN;
-		}
-	      case OP_SW_SUB: /* - */
-		if (VpGetSign(a) != VpGetSign(b)) {
-		    VpSetInf(c, VpGetSign(a));
-		    goto Inf;
-		}
-		else {
-		    VpSetNaN(c);
-		    goto NaN;
-		}
-	      case OP_SW_MULT: /* * */
-		VpSetInf(c, VpGetSign(a)*VpGetSign(b));
-		goto Inf;
-	      case OP_SW_DIV: /* / */
-		VpSetNaN(c);
-		goto NaN;
-	    }
-	    VpSetNaN(c);
-	    goto NaN;
-	}
-	/* Inf op Finite */
-	switch(sw) {
-	  case OP_SW_ADD: /* + */
-	  case OP_SW_SUB: /* - */
-	    VpSetInf(c, VpGetSign(a));
-	    break;
-	  case OP_SW_MULT: /* * */
-	    if (VpIsZero(b)) {
-		VpSetNaN(c);
-		goto NaN;
-	    }
-	    VpSetInf(c, VpGetSign(a)*VpGetSign(b));
-	    break;
-	  case OP_SW_DIV: /* / */
-	    VpSetInf(c, VpGetSign(a)*VpGetSign(b));
-	}
-	goto Inf;
+        if (VpIsInf(b)) {
+            switch (sw) {
+                case OP_SW_ADD: /* + */
+                    if (VpGetSign(a) == VpGetSign(b)) {
+                        VpSetInf(c, VpGetSign(a));
+                        goto Inf;
+                    }
+                    else {
+                        VpSetNaN(c);
+                        goto NaN;
+                    }
+                case OP_SW_SUB: /* - */
+                    if (VpGetSign(a) != VpGetSign(b)) {
+                        VpSetInf(c, VpGetSign(a));
+                        goto Inf;
+                    }
+                    else {
+                        VpSetNaN(c);
+                        goto NaN;
+                    }
+                case OP_SW_MULT: /* * */
+                    VpSetInf(c, VpGetSign(a) * VpGetSign(b));
+                    goto Inf;
+                case OP_SW_DIV: /* / */
+                    VpSetNaN(c);
+                    goto NaN;
+            }
+            VpSetNaN(c);
+            goto NaN;
+        }
+        /* Inf op Finite */
+        switch (sw) {
+            case OP_SW_ADD: /* + */
+            case OP_SW_SUB: /* - */
+                VpSetInf(c, VpGetSign(a));
+                break;
+            case OP_SW_MULT: /* * */
+                if (VpIsZero(b)) {
+                    VpSetNaN(c);
+                    goto NaN;
+                }
+                VpSetInf(c, VpGetSign(a) * VpGetSign(b));
+                break;
+            case OP_SW_DIV: /* / */
+                VpSetInf(c, VpGetSign(a) * VpGetSign(b));
+        }
+        goto Inf;
     }
 
     if (VpIsInf(b)) {
-	switch(sw) {
-	  case OP_SW_ADD: /* + */
-	    VpSetInf(c, VpGetSign(b));
-	    break;
-	  case OP_SW_SUB: /* - */
-	    VpSetInf(c, -VpGetSign(b));
-	    break;
-	  case OP_SW_MULT: /* * */
-	    if (VpIsZero(a)) {
-		VpSetNaN(c);
-		goto NaN;
-	    }
-	    VpSetInf(c, VpGetSign(a)*VpGetSign(b));
-	    break;
-	  case OP_SW_DIV: /* / */
-	    VpSetZero(c, VpGetSign(a)*VpGetSign(b));
-	}
-	goto Inf;
+        switch (sw) {
+            case OP_SW_ADD: /* + */
+                VpSetInf(c, VpGetSign(b));
+                break;
+            case OP_SW_SUB: /* - */
+                VpSetInf(c, -VpGetSign(b));
+                break;
+            case OP_SW_MULT: /* * */
+                if (VpIsZero(a)) {
+                    VpSetNaN(c);
+                    goto NaN;
+                }
+                VpSetInf(c, VpGetSign(a) * VpGetSign(b));
+                break;
+            case OP_SW_DIV: /* / */
+                VpSetZero(c, VpGetSign(a) * VpGetSign(b));
+        }
+        goto Inf;
     }
     return 1; /* Results OK */
 
 Inf:
     if (VpIsPosInf(c)) {
-	return VpException(VP_EXCEPTION_INFINITY, "Computation results to 'Infinity'", 0);
+        return VpException(VP_EXCEPTION_INFINITY, "Computation results to 'Infinity'", 0);
     }
     else {
-	return VpException(VP_EXCEPTION_INFINITY, "Computation results to '-Infinity'", 0);
+        return VpException(VP_EXCEPTION_INFINITY, "Computation results to '-Infinity'", 0);
     }
 
 NaN:
@@ -5012,31 +5029,31 @@ NaN:
  *    returns number of chars needed to represent vp in specified format.
  */
 VP_EXPORT size_t
-VpNumOfChars(Real *vp,const char *pszFmt)
+VpNumOfChars(Real *vp, const char *pszFmt)
 {
-    SIGNED_VALUE  ex;
+    SIGNED_VALUE ex;
     size_t nc;
 
-    if (vp == NULL)   return BASE_FIG*2+6;
+    if (vp == NULL) return BASE_FIG * 2 + 6;
     if (!VpIsDef(vp)) return 32; /* not sure,may be OK */
 
-    switch(*pszFmt) {
-      case 'F':
-	nc = BASE_FIG*(vp->Prec + 1)+2;
-	ex = vp->exponent;
-	if (ex < 0) {
-	    nc += BASE_FIG*(size_t)(-ex);
-	}
-	else {
-	    if ((size_t)ex > vp->Prec) {
-		nc += BASE_FIG*((size_t)ex - vp->Prec);
-	    }
-	}
-	break;
-      case 'E':
-	/* fall through */
-      default:
-	nc = BASE_FIG*(vp->Prec + 2)+6; /* 3: sign + exponent chars */
+    switch (*pszFmt) {
+        case 'F':
+            nc = BASE_FIG * (vp->Prec + 1) + 2;
+            ex = vp->exponent;
+            if (ex < 0) {
+                nc += BASE_FIG * (size_t)(-ex);
+            }
+            else {
+                if ((size_t)ex > vp->Prec) {
+                    nc += BASE_FIG * ((size_t)ex - vp->Prec);
+                }
+            }
+            break;
+        case 'E':
+            /* fall through */
+        default:
+            nc = BASE_FIG * (vp->Prec + 2) + 6; /* 3: sign + exponent chars */
     }
     return nc;
 }
@@ -5067,7 +5084,7 @@ VpInit(DECDIG BaseVal)
     /* Const 0.5 */
     VpConstPt5 = NewOneNolimit(1, 1);
     VpConstPt5->exponent = 0;
-    VpConstPt5->frac[0] = 5*BASE1;
+    VpConstPt5->frac[0] = 5 * BASE1;
 
 #ifdef BIGDECIMAL_DEBUG
     gnAlloc = 0;
@@ -5075,10 +5092,10 @@ VpInit(DECDIG BaseVal)
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-        printf("VpInit: BaseVal = %"PRIuDECDIG"\n", BaseVal);
-        printf("\tBASE      = %"PRIuDECDIG"\n", BASE);
-        printf("\tHALF_BASE = %"PRIuDECDIG"\n", HALF_BASE);
-        printf("\tBASE1     = %"PRIuDECDIG"\n", BASE1);
+        printf("VpInit: BaseVal = %" PRIuDECDIG "\n", BaseVal);
+        printf("\tBASE      = %" PRIuDECDIG "\n", BASE);
+        printf("\tHALF_BASE = %" PRIuDECDIG "\n", HALF_BASE);
+        printf("\tBASE1     = %" PRIuDECDIG "\n", BASE1);
         printf("\tBASE_FIG  = %u\n", BASE_FIG);
         printf("\tBIGDECIMAL_DOUBLE_FIGURES = %d\n", BIGDECIMAL_DOUBLE_FIGURES);
     }
@@ -5098,25 +5115,25 @@ static int
 AddExponent(Real *a, SIGNED_VALUE n)
 {
     SIGNED_VALUE e = a->exponent;
-    SIGNED_VALUE m = e+n;
+    SIGNED_VALUE m = e + n;
     SIGNED_VALUE eb, mb;
     if (e > 0) {
-	if (n > 0) {
+        if (n > 0) {
             if (MUL_OVERFLOW_SIGNED_VALUE_P(m, (SIGNED_VALUE)BASE_FIG) ||
-                MUL_OVERFLOW_SIGNED_VALUE_P(e, (SIGNED_VALUE)BASE_FIG))
+              MUL_OVERFLOW_SIGNED_VALUE_P(e, (SIGNED_VALUE)BASE_FIG))
                 goto overflow;
-	    mb = m*(SIGNED_VALUE)BASE_FIG;
-	    eb = e*(SIGNED_VALUE)BASE_FIG;
-	    if (eb - mb > 0) goto overflow;
-	}
+            mb = m * (SIGNED_VALUE)BASE_FIG;
+            eb = e * (SIGNED_VALUE)BASE_FIG;
+            if (eb - mb > 0) goto overflow;
+        }
     }
     else if (n < 0) {
         if (MUL_OVERFLOW_SIGNED_VALUE_P(m, (SIGNED_VALUE)BASE_FIG) ||
-            MUL_OVERFLOW_SIGNED_VALUE_P(e, (SIGNED_VALUE)BASE_FIG))
+          MUL_OVERFLOW_SIGNED_VALUE_P(e, (SIGNED_VALUE)BASE_FIG))
             goto underflow;
-	mb = m*(SIGNED_VALUE)BASE_FIG;
-	eb = e*(SIGNED_VALUE)BASE_FIG;
-	if (mb - eb > 0) goto underflow;
+        mb = m * (SIGNED_VALUE)BASE_FIG;
+        eb = e * (SIGNED_VALUE)BASE_FIG;
+        if (mb - eb > 0) goto underflow;
     }
     a->exponent = m;
     return 1;
@@ -5139,10 +5156,10 @@ bigdecimal_parse_special_string(const char *str)
         size_t len;
         int sign;
     } table[] = {
-        { SZ_INF,  sizeof(SZ_INF)  - 1, VP_SIGN_POSITIVE_INFINITE },
+        { SZ_INF, sizeof(SZ_INF) - 1, VP_SIGN_POSITIVE_INFINITE },
         { SZ_PINF, sizeof(SZ_PINF) - 1, VP_SIGN_POSITIVE_INFINITE },
         { SZ_NINF, sizeof(SZ_NINF) - 1, VP_SIGN_NEGATIVE_INFINITE },
-        { SZ_NaN,  sizeof(SZ_NaN)  - 1, VP_SIGN_NaN               }
+        { SZ_NaN, sizeof(SZ_NaN) - 1, VP_SIGN_NaN }
     };
     static const size_t table_length = sizeof(table) / sizeof(table[0]);
     size_t i;
@@ -5159,17 +5176,18 @@ bigdecimal_parse_special_string(const char *str)
             Real *vp = rbd_allocate_struct(1);
             vp->MaxPrec = 1;
             switch (table[i].sign) {
-              default:
-                UNREACHABLE; break;
-              case VP_SIGN_POSITIVE_INFINITE:
-                VpSetPosInf(vp);
-                return vp;
-              case VP_SIGN_NEGATIVE_INFINITE:
-                VpSetNegInf(vp);
-                return vp;
-              case VP_SIGN_NaN:
-                VpSetNaN(vp);
-                return vp;
+                default:
+                    UNREACHABLE;
+                    break;
+                case VP_SIGN_POSITIVE_INFINITE:
+                    VpSetPosInf(vp);
+                    return vp;
+                case VP_SIGN_NEGATIVE_INFINITE:
+                    VpSetNegInf(vp);
+                    return vp;
+                case VP_SIGN_NaN:
+                    VpSetNaN(vp);
+                    return vp;
             }
         }
     }
@@ -5197,18 +5215,18 @@ VpAlloc(size_t mx, const char *szVal, int strict_p, int exc)
     size_t i, j, ni, ipf, nf, ipe, ne, dot_seen, exp_seen, nalloc;
     size_t len;
     char v, *psz;
-    int  sign=1;
+    int sign = 1;
     Real *vp = NULL;
     VALUE buf;
 
     if (szVal == NULL) {
-      return_zero:
+    return_zero:
         /* necessary to be able to store */
         /* at least mx digits. */
         /* szVal==NULL ==> allocate zero value. */
         vp = rbd_allocate_struct(mx);
-        vp->MaxPrec = rbd_calculate_internal_digits(mx, false);  /* Must false */
-        VpSetZero(vp, 1);    /* initialize vp to zero. */
+        vp->MaxPrec = rbd_calculate_internal_digits(mx, false); /* Must false */
+        VpSetZero(vp, 1); /* initialize vp to zero. */
         return vp;
     }
 
@@ -5247,7 +5265,7 @@ VpAlloc(size_t mx, const char *szVal, int strict_p, int exc)
     }
 
     /* Scanning: integer part */
-    ni  = 0; /* number of digits in the integer part */
+    ni = 0; /* number of digits in the integer part */
     while ((v = psz[i] = szVal[j]) != '\0') {
         if (!strict_p && ISSPACE(v)) {
             v = psz[i] = '\0';
@@ -5255,7 +5273,7 @@ VpAlloc(size_t mx, const char *szVal, int strict_p, int exc)
         }
         if (v == '_') {
             if (ni > 0) {
-                v = szVal[j+1];
+                v = szVal[j + 1];
                 if (v == '\0' || ISSPACE(v) || ISDIGIT(v)) {
                     ++j;
                     continue;
@@ -5276,8 +5294,8 @@ VpAlloc(size_t mx, const char *szVal, int strict_p, int exc)
     }
 
     /* Scanning: fractional part */
-    nf  = 0; /* number of digits in the fractional part */
-    ne  = 0; /* number of digits in the exponential part */
+    nf = 0; /* number of digits in the fractional part */
+    ne = 0; /* number of digits in the exponential part */
     ipf = 0; /* index of the beginning of the fractional part */
     ipe = 0; /* index of the beginning of the exponential part */
     dot_seen = 0;
@@ -5296,7 +5314,7 @@ VpAlloc(size_t mx, const char *szVal, int strict_p, int exc)
                     break;
                 }
                 if (v == '_') {
-                    if (nf > 0 && ISDIGIT(szVal[j+1])) {
+                    if (nf > 0 && ISDIGIT(szVal[j + 1])) {
                         ++j;
                         continue;
                     }
@@ -5321,8 +5339,10 @@ VpAlloc(size_t mx, const char *szVal, int strict_p, int exc)
             switch ((psz[i] = szVal[j])) {
                 case '\0':
                     break;
-                case 'e': case 'E':
-                case 'd': case 'D':
+                case 'e':
+                case 'E':
+                case 'd':
+                case 'D':
                     exp_seen = 1;
                     ++i;
                     ++j;
@@ -5338,7 +5358,7 @@ VpAlloc(size_t mx, const char *szVal, int strict_p, int exc)
                             break;
                         }
                         if (v == '_') {
-                            if (ne > 0 && ISDIGIT(szVal[j+1])) {
+                            if (ne > 0 && ISDIGIT(szVal[j + 1])) {
                                 ++j;
                                 continue;
                             }
@@ -5377,7 +5397,7 @@ VpAlloc(size_t mx, const char *szVal, int strict_p, int exc)
 
     if (strict_p && (((ni == 0 || dot_seen) && nf == 0) || (exp_seen && ne == 0))) {
         VALUE str;
-      invalid_value:
+    invalid_value:
         if (!strict_p) {
             goto return_zero;
         }
@@ -5385,16 +5405,16 @@ VpAlloc(size_t mx, const char *szVal, int strict_p, int exc)
             return NULL;
         }
         str = rb_str_new2(orig_szVal);
-        rb_raise(rb_eArgError, "invalid value for BigDecimal(): \"%"PRIsVALUE"\"", str);
+        rb_raise(rb_eArgError, "invalid value for BigDecimal(): \"%" PRIsVALUE "\"", str);
     }
 
-    nalloc = (ni + nf + BASE_FIG - 1) / BASE_FIG + 1;    /* set effective allocation  */
+    nalloc = (ni + nf + BASE_FIG - 1) / BASE_FIG + 1; /* set effective allocation  */
     /* units for szVal[]  */
     if (len == 0) len = 1;
     nalloc = Max(nalloc, len);
     len = nalloc;
     vp = rbd_allocate_struct(len);
-    vp->MaxPrec = len;        /* set max precision */
+    vp->MaxPrec = len; /* set max precision */
     VpSetZero(vp, sign);
     VpCtoV(vp, psz, ni, psz + ipf, nf, psz + ipe, ne);
     rb_str_resize(buf, 0);
@@ -5418,36 +5438,36 @@ VpAsgn(Real *c, Real *a, int isw)
 {
     size_t n;
     if (VpIsNaN(a)) {
-	VpSetNaN(c);
-	return 0;
+        VpSetNaN(c);
+        return 0;
     }
     if (VpIsInf(a)) {
-	VpSetInf(c, isw * VpGetSign(a));
-	return 0;
+        VpSetInf(c, isw * VpGetSign(a));
+        return 0;
     }
 
     /* check if the RHS is zero */
     if (!VpIsZero(a)) {
-	c->exponent = a->exponent;    /* store  exponent */
-	VpSetSign(c, isw * VpGetSign(a));    /* set sign */
-	n = (a->Prec < c->MaxPrec) ? (a->Prec) : (c->MaxPrec);
-	c->Prec = n;
+        c->exponent = a->exponent; /* store  exponent */
+        VpSetSign(c, isw * VpGetSign(a)); /* set sign */
+        n = (a->Prec < c->MaxPrec) ? (a->Prec) : (c->MaxPrec);
+        c->Prec = n;
         memcpy(c->frac, a->frac, n * sizeof(DECDIG));
-	/* Needs round ? */
-	if (isw != 10) {
-	    /* Not in ActiveRound */
-	    if(c->Prec < a->Prec) {
-		VpInternalRound(c, n, (n>0) ? a->frac[n-1] : 0, a->frac[n]);
-	    }
-	    else {
-		VpLimitRound(c,0);
-	    }
-	}
+        /* Needs round ? */
+        if (isw != 10) {
+            /* Not in ActiveRound */
+            if (c->Prec < a->Prec) {
+                VpInternalRound(c, n, (n > 0) ? a->frac[n - 1] : 0, a->frac[n]);
+            }
+            else {
+                VpLimitRound(c, 0);
+            }
+        }
     }
     else {
-	/* The value of 'a' is zero.  */
-	VpSetZero(c, isw * VpGetSign(a));
-	return 1;
+        /* The value of 'a' is zero.  */
+        VpSetZero(c, isw * VpGetSign(a));
+        return 1;
     }
     return c->Prec * BASE_FIG;
 }
@@ -5467,9 +5487,9 @@ VpAddSub(Real *c, Real *a, Real *b, int operation)
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpAddSub(enter) a=% \n", a);
-	VPrint(stdout, "     b=% \n", b);
-	printf(" operation=%d\n", operation);
+        VPrint(stdout, "VpAddSub(enter) a=% \n", a);
+        VPrint(stdout, "     b=% \n", b);
+        printf(" operation=%d\n", operation);
     }
 #endif /* BIGDECIMAL_DEBUG */
 
@@ -5477,80 +5497,82 @@ VpAddSub(Real *c, Real *a, Real *b, int operation)
 
     /* check if a or b is zero  */
     if (VpIsZero(a)) {
-	/* a is zero,then assign b to c */
-	if (!VpIsZero(b)) {
-	    VpAsgn(c, b, operation);
-	}
-	else {
-	    /* Both a and b are zero. */
-	    if (VpGetSign(a) < 0 && operation * VpGetSign(b) < 0) {
-		/* -0 -0 */
-		VpSetZero(c, -1);
-	    }
-	    else {
-		VpSetZero(c, 1);
-	    }
-	    return 1; /* 0: 1 significant digits */
-	}
-	return c->Prec * BASE_FIG;
+        /* a is zero,then assign b to c */
+        if (!VpIsZero(b)) {
+            VpAsgn(c, b, operation);
+        }
+        else {
+            /* Both a and b are zero. */
+            if (VpGetSign(a) < 0 && operation * VpGetSign(b) < 0) {
+                /* -0 -0 */
+                VpSetZero(c, -1);
+            }
+            else {
+                VpSetZero(c, 1);
+            }
+            return 1; /* 0: 1 significant digits */
+        }
+        return c->Prec * BASE_FIG;
     }
     if (VpIsZero(b)) {
-	/* b is zero,then assign a to c. */
-	VpAsgn(c, a, 1);
-	return c->Prec*BASE_FIG;
+        /* b is zero,then assign a to c. */
+        VpAsgn(c, a, 1);
+        return c->Prec * BASE_FIG;
     }
 
-    if (operation < 0) sw = -1;
-    else               sw =  1;
+    if (operation < 0)
+        sw = -1;
+    else
+        sw = 1;
 
     /* compare absolute value. As a result,|a_ptr|>=|b_ptr| */
     if (a->exponent > b->exponent) {
-	a_ptr = a;
-	b_ptr = b;
-    }         /* |a|>|b| */
+        a_ptr = a;
+        b_ptr = b;
+    } /* |a|>|b| */
     else if (a->exponent < b->exponent) {
-	a_ptr = b;
-	b_ptr = a;
-    }                /* |a|<|b| */
+        a_ptr = b;
+        b_ptr = a;
+    } /* |a|<|b| */
     else {
-	/* Exponent part of a and b is the same,then compare fraction */
-	/* part */
-	na = a->Prec;
-	nb = b->Prec;
-	n  = Min(na, nb);
-	for (i=0; i < n; ++i) {
-	    if (a->frac[i] > b->frac[i]) {
-		a_ptr = a;
-		b_ptr = b;
-		goto end_if;
-	    }
-	    else if (a->frac[i] < b->frac[i]) {
-		a_ptr = b;
-		b_ptr = a;
-		goto end_if;
-	    }
-	}
-	if (na > nb) {
-	    a_ptr = a;
-	    b_ptr = b;
-	    goto end_if;
-	}
-	else if (na < nb) {
-	    a_ptr = b;
-	    b_ptr = a;
-	    goto end_if;
-	}
-	/* |a| == |b| */
-	if (VpGetSign(a) + sw *VpGetSign(b) == 0) {
-	    VpSetZero(c, 1);        /* abs(a)=abs(b) and operation = '-'  */
-	    return c->Prec * BASE_FIG;
-	}
-	a_ptr = a;
-	b_ptr = b;
+        /* Exponent part of a and b is the same,then compare fraction */
+        /* part */
+        na = a->Prec;
+        nb = b->Prec;
+        n = Min(na, nb);
+        for (i = 0; i < n; ++i) {
+            if (a->frac[i] > b->frac[i]) {
+                a_ptr = a;
+                b_ptr = b;
+                goto end_if;
+            }
+            else if (a->frac[i] < b->frac[i]) {
+                a_ptr = b;
+                b_ptr = a;
+                goto end_if;
+            }
+        }
+        if (na > nb) {
+            a_ptr = a;
+            b_ptr = b;
+            goto end_if;
+        }
+        else if (na < nb) {
+            a_ptr = b;
+            b_ptr = a;
+            goto end_if;
+        }
+        /* |a| == |b| */
+        if (VpGetSign(a) + sw * VpGetSign(b) == 0) {
+            VpSetZero(c, 1); /* abs(a)=abs(b) and operation = '-'  */
+            return c->Prec * BASE_FIG;
+        }
+        a_ptr = a;
+        b_ptr = b;
     }
 
 end_if:
-    isw = VpGetSign(a) + sw *VpGetSign(b);
+    isw = VpGetSign(a) + sw * VpGetSign(b);
     /*
      *  isw = 0 ...( 1)+(-1),( 1)-( 1),(-1)+(1),(-1)-(-1)
      *      = 2 ...( 1)+( 1),( 1)-(-1)
@@ -5558,29 +5580,29 @@ end_if:
      *   If isw==0, then c =(Sign a_ptr)(|a_ptr|-|b_ptr|)
      *              else c =(Sign ofisw)(|a_ptr|+|b_ptr|)
      */
-    if (isw) {            /* addition */
-	VpSetSign(c, 1);
-	mrv = VpAddAbs(a_ptr, b_ptr, c);
-	VpSetSign(c, isw / 2);
+    if (isw) { /* addition */
+        VpSetSign(c, 1);
+        mrv = VpAddAbs(a_ptr, b_ptr, c);
+        VpSetSign(c, isw / 2);
     }
-    else {            /* subtraction */
-	VpSetSign(c, 1);
-	mrv = VpSubAbs(a_ptr, b_ptr, c);
-	if (a_ptr == a) {
-	    VpSetSign(c,VpGetSign(a));
-	}
-	else {
-	    VpSetSign(c, VpGetSign(a_ptr) * sw);
-	}
+    else { /* subtraction */
+        VpSetSign(c, 1);
+        mrv = VpSubAbs(a_ptr, b_ptr, c);
+        if (a_ptr == a) {
+            VpSetSign(c, VpGetSign(a));
+        }
+        else {
+            VpSetSign(c, VpGetSign(a_ptr) * sw);
+        }
     }
-    VpInternalRound(c, 0, (c->Prec > 0) ? c->frac[c->Prec-1] : 0, mrv);
+    VpInternalRound(c, 0, (c->Prec > 0) ? c->frac[c->Prec - 1] : 0, mrv);
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpAddSub(result) c=% \n", c);
-	VPrint(stdout, "     a=% \n", a);
-	VPrint(stdout, "     b=% \n", b);
-	printf(" operation=%d\n", operation);
+        VPrint(stdout, "VpAddSub(result) c=% \n", c);
+        VPrint(stdout, "     a=% \n", a);
+        VPrint(stdout, "     b=% \n", b);
+        printf(" operation=%d\n", operation);
     }
 #endif /* BIGDECIMAL_DEBUG */
     return c->Prec * BASE_FIG;
@@ -5605,8 +5627,8 @@ VpAddAbs(Real *a, Real *b, Real *c)
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpAddAbs called: a = %\n", a);
-	VPrint(stdout, "     b = %\n", b);
+        VPrint(stdout, "VpAddAbs called: a = %\n", a);
+        VPrint(stdout, "     b = %\n", b);
     }
 #endif /* BIGDECIMAL_DEBUG */
 
@@ -5623,48 +5645,48 @@ VpAddAbs(Real *a, Real *b, Real *c)
     /* Just assign the last few digits of b to c because a has no  */
     /* corresponding digits to be added. */
     if (b_pos > 0) {
-	while (b_pos > 0 && b_pos + word_shift > a_pos) {
-	    c->frac[--c_pos] = b->frac[--b_pos];
-	}
+        while (b_pos > 0 && b_pos + word_shift > a_pos) {
+            c->frac[--c_pos] = b->frac[--b_pos];
+        }
     }
     if (b_pos == 0 && word_shift > a_pos) {
-	while (word_shift-- > a_pos) {
-	    c->frac[--c_pos] = 0;
-	}
+        while (word_shift-- > a_pos) {
+            c->frac[--c_pos] = 0;
+        }
     }
 
     /* Just assign the last few digits of a to c because b has no */
     /* corresponding digits to be added. */
     b_pos_with_word_shift = b_pos + word_shift;
     while (a_pos > b_pos_with_word_shift) {
-	c->frac[--c_pos] = a->frac[--a_pos];
+        c->frac[--c_pos] = a->frac[--a_pos];
     }
-    carry = 0;    /* set first carry be zero */
+    carry = 0; /* set first carry be zero */
 
     /* Now perform addition until every digits of b will be */
     /* exhausted. */
     while (b_pos > 0) {
-	c->frac[--c_pos] = a->frac[--a_pos] + b->frac[--b_pos] + carry;
-	if (c->frac[c_pos] >= BASE) {
-	    c->frac[c_pos] -= BASE;
-	    carry = 1;
-	}
-	else {
-	    carry = 0;
-	}
+        c->frac[--c_pos] = a->frac[--a_pos] + b->frac[--b_pos] + carry;
+        if (c->frac[c_pos] >= BASE) {
+            c->frac[c_pos] -= BASE;
+            carry = 1;
+        }
+        else {
+            carry = 0;
+        }
     }
 
     /* Just assign the first few digits of a with considering */
     /* the carry obtained so far because b has been exhausted. */
     while (a_pos > 0) {
-	c->frac[--c_pos] = a->frac[--a_pos] + carry;
-	if (c->frac[c_pos] >= BASE) {
-	    c->frac[c_pos] -= BASE;
-	    carry = 1;
-	}
-	else {
-	    carry = 0;
-	}
+        c->frac[--c_pos] = a->frac[--a_pos] + carry;
+        if (c->frac[c_pos] >= BASE) {
+            c->frac[c_pos] -= BASE;
+            carry = 1;
+        }
+        else {
+            carry = 0;
+        }
     }
     if (c_pos) c->frac[c_pos - 1] += carry;
     goto Exit;
@@ -5677,7 +5699,7 @@ Exit:
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpAddAbs exit: c=% \n", c);
+        VPrint(stdout, "VpAddAbs exit: c=% \n", c);
     }
 #endif /* BIGDECIMAL_DEBUG */
     return mrv;
@@ -5700,8 +5722,8 @@ VpSubAbs(Real *a, Real *b, Real *c)
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpSubAbs called: a = %\n", a);
-	VPrint(stdout, "     b = %\n", b);
+        VPrint(stdout, "VpSubAbs called: a = %\n", a);
+        VPrint(stdout, "     b = %\n", b);
     }
 #endif /* BIGDECIMAL_DEBUG */
 
@@ -5713,64 +5735,64 @@ VpSubAbs(Real *a, Real *b, Real *c)
     if (b_pos == (size_t)-1L) goto Assign_a;
 
     if (av >= bv) {
-	mrv = av - bv;
-	borrow = 0;
+        mrv = av - bv;
+        borrow = 0;
     }
     else {
-	mrv    = 0;
-	borrow = 1;
+        mrv = 0;
+        borrow = 1;
     }
 
     /* Just assign the values which are the BASE subtracted by   */
     /* each of the last few digits of the b because the a has no */
     /* corresponding digits to be subtracted. */
     if (b_pos + word_shift > a_pos) {
-	while (b_pos > 0 && b_pos + word_shift > a_pos) {
-	    c->frac[--c_pos] = BASE - b->frac[--b_pos] - borrow;
-	    borrow = 1;
-	}
-	if (b_pos == 0) {
-	    while (word_shift > a_pos) {
-		--word_shift;
-		c->frac[--c_pos] = BASE - borrow;
-		borrow = 1;
-	    }
-	}
+        while (b_pos > 0 && b_pos + word_shift > a_pos) {
+            c->frac[--c_pos] = BASE - b->frac[--b_pos] - borrow;
+            borrow = 1;
+        }
+        if (b_pos == 0) {
+            while (word_shift > a_pos) {
+                --word_shift;
+                c->frac[--c_pos] = BASE - borrow;
+                borrow = 1;
+            }
+        }
     }
     /* Just assign the last few digits of a to c because b has no */
     /* corresponding digits to subtract. */
 
     b_pos_with_word_shift = b_pos + word_shift;
     while (a_pos > b_pos_with_word_shift) {
-	c->frac[--c_pos] = a->frac[--a_pos];
+        c->frac[--c_pos] = a->frac[--a_pos];
     }
 
     /* Now perform subtraction until every digits of b will be */
     /* exhausted. */
     while (b_pos > 0) {
-	--c_pos;
-	if (a->frac[--a_pos] < b->frac[--b_pos] + borrow) {
-	    c->frac[c_pos] = BASE + a->frac[a_pos] - b->frac[b_pos] - borrow;
-	    borrow = 1;
-	}
-	else {
-	    c->frac[c_pos] = a->frac[a_pos] - b->frac[b_pos] - borrow;
-	    borrow = 0;
-	}
+        --c_pos;
+        if (a->frac[--a_pos] < b->frac[--b_pos] + borrow) {
+            c->frac[c_pos] = BASE + a->frac[a_pos] - b->frac[b_pos] - borrow;
+            borrow = 1;
+        }
+        else {
+            c->frac[c_pos] = a->frac[a_pos] - b->frac[b_pos] - borrow;
+            borrow = 0;
+        }
     }
 
     /* Just assign the first few digits of a with considering */
     /* the borrow obtained so far because b has been exhausted. */
     while (a_pos > 0) {
-	--c_pos;
-	if (a->frac[--a_pos] < borrow) {
-	    c->frac[c_pos] = BASE + a->frac[a_pos] - borrow;
-	    borrow = 1;
-	}
-	else {
-	    c->frac[c_pos] = a->frac[a_pos] - borrow;
-	    borrow = 0;
-	}
+        --c_pos;
+        if (a->frac[--a_pos] < borrow) {
+            c->frac[c_pos] = BASE + a->frac[a_pos] - borrow;
+            borrow = 1;
+        }
+        else {
+            c->frac[c_pos] = a->frac[a_pos] - borrow;
+            borrow = 0;
+        }
     }
     if (c_pos) c->frac[c_pos - 1] -= borrow;
     goto Exit;
@@ -5782,7 +5804,7 @@ Assign_a:
 Exit:
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpSubAbs exit: c=% \n", c);
+        VPrint(stdout, "VpSubAbs exit: c=% \n", c);
     }
 #endif /* BIGDECIMAL_DEBUG */
     return mrv;
@@ -5817,13 +5839,13 @@ VpSetPTR(Real *a, Real *b, Real *c, size_t *a_pos, size_t *b_pos, size_t *c_pos,
     word_shift = (a->exponent - b->exponent);
     left_word = b->Prec + word_shift;
     right_word = Max(a->Prec, left_word);
-    left_word = c->MaxPrec - 1;    /* -1 ... prepare for round up */
+    left_word = c->MaxPrec - 1; /* -1 ... prepare for round up */
 
     /*
      * check if 'round' is needed.
      */
-    if (right_word > left_word) {    /* round ? */
-	/*---------------------------------
+    if (right_word > left_word) { /* round ? */
+        /*---------------------------------
 	 *  Actual size of a = xxxxxxAxx
 	 *  Actual size of b = xxxBxxxxx
 	 *  Max. size of   c = xxxxxx
@@ -5832,64 +5854,64 @@ VpSetPTR(Real *a, Real *b, Real *c, size_t *a_pos, size_t *b_pos, size_t *c_pos,
 	 *  right_word       =   |
 	 *  a_pos            =    |
 	 */
-	*c_pos = right_word = left_word + 1;    /* Set resulting precision */
-	/* be equal to that of c */
-	if (a->Prec >= c->MaxPrec) {
-	    /*
+        *c_pos = right_word = left_word + 1; /* Set resulting precision */
+        /* be equal to that of c */
+        if (a->Prec >= c->MaxPrec) {
+            /*
 	     *   a =  xxxxxxAxxx
 	     *   c =  xxxxxx
 	     *   a_pos =    |
 	     */
-	    *a_pos = left_word;
-	    if (*a_pos <= round_limit) {
-		*av = a->frac[*a_pos];    /* av is 'A' shown in above. */
-	    }
-	}
-	else {
-	    /*
+            *a_pos = left_word;
+            if (*a_pos <= round_limit) {
+                *av = a->frac[*a_pos]; /* av is 'A' shown in above. */
+            }
+        }
+        else {
+            /*
 	     *   a = xxxxxxx
 	     *   c = xxxxxxxxxx
 	     *  a_pos =     |
 	     */
-	    *a_pos = a->Prec;
-	}
-	if (b->Prec + word_shift >= c->MaxPrec) {
-	    /*
+            *a_pos = a->Prec;
+        }
+        if (b->Prec + word_shift >= c->MaxPrec) {
+            /*
 	     *   a = xxxxxxxxx
 	     *   b =  xxxxxxxBxxx
 	     *   c = xxxxxxxxxxx
 	     *  b_pos =   |
 	     */
-	    if (c->MaxPrec >= word_shift + 1) {
-		*b_pos = c->MaxPrec - word_shift - 1;
-		if (*b_pos + word_shift <= round_limit) {
-		    *bv = b->frac[*b_pos];
-		}
-	    }
-	    else {
-		*b_pos = -1L;
-	    }
-	}
-	else {
-	    /*
+            if (c->MaxPrec >= word_shift + 1) {
+                *b_pos = c->MaxPrec - word_shift - 1;
+                if (*b_pos + word_shift <= round_limit) {
+                    *bv = b->frac[*b_pos];
+                }
+            }
+            else {
+                *b_pos = -1L;
+            }
+        }
+        else {
+            /*
 	     *   a = xxxxxxxxxxxxxxxx
 	     *   b =  xxxxxx
 	     *   c = xxxxxxxxxxxxx
 	     *  b_pos =     |
 	     */
-	    *b_pos = b->Prec;
-	}
+            *b_pos = b->Prec;
+        }
     }
-    else {            /* The MaxPrec of c - 1 > The Prec of a + b  */
-	/*
+    else { /* The MaxPrec of c - 1 > The Prec of a + b  */
+        /*
 	 *    a =   xxxxxxx
 	 *    b =   xxxxxx
 	 *    c = xxxxxxxxxxx
 	 *   c_pos =   |
 	 */
-	*b_pos = b->Prec;
-	*a_pos = a->Prec;
-	*c_pos = right_word + 1;
+        *b_pos = b->Prec;
+        *a_pos = a->Prec;
+        *c_pos = right_word + 1;
     }
     c->Prec = *c_pos;
     c->exponent = a->exponent;
@@ -5924,32 +5946,32 @@ VpMult(Real *c, Real *a, Real *b)
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpMult(Enter): a=% \n", a);
-	VPrint(stdout, "      b=% \n", b);
+        VPrint(stdout, "VpMult(Enter): a=% \n", a);
+        VPrint(stdout, "      b=% \n", b);
     }
 #endif /* BIGDECIMAL_DEBUG */
 
     if (!VpIsDefOP(c, a, b, OP_SW_MULT)) return 0; /* No significant digit */
 
     if (VpIsZero(a) || VpIsZero(b)) {
-	/* at least a or b is zero */
-	VpSetZero(c, VpGetSign(a) * VpGetSign(b));
-	return 1; /* 0: 1 significant digit */
+        /* at least a or b is zero */
+        VpSetZero(c, VpGetSign(a) * VpGetSign(b));
+        return 1; /* 0: 1 significant digit */
     }
 
     if (VpIsOne(a)) {
-	VpAsgn(c, b, VpGetSign(a));
-	goto Exit;
+        VpAsgn(c, b, VpGetSign(a));
+        goto Exit;
     }
     if (VpIsOne(b)) {
-	VpAsgn(c, a, VpGetSign(b));
-	goto Exit;
+        VpAsgn(c, a, VpGetSign(b));
+        goto Exit;
     }
     if (b->Prec > a->Prec) {
-	/* Adjust so that digits(a)>digits(b) */
-	w = a;
-	a = b;
-	b = w;
+        /* Adjust so that digits(a)>digits(b) */
+        w = a;
+        a = b;
+        b = w;
     }
     w = NULL;
     MxIndA = a->Prec - 1;
@@ -5957,42 +5979,42 @@ VpMult(Real *c, Real *a, Real *b)
     MxIndC = c->MaxPrec - 1;
     MxIndAB = a->Prec + b->Prec - 1;
 
-    if (MxIndC < MxIndAB) {    /* The Max. prec. of c < Prec(a)+Prec(b) */
-	w = c;
+    if (MxIndC < MxIndAB) { /* The Max. prec. of c < Prec(a)+Prec(b) */
+        w = c;
         c = NewZeroNolimit(1, (size_t)((MxIndAB + 1) * BASE_FIG));
-	MxIndC = MxIndAB;
+        MxIndC = MxIndAB;
     }
 
     /* set LHSV c info */
 
-    c->exponent = a->exponent;    /* set exponent */
+    c->exponent = a->exponent; /* set exponent */
     if (!AddExponent(c, b->exponent)) {
         if (w) rbd_free_struct(c);
         return 0;
     }
-    VpSetSign(c, VpGetSign(a) * VpGetSign(b));    /* set sign  */
+    VpSetSign(c, VpGetSign(a) * VpGetSign(b)); /* set sign  */
     carry = 0;
     nc = ind_c = MxIndAB;
-    memset(c->frac, 0, (nc + 1) * sizeof(DECDIG));        /* Initialize c  */
-    c->Prec = nc + 1;        /* set precision */
+    memset(c->frac, 0, (nc + 1) * sizeof(DECDIG)); /* Initialize c  */
+    c->Prec = nc + 1; /* set precision */
     for (nc = 0; nc < MxIndAB; ++nc, --ind_c) {
-	if (nc < MxIndB) {    /* The left triangle of the Fig. */
-	    ind_as = MxIndA - nc;
-	    ind_ae = MxIndA;
-	    ind_bs = MxIndB;
-	}
-	else if (nc <= MxIndA) {    /* The middle rectangular of the Fig. */
-	    ind_as = MxIndA - nc;
-	    ind_ae = MxIndA - (nc - MxIndB);
-	    ind_bs = MxIndB;
-	}
-	else /* if (nc > MxIndA) */ {    /*  The right triangle of the Fig. */
-	    ind_as = 0;
-	    ind_ae = MxIndAB - nc - 1;
-	    ind_bs = MxIndB - (nc - MxIndA);
-	}
+        if (nc < MxIndB) { /* The left triangle of the Fig. */
+            ind_as = MxIndA - nc;
+            ind_ae = MxIndA;
+            ind_bs = MxIndB;
+        }
+        else if (nc <= MxIndA) { /* The middle rectangular of the Fig. */
+            ind_as = MxIndA - nc;
+            ind_ae = MxIndA - (nc - MxIndB);
+            ind_bs = MxIndB;
+        }
+        else /* if (nc > MxIndA) */ { /*  The right triangle of the Fig. */
+            ind_as = 0;
+            ind_ae = MxIndAB - nc - 1;
+            ind_bs = MxIndB - (nc - MxIndA);
+        }
 
-	for (i = ind_as; i <= ind_ae; ++i) {
+        for (i = ind_as; i <= ind_ae; ++i) {
             s = (DECDIG_DBL)a->frac[i] * b->frac[ind_bs--];
             carry = (DECDIG)(s / BASE);
             s -= (DECDIG_DBL)carry * BASE;
@@ -6002,40 +6024,40 @@ VpMult(Real *c, Real *a, Real *b)
                 carry += (DECDIG)s;
                 c->frac[ind_c] -= (DECDIG)(s * BASE);
             }
-	    if (carry) {
-		ii = ind_c;
-		while (ii-- > 0) {
-		    c->frac[ii] += carry;
-		    if (c->frac[ii] >= BASE) {
-			carry = c->frac[ii] / BASE;
-			c->frac[ii] -= (carry * BASE);
-		    }
-		    else {
-			break;
-		    }
-		}
-	    }
-	}
+            if (carry) {
+                ii = ind_c;
+                while (ii-- > 0) {
+                    c->frac[ii] += carry;
+                    if (c->frac[ii] >= BASE) {
+                        carry = c->frac[ii] / BASE;
+                        c->frac[ii] -= (carry * BASE);
+                    }
+                    else {
+                        break;
+                    }
+                }
+            }
+        }
     }
-    if (w != NULL) {        /* free work variable */
+    if (w != NULL) { /* free work variable */
         VpNmlz(c);
         VpAsgn(w, c, 1);
         rbd_free_struct(c);
         c = w;
     }
     else {
-	VpLimitRound(c,0);
+        VpLimitRound(c, 0);
     }
 
 Exit:
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpMult(c=a*b): c=% \n", c);
-	VPrint(stdout, "      a=% \n", a);
-	VPrint(stdout, "      b=% \n", b);
+        VPrint(stdout, "VpMult(c=a*b): c=% \n", c);
+        VPrint(stdout, "      a=% \n", a);
+        VPrint(stdout, "      b=% \n", b);
     }
 #endif /*BIGDECIMAL_DEBUG */
-    return c->Prec*BASE_FIG;
+    return c->Prec * BASE_FIG;
 }
 
 /*
@@ -6053,32 +6075,32 @@ VpDivd(Real *c, Real *r, Real *a, Real *b)
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, " VpDivd(c=a/b)  a=% \n", a);
-	VPrint(stdout, "    b=% \n", b);
+        VPrint(stdout, " VpDivd(c=a/b)  a=% \n", a);
+        VPrint(stdout, "    b=% \n", b);
     }
 #endif /*BIGDECIMAL_DEBUG */
 
     VpSetNaN(r);
     if (!VpIsDefOP(c, a, b, OP_SW_DIV)) goto Exit;
     if (VpIsZero(a) && VpIsZero(b)) {
-	VpSetNaN(c);
-	return VpException(VP_EXCEPTION_NaN, "Computation results to 'NaN'", 0);
+        VpSetNaN(c);
+        return VpException(VP_EXCEPTION_NaN, "Computation results to 'NaN'", 0);
     }
     if (VpIsZero(b)) {
-	VpSetInf(c, VpGetSign(a) * VpGetSign(b));
-	return VpException(VP_EXCEPTION_ZERODIVIDE, "Divide by zero", 0);
+        VpSetInf(c, VpGetSign(a) * VpGetSign(b));
+        return VpException(VP_EXCEPTION_ZERODIVIDE, "Divide by zero", 0);
     }
     if (VpIsZero(a)) {
-	/* numerator a is zero  */
-	VpSetZero(c, VpGetSign(a) * VpGetSign(b));
-	VpSetZero(r, VpGetSign(a) * VpGetSign(b));
-	goto Exit;
+        /* numerator a is zero  */
+        VpSetZero(c, VpGetSign(a) * VpGetSign(b));
+        VpSetZero(r, VpGetSign(a) * VpGetSign(b));
+        goto Exit;
     }
     if (VpIsOne(b)) {
-	/* divide by one  */
-	VpAsgn(c, a, VpGetSign(b));
-	VpSetZero(r, VpGetSign(a));
-	goto Exit;
+        /* divide by one  */
+        VpAsgn(c, a, VpGetSign(b));
+        VpSetZero(r, VpGetSign(a));
+        goto Exit;
     }
 
     word_a = a->Prec;
@@ -6091,8 +6113,8 @@ VpDivd(Real *c, Real *r, Real *a, Real *b)
     ind_r = 1;
     r->frac[0] = 0;
     while (ind_r <= word_a) {
-	r->frac[ind_r] = a->frac[ind_r - 1];
-	++ind_r;
+        r->frac[ind_r] = a->frac[ind_r - 1];
+        ++ind_r;
     }
     while (ind_r < word_r) r->frac[ind_r++] = 0;
 
@@ -6102,116 +6124,117 @@ VpDivd(Real *c, Real *r, Real *a, Real *b)
     /* initial procedure */
     b1 = b1p1 = b->frac[0];
     if (b->Prec <= 1) {
-	b1b2p1 = b1b2 = b1p1 * BASE;
+        b1b2p1 = b1b2 = b1p1 * BASE;
     }
     else {
-	b1p1 = b1 + 1;
-	b1b2p1 = b1b2 = b1 * BASE + b->frac[1];
-	if (b->Prec > 2) ++b1b2p1;
+        b1p1 = b1 + 1;
+        b1b2p1 = b1b2 = b1 * BASE + b->frac[1];
+        if (b->Prec > 2) ++b1b2p1;
     }
 
     /* */
     /* loop start */
     ind_c = word_r - 1;
-    nLoop = Min(word_c,ind_c);
+    nLoop = Min(word_c, ind_c);
     ind_c = 1;
     while (ind_c < nLoop) {
-	if (r->frac[ind_c] == 0) {
-	    ++ind_c;
-	    continue;
-	}
+        if (r->frac[ind_c] == 0) {
+            ++ind_c;
+            continue;
+        }
         r1r2 = (DECDIG_DBL)r->frac[ind_c] * BASE + r->frac[ind_c + 1];
-	if (r1r2 == b1b2) {
-	    /* The first two word digits is the same */
-	    ind_b = 2;
-	    ind_a = ind_c + 2;
-	    while (ind_b < word_b) {
-		if (r->frac[ind_a] < b->frac[ind_b]) goto div_b1p1;
-		if (r->frac[ind_a] > b->frac[ind_b]) break;
-		++ind_a;
-		++ind_b;
-	    }
-	    /* The first few word digits of r and b is the same and */
-	    /* the first different word digit of w is greater than that */
-	    /* of b, so quotient is 1 and just subtract b from r. */
-	    borrow = 0;        /* quotient=1, then just r-b */
-	    ind_b = b->Prec - 1;
-	    ind_r = ind_c + ind_b;
-	    if (ind_r >= word_r) goto space_error;
-	    n = ind_b;
-	    for (i = 0; i <= n; ++i) {
-		if (r->frac[ind_r] < b->frac[ind_b] + borrow) {
-		    r->frac[ind_r] += (BASE - (b->frac[ind_b] + borrow));
-		    borrow = 1;
-		}
-		else {
-		    r->frac[ind_r] = r->frac[ind_r] - b->frac[ind_b] - borrow;
-		    borrow = 0;
-		}
-		--ind_r;
-		--ind_b;
-	    }
-	    ++c->frac[ind_c];
-	    goto carry;
-	}
-	/* The first two word digits is not the same, */
-	/* then compare magnitude, and divide actually. */
-	if (r1r2 >= b1b2p1) {
-            q = r1r2 / b1b2p1;  /* q == (DECDIG)q  */
+        if (r1r2 == b1b2) {
+            /* The first two word digits is the same */
+            ind_b = 2;
+            ind_a = ind_c + 2;
+            while (ind_b < word_b) {
+                if (r->frac[ind_a] < b->frac[ind_b]) goto div_b1p1;
+                if (r->frac[ind_a] > b->frac[ind_b]) break;
+                ++ind_a;
+                ++ind_b;
+            }
+            /* The first few word digits of r and b is the same and */
+            /* the first different word digit of w is greater than that */
+            /* of b, so quotient is 1 and just subtract b from r. */
+            borrow = 0; /* quotient=1, then just r-b */
+            ind_b = b->Prec - 1;
+            ind_r = ind_c + ind_b;
+            if (ind_r >= word_r) goto space_error;
+            n = ind_b;
+            for (i = 0; i <= n; ++i) {
+                if (r->frac[ind_r] < b->frac[ind_b] + borrow) {
+                    r->frac[ind_r] += (BASE - (b->frac[ind_b] + borrow));
+                    borrow = 1;
+                }
+                else {
+                    r->frac[ind_r] = r->frac[ind_r] - b->frac[ind_b] - borrow;
+                    borrow = 0;
+                }
+                --ind_r;
+                --ind_b;
+            }
+            ++c->frac[ind_c];
+            goto carry;
+        }
+        /* The first two word digits is not the same, */
+        /* then compare magnitude, and divide actually. */
+        if (r1r2 >= b1b2p1) {
+            q = r1r2 / b1b2p1; /* q == (DECDIG)q  */
             c->frac[ind_c] += (DECDIG)q;
             ind_r = b->Prec + ind_c - 1;
             goto sub_mult;
-	}
+        }
 
-div_b1p1:
+    div_b1p1:
         if (ind_c + 1 >= word_c) goto out_side;
-        q = r1r2 / b1p1;  /* q == (DECDIG)q */
+        q = r1r2 / b1p1; /* q == (DECDIG)q */
         c->frac[ind_c + 1] += (DECDIG)q;
         ind_r = b->Prec + ind_c;
 
-sub_mult:
-	borrow1 = borrow2 = 0;
-	ind_b = word_b - 1;
-	if (ind_r >= word_r) goto space_error;
-	n = ind_b;
-	for (i = 0; i <= n; ++i) {
-	    /* now, perform r = r - q * b */
-	    qb = q * b->frac[ind_b];
-	    if (qb < BASE) borrow1 = 0;
-	    else {
+    sub_mult:
+        borrow1 = borrow2 = 0;
+        ind_b = word_b - 1;
+        if (ind_r >= word_r) goto space_error;
+        n = ind_b;
+        for (i = 0; i <= n; ++i) {
+            /* now, perform r = r - q * b */
+            qb = q * b->frac[ind_b];
+            if (qb < BASE)
+                borrow1 = 0;
+            else {
                 borrow1 = (DECDIG)(qb / BASE);
-                qb -= (DECDIG_DBL)borrow1 * BASE;	/* get qb < BASE */
-	    }
-	    if(r->frac[ind_r] < qb) {
+                qb -= (DECDIG_DBL)borrow1 * BASE; /* get qb < BASE */
+            }
+            if (r->frac[ind_r] < qb) {
                 r->frac[ind_r] += (DECDIG)(BASE - qb);
                 borrow2 = borrow2 + borrow1 + 1;
-	    }
-	    else {
+            }
+            else {
                 r->frac[ind_r] -= (DECDIG)qb;
                 borrow2 += borrow1;
-	    }
-	    if (borrow2) {
-		if(r->frac[ind_r - 1] < borrow2) {
-		    r->frac[ind_r - 1] += (BASE - borrow2);
-		    borrow2 = 1;
-		}
-		else {
-		    r->frac[ind_r - 1] -= borrow2;
-		    borrow2 = 0;
-		}
-	    }
-	    --ind_r;
-	    --ind_b;
-	}
+            }
+            if (borrow2) {
+                if (r->frac[ind_r - 1] < borrow2) {
+                    r->frac[ind_r - 1] += (BASE - borrow2);
+                    borrow2 = 1;
+                }
+                else {
+                    r->frac[ind_r - 1] -= borrow2;
+                    borrow2 = 0;
+                }
+            }
+            --ind_r;
+            --ind_b;
+        }
 
-	r->frac[ind_r] -= borrow2;
-carry:
-	ind_r = ind_c;
-	while (c->frac[ind_r] >= BASE) {
-	    c->frac[ind_r] -= BASE;
-	    --ind_r;
-	    ++c->frac[ind_r];
-	}
+        r->frac[ind_r] -= borrow2;
+    carry:
+        ind_r = ind_c;
+        while (c->frac[ind_r] >= BASE) {
+            c->frac[ind_r] -= BASE;
+            --ind_r;
+            ++c->frac[ind_r];
+        }
     }
     /* End of operation, now final arrangement */
 out_side:
@@ -6221,22 +6244,22 @@ out_side:
     if (!AddExponent(c, -(b->exponent))) return 0;
 
     VpSetSign(c, VpGetSign(a) * VpGetSign(b));
-    VpNmlz(c);            /* normalize c */
+    VpNmlz(c); /* normalize c */
     r->Prec = word_r;
     r->exponent = a->exponent;
     if (!AddExponent(r, 1)) return 0;
     VpSetSign(r, VpGetSign(a));
-    VpNmlz(r);            /* normalize r(remainder) */
+    VpNmlz(r); /* normalize r(remainder) */
     goto Exit;
 
 space_error:
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	printf("   word_a=%"PRIuSIZE"\n", word_a);
-	printf("   word_b=%"PRIuSIZE"\n", word_b);
-	printf("   word_c=%"PRIuSIZE"\n", word_c);
-	printf("   word_r=%"PRIuSIZE"\n", word_r);
-	printf("   ind_r =%"PRIuSIZE"\n", ind_r);
+        printf("   word_a=%" PRIuSIZE "\n", word_a);
+        printf("   word_b=%" PRIuSIZE "\n", word_b);
+        printf("   word_c=%" PRIuSIZE "\n", word_c);
+        printf("   word_r=%" PRIuSIZE "\n", word_r);
+        printf("   ind_r =%" PRIuSIZE "\n", ind_r);
     }
 #endif /* BIGDECIMAL_DEBUG */
     rb_bug("ERROR(VpDivd): space for remainder too small.");
@@ -6244,8 +6267,8 @@ space_error:
 Exit:
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, " VpDivd(c=a/b), c=% \n", c);
-	VPrint(stdout, "    r=% \n", r);
+        VPrint(stdout, " VpDivd(c=a/b), c=% \n", c);
+        VPrint(stdout, "    r=% \n", r);
     }
 #endif /* BIGDECIMAL_DEBUG */
     return c->Prec * BASE_FIG;
@@ -6265,17 +6288,17 @@ VpNmlz(Real *a)
 
     ind_a = a->Prec;
     while (ind_a--) {
-	if (a->frac[ind_a]) {
-	    a->Prec = ind_a + 1;
-	    i = 0;
-	    while (a->frac[i] == 0) ++i;        /* skip the first few zeros */
-	    if (i) {
+        if (a->frac[ind_a]) {
+            a->Prec = ind_a + 1;
+            i = 0;
+            while (a->frac[i] == 0) ++i; /* skip the first few zeros */
+            if (i) {
                 a->Prec -= i;
                 if (!AddExponent(a, -(SIGNED_VALUE)i)) return 0;
-                memmove(&a->frac[0], &a->frac[i], a->Prec*sizeof(DECDIG));
-	    }
-	    return 1;
-	}
+                memmove(&a->frac[0], &a->frac[i], a->Prec * sizeof(DECDIG));
+            }
+            return 1;
+        }
     }
     /* a is zero(no non-zero digit) */
     VpSetZero(a, VpGetSign(a));
@@ -6302,79 +6325,88 @@ VpComp(Real *a, Real *b)
     val = 0;
     if (VpIsNaN(a) || VpIsNaN(b)) return 999;
     if (!VpIsDef(a)) {
-	if (!VpIsDef(b)) e = a->sign - b->sign;
-	else             e = a->sign;
+        if (!VpIsDef(b))
+            e = a->sign - b->sign;
+        else
+            e = a->sign;
 
-	if (e > 0)      return  1;
-	else if (e < 0) return -1;
-	else            return  0;
+        if (e > 0)
+            return 1;
+        else if (e < 0)
+            return -1;
+        else
+            return 0;
     }
     if (!VpIsDef(b)) {
-	e = -b->sign;
-	if (e > 0) return  1;
-	else       return -1;
+        e = -b->sign;
+        if (e > 0)
+            return 1;
+        else
+            return -1;
     }
     /* Zero check */
     if (VpIsZero(a)) {
-	if (VpIsZero(b)) return 0; /* both zero */
-	val = -VpGetSign(b);
-	goto Exit;
+        if (VpIsZero(b)) return 0; /* both zero */
+        val = -VpGetSign(b);
+        goto Exit;
     }
     if (VpIsZero(b)) {
-	val = VpGetSign(a);
-	goto Exit;
+        val = VpGetSign(a);
+        goto Exit;
     }
 
     /* compare sign */
     if (VpGetSign(a) > VpGetSign(b)) {
-	val = 1;        /* a>b */
-	goto Exit;
+        val = 1; /* a>b */
+        goto Exit;
     }
     if (VpGetSign(a) < VpGetSign(b)) {
-	val = -1;        /* a<b */
-	goto Exit;
+        val = -1; /* a<b */
+        goto Exit;
     }
 
     /* a and b have same sign, && sign!=0,then compare exponent */
     if (a->exponent > b->exponent) {
-	val = VpGetSign(a);
-	goto Exit;
+        val = VpGetSign(a);
+        goto Exit;
     }
     if (a->exponent < b->exponent) {
-	val = -VpGetSign(b);
-	goto Exit;
+        val = -VpGetSign(b);
+        goto Exit;
     }
 
     /* a and b have same exponent, then compare their significand. */
     mx = (a->Prec < b->Prec) ? a->Prec : b->Prec;
     ind = 0;
     while (ind < mx) {
-	if (a->frac[ind] > b->frac[ind]) {
-	    val = VpGetSign(a);
-	    goto Exit;
-	}
-	if (a->frac[ind] < b->frac[ind]) {
-	    val = -VpGetSign(b);
-	    goto Exit;
-	}
-	++ind;
+        if (a->frac[ind] > b->frac[ind]) {
+            val = VpGetSign(a);
+            goto Exit;
+        }
+        if (a->frac[ind] < b->frac[ind]) {
+            val = -VpGetSign(b);
+            goto Exit;
+        }
+        ++ind;
     }
     if (a->Prec > b->Prec) {
-	val = VpGetSign(a);
+        val = VpGetSign(a);
     }
     else if (a->Prec < b->Prec) {
-	val = -VpGetSign(b);
+        val = -VpGetSign(b);
     }
 
 Exit:
-    if      (val >  1) val =  1;
-    else if (val < -1) val = -1;
+    if (val > 1)
+        val = 1;
+    else if (val < -1)
+        val = -1;
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, " VpComp a=%\n", a);
-	VPrint(stdout, "  b=%\n", b);
-	printf("  ans=%d\n", val);
+        VPrint(stdout, " VpComp a=%\n", a);
+        VPrint(stdout, "  b=%\n", b);
+        printf("  ans=%d\n", val);
     }
 #endif /* BIGDECIMAL_DEBUG */
     return (int)val;
@@ -6397,10 +6429,10 @@ VPrint(FILE *fp, const char *cntl_chr, Real *a)
     DECDIG m, e, nn;
 
     j = 0;
-    nd = nc = 0;        /*  nd : number of digits in fraction part(every 10 digits, */
+    nd = nc = 0; /*  nd : number of digits in fraction part(every 10 digits, */
     /*    nd<=10). */
     /*  nc : number of characters printed  */
-    ZeroSup = 1;        /* Flag not to print the leading zeros as 0.00xxxxEnn */
+    ZeroSup = 1; /* Flag not to print the leading zeros as 0.00xxxxEnn */
     while (*(cntl_chr + j)) {
         if (*(cntl_chr + j) == '%' && *(cntl_chr + j + 1) != '%') {
             nc = 0;
@@ -6423,14 +6455,15 @@ VPrint(FILE *fp, const char *cntl_chr, Real *a)
                 }
                 nc += fprintf(fp, "0.");
                 switch (*(cntl_chr + j + 1)) {
-                  default:
-                    break;
+                    default:
+                        break;
 
-                  case '0': case 'z':
-                    ZeroSup = 0;
-                    ++j;
-                    sep = cntl_chr[j] == 'z' ? BIGDECIMAL_COMPONENT_FIGURES : 10;
-                    break;
+                    case '0':
+                    case 'z':
+                        ZeroSup = 0;
+                        ++j;
+                        sep = cntl_chr[j] == 'z' ? BIGDECIMAL_COMPONENT_FIGURES : 10;
+                        break;
                 }
                 for (i = 0; i < a->Prec; ++i) {
                     m = BASE1;
@@ -6438,13 +6471,13 @@ VPrint(FILE *fp, const char *cntl_chr, Real *a)
                     while (m) {
                         nn = e / m;
                         if (!ZeroSup || nn) {
-                            nc += fprintf(fp, "%lu", (unsigned long)nn);    /* The leading zero(s) */
+                            nc += fprintf(fp, "%lu", (unsigned long)nn); /* The leading zero(s) */
                             /* as 0.00xx will not */
                             /* be printed. */
                             ++nd;
-                            ZeroSup = 0;    /* Set to print succeeding zeros */
+                            ZeroSup = 0; /* Set to print succeeding zeros */
                         }
-                        if (nd >= sep) {    /* print ' ' after every 10 digits */
+                        if (nd >= sep) { /* print ' ' after every 10 digits */
                             nd = 0;
                             nc += fprintf(fp, " ");
                         }
@@ -6452,8 +6485,8 @@ VPrint(FILE *fp, const char *cntl_chr, Real *a)
                         m /= 10;
                     }
                 }
-                nc += fprintf(fp, "E%"PRIdSIZE, VpExponent10(a));
-                nc += fprintf(fp, " (%"PRIdVALUE", %"PRIuSIZE", %"PRIuSIZE")", a->exponent, a->Prec, a->MaxPrec);
+                nc += fprintf(fp, "E%" PRIdSIZE, VpExponent10(a));
+                nc += fprintf(fp, " (%" PRIdVALUE ", %" PRIuSIZE ", %" PRIuSIZE ")", a->exponent, a->Prec, a->MaxPrec);
             }
             else {
                 nc += fprintf(fp, "0.0");
@@ -6463,21 +6496,21 @@ VPrint(FILE *fp, const char *cntl_chr, Real *a)
             ++nc;
             if (*(cntl_chr + j) == '\\') {
                 switch (*(cntl_chr + j + 1)) {
-                  case 'n':
-                    fprintf(fp, "\n");
-                    ++j;
-                    break;
-                  case 't':
-                    fprintf(fp, "\t");
-                    ++j;
-                    break;
-                  case 'b':
-                    fprintf(fp, "\n");
-                    ++j;
-                    break;
-                  default:
-                    fprintf(fp, "%c", *(cntl_chr + j));
-                    break;
+                    case 'n':
+                        fprintf(fp, "\n");
+                        ++j;
+                        break;
+                    case 't':
+                        fprintf(fp, "\t");
+                        ++j;
+                        break;
+                    case 'b':
+                        fprintf(fp, "\n");
+                        ++j;
+                        break;
+                    default:
+                        fprintf(fp, "%c", *(cntl_chr + j));
+                        break;
                 }
             }
             else {
@@ -6501,18 +6534,21 @@ VpFormatSt(char *psz, size_t fFmt)
 
     ie = strlen(psz);
     for (i = 0; i < ie; ++i) {
-	ch = psz[i];
-	if (!ch) break;
-	if (ISSPACE(ch) || ch=='-' || ch=='+') continue;
-	if (ch == '.') { nf = 0; continue; }
-	if (ch == 'E' || ch == 'e') break;
+        ch = psz[i];
+        if (!ch) break;
+        if (ISSPACE(ch) || ch == '-' || ch == '+') continue;
+        if (ch == '.') {
+            nf = 0;
+            continue;
+        }
+        if (ch == 'E' || ch == 'e') break;
 
-	if (++nf > fFmt) {
-	    memmove(psz + i + 1, psz + i, ie - i + 1);
-	    ++ie;
-	    nf = 0;
-	    psz[i] = ' ';
-	}
+        if (++nf > fFmt) {
+            memmove(psz + i + 1, psz + i, ie - i + 1);
+            ++ie;
+            nf = 0;
+            psz[i] = ' ';
+        }
     }
 }
 
@@ -6527,8 +6563,8 @@ VpExponent10(Real *a)
     ex = a->exponent * (ssize_t)BASE_FIG;
     n = BASE1;
     while ((a->frac[0] / n) == 0) {
-	--ex;
-	n /= 10;
+        --ex;
+        n /= 10;
     }
     return ex;
 }
@@ -6544,15 +6580,15 @@ VpSzMantissa(Real *a, char *buf, size_t buflen)
         return;
     }
     if (VpIsPosInf(a)) {
-	snprintf(buf, buflen, SZ_INF);
-	return;
+        snprintf(buf, buflen, SZ_INF);
+        return;
     }
     if (VpIsNegInf(a)) {
-	snprintf(buf, buflen, SZ_NINF);
-	return;
+        snprintf(buf, buflen, SZ_NINF);
+        return;
     }
 
-    ZeroSup = 1;        /* Flag not to print the leading zeros as 0.00xxxxEnn */
+    ZeroSup = 1; /* Flag not to print the leading zeros as 0.00xxxxEnn */
     if (!VpIsZero(a)) {
         if (BIGDECIMAL_NEGATIVE_P(a)) *buf++ = '-';
         n = a->Prec;
@@ -6575,8 +6611,10 @@ VpSzMantissa(Real *a, char *buf, size_t buflen)
         while (buf[-1] == '0') *(--buf) = 0;
     }
     else {
-	if (VpIsPosZero(a)) snprintf(buf, buflen, "0");
-	else                snprintf(buf, buflen, "-0");
+        if (VpIsPosZero(a))
+            snprintf(buf, buflen, "0");
+        else
+            snprintf(buf, buflen, "-0");
     }
 }
 
@@ -6605,11 +6643,15 @@ VpToSpecialString(Real *a, char *buf, size_t buflen, int fPlus)
     }
     if (VpIsZero(a)) {
         if (VpIsPosZero(a)) {
-            if (fPlus == 1)      snprintf(buf, buflen, " 0.0");
-            else if (fPlus == 2) snprintf(buf, buflen, "+0.0");
-            else                 snprintf(buf, buflen,  "0.0");
+            if (fPlus == 1)
+                snprintf(buf, buflen, " 0.0");
+            else if (fPlus == 2)
+                snprintf(buf, buflen, "+0.0");
+            else
+                snprintf(buf, buflen, "0.0");
         }
-        else                     snprintf(buf, buflen, "-0.0");
+        else
+            snprintf(buf, buflen, "-0.0");
         return 1;
     }
     return 0;
@@ -6627,13 +6669,14 @@ VpToString(Real *a, char *buf, size_t buflen, size_t fFmt, int fPlus)
 
     if (VpToSpecialString(a, buf, buflen, fPlus)) return;
 
-    ZeroSup = 1;    /* Flag not to print the leading zeros as 0.00xxxxEnn */
+    ZeroSup = 1; /* Flag not to print the leading zeros as 0.00xxxxEnn */
 
-#define ADVANCE(n) do { \
-    if (plen < n) goto overflow; \
-    p += n; \
-    plen -= n; \
-} while (0)
+#define ADVANCE(n) \
+ do { \
+  if (plen < n) goto overflow; \
+  p += n; \
+  plen -= n; \
+ } while (0)
 
     if (BIGDECIMAL_NEGATIVE_P(a)) {
         *p = '-';
@@ -6648,8 +6691,10 @@ VpToString(Real *a, char *buf, size_t buflen, size_t fFmt, int fPlus)
         ADVANCE(1);
     }
 
-    *p = '0'; ADVANCE(1);
-    *p = '.'; ADVANCE(1);
+    *p = '0';
+    ADVANCE(1);
+    *p = '.';
+    ADVANCE(1);
 
     n = a->Prec;
     for (i = 0; i < n; ++i) {
@@ -6663,7 +6708,7 @@ VpToString(Real *a, char *buf, size_t buflen, size_t fFmt, int fPlus)
                 if (n > plen) goto overflow;
                 ADVANCE(n);
                 /* as 0.00xx will be ignored. */
-                ZeroSup = 0;    /* Set to print succeeding zeros */
+                ZeroSup = 0; /* Set to print succeeding zeros */
             }
             e = e - nn * m;
             m /= 10;
@@ -6680,10 +6725,10 @@ VpToString(Real *a, char *buf, size_t buflen, size_t fFmt, int fPlus)
         *(--p) = '\0';
         ++plen;
     }
-    snprintf(p, plen, "e%"PRIdSIZE, ex);
+    snprintf(p, plen, "e%" PRIdSIZE, ex);
     if (fFmt) VpFormatSt(buf, fFmt);
 
-  overflow:
+overflow:
     return;
 #undef ADVANCE
 }
@@ -6700,12 +6745,12 @@ VpToFString(Real *a, char *buf, size_t buflen, size_t fFmt, int fPlus)
 
     if (VpToSpecialString(a, buf, buflen, fPlus)) return;
 
-#define ADVANCE(n) do { \
-    if (plen < n) goto overflow; \
-    p += n; \
-    plen -= n; \
-} while (0)
-
+#define ADVANCE(n) \
+ do { \
+  if (plen < n) goto overflow; \
+  p += n; \
+  plen -= n; \
+ } while (0)
 
     if (BIGDECIMAL_NEGATIVE_P(a)) {
         *p = '-';
@@ -6720,14 +6765,17 @@ VpToFString(Real *a, char *buf, size_t buflen, size_t fFmt, int fPlus)
         ADVANCE(1);
     }
 
-    n  = a->Prec;
+    n = a->Prec;
     ex = a->exponent;
     if (ex <= 0) {
-        *p = '0'; ADVANCE(1);
-        *p = '.'; ADVANCE(1);
+        *p = '0';
+        ADVANCE(1);
+        *p = '.';
+        ADVANCE(1);
         while (ex < 0) {
-            for (i=0; i < BASE_FIG; ++i) {
-                *p = '0'; ADVANCE(1);
+            for (i = 0; i < BASE_FIG; ++i) {
+                *p = '0';
+                ADVANCE(1);
             }
             ++ex;
         }
@@ -6757,7 +6805,7 @@ VpToFString(Real *a, char *buf, size_t buflen, size_t fFmt, int fPlus)
             ADVANCE(1);
         }
     }
-    while (--ex>=0) {
+    while (--ex >= 0) {
         m = BASE;
         while (m /= 10) {
             *p = '0';
@@ -6779,7 +6827,7 @@ VpToFString(Real *a, char *buf, size_t buflen, size_t fFmt, int fPlus)
     }
     if (fFmt) VpFormatSt(buf, fFmt);
 
-  overflow:
+overflow:
     return;
 #undef ADVANCE
 }
@@ -6800,7 +6848,7 @@ VpCtoV(Real *a, const char *int_chr, size_t ni, const char *frac, size_t nf, con
 {
     size_t i, j, ind_a, ma, mi, me;
     SIGNED_VALUE e, es, eb, ef;
-    int  sign, signe, exponent_overflow;
+    int sign, signe, exponent_overflow;
 
     /* get exponent part */
     e = 0;
@@ -6811,116 +6859,121 @@ VpCtoV(Real *a, const char *int_chr, size_t ni, const char *frac, size_t nf, con
     exponent_overflow = 0;
     memset(a->frac, 0, ma * sizeof(DECDIG));
     if (ne > 0) {
-	i = 0;
-	if (exp_chr[0] == '-') {
-	    signe = -1;
-	    ++i;
-	    ++me;
-	}
-	else if (exp_chr[0] == '+') {
-	    ++i;
-	    ++me;
-	}
-	while (i < me) {
+        i = 0;
+        if (exp_chr[0] == '-') {
+            signe = -1;
+            ++i;
+            ++me;
+        }
+        else if (exp_chr[0] == '+') {
+            ++i;
+            ++me;
+        }
+        while (i < me) {
             if (MUL_OVERFLOW_SIGNED_VALUE_P(e, (SIGNED_VALUE)BASE_FIG)) {
                 es = e;
                 goto exp_overflow;
             }
-	    es = e * (SIGNED_VALUE)BASE_FIG;
+            es = e * (SIGNED_VALUE)BASE_FIG;
             if (MUL_OVERFLOW_SIGNED_VALUE_P(e, 10) ||
-                SIGNED_VALUE_MAX - (exp_chr[i] - '0') < e * 10)
+              SIGNED_VALUE_MAX - (exp_chr[i] - '0') < e * 10)
                 goto exp_overflow;
-	    e = e * 10 + exp_chr[i] - '0';
+            e = e * 10 + exp_chr[i] - '0';
             if (MUL_OVERFLOW_SIGNED_VALUE_P(e, (SIGNED_VALUE)BASE_FIG))
                 goto exp_overflow;
-	    if (es > (SIGNED_VALUE)(e * BASE_FIG)) {
-              exp_overflow:
-		exponent_overflow = 1;
-		e = es; /* keep sign */
-		break;
-	    }
-	    ++i;
-	}
+            if (es > (SIGNED_VALUE)(e * BASE_FIG)) {
+            exp_overflow:
+                exponent_overflow = 1;
+                e = es; /* keep sign */
+                break;
+            }
+            ++i;
+        }
     }
 
     /* get integer part */
     i = 0;
     sign = 1;
     if (1 /*ni >= 0*/) {
-	if (int_chr[0] == '-') {
-	    sign = -1;
-	    ++i;
-	    ++mi;
-	}
-	else if (int_chr[0] == '+') {
-	    ++i;
-	    ++mi;
-	}
+        if (int_chr[0] == '-') {
+            sign = -1;
+            ++i;
+            ++mi;
+        }
+        else if (int_chr[0] == '+') {
+            ++i;
+            ++mi;
+        }
     }
 
-    e = signe * e;        /* e: The value of exponent part. */
-    e = e + ni;        /* set actual exponent size. */
+    e = signe * e; /* e: The value of exponent part. */
+    e = e + ni; /* set actual exponent size. */
 
-    if (e > 0) signe = 1;
-    else       signe = -1;
+    if (e > 0)
+        signe = 1;
+    else
+        signe = -1;
 
     /* Adjust the exponent so that it is the multiple of BASE_FIG. */
     j = 0;
     ef = 1;
     while (ef) {
-	if (e >= 0) eb =  e;
-	else        eb = -e;
-	ef = eb / (SIGNED_VALUE)BASE_FIG;
-	ef = eb - ef * (SIGNED_VALUE)BASE_FIG;
-	if (ef) {
-	    ++j;        /* Means to add one more preceding zero */
-	    ++e;
-	}
+        if (e >= 0)
+            eb = e;
+        else
+            eb = -e;
+        ef = eb / (SIGNED_VALUE)BASE_FIG;
+        ef = eb - ef * (SIGNED_VALUE)BASE_FIG;
+        if (ef) {
+            ++j; /* Means to add one more preceding zero */
+            ++e;
+        }
     }
 
     eb = e / (SIGNED_VALUE)BASE_FIG;
 
     if (exponent_overflow) {
-	int zero = 1;
-	for (     ; i < mi && zero; i++) zero = int_chr[i] == '0';
-	for (i = 0; i < nf && zero; i++) zero = frac[i] == '0';
-	if (!zero && signe > 0) {
-	    VpSetInf(a, sign);
-	    VpException(VP_EXCEPTION_INFINITY, "exponent overflow",0);
-	}
-	else VpSetZero(a, sign);
-	return 1;
+        int zero = 1;
+        for (; i < mi && zero; i++) zero = int_chr[i] == '0';
+        for (i = 0; i < nf && zero; i++) zero = frac[i] == '0';
+        if (!zero && signe > 0) {
+            VpSetInf(a, sign);
+            VpException(VP_EXCEPTION_INFINITY, "exponent overflow", 0);
+        }
+        else
+            VpSetZero(a, sign);
+        return 1;
     }
 
     ind_a = 0;
     while (i < mi) {
-	a->frac[ind_a] = 0;
-	while (j < BASE_FIG && i < mi) {
-	    a->frac[ind_a] = a->frac[ind_a] * 10 + int_chr[i] - '0';
-	    ++j;
-	    ++i;
-	}
-	if (i < mi) {
-	    ++ind_a;
-	    if (ind_a >= ma) goto over_flow;
-	    j = 0;
-	}
+        a->frac[ind_a] = 0;
+        while (j < BASE_FIG && i < mi) {
+            a->frac[ind_a] = a->frac[ind_a] * 10 + int_chr[i] - '0';
+            ++j;
+            ++i;
+        }
+        if (i < mi) {
+            ++ind_a;
+            if (ind_a >= ma) goto over_flow;
+            j = 0;
+        }
     }
 
     /* get fraction part */
 
     i = 0;
     while (i < nf) {
-	while (j < BASE_FIG && i < nf) {
-	    a->frac[ind_a] = a->frac[ind_a] * 10 + frac[i] - '0';
-	    ++j;
-	    ++i;
-	}
-	if (i < nf) {
-	    ++ind_a;
-	    if (ind_a >= ma) goto over_flow;
-	    j = 0;
-	}
+        while (j < BASE_FIG && i < nf) {
+            a->frac[ind_a] = a->frac[ind_a] * 10 + frac[i] - '0';
+            ++j;
+            ++i;
+        }
+        if (i < nf) {
+            ++ind_a;
+            if (ind_a >= ma) goto over_flow;
+            j = 0;
+        }
     }
     goto Final;
 
@@ -6930,8 +6983,8 @@ over_flow:
 Final:
     if (ind_a >= ma) ind_a = ma - 1;
     while (j < BASE_FIG) {
-	a->frac[ind_a] = a->frac[ind_a] * 10;
-	++j;
+        a->frac[ind_a] = a->frac[ind_a] * 10;
+        ++j;
     }
     a->Prec = ind_a + 1;
     a->exponent = eb;
@@ -6960,37 +7013,37 @@ VpVtoD(double *d, SIGNED_VALUE *e, Real *m)
 {
     size_t ind_m, mm, fig;
     double div;
-    int    f = 1;
+    int f = 1;
 
     if (VpIsNaN(m)) {
-	*d = VpGetDoubleNaN();
-	*e = 0;
-	f = -1; /* NaN */
-	goto Exit;
+        *d = VpGetDoubleNaN();
+        *e = 0;
+        f = -1; /* NaN */
+        goto Exit;
     }
     else if (VpIsPosZero(m)) {
-	*d = 0.0;
-	*e = 0;
-	f  = 0;
-	goto Exit;
+        *d = 0.0;
+        *e = 0;
+        f = 0;
+        goto Exit;
     }
     else if (VpIsNegZero(m)) {
-	*d = VpGetDoubleNegZero();
-	*e = 0;
-	f  = 0;
-	goto Exit;
+        *d = VpGetDoubleNegZero();
+        *e = 0;
+        f = 0;
+        goto Exit;
     }
     else if (VpIsPosInf(m)) {
-	*d = VpGetDoublePosInf();
-	*e = 0;
-	f  = 2;
-	goto Exit;
+        *d = VpGetDoublePosInf();
+        *e = 0;
+        f = 2;
+        goto Exit;
     }
     else if (VpIsNegInf(m)) {
-	*d = VpGetDoubleNegInf();
-	*e = 0;
-	f  = 2;
-	goto Exit;
+        *d = VpGetDoubleNegInf();
+        *e = 0;
+        f = 2;
+        goto Exit;
     }
     /* Normal number */
     fig = roomof(BIGDECIMAL_DOUBLE_FIGURES, BASE_FIG);
@@ -6999,8 +7052,8 @@ VpVtoD(double *d, SIGNED_VALUE *e, Real *m)
     *d = 0.0;
     div = 1.;
     while (ind_m < mm) {
-	div /= (double)BASE;
-	*d = *d + (double)m->frac[ind_m++] * div;
+        div /= (double)BASE;
+        *d = *d + (double)m->frac[ind_m++] * div;
     }
     *e = m->exponent * (SIGNED_VALUE)BASE_FIG;
     *d *= VpGetSign(m);
@@ -7008,9 +7061,9 @@ VpVtoD(double *d, SIGNED_VALUE *e, Real *m)
 Exit:
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, " VpVtoD: m=%\n", m);
-	printf("   d=%e * 10 **%ld\n", *d, *e);
-	printf("   BIGDECIMAL_DOUBLE_FIGURES = %d\n", BIGDECIMAL_DOUBLE_FIGURES);
+        VPrint(stdout, " VpVtoD: m=%\n", m);
+        printf("   d=%e * 10 **%ld\n", *d, *e);
+        printf("   BIGDECIMAL_DOUBLE_FIGURES = %d\n", BIGDECIMAL_DOUBLE_FIGURES);
     }
 #endif /*BIGDECIMAL_DEBUG */
     return f;
@@ -7025,36 +7078,38 @@ VpDtoV(Real *m, double d)
     size_t ind_m, mm;
     SIGNED_VALUE ne;
     DECDIG i;
-    double  val, val2;
+    double val, val2;
 
     if (isnan(d)) {
-	VpSetNaN(m);
-	goto Exit;
+        VpSetNaN(m);
+        goto Exit;
     }
     if (isinf(d)) {
-	if (d > 0.0) VpSetPosInf(m);
-	else VpSetNegInf(m);
-	goto Exit;
+        if (d > 0.0)
+            VpSetPosInf(m);
+        else
+            VpSetNegInf(m);
+        goto Exit;
     }
 
     if (d == 0.0) {
-	VpSetZero(m, 1);
-	goto Exit;
+        VpSetZero(m, 1);
+        goto Exit;
     }
     val = (d > 0.) ? d : -d;
     ne = 0;
     if (val >= 1.0) {
-	while (val >= 1.0) {
-	    val /= (double)BASE;
-	    ++ne;
-	}
+        while (val >= 1.0) {
+            val /= (double)BASE;
+            ++ne;
+        }
     }
     else {
-	val2 = 1.0 / (double)BASE;
-	while (val < val2) {
-	    val *= (double)BASE;
-	    --ne;
-	}
+        val2 = 1.0 / (double)BASE;
+        while (val < val2) {
+            val *= (double)BASE;
+            --ne;
+        }
     }
     /* Now val = 0.xxxxx*BASE**ne */
 
@@ -7071,14 +7126,14 @@ VpDtoV(Real *m, double d)
     m->Prec = ind_m + 1;
     m->exponent = ne;
 
-    VpInternalRound(m, 0, (m->Prec > 0) ? m->frac[m->Prec-1] : 0,
-                    (DECDIG)(val*(double)BASE));
+    VpInternalRound(m, 0, (m->Prec > 0) ? m->frac[m->Prec - 1] : 0,
+      (DECDIG)(val * (double)BASE));
 
 Exit:
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	printf("VpDtoV d=%30.30e\n", d);
-	VPrint(stdout, "  m=%\n", m);
+        printf("VpDtoV d=%30.30e\n", d);
+        VPrint(stdout, "  m=%\n", m);
     }
 #endif /* BIGDECIMAL_DEBUG */
     return;
@@ -7087,7 +7142,7 @@ Exit:
 /*
  *  m <- ival
  */
-#if 0  /* unused */
+#if 0 /* unused */
 VP_EXPORT void
 VpItoV(Real *m, SIGNED_VALUE ival)
 {
@@ -7138,12 +7193,12 @@ VpItoV(Real *m, SIGNED_VALUE ival)
     VpNmlz(m);
 
 Exit:
-#ifdef BIGDECIMAL_DEBUG
+# ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
 	printf(" VpItoV i=%d\n", ival);
 	VPrint(stdout, "  m=%\n", m);
     }
-#endif /* BIGDECIMAL_DEBUG */
+# endif /* BIGDECIMAL_DEBUG */
     return;
 }
 #endif
@@ -7164,26 +7219,26 @@ VpSqrt(Real *y, Real *x)
 
     /* Zero or +Infinity ? */
     if (VpIsZero(x) || VpIsPosInf(x)) {
-	VpAsgn(y,x,1);
-	goto Exit;
+        VpAsgn(y, x, 1);
+        goto Exit;
     }
 
     /* Negative ? */
     if (BIGDECIMAL_NEGATIVE_P(x)) {
-	VpSetNaN(y);
-	return VpException(VP_EXCEPTION_OP, "sqrt of negative value", 0);
+        VpSetNaN(y);
+        return VpException(VP_EXCEPTION_OP, "sqrt of negative value", 0);
     }
 
     /* NaN ? */
     if (VpIsNaN(x)) {
-	VpSetNaN(y);
-	return VpException(VP_EXCEPTION_OP, "sqrt of 'NaN'(Not a Number)", 0);
+        VpSetNaN(y);
+        return VpException(VP_EXCEPTION_OP, "sqrt of 'NaN'(Not a Number)", 0);
     }
 
     /* One ? */
     if (VpIsOne(x)) {
-	VpSetOne(y);
-	goto Exit;
+        VpSetOne(y);
+        goto Exit;
     }
 
     n = (SIGNED_VALUE)y->MaxPrec;
@@ -7199,21 +7254,21 @@ VpSqrt(Real *y, Real *x)
 
     prec = x->exponent - (ssize_t)y_prec;
     if (x->exponent > 0)
-	++prec;
+        ++prec;
     else
-	--prec;
+        --prec;
 
-    VpVtoD(&val, &e, x);    /* val <- x  */
+    VpVtoD(&val, &e, x); /* val <- x  */
     e /= (SIGNED_VALUE)BASE_FIG;
     n = e / 2;
     if (e - n * 2 != 0) {
-	val /= BASE;
-	n = (e + 1) / 2;
+        val /= BASE;
+        n = (e + 1) / 2;
     }
-    VpDtoV(y, sqrt(val));    /* y <- sqrt(val) */
+    VpDtoV(y, sqrt(val)); /* y <- sqrt(val) */
     y->exponent += n;
     n = (SIGNED_VALUE)roomof(BIGDECIMAL_DOUBLE_FIGURES, BASE_FIG);
-    y->MaxPrec = Min((size_t)n , y_prec);
+    y->MaxPrec = Min((size_t)n, y_prec);
     f->MaxPrec = y->MaxPrec + 1;
     n = (SIGNED_VALUE)(y_prec * BASE_FIG);
     if (n < (SIGNED_VALUE)maxnr) n = (SIGNED_VALUE)maxnr;
@@ -7225,18 +7280,18 @@ VpSqrt(Real *y, Real *x)
         y->MaxPrec *= 2;
         if (y->MaxPrec > y_prec) y->MaxPrec = y_prec;
         f->MaxPrec = y->MaxPrec;
-        VpDivd(f, r, x, y);        /* f = x/y    */
-        VpAddSub(r, f, y, -1);     /* r = f - y  */
-        VpMult(f, VpConstPt5, r);  /* f = 0.5*r  */
+        VpDivd(f, r, x, y); /* f = x/y    */
+        VpAddSub(r, f, y, -1); /* r = f - y  */
+        VpMult(f, VpConstPt5, r); /* f = 0.5*r  */
         if (VpIsZero(f))
             goto converge;
-        VpAddSub(r, f, y, 1);      /* r = y + f  */
-        VpAsgn(y, r, 1);           /* y = r      */
+        VpAddSub(r, f, y, 1); /* r = y + f  */
+        VpAsgn(y, r, 1); /* y = r      */
     } while (++nr < n);
 
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	printf("ERROR(VpSqrt): did not converge within %ld iterations.\n", nr);
+        printf("ERROR(VpSqrt): did not converge within %ld iterations.\n", nr);
     }
 #endif /* BIGDECIMAL_DEBUG */
     y->MaxPrec = y_prec;
@@ -7245,12 +7300,12 @@ converge:
     VpChangeSign(y, 1);
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VpMult(r, y, y);
-	VpAddSub(f, x, r, -1);
-	printf("VpSqrt: iterations = %"PRIdSIZE"\n", nr);
-	VPrint(stdout, "  y =% \n", y);
-	VPrint(stdout, "  x =% \n", x);
-	VPrint(stdout, "  x-y*y = % \n", f);
+        VpMult(r, y, y);
+        VpAddSub(f, x, r, -1);
+        printf("VpSqrt: iterations = %" PRIdSIZE "\n", nr);
+        VPrint(stdout, "  y =% \n", y);
+        VPrint(stdout, "  x =% \n", x);
+        VPrint(stdout, "  x-y*y = % \n", f);
     }
 #endif /* BIGDECIMAL_DEBUG */
     y->MaxPrec = y_prec;
@@ -7273,27 +7328,27 @@ VpMidRound(Real *y, unsigned short f, ssize_t nf)
     /* fracf_1further: any positive digits under one further than the rounding position? */
     /* exptoadd: number of digits needed to compensate negative nf */
     int fracf, fracf_1further;
-    ssize_t n,i,ix,ioffset, exptoadd;
+    ssize_t n, i, ix, ioffset, exptoadd;
     DECDIG v, shifter;
     DECDIG div;
 
     nf += y->exponent * (ssize_t)BASE_FIG;
-    exptoadd=0;
+    exptoadd = 0;
     if (nf < 0) {
-	/* rounding position too left(large). */
-	if (f != VP_ROUND_CEIL && f != VP_ROUND_FLOOR) {
-	    VpSetZero(y, VpGetSign(y)); /* truncate everything */
-	    return 0;
-	}
-	exptoadd = -nf;
-	nf = 0;
+        /* rounding position too left(large). */
+        if (f != VP_ROUND_CEIL && f != VP_ROUND_FLOOR) {
+            VpSetZero(y, VpGetSign(y)); /* truncate everything */
+            return 0;
+        }
+        exptoadd = -nf;
+        nf = 0;
     }
 
     ix = nf / (ssize_t)BASE_FIG;
-    if ((size_t)ix >= y->Prec) return 0;  /* rounding position too right(small). */
+    if ((size_t)ix >= y->Prec) return 0; /* rounding position too right(small). */
     v = y->frac[ix];
 
-    ioffset = nf - ix*(ssize_t)BASE_FIG;
+    ioffset = nf - ix * (ssize_t)BASE_FIG;
     n = (ssize_t)BASE_FIG - ioffset - 1;
     for (shifter = 1, i = 0; i < n; ++i) shifter *= 10;
 
@@ -7329,7 +7384,7 @@ VpMidRound(Real *y, unsigned short f, ssize_t nf)
 
     v /= shifter;
     div = v / 10;
-    v = v - div*10;
+    v = v - div * 10;
     /* now v is just the digit required.
        now fracf is whether the digit or any of the remaining digits within v are non-zero
        now fracf_1further is whether any of the remaining digits within v are non-zero
@@ -7342,10 +7397,10 @@ VpMidRound(Real *y, unsigned short f, ssize_t nf)
        can stop */
 
     for (i = ix + 1; (size_t)i < y->Prec; i++) {
-	if (y->frac[i] % BASE) {
-	    fracf = fracf_1further = 1;
-	    break;
-	}
+        if (y->frac[i] % BASE) {
+            fracf = fracf_1further = 1;
+            break;
+        }
     }
 
     /* now fracf = does any positive digit exist under the rounding position?
@@ -7357,73 +7412,74 @@ VpMidRound(Real *y, unsigned short f, ssize_t nf)
     memset(y->frac + ix + 1, 0, (y->Prec - (ix + 1)) * sizeof(DECDIG));
 
     switch (f) {
-      case VP_ROUND_DOWN: /* Truncate */
-	break;
-      case VP_ROUND_UP:   /* Roundup */
-	if (fracf) ++div;
-	break;
-      case VP_ROUND_HALF_UP:
-	if (v>=5) ++div;
-	break;
-      case VP_ROUND_HALF_DOWN:
-	if (v > 5 || (v == 5 && fracf_1further)) ++div;
-	break;
-      case VP_ROUND_CEIL:
-	if (fracf && BIGDECIMAL_POSITIVE_P(y)) ++div;
-	break;
-      case VP_ROUND_FLOOR:
-	if (fracf && BIGDECIMAL_NEGATIVE_P(y)) ++div;
-	break;
-      case VP_ROUND_HALF_EVEN: /* Banker's rounding */
-	if (v > 5) ++div;
-	else if (v == 5) {
-	    if (fracf_1further) {
-		++div;
-	    }
-	    else {
-		if (ioffset == 0) {
-                    /* v is the first decimal digit of its DECDIG;
+        case VP_ROUND_DOWN: /* Truncate */
+            break;
+        case VP_ROUND_UP: /* Roundup */
+            if (fracf) ++div;
+            break;
+        case VP_ROUND_HALF_UP:
+            if (v >= 5) ++div;
+            break;
+        case VP_ROUND_HALF_DOWN:
+            if (v > 5 || (v == 5 && fracf_1further)) ++div;
+            break;
+        case VP_ROUND_CEIL:
+            if (fracf && BIGDECIMAL_POSITIVE_P(y)) ++div;
+            break;
+        case VP_ROUND_FLOOR:
+            if (fracf && BIGDECIMAL_NEGATIVE_P(y)) ++div;
+            break;
+        case VP_ROUND_HALF_EVEN: /* Banker's rounding */
+            if (v > 5)
+                ++div;
+            else if (v == 5) {
+                if (fracf_1further) {
+                    ++div;
+                }
+                else {
+                    if (ioffset == 0) {
+                        /* v is the first decimal digit of its DECDIG;
                        need to grab the previous DECDIG if present
                        to check for evenness of the previous decimal
                        digit (which is same as that of the DECDIG since
                        base 10 has a factor of 2) */
-		    if (ix && (y->frac[ix-1] % 2)) ++div;
-		}
-		else {
-		    if (div % 2) ++div;
-		}
-	    }
-	}
-	break;
+                        if (ix && (y->frac[ix - 1] % 2)) ++div;
+                    }
+                    else {
+                        if (div % 2) ++div;
+                    }
+                }
+            }
+            break;
     }
     for (i = 0; i <= n; ++i) div *= 10;
     if (div >= BASE) {
-	if (ix) {
-	    y->frac[ix] = 0;
-	    VpRdup(y, ix);
-	}
-	else {
-	    short s = VpGetSign(y);
-	    SIGNED_VALUE e = y->exponent;
-	    VpSetOne(y);
-	    VpSetSign(y, s);
-	    y->exponent = e + 1;
-	}
+        if (ix) {
+            y->frac[ix] = 0;
+            VpRdup(y, ix);
+        }
+        else {
+            short s = VpGetSign(y);
+            SIGNED_VALUE e = y->exponent;
+            VpSetOne(y);
+            VpSetSign(y, s);
+            y->exponent = e + 1;
+        }
     }
     else {
-	y->frac[ix] = div;
-	VpNmlz(y);
+        y->frac[ix] = div;
+        VpNmlz(y);
     }
     if (exptoadd > 0) {
-	y->exponent += (SIGNED_VALUE)(exptoadd / BASE_FIG);
-	exptoadd %= (ssize_t)BASE_FIG;
-	for (i = 0; i < exptoadd; i++) {
-	    y->frac[0] *= 10;
-	    if (y->frac[0] >= BASE) {
-		y->frac[0] /= BASE;
-		y->exponent++;
-	    }
-	}
+        y->exponent += (SIGNED_VALUE)(exptoadd / BASE_FIG);
+        exptoadd %= (ssize_t)BASE_FIG;
+        for (i = 0; i < exptoadd; i++) {
+            y->frac[0] *= 10;
+            if (y->frac[0] >= BASE) {
+                y->frac[0] /= BASE;
+                y->exponent++;
+            }
+        }
     }
     return 1;
 }
@@ -7439,7 +7495,7 @@ VpLeftRound(Real *y, unsigned short f, ssize_t nf)
     v = y->frac[0];
     nf -= VpExponent(y) * (ssize_t)BASE_FIG;
     while ((v /= 10) != 0) nf--;
-    nf += (ssize_t)BASE_FIG-1;
+    nf += (ssize_t)BASE_FIG - 1;
     return VpMidRound(y, f, nf);
 }
 
@@ -7456,8 +7512,8 @@ VpLimitRound(Real *c, size_t ixDigit)
 {
     size_t ix = VpGetPrecLimit();
     if (!VpNmlz(c)) return -1;
-    if (!ix)        return  0;
-    if (!ixDigit) ixDigit = c->Prec-1;
+    if (!ix) return 0;
+    if (!ixDigit) ixDigit = c->Prec - 1;
     if ((ix + BASE_FIG - 1) / BASE_FIG > ixDigit + 1) return 0;
     return VpLeftRound(c, VpGetRoundMode(), (ssize_t)ix);
 }
@@ -7476,36 +7532,38 @@ VpInternalRound(Real *c, size_t ixDigit, DECDIG vPrev, DECDIG v)
 
     v /= BASE1;
     switch (rounding_mode) {
-      case VP_ROUND_DOWN:
-	break;
-      case VP_ROUND_UP:
-	if (v) f = 1;
-	break;
-      case VP_ROUND_HALF_UP:
-	if (v >= 5) f = 1;
-	break;
-      case VP_ROUND_HALF_DOWN:
-	/* this is ok - because this is the last digit of precision,
+        case VP_ROUND_DOWN:
+            break;
+        case VP_ROUND_UP:
+            if (v) f = 1;
+            break;
+        case VP_ROUND_HALF_UP:
+            if (v >= 5) f = 1;
+            break;
+        case VP_ROUND_HALF_DOWN:
+            /* this is ok - because this is the last digit of precision,
 	   the case where v == 5 and some further digits are nonzero
 	   will never occur */
-	if (v >= 6) f = 1;
-	break;
-      case VP_ROUND_CEIL:
-	if (v && BIGDECIMAL_POSITIVE_P(c)) f = 1;
-	break;
-      case VP_ROUND_FLOOR:
-	if (v && BIGDECIMAL_NEGATIVE_P(c)) f = 1;
-	break;
-      case VP_ROUND_HALF_EVEN:  /* Banker's rounding */
-	/* as per VP_ROUND_HALF_DOWN, because this is the last digit of precision,
+            if (v >= 6) f = 1;
+            break;
+        case VP_ROUND_CEIL:
+            if (v && BIGDECIMAL_POSITIVE_P(c)) f = 1;
+            break;
+        case VP_ROUND_FLOOR:
+            if (v && BIGDECIMAL_NEGATIVE_P(c)) f = 1;
+            break;
+        case VP_ROUND_HALF_EVEN: /* Banker's rounding */
+            /* as per VP_ROUND_HALF_DOWN, because this is the last digit of precision,
 	   there is no case to worry about where v == 5 and some further digits are nonzero */
-	if (v > 5) f = 1;
-	else if (v == 5 && vPrev % 2) f = 1;
-	break;
+            if (v > 5)
+                f = 1;
+            else if (v == 5 && vPrev % 2)
+                f = 1;
+            break;
     }
     if (f) {
-	VpRdup(c, ixDigit);
-	VpNmlz(c);
+        VpRdup(c, ixDigit);
+        VpNmlz(c);
     }
 }
 
@@ -7521,16 +7579,18 @@ VpRdup(Real *m, size_t ind_m)
 
     carry = 1;
     while (carry > 0 && ind_m--) {
-	m->frac[ind_m] += carry;
-	if (m->frac[ind_m] >= BASE) m->frac[ind_m] -= BASE;
-	else                        carry = 0;
+        m->frac[ind_m] += carry;
+        if (m->frac[ind_m] >= BASE)
+            m->frac[ind_m] -= BASE;
+        else
+            carry = 0;
     }
     if (carry > 0) { /* Overflow,count exponent and set fraction part be 1  */
-	if (!AddExponent(m, 1)) return 0;
-	m->Prec = m->frac[0] = 1;
+        if (!AddExponent(m, 1)) return 0;
+        m->Prec = m->frac[0] = 1;
     }
     else {
-	VpNmlz(m);
+        VpNmlz(m);
     }
     return 1;
 }
@@ -7544,17 +7604,17 @@ VpFrac(Real *y, Real *x)
     size_t my, ind_y, ind_x;
 
     if (!VpHasVal(x)) {
-	VpAsgn(y, x, 1);
-	goto Exit;
+        VpAsgn(y, x, 1);
+        goto Exit;
     }
 
     if (x->exponent > 0 && (size_t)x->exponent >= x->Prec) {
-	VpSetZero(y, VpGetSign(x));
-	goto Exit;
+        VpSetZero(y, VpGetSign(x));
+        goto Exit;
     }
     else if (x->exponent <= 0) {
-	VpAsgn(y, x, 1);
-	goto Exit;
+        VpAsgn(y, x, 1);
+        goto Exit;
     }
 
     /* satisfy: x->exponent > 0 */
@@ -7567,17 +7627,17 @@ VpFrac(Real *y, Real *x)
     my = y->Prec;
     ind_x = x->exponent;
     while (ind_y < my) {
-	y->frac[ind_y] = x->frac[ind_x];
-	++ind_y;
-	++ind_x;
+        y->frac[ind_y] = x->frac[ind_x];
+        ++ind_y;
+        ++ind_x;
     }
     VpNmlz(y);
 
 Exit:
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpFrac y=%\n", y);
-	VPrint(stdout, "    x=%\n", x);
+        VPrint(stdout, "VpFrac y=%\n", y);
+        VPrint(stdout, "    x=%\n", x);
     }
 #endif /* BIGDECIMAL_DEBUG */
     return;
@@ -7595,56 +7655,57 @@ VpPowerByInt(Real *y, Real *x, SIGNED_VALUE n)
     Real *w2 = NULL;
 
     if (VpIsZero(x)) {
-	if (n == 0) {
-	    VpSetOne(y);
-	    goto Exit;
-	}
-	sign = VpGetSign(x);
-	if (n < 0) {
-	    n = -n;
-	    if (sign < 0) sign = (n % 2) ? -1 : 1;
-	    VpSetInf(y, sign);
-	}
-	else {
-	    if (sign < 0) sign = (n % 2) ? -1 : 1;
-	    VpSetZero(y,sign);
-	}
-	goto Exit;
+        if (n == 0) {
+            VpSetOne(y);
+            goto Exit;
+        }
+        sign = VpGetSign(x);
+        if (n < 0) {
+            n = -n;
+            if (sign < 0) sign = (n % 2) ? -1 : 1;
+            VpSetInf(y, sign);
+        }
+        else {
+            if (sign < 0) sign = (n % 2) ? -1 : 1;
+            VpSetZero(y, sign);
+        }
+        goto Exit;
     }
     if (VpIsNaN(x)) {
-	VpSetNaN(y);
-	goto Exit;
+        VpSetNaN(y);
+        goto Exit;
     }
     if (VpIsInf(x)) {
-	if (n == 0) {
-	    VpSetOne(y);
-	    goto Exit;
-	}
-	if (n > 0) {
-	    VpSetInf(y, (n % 2 == 0 || VpIsPosInf(x)) ? 1 : -1);
-	    goto Exit;
-	}
-	VpSetZero(y, (n % 2 == 0 || VpIsPosInf(x)) ? 1 : -1);
-	goto Exit;
+        if (n == 0) {
+            VpSetOne(y);
+            goto Exit;
+        }
+        if (n > 0) {
+            VpSetInf(y, (n % 2 == 0 || VpIsPosInf(x)) ? 1 : -1);
+            goto Exit;
+        }
+        VpSetZero(y, (n % 2 == 0 || VpIsPosInf(x)) ? 1 : -1);
+        goto Exit;
     }
 
     if (x->exponent == 1 && x->Prec == 1 && x->frac[0] == 1) {
-	/* abs(x) = 1 */
-	VpSetOne(y);
-	if (BIGDECIMAL_POSITIVE_P(x)) goto Exit;
-	if ((n % 2) == 0) goto Exit;
-	VpSetSign(y, -1);
-	goto Exit;
+        /* abs(x) = 1 */
+        VpSetOne(y);
+        if (BIGDECIMAL_POSITIVE_P(x)) goto Exit;
+        if ((n % 2) == 0) goto Exit;
+        VpSetSign(y, -1);
+        goto Exit;
     }
 
-    if (n > 0) sign = 1;
+    if (n > 0)
+        sign = 1;
     else if (n < 0) {
-	sign = -1;
-	n = -n;
+        sign = -1;
+        n = -n;
     }
     else {
-	VpSetOne(y);
-	goto Exit;
+        VpSetOne(y);
+        goto Exit;
     }
 
     /* Allocate working variables  */
@@ -7657,27 +7718,27 @@ VpPowerByInt(Real *y, Real *x, SIGNED_VALUE n)
     VpAsgn(y, x, 1);
     --n;
     while (n > 0) {
-	VpAsgn(w1, x, 1);
-	s = 1;
-	while (ss = s, (s += s) <= (size_t)n) {
-	    VpMult(w2, w1, w1);
-	    VpAsgn(w1, w2, 1);
-	}
-	n -= (SIGNED_VALUE)ss;
-	VpMult(w2, y, w1);
-	VpAsgn(y, w2, 1);
+        VpAsgn(w1, x, 1);
+        s = 1;
+        while (ss = s, (s += s) <= (size_t)n) {
+            VpMult(w2, w1, w1);
+            VpAsgn(w1, w2, 1);
+        }
+        n -= (SIGNED_VALUE)ss;
+        VpMult(w2, y, w1);
+        VpAsgn(y, w2, 1);
     }
     if (sign < 0) {
-	VpDivd(w1, w2, VpConstOne, y);
-	VpAsgn(y, w1, 1);
+        VpDivd(w1, w2, VpConstOne, y);
+        VpAsgn(y, w1, 1);
     }
 
 Exit:
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
-	VPrint(stdout, "VpPowerByInt y=%\n", y);
-	VPrint(stdout, "VpPowerByInt x=%\n", x);
-	printf("  n=%"PRIdVALUE"\n", n);
+        VPrint(stdout, "VpPowerByInt y=%\n", y);
+        VPrint(stdout, "VpPowerByInt x=%\n", x);
+        printf("  n=%" PRIdVALUE "\n", n);
     }
 #endif /* BIGDECIMAL_DEBUG */
     rbd_free_struct(w2);
@@ -7687,7 +7748,7 @@ Exit:
 
 #ifdef BIGDECIMAL_DEBUG
 int
-VpVarCheck(Real * v)
+VpVarCheck(Real *v)
 /*
  * Checks the validity of the Real variable v.
  * [Input]
@@ -7700,24 +7761,24 @@ VpVarCheck(Real * v)
     size_t i;
 
     if (v->MaxPrec == 0) {
-	printf("ERROR(VpVarCheck): Illegal Max. Precision(=%"PRIuSIZE")\n",
-	       v->MaxPrec);
-	return 1;
+        printf("ERROR(VpVarCheck): Illegal Max. Precision(=%" PRIuSIZE ")\n",
+          v->MaxPrec);
+        return 1;
     }
     if (v->Prec == 0 || v->Prec > v->MaxPrec) {
-	printf("ERROR(VpVarCheck): Illegal Precision(=%"PRIuSIZE")\n", v->Prec);
-	printf("       Max. Prec.=%"PRIuSIZE"\n", v->MaxPrec);
-	return 2;
+        printf("ERROR(VpVarCheck): Illegal Precision(=%" PRIuSIZE ")\n", v->Prec);
+        printf("       Max. Prec.=%" PRIuSIZE "\n", v->MaxPrec);
+        return 2;
     }
     for (i = 0; i < v->Prec; ++i) {
-	if (v->frac[i] >= BASE) {
+        if (v->frac[i] >= BASE) {
             printf("ERROR(VpVarCheck): Illegal fraction\n");
-            printf("       Frac[%"PRIuSIZE"]=%"PRIuDECDIG"\n", i, v->frac[i]);
-            printf("       Prec.   =%"PRIuSIZE"\n", v->Prec);
-            printf("       Exp. =%"PRIdVALUE"\n", v->exponent);
-            printf("       BASE =%"PRIuDECDIG"\n", BASE);
+            printf("       Frac[%" PRIuSIZE "]=%" PRIuDECDIG "\n", i, v->frac[i]);
+            printf("       Prec.   =%" PRIuSIZE "\n", v->Prec);
+            printf("       Exp. =%" PRIdVALUE "\n", v->exponent);
+            printf("       BASE =%" PRIuDECDIG "\n", BASE);
             return 3;
-	}
+        }
     }
     return 0;
 }

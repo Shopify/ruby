@@ -41,16 +41,16 @@ bug_str_qsort_bang(int argc, VALUE *argv, VALUE str)
         rb_raise(rb_eArgError, "negative size");
     }
     if (NIL_P(len) ||
-        (((n = NUM2INT(len)) < 0) ?
-         (rb_raise(rb_eArgError, "negative length"), 0) :
-         (b + n * s > l))) {
+      (((n = NUM2INT(len)) < 0) ?
+          (rb_raise(rb_eArgError, "negative length"), 0) :
+          (b + n * s > l))) {
         n = (l - b) / s;
     }
     rb_str_modify(str);
     d.enc = rb_enc_get(str);
     d.elsize = s;
     ruby_qsort(RSTRING_PTR(str) + b, n, s,
-               rb_block_given_p() ? cmp_1 : cmp_2, &d);
+      rb_block_given_p() ? cmp_1 : cmp_2, &d);
     return str;
 }
 

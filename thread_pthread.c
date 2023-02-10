@@ -11,49 +11,49 @@
 
 #ifdef THREAD_SYSTEM_DEPENDENT_IMPLEMENTATION
 
-#include "gc.h"
-#include "mjit.h"
+# include "gc.h"
+# include "mjit.h"
 
-#ifdef HAVE_SYS_RESOURCE_H
-#include <sys/resource.h>
-#endif
-#ifdef HAVE_THR_STKSEGMENT
-#include <thread.h>
-#endif
-#if defined(HAVE_FCNTL_H)
-#include <fcntl.h>
-#elif defined(HAVE_SYS_FCNTL_H)
-#include <sys/fcntl.h>
-#endif
-#ifdef HAVE_SYS_PRCTL_H
-#include <sys/prctl.h>
-#endif
-#if defined(HAVE_SYS_TIME_H)
-#include <sys/time.h>
-#endif
-#if defined(__HAIKU__)
-#include <kernel/OS.h>
-#endif
-#ifdef __linux__
-#include <sys/syscall.h> /* for SYS_gettid */
-#endif
-#include <time.h>
-#include <signal.h>
+# ifdef HAVE_SYS_RESOURCE_H
+#  include <sys/resource.h>
+# endif
+# ifdef HAVE_THR_STKSEGMENT
+#  include <thread.h>
+# endif
+# if defined(HAVE_FCNTL_H)
+#  include <fcntl.h>
+# elif defined(HAVE_SYS_FCNTL_H)
+#  include <sys/fcntl.h>
+# endif
+# ifdef HAVE_SYS_PRCTL_H
+#  include <sys/prctl.h>
+# endif
+# if defined(HAVE_SYS_TIME_H)
+#  include <sys/time.h>
+# endif
+# if defined(__HAIKU__)
+#  include <kernel/OS.h>
+# endif
+# ifdef __linux__
+#  include <sys/syscall.h> /* for SYS_gettid */
+# endif
+# include <time.h>
+# include <signal.h>
 
-#if defined __APPLE__
-# include <AvailabilityMacros.h>
-#endif
+# if defined __APPLE__
+#  include <AvailabilityMacros.h>
+# endif
 
-#if defined(HAVE_SYS_EVENTFD_H) && defined(HAVE_EVENTFD)
+# if defined(HAVE_SYS_EVENTFD_H) && defined(HAVE_EVENTFD)
 #  define USE_EVENTFD (1)
 #  include <sys/eventfd.h>
-#else
+# else
 #  define USE_EVENTFD (0)
-#endif
+# endif
 
-#if defined(SIGVTALRM) && !defined(__CYGWIN__) && !defined(__EMSCRIPTEN__)
+# if defined(SIGVTALRM) && !defined(__CYGWIN__) && !defined(__EMSCRIPTEN__)
 #  define USE_UBF_LIST 1
-#endif
+# endif
 
 /*
  * UBF_TIMER and ubf_list both use SIGVTALRM.
@@ -80,23 +80,23 @@
  * If we have vm->gvl.timer (on GVL contention), we don't need UBF_TIMER
  * as it can perform the same tasks while doing timeslices.
  */
-#define UBF_TIMER_NONE 0
-#define UBF_TIMER_POSIX 1
-#define UBF_TIMER_PTHREAD 2
+# define UBF_TIMER_NONE 0
+# define UBF_TIMER_POSIX 1
+# define UBF_TIMER_PTHREAD 2
 
-#ifndef UBF_TIMER
+# ifndef UBF_TIMER
 #  if defined(HAVE_TIMER_SETTIME) && defined(HAVE_TIMER_CREATE) && \
-      defined(CLOCK_MONOTONIC) && defined(USE_UBF_LIST)
-     /* preferred */
-#    define UBF_TIMER UBF_TIMER_POSIX
+    defined(CLOCK_MONOTONIC) && defined(USE_UBF_LIST)
+/* preferred */
+#   define UBF_TIMER UBF_TIMER_POSIX
 #  elif defined(USE_UBF_LIST)
-     /* safe, but inefficient */
-#    define UBF_TIMER UBF_TIMER_PTHREAD
+/* safe, but inefficient */
+#   define UBF_TIMER UBF_TIMER_PTHREAD
 #  else
-     /* we'll be racy without SIGVTALRM for ubf_list */
-#    define UBF_TIMER UBF_TIMER_NONE
+/* we'll be racy without SIGVTALRM for ubf_list */
+#   define UBF_TIMER UBF_TIMER_NONE
 #  endif
-#endif
+# endif
 
 struct rb_internal_thread_event_hook {
     rb_internal_thread_event_callback callback;
@@ -109,7 +109,10 @@ struct rb_internal_thread_event_hook {
 static rb_internal_thread_event_hook_t *rb_internal_thread_event_hooks = NULL;
 static pthread_rwlock_t rb_internal_thread_event_hooks_rw_lock = PTHREAD_RWLOCK_INITIALIZER;
 
-#define RB_INTERNAL_THREAD_HOOK(event) if (rb_internal_thread_event_hooks) { rb_thread_execute_hooks(event); }
+# define RB_INTERNAL_THREAD_HOOK(event) \
+  if (rb_internal_thread_event_hooks) { \
+   rb_thread_execute_hooks(event); \
+  }
 
 rb_internal_thread_event_hook_t *
 rb_internal_thread_add_event_hook(rb_internal_thread_event_callback callback, rb_event_flag_t internal_event, void *user_data)
@@ -134,7 +137,7 @@ rb_internal_thread_add_event_hook(rb_internal_thread_event_callback callback, rb
 }
 
 bool
-rb_internal_thread_remove_event_hook(rb_internal_thread_event_hook_t * hook)
+rb_internal_thread_remove_event_hook(rb_internal_thread_event_hook_t *hook)
 {
     int r;
     if ((r = pthread_rwlock_wrlock(&rb_internal_thread_event_hooks_rw_lock))) {
@@ -183,7 +186,7 @@ rb_thread_execute_hooks(rb_event_flag_t event)
             if (h->event & event) {
                 (*h->callback)(event, NULL, h->user_data);
             }
-        } while((h = h->next));
+        } while ((h = h->next));
     }
     if ((r = pthread_rwlock_unlock(&rb_internal_thread_event_hooks_rw_lock))) {
         rb_bug_errno("pthread_rwlock_unlock", r);
@@ -199,7 +202,7 @@ enum rtimer_state {
     RTIMER_DEAD
 };
 
-#if UBF_TIMER == UBF_TIMER_POSIX
+# if UBF_TIMER == UBF_TIMER_POSIX
 static const struct itimerspec zero;
 static struct {
     rb_atomic_t state_; /* rtimer_state */
@@ -209,17 +212,17 @@ static struct {
     /* .state = */ RTIMER_DEAD,
 };
 
-#define TIMER_STATE_DEBUG 0
+#  define TIMER_STATE_DEBUG 0
 
 static const char *
 rtimer_state_name(enum rtimer_state state)
 {
     switch (state) {
-      case RTIMER_DISARM: return "disarm";
-      case RTIMER_ARMING: return "arming";
-      case RTIMER_ARMED:  return "armed";
-      case RTIMER_DEAD:   return "dead";
-      default: rb_bug("unreachable");
+        case RTIMER_DISARM: return "disarm";
+        case RTIMER_ARMING: return "arming";
+        case RTIMER_ARMED: return "armed";
+        case RTIMER_DEAD: return "dead";
+        default: rb_bug("unreachable");
     }
 }
 
@@ -248,7 +251,7 @@ timer_state_cas(enum rtimer_state expected_prev, enum rtimer_state state)
     return prev;
 }
 
-#elif UBF_TIMER == UBF_TIMER_PTHREAD
+# elif UBF_TIMER == UBF_TIMER_PTHREAD
 static void *timer_pthread_fn(void *);
 static struct {
     int low[2];
@@ -258,20 +261,20 @@ static struct {
 } timer_pthread = {
     { -1, -1 },
 };
-#endif
+# endif
 
 static const rb_hrtime_t *sigwait_timeout(rb_thread_t *, int sigwait_fd,
-                                              const rb_hrtime_t *,
-                                              int *drained_p);
+  const rb_hrtime_t *,
+  int *drained_p);
 static void ubf_timer_disarm(void);
 static void threadptr_trap_interrupt(rb_thread_t *);
 static void ubf_wakeup_all_threads(void);
 static int ubf_threads_empty(void);
 
-#define TIMER_THREAD_CREATED_P() (signal_self_pipe.owner_process == getpid())
+# define TIMER_THREAD_CREATED_P() (signal_self_pipe.owner_process == getpid())
 
 /* for testing, and in case we come across a platform w/o pipes: */
-#define BUSY_WAIT_SIGNALS (0)
+# define BUSY_WAIT_SIGNALS (0)
 
 /*
  * sigwait_th is the thread which owns sigwait_fd and sleeps on it
@@ -279,30 +282,30 @@ static int ubf_threads_empty(void);
  * it to THREAD_INVALID at startup and fork time.  It is the ONLY thread
  * allowed to read from sigwait_fd, otherwise starvation can occur.
  */
-#define THREAD_INVALID ((const rb_thread_t *)-1)
+# define THREAD_INVALID ((const rb_thread_t *)-1)
 static const rb_thread_t *sigwait_th;
 
-#ifdef HAVE_SCHED_YIELD
-#define native_thread_yield() (void)sched_yield()
-#else
-#define native_thread_yield() ((void)0)
-#endif
+# ifdef HAVE_SCHED_YIELD
+#  define native_thread_yield() (void)sched_yield()
+# else
+#  define native_thread_yield() ((void)0)
+# endif
 
-#if defined(HAVE_PTHREAD_CONDATTR_SETCLOCK) && \
-    defined(CLOCK_REALTIME) && defined(CLOCK_MONOTONIC) && \
-    defined(HAVE_CLOCK_GETTIME)
+# if defined(HAVE_PTHREAD_CONDATTR_SETCLOCK) && \
+   defined(CLOCK_REALTIME) && defined(CLOCK_MONOTONIC) && \
+   defined(HAVE_CLOCK_GETTIME)
 static pthread_condattr_t condattr_mono;
 static pthread_condattr_t *condattr_monotonic = &condattr_mono;
-#else
+# else
 static const void *const condattr_monotonic = NULL;
-#endif
+# endif
 
 /* 100ms.  10ms is too small for user level thread scheduling
  * on recent Linux (tested on 2.6.35)
  */
-#define TIME_QUANTUM_MSEC (100)
-#define TIME_QUANTUM_USEC (TIME_QUANTUM_MSEC * 1000)
-#define TIME_QUANTUM_NSEC (TIME_QUANTUM_USEC * 1000)
+# define TIME_QUANTUM_MSEC (100)
+# define TIME_QUANTUM_USEC (TIME_QUANTUM_MSEC * 1000)
+# define TIME_QUANTUM_NSEC (TIME_QUANTUM_USEC * 1000)
 
 static rb_hrtime_t native_cond_timeout(rb_nativethread_cond_t *, rb_hrtime_t);
 static int native_cond_timedwait(rb_nativethread_cond_t *cond, pthread_mutex_t *mutex, const rb_hrtime_t *abs);
@@ -383,7 +386,7 @@ thread_sched_to_running_common(struct rb_thread_sched *sched, rb_thread_t *th)
     RB_INTERNAL_THREAD_HOOK(RUBY_INTERNAL_THREAD_EVENT_READY);
     if (sched->running) {
         VM_ASSERT(th->unblock.func == 0 &&
-                  "we must not be in ubf_list and GVL readyq at the same time");
+          "we must not be in ubf_list and GVL readyq at the same time");
 
         // waiting -> ready
         thread_sched_to_ready_common(sched, th);
@@ -500,7 +503,7 @@ rb_thread_sched_init(struct rb_thread_sched *sched)
     sched->wait_yield = 0;
 }
 
-#if 0
+# if 0
 // TODO
 
 static void clear_thread_cache_altstack(void);
@@ -520,9 +523,9 @@ rb_thread_sched_destroy(struct rb_thread_sched *sched)
     }
     clear_thread_cache_altstack();
 }
-#endif
+# endif
 
-#if defined(HAVE_WORKING_FORK)
+# if defined(HAVE_WORKING_FORK)
 static void thread_cache_reset(void);
 static void
 thread_sched_atfork(struct rb_thread_sched *sched)
@@ -531,9 +534,9 @@ thread_sched_atfork(struct rb_thread_sched *sched)
     rb_thread_sched_init(sched);
     thread_sched_to_running(sched, GET_THREAD());
 }
-#endif
+# endif
 
-#define NATIVE_MUTEX_LOCK_DEBUG 0
+# define NATIVE_MUTEX_LOCK_DEBUG 0
 
 static void
 mutex_debug(const char *msg, void *lock)
@@ -542,9 +545,13 @@ mutex_debug(const char *msg, void *lock)
         int r;
         static pthread_mutex_t dbglock = PTHREAD_MUTEX_INITIALIZER;
 
-        if ((r = pthread_mutex_lock(&dbglock)) != 0) {exit(EXIT_FAILURE);}
+        if ((r = pthread_mutex_lock(&dbglock)) != 0) {
+            exit(EXIT_FAILURE);
+        }
         fprintf(stdout, "%s: %p\n", msg, lock);
-        if ((r = pthread_mutex_unlock(&dbglock)) != 0) {exit(EXIT_FAILURE);}
+        if ((r = pthread_mutex_unlock(&dbglock)) != 0) {
+            exit(EXIT_FAILURE);
+        }
     }
 }
 
@@ -710,14 +717,14 @@ native_cond_timeout(rb_nativethread_cond_t *cond, const rb_hrtime_t rel)
     }
 }
 
-#define native_cleanup_push pthread_cleanup_push
-#define native_cleanup_pop  pthread_cleanup_pop
+# define native_cleanup_push pthread_cleanup_push
+# define native_cleanup_pop pthread_cleanup_pop
 
-#ifdef RB_THREAD_LOCAL_SPECIFIER
+# ifdef RB_THREAD_LOCAL_SPECIFIER
 static RB_THREAD_LOCAL_SPECIFIER rb_thread_t *ruby_native_thread;
-#else
+# else
 static pthread_key_t ruby_native_thread_key;
-#endif
+# endif
 
 static void
 null_func(int i)
@@ -728,20 +735,20 @@ null_func(int i)
 rb_thread_t *
 ruby_thread_from_native(void)
 {
-#ifdef RB_THREAD_LOCAL_SPECIFIER
+# ifdef RB_THREAD_LOCAL_SPECIFIER
     return ruby_native_thread;
-#else
+# else
     return pthread_getspecific(ruby_native_thread_key);
-#endif
+# endif
 }
 
 int
 ruby_thread_set_native(rb_thread_t *th)
 {
     if (th) {
-#ifdef USE_UBF_LIST
+# ifdef USE_UBF_LIST
         ccan_list_node_init(&th->sched.node.ubf);
-#endif
+# endif
     }
 
     // setup TLS
@@ -749,41 +756,41 @@ ruby_thread_set_native(rb_thread_t *th)
     if (th && th->ec) {
         rb_ractor_set_current_ec(th->ractor, th->ec);
     }
-#ifdef RB_THREAD_LOCAL_SPECIFIER
+# ifdef RB_THREAD_LOCAL_SPECIFIER
     ruby_native_thread = th;
     return 1;
-#else
+# else
     return pthread_setspecific(ruby_native_thread_key, th) == 0;
-#endif
+# endif
 }
 
-#ifdef RB_THREAD_T_HAS_NATIVE_ID
+# ifdef RB_THREAD_T_HAS_NATIVE_ID
 static int
 get_native_thread_id(void)
 {
-#ifdef __linux__
+#  ifdef __linux__
     return (int)syscall(SYS_gettid);
-#elif defined(__FreeBSD__)
+#  elif defined(__FreeBSD__)
     return pthread_getthreadid_np();
-#endif
+#  endif
 }
-#endif
+# endif
 
 static void
 native_thread_init(struct rb_native_thread *nt)
 {
-#ifdef RB_THREAD_T_HAS_NATIVE_ID
+# ifdef RB_THREAD_T_HAS_NATIVE_ID
     nt->tid = get_native_thread_id();
-#endif
+# endif
     rb_native_cond_initialize(&nt->cond.readyq);
     if (&nt->cond.readyq != &nt->cond.intr)
-      rb_native_cond_initialize(&nt->cond.intr);
+        rb_native_cond_initialize(&nt->cond.intr);
 }
 
 void
 Init_native_thread(rb_thread_t *main_th)
 {
-#if defined(HAVE_PTHREAD_CONDATTR_SETCLOCK)
+# if defined(HAVE_PTHREAD_CONDATTR_SETCLOCK)
     if (condattr_monotonic) {
         int r = pthread_condattr_init(condattr_monotonic);
         if (r == 0) {
@@ -791,16 +798,16 @@ Init_native_thread(rb_thread_t *main_th)
         }
         if (r) condattr_monotonic = NULL;
     }
-#endif
+# endif
 
-#ifndef RB_THREAD_LOCAL_SPECIFIER
+# ifndef RB_THREAD_LOCAL_SPECIFIER
     if (pthread_key_create(&ruby_native_thread_key, 0) == EAGAIN) {
         rb_bug("pthread_key_create failed (ruby_native_thread_key)");
     }
     if (pthread_key_create(&ruby_current_ec_key, 0) == EAGAIN) {
         rb_bug("pthread_key_create failed (ruby_current_ec_key)");
     }
-#endif
+# endif
     posix_signal(SIGVTALRM, null_func);
 
     // setup main thread
@@ -809,9 +816,9 @@ Init_native_thread(rb_thread_t *main_th)
     native_thread_init(main_th->nt);
 }
 
-#ifndef USE_THREAD_CACHE
-#define USE_THREAD_CACHE 1
-#endif
+# ifndef USE_THREAD_CACHE
+#  define USE_THREAD_CACHE 1
+# endif
 
 static void
 native_thread_destroy(rb_thread_t *th)
@@ -821,7 +828,7 @@ native_thread_destroy(rb_thread_t *th)
     rb_native_cond_destroy(&nt->cond.readyq);
 
     if (&nt->cond.readyq != &nt->cond.intr)
-      rb_native_cond_destroy(&nt->cond.intr);
+        rb_native_cond_destroy(&nt->cond.intr);
 
     /*
      * prevent false positive from ruby_thread_has_gvl_p if that
@@ -831,118 +838,121 @@ native_thread_destroy(rb_thread_t *th)
         ruby_thread_set_native(0);
 }
 
-#if USE_THREAD_CACHE
+# if USE_THREAD_CACHE
 static rb_thread_t *register_cached_thread_and_wait(void *);
-#endif
+# endif
 
-#if defined HAVE_PTHREAD_GETATTR_NP || defined HAVE_PTHREAD_ATTR_GET_NP
-#define STACKADDR_AVAILABLE 1
-#elif defined HAVE_PTHREAD_GET_STACKADDR_NP && defined HAVE_PTHREAD_GET_STACKSIZE_NP
-#define STACKADDR_AVAILABLE 1
-#undef MAINSTACKADDR_AVAILABLE
-#define MAINSTACKADDR_AVAILABLE 1
+# if defined HAVE_PTHREAD_GETATTR_NP || defined HAVE_PTHREAD_ATTR_GET_NP
+#  define STACKADDR_AVAILABLE 1
+# elif defined HAVE_PTHREAD_GET_STACKADDR_NP && defined HAVE_PTHREAD_GET_STACKSIZE_NP
+#  define STACKADDR_AVAILABLE 1
+#  undef MAINSTACKADDR_AVAILABLE
+#  define MAINSTACKADDR_AVAILABLE 1
 void *pthread_get_stackaddr_np(pthread_t);
 size_t pthread_get_stacksize_np(pthread_t);
-#elif defined HAVE_THR_STKSEGMENT || defined HAVE_PTHREAD_STACKSEG_NP
-#define STACKADDR_AVAILABLE 1
-#elif defined HAVE_PTHREAD_GETTHRDS_NP
-#define STACKADDR_AVAILABLE 1
-#elif defined __HAIKU__
-#define STACKADDR_AVAILABLE 1
-#endif
-
-#ifndef MAINSTACKADDR_AVAILABLE
-# ifdef STACKADDR_AVAILABLE
-#   define MAINSTACKADDR_AVAILABLE 1
-# else
-#   define MAINSTACKADDR_AVAILABLE 0
+# elif defined HAVE_THR_STKSEGMENT || defined HAVE_PTHREAD_STACKSEG_NP
+#  define STACKADDR_AVAILABLE 1
+# elif defined HAVE_PTHREAD_GETTHRDS_NP
+#  define STACKADDR_AVAILABLE 1
+# elif defined __HAIKU__
+#  define STACKADDR_AVAILABLE 1
 # endif
-#endif
-#if MAINSTACKADDR_AVAILABLE && !defined(get_main_stack)
-# define get_main_stack(addr, size) get_stack(addr, size)
-#endif
 
-#ifdef STACKADDR_AVAILABLE
+# ifndef MAINSTACKADDR_AVAILABLE
+#  ifdef STACKADDR_AVAILABLE
+#   define MAINSTACKADDR_AVAILABLE 1
+#  else
+#   define MAINSTACKADDR_AVAILABLE 0
+#  endif
+# endif
+# if MAINSTACKADDR_AVAILABLE && !defined(get_main_stack)
+#  define get_main_stack(addr, size) get_stack(addr, size)
+# endif
+
+# ifdef STACKADDR_AVAILABLE
 /*
  * Get the initial address and size of current thread's stack
  */
 static int
 get_stack(void **addr, size_t *size)
 {
-#define CHECK_ERR(expr)				\
-    {int err = (expr); if (err) return err;}
-#ifdef HAVE_PTHREAD_GETATTR_NP /* Linux */
+#  define CHECK_ERR(expr) \
+   { \
+    int err = (expr); \
+    if (err) return err; \
+   }
+#  ifdef HAVE_PTHREAD_GETATTR_NP /* Linux */
     pthread_attr_t attr;
     size_t guard = 0;
     STACK_GROW_DIR_DETECTION;
     CHECK_ERR(pthread_getattr_np(pthread_self(), &attr));
-# ifdef HAVE_PTHREAD_ATTR_GETSTACK
+#   ifdef HAVE_PTHREAD_ATTR_GETSTACK
     CHECK_ERR(pthread_attr_getstack(&attr, addr, size));
     STACK_DIR_UPPER((void)0, (void)(*addr = (char *)*addr + *size));
-# else
+#   else
     CHECK_ERR(pthread_attr_getstackaddr(&attr, addr));
     CHECK_ERR(pthread_attr_getstacksize(&attr, size));
-# endif
-# ifdef HAVE_PTHREAD_ATTR_GETGUARDSIZE
+#   endif
+#   ifdef HAVE_PTHREAD_ATTR_GETGUARDSIZE
     CHECK_ERR(pthread_attr_getguardsize(&attr, &guard));
-# else
+#   else
     guard = getpagesize();
-# endif
+#   endif
     *size -= guard;
     pthread_attr_destroy(&attr);
-#elif defined HAVE_PTHREAD_ATTR_GET_NP /* FreeBSD, DragonFly BSD, NetBSD */
+#  elif defined HAVE_PTHREAD_ATTR_GET_NP /* FreeBSD, DragonFly BSD, NetBSD */
     pthread_attr_t attr;
     CHECK_ERR(pthread_attr_init(&attr));
     CHECK_ERR(pthread_attr_get_np(pthread_self(), &attr));
-# ifdef HAVE_PTHREAD_ATTR_GETSTACK
+#   ifdef HAVE_PTHREAD_ATTR_GETSTACK
     CHECK_ERR(pthread_attr_getstack(&attr, addr, size));
-# else
+#   else
     CHECK_ERR(pthread_attr_getstackaddr(&attr, addr));
     CHECK_ERR(pthread_attr_getstacksize(&attr, size));
-# endif
+#   endif
     STACK_DIR_UPPER((void)0, (void)(*addr = (char *)*addr + *size));
     pthread_attr_destroy(&attr);
-#elif (defined HAVE_PTHREAD_GET_STACKADDR_NP && defined HAVE_PTHREAD_GET_STACKSIZE_NP) /* MacOS X */
+#  elif (defined HAVE_PTHREAD_GET_STACKADDR_NP && defined HAVE_PTHREAD_GET_STACKSIZE_NP) /* MacOS X */
     pthread_t th = pthread_self();
     *addr = pthread_get_stackaddr_np(th);
     *size = pthread_get_stacksize_np(th);
-#elif defined HAVE_THR_STKSEGMENT || defined HAVE_PTHREAD_STACKSEG_NP
+#  elif defined HAVE_THR_STKSEGMENT || defined HAVE_PTHREAD_STACKSEG_NP
     stack_t stk;
-# if defined HAVE_THR_STKSEGMENT /* Solaris */
+#   if defined HAVE_THR_STKSEGMENT /* Solaris */
     CHECK_ERR(thr_stksegment(&stk));
-# else /* OpenBSD */
+#   else /* OpenBSD */
     CHECK_ERR(pthread_stackseg_np(pthread_self(), &stk));
-# endif
+#   endif
     *addr = stk.ss_sp;
     *size = stk.ss_size;
-#elif defined HAVE_PTHREAD_GETTHRDS_NP /* AIX */
+#  elif defined HAVE_PTHREAD_GETTHRDS_NP /* AIX */
     pthread_t th = pthread_self();
     struct __pthrdsinfo thinfo;
     char reg[256];
-    int regsiz=sizeof(reg);
+    int regsiz = sizeof(reg);
     CHECK_ERR(pthread_getthrds_np(&th, PTHRDSINFO_QUERY_ALL,
-                                   &thinfo, sizeof(thinfo),
-                                   &reg, &regsiz));
+      &thinfo, sizeof(thinfo),
+      &reg, &regsiz));
     *addr = thinfo.__pi_stackaddr;
     /* Must not use thinfo.__pi_stacksize for size.
        It is around 3KB smaller than the correct size
        calculated by thinfo.__pi_stackend - thinfo.__pi_stackaddr. */
     *size = thinfo.__pi_stackend - thinfo.__pi_stackaddr;
     STACK_DIR_UPPER((void)0, (void)(*addr = (char *)*addr + *size));
-#elif defined __HAIKU__
+#  elif defined __HAIKU__
     thread_info info;
     STACK_GROW_DIR_DETECTION;
     CHECK_ERR(get_thread_info(find_thread(NULL), &info));
     *addr = info.stack_base;
     *size = (uintptr_t)info.stack_end - (uintptr_t)info.stack_base;
     STACK_DIR_UPPER((void)0, (void)(*addr = (char *)*addr + *size));
-#else
-#error STACKADDR_AVAILABLE is defined but not implemented.
-#endif
+#  else
+#   error STACKADDR_AVAILABLE is defined but not implemented.
+#  endif
     return 0;
-#undef CHECK_ERR
+#  undef CHECK_ERR
 }
-#endif
+# endif
 
 static struct {
     rb_nativethread_id_t id;
@@ -950,9 +960,9 @@ static struct {
     VALUE *stack_start;
 } native_main_thread;
 
-#ifdef STACK_END_ADDRESS
+# ifdef STACK_END_ADDRESS
 extern void *STACK_END_ADDRESS;
-#endif
+# endif
 
 enum {
     RUBY_STACK_SPACE_LIMIT = 1024 * 1024, /* 1024KB */
@@ -971,16 +981,16 @@ space_size(size_t stack_size)
     }
 }
 
-#ifdef __linux__
+# ifdef __linux__
 static __attribute__((noinline)) void
 reserve_stack(volatile char *limit, size_t size)
 {
-# ifdef C_ALLOCA
+#  ifdef C_ALLOCA
 #   error needs alloca()
-# endif
+#  endif
     struct rlimit rl;
     volatile char buf[0x100];
-    enum {stack_check_margin = 0x1000}; /* for -fstack-check */
+    enum { stack_check_margin = 0x1000 }; /* for -fstack-check */
 
     STACK_GROW_DIR_DETECTION;
 
@@ -1004,7 +1014,7 @@ reserve_stack(volatile char *limit, size_t size)
              */
             size_t sz = limit - end;
             limit = alloca(sz);
-            limit[sz-1] = 0;
+            limit[sz - 1] = 0;
         }
     }
     else {
@@ -1023,20 +1033,20 @@ reserve_stack(volatile char *limit, size_t size)
         }
     }
 }
-#else
-# define reserve_stack(limit, size) ((void)(limit), (void)(size))
-#endif
+# else
+#  define reserve_stack(limit, size) ((void)(limit), (void)(size))
+# endif
 
-#undef ruby_init_stack
+# undef ruby_init_stack
 void
 ruby_init_stack(volatile VALUE *addr)
 {
     native_main_thread.id = pthread_self();
 
-#if MAINSTACKADDR_AVAILABLE
+# if MAINSTACKADDR_AVAILABLE
     if (native_main_thread.stack_maxsize) return;
     {
-        void* stackaddr;
+        void *stackaddr;
         size_t size;
         if (get_main_stack(&stackaddr, &size) == 0) {
             native_main_thread.stack_maxsize = size;
@@ -1045,27 +1055,27 @@ ruby_init_stack(volatile VALUE *addr)
             goto bound_check;
         }
     }
-#endif
-#ifdef STACK_END_ADDRESS
+# endif
+# ifdef STACK_END_ADDRESS
     native_main_thread.stack_start = STACK_END_ADDRESS;
-#else
+# else
     if (!native_main_thread.stack_start ||
-        STACK_UPPER((VALUE *)(void *)&addr,
-                    native_main_thread.stack_start > addr,
-                    native_main_thread.stack_start < addr)) {
+      STACK_UPPER((VALUE *)(void *)&addr,
+        native_main_thread.stack_start > addr,
+        native_main_thread.stack_start < addr)) {
         native_main_thread.stack_start = (VALUE *)addr;
     }
-#endif
-    {
-#if defined(HAVE_GETRLIMIT)
-#if defined(PTHREAD_STACK_DEFAULT)
-# if PTHREAD_STACK_DEFAULT < RUBY_STACK_SPACE*5
-#  error "PTHREAD_STACK_DEFAULT is too small"
 # endif
+    {
+# if defined(HAVE_GETRLIMIT)
+#  if defined(PTHREAD_STACK_DEFAULT)
+#   if PTHREAD_STACK_DEFAULT < RUBY_STACK_SPACE * 5
+#    error "PTHREAD_STACK_DEFAULT is too small"
+#   endif
         size_t size = PTHREAD_STACK_DEFAULT;
-#else
+#  else
         size_t size = RUBY_VM_THREAD_VM_STACK_SIZE;
-#endif
+#  endif
         size_t space;
         int pagesize = getpagesize();
         struct rlimit rlim;
@@ -1081,12 +1091,12 @@ ruby_init_stack(volatile VALUE *addr)
             space = (size_t)addr - ((size_t)((char *)addr - size) / pagesize + 1) * pagesize;
         }
         native_main_thread.stack_maxsize = space;
-#endif
+# endif
     }
 
-#if MAINSTACKADDR_AVAILABLE
-  bound_check:
-#endif
+# if MAINSTACKADDR_AVAILABLE
+bound_check:
+# endif
     /* If addr is out of range of main-thread stack range estimation,  */
     /* it should be on co-routine (alternative stack). [Feature #2294] */
     {
@@ -1110,8 +1120,13 @@ ruby_init_stack(volatile VALUE *addr)
     }
 }
 
-#define CHECK_ERR(expr) \
-    {int err = (expr); if (err) {rb_bug_errno(#expr, err);}}
+# define CHECK_ERR(expr) \
+  { \
+   int err = (expr); \
+   if (err) { \
+    rb_bug_errno(#expr, err); \
+   } \
+  }
 
 static int
 native_thread_init_stack(rb_thread_t *th)
@@ -1123,7 +1138,7 @@ native_thread_init_stack(rb_thread_t *th)
         th->ec->machine.stack_maxsize = native_main_thread.stack_maxsize;
     }
     else {
-#ifdef STACKADDR_AVAILABLE
+# ifdef STACKADDR_AVAILABLE
         void *start;
         size_t size;
 
@@ -1132,56 +1147,56 @@ native_thread_init_stack(rb_thread_t *th)
             th->ec->machine.stack_start = (VALUE *)&curr;
             th->ec->machine.stack_maxsize = size - diff;
         }
-#else
+# else
         rb_raise(rb_eNotImpError, "ruby engine can initialize only in the main thread");
-#endif
+# endif
     }
 
     return 0;
 }
 
-#ifndef __CYGWIN__
-#define USE_NATIVE_THREAD_INIT 1
-#endif
+# ifndef __CYGWIN__
+#  define USE_NATIVE_THREAD_INIT 1
+# endif
 
 static void *
 thread_start_func_1(void *th_ptr)
 {
     rb_thread_t *th = th_ptr;
     RB_ALTSTACK_INIT(void *altstack, th->nt->altstack);
-#if USE_THREAD_CACHE
-  thread_start:
-#endif
+# if USE_THREAD_CACHE
+thread_start:
+# endif
     {
-#if !defined USE_NATIVE_THREAD_INIT
+# if !defined USE_NATIVE_THREAD_INIT
         VALUE stack_start;
-#endif
+# endif
 
-#if defined USE_NATIVE_THREAD_INIT
+# if defined USE_NATIVE_THREAD_INIT
         native_thread_init_stack(th);
-#endif
+# endif
 
         native_thread_init(th->nt);
 
         RB_INTERNAL_THREAD_HOOK(RUBY_INTERNAL_THREAD_EVENT_STARTED);
 
         /* run */
-#if defined USE_NATIVE_THREAD_INIT
+# if defined USE_NATIVE_THREAD_INIT
         thread_start_func_2(th, th->ec->machine.stack_start);
-#else
+# else
         thread_start_func_2(th, &stack_start);
-#endif
+# endif
 
         RB_INTERNAL_THREAD_HOOK(RUBY_INTERNAL_THREAD_EVENT_EXITED);
     }
-#if USE_THREAD_CACHE
+# if USE_THREAD_CACHE
     /* cache thread */
     if ((th = register_cached_thread_and_wait(RB_ALTSTACK(altstack))) != 0) {
         goto thread_start;
     }
-#else
+# else
     RB_ALTSTACK_FREE(altstack);
-#endif
+# endif
     return 0;
 }
 
@@ -1193,7 +1208,7 @@ struct cached_thread_entry {
     struct ccan_list_node node;
 };
 
-#if USE_THREAD_CACHE
+# if USE_THREAD_CACHE
 static rb_nativethread_lock_t thread_cache_lock = RB_NATIVETHREAD_LOCK_INIT;
 static CCAN_LIST_HEAD(cached_thread_head);
 
@@ -1211,9 +1226,9 @@ thread_cache_reset(void)
  * the need for thread pool in many network programs (taking into account
  * worst case network latency across the globe) without wasting memory
  */
-#ifndef THREAD_CACHE_TIME
-#  define THREAD_CACHE_TIME ((rb_hrtime_t)3 * RB_HRTIME_PER_SEC)
-#endif
+#  ifndef THREAD_CACHE_TIME
+#   define THREAD_CACHE_TIME ((rb_hrtime_t)3 * RB_HRTIME_PER_SEC)
+#  endif
 
 static rb_thread_t *
 register_cached_thread_and_wait(void *altstack)
@@ -1246,16 +1261,19 @@ register_cached_thread_and_wait(void *altstack)
 
     return entry.th;
 }
-#else
+# else
 #  if defined(HAVE_WORKING_FORK)
-static void thread_cache_reset(void) { }
+static void
+thread_cache_reset(void)
+{
+}
 #  endif
-#endif
+# endif
 
 static int
 use_cached_thread(rb_thread_t *th)
 {
-#if USE_THREAD_CACHE
+# if USE_THREAD_CACHE
     struct cached_thread_entry *entry;
 
     rb_native_mutex_lock(&thread_cache_lock);
@@ -1268,16 +1286,16 @@ use_cached_thread(rb_thread_t *th)
     }
     rb_native_mutex_unlock(&thread_cache_lock);
     return !!entry;
-#endif
+# endif
     return 0;
 }
 
-#if 0
+# if 0
 // TODO
 static void
 clear_thread_cache_altstack(void)
 {
-#if USE_THREAD_CACHE
+#  if USE_THREAD_CACHE
     struct cached_thread_entry *entry;
 
     rb_native_mutex_lock(&thread_cache_lock);
@@ -1287,9 +1305,9 @@ clear_thread_cache_altstack(void)
         RB_ALTSTACK_FREE(altstack);
     }
     rb_native_mutex_unlock(&thread_cache_lock);
-#endif
+#  endif
 }
-#endif
+# endif
 
 static int
 native_thread_create(rb_thread_t *th)
@@ -1307,9 +1325,9 @@ native_thread_create(rb_thread_t *th)
         const size_t stack_size = th->vm->default_params.thread_machine_stack_size + th->vm->default_params.thread_vm_stack_size;
         const size_t space = space_size(stack_size);
 
-#ifdef USE_SIGALTSTACK
+# ifdef USE_SIGALTSTACK
         th->nt->altstack = rb_allocate_sigaltstack();
-#endif
+# endif
         th->ec->machine.stack_maxsize = stack_size - space;
 
         CHECK_ERR(pthread_attr_init(&attr));
@@ -1334,12 +1352,12 @@ native_thread_create(rb_thread_t *th)
     return err;
 }
 
-#if USE_NATIVE_THREAD_PRIORITY
+# if USE_NATIVE_THREAD_PRIORITY
 
 static void
 native_thread_apply_priority(rb_thread_t *th)
 {
-#if defined(_POSIX_PRIORITY_SCHEDULING) && (_POSIX_PRIORITY_SCHEDULING > 0)
+#  if defined(_POSIX_PRIORITY_SCHEDULING) && (_POSIX_PRIORITY_SCHEDULING > 0)
     struct sched_param sp;
     int policy;
     int priority = 0 - th->priority;
@@ -1357,12 +1375,12 @@ native_thread_apply_priority(rb_thread_t *th)
 
     sp.sched_priority = priority;
     pthread_setschedparam(th->nt->thread_id, policy, &sp);
-#else
+#  else
     /* not touched */
-#endif
+#  endif
 }
 
-#endif /* USE_NATIVE_THREAD_PRIORITY */
+# endif /* USE_NATIVE_THREAD_PRIORITY */
 
 static int
 native_fd_select(int n, rb_fdset_t *readfds, rb_fdset_t *writefds, rb_fdset_t *exceptfds, struct timeval *timeout, rb_thread_t *th)
@@ -1428,7 +1446,7 @@ native_cond_sleep(rb_thread_t *th, rb_hrtime_t *rel)
     RUBY_DEBUG_LOG("done th:%u", rb_th_serial(th));
 }
 
-#ifdef USE_UBF_LIST
+# ifdef USE_UBF_LIST
 static CCAN_LIST_HEAD(ubf_list_head);
 static rb_nativethread_lock_t ubf_list_lock = RB_NATIVETHREAD_LOCK_INIT;
 
@@ -1445,7 +1463,7 @@ register_ubf_list(rb_thread_t *th)
 {
     struct ccan_list_node *node = &th->sched.node.ubf;
 
-    if (ccan_list_empty((struct ccan_list_head*)node)) {
+    if (ccan_list_empty((struct ccan_list_head *)node)) {
         rb_native_mutex_lock(&ubf_list_lock);
         ccan_list_add(&ubf_list_head, node);
         rb_native_mutex_unlock(&ubf_list_lock);
@@ -1461,7 +1479,7 @@ unregister_ubf_list(rb_thread_t *th)
     /* we can't allow re-entry into ubf_list_head */
     VM_ASSERT(th->unblock.func == 0);
 
-    if (!ccan_list_empty((struct ccan_list_head*)node)) {
+    if (!ccan_list_empty((struct ccan_list_head *)node)) {
         rb_native_mutex_lock(&ubf_list_lock);
         ccan_list_del_init(node);
         if (ccan_list_empty(&ubf_list_head) && !rb_signal_buff_size()) {
@@ -1531,24 +1549,35 @@ ubf_wakeup_all_threads(void)
         rb_native_mutex_lock(&ubf_list_lock);
         rb_thread_t *th;
 
-        ccan_list_for_each(&ubf_list_head, th, sched.node.ubf) {
+        ccan_list_for_each(&ubf_list_head, th, sched.node.ubf)
+        {
             ubf_wakeup_thread(th);
         }
         rb_native_mutex_unlock(&ubf_list_lock);
     }
 }
 
-#else /* USE_UBF_LIST */
-#define register_ubf_list(th) (void)(th)
-#define unregister_ubf_list(th) (void)(th)
-#define ubf_select 0
-static void ubf_wakeup_all_threads(void) { return; }
-static int ubf_threads_empty(void) { return 1; }
-#define ubf_list_atfork() do {} while (0)
-#endif /* USE_UBF_LIST */
+# else /* USE_UBF_LIST */
+#  define register_ubf_list(th) (void)(th)
+#  define unregister_ubf_list(th) (void)(th)
+#  define ubf_select 0
+static void
+ubf_wakeup_all_threads(void)
+{
+    return;
+}
+static int
+ubf_threads_empty(void)
+{
+    return 1;
+}
+#  define ubf_list_atfork() \
+   do { \
+   } while (0)
+# endif /* USE_UBF_LIST */
 
-#define TT_DEBUG 0
-#define WRITE_CONST(fd, str) (void)(write((fd),(str),sizeof(str)-1)<0)
+# define TT_DEBUG 0
+# define WRITE_CONST(fd, str) (void)(write((fd), (str), sizeof(str) - 1) < 0)
 
 static struct {
     /* pipes are closed in forked children when owner_process does not match */
@@ -1558,35 +1587,35 @@ static struct {
     /* volatile for signal handler use: */
     volatile rb_pid_t owner_process;
 } signal_self_pipe = {
-    {-1, -1},
-    {-1, -1},
+    { -1, -1 },
+    { -1, -1 },
 };
 
 /* only use signal-safe system calls here */
 static void
 rb_thread_wakeup_timer_thread_fd(int fd)
 {
-#if USE_EVENTFD
+# if USE_EVENTFD
     const uint64_t buff = 1;
-#else
+# else
     const char buff = '!';
-#endif
+# endif
     ssize_t result;
 
     /* already opened */
     if (fd >= 0) {
-      retry:
+    retry:
         if ((result = write(fd, &buff, sizeof(buff))) <= 0) {
             int e = errno;
             switch (e) {
-              case EINTR: goto retry;
-              case EAGAIN:
-#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
-              case EWOULDBLOCK:
-#endif
-                break;
-              default:
-                async_bug_fd("rb_thread_wakeup_timer_thread: write", e, fd);
+                case EINTR: goto retry;
+                case EAGAIN:
+# if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+                case EWOULDBLOCK:
+# endif
+                    break;
+                default:
+                    async_bug_fd("rb_thread_wakeup_timer_thread: write", e, fd);
             }
         }
         if (TT_DEBUG) WRITE_CONST(2, "rb_thread_wakeup_timer_thread: write\n");
@@ -1603,9 +1632,9 @@ rb_thread_wakeup_timer_thread_fd(int fd)
 static void
 ubf_timer_arm(rb_pid_t current) /* async signal safe */
 {
-#if UBF_TIMER == UBF_TIMER_POSIX
+# if UBF_TIMER == UBF_TIMER_POSIX
     if ((!current || timer_posix.owner == current) &&
-        timer_state_cas(RTIMER_DISARM, RTIMER_ARMING) == RTIMER_DISARM) {
+      timer_state_cas(RTIMER_DISARM, RTIMER_ARMING) == RTIMER_DISARM) {
         struct itimerspec it;
 
         it.it_interval.tv_sec = it.it_value.tv_sec = 0;
@@ -1615,34 +1644,34 @@ ubf_timer_arm(rb_pid_t current) /* async signal safe */
             rb_async_bug_errno("timer_settime (arm)", errno);
 
         switch (timer_state_cas(RTIMER_ARMING, RTIMER_ARMED)) {
-          case RTIMER_DISARM:
-            /* somebody requested a disarm while we were arming */
-            /* may race harmlessly with ubf_timer_destroy */
-            (void)timer_settime(timer_posix.timerid, 0, &zero, 0);
+            case RTIMER_DISARM:
+                /* somebody requested a disarm while we were arming */
+                /* may race harmlessly with ubf_timer_destroy */
+                (void)timer_settime(timer_posix.timerid, 0, &zero, 0);
 
-          case RTIMER_ARMING: return; /* success */
-          case RTIMER_ARMED:
-            /*
+            case RTIMER_ARMING: return; /* success */
+            case RTIMER_ARMED:
+                /*
              * it is possible to have another thread disarm, and
              * a third thread arm finish re-arming before we get
              * here, so we wasted a syscall with timer_settime but
              * probably unavoidable in a signal handler.
              */
-            return;
-          case RTIMER_DEAD:
-            /* may race harmlessly with ubf_timer_destroy */
-            (void)timer_settime(timer_posix.timerid, 0, &zero, 0);
-            return;
-          default:
-            rb_async_bug_errno("UBF_TIMER_POSIX unknown state", ERANGE);
+                return;
+            case RTIMER_DEAD:
+                /* may race harmlessly with ubf_timer_destroy */
+                (void)timer_settime(timer_posix.timerid, 0, &zero, 0);
+                return;
+            default:
+                rb_async_bug_errno("UBF_TIMER_POSIX unknown state", ERANGE);
         }
     }
-#elif UBF_TIMER == UBF_TIMER_PTHREAD
+# elif UBF_TIMER == UBF_TIMER_PTHREAD
     if (!current || current == timer_pthread.owner) {
         if (ATOMIC_EXCHANGE(timer_pthread.armed, 1) == 0)
             rb_thread_wakeup_timer_thread_fd(timer_pthread.low[1]);
     }
-#endif
+# endif
 }
 
 void
@@ -1697,8 +1726,8 @@ rb_thread_wakeup_timer_thread(int sig)
     }
 }
 
-#define CLOSE_INVALIDATE_PAIR(expr) \
-    close_invalidate_pair(expr,"close_invalidate: "#expr)
+# define CLOSE_INVALIDATE_PAIR(expr) \
+  close_invalidate_pair(expr, "close_invalidate: " #expr)
 static void
 close_invalidate(int *fdp, const char *msg)
 {
@@ -1754,18 +1783,18 @@ setup_communication_pipe_internal(int pipes[2])
      * Don't bother with eventfd on ancient Linux 2.6.22..2.6.26 which were
      * missing EFD_* flags, they can fall back to pipe
      */
-#if USE_EVENTFD && defined(EFD_NONBLOCK) && defined(EFD_CLOEXEC)
-    pipes[0] = pipes[1] = eventfd(0, EFD_NONBLOCK|EFD_CLOEXEC);
+# if USE_EVENTFD && defined(EFD_NONBLOCK) && defined(EFD_CLOEXEC)
+    pipes[0] = pipes[1] = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (pipes[0] >= 0) {
         rb_update_max_fd(pipes[0]);
         return 0;
     }
-#endif
+# endif
 
     err = rb_cloexec_pipe(pipes);
     if (err != 0) {
         rb_warn("pipe creation failed for timer: %s, scheduling broken",
-                strerror(errno));
+          strerror(errno));
         return -1;
     }
     rb_update_max_fd(pipes[0]);
@@ -1775,20 +1804,20 @@ setup_communication_pipe_internal(int pipes[2])
     return 0;
 }
 
-#if !defined(SET_CURRENT_THREAD_NAME) && defined(__linux__) && defined(PR_SET_NAME)
-# define SET_CURRENT_THREAD_NAME(name) prctl(PR_SET_NAME, name)
-#endif
+# if !defined(SET_CURRENT_THREAD_NAME) && defined(__linux__) && defined(PR_SET_NAME)
+#  define SET_CURRENT_THREAD_NAME(name) prctl(PR_SET_NAME, name)
+# endif
 
 enum {
     THREAD_NAME_MAX =
-#if defined(__linux__)
-    16
-#elif defined(__APPLE__)
-/* Undocumented, and main thread seems unlimited */
+# if defined(__linux__)
+      16
+# elif defined(__APPLE__)
+      /* Undocumented, and main thread seems unlimited */
     64
-#else
-    16
-#endif
+# else
+      16
+# endif
 };
 
 static VALUE threadptr_invoke_proc_location(rb_thread_t *th);
@@ -1796,7 +1825,7 @@ static VALUE threadptr_invoke_proc_location(rb_thread_t *th);
 static void
 native_set_thread_name(rb_thread_t *th)
 {
-#ifdef SET_CURRENT_THREAD_NAME
+# ifdef SET_CURRENT_THREAD_NAME
     VALUE loc;
     if (!NIL_P(loc = th->name)) {
         SET_CURRENT_THREAD_NAME(RSTRING_PTR(loc));
@@ -1817,92 +1846,92 @@ native_set_thread_name(rb_thread_t *th)
 
         len = (size_t)n;
         if (len >= sizeof(buf)) {
-            buf[sizeof(buf)-2] = '*';
-            buf[sizeof(buf)-1] = '\0';
+            buf[sizeof(buf) - 2] = '*';
+            buf[sizeof(buf) - 1] = '\0';
         }
         SET_CURRENT_THREAD_NAME(buf);
     }
-#endif
+# endif
 }
 
 static void
 native_set_another_thread_name(rb_nativethread_id_t thread_id, VALUE name)
 {
-#if defined SET_ANOTHER_THREAD_NAME || defined SET_CURRENT_THREAD_NAME
+# if defined SET_ANOTHER_THREAD_NAME || defined SET_CURRENT_THREAD_NAME
     char buf[THREAD_NAME_MAX];
     const char *s = "";
-# if !defined SET_ANOTHER_THREAD_NAME
+#  if !defined SET_ANOTHER_THREAD_NAME
     if (!pthread_equal(pthread_self(), thread_id)) return;
-# endif
+#  endif
     if (!NIL_P(name)) {
         long n;
         RSTRING_GETMEM(name, s, n);
         if (n >= (int)sizeof(buf)) {
-            memcpy(buf, s, sizeof(buf)-1);
-            buf[sizeof(buf)-1] = '\0';
+            memcpy(buf, s, sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = '\0';
             s = buf;
         }
     }
-# if defined SET_ANOTHER_THREAD_NAME
+#  if defined SET_ANOTHER_THREAD_NAME
     SET_ANOTHER_THREAD_NAME(thread_id, s);
-# elif defined SET_CURRENT_THREAD_NAME
+#  elif defined SET_CURRENT_THREAD_NAME
     SET_CURRENT_THREAD_NAME(s);
+#  endif
 # endif
-#endif
 }
 
-#if defined(RB_THREAD_T_HAS_NATIVE_ID) || defined(__APPLE__)
+# if defined(RB_THREAD_T_HAS_NATIVE_ID) || defined(__APPLE__)
 static VALUE
 native_thread_native_thread_id(rb_thread_t *target_th)
 {
-#ifdef RB_THREAD_T_HAS_NATIVE_ID
+#  ifdef RB_THREAD_T_HAS_NATIVE_ID
     int tid = target_th->nt->tid;
     if (tid == 0) return Qnil;
     return INT2FIX(tid);
-#elif defined(__APPLE__)
+#  elif defined(__APPLE__)
     uint64_t tid;
-# if (!defined(MAC_OS_X_VERSION_10_6) || \
-      (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_6) || \
-      defined(__POWERPC__) /* never defined for PowerPC platforms */)
+#   if (!defined(MAC_OS_X_VERSION_10_6) || \
+     (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_6) || \
+     defined(__POWERPC__) /* never defined for PowerPC platforms */)
     const bool no_pthread_threadid_np = true;
-#   define NO_PTHREAD_MACH_THREAD_NP 1
-# elif MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_6
+#    define NO_PTHREAD_MACH_THREAD_NP 1
+#   elif MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_6
     const bool no_pthread_threadid_np = false;
-# else
-#   if !(defined(__has_attribute) && __has_attribute(availability))
+#   else
+#    if !(defined(__has_attribute) && __has_attribute(availability))
     /* __API_AVAILABLE macro does nothing on gcc */
-    __attribute__((weak)) int pthread_threadid_np(pthread_t, uint64_t*);
-#   endif
+    __attribute__((weak)) int pthread_threadid_np(pthread_t, uint64_t *);
+#    endif
     /* Check weakly linked symbol */
     const bool no_pthread_threadid_np = !&pthread_threadid_np;
-# endif
+#   endif
     if (no_pthread_threadid_np) {
         return ULL2NUM(pthread_mach_thread_np(pthread_self()));
     }
-# ifndef NO_PTHREAD_MACH_THREAD_NP
+#   ifndef NO_PTHREAD_MACH_THREAD_NP
     int e = pthread_threadid_np(target_th->nt->thread_id, &tid);
     if (e != 0) rb_syserr_fail(e, "pthread_threadid_np");
     return ULL2NUM((unsigned long long)tid);
-# endif
-#endif
+#   endif
+#  endif
 }
-# define USE_NATIVE_THREAD_NATIVE_THREAD_ID 1
-#else
-# define USE_NATIVE_THREAD_NATIVE_THREAD_ID 0
-#endif
+#  define USE_NATIVE_THREAD_NATIVE_THREAD_ID 1
+# else
+#  define USE_NATIVE_THREAD_NATIVE_THREAD_ID 0
+# endif
 
 static void
 ubf_timer_invalidate(void)
 {
-#if UBF_TIMER == UBF_TIMER_PTHREAD
+# if UBF_TIMER == UBF_TIMER_PTHREAD
     CLOSE_INVALIDATE_PAIR(timer_pthread.low);
-#endif
+# endif
 }
 
 static void
 ubf_timer_pthread_create(rb_pid_t current)
 {
-#if UBF_TIMER == UBF_TIMER_PTHREAD
+# if UBF_TIMER == UBF_TIMER_PTHREAD
     int err;
     if (timer_pthread.owner == current)
         return;
@@ -1915,18 +1944,18 @@ ubf_timer_pthread_create(rb_pid_t current)
         timer_pthread.owner = current;
     else
         rb_warn("pthread_create failed for timer: %s, signals racy",
-                strerror(err));
-#endif
+          strerror(err));
+# endif
 }
 
 static void
 ubf_timer_create(rb_pid_t current)
 {
-#if UBF_TIMER == UBF_TIMER_POSIX
+# if UBF_TIMER == UBF_TIMER_POSIX
 #  if defined(__sun)
-#    define UBF_TIMER_CLOCK CLOCK_REALTIME
+#   define UBF_TIMER_CLOCK CLOCK_REALTIME
 #  else /* Tested Linux and FreeBSD: */
-#    define UBF_TIMER_CLOCK CLOCK_MONOTONIC
+#   define UBF_TIMER_CLOCK CLOCK_MONOTONIC
 #  endif
 
     struct sigevent sev;
@@ -1946,7 +1975,7 @@ ubf_timer_create(rb_pid_t current)
     else {
         rb_warn("timer_create failed: %s, signals racy", strerror(errno));
     }
-#endif
+# endif
     if (UBF_TIMER == UBF_TIMER_PTHREAD)
         ubf_timer_pthread_create(current);
 }
@@ -1978,42 +2007,42 @@ rb_thread_create_timer_thread(void)
 static void
 ubf_timer_disarm(void)
 {
-#if UBF_TIMER == UBF_TIMER_POSIX
+# if UBF_TIMER == UBF_TIMER_POSIX
     rb_atomic_t prev;
 
     if (timer_posix.owner && timer_posix.owner != getpid()) return;
     prev = timer_state_cas(RTIMER_ARMED, RTIMER_DISARM);
     switch (prev) {
-      case RTIMER_DISARM: return; /* likely */
-      case RTIMER_ARMING: return; /* ubf_timer_arm will disarm itself */
-      case RTIMER_ARMED:
-        if (timer_settime(timer_posix.timerid, 0, &zero, 0)) {
-            int err = errno;
+        case RTIMER_DISARM: return; /* likely */
+        case RTIMER_ARMING: return; /* ubf_timer_arm will disarm itself */
+        case RTIMER_ARMED:
+            if (timer_settime(timer_posix.timerid, 0, &zero, 0)) {
+                int err = errno;
 
-            if (err == EINVAL) {
-                prev = timer_state_cas(RTIMER_DISARM, RTIMER_DISARM);
+                if (err == EINVAL) {
+                    prev = timer_state_cas(RTIMER_DISARM, RTIMER_DISARM);
 
-                /* main thread may have killed the timer */
-                if (prev == RTIMER_DEAD) return;
+                    /* main thread may have killed the timer */
+                    if (prev == RTIMER_DEAD) return;
 
-                rb_bug_errno("timer_settime (disarm)", err);
+                    rb_bug_errno("timer_settime (disarm)", err);
+                }
             }
-        }
-        return;
-      case RTIMER_DEAD: return; /* stay dead */
-      default:
-        rb_bug("UBF_TIMER_POSIX bad state: %u\n", (unsigned)prev);
+            return;
+        case RTIMER_DEAD: return; /* stay dead */
+        default:
+            rb_bug("UBF_TIMER_POSIX bad state: %u\n", (unsigned)prev);
     }
 
-#elif UBF_TIMER == UBF_TIMER_PTHREAD
+# elif UBF_TIMER == UBF_TIMER_PTHREAD
     ATOMIC_SET(timer_pthread.armed, 0);
-#endif
+# endif
 }
 
 static void
 ubf_timer_destroy(void)
 {
-#if UBF_TIMER == UBF_TIMER_POSIX
+# if UBF_TIMER == UBF_TIMER_POSIX
     if (timer_posix.owner == getpid()) {
         rb_atomic_t expect = RTIMER_DISARM;
         size_t i, max = 10000000;
@@ -2021,34 +2050,34 @@ ubf_timer_destroy(void)
         /* prevent signal handler from arming: */
         for (i = 0; i < max; i++) {
             switch (timer_state_cas(expect, RTIMER_DEAD)) {
-              case RTIMER_DISARM:
-                if (expect == RTIMER_DISARM) goto done;
-                expect = RTIMER_DISARM;
-                break;
-              case RTIMER_ARMING:
-                native_thread_yield(); /* let another thread finish arming */
-                expect = RTIMER_ARMED;
-                break;
-              case RTIMER_ARMED:
-                if (expect == RTIMER_ARMED) {
-                    if (timer_settime(timer_posix.timerid, 0, &zero, 0))
-                        rb_bug_errno("timer_settime (destroy)", errno);
-                    goto done;
-                }
-                expect = RTIMER_ARMED;
-                break;
-              case RTIMER_DEAD:
-                rb_bug("RTIMER_DEAD unexpected");
+                case RTIMER_DISARM:
+                    if (expect == RTIMER_DISARM) goto done;
+                    expect = RTIMER_DISARM;
+                    break;
+                case RTIMER_ARMING:
+                    native_thread_yield(); /* let another thread finish arming */
+                    expect = RTIMER_ARMED;
+                    break;
+                case RTIMER_ARMED:
+                    if (expect == RTIMER_ARMED) {
+                        if (timer_settime(timer_posix.timerid, 0, &zero, 0))
+                            rb_bug_errno("timer_settime (destroy)", errno);
+                        goto done;
+                    }
+                    expect = RTIMER_ARMED;
+                    break;
+                case RTIMER_DEAD:
+                    rb_bug("RTIMER_DEAD unexpected");
             }
         }
         rb_bug("timed out waiting for timer to arm");
-done:
+    done:
         if (timer_delete(timer_posix.timerid) < 0)
             rb_sys_fail("timer_delete");
 
         VM_ASSERT(timer_state_exchange(RTIMER_DEAD) == RTIMER_DEAD);
     }
-#elif UBF_TIMER == UBF_TIMER_PTHREAD
+# elif UBF_TIMER == UBF_TIMER_PTHREAD
     int err;
 
     timer_pthread.owner = 0;
@@ -2058,7 +2087,7 @@ done:
     if (err) {
         rb_raise(rb_eThreadError, "native_thread_join() failed (%d)", err);
     }
-#endif
+# endif
 }
 
 static int
@@ -2076,10 +2105,10 @@ native_stop_timer_thread(void)
 static void
 native_reset_timer_thread(void)
 {
-    if (TT_DEBUG)  fprintf(stderr, "reset timer thread\n");
+    if (TT_DEBUG) fprintf(stderr, "reset timer thread\n");
 }
 
-#ifdef HAVE_SIGALTSTACK
+# ifdef HAVE_SIGALTSTACK
 int
 ruby_stack_overflowed_p(const rb_thread_t *th, const void *addr)
 {
@@ -2088,21 +2117,21 @@ ruby_stack_overflowed_p(const rb_thread_t *th, const void *addr)
     const size_t water_mark = 1024 * 1024;
     STACK_GROW_DIR_DETECTION;
 
-#ifdef STACKADDR_AVAILABLE
+#  ifdef STACKADDR_AVAILABLE
     if (get_stack(&base, &size) == 0) {
-# ifdef __APPLE__
+#   ifdef __APPLE__
         if (pthread_equal(th->nt->thread_id, native_main_thread.id)) {
             struct rlimit rlim;
             if (getrlimit(RLIMIT_STACK, &rlim) == 0 && rlim.rlim_cur > size) {
                 size = (size_t)rlim.rlim_cur;
             }
         }
-# endif
+#   endif
         base = (char *)base + STACK_DIR_UPPER(+size, -size);
     }
     else
-#endif
-    if (th) {
+#  endif
+      if (th) {
         size = th->ec->machine.stack_maxsize;
         base = (char *)th->ec->machine.stack_start - STACK_DIR_UPPER(0, size);
     }
@@ -2112,7 +2141,7 @@ ruby_stack_overflowed_p(const rb_thread_t *th, const void *addr)
     size /= RUBY_STACK_SPACE_RATIO;
     if (size > water_mark) size = water_mark;
     if (IS_STACK_DIR_UPPER()) {
-        if (size > ~(size_t)base+1) size = ~(size_t)base+1;
+        if (size > ~(size_t)base + 1) size = ~(size_t)base + 1;
         if (addr > base && addr <= (void *)((char *)base + size)) return 1;
     }
     else {
@@ -2121,7 +2150,7 @@ ruby_stack_overflowed_p(const rb_thread_t *th, const void *addr)
     }
     return 0;
 }
-#endif
+# endif
 
 int
 rb_reserved_fd_p(int fd)
@@ -2130,10 +2159,10 @@ rb_reserved_fd_p(int fd)
     if (fd < 0)
         return 0;
 
-#if UBF_TIMER == UBF_TIMER_PTHREAD
+# if UBF_TIMER == UBF_TIMER_PTHREAD
     if (fd == timer_pthread.low[0] || fd == timer_pthread.low[1])
         goto check_pid;
-#endif
+# endif
     if (fd == signal_self_pipe.normal[0] || fd == signal_self_pipe.normal[1])
         goto check_pid;
     if (fd == signal_self_pipe.ub_main[0] || fd == signal_self_pipe.ub_main[1])
@@ -2179,18 +2208,18 @@ rb_sigwait_fd_put(const rb_thread_t *th, int fd)
     if (old != th) assert(old == th);
 }
 
-#ifndef HAVE_PPOLL
+# ifndef HAVE_PPOLL
 /* TODO: don't ignore sigmask */
 static int
 ruby_ppoll(struct pollfd *fds, nfds_t nfds,
-      const struct timespec *ts, const sigset_t *sigmask)
+  const struct timespec *ts, const sigset_t *sigmask)
 {
     int timeout_ms;
 
     if (ts) {
         int tmp, tmp2;
 
-        if (ts->tv_sec > INT_MAX/1000)
+        if (ts->tv_sec > INT_MAX / 1000)
             timeout_ms = INT_MAX;
         else {
             tmp = (int)(ts->tv_sec * 1000);
@@ -2207,8 +2236,8 @@ ruby_ppoll(struct pollfd *fds, nfds_t nfds,
 
     return poll(fds, nfds, timeout_ms);
 }
-#  define ppoll(fds,nfds,ts,sigmask) ruby_ppoll((fds),(nfds),(ts),(sigmask))
-#endif
+#  define ppoll(fds, nfds, ts, sigmask) ruby_ppoll((fds), (nfds), (ts), (sigmask))
+# endif
 
 void
 rb_sigwait_sleep(rb_thread_t *th, int sigwait_fd, const rb_hrtime_t *rel)
@@ -2275,16 +2304,17 @@ ubf_ppoll_sleep(void *ignore)
  * Confirmed on FreeBSD 11.2 and Linux 4.19.
  * [ruby-core:90417] [Bug #15398]
  */
-#define THREAD_BLOCKING_YIELD(th) do { \
-    const rb_thread_t *next; \
-    struct rb_thread_sched *sched = TH_SCHED(th); \
-    RB_GC_SAVE_MACHINE_CONTEXT(th); \
-    rb_native_mutex_lock(&sched->lock); \
-    next = thread_sched_to_waiting_common(sched); \
-    rb_native_mutex_unlock(&sched->lock); \
-    if (!next && rb_ractor_living_thread_num(th->ractor) > 1) { \
-        native_thread_yield(); \
-    }
+# define THREAD_BLOCKING_YIELD(th) \
+  do { \
+   const rb_thread_t *next; \
+   struct rb_thread_sched *sched = TH_SCHED(th); \
+   RB_GC_SAVE_MACHINE_CONTEXT(th); \
+   rb_native_mutex_lock(&sched->lock); \
+   next = thread_sched_to_waiting_common(sched); \
+   rb_native_mutex_unlock(&sched->lock); \
+   if (!next && rb_ractor_living_thread_num(th->ractor) > 1) { \
+    native_thread_yield(); \
+   }
 
 /*
  * This function does not exclusively acquire sigwait_fd, so it
@@ -2366,7 +2396,7 @@ native_sleep(rb_thread_t *th, rb_hrtime_t *rel)
     rb_ractor_blocking_threads_dec(th->ractor, __FILE__, __LINE__);
 }
 
-#if UBF_TIMER == UBF_TIMER_PTHREAD
+# if UBF_TIMER == UBF_TIMER_PTHREAD
 static void *
 timer_pthread_fn(void *p)
 {
@@ -2405,7 +2435,7 @@ timer_pthread_fn(void *p)
 
     return 0;
 }
-#endif /* UBF_TIMER_PTHREAD */
+# endif /* UBF_TIMER_PTHREAD */
 
 static VALUE
 ubf_caller(void *ignore)

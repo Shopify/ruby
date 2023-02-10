@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ATTR_ENUM_EXTENSIBILITY_H             /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ATTR_ENUM_EXTENSIBILITY_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ATTR_ENUM_EXTENSIBILITY_H
 /**
  * @file

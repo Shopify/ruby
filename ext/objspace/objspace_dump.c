@@ -42,8 +42,8 @@ struct dump_config {
     VALUE cur_obj_klass;
     size_t cur_page_slot_size;
     size_t cur_obj_references;
-    unsigned int roots: 1;
-    unsigned int full_heap: 1;
+    unsigned int roots : 1;
+    unsigned int full_heap : 1;
     unsigned int partial_dump;
     size_t since;
     size_t shapes_since;
@@ -92,7 +92,7 @@ buffer_append(struct dump_config *dc, const char *cstr, unsigned long len)
     }
 }
 
-# define dump_append(dc, str) buffer_append(dc, (str), (long)strlen(str))
+#define dump_append(dc, str) buffer_append(dc, (str), (long)strlen(str))
 
 static void
 dump_append_ld(struct dump_config *dc, const long number)
@@ -143,7 +143,7 @@ dump_append_sizet(struct dump_config *dc, const size_t number)
 {
     const unsigned int width = DECIMAL_SIZE_OF_BITS(sizeof(number) * CHAR_BIT) + 1;
     buffer_ensure_capa(dc, width);
-    unsigned long required = snprintf(dc->buffer + dc->buffer_len, width, "%"PRIuSIZE, number);
+    unsigned long required = snprintf(dc->buffer + dc->buffer_len, width, "%" PRIuSIZE, number);
     RUBY_ASSERT(required <= width);
     dc->buffer_len += required;
 }
@@ -195,35 +195,35 @@ dump_append_string_value(struct dump_config *dc, VALUE obj)
     dump_append(dc, "\"");
     for (i = 0, value = RSTRING_PTR(obj); i < RSTRING_LEN(obj); i++) {
         switch ((c = value[i])) {
-          case '\\':
-            dump_append(dc, "\\\\");
-            break;
-          case '"':
-            dump_append(dc, "\\\"");
-            break;
-          case '\0':
-            dump_append(dc, "\\u0000");
-            break;
-          case '\b':
-            dump_append(dc, "\\b");
-            break;
-          case '\t':
-            dump_append(dc, "\\t");
-            break;
-          case '\f':
-            dump_append(dc, "\\f");
-            break;
-          case '\n':
-            dump_append(dc, "\\n");
-            break;
-          case '\r':
-            dump_append(dc, "\\r");
-            break;
-          case '\177':
-            dump_append(dc, "\\u007f");
-            break;
-          default:
-            dump_append_c(dc, c);
+            case '\\':
+                dump_append(dc, "\\\\");
+                break;
+            case '"':
+                dump_append(dc, "\\\"");
+                break;
+            case '\0':
+                dump_append(dc, "\\u0000");
+                break;
+            case '\b':
+                dump_append(dc, "\\b");
+                break;
+            case '\t':
+                dump_append(dc, "\\t");
+                break;
+            case '\f':
+                dump_append(dc, "\\f");
+                break;
+            case '\n':
+                dump_append(dc, "\\n");
+                break;
+            case '\r':
+                dump_append(dc, "\\r");
+                break;
+            case '\177':
+                dump_append(dc, "\\u007f");
+                break;
+            default:
+                dump_append_c(dc, c);
         }
     }
     dump_append(dc, "\"");
@@ -241,7 +241,8 @@ static inline const char *
 obj_type(VALUE obj)
 {
     switch (BUILTIN_TYPE(obj)) {
-#define CASE_TYPE(type) case T_##type: return #type
+#define CASE_TYPE(type) \
+ case T_##type: return #type
         CASE_TYPE(NONE);
         CASE_TYPE(NIL);
         CASE_TYPE(OBJECT);
@@ -269,7 +270,7 @@ obj_type(VALUE obj)
         CASE_TYPE(NODE);
         CASE_TYPE(ZOMBIE);
 #undef CASE_TYPE
-      default: break;
+        default: break;
     }
     return "UNKNOWN";
 }
@@ -368,7 +369,6 @@ dump_append_id(struct dump_config *dc, ID id)
     }
 }
 
-
 static void
 dump_object(VALUE obj, struct dump_config *dc)
 {
@@ -387,7 +387,8 @@ dump_object(VALUE obj, struct dump_config *dc)
     dc->cur_obj_references = 0;
     if (BUILTIN_TYPE(obj) == T_NODE || BUILTIN_TYPE(obj) == T_IMEMO) {
         dc->cur_obj_klass = 0;
-    } else {
+    }
+    else {
         dc->cur_obj_klass = RBASIC_CLASS(obj);
     }
 
@@ -420,155 +421,155 @@ dump_object(VALUE obj, struct dump_config *dc)
         dump_append(dc, ", \"frozen\":true");
 
     switch (BUILTIN_TYPE(obj)) {
-      case T_NONE:
-        dump_append(dc, "}\n");
-        return;
+        case T_NONE:
+            dump_append(dc, "}\n");
+            return;
 
-      case T_IMEMO:
-        dump_append(dc, ", \"imemo_type\":\"");
-        dump_append(dc, rb_imemo_name(imemo_type(obj)));
-        dump_append(dc, "\"");
-        break;
-
-      case T_SYMBOL:
-        dump_append_string_content(dc, rb_sym2str(obj));
-        break;
-
-      case T_STRING:
-        if (STR_EMBED_P(obj))
-            dump_append(dc, ", \"embedded\":true");
-        if (FL_TEST(obj, RSTRING_FSTR))
-            dump_append(dc, ", \"fstring\":true");
-        if (STR_SHARED_P(obj))
-            dump_append(dc, ", \"shared\":true");
-        else
-            dump_append_string_content(dc, obj);
-
-        if (!ENCODING_IS_ASCII8BIT(obj)) {
-            dump_append(dc, ", \"encoding\":\"");
-            dump_append(dc, rb_enc_name(rb_enc_from_index(ENCODING_GET(obj))));
+        case T_IMEMO:
+            dump_append(dc, ", \"imemo_type\":\"");
+            dump_append(dc, rb_imemo_name(imemo_type(obj)));
             dump_append(dc, "\"");
-        }
-
-        dump_append(dc, ", \"coderange\":\"");
-        switch (RB_ENC_CODERANGE(obj)) {
-          case RUBY_ENC_CODERANGE_UNKNOWN:
-            dump_append(dc, "unknown");
             break;
-          case RUBY_ENC_CODERANGE_7BIT:
-            dump_append(dc, "7bit");
+
+        case T_SYMBOL:
+            dump_append_string_content(dc, rb_sym2str(obj));
             break;
-          case RUBY_ENC_CODERANGE_VALID:
-            dump_append(dc, "valid");
-            break;
-          case RUBY_ENC_CODERANGE_BROKEN:
-            dump_append(dc, "broken");
-            break;
-        }
-        dump_append(dc, "\"");
 
-        if (RB_ENC_CODERANGE(obj) == RUBY_ENC_CODERANGE_BROKEN)
-            dump_append(dc, ", \"broken\":true");
+        case T_STRING:
+            if (STR_EMBED_P(obj))
+                dump_append(dc, ", \"embedded\":true");
+            if (FL_TEST(obj, RSTRING_FSTR))
+                dump_append(dc, ", \"fstring\":true");
+            if (STR_SHARED_P(obj))
+                dump_append(dc, ", \"shared\":true");
+            else
+                dump_append_string_content(dc, obj);
 
-        break;
-
-      case T_HASH:
-        dump_append(dc, ", \"size\":");
-        dump_append_sizet(dc, (size_t)RHASH_SIZE(obj));
-        if (FL_TEST(obj, RHASH_PROC_DEFAULT)) {
-            dump_append(dc, ", \"default\":");
-            dump_append_ref(dc, RHASH_IFNONE(obj));
-        }
-        break;
-
-      case T_ARRAY:
-        dump_append(dc, ", \"length\":");
-        dump_append_ld(dc, RARRAY_LEN(obj));
-        if (RARRAY_LEN(obj) > 0 && FL_TEST(obj, RARRAY_SHARED_FLAG))
-            dump_append(dc, ", \"shared\":true");
-        if (FL_TEST(obj, RARRAY_EMBED_FLAG))
-            dump_append(dc, ", \"embedded\":true");
-        break;
-
-      case T_ICLASS:
-        if (rb_class_get_superclass(obj)) {
-            dump_append(dc, ", \"superclass\":");
-            dump_append_ref(dc, rb_class_get_superclass(obj));
-        }
-        break;
-
-      case T_CLASS:
-        dump_append(dc, ", \"variation_count\":");
-        dump_append_d(dc, RCLASS_EXT(obj)->variation_count);
-
-      case T_MODULE:
-        if (rb_class_get_superclass(obj)) {
-            dump_append(dc, ", \"superclass\":");
-            dump_append_ref(dc, rb_class_get_superclass(obj));
-        }
-
-        if (dc->cur_obj_klass) {
-            VALUE mod_name = rb_mod_name(obj);
-            if (!NIL_P(mod_name)) {
-                dump_append(dc, ", \"name\":\"");
-                dump_append(dc, RSTRING_PTR(mod_name));
+            if (!ENCODING_IS_ASCII8BIT(obj)) {
+                dump_append(dc, ", \"encoding\":\"");
+                dump_append(dc, rb_enc_name(rb_enc_from_index(ENCODING_GET(obj))));
                 dump_append(dc, "\"");
             }
-            else {
-                VALUE real_mod_name = rb_mod_name(rb_class_real(obj));
-                if (RTEST(real_mod_name)) {
-                    dump_append(dc, ", \"real_class_name\":\"");
-                    dump_append(dc, RSTRING_PTR(real_mod_name));
+
+            dump_append(dc, ", \"coderange\":\"");
+            switch (RB_ENC_CODERANGE(obj)) {
+                case RUBY_ENC_CODERANGE_UNKNOWN:
+                    dump_append(dc, "unknown");
+                    break;
+                case RUBY_ENC_CODERANGE_7BIT:
+                    dump_append(dc, "7bit");
+                    break;
+                case RUBY_ENC_CODERANGE_VALID:
+                    dump_append(dc, "valid");
+                    break;
+                case RUBY_ENC_CODERANGE_BROKEN:
+                    dump_append(dc, "broken");
+                    break;
+            }
+            dump_append(dc, "\"");
+
+            if (RB_ENC_CODERANGE(obj) == RUBY_ENC_CODERANGE_BROKEN)
+                dump_append(dc, ", \"broken\":true");
+
+            break;
+
+        case T_HASH:
+            dump_append(dc, ", \"size\":");
+            dump_append_sizet(dc, (size_t)RHASH_SIZE(obj));
+            if (FL_TEST(obj, RHASH_PROC_DEFAULT)) {
+                dump_append(dc, ", \"default\":");
+                dump_append_ref(dc, RHASH_IFNONE(obj));
+            }
+            break;
+
+        case T_ARRAY:
+            dump_append(dc, ", \"length\":");
+            dump_append_ld(dc, RARRAY_LEN(obj));
+            if (RARRAY_LEN(obj) > 0 && FL_TEST(obj, RARRAY_SHARED_FLAG))
+                dump_append(dc, ", \"shared\":true");
+            if (FL_TEST(obj, RARRAY_EMBED_FLAG))
+                dump_append(dc, ", \"embedded\":true");
+            break;
+
+        case T_ICLASS:
+            if (rb_class_get_superclass(obj)) {
+                dump_append(dc, ", \"superclass\":");
+                dump_append_ref(dc, rb_class_get_superclass(obj));
+            }
+            break;
+
+        case T_CLASS:
+            dump_append(dc, ", \"variation_count\":");
+            dump_append_d(dc, RCLASS_EXT(obj)->variation_count);
+
+        case T_MODULE:
+            if (rb_class_get_superclass(obj)) {
+                dump_append(dc, ", \"superclass\":");
+                dump_append_ref(dc, rb_class_get_superclass(obj));
+            }
+
+            if (dc->cur_obj_klass) {
+                VALUE mod_name = rb_mod_name(obj);
+                if (!NIL_P(mod_name)) {
+                    dump_append(dc, ", \"name\":\"");
+                    dump_append(dc, RSTRING_PTR(mod_name));
                     dump_append(dc, "\"");
                 }
-            }
+                else {
+                    VALUE real_mod_name = rb_mod_name(rb_class_real(obj));
+                    if (RTEST(real_mod_name)) {
+                        dump_append(dc, ", \"real_class_name\":\"");
+                        dump_append(dc, RSTRING_PTR(real_mod_name));
+                        dump_append(dc, "\"");
+                    }
+                }
 
-            if (FL_TEST(obj, FL_SINGLETON)) {
-                dump_append(dc, ", \"singleton\":true");
+                if (FL_TEST(obj, FL_SINGLETON)) {
+                    dump_append(dc, ", \"singleton\":true");
+                }
             }
-        }
-        break;
+            break;
 
-      case T_DATA:
-        if (RTYPEDDATA_P(obj)) {
-            dump_append(dc, ", \"struct\":\"");
-            dump_append(dc, RTYPEDDATA_TYPE(obj)->wrap_struct_name);
+        case T_DATA:
+            if (RTYPEDDATA_P(obj)) {
+                dump_append(dc, ", \"struct\":\"");
+                dump_append(dc, RTYPEDDATA_TYPE(obj)->wrap_struct_name);
+                dump_append(dc, "\"");
+            }
+            break;
+
+        case T_FLOAT:
+            dump_append(dc, ", \"value\":\"");
+            dump_append_g(dc, RFLOAT_VALUE(obj));
             dump_append(dc, "\"");
-        }
-        break;
+            break;
 
-      case T_FLOAT:
-        dump_append(dc, ", \"value\":\"");
-        dump_append_g(dc, RFLOAT_VALUE(obj));
-        dump_append(dc, "\"");
-        break;
+        case T_OBJECT:
+            if (FL_TEST(obj, ROBJECT_EMBED)) {
+                dump_append(dc, ", \"embedded\":true");
+            }
 
-      case T_OBJECT:
-        if (FL_TEST(obj, ROBJECT_EMBED)) {
-            dump_append(dc, ", \"embedded\":true");
-        }
+            dump_append(dc, ", \"ivars\":");
+            dump_append_lu(dc, ROBJECT_IV_COUNT(obj));
+            if (rb_shape_obj_too_complex(obj)) {
+                dump_append(dc, ", \"too_complex_shape\":true");
+            }
+            break;
 
-        dump_append(dc, ", \"ivars\":");
-        dump_append_lu(dc, ROBJECT_IV_COUNT(obj));
-        if (rb_shape_obj_too_complex(obj)) {
-            dump_append(dc, ", \"too_complex_shape\":true");
-        }
-        break;
+        case T_FILE:
+            fptr = RFILE(obj)->fptr;
+            if (fptr) {
+                dump_append(dc, ", \"fd\":");
+                dump_append_d(dc, fptr->fd);
+            }
+            break;
 
-      case T_FILE:
-        fptr = RFILE(obj)->fptr;
-        if (fptr) {
-            dump_append(dc, ", \"fd\":");
-            dump_append_d(dc, fptr->fd);
-        }
-        break;
+        case T_ZOMBIE:
+            dump_append(dc, "}\n");
+            return;
 
-      case T_ZOMBIE:
-        dump_append(dc, "}\n");
-        return;
-
-      default:
-        break;
+        default:
+            break;
     }
 
     rb_objspace_reachable_objects_from(obj, reachable_object_i, dc);
@@ -601,11 +602,11 @@ dump_object(VALUE obj, struct dump_config *dc)
 
     if ((n = rb_obj_gc_flags(obj, flags, sizeof(flags))) > 0) {
         dump_append(dc, ", \"flags\":{");
-        for (i=0; i<n; i++) {
+        for (i = 0; i < n; i++) {
             dump_append(dc, "\"");
             dump_append(dc, rb_id2name(flags[i]));
             dump_append(dc, "\":true");
-            if (i != n-1) dump_append(dc, ", ");
+            if (i != n - 1) dump_append(dc, ", ");
         }
         dump_append(dc, "}");
     }
@@ -704,7 +705,9 @@ dump_result(struct dump_config *dc)
 static VALUE
 objspace_dump(VALUE os, VALUE obj, VALUE output)
 {
-    struct dump_config dc = {0,};
+    struct dump_config dc = {
+        0,
+    };
     if (!RB_SPECIAL_CONST_P(obj)) {
         dc.cur_page_slot_size = rb_gc_obj_slot_size(obj);
     }
@@ -741,38 +744,38 @@ shape_i(rb_shape_t *shape, void *data)
     dump_append_sizet(dc, rb_shape_depth(shape));
 
     dump_append(dc, ", \"shape_type\":");
-    switch((enum shape_type)shape->type) {
-      case SHAPE_ROOT:
-        dump_append(dc, "\"ROOT\"");
-        break;
-      case SHAPE_IVAR:
-        dump_append(dc, "\"IVAR\"");
+    switch ((enum shape_type)shape->type) {
+        case SHAPE_ROOT:
+            dump_append(dc, "\"ROOT\"");
+            break;
+        case SHAPE_IVAR:
+            dump_append(dc, "\"IVAR\"");
 
-        dump_append(dc, ",\"edge_name\":");
-        dump_append_id(dc, shape->edge_name);
+            dump_append(dc, ",\"edge_name\":");
+            dump_append_id(dc, shape->edge_name);
 
-        break;
-      case SHAPE_FROZEN:
-        dump_append(dc, "\"FROZEN\"");
-        break;
-      case SHAPE_CAPACITY_CHANGE:
-        dump_append(dc, "\"CAPACITY_CHANGE\"");
-        dump_append(dc, ", \"capacity\":");
-        dump_append_sizet(dc, shape->capacity);
-        break;
-      case SHAPE_INITIAL_CAPACITY:
-        dump_append(dc, "\"INITIAL_CAPACITY\"");
-        dump_append(dc, ", \"capacity\":");
-        dump_append_sizet(dc, shape->capacity);
-        break;
-      case SHAPE_T_OBJECT:
-        dump_append(dc, "\"T_OBJECT\"");
-        break;
-      case SHAPE_OBJ_TOO_COMPLEX:
-        dump_append(dc, "\"OBJ_TOO_COMPLEX\"");
-        break;
-      default:
-        rb_bug("[objspace] unexpected shape type");
+            break;
+        case SHAPE_FROZEN:
+            dump_append(dc, "\"FROZEN\"");
+            break;
+        case SHAPE_CAPACITY_CHANGE:
+            dump_append(dc, "\"CAPACITY_CHANGE\"");
+            dump_append(dc, ", \"capacity\":");
+            dump_append_sizet(dc, shape->capacity);
+            break;
+        case SHAPE_INITIAL_CAPACITY:
+            dump_append(dc, "\"INITIAL_CAPACITY\"");
+            dump_append(dc, ", \"capacity\":");
+            dump_append_sizet(dc, shape->capacity);
+            break;
+        case SHAPE_T_OBJECT:
+            dump_append(dc, "\"T_OBJECT\"");
+            break;
+        case SHAPE_OBJ_TOO_COMPLEX:
+            dump_append(dc, "\"OBJ_TOO_COMPLEX\"");
+            break;
+        default:
+            rb_bug("[objspace] unexpected shape type");
     }
 
     dump_append(dc, ", \"edges\":");
@@ -788,7 +791,9 @@ shape_i(rb_shape_t *shape, void *data)
 static VALUE
 objspace_dump_all(VALUE os, VALUE output, VALUE full, VALUE since, VALUE shapes)
 {
-    struct dump_config dc = {0,};
+    struct dump_config dc = {
+        0,
+    };
     dump_output(&dc, output, full, since, shapes);
 
     if (!dc.partial_dump || dc.since == 0) {
@@ -811,7 +816,9 @@ objspace_dump_all(VALUE os, VALUE output, VALUE full, VALUE since, VALUE shapes)
 static VALUE
 objspace_dump_shapes(VALUE os, VALUE output, VALUE shapes)
 {
-    struct dump_config dc = {0,};
+    struct dump_config dc = {
+        0,
+    };
     dump_output(&dc, output, Qfalse, Qnil, shapes);
 
     if (RTEST(shapes)) {

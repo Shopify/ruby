@@ -1,4 +1,4 @@
-#ifndef RUBY_RANDOM_H                                /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_RANDOM_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_RANDOM_H 1
 /**
  * @file
@@ -26,13 +26,15 @@
 
 #define RUBY_RANDOM_PASTE_VERSION_SUFFIX(x, y, z) x##_##y##_##z
 #define RUBY_RANDOM_WITH_VERSION_SUFFIX(name, major, minor) \
-    RUBY_RANDOM_PASTE_VERSION_SUFFIX(name, major, minor)
+ RUBY_RANDOM_PASTE_VERSION_SUFFIX(name, major, minor)
 #define rb_random_data_type \
-    RUBY_RANDOM_WITH_VERSION_SUFFIX(rb_random_data_type, \
-                                    RUBY_RANDOM_INTERFACE_VERSION_MAJOR, \
-                                    RUBY_RANDOM_INTERFACE_VERSION_MINOR)
+ RUBY_RANDOM_WITH_VERSION_SUFFIX(rb_random_data_type, \
+   RUBY_RANDOM_INTERFACE_VERSION_MAJOR, \
+   RUBY_RANDOM_INTERFACE_VERSION_MINOR)
 #define RUBY_RANDOM_INTERFACE_VERSION_INITIALIZER \
-    {RUBY_RANDOM_INTERFACE_VERSION_MAJOR, RUBY_RANDOM_INTERFACE_VERSION_MINOR}
+ { \
+  RUBY_RANDOM_INTERFACE_VERSION_MAJOR, RUBY_RANDOM_INTERFACE_VERSION_MINOR \
+ }
 #define RUBY_RANDOM_INTERFACE_VERSION_MAJOR_MAX 0xff
 #define RUBY_RANDOM_INTERFACE_VERSION_MINOR_MAX 0xff
 
@@ -180,18 +182,18 @@ typedef struct {
  * prefix_get_int32, prefix_get_bytes.
  */
 #define RB_RANDOM_INTERFACE_DECLARE(prefix) \
-    static void prefix##_init(rb_random_t *, const uint32_t *, size_t); \
-    static void prefix##_init_int32(rb_random_t *, uint32_t); \
-    static unsigned int prefix##_get_int32(rb_random_t *); \
-    static void prefix##_get_bytes(rb_random_t *, void *, size_t)
+ static void prefix##_init(rb_random_t *, const uint32_t *, size_t); \
+ static void prefix##_init_int32(rb_random_t *, uint32_t); \
+ static unsigned int prefix##_get_int32(rb_random_t *); \
+ static void prefix##_get_bytes(rb_random_t *, void *, size_t)
 
 /**
  * Identical   to   #RB_RANDOM_INTERFACE_DECLARE   except  it   also   declares
  * prefix_get_real.
  */
 #define RB_RANDOM_INTERFACE_DECLARE_WITH_REAL(prefix) \
-    RB_RANDOM_INTERFACE_DECLARE(prefix); \
-    static double prefix##_get_real(rb_random_t *, int)
+ RB_RANDOM_INTERFACE_DECLARE(prefix); \
+ static double prefix##_get_real(rb_random_t *, int)
 
 /**
  * This    utility    macro   expands    to    the    names   declared    using
@@ -208,25 +210,25 @@ typedef struct {
  * ```
  */
 #define RB_RANDOM_INTERFACE_DEFINE(prefix) \
-    RUBY_RANDOM_INTERFACE_VERSION_INITIALIZER, 0, \
-    prefix##_init, \
-    prefix##_init_int32, \
-    prefix##_get_int32, \
-    prefix##_get_bytes
+ RUBY_RANDOM_INTERFACE_VERSION_INITIALIZER, 0, \
+   prefix##_init, \
+   prefix##_init_int32, \
+   prefix##_get_int32, \
+   prefix##_get_bytes
 
 /**
  * Identical   to   #RB_RANDOM_INTERFACE_DEFINE    except   it   also   defines
  * prefix_get_real.
  */
 #define RB_RANDOM_INTERFACE_DEFINE_WITH_REAL(prefix) \
-    RB_RANDOM_INTERFACE_DEFINE(prefix), \
-    prefix##_get_real
+ RB_RANDOM_INTERFACE_DEFINE(prefix), \
+   prefix##_get_real
 
 #define RB_RANDOM_DEFINE_INIT_INT32_FUNC(prefix) \
-    static void prefix##_init_int32(rb_random_t *rnd, uint32_t data) \
-    { \
-        prefix##_init(rnd, &data, 1); \
-    }
+ static void prefix##_init_int32(rb_random_t *rnd, uint32_t data) \
+ { \
+  prefix##_init(rnd, &data, 1); \
+ }
 
 #if defined _WIN32 && !defined __CYGWIN__
 typedef rb_data_type_t rb_random_data_type_t;
@@ -263,7 +265,7 @@ typedef const rb_data_type_t rb_random_data_type_t;
  * when necessary.
  */
 #define RB_RANDOM_DATA_INIT_PARENT(random_data) \
-    rbimpl_random_data_init_parent(&random_data)
+ rbimpl_random_data_init_parent(&random_data)
 
 /**
  * This   is    the   implementation   of    ::rb_data_type_struct::dmark   for

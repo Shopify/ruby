@@ -44,7 +44,11 @@ static VALUE folemethod_inspect(VALUE self);
 
 static const rb_data_type_t olemethod_datatype = {
     "win32ole_method",
-    {NULL, olemethod_free, olemethod_size,},
+    {
+      NULL,
+      olemethod_free,
+      olemethod_size,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -85,13 +89,13 @@ ole_method_sub(VALUE self, ITypeInfo *pOwnerTypeInfo, ITypeInfo *pTypeInfo, VALU
     if (FAILED(hr)) {
         ole_raise(hr, eWIN32OLEQueryInterfaceError, "failed to GetTypeAttr");
     }
-    for(i = 0; i < pTypeAttr->cFuncs && method == Qnil; i++) {
+    for (i = 0; i < pTypeAttr->cFuncs && method == Qnil; i++) {
         hr = pTypeInfo->lpVtbl->GetFuncDesc(pTypeInfo, i, &pFuncDesc);
         if (FAILED(hr))
-             continue;
+            continue;
 
         hr = pTypeInfo->lpVtbl->GetDocumentation(pTypeInfo, pFuncDesc->memid,
-                                                 &bstr, NULL, NULL, NULL);
+          &bstr, NULL, NULL, NULL);
         if (FAILED(hr)) {
             pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
             continue;
@@ -102,7 +106,7 @@ ole_method_sub(VALUE self, ITypeInfo *pOwnerTypeInfo, ITypeInfo *pTypeInfo, VALU
             method = self;
         }
         pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
-        pFuncDesc=NULL;
+        pFuncDesc = NULL;
     }
     OLE_RELEASE_TYPEATTR(pTypeInfo, pTypeAttr);
     return method;
@@ -123,15 +127,15 @@ ole_methods_from_typeinfo(ITypeInfo *pTypeInfo, int mask)
     }
 
     ole_methods_sub(0, pTypeInfo, methods, mask);
-    for(i=0; i < pTypeAttr->cImplTypes; i++){
-       hr = pTypeInfo->lpVtbl->GetRefTypeOfImplType(pTypeInfo, i, &href);
-       if(FAILED(hr))
-           continue;
-       hr = pTypeInfo->lpVtbl->GetRefTypeInfo(pTypeInfo, href, &pRefTypeInfo);
-       if (FAILED(hr))
-           continue;
-       ole_methods_sub(pTypeInfo, pRefTypeInfo, methods, mask);
-       OLE_RELEASE(pRefTypeInfo);
+    for (i = 0; i < pTypeAttr->cImplTypes; i++) {
+        hr = pTypeInfo->lpVtbl->GetRefTypeOfImplType(pTypeInfo, i, &href);
+        if (FAILED(hr))
+            continue;
+        hr = pTypeInfo->lpVtbl->GetRefTypeInfo(pTypeInfo, href, &pRefTypeInfo);
+        if (FAILED(hr))
+            continue;
+        ole_methods_sub(pTypeInfo, pRefTypeInfo, methods, mask);
+        OLE_RELEASE(pRefTypeInfo);
     }
     OLE_RELEASE_TYPEATTR(pTypeInfo, pTypeAttr);
     return methods;
@@ -152,17 +156,17 @@ olemethod_from_typeinfo(VALUE self, ITypeInfo *pTypeInfo, VALUE name)
     }
     method = ole_method_sub(self, 0, pTypeInfo, name);
     if (method != Qnil) {
-       return method;
+        return method;
     }
-    for(i=0; i < pTypeAttr->cImplTypes && method == Qnil; i++){
-       hr = pTypeInfo->lpVtbl->GetRefTypeOfImplType(pTypeInfo, i, &href);
-       if(FAILED(hr))
-           continue;
-       hr = pTypeInfo->lpVtbl->GetRefTypeInfo(pTypeInfo, href, &pRefTypeInfo);
-       if (FAILED(hr))
-           continue;
-       method = ole_method_sub(self, pTypeInfo, pRefTypeInfo, name);
-       OLE_RELEASE(pRefTypeInfo);
+    for (i = 0; i < pTypeAttr->cImplTypes && method == Qnil; i++) {
+        hr = pTypeInfo->lpVtbl->GetRefTypeOfImplType(pTypeInfo, i, &href);
+        if (FAILED(hr))
+            continue;
+        hr = pTypeInfo->lpVtbl->GetRefTypeInfo(pTypeInfo, href, &pRefTypeInfo);
+        if (FAILED(hr))
+            continue;
+        method = ole_method_sub(self, pTypeInfo, pRefTypeInfo, name);
+        OLE_RELEASE(pRefTypeInfo);
     }
     OLE_RELEASE_TYPEATTR(pTypeInfo, pTypeAttr);
     return method;
@@ -181,25 +185,25 @@ ole_methods_sub(ITypeInfo *pOwnerTypeInfo, ITypeInfo *pTypeInfo, VALUE methods, 
     if (FAILED(hr)) {
         ole_raise(hr, eWIN32OLEQueryInterfaceError, "failed to GetTypeAttr");
     }
-    for(i = 0; i < pTypeAttr->cFuncs; i++) {
+    for (i = 0; i < pTypeAttr->cFuncs; i++) {
         hr = pTypeInfo->lpVtbl->GetFuncDesc(pTypeInfo, i, &pFuncDesc);
         if (FAILED(hr))
-             continue;
+            continue;
 
         hr = pTypeInfo->lpVtbl->GetDocumentation(pTypeInfo, pFuncDesc->memid,
-                                                 &bstr, NULL, NULL, NULL);
+          &bstr, NULL, NULL, NULL);
         if (FAILED(hr)) {
             pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
             continue;
         }
-        if(pFuncDesc->invkind & mask) {
+        if (pFuncDesc->invkind & mask) {
             method = folemethod_s_allocate(cWIN32OLE_METHOD);
             olemethod_set_member(method, pTypeInfo, pOwnerTypeInfo,
-                                 i, WC2VSTR(bstr));
+              i, WC2VSTR(bstr));
             rb_ary_push(methods, method);
         }
         pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
-        pFuncDesc=NULL;
+        pFuncDesc = NULL;
     }
     OLE_RELEASE_TYPEATTR(pTypeInfo, pTypeAttr);
 
@@ -241,8 +245,8 @@ folemethod_s_allocate(VALUE klass)
     struct olemethoddata *pmethod;
     VALUE obj;
     obj = TypedData_Make_Struct(klass,
-                                struct olemethoddata,
-                                &olemethod_datatype, pmethod);
+      struct olemethoddata,
+      &olemethod_datatype, pmethod);
     pmethod->pTypeInfo = NULL;
     pmethod->pOwnerTypeInfo = NULL;
     pmethod->index = 0;
@@ -273,7 +277,7 @@ folemethod_initialize(VALUE self, VALUE oletype, VALUE method)
         obj = olemethod_from_typeinfo(self, pTypeInfo, method);
         if (obj == Qnil) {
             rb_raise(eWIN32OLERuntimeError, "not found %s",
-                     StringValuePtr(method));
+              StringValuePtr(method));
         }
     }
     else {
@@ -408,7 +412,7 @@ ole_method_invkind(ITypeInfo *pTypeInfo, UINT method_index)
     HRESULT hr;
     VALUE invkind;
     hr = pTypeInfo->lpVtbl->GetFuncDesc(pTypeInfo, method_index, &pFuncDesc);
-    if(FAILED(hr))
+    if (FAILED(hr))
         ole_raise(hr, eWIN32OLERuntimeError, "failed to GetFuncDesc");
     invkind = RB_INT2FIX(pFuncDesc->invkind);
     pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
@@ -420,16 +424,20 @@ ole_method_invoke_kind(ITypeInfo *pTypeInfo, UINT method_index)
 {
     VALUE type = rb_str_new2("UNKNOWN");
     VALUE invkind = ole_method_invkind(pTypeInfo, method_index);
-    if((RB_FIX2INT(invkind) & INVOKE_PROPERTYGET) &&
-       (RB_FIX2INT(invkind) & INVOKE_PROPERTYPUT) ) {
+    if ((RB_FIX2INT(invkind) & INVOKE_PROPERTYGET) &&
+      (RB_FIX2INT(invkind) & INVOKE_PROPERTYPUT)) {
         type = rb_str_new2("PROPERTY");
-    } else if(RB_FIX2INT(invkind) & INVOKE_PROPERTYGET) {
-        type =  rb_str_new2("PROPERTYGET");
-    } else if(RB_FIX2INT(invkind) & INVOKE_PROPERTYPUT) {
+    }
+    else if (RB_FIX2INT(invkind) & INVOKE_PROPERTYGET) {
+        type = rb_str_new2("PROPERTYGET");
+    }
+    else if (RB_FIX2INT(invkind) & INVOKE_PROPERTYPUT) {
         type = rb_str_new2("PROPERTYPUT");
-    } else if(RB_FIX2INT(invkind) & INVOKE_PROPERTYPUTREF) {
+    }
+    else if (RB_FIX2INT(invkind) & INVOKE_PROPERTYPUTREF) {
         type = rb_str_new2("PROPERTYPUTREF");
-    } else if(RB_FIX2INT(invkind) & INVOKE_FUNC) {
+    }
+    else if (RB_FIX2INT(invkind) & INVOKE_FUNC) {
         type = rb_str_new2("FUNC");
     }
     return type;
@@ -479,13 +487,12 @@ ole_method_visible(ITypeInfo *pTypeInfo, UINT method_index)
     HRESULT hr;
     VALUE visible;
     hr = pTypeInfo->lpVtbl->GetFuncDesc(pTypeInfo, method_index, &pFuncDesc);
-    if(FAILED(hr))
+    if (FAILED(hr))
         return Qfalse;
-    if (pFuncDesc->wFuncFlags & (FUNCFLAG_FRESTRICTED |
-                                 FUNCFLAG_FHIDDEN |
-                                 FUNCFLAG_FNONBROWSABLE)) {
+    if (pFuncDesc->wFuncFlags & (FUNCFLAG_FRESTRICTED | FUNCFLAG_FHIDDEN | FUNCFLAG_FNONBROWSABLE)) {
         visible = Qfalse;
-    } else {
+    }
+    else {
         visible = Qtrue;
     }
     pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
@@ -526,7 +533,7 @@ ole_method_event(ITypeInfo *pTypeInfo, UINT method_index, VALUE method_name)
     hr = OLE_GET_TYPEATTR(pTypeInfo, &pTypeAttr);
     if (FAILED(hr))
         return event;
-    if(pTypeAttr->typekind != TKIND_COCLASS) {
+    if (pTypeAttr->typekind != TKIND_COCLASS) {
         pTypeInfo->lpVtbl->ReleaseTypeAttr(pTypeInfo, pTypeAttr);
         return event;
     }
@@ -537,23 +544,23 @@ ole_method_event(ITypeInfo *pTypeInfo, UINT method_index, VALUE method_name)
 
         if (flags & IMPLTYPEFLAG_FSOURCE) {
             hr = pTypeInfo->lpVtbl->GetRefTypeOfImplType(pTypeInfo,
-                                                         i, &href);
+              i, &href);
             if (FAILED(hr))
                 continue;
             hr = pTypeInfo->lpVtbl->GetRefTypeInfo(pTypeInfo,
-                                                   href, &pRefTypeInfo);
+              href, &pRefTypeInfo);
             if (FAILED(hr))
                 continue;
             hr = pRefTypeInfo->lpVtbl->GetFuncDesc(pRefTypeInfo, method_index,
-                                                   &pFuncDesc);
+              &pFuncDesc);
             if (FAILED(hr)) {
                 OLE_RELEASE(pRefTypeInfo);
                 continue;
             }
 
             hr = pRefTypeInfo->lpVtbl->GetDocumentation(pRefTypeInfo,
-                                                        pFuncDesc->memid,
-                                                        &bstr, NULL, NULL, NULL);
+              pFuncDesc->memid,
+              &bstr, NULL, NULL, NULL);
             if (FAILED(hr)) {
                 pRefTypeInfo->lpVtbl->ReleaseFuncDesc(pRefTypeInfo, pFuncDesc);
                 OLE_RELEASE(pRefTypeInfo);
@@ -591,8 +598,8 @@ folemethod_event(VALUE self)
     if (!pmethod->pOwnerTypeInfo)
         return Qfalse;
     return ole_method_event(pmethod->pOwnerTypeInfo,
-                            pmethod->index,
-                            rb_ivar_get(self, rb_intern("name")));
+      pmethod->index,
+      rb_ivar_get(self, rb_intern("name")));
 }
 
 /*
@@ -611,9 +618,9 @@ folemethod_event_interface(VALUE self)
     struct olemethoddata *pmethod;
     HRESULT hr;
     TypedData_Get_Struct(self, struct olemethoddata, &olemethod_datatype, pmethod);
-    if(folemethod_event(self) == Qtrue) {
+    if (folemethod_event(self) == Qtrue) {
         hr = ole_docinfo_from_type(pmethod->pTypeInfo, &name, NULL, NULL, NULL);
-        if(SUCCEEDED(hr))
+        if (SUCCEEDED(hr))
             return WC2VSTR(name);
     }
     return Qnil;
@@ -621,13 +628,12 @@ folemethod_event_interface(VALUE self)
 
 static HRESULT
 ole_method_docinfo_from_type(
-    ITypeInfo *pTypeInfo,
-    UINT method_index,
-    BSTR *name,
-    BSTR *helpstr,
-    DWORD *helpcontext,
-    BSTR *helpfile
-    )
+  ITypeInfo *pTypeInfo,
+  UINT method_index,
+  BSTR *name,
+  BSTR *helpstr,
+  DWORD *helpcontext,
+  BSTR *helpfile)
 {
     FUNCDESC *pFuncDesc;
     HRESULT hr;
@@ -635,8 +641,8 @@ ole_method_docinfo_from_type(
     if (FAILED(hr))
         return hr;
     hr = pTypeInfo->lpVtbl->GetDocumentation(pTypeInfo, pFuncDesc->memid,
-                                             name, helpstr,
-                                             helpcontext, helpfile);
+      name, helpstr,
+      helpcontext, helpfile);
     pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
     return hr;
 }
@@ -647,7 +653,7 @@ ole_method_helpstring(ITypeInfo *pTypeInfo, UINT method_index)
     HRESULT hr;
     BSTR bhelpstring;
     hr = ole_method_docinfo_from_type(pTypeInfo, method_index, NULL, &bhelpstring,
-                                      NULL, NULL);
+      NULL, NULL);
     if (FAILED(hr))
         return Qnil;
     return WC2VSTR(bhelpstring);
@@ -678,7 +684,7 @@ ole_method_helpfile(ITypeInfo *pTypeInfo, UINT method_index)
     HRESULT hr;
     BSTR bhelpfile;
     hr = ole_method_docinfo_from_type(pTypeInfo, method_index, NULL, NULL,
-                                      NULL, &bhelpfile);
+      NULL, &bhelpfile);
     if (FAILED(hr))
         return Qnil;
     return WC2VSTR(bhelpfile);
@@ -709,7 +715,7 @@ ole_method_helpcontext(ITypeInfo *pTypeInfo, UINT method_index)
     HRESULT hr;
     DWORD helpcontext = 0;
     hr = ole_method_docinfo_from_type(pTypeInfo, method_index, NULL, NULL,
-                                      &helpcontext, NULL);
+      &helpcontext, NULL);
     if (FAILED(hr))
         return Qnil;
     return RB_INT2FIX(helpcontext);
@@ -873,21 +879,21 @@ ole_method_params(ITypeInfo *pTypeInfo, UINT method_index)
     len = 0;
     bstrs = ALLOCA_N(BSTR, pFuncDesc->cParams + 1);
     hr = pTypeInfo->lpVtbl->GetNames(pTypeInfo, pFuncDesc->memid,
-                                     bstrs, pFuncDesc->cParams + 1,
-                                     &len);
+      bstrs, pFuncDesc->cParams + 1,
+      &len);
     if (FAILED(hr)) {
         pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
         return params;
     }
     SysFreeString(bstrs[0]);
     if (pFuncDesc->cParams > 0) {
-        for(i = 1; i < len; i++) {
-            param = create_win32ole_param(pTypeInfo, method_index, i-1, WC2VSTR(bstrs[i]));
+        for (i = 1; i < len; i++) {
+            param = create_win32ole_param(pTypeInfo, method_index, i - 1, WC2VSTR(bstrs[i]));
             rb_ary_push(params, param);
-         }
-     }
-     pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
-     return params;
+        }
+    }
+    pTypeInfo->lpVtbl->ReleaseFuncDesc(pTypeInfo, pFuncDesc);
+    return params;
 }
 
 /*
@@ -925,7 +931,8 @@ folemethod_inspect(VALUE self)
 
 VALUE cWIN32OLE_METHOD;
 
-void Init_win32ole_method(void)
+void
+Init_win32ole_method(void)
 {
     cWIN32OLE_METHOD = rb_define_class_under(cWIN32OLE, "Method", rb_cObject);
     rb_define_const(rb_cObject, "WIN32OLE_METHOD", cWIN32OLE_METHOD);

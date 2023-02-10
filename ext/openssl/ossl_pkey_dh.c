@@ -11,17 +11,19 @@
 
 #if !defined(OPENSSL_NO_DH)
 
-#define GetPKeyDH(obj, pkey) do { \
-    GetPKey((obj), (pkey)); \
-    if (EVP_PKEY_base_id(pkey) != EVP_PKEY_DH) { /* PARANOIA? */ \
-	ossl_raise(rb_eRuntimeError, "THIS IS NOT A DH!") ; \
-    } \
-} while (0)
-#define GetDH(obj, dh) do { \
-    EVP_PKEY *_pkey; \
-    GetPKeyDH((obj), _pkey); \
-    (dh) = EVP_PKEY_get0_DH(_pkey); \
-} while (0)
+# define GetPKeyDH(obj, pkey) \
+  do { \
+   GetPKey((obj), (pkey)); \
+   if (EVP_PKEY_base_id(pkey) != EVP_PKEY_DH) { /* PARANOIA? */ \
+    ossl_raise(rb_eRuntimeError, "THIS IS NOT A DH!"); \
+   } \
+  } while (0)
+# define GetDH(obj, dh) \
+  do { \
+   EVP_PKEY *_pkey; \
+   GetPKeyDH((obj), _pkey); \
+   (dh) = EVP_PKEY_get0_DH(_pkey); \
+  } while (0)
 
 /*
  * Classes
@@ -115,7 +117,7 @@ ossl_dh_initialize(int argc, VALUE *argv, VALUE self)
     RTYPEDDATA_DATA(self) = pkey;
     return self;
 
-  legacy:
+legacy:
     BIO_free(in);
     pkey = EVP_PKEY_new();
     if (!pkey || EVP_PKEY_assign_DH(pkey, dh) != 1) {
@@ -127,7 +129,7 @@ ossl_dh_initialize(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
-#ifndef HAVE_EVP_PKEY_DUP
+# ifndef HAVE_EVP_PKEY_DUP
 static VALUE
 ossl_dh_initialize_copy(VALUE self, VALUE other)
 {
@@ -142,19 +144,19 @@ ossl_dh_initialize_copy(VALUE self, VALUE other)
 
     dh = DHparams_dup(dh_other);
     if (!dh)
-	ossl_raise(eDHError, "DHparams_dup");
+        ossl_raise(eDHError, "DHparams_dup");
 
     DH_get0_key(dh_other, &pub, &priv);
     if (pub) {
-	BIGNUM *pub2 = BN_dup(pub);
-	BIGNUM *priv2 = BN_dup(priv);
+        BIGNUM *pub2 = BN_dup(pub);
+        BIGNUM *priv2 = BN_dup(priv);
 
         if (!pub2 || (priv && !priv2)) {
-	    BN_clear_free(pub2);
-	    BN_clear_free(priv2);
-	    ossl_raise(eDHError, "BN_dup");
-	}
-	DH_set0_key(dh, pub2, priv2);
+            BN_clear_free(pub2);
+            BN_clear_free(priv2);
+            ossl_raise(eDHError, "BN_dup");
+        }
+        DH_set0_key(dh, pub2, priv2);
     }
 
     pkey = EVP_PKEY_new();
@@ -166,7 +168,7 @@ ossl_dh_initialize_copy(VALUE self, VALUE other)
     RTYPEDDATA_DATA(self) = pkey;
     return self;
 }
-#endif
+# endif
 
 /*
  *  call-seq:
@@ -203,11 +205,11 @@ ossl_dh_is_private(VALUE self)
     GetDH(self, dh);
     DH_get0_key(dh, NULL, &bn);
 
-#if !defined(OPENSSL_NO_ENGINE)
+# if !defined(OPENSSL_NO_ENGINE)
     return (bn || DH_get0_engine((DH *)dh)) ? Qtrue : Qfalse;
-#else
+# else
     return bn ? Qtrue : Qfalse;
-#endif
+# endif
 }
 
 /*
@@ -229,11 +231,11 @@ ossl_dh_export(VALUE self)
 
     GetDH(self, dh);
     if (!(out = BIO_new(BIO_s_mem()))) {
-	ossl_raise(eDHError, NULL);
+        ossl_raise(eDHError, NULL);
     }
     if (!PEM_write_bio_DHparams(out, dh)) {
-	BIO_free(out);
-	ossl_raise(eDHError, NULL);
+        BIO_free(out);
+        ossl_raise(eDHError, NULL);
     }
     str = ossl_membio2str(out);
 
@@ -258,12 +260,12 @@ ossl_dh_to_der(VALUE self)
     VALUE str;
 
     GetDH(self, dh);
-    if((len = i2d_DHparams(dh, NULL)) <= 0)
-	ossl_raise(eDHError, NULL);
+    if ((len = i2d_DHparams(dh, NULL)) <= 0)
+        ossl_raise(eDHError, NULL);
     str = rb_str_new(0, len);
     p = (unsigned char *)RSTRING_PTR(str);
-    if(i2d_DHparams(dh, &p) < 0)
-	ossl_raise(eDHError, NULL);
+    if (i2d_DHparams(dh, &p) < 0)
+        ossl_raise(eDHError, NULL);
     ossl_str_adjust(str, p);
 
     return str;
@@ -312,23 +314,23 @@ static VALUE
 ossl_dh_check_params(VALUE self)
 {
     int ret;
-#ifdef HAVE_EVP_PKEY_CHECK
+# ifdef HAVE_EVP_PKEY_CHECK
     EVP_PKEY *pkey;
     EVP_PKEY_CTX *pctx;
 
     GetPKey(self, pkey);
-    pctx = EVP_PKEY_CTX_new(pkey, /* engine */NULL);
+    pctx = EVP_PKEY_CTX_new(pkey, /* engine */ NULL);
     if (!pctx)
         ossl_raise(eDHError, "EVP_PKEY_CTX_new");
     ret = EVP_PKEY_param_check(pctx);
     EVP_PKEY_CTX_free(pctx);
-#else
+# else
     DH *dh;
     int codes;
 
     GetDH(self, dh);
     ret = DH_check(dh, &codes) == 1 && codes == 0;
-#endif
+# endif
 
     if (ret == 1)
         return Qtrue;
@@ -362,11 +364,11 @@ OSSL_PKEY_BN_DEF2(dh, DH, key, pub_key, priv_key)
 void
 Init_ossl_dh(void)
 {
-#if 0
+# if 0
     mPKey = rb_define_module_under(mOSSL, "PKey");
     cPKey = rb_define_class_under(mPKey, "PKey", rb_cObject);
     ePKeyError = rb_define_class_under(mPKey, "PKeyError", eOSSLError);
-#endif
+# endif
 
     /* Document-class: OpenSSL::PKey::DHError
      *
@@ -410,9 +412,9 @@ Init_ossl_dh(void)
      */
     cDH = rb_define_class_under(mPKey, "DH", cPKey);
     rb_define_method(cDH, "initialize", ossl_dh_initialize, -1);
-#ifndef HAVE_EVP_PKEY_DUP
+# ifndef HAVE_EVP_PKEY_DUP
     rb_define_method(cDH, "initialize_copy", ossl_dh_initialize_copy, 1);
-#endif
+# endif
     rb_define_method(cDH, "public?", ossl_dh_is_public, 0);
     rb_define_method(cDH, "private?", ossl_dh_is_private, 0);
     rb_define_method(cDH, "export", ossl_dh_export, 0);

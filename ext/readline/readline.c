@@ -16,7 +16,7 @@
 ************************************************/
 
 #ifdef RUBY_EXTCONF_H
-#include RUBY_EXTCONF_H
+# include RUBY_EXTCONF_H
 #endif
 
 #include "ruby/config.h"
@@ -24,24 +24,24 @@
 #include <stdio.h>
 #include <string.h>
 #ifdef HAVE_READLINE_READLINE_H
-#include <readline/readline.h>
+# include <readline/readline.h>
 #endif
 #ifdef HAVE_READLINE_HISTORY_H
-#include <readline/history.h>
+# include <readline/history.h>
 #endif
 #ifdef HAVE_EDITLINE_READLINE_H
-#include <editline/readline.h>
+# include <editline/readline.h>
 #endif
 
 #include "ruby/io.h"
 #include "ruby/thread.h"
 
 #ifdef HAVE_UNISTD_H
-#include <unistd.h>
+# include <unistd.h>
 #endif
 
 #ifdef HAVE_SYS_STAT_H
-#include <sys/stat.h>
+# include <sys/stat.h>
 #endif
 
 static VALUE mReadline;
@@ -59,7 +59,7 @@ static VALUE mReadline;
 #define COMPLETION_CASE_FOLD "completion_case_fold"
 static ID id_call, completion_proc, completion_case_fold;
 #if defined HAVE_RL_CHAR_IS_QUOTED_P
-#define QUOTING_DETECTION_PROC "quoting_detection_proc"
+# define QUOTING_DETECTION_PROC "quoting_detection_proc"
 static ID quoting_detection_proc;
 #endif
 #if USE_INSERT_IGNORE_ESCAPE
@@ -91,13 +91,13 @@ static int readline_completion_append_character;
 #endif
 
 static char **readline_attempted_completion_function(const char *text,
-                                                     int start, int end);
+  int start, int end);
 
-#define OutputStringValue(str) do {\
-    StringValueCStr(str);\
-    (str) = rb_str_conv_enc((str), rb_enc_get(str), rb_locale_encoding());\
-} while (0)\
-
+#define OutputStringValue(str) \
+ do { \
+  StringValueCStr(str); \
+  (str) = rb_str_conv_enc((str), rb_enc_get(str), rb_locale_encoding()); \
+ } while (0)
 
 /*
  * Document-class: Readline
@@ -146,15 +146,15 @@ mustbe_callable(VALUE proc)
 
 #if defined HAVE_RL_GETC_FUNCTION
 
-#ifndef HAVE_RL_GETC
-#define rl_getc(f) EOF
-#endif
+# ifndef HAVE_RL_GETC
+#  define rl_getc(f) EOF
+# endif
 
 struct getc_struct {
-  FILE *input;
-  int fd;
-  int ret;
-  int err;
+    FILE *input;
+    int fd;
+    int ret;
+    int err;
 };
 
 static int
@@ -163,7 +163,7 @@ getc_body(struct getc_struct *p)
     char ch;
     ssize_t ss;
 
-#if defined(_WIN32)
+# if defined(_WIN32)
     {
         INPUT_RECORD ir;
         DWORD n;
@@ -180,18 +180,21 @@ getc_body(struct getc_struct *p)
                     if (ir.EventType == KEY_EVENT && ir.Event.KeyEvent.bKeyDown) {
                         prior_key = rl_getc(p->input);
                         return prior_key;
-                    } else {
+                    }
+                    else {
                         ReadConsoleInput(h, &ir, 1, &n);
                     }
-                } else {
+                }
+                else {
                     rb_w32_wait_events_blocking(&h, 1, INFINITE);
                 }
-            } else {
+            }
+            else {
                 break;
             }
         }
     }
-#endif
+# endif
 
     ss = read(p->fd, &ch, 1);
     if (ss == 0) {
@@ -221,7 +224,7 @@ readline_getc(FILE *input)
         input = stdin;
     data.input = input;
     data.fd = fileno(input);
-  again:
+again:
     data.ret = EOF;
     data.err = EINTR; /* getc_func is not called if already interrupted. */
     rb_thread_call_without_gvl2(getc_func, &data, RUBY_UBF_IO, NULL);
@@ -248,18 +251,18 @@ readline_getc(FILE *input)
 }
 
 #elif defined HAVE_RL_EVENT_HOOK
-#define BUSY_WAIT 0
+# define BUSY_WAIT 0
 
 static int readline_event(void);
 static int
 readline_event(void)
 {
-#if BUSY_WAIT
+# if BUSY_WAIT
     rb_thread_schedule();
-#else
+# else
     rb_wait_for_single_fd(fileno(rl_instream), RB_WAITFD_IN, NULL);
     return 0;
-#endif
+# endif
 }
 #endif
 
@@ -271,7 +274,7 @@ insert_ignore_escape(VALUE self, VALUE prompt)
     int ignoring = 0;
     const char *s0, *s, *e;
     long len;
-    static const char ignore_code[2] = {RL_PROMPT_START_IGNORE, RL_PROMPT_END_IGNORE};
+    static const char ignore_code[2] = { RL_PROMPT_START_IGNORE, RL_PROMPT_END_IGNORE };
 
     prompt = rb_str_new_shared(prompt);
     last_prompt = rb_attr_get(self, id_last_prompt);
@@ -286,48 +289,48 @@ insert_ignore_escape(VALUE self, VALUE prompt)
     rb_str_set_len(last_prompt, 0);
     while (s < e && *s) {
         switch (*s) {
-          case RL_PROMPT_START_IGNORE:
-            ignoring = -1;
-            rb_str_cat(last_prompt, s0, ++s - s0);
-            s0 = s;
-            break;
-          case RL_PROMPT_END_IGNORE:
-            ignoring = 0;
-            rb_str_cat(last_prompt, s0, ++s - s0);
-            s0 = s;
-            break;
-          case '\033':
-            if (++s < e && *s == '[') {
-                rb_str_cat(last_prompt, s0, s - s0 - 1);
-                s0 = s - 1;
-                while (++s < e && *s) {
-                    if (ISALPHA(*(unsigned char *)s)) {
-                        if (!ignoring) {
-                            ignoring = 1;
-                            rb_str_cat(last_prompt, ignore_code+0, 1);
+            case RL_PROMPT_START_IGNORE:
+                ignoring = -1;
+                rb_str_cat(last_prompt, s0, ++s - s0);
+                s0 = s;
+                break;
+            case RL_PROMPT_END_IGNORE:
+                ignoring = 0;
+                rb_str_cat(last_prompt, s0, ++s - s0);
+                s0 = s;
+                break;
+            case '\033':
+                if (++s < e && *s == '[') {
+                    rb_str_cat(last_prompt, s0, s - s0 - 1);
+                    s0 = s - 1;
+                    while (++s < e && *s) {
+                        if (ISALPHA(*(unsigned char *)s)) {
+                            if (!ignoring) {
+                                ignoring = 1;
+                                rb_str_cat(last_prompt, ignore_code + 0, 1);
+                            }
+                            rb_str_cat(last_prompt, s0, ++s - s0);
+                            s0 = s;
+                            break;
                         }
-                        rb_str_cat(last_prompt, s0, ++s - s0);
-                        s0 = s;
-                        break;
-                    }
-                    else if (!(('0' <= *s && *s <= '9') || *s == ';')) {
-                        break;
+                        else if (!(('0' <= *s && *s <= '9') || *s == ';')) {
+                            break;
+                        }
                     }
                 }
-            }
-            break;
-          default:
-            if (ignoring > 0) {
-                ignoring = 0;
-                rb_str_cat(last_prompt, ignore_code+1, 1);
-            }
-            s++;
-            break;
+                break;
+            default:
+                if (ignoring > 0) {
+                    ignoring = 0;
+                    rb_str_cat(last_prompt, ignore_code + 1, 1);
+                }
+                s++;
+                break;
         }
     }
     if (ignoring > 0) {
         ignoring = 0;
-        rb_str_cat(last_prompt, ignore_code+1, 1);
+        rb_str_cat(last_prompt, ignore_code + 1, 1);
     }
     rb_str_cat(last_prompt, s0, s - s0);
 
@@ -505,7 +508,7 @@ readline_readline(int argc, VALUE *argv, VALUE self)
 #ifdef _WIN32
     rl_prep_terminal(1);
 #endif
-    buff = (char*)rb_protect(readline_get, (VALUE)prompt, &status);
+    buff = (char *)rb_protect(readline_get, (VALUE)prompt, &status);
 #if USE_INSERT_IGNORE_ESCAPE
     if (prompt) {
         rb_str_unlocktmp(tmp);
@@ -514,9 +517,9 @@ readline_readline(int argc, VALUE *argv, VALUE self)
     if (status) {
 #if defined HAVE_RL_CLEANUP_AFTER_SIGNAL
         /* restore terminal mode and signal handler*/
-#if defined HAVE_RL_FREE_LINE_STATE
+# if defined HAVE_RL_FREE_LINE_STATE
         rl_free_line_state();
-#endif
+# endif
         rl_cleanup_after_signal();
 #elif defined HAVE_RL_DEPREP_TERM_FUNCTION
         /* restore terminal mode */
@@ -662,8 +665,8 @@ readline_pre_input_hook(void)
     return 0;
 }
 #else
-#define readline_s_set_pre_input_hook rb_f_notimplement
-#define readline_s_get_pre_input_hook rb_f_notimplement
+# define readline_s_set_pre_input_hook rb_f_notimplement
+# define readline_s_get_pre_input_hook rb_f_notimplement
 #endif
 
 #if defined(HAVE_RL_INSERT_TEXT)
@@ -685,7 +688,7 @@ readline_s_insert_text(VALUE self, VALUE str)
     return self;
 }
 #else
-#define readline_s_insert_text rb_f_notimplement
+# define readline_s_insert_text rb_f_notimplement
 #endif
 
 #if defined(HAVE_RL_DELETE_TEXT)
@@ -693,7 +696,7 @@ RUBY_EXTERN int rl_delete_text(int, int);
 static const char *
 str_subpos(const char *ptr, const char *end, long beg, long *sublen, rb_encoding *enc)
 {
-    VALUE str = rb_enc_str_new_static(ptr, end-ptr, enc);
+    VALUE str = rb_enc_str_new_static(ptr, end - ptr, enc);
     OBJ_FREEZE(str);
     ptr = rb_str_subpos(str, beg, sublen);
     return ptr;
@@ -723,7 +726,7 @@ readline_s_delete_text(int argc, VALUE *argv, VALUE self)
         if (argc == 2) {
             beg = NUM2LONG(argv[0]);
             len = NUM2LONG(argv[1]);
-          num_pos:
+        num_pos:
             p = str_subpos(ptr, end, beg, &len, enc);
             if (!p) rb_raise(rb_eArgError, "invalid index");
             beg = p - ptr;
@@ -740,7 +743,7 @@ readline_s_delete_text(int argc, VALUE *argv, VALUE self)
     return self;
 }
 #else
-#define readline_s_delete_text rb_f_notimplement
+# define readline_s_delete_text rb_f_notimplement
 #endif
 
 #if defined(HAVE_RL_REDISPLAY)
@@ -762,7 +765,7 @@ readline_s_redisplay(VALUE self)
     return self;
 }
 #else
-#define readline_s_redisplay rb_f_notimplement
+# define readline_s_redisplay rb_f_notimplement
 #endif
 
 /*
@@ -893,8 +896,8 @@ readline_s_get_quoting_detection_proc(VALUE self)
     return rb_attr_get(mReadline, quoting_detection_proc);
 }
 #else
-#define readline_s_set_quoting_detection_proc rb_f_notimplement
-#define readline_s_get_quoting_detection_proc rb_f_notimplement
+# define readline_s_set_quoting_detection_proc rb_f_notimplement
+# define readline_s_get_quoting_detection_proc rb_f_notimplement
 #endif
 
 /*
@@ -951,7 +954,7 @@ readline_s_get_line_buffer(VALUE self)
     return rb_locale_str_new_cstr(rl_line_buffer);
 }
 #else
-#define readline_s_get_line_buffer rb_f_notimplement
+# define readline_s_get_line_buffer rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_POINT
@@ -994,8 +997,8 @@ readline_s_set_point(VALUE self, VALUE pos)
     return pos;
 }
 #else
-#define readline_s_get_point rb_f_notimplement
-#define readline_s_set_point rb_f_notimplement
+# define readline_s_get_point rb_f_notimplement
+# define readline_s_set_point rb_f_notimplement
 #endif
 
 static char **
@@ -1023,16 +1026,16 @@ readline_attempted_completion_function(const char *text, int start, int end)
         ary = rb_Array(ary);
     matches = RARRAY_LEN(ary);
     if (matches == 0) return NULL;
-    result = (char**)malloc((matches + 2)*sizeof(char*));
+    result = (char **)malloc((matches + 2) * sizeof(char *));
     if (result == NULL) rb_memerror();
     enc = rb_locale_encoding();
     encobj = rb_enc_from_encoding(enc);
     for (i = 0; i < matches; i++) {
         temp = rb_obj_as_string(RARRAY_AREF(ary, i));
-        StringValueCStr(temp);  /* must be NUL-terminated */
+        StringValueCStr(temp); /* must be NUL-terminated */
         rb_enc_check(encobj, temp);
-        result[i + 1] = (char*)malloc(RSTRING_LEN(temp) + 1);
-        if (result[i + 1]  == NULL) rb_memerror();
+        result[i + 1] = (char *)malloc(RSTRING_LEN(temp) + 1);
+        if (result[i + 1] == NULL) rb_memerror();
         strcpy(result[i + 1], RSTRING_PTR(temp));
     }
     result[matches + 1] = NULL;
@@ -1063,8 +1066,8 @@ readline_attempted_completion_function(const char *text, int start, int end)
 
             low = i1;
         }
-        result[0] = (char*)malloc(low + 1);
-        if (result[0]  == NULL) rb_memerror();
+        result[0] = (char *)malloc(low + 1);
+        if (result[0] == NULL) rb_memerror();
         strncpy(result[0], result[1], low);
         result[0][low] = '\0';
     }
@@ -1087,8 +1090,8 @@ readline_char_is_quoted(char *text, int byte_index)
 
     len = strlen(text);
     if (byte_index < 0 || len < (size_t)byte_index) {
-        rb_raise(rb_eIndexError, "invalid byte index (%d in %"PRIdSIZE")",
-                 byte_index, len);
+        rb_raise(rb_eIndexError, "invalid byte index (%d in %" PRIdSIZE ")",
+          byte_index, len);
     }
 
     str = rb_locale_str_new(text, len);
@@ -1116,7 +1119,7 @@ readline_s_set_screen_size(VALUE self, VALUE rows, VALUE columns)
     return self;
 }
 #else
-#define readline_s_set_screen_size rb_f_notimplement
+# define readline_s_set_screen_size rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_GET_SCREEN_SIZE
@@ -1143,7 +1146,7 @@ readline_s_get_screen_size(VALUE self)
     return res;
 }
 #else
-#define readline_s_get_screen_size rb_f_notimplement
+# define readline_s_get_screen_size rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_VI_EDITING_MODE
@@ -1160,11 +1163,11 @@ RUBY_EXTERN int rl_vi_editing_mode(int, int);
 static VALUE
 readline_s_vi_editing_mode(VALUE self)
 {
-    rl_vi_editing_mode(1,0);
+    rl_vi_editing_mode(1, 0);
     return Qnil;
 }
 #else
-#define readline_s_vi_editing_mode rb_f_notimplement
+# define readline_s_vi_editing_mode rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_EDITING_MODE
@@ -1182,7 +1185,7 @@ readline_s_vi_editing_mode_p(VALUE self)
     return rl_editing_mode == 0 ? Qtrue : Qfalse;
 }
 #else
-#define readline_s_vi_editing_mode_p rb_f_notimplement
+# define readline_s_vi_editing_mode_p rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_EMACS_EDITING_MODE
@@ -1199,14 +1202,14 @@ RUBY_EXTERN int rl_emacs_editing_mode(int, int);
 static VALUE
 readline_s_emacs_editing_mode(VALUE self)
 {
-    rl_emacs_editing_mode(1,0);
+    rl_emacs_editing_mode(1, 0);
     return Qnil;
 }
 #else
-#define readline_s_emacs_editing_mode rb_f_notimplement
+# define readline_s_emacs_editing_mode rb_f_notimplement
 #endif
 
-#ifdef  HAVE_RL_EDITING_MODE
+#ifdef HAVE_RL_EDITING_MODE
 /*
  * call-seq:
  *   Readline.emacs_editing_mode? -> bool
@@ -1221,7 +1224,7 @@ readline_s_emacs_editing_mode_p(VALUE self)
     return rl_editing_mode == 1 ? Qtrue : Qfalse;
 }
 #else
-#define readline_s_emacs_editing_mode_p rb_f_notimplement
+# define readline_s_emacs_editing_mode_p rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_COMPLETION_APPEND_CHARACTER
@@ -1271,14 +1274,15 @@ readline_s_set_completion_append_character(VALUE self, VALUE str)
         OutputStringValue(str);
         if (RSTRING_LEN(str) == 0) {
             rl_completion_append_character = '\0';
-        } else {
+        }
+        else {
             rl_completion_append_character = RSTRING_PTR(str)[0];
         }
     }
     return self;
 }
 #else
-#define readline_s_set_completion_append_character rb_f_notimplement
+# define readline_s_set_completion_append_character rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_COMPLETION_APPEND_CHARACTER
@@ -1299,11 +1303,11 @@ readline_s_get_completion_append_character(VALUE self)
     if (rl_completion_append_character == '\0')
         return Qnil;
 
-    buf[0] = (char) rl_completion_append_character;
+    buf[0] = (char)rl_completion_append_character;
     return rb_locale_str_new(buf, 1);
 }
 #else
-#define readline_s_get_completion_append_character rb_f_notimplement
+# define readline_s_get_completion_append_character rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_COMPLETION_QUOTE_CHARACTER
@@ -1328,11 +1332,11 @@ readline_s_get_completion_quote_character(VALUE self)
     if (rl_completion_quote_character == '\0')
         return Qnil;
 
-    buf[0] = (char) rl_completion_quote_character;
+    buf[0] = (char)rl_completion_quote_character;
     return rb_locale_str_new(buf, 1);
 }
 #else
-#define readline_s_get_completion_quote_character rb_f_notimplement
+# define readline_s_get_completion_quote_character rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_BASIC_WORD_BREAK_CHARACTERS
@@ -1354,19 +1358,19 @@ readline_s_set_basic_word_break_characters(VALUE self, VALUE str)
     OutputStringValue(str);
     if (basic_word_break_characters == NULL) {
         basic_word_break_characters =
-            ALLOC_N(char, RSTRING_LEN(str) + 1);
+          ALLOC_N(char, RSTRING_LEN(str) + 1);
     }
     else {
         REALLOC_N(basic_word_break_characters, char, RSTRING_LEN(str) + 1);
     }
     strncpy(basic_word_break_characters,
-            RSTRING_PTR(str), RSTRING_LEN(str));
+      RSTRING_PTR(str), RSTRING_LEN(str));
     basic_word_break_characters[RSTRING_LEN(str)] = '\0';
     rl_basic_word_break_characters = basic_word_break_characters;
     return self;
 }
 #else
-#define readline_s_set_basic_word_break_characters rb_f_notimplement
+# define readline_s_set_basic_word_break_characters rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_BASIC_WORD_BREAK_CHARACTERS
@@ -1387,7 +1391,7 @@ readline_s_get_basic_word_break_characters(VALUE self)
     return rb_locale_str_new_cstr(rl_basic_word_break_characters);
 }
 #else
-#define readline_s_get_basic_word_break_characters rb_f_notimplement
+# define readline_s_get_basic_word_break_characters rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_COMPLETER_WORD_BREAK_CHARACTERS
@@ -1409,19 +1413,19 @@ readline_s_set_completer_word_break_characters(VALUE self, VALUE str)
     OutputStringValue(str);
     if (completer_word_break_characters == NULL) {
         completer_word_break_characters =
-            ALLOC_N(char, RSTRING_LEN(str) + 1);
+          ALLOC_N(char, RSTRING_LEN(str) + 1);
     }
     else {
         REALLOC_N(completer_word_break_characters, char, RSTRING_LEN(str) + 1);
     }
     strncpy(completer_word_break_characters,
-            RSTRING_PTR(str), RSTRING_LEN(str));
+      RSTRING_PTR(str), RSTRING_LEN(str));
     completer_word_break_characters[RSTRING_LEN(str)] = '\0';
     rl_completer_word_break_characters = completer_word_break_characters;
     return self;
 }
 #else
-#define readline_s_set_completer_word_break_characters rb_f_notimplement
+# define readline_s_set_completer_word_break_characters rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_COMPLETER_WORD_BREAK_CHARACTERS
@@ -1442,7 +1446,7 @@ readline_s_get_completer_word_break_characters(VALUE self)
     return rb_locale_str_new_cstr(rl_completer_word_break_characters);
 }
 #else
-#define readline_s_get_completer_word_break_characters rb_f_notimplement
+# define readline_s_get_completer_word_break_characters rb_f_notimplement
 #endif
 
 #if defined(HAVE_RL_SPECIAL_PREFIXES)
@@ -1503,8 +1507,8 @@ readline_s_get_special_prefixes(VALUE self)
     return str;
 }
 #else
-#define readline_s_set_special_prefixes rb_f_notimplement
-#define readline_s_get_special_prefixes rb_f_notimplement
+# define readline_s_set_special_prefixes rb_f_notimplement
+# define readline_s_get_special_prefixes rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_BASIC_QUOTE_CHARACTERS
@@ -1524,20 +1528,20 @@ readline_s_set_basic_quote_characters(VALUE self, VALUE str)
     OutputStringValue(str);
     if (basic_quote_characters == NULL) {
         basic_quote_characters =
-            ALLOC_N(char, RSTRING_LEN(str) + 1);
+          ALLOC_N(char, RSTRING_LEN(str) + 1);
     }
     else {
         REALLOC_N(basic_quote_characters, char, RSTRING_LEN(str) + 1);
     }
     strncpy(basic_quote_characters,
-            RSTRING_PTR(str), RSTRING_LEN(str));
+      RSTRING_PTR(str), RSTRING_LEN(str));
     basic_quote_characters[RSTRING_LEN(str)] = '\0';
     rl_basic_quote_characters = basic_quote_characters;
 
     return self;
 }
 #else
-#define readline_s_set_basic_quote_characters rb_f_notimplement
+# define readline_s_set_basic_quote_characters rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_BASIC_QUOTE_CHARACTERS
@@ -1557,7 +1561,7 @@ readline_s_get_basic_quote_characters(VALUE self)
     return rb_locale_str_new_cstr(rl_basic_quote_characters);
 }
 #else
-#define readline_s_get_basic_quote_characters rb_f_notimplement
+# define readline_s_get_basic_quote_characters rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_COMPLETER_QUOTE_CHARACTERS
@@ -1580,7 +1584,7 @@ readline_s_set_completer_quote_characters(VALUE self, VALUE str)
     OutputStringValue(str);
     if (completer_quote_characters == NULL) {
         completer_quote_characters =
-            ALLOC_N(char, RSTRING_LEN(str) + 1);
+          ALLOC_N(char, RSTRING_LEN(str) + 1);
     }
     else {
         REALLOC_N(completer_quote_characters, char, RSTRING_LEN(str) + 1);
@@ -1592,7 +1596,7 @@ readline_s_set_completer_quote_characters(VALUE self, VALUE str)
     return self;
 }
 #else
-#define readline_s_set_completer_quote_characters rb_f_notimplement
+# define readline_s_set_completer_quote_characters rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_COMPLETER_QUOTE_CHARACTERS
@@ -1613,7 +1617,7 @@ readline_s_get_completer_quote_characters(VALUE self)
     return rb_locale_str_new_cstr(rl_completer_quote_characters);
 }
 #else
-#define readline_s_get_completer_quote_characters rb_f_notimplement
+# define readline_s_get_completer_quote_characters rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_FILENAME_QUOTE_CHARACTERS
@@ -1634,7 +1638,7 @@ readline_s_set_filename_quote_characters(VALUE self, VALUE str)
     OutputStringValue(str);
     if (filename_quote_characters == NULL) {
         filename_quote_characters =
-            ALLOC_N(char, RSTRING_LEN(str) + 1);
+          ALLOC_N(char, RSTRING_LEN(str) + 1);
     }
     else {
         REALLOC_N(filename_quote_characters, char, RSTRING_LEN(str) + 1);
@@ -1646,7 +1650,7 @@ readline_s_set_filename_quote_characters(VALUE self, VALUE str)
     return self;
 }
 #else
-#define readline_s_set_filename_quote_characters rb_f_notimplement
+# define readline_s_set_filename_quote_characters rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_FILENAME_QUOTE_CHARACTERS
@@ -1667,7 +1671,7 @@ readline_s_get_filename_quote_characters(VALUE self)
     return rb_locale_str_new_cstr(rl_filename_quote_characters);
 }
 #else
-#define readline_s_get_filename_quote_characters rb_f_notimplement
+# define readline_s_get_filename_quote_characters rb_f_notimplement
 #endif
 
 #ifdef HAVE_RL_REFRESH_LINE
@@ -1686,7 +1690,7 @@ readline_s_refresh_line(VALUE self)
     return Qnil;
 }
 #else
-#define readline_s_refresh_line rb_f_notimplement
+# define readline_s_refresh_line rb_f_notimplement
 #endif
 
 static VALUE
@@ -1747,7 +1751,7 @@ hist_set(VALUE self, VALUE index, VALUE str)
     return str;
 }
 #else
-#define hist_set rb_f_notimplement
+# define hist_set rb_f_notimplement
 #endif
 
 static VALUE
@@ -1781,7 +1785,7 @@ rb_remove_history(int index)
     entry = remove_history(index);
     if (entry) {
         val = rb_locale_str_new_cstr(entry->line);
-        free((void *) entry->line);
+        free((void *)entry->line);
         free(entry);
         return val;
     }
@@ -1798,7 +1802,8 @@ hist_pop(VALUE self)
 {
     if (history_length > 0) {
         return rb_remove_history(history_length - 1);
-    } else {
+    }
+    else {
         return Qnil;
     }
 }
@@ -1808,7 +1813,8 @@ hist_shift(VALUE self)
 {
     if (history_length > 0) {
         return rb_remove_history(0);
-    } else {
+    }
+    else {
         return Qnil;
     }
 }
@@ -1864,7 +1870,7 @@ hist_clear(VALUE self)
     return self;
 }
 #else
-#define hist_clear rb_f_notimplement
+# define hist_clear rb_f_notimplement
 #endif
 
 static VALUE
@@ -1875,7 +1881,7 @@ filename_completion_proc_call(VALUE self, VALUE str)
     int i;
 
     matches = rl_completion_matches(StringValuePtr(str),
-                                    rl_filename_completion_function);
+      rl_filename_completion_function);
     if (matches) {
         result = rb_ary_new();
         for (i = 0; matches[i]; i++) {
@@ -1900,7 +1906,7 @@ username_completion_proc_call(VALUE self, VALUE str)
     int i;
 
     matches = rl_completion_matches(StringValuePtr(str),
-                                    rl_username_completion_function);
+      rl_username_completion_function);
     if (matches) {
         result = rb_ary_new();
         for (i = 0; matches[i]; i++) {
@@ -1959,83 +1965,83 @@ Init_readline(void)
 
     mReadline = rb_define_module("Readline");
     rb_define_module_function(mReadline, "readline",
-                              readline_readline, -1);
+      readline_readline, -1);
     rb_define_singleton_method(mReadline, "input=",
-                               readline_s_set_input, 1);
+      readline_s_set_input, 1);
     rb_define_singleton_method(mReadline, "output=",
-                               readline_s_set_output, 1);
+      readline_s_set_output, 1);
     rb_define_singleton_method(mReadline, "completion_proc=",
-                               readline_s_set_completion_proc, 1);
+      readline_s_set_completion_proc, 1);
     rb_define_singleton_method(mReadline, "completion_proc",
-                               readline_s_get_completion_proc, 0);
+      readline_s_get_completion_proc, 0);
     rb_define_singleton_method(mReadline, "quoting_detection_proc=",
-                               readline_s_set_quoting_detection_proc, 1);
+      readline_s_set_quoting_detection_proc, 1);
     rb_define_singleton_method(mReadline, "quoting_detection_proc",
-                               readline_s_get_quoting_detection_proc, 0);
+      readline_s_get_quoting_detection_proc, 0);
     rb_define_singleton_method(mReadline, "completion_case_fold=",
-                               readline_s_set_completion_case_fold, 1);
+      readline_s_set_completion_case_fold, 1);
     rb_define_singleton_method(mReadline, "completion_case_fold",
-                               readline_s_get_completion_case_fold, 0);
+      readline_s_get_completion_case_fold, 0);
     rb_define_singleton_method(mReadline, "line_buffer",
-                               readline_s_get_line_buffer, 0);
+      readline_s_get_line_buffer, 0);
     rb_define_singleton_method(mReadline, "point",
-                               readline_s_get_point, 0);
+      readline_s_get_point, 0);
     rb_define_singleton_method(mReadline, "point=",
-                               readline_s_set_point, 1);
+      readline_s_set_point, 1);
     rb_define_singleton_method(mReadline, "set_screen_size",
-                               readline_s_set_screen_size, 2);
+      readline_s_set_screen_size, 2);
     rb_define_singleton_method(mReadline, "get_screen_size",
-                               readline_s_get_screen_size, 0);
+      readline_s_get_screen_size, 0);
     rb_define_singleton_method(mReadline, "vi_editing_mode",
-                               readline_s_vi_editing_mode, 0);
+      readline_s_vi_editing_mode, 0);
     rb_define_singleton_method(mReadline, "vi_editing_mode?",
-                               readline_s_vi_editing_mode_p, 0);
+      readline_s_vi_editing_mode_p, 0);
     rb_define_singleton_method(mReadline, "emacs_editing_mode",
-                               readline_s_emacs_editing_mode, 0);
+      readline_s_emacs_editing_mode, 0);
     rb_define_singleton_method(mReadline, "emacs_editing_mode?",
-                               readline_s_emacs_editing_mode_p, 0);
+      readline_s_emacs_editing_mode_p, 0);
     rb_define_singleton_method(mReadline, "completion_append_character=",
-                               readline_s_set_completion_append_character, 1);
+      readline_s_set_completion_append_character, 1);
     rb_define_singleton_method(mReadline, "completion_append_character",
-                               readline_s_get_completion_append_character, 0);
+      readline_s_get_completion_append_character, 0);
     rb_define_singleton_method(mReadline, "completion_quote_character",
-                               readline_s_get_completion_quote_character, 0);
+      readline_s_get_completion_quote_character, 0);
     rb_define_singleton_method(mReadline, "basic_word_break_characters=",
-                               readline_s_set_basic_word_break_characters, 1);
+      readline_s_set_basic_word_break_characters, 1);
     rb_define_singleton_method(mReadline, "basic_word_break_characters",
-                               readline_s_get_basic_word_break_characters, 0);
+      readline_s_get_basic_word_break_characters, 0);
     rb_define_singleton_method(mReadline, "completer_word_break_characters=",
-                               readline_s_set_completer_word_break_characters, 1);
+      readline_s_set_completer_word_break_characters, 1);
     rb_define_singleton_method(mReadline, "completer_word_break_characters",
-                               readline_s_get_completer_word_break_characters, 0);
+      readline_s_get_completer_word_break_characters, 0);
     rb_define_singleton_method(mReadline, "basic_quote_characters=",
-                               readline_s_set_basic_quote_characters, 1);
+      readline_s_set_basic_quote_characters, 1);
     rb_define_singleton_method(mReadline, "basic_quote_characters",
-                               readline_s_get_basic_quote_characters, 0);
+      readline_s_get_basic_quote_characters, 0);
     rb_define_singleton_method(mReadline, "completer_quote_characters=",
-                               readline_s_set_completer_quote_characters, 1);
+      readline_s_set_completer_quote_characters, 1);
     rb_define_singleton_method(mReadline, "completer_quote_characters",
-                               readline_s_get_completer_quote_characters, 0);
+      readline_s_get_completer_quote_characters, 0);
     rb_define_singleton_method(mReadline, "filename_quote_characters=",
-                               readline_s_set_filename_quote_characters, 1);
+      readline_s_set_filename_quote_characters, 1);
     rb_define_singleton_method(mReadline, "filename_quote_characters",
-                               readline_s_get_filename_quote_characters, 0);
+      readline_s_get_filename_quote_characters, 0);
     rb_define_singleton_method(mReadline, "refresh_line",
-                               readline_s_refresh_line, 0);
+      readline_s_refresh_line, 0);
     rb_define_singleton_method(mReadline, "pre_input_hook=",
-                               readline_s_set_pre_input_hook, 1);
+      readline_s_set_pre_input_hook, 1);
     rb_define_singleton_method(mReadline, "pre_input_hook",
-                               readline_s_get_pre_input_hook, 0);
+      readline_s_get_pre_input_hook, 0);
     rb_define_singleton_method(mReadline, "insert_text",
-                               readline_s_insert_text, 1);
+      readline_s_insert_text, 1);
     rb_define_singleton_method(mReadline, "delete_text",
-                               readline_s_delete_text, -1);
+      readline_s_delete_text, -1);
     rb_define_singleton_method(mReadline, "redisplay",
-                               readline_s_redisplay, 0);
+      readline_s_redisplay, 0);
     rb_define_singleton_method(mReadline, "special_prefixes=",
-                               readline_s_set_special_prefixes, 1);
+      readline_s_set_special_prefixes, 1);
     rb_define_singleton_method(mReadline, "special_prefixes",
-                               readline_s_get_special_prefixes, 0);
+      readline_s_get_special_prefixes, 0);
 
 #if USE_INSERT_IGNORE_ESCAPE
     id_orig_prompt = rb_intern("orig_prompt");
@@ -2044,19 +2050,19 @@ Init_readline(void)
 
     history = rb_obj_alloc(rb_cObject);
     rb_extend_object(history, rb_mEnumerable);
-    rb_define_singleton_method(history,"to_s", hist_to_s, 0);
-    rb_define_singleton_method(history,"[]", hist_get, 1);
-    rb_define_singleton_method(history,"[]=", hist_set, 2);
-    rb_define_singleton_method(history,"<<", hist_push, 1);
-    rb_define_singleton_method(history,"push", hist_push_method, -1);
-    rb_define_singleton_method(history,"pop", hist_pop, 0);
-    rb_define_singleton_method(history,"shift", hist_shift, 0);
-    rb_define_singleton_method(history,"each", hist_each, 0);
-    rb_define_singleton_method(history,"length", hist_length, 0);
-    rb_define_singleton_method(history,"size", hist_length, 0);
-    rb_define_singleton_method(history,"empty?", hist_empty_p, 0);
-    rb_define_singleton_method(history,"delete_at", hist_delete_at, 1);
-    rb_define_singleton_method(history,"clear", hist_clear, 0);
+    rb_define_singleton_method(history, "to_s", hist_to_s, 0);
+    rb_define_singleton_method(history, "[]", hist_get, 1);
+    rb_define_singleton_method(history, "[]=", hist_set, 2);
+    rb_define_singleton_method(history, "<<", hist_push, 1);
+    rb_define_singleton_method(history, "push", hist_push_method, -1);
+    rb_define_singleton_method(history, "pop", hist_pop, 0);
+    rb_define_singleton_method(history, "shift", hist_shift, 0);
+    rb_define_singleton_method(history, "each", hist_each, 0);
+    rb_define_singleton_method(history, "length", hist_length, 0);
+    rb_define_singleton_method(history, "size", hist_length, 0);
+    rb_define_singleton_method(history, "empty?", hist_empty_p, 0);
+    rb_define_singleton_method(history, "delete_at", hist_delete_at, 1);
+    rb_define_singleton_method(history, "clear", hist_clear, 0);
 
     /*
      * The history buffer. It extends Enumerable module, so it behaves
@@ -2068,7 +2074,7 @@ Init_readline(void)
 
     fcomp = rb_obj_alloc(rb_cObject);
     rb_define_singleton_method(fcomp, "call",
-                               filename_completion_proc_call, 1);
+      filename_completion_proc_call, 1);
     /*
      * The Object with the call method that is a completion for filename.
      * This is sets by Readline.completion_proc= method.
@@ -2077,7 +2083,7 @@ Init_readline(void)
 
     ucomp = rb_obj_alloc(rb_cObject);
     rb_define_singleton_method(ucomp, "call",
-                               username_completion_proc_call, 1);
+      username_completion_proc_call, 1);
     /*
      * The Object with the call method that is a completion for usernames.
      * This is sets by Readline.completion_proc= method.
@@ -2087,22 +2093,22 @@ Init_readline(void)
     history_replace_offset_func = history_get_offset_0;
 #if defined HAVE_RL_LIBRARY_VERSION
     version = rb_str_new_cstr(rl_library_version);
-#if defined HAVE_CLEAR_HISTORY || defined HAVE_REMOVE_HISTORY
+# if defined HAVE_CLEAR_HISTORY || defined HAVE_REMOVE_HISTORY
     if (strncmp(rl_library_version, EDIT_LINE_LIBRARY_VERSION,
-                strlen(EDIT_LINE_LIBRARY_VERSION)) == 0) {
+          strlen(EDIT_LINE_LIBRARY_VERSION)) == 0) {
         prepare_readline();
         add_history("1");
         if (history_get(history_get_offset_func(0)) == NULL) {
             history_get_offset_func = history_get_offset_0;
         }
-#ifdef HAVE_REPLACE_HISTORY_ENTRY
+#  ifdef HAVE_REPLACE_HISTORY_ENTRY
         if (replace_history_entry(0, "a", NULL) == NULL) {
             history_replace_offset_func = history_get_offset_history_base;
         }
-#endif
-#ifdef HAVE_CLEAR_HISTORY
+#  endif
+#  ifdef HAVE_CLEAR_HISTORY
         clear_history();
-#else
+#  else
         {
             HIST_ENTRY *entry = remove_history(0);
             if (entry) {
@@ -2110,9 +2116,9 @@ Init_readline(void)
                 free(entry);
             }
         }
-#endif
+#  endif
     }
-#endif
+# endif
 #else
     version = rb_str_new_cstr("2.0 or prior version");
 #endif

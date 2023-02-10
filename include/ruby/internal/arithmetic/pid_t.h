@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ARITHMETIC_PID_T_H                    /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ARITHMETIC_PID_T_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ARITHMETIC_PID_T_H
 /**
  * @file

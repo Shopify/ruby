@@ -68,7 +68,7 @@ total_i(VALUE v, void *ptr)
     }
 }
 
-typedef void (*each_obj_with_flags)(VALUE, void*);
+typedef void (*each_obj_with_flags)(VALUE, void *);
 
 struct obj_itr {
     each_obj_with_flags cb;
@@ -78,7 +78,7 @@ struct obj_itr {
 static int
 heap_iter(void *vstart, void *vend, size_t stride, void *ptr)
 {
-    struct obj_itr * ctx = (struct obj_itr *)ptr;
+    struct obj_itr *ctx = (struct obj_itr *)ptr;
     VALUE v;
 
     for (v = (VALUE)vstart; v != (VALUE)vend; v += stride) {
@@ -137,7 +137,7 @@ each_object_with_flags(each_obj_with_flags cb, void *ctx)
 static VALUE
 memsize_of_all_m(int argc, VALUE *argv, VALUE self)
 {
-    struct total_data data = {0, 0};
+    struct total_data data = { 0, 0 };
 
     if (argc > 0) {
         rb_scan_args(argc, argv, "01", &data.klass);
@@ -189,7 +189,8 @@ type2sym(enum ruby_value_type i)
 {
     VALUE type;
     switch (i) {
-#define CASE_TYPE(t) case t: type = ID2SYM(rb_intern(#t)); break;
+#define CASE_TYPE(t) \
+ case t: type = ID2SYM(rb_intern(#t)); break;
         CASE_TYPE(T_NONE);
         CASE_TYPE(T_OBJECT);
         CASE_TYPE(T_CLASS);
@@ -218,7 +219,7 @@ type2sym(enum ruby_value_type i)
         CASE_TYPE(T_MOVED);
         CASE_TYPE(T_ZOMBIE);
 #undef CASE_TYPE
-      default: rb_bug("type2sym: unknown type (%d)", i);
+        default: rb_bug("type2sym: unknown type (%d)", i);
     }
     return type;
 }
@@ -249,7 +250,7 @@ type2sym(enum ruby_value_type i)
 static VALUE
 count_objects_size(int argc, VALUE *argv, VALUE os)
 {
-    size_t counts[T_MASK+1];
+    size_t counts[T_MASK + 1];
     size_t total = 0;
     enum ruby_value_type i;
     VALUE hash = setup_hash(argc, argv);
@@ -323,16 +324,16 @@ size_t rb_sym_immortal_count(void);
 static VALUE
 count_symbols(int argc, VALUE *argv, VALUE os)
 {
-    struct dynamic_symbol_counts dynamic_counts = {0, 0};
+    struct dynamic_symbol_counts dynamic_counts = { 0, 0 };
     VALUE hash = setup_hash(argc, argv);
 
     size_t immortal_symbols = rb_sym_immortal_count();
     each_object_with_flags(cs_i, &dynamic_counts);
 
-    rb_hash_aset(hash, ID2SYM(rb_intern("mortal_dynamic_symbol")),   SIZET2NUM(dynamic_counts.mortal));
+    rb_hash_aset(hash, ID2SYM(rb_intern("mortal_dynamic_symbol")), SIZET2NUM(dynamic_counts.mortal));
     rb_hash_aset(hash, ID2SYM(rb_intern("immortal_dynamic_symbol")), SIZET2NUM(dynamic_counts.immortal));
-    rb_hash_aset(hash, ID2SYM(rb_intern("immortal_static_symbol")),  SIZET2NUM(immortal_symbols - dynamic_counts.immortal));
-    rb_hash_aset(hash, ID2SYM(rb_intern("immortal_symbol")),         SIZET2NUM(immortal_symbols));
+    rb_hash_aset(hash, ID2SYM(rb_intern("immortal_static_symbol")), SIZET2NUM(immortal_symbols - dynamic_counts.immortal));
+    rb_hash_aset(hash, ID2SYM(rb_intern("immortal_symbol")), SIZET2NUM(immortal_symbols));
 
     return hash;
 }
@@ -374,7 +375,7 @@ cn_i(VALUE v, void *n)
 static VALUE
 count_nodes(int argc, VALUE *argv, VALUE os)
 {
-    size_t nodes[NODE_LAST+1];
+    size_t nodes[NODE_LAST + 1];
     enum node_type i;
     VALUE hash = setup_hash(argc, argv);
 
@@ -384,11 +385,12 @@ count_nodes(int argc, VALUE *argv, VALUE os)
 
     each_object_with_flags(cn_i, &nodes[0]);
 
-    for (i=0; i<NODE_LAST; i++) {
+    for (i = 0; i < NODE_LAST; i++) {
         if (nodes[i] != 0) {
             VALUE node;
             switch (i) {
-#define COUNT_NODE(n) case n: node = ID2SYM(rb_intern(#n)); goto set
+#define COUNT_NODE(n) \
+ case n: node = ID2SYM(rb_intern(#n)); goto set
                 COUNT_NODE(NODE_SCOPE);
                 COUNT_NODE(NODE_BLOCK);
                 COUNT_NODE(NODE_IF);
@@ -495,10 +497,10 @@ count_nodes(int argc, VALUE *argv, VALUE os)
                 COUNT_NODE(NODE_HSHPTN);
                 COUNT_NODE(NODE_ERROR);
 #undef COUNT_NODE
-              case NODE_LAST: break;
+                case NODE_LAST: break;
             }
             UNREACHABLE;
-          set:
+        set:
             rb_hash_aset(hash, node, SIZET2NUM(nodes[i]));
         }
     }
@@ -572,7 +574,7 @@ count_tdata_objects(int argc, VALUE *argv, VALUE self)
     return hash;
 }
 
-static ID imemo_type_ids[IMEMO_MASK+1];
+static ID imemo_type_ids[IMEMO_MASK + 1];
 
 static void
 count_imemo_objects_i(VALUE v, void *data)
@@ -668,7 +670,11 @@ iow_size(const void *ptr)
 
 static const rb_data_type_t iow_data_type = {
     "ObjectSpace::InternalObjectWrapper",
-    {iow_mark, 0, iow_size,},
+    {
+      iow_mark,
+      0,
+      iow_size,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -695,7 +701,7 @@ iow_inspect(VALUE self)
     VALUE obj = (VALUE)DATA_PTR(self);
     VALUE type = type2sym(BUILTIN_TYPE(obj));
 
-    return rb_sprintf("#<InternalObject:%p %"PRIsVALUE">", (void *)obj, rb_sym2str(type));
+    return rb_sprintf("#<InternalObject:%p %" PRIsVALUE ">", (void *)obj, rb_sym2str(type));
 }
 
 /* Returns the Object#object_id of the internal object. */
@@ -832,8 +838,8 @@ reachable_object_from_root_i(const char *category, VALUE obj, void *ptr)
     }
 
     if (rb_objspace_markable_object_p(obj) &&
-        obj != data->categories &&
-        obj != data->last_category_objects) {
+      obj != data->categories &&
+      obj != data->last_category_objects) {
         if (rb_objspace_internal_object_p(obj)) {
             obj = iow_newobj(obj);
         }
@@ -876,7 +882,7 @@ wrap_klass_iow(VALUE klass)
         return Qnil;
     }
     else if (RB_TYPE_P(klass, T_ICLASS) ||
-             CLASS_OF(klass) == Qfalse /* hidden object */) {
+      CLASS_OF(klass) == Qfalse /* hidden object */) {
         return iow_newobj(klass);
     }
     else {
@@ -930,13 +936,13 @@ objspace_internal_super_of(VALUE self, VALUE obj)
     }
 
     switch (OBJ_BUILTIN_TYPE(obj)) {
-      case T_MODULE:
-      case T_CLASS:
-      case T_ICLASS:
-        super = RCLASS_SUPER(obj);
-        break;
-      default:
-        rb_raise(rb_eArgError, "class or module is expected");
+        case T_MODULE:
+        case T_CLASS:
+        case T_ICLASS:
+            super = RCLASS_SUPER(obj);
+            break;
+        default:
+            rb_raise(rb_eArgError, "class or module is expected");
     }
 
     return wrap_klass_iow(super);

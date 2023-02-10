@@ -4,9 +4,9 @@
 #include <ruby/ruby.h>
 #include "../digest.h"
 #if defined(SHA1_USE_COMMONDIGEST)
-#include "sha1cc.h"
+# include "sha1cc.h"
 #else
-#include "sha1.h"
+# include "sha1.h"
 #endif
 
 static const rb_digest_metadata_t sha1 = {

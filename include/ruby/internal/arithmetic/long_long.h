@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ARITHMETIC_LONG_LONG_H                /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ARITHMETIC_LONG_LONG_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ARITHMETIC_LONG_LONG_H
 /**
  * @file
@@ -25,14 +25,14 @@
 #include "ruby/internal/special_consts.h"
 #include "ruby/backward/2/long_long.h"
 
-#define RB_LL2NUM  rb_ll2num_inline   /**< @alias{rb_ll2num_inline} */
-#define RB_ULL2NUM rb_ull2num_inline  /**< @alias{rb_ull2num_inline} */
-#define LL2NUM     RB_LL2NUM          /**< @old{RB_LL2NUM} */
-#define ULL2NUM    RB_ULL2NUM         /**< @old{RB_ULL2NUM} */
-#define RB_NUM2LL  rb_num2ll_inline   /**< @alias{rb_num2ll_inline} */
-#define RB_NUM2ULL rb_num2ull_inline  /**< @alias{rb_num2ull_inline} */
-#define NUM2LL     RB_NUM2LL          /**< @old{RB_NUM2LL} */
-#define NUM2ULL    RB_NUM2ULL         /**< @old{RB_NUM2ULL} */
+#define RB_LL2NUM rb_ll2num_inline /**< @alias{rb_ll2num_inline} */
+#define RB_ULL2NUM rb_ull2num_inline /**< @alias{rb_ull2num_inline} */
+#define LL2NUM RB_LL2NUM /**< @old{RB_LL2NUM} */
+#define ULL2NUM RB_ULL2NUM /**< @old{RB_ULL2NUM} */
+#define RB_NUM2LL rb_num2ll_inline /**< @alias{rb_num2ll_inline} */
+#define RB_NUM2ULL rb_num2ull_inline /**< @alias{rb_num2ull_inline} */
+#define NUM2LL RB_NUM2LL /**< @old{RB_NUM2LL} */
+#define NUM2ULL RB_NUM2ULL /**< @old{RB_NUM2ULL} */
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
 /**

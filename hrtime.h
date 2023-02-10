@@ -3,7 +3,7 @@
 #include "ruby/ruby.h"
 #include <time.h>
 #if defined(HAVE_SYS_TIME_H)
-#  include <sys/time.h>
+# include <sys/time.h>
 #endif
 
 /*
@@ -34,9 +34,9 @@
  */
 #define RB_HRTIME_PER_USEC ((rb_hrtime_t)1000)
 #define RB_HRTIME_PER_MSEC (RB_HRTIME_PER_USEC * (rb_hrtime_t)1000)
-#define RB_HRTIME_PER_SEC  (RB_HRTIME_PER_MSEC * (rb_hrtime_t)1000)
-#define RB_HRTIME_MAX      UINT64_MAX
-#define RB_HRTIME_MIN      ((rb_hrtime_t)0)
+#define RB_HRTIME_PER_SEC (RB_HRTIME_PER_MSEC * (rb_hrtime_t)1000)
+#define RB_HRTIME_MAX UINT64_MAX
+#define RB_HRTIME_MIN ((rb_hrtime_t)0)
 
 /*
  * Lets try to support time travelers.  Lets assume anybody with a time machine
@@ -169,7 +169,7 @@ rb_hrtime2timeval(struct timeval *tv, const rb_hrtime_t *hrt)
 {
     if (hrt) {
         tv->tv_sec = (time_t)(*hrt / RB_HRTIME_PER_SEC);
-        tv->tv_usec = (int32_t)((*hrt % RB_HRTIME_PER_SEC)/RB_HRTIME_PER_USEC);
+        tv->tv_usec = (int32_t)((*hrt % RB_HRTIME_PER_SEC) / RB_HRTIME_PER_USEC);
 
         return tv;
     }
@@ -191,7 +191,10 @@ rb_hrtime2timeval(struct timeval *tv, const rb_hrtime_t *hrt)
 
 COMPILER_WARNING_PUSH
 #if __has_warning("-Wimplicit-int-float-conversion")
+// clang-format off
+// There's no way to tell clang format to not add spaces around binary operators.
 COMPILER_WARNING_IGNORED(-Wimplicit-int-float-conversion)
+// clang-format on
 #elif defined(_MSC_VER)
 /* C4305: 'initializing': truncation from '__int64' to 'const double' */
 COMPILER_WARNING_IGNORED(4305)

@@ -1,5 +1,5 @@
-#ifndef  RBIMPL_INTERN_CONT_H                        /*-*-C++-*-vi:se ft=cpp:*/
-#define  RBIMPL_INTERN_CONT_H
+#ifndef RBIMPL_INTERN_CONT_H /*-*-C++-*-vi:se ft=cpp:*/
+#define RBIMPL_INTERN_CONT_H
 /**
  * @file
  * @author     Ruby developers <ruby-core@ruby-lang.org>

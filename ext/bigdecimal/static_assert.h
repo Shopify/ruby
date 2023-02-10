@@ -35,20 +35,19 @@
 
 # elif defined(__STDC_VERSION__) && defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
 #  define BIGDECIMAL_STATIC_ASSERT0 __extension__ _Static_assert
-#endif
+# endif
 
 # if defined(__DOXYGEN__)
 #  define STATIC_ASSERT static_assert
 
 # elif defined(BIGDECIMAL_STATIC_ASSERT0)
 #  define STATIC_ASSERT(name, expr) \
-    BIGDECIMAL_STATIC_ASSERT0(expr, #name ": " #expr)
+   BIGDECIMAL_STATIC_ASSERT0(expr, #name ": " #expr)
 
 # else
 #  define STATIC_ASSERT(name, expr) \
-    typedef int static_assert_ ## name ## _check[1 - 2 * !(expr)]
+   typedef int static_assert_##name##_check[1 - 2 * !(expr)]
 # endif
 #endif /* STATIC_ASSERT */
-
 
 #endif /* BIGDECIMAL_STATIC_ASSERT_H */

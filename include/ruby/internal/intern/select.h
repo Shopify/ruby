@@ -1,4 +1,4 @@
-#ifndef RBIMPL_INTERN_SELECT_H                       /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_INTERN_SELECT_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_INTERN_SELECT_H
 /**
  * @file
@@ -25,7 +25,7 @@
 #include "ruby/internal/config.h"
 
 #ifdef HAVE_SYS_TYPES_H
-# include <sys/types.h>         /* for NFDBITS (BSD Net/2) */
+# include <sys/types.h> /* for NFDBITS (BSD Net/2) */
 #endif
 
 #include "ruby/internal/dllexport.h"

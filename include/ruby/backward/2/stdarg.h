@@ -1,4 +1,4 @@
-#ifndef RUBY_BACKWARD2_STDARG_H                      /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_BACKWARD2_STDARG_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_BACKWARD2_STDARG_H
 /**
  * @file
@@ -61,9 +61,9 @@
  * @see ruby::backward::cxxanyargs
  */
 #ifdef __cplusplus
-#define ANYARGS ...
+# define ANYARGS ...
 #else
-#define ANYARGS
+# define ANYARGS
 #endif
 
 #endif /* RUBY_BACKWARD2_STDARG_H */

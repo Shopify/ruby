@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ARITHMETIC_INT_H                      /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ARITHMETIC_INT_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ARITHMETIC_INT_H
 /**
  * @file
@@ -34,19 +34,19 @@
 #include "ruby/internal/warning_push.h"
 #include "ruby/assert.h"
 
-#define RB_INT2NUM  rb_int2num_inline  /**< @alias{rb_int2num_inline} */
-#define RB_NUM2INT  rb_num2int_inline  /**< @alias{rb_num2int_inline} */
+#define RB_INT2NUM rb_int2num_inline /**< @alias{rb_int2num_inline} */
+#define RB_NUM2INT rb_num2int_inline /**< @alias{rb_num2int_inline} */
 #define RB_UINT2NUM rb_uint2num_inline /**< @alias{rb_uint2num_inline} */
 
-#define FIX2INT    RB_FIX2INT          /**< @old{RB_FIX2INT} */
-#define FIX2UINT   RB_FIX2UINT         /**< @old{RB_FIX2UINT} */
-#define INT2NUM    RB_INT2NUM          /**< @old{RB_INT2NUM} */
-#define NUM2INT    RB_NUM2INT          /**< @old{RB_NUM2INT} */
-#define NUM2UINT   RB_NUM2UINT         /**< @old{RB_NUM2UINT} */
-#define UINT2NUM   RB_UINT2NUM         /**< @old{RB_UINT2NUM} */
+#define FIX2INT RB_FIX2INT /**< @old{RB_FIX2INT} */
+#define FIX2UINT RB_FIX2UINT /**< @old{RB_FIX2UINT} */
+#define INT2NUM RB_INT2NUM /**< @old{RB_INT2NUM} */
+#define NUM2INT RB_NUM2INT /**< @old{RB_NUM2INT} */
+#define NUM2UINT RB_NUM2UINT /**< @old{RB_NUM2UINT} */
+#define UINT2NUM RB_UINT2NUM /**< @old{RB_UINT2NUM} */
 
 /** @cond INTERNAL_MACRO */
-#define RB_FIX2INT  RB_FIX2INT
+#define RB_FIX2INT RB_FIX2INT
 #define RB_NUM2UINT RB_NUM2UINT
 #define RB_FIX2UINT RB_FIX2UINT
 /** @endcond */
@@ -222,11 +222,14 @@ RB_FIX2UINT(VALUE x)
     return RBIMPL_CAST((unsigned int)ret);
 }
 
+// clang-format off
+// There's no way to tell clang format to not add spaces around binary operators.
 RBIMPL_WARNING_PUSH()
 #if RBIMPL_COMPILER_IS(GCC)
 RBIMPL_WARNING_IGNORED(-Wtype-limits) /* We can ignore them here. */
 #elif RBIMPL_HAS_WARNING("-Wtautological-constant-out-of-range-compare")
 RBIMPL_WARNING_IGNORED(-Wtautological-constant-out-of-range-compare)
+// clang-format
 #endif
 
 /**

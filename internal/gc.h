@@ -1,4 +1,4 @@
-#ifndef INTERNAL_GC_H                                    /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_GC_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_GC_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -10,10 +10,10 @@
  */
 #include "ruby/internal/config.h"
 
-#include <stddef.h>             /* for size_t */
+#include <stddef.h> /* for size_t */
 
 #include "internal/compilers.h" /* for __has_attribute */
-#include "ruby/ruby.h"          /* for rb_event_flag_t */
+#include "ruby/ruby.h" /* for rb_event_flag_t */
 
 struct rb_execution_context_struct; /* in vm_core.h */
 struct rb_objspace; /* in vm_core.h */
@@ -26,14 +26,14 @@ struct rb_objspace; /* in vm_core.h */
 #define RVALUE_SIZE (sizeof(struct RBasic) + sizeof(VALUE[RBIMPL_RVALUE_EMBED_LEN_MAX]))
 
 #define RB_RVARGC_NEWOBJ_OF(var, T, c, f, s) \
-  T *(var) = (T *)(((f) & FL_WB_PROTECTED) ? \
-                   rb_wb_protected_newobj_of((c), (f) & ~FL_WB_PROTECTED, s) : \
-                   rb_wb_unprotected_newobj_of((c), (f), s))
+ T *(var) = (T *)(((f)&FL_WB_PROTECTED) ? \
+     rb_wb_protected_newobj_of((c), (f) & ~FL_WB_PROTECTED, s) : \
+     rb_wb_unprotected_newobj_of((c), (f), s))
 
 #define RB_RVARGC_EC_NEWOBJ_OF(ec, var, T, c, f, s) \
-  T *(var) = (T *)(((f) & FL_WB_PROTECTED) ? \
-                   rb_ec_wb_protected_newobj_of((ec), (c), (f) & ~FL_WB_PROTECTED, s) : \
-                   rb_wb_unprotected_newobj_of((c), (f), s))
+ T *(var) = (T *)(((f)&FL_WB_PROTECTED) ? \
+     rb_ec_wb_protected_newobj_of((ec), (c), (f) & ~FL_WB_PROTECTED, s) : \
+     rb_wb_unprotected_newobj_of((c), (f), s))
 
 /* optimized version of NEWOBJ() */
 #define RB_NEWOBJ_OF(var, T, c, f) RB_RVARGC_NEWOBJ_OF(var, T, c, f, RVALUE_SIZE)
@@ -42,41 +42,45 @@ struct rb_objspace; /* in vm_core.h */
 
 #define NEWOBJ_OF(var, T, c, f) RB_NEWOBJ_OF((var), T, (c), (f))
 #define RVARGC_NEWOBJ_OF(var, T, c, f, s) RB_RVARGC_NEWOBJ_OF((var), T, (c), (f), (s))
-#define RB_OBJ_GC_FLAGS_MAX 6   /* used in ext/objspace */
+#define RB_OBJ_GC_FLAGS_MAX 6 /* used in ext/objspace */
 
 #ifndef USE_UNALIGNED_MEMBER_ACCESS
 # define UNALIGNED_MEMBER_ACCESS(expr) (expr)
-#elif ! USE_UNALIGNED_MEMBER_ACCESS
+#elif !USE_UNALIGNED_MEMBER_ACCESS
 # define UNALIGNED_MEMBER_ACCESS(expr) (expr)
-#elif ! (__has_warning("-Waddress-of-packed-member") || GCC_VERSION_SINCE(9, 0, 0))
+#elif !(__has_warning("-Waddress-of-packed-member") || GCC_VERSION_SINCE(9, 0, 0))
 # define UNALIGNED_MEMBER_ACCESS(expr) (expr)
 #else
 # include "internal/warnings.h"
+// clang-format off
+// There's no way to tell clang format to not add spaces around binary operators.
 # define UNALIGNED_MEMBER_ACCESS(expr) __extension__({ \
-    COMPILER_WARNING_PUSH; \
-    COMPILER_WARNING_IGNORED(-Waddress-of-packed-member); \
-    __typeof__(expr) unaligned_member_access_result = (expr); \
-    COMPILER_WARNING_POP; \
-    unaligned_member_access_result; \
-})
+COMPILER_WARNING_PUSH; \
+COMPILER_WARNING_IGNORED(-Waddress-of-packed-member); \
+__typeof__(expr) unaligned_member_access_result = (expr); \
+COMPILER_WARNING_POP; \
+unaligned_member_access_result; \
+ })
 
 # define UNALIGNED_MEMBER_PTR(ptr, mem) __extension__({ \
-    COMPILER_WARNING_PUSH; \
-    COMPILER_WARNING_IGNORED(-Waddress-of-packed-member); \
-    const volatile void *unaligned_member_ptr_result = &(ptr)->mem; \
-    COMPILER_WARNING_POP; \
-    (__typeof__((ptr)->mem) *)unaligned_member_ptr_result; \
-})
+COMPILER_WARNING_PUSH; \
+COMPILER_WARNING_IGNORED(-Waddress-of-packed-member); \
+const volatile void *unaligned_member_ptr_result = &(ptr)->mem; \
+COMPILER_WARNING_POP; \
+(__typeof__((ptr)->mem) *)unaligned_member_ptr_result; \
+ })
+// clang-format on
 #endif
 
 #ifndef UNALIGNED_MEMBER_PTR
 # define UNALIGNED_MEMBER_PTR(ptr, mem) UNALIGNED_MEMBER_ACCESS(&(ptr)->mem)
 #endif
 
-#define RB_OBJ_WRITE_UNALIGNED(old, slot, young) do { \
-    VALUE *_slot = UNALIGNED_MEMBER_ACCESS(slot); \
-    RB_OBJ_WRITE(old, _slot, young); \
-} while (0)
+#define RB_OBJ_WRITE_UNALIGNED(old, slot, young) \
+ do { \
+  VALUE *_slot = UNALIGNED_MEMBER_ACCESS(slot); \
+  RB_OBJ_WRITE(old, _slot, young); \
+ } while (0)
 
 // We use SIZE_POOL_COUNT number of shape IDs for transitions out of different size pools
 // The next available shape ID will be the SPECIAL_CONST_SHAPE_ID
@@ -130,11 +134,12 @@ int rb_objspace_garbage_object_p(VALUE obj);
 
 void rb_gc_mark_and_move(VALUE *ptr);
 
-#define rb_gc_mark_and_move_ptr(ptr) do { \
-    VALUE _obj = (VALUE)*(ptr); \
-    rb_gc_mark_and_move(&_obj); \
-    if (_obj != (VALUE)*(ptr)) *(ptr) = (void *)_obj; \
-} while (0)
+#define rb_gc_mark_and_move_ptr(ptr) \
+ do { \
+  VALUE _obj = (VALUE) * (ptr); \
+  rb_gc_mark_and_move(&_obj); \
+  if (_obj != (VALUE) * (ptr)) *(ptr) = (void *)_obj; \
+ } while (0)
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* gc.c (export) */
@@ -201,7 +206,7 @@ ruby_sized_xfree_inlined(void *ptr, size_t size)
 }
 
 # define SIZED_REALLOC_N(v, T, m, n) \
-    ((v) = (T *)ruby_sized_xrealloc2((void *)(v), (m), sizeof(T), (n)))
+  ((v) = (T *)ruby_sized_xrealloc2((void *)(v), (m), sizeof(T), (n)))
 
 #endif /* HAVE_MALLOC_USABLE_SIZE */
 

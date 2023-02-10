@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ATTR_NOEXCEPT_H                       /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ATTR_NOEXCEPT_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ATTR_NOEXCEPT_H
 /**
  * @file
@@ -65,7 +65,7 @@
 #include "ruby/internal/has/feature.h"
 
 /** Wraps (or simulates) C++11 `noexcept` */
-#if ! defined(__cplusplus)
+#if !defined(__cplusplus)
 # /* Doesn't make sense. */
 # define RBIMPL_ATTR_NOEXCEPT(_) /* void */
 

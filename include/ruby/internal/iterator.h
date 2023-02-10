@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ITERATOR_H                            /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ITERATOR_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ITERATOR_H
 /**
  * @file
@@ -56,7 +56,7 @@ RBIMPL_SYMBOL_EXPORT_BEGIN()
  * ```
  */
 #define RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg) \
-    VALUE yielded_arg, VALUE callback_arg, int argc, const VALUE *argv, VALUE blockarg
+ VALUE yielded_arg, VALUE callback_arg, int argc, const VALUE *argv, VALUE blockarg
 
 /**
  * This is the  type of a function that the  interpreter expect for C-backended
@@ -285,7 +285,7 @@ VALUE rb_iterate(VALUE (*func1)(VALUE), VALUE data1, rb_block_call_func_t proc, 
 #ifdef __cplusplus
 namespace ruby {
 namespace backward {
-/**
+    /**
  * Old way to iterate a block.
  *
  * @deprecated     This is an old API.  Use rb_block_call() instead.
@@ -297,11 +297,13 @@ namespace backward {
  * @param[in,out]  data2  Passed to `proc` as the data2 parameter.
  * @return         What `func1` returns.
  */
-static inline VALUE
-rb_iterate_deprecated(VALUE (*iter)(VALUE), VALUE data1, rb_block_call_func_t bl, VALUE data2)
-{
-    return ::rb_iterate(iter, data1, bl, data2);
-}}}
+    static inline VALUE
+    rb_iterate_deprecated(VALUE (*iter)(VALUE), VALUE data1, rb_block_call_func_t bl, VALUE data2)
+    {
+        return ::rb_iterate(iter, data1, bl, data2);
+    }
+}
+}
 
 RBIMPL_ATTR_DEPRECATED(("by: rb_block_call since 1.9"))
 VALUE rb_iterate(VALUE (*func1)(VALUE), VALUE data1, rb_block_call_func_t proc, VALUE data2);

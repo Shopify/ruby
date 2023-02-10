@@ -18,7 +18,7 @@
 #include <stdio.h>
 
 #ifndef EXIT_SUCCESS
-#define EXIT_SUCCESS 0
+# define EXIT_SUCCESS 0
 #endif
 
 #ifdef RUBY_REVISION
@@ -26,9 +26,9 @@
 #  ifndef RUBY_BRANCH_NAME
 #   define RUBY_BRANCH_NAME "master"
 #  endif
-#  define RUBY_REVISION_STR " "RUBY_BRANCH_NAME" "RUBY_REVISION
+#  define RUBY_REVISION_STR " " RUBY_BRANCH_NAME " " RUBY_REVISION
 # else
-#  define RUBY_REVISION_STR " revision "RUBY_REVISION
+#  define RUBY_REVISION_STR " revision " RUBY_REVISION
 # endif
 #else
 # define RUBY_REVISION "HEAD"
@@ -39,13 +39,13 @@
 # define RUBY_RELEASE_DATETIME RUBY_RELEASE_DATE
 #endif
 
-# define RUBY_DESCRIPTION_WITH(opt) \
-    "ruby " RUBY_VERSION RUBY_PATCHLEVEL_STR " " \
-    "(" RUBY_RELEASE_DATETIME RUBY_REVISION_STR ")" opt " " \
-    "[" RUBY_PLATFORM "]"
+#define RUBY_DESCRIPTION_WITH(opt) \
+ "ruby " RUBY_VERSION RUBY_PATCHLEVEL_STR " " \
+ "(" RUBY_RELEASE_DATETIME RUBY_REVISION_STR ")" opt " " \
+ "[" RUBY_PLATFORM "]"
 
 #define PRINT(type) puts(ruby_##type)
-#define MKSTR(type) rb_obj_freeze(rb_usascii_str_new_static(ruby_##type, sizeof(ruby_##type)-1))
+#define MKSTR(type) rb_obj_freeze(rb_usascii_str_new_static(ruby_##type, sizeof(ruby_##type) - 1))
 #define MKINT(name) INT2FIX(ruby_##name)
 
 const int ruby_api_version[] = {
@@ -54,16 +54,14 @@ const int ruby_api_version[] = {
     RUBY_API_VERSION_TEENY,
 };
 #define RUBY_VERSION \
-    STRINGIZE(RUBY_VERSION_MAJOR) "." \
-    STRINGIZE(RUBY_VERSION_MINOR) "." \
-    STRINGIZE(RUBY_VERSION_TEENY) ""
+ STRINGIZE(RUBY_VERSION_MAJOR) "." STRINGIZE(RUBY_VERSION_MINOR) "." STRINGIZE(RUBY_VERSION_TEENY) ""
 #ifndef RUBY_FULL_REVISION
 # define RUBY_FULL_REVISION RUBY_REVISION
 #endif
 #ifdef YJIT_SUPPORT
-#define YJIT_DESCRIPTION " +YJIT " STRINGIZE(YJIT_SUPPORT)
+# define YJIT_DESCRIPTION " +YJIT " STRINGIZE(YJIT_SUPPORT)
 #else
-#define YJIT_DESCRIPTION " +YJIT"
+# define YJIT_DESCRIPTION " +YJIT"
 #endif
 const char ruby_version[] = RUBY_VERSION;
 const char ruby_revision[] = RUBY_FULL_REVISION;
@@ -73,9 +71,7 @@ const int ruby_patchlevel = RUBY_PATCHLEVEL;
 const char ruby_description[] = RUBY_DESCRIPTION_WITH("");
 static const char ruby_description_with_mjit[] = RUBY_DESCRIPTION_WITH(" +MJIT");
 static const char ruby_description_with_yjit[] = RUBY_DESCRIPTION_WITH(YJIT_DESCRIPTION);
-const char ruby_copyright[] = "ruby - Copyright (C) "
-    RUBY_BIRTH_YEAR_STR "-" RUBY_RELEASE_YEAR_STR " "
-    RUBY_AUTHOR;
+const char ruby_copyright[] = "ruby - Copyright (C) " RUBY_BIRTH_YEAR_STR "-" RUBY_RELEASE_YEAR_STR " " RUBY_AUTHOR;
 const char ruby_engine[] = "ruby";
 
 // Might change after initialization
@@ -85,7 +81,7 @@ const char *rb_dynamic_description = ruby_description;
 void
 Init_version(void)
 {
-    enum {ruby_patchlevel = RUBY_PATCHLEVEL};
+    enum { ruby_patchlevel = RUBY_PATCHLEVEL };
     VALUE version;
     VALUE ruby_engine_name;
     /*
@@ -127,15 +123,15 @@ Init_version(void)
 }
 
 #if USE_MJIT
-#define MJIT_OPTS_ON opt->mjit.on
+# define MJIT_OPTS_ON opt->mjit.on
 #else
-#define MJIT_OPTS_ON 0
+# define MJIT_OPTS_ON 0
 #endif
 
 #if USE_YJIT
-#define YJIT_OPTS_ON opt->yjit
+# define YJIT_OPTS_ON opt->yjit
 #else
-#define YJIT_OPTS_ON 0
+# define YJIT_OPTS_ON 0
 #endif
 
 void

@@ -21,7 +21,7 @@
 #include "ruby.h"
 #include "vm_debug.h"
 #ifdef HAVE_LOCALE_H
-#include <locale.h>
+# include <locale.h>
 #endif
 #if defined RUBY_DEVEL && !defined RUBY_DEBUG_ENV
 # define RUBY_DEBUG_ENV 1
@@ -39,8 +39,8 @@ rb_main(int argc, char **argv)
 }
 
 #if defined(__wasm__) && !defined(__EMSCRIPTEN__)
-int rb_wasm_rt_start(int (main)(int argc, char **argv), int argc, char **argv);
-#define rb_main(argc, argv) rb_wasm_rt_start(rb_main, argc, argv)
+int rb_wasm_rt_start(int(main)(int argc, char **argv), int argc, char **argv);
+# define rb_main(argc, argv) rb_wasm_rt_start(rb_main, argc, argv)
 #endif
 
 int

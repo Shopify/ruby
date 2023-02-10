@@ -46,14 +46,14 @@ nextafter(double x, double y)
     x1 = frexp(x, &e);
 
     if (x < y) {
-        d = DBL_EPSILON/2;
+        d = DBL_EPSILON / 2;
         if (x1 == -0.5) {
             x1 *= 2;
             e--;
         }
     }
     else {
-        d = -DBL_EPSILON/2;
+        d = -DBL_EPSILON / 2;
         if (x1 == 0.5) {
             x1 *= 2;
             e--;
@@ -61,7 +61,7 @@ nextafter(double x, double y)
     }
 
     if (e < DBL_MIN_EXP) {
-        d = ldexp(d, DBL_MIN_EXP-e);
+        d = ldexp(d, DBL_MIN_EXP - e);
     }
 
     x2 = x1 + d;

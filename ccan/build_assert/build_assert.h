@@ -20,7 +20,9 @@
  *	}
  */
 #define CCAN_BUILD_ASSERT(cond) \
-	do { (void) sizeof(char [1 - 2*!(cond)]); } while(0)
+ do { \
+  (void)sizeof(char[1 - 2 * !(cond)]); \
+ } while (0)
 
 /**
  * CCAN_BUILD_ASSERT_OR_ZERO - assert a build-time dependency, as an expression.
@@ -35,6 +37,6 @@
  *		  + CCAN_BUILD_ASSERT_OR_ZERO(offsetof(struct foo, string) == 0))
  */
 #define CCAN_BUILD_ASSERT_OR_ZERO(cond) \
-	(sizeof(char [1 - 2*!(cond)]) - 1)
+ (sizeof(char[1 - 2 * !(cond)]) - 1)
 
 #endif /* CCAN_BUILD_ASSERT_H */

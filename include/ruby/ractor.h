@@ -1,4 +1,4 @@
-#ifndef RUBY_RACTOR_H                                /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_RACTOR_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_RACTOR_H 1
 
 /**
@@ -11,11 +11,11 @@
  *             modify this file, provided that  the conditions mentioned in the
  *             file COPYING are met.  Consult the file for details.
  */
-#include "internal/dllexport.h"      /* RUBY_EXTERN is here */
-#include "internal/fl_type.h"        /* FL_TEST_RAW is here */
+#include "internal/dllexport.h" /* RUBY_EXTERN is here */
+#include "internal/fl_type.h" /* FL_TEST_RAW is here */
 #include "internal/special_consts.h" /* RB_SPECIAL_CONSTS_P is here */
-#include "internal/stdbool.h"        /* bool is here */
-#include "internal/value.h"          /* VALUE is here */
+#include "internal/stdbool.h" /* bool is here */
+#include "internal/value.h" /* VALUE is here */
 
 /** Type that defines a ractor-local storage. */
 struct rb_ractor_local_storage_type {
@@ -148,7 +148,7 @@ bool rb_ractor_local_storage_value_lookup(rb_ractor_local_key_t key, VALUE *val)
  * @param[in]  val  Arbitrary ruby object.
  * @post       `val` corresponds to `key` in the current Ractor.
  */
-void  rb_ractor_local_storage_value_set(rb_ractor_local_key_t key, VALUE val);
+void rb_ractor_local_storage_value_set(rb_ractor_local_key_t key, VALUE val);
 
 /**
  * A type of ractor-local storage that destructs itself using ::ruby_xfree.
@@ -189,7 +189,7 @@ void *rb_ractor_local_storage_ptr(rb_ractor_local_key_t key);
  * @param[in]  ptr  A pointer that conforms `key`'s type.
  * @post       `ptr` corresponds to `key` in the current Ractor.
  */
-void  rb_ractor_local_storage_ptr_set(rb_ractor_local_key_t key, void *ptr);
+void rb_ractor_local_storage_ptr_set(rb_ractor_local_key_t key, void *ptr);
 
 /**
  * Destructively  transforms the  passed object  so that  multiple Ractors  can

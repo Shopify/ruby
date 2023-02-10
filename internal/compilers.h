@@ -1,4 +1,4 @@
-#ifndef INTERNAL_COMPILERS_H                             /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_COMPILERS_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_COMPILERS_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -18,8 +18,8 @@
 #include "ruby/internal/has/warning.h"
 #include "ruby/backward/2/gcc_version_since.h"
 
-#define MSC_VERSION_SINCE(_)   RBIMPL_COMPILER_SINCE(MSVC, (_) / 100, (_) % 100, 0)
-#define MSC_VERSION_BEFORE(_)  RBIMPL_COMPILER_BEFORE(MSVC, (_) / 100, (_) % 100, 0)
+#define MSC_VERSION_SINCE(_) RBIMPL_COMPILER_SINCE(MSVC, (_) / 100, (_) % 100, 0)
+#define MSC_VERSION_BEFORE(_) RBIMPL_COMPILER_BEFORE(MSVC, (_) / 100, (_) % 100, 0)
 
 #ifndef __has_attribute
 # define __has_attribute(...) RBIMPL_HAS_ATTRIBUTE(__VA_ARGS__)
@@ -66,25 +66,25 @@
 #define RB_OBJ_BUILTIN_TYPE(obj) rb_obj_builtin_type(obj)
 #define OBJ_BUILTIN_TYPE(obj) RB_OBJ_BUILTIN_TYPE(obj)
 #ifdef __GNUC__
-#define rb_obj_builtin_type(obj) \
-__extension__({ \
-    VALUE arg_obj = (obj); \
-    RB_SPECIAL_CONST_P(arg_obj) ? -1 : \
-        (int)RB_BUILTIN_TYPE(arg_obj);    \
-    })
+# define rb_obj_builtin_type(obj) \
+  __extension__({ \
+VALUE arg_obj = (obj); \
+RB_SPECIAL_CONST_P(arg_obj) ? -1 : \
+                        (int)RB_BUILTIN_TYPE(arg_obj); \
+  })
 #else
 # include "ruby/ruby.h"
 static inline int
 rb_obj_builtin_type(VALUE obj)
 {
     return RB_SPECIAL_CONST_P(obj) ? -1 :
-        (int)RB_BUILTIN_TYPE(obj);
+                                     (int)RB_BUILTIN_TYPE(obj);
 }
 #endif
 
 /* A macro for defining a flexible array, like: VALUE ary[FLEX_ARY_LEN]; */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
-# define FLEX_ARY_LEN   /* VALUE ary[]; */
+# define FLEX_ARY_LEN /* VALUE ary[]; */
 #elif defined(__GNUC__) && !defined(__STRICT_ANSI__)
 # define FLEX_ARY_LEN 0 /* VALUE ary[0]; */
 #else

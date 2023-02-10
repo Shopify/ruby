@@ -49,7 +49,11 @@ static VALUE foletype_inspect(VALUE self);
 
 static const rb_data_type_t oletype_datatype = {
     "win32ole_type",
-    {NULL, oletype_free, oletype_size,},
+    {
+      NULL,
+      oletype_free,
+      oletype_size,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -73,7 +77,8 @@ oletype_size(const void *ptr)
     return ptr ? sizeof(struct oletypedata) : 0;
 }
 
-ITypeInfo *itypeinfo(VALUE self)
+ITypeInfo *
+itypeinfo(VALUE self)
 {
     struct oletypedata *ptype;
     TypedData_Get_Struct(self, struct oletypedata, &oletype_datatype, ptype);
@@ -89,12 +94,12 @@ ole_type_from_itypeinfo(ITypeInfo *pTypeInfo)
     unsigned int index;
     BSTR bstr;
 
-    hr = pTypeInfo->lpVtbl->GetContainingTypeLib( pTypeInfo, &pTypeLib, &index );
-    if(FAILED(hr)) {
+    hr = pTypeInfo->lpVtbl->GetContainingTypeLib(pTypeInfo, &pTypeLib, &index);
+    if (FAILED(hr)) {
         return Qnil;
     }
-    hr = pTypeLib->lpVtbl->GetDocumentation( pTypeLib, index,
-                                             &bstr, NULL, NULL, NULL);
+    hr = pTypeLib->lpVtbl->GetDocumentation(pTypeLib, index,
+      &bstr, NULL, NULL, NULL);
     OLE_RELEASE(pTypeLib);
     if (FAILED(hr)) {
         return Qnil;
@@ -102,7 +107,6 @@ ole_type_from_itypeinfo(ITypeInfo *pTypeInfo)
     type = create_win32ole_type(pTypeInfo, WC2VSTR(bstr));
     return type;
 }
-
 
 /*
  *   call-seq:
@@ -161,10 +165,10 @@ foletype_s_progids(VALUE self)
     VALUE progids = rb_ary_new();
 
     err = reg_open_key(HKEY_CLASSES_ROOT, "CLSID", &hclsids);
-    if(err != ERROR_SUCCESS) {
+    if (err != ERROR_SUCCESS) {
         return progids;
     }
-    for(i = 0; ; i++) {
+    for (i = 0;; i++) {
         clsid = reg_enum_key(hclsids, i);
         if (clsid == Qnil)
             break;
@@ -198,7 +202,7 @@ foletype_s_allocate(VALUE klass)
     struct oletypedata *poletype;
     VALUE obj;
     ole_initialize();
-    obj = TypedData_Make_Struct(klass,struct oletypedata, &oletype_datatype, poletype);
+    obj = TypedData_Make_Struct(klass, struct oletypedata, &oletype_datatype, poletype);
     poletype->pTypeInfo = NULL;
     return obj;
 }
@@ -230,7 +234,7 @@ oleclass_from_typelib(VALUE self, ITypeLib *pTypeLib, VALUE oleclass)
         if (FAILED(hr))
             continue;
         hr = pTypeLib->lpVtbl->GetDocumentation(pTypeLib, i,
-                                                &bstr, NULL, NULL, NULL);
+          &bstr, NULL, NULL, NULL);
         if (FAILED(hr))
             continue;
         typelib = WC2VSTR(bstr);
@@ -258,7 +262,7 @@ static VALUE
 foletype_initialize(VALUE self, VALUE typelib, VALUE oleclass)
 {
     VALUE file;
-    OLECHAR * pbuf;
+    OLECHAR *pbuf;
     ITypeLib *pTypeLib;
     HRESULT hr;
 
@@ -276,7 +280,7 @@ foletype_initialize(VALUE self, VALUE typelib, VALUE oleclass)
     if (oleclass_from_typelib(self, pTypeLib, oleclass) == Qfalse) {
         OLE_RELEASE(pTypeLib);
         rb_raise(eWIN32OLERuntimeError, "not found `%s` in `%s`",
-                 StringValuePtr(oleclass), StringValuePtr(typelib));
+          StringValuePtr(oleclass), StringValuePtr(typelib));
     }
     OLE_RELEASE(pTypeLib);
     return self;
@@ -303,40 +307,40 @@ ole_ole_type(ITypeInfo *pTypeInfo)
     TYPEATTR *pTypeAttr;
     VALUE type = Qnil;
     hr = OLE_GET_TYPEATTR(pTypeInfo, &pTypeAttr);
-    if(FAILED(hr)){
+    if (FAILED(hr)) {
         return type;
     }
-    switch(pTypeAttr->typekind) {
-    case TKIND_ENUM:
-        type = rb_str_new2("Enum");
-        break;
-    case TKIND_RECORD:
-        type = rb_str_new2("Record");
-        break;
-    case TKIND_MODULE:
-        type = rb_str_new2("Module");
-        break;
-    case TKIND_INTERFACE:
-        type = rb_str_new2("Interface");
-        break;
-    case TKIND_DISPATCH:
-        type = rb_str_new2("Dispatch");
-        break;
-    case TKIND_COCLASS:
-        type = rb_str_new2("Class");
-        break;
-    case TKIND_ALIAS:
-        type = rb_str_new2("Alias");
-        break;
-    case TKIND_UNION:
-        type = rb_str_new2("Union");
-        break;
-    case TKIND_MAX:
-        type = rb_str_new2("Max");
-        break;
-    default:
-        type = Qnil;
-        break;
+    switch (pTypeAttr->typekind) {
+        case TKIND_ENUM:
+            type = rb_str_new2("Enum");
+            break;
+        case TKIND_RECORD:
+            type = rb_str_new2("Record");
+            break;
+        case TKIND_MODULE:
+            type = rb_str_new2("Module");
+            break;
+        case TKIND_INTERFACE:
+            type = rb_str_new2("Interface");
+            break;
+        case TKIND_DISPATCH:
+            type = rb_str_new2("Dispatch");
+            break;
+        case TKIND_COCLASS:
+            type = rb_str_new2("Class");
+            break;
+        case TKIND_ALIAS:
+            type = rb_str_new2("Alias");
+            break;
+        case TKIND_UNION:
+            type = rb_str_new2("Union");
+            break;
+        case TKIND_MAX:
+            type = rb_str_new2("Max");
+            break;
+        default:
+            type = Qnil;
+            break;
     }
     OLE_RELEASE_TYPEATTR(pTypeInfo, pTypeAttr);
     return type;
@@ -368,7 +372,7 @@ ole_type_guid(ITypeInfo *pTypeInfo)
     hr = OLE_GET_TYPEATTR(pTypeInfo, &pTypeAttr);
     if (FAILED(hr))
         return guid;
-    len = StringFromGUID2(&pTypeAttr->guid, bstr, sizeof(bstr)/sizeof(OLECHAR));
+    len = StringFromGUID2(&pTypeAttr->guid, bstr, sizeof(bstr) / sizeof(OLECHAR));
     if (len > 3) {
         guid = ole_wc2vstr(bstr, FALSE);
     }
@@ -425,7 +429,6 @@ foletype_progid(VALUE self)
     return ole_type_progid(pTypeInfo);
 }
 
-
 static VALUE
 ole_type_visible(ITypeInfo *pTypeInfo)
 {
@@ -437,7 +440,8 @@ ole_type_visible(ITypeInfo *pTypeInfo)
         return Qtrue;
     if (pTypeAttr->wTypeFlags & (TYPEFLAG_FHIDDEN | TYPEFLAG_FRESTRICTED)) {
         visible = Qfalse;
-    } else {
+    }
+    else {
         visible = Qtrue;
     }
     OLE_RELEASE_TYPEATTR(pTypeInfo, pTypeAttr);
@@ -553,7 +557,7 @@ ole_type_helpstring(ITypeInfo *pTypeInfo)
     HRESULT hr;
     BSTR bhelpstr;
     hr = ole_docinfo_from_type(pTypeInfo, NULL, &bhelpstr, NULL, NULL);
-    if(FAILED(hr)) {
+    if (FAILED(hr)) {
         return Qnil;
     }
     return WC2VSTR(bhelpstr);
@@ -583,7 +587,7 @@ ole_type_src_type(ITypeInfo *pTypeInfo)
     hr = OLE_GET_TYPEATTR(pTypeInfo, &pTypeAttr);
     if (FAILED(hr))
         return alias;
-    if(pTypeAttr->typekind != TKIND_ALIAS) {
+    if (pTypeAttr->typekind != TKIND_ALIAS) {
         OLE_RELEASE_TYPEATTR(pTypeInfo, pTypeAttr);
         return alias;
     }
@@ -614,7 +618,7 @@ ole_type_helpfile(ITypeInfo *pTypeInfo)
     HRESULT hr;
     BSTR bhelpfile;
     hr = ole_docinfo_from_type(pTypeInfo, NULL, NULL, NULL, &bhelpfile);
-    if(FAILED(hr)) {
+    if (FAILED(hr)) {
         return Qnil;
     }
     return WC2VSTR(bhelpfile);
@@ -642,8 +646,8 @@ ole_type_helpcontext(ITypeInfo *pTypeInfo)
     HRESULT hr;
     DWORD helpcontext;
     hr = ole_docinfo_from_type(pTypeInfo, NULL, NULL,
-                               &helpcontext, NULL);
-    if(FAILED(hr))
+      &helpcontext, NULL);
+    if (FAILED(hr))
         return Qnil;
     return RB_INT2FIX(helpcontext);
 }
@@ -679,14 +683,14 @@ ole_variables(ITypeInfo *pTypeInfo)
         ole_raise(hr, eWIN32OLERuntimeError, "failed to GetTypeAttr");
     }
 
-    for(i = 0; i < pTypeAttr->cVars; i++) {
+    for (i = 0; i < pTypeAttr->cVars; i++) {
         hr = pTypeInfo->lpVtbl->GetVarDesc(pTypeInfo, i, &pVarDesc);
-        if(FAILED(hr))
+        if (FAILED(hr))
             continue;
         len = 0;
         hr = pTypeInfo->lpVtbl->GetNames(pTypeInfo, pVarDesc->memid, &bstr,
-                                         1, &len);
-        if(FAILED(hr) || len == 0 || !bstr)
+          1, &len);
+        if (FAILED(hr) || len == 0 || !bstr)
             continue;
 
         var = create_win32ole_variable(pTypeInfo, i, WC2VSTR(bstr));
@@ -848,7 +852,7 @@ static VALUE
 foletype_default_event_sources(VALUE self)
 {
     ITypeInfo *pTypeInfo = itypeinfo(self);
-    return ole_type_impl_ole_types(pTypeInfo, IMPLTYPEFLAG_FSOURCE|IMPLTYPEFLAG_FDEFAULT);
+    return ole_type_impl_ole_types(pTypeInfo, IMPLTYPEFLAG_FSOURCE | IMPLTYPEFLAG_FDEFAULT);
 }
 
 /*
@@ -885,7 +889,8 @@ foletype_inspect(VALUE self)
 
 VALUE cWIN32OLE_TYPE;
 
-void Init_win32ole_type(void)
+void
+Init_win32ole_type(void)
 {
     cWIN32OLE_TYPE = rb_define_class_under(cWIN32OLE, "Type", rb_cObject);
     rb_define_const(rb_cObject, "WIN32OLE_TYPE", cWIN32OLE_TYPE);

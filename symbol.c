@@ -34,7 +34,7 @@
 # define CHECK_ID_SERIAL SYMBOL_DEBUG
 #endif
 
-#define SYMBOL_PINNED_P(sym) (RSYMBOL(sym)->id&~ID_SCOPE_MASK)
+#define SYMBOL_PINNED_P(sym) (RSYMBOL(sym)->id & ~ID_SCOPE_MASK)
 
 #define STATIC_SYM2ID(sym) RSHIFT((VALUE)(sym), RUBY_SPECIAL_SHIFT)
 
@@ -43,11 +43,12 @@ static ID register_static_symid_str(ID, VALUE);
 #define REGISTER_SYMID(id, name) register_static_symid((id), (name), strlen(name), enc)
 #include "id.c"
 
-#define is_identchar(p,e,enc) (ISALNUM((unsigned char)*(p)) || (*(p)) == '_' || !ISASCII(*(p)))
+#define is_identchar(p, e, enc) (ISALNUM((unsigned char)*(p)) || (*(p)) == '_' || !ISASCII(*(p)))
 
 #define op_tbl_count numberof(op_tbl)
 STATIC_ASSERT(op_tbl_name_size, sizeof(op_tbl[0].name) == 3);
-#define op_tbl_len(i) (!op_tbl[i].name[1] ? 1 : !op_tbl[i].name[2] ? 2 : 3)
+#define op_tbl_len(i) (!op_tbl[i].name[1] ? 1 : !op_tbl[i].name[2] ? 2 : \
+                                                                     3)
 
 static void
 Init_op_tbl(void)
@@ -74,7 +75,7 @@ enum id_entry_type {
     ID_ENTRY_SIZE
 };
 
-rb_symbols_t ruby_global_symbols = {tNEXT_ID-1};
+rb_symbols_t ruby_global_symbols = { tNEXT_ID - 1 };
 
 static const struct st_hash_type symhash = {
     rb_str_hash_cmp,
@@ -107,8 +108,10 @@ WARN_UNUSED_RESULT(static VALUE lookup_str_sym(const VALUE str));
 WARN_UNUSED_RESULT(static VALUE lookup_id_str(ID id));
 WARN_UNUSED_RESULT(static ID intern_str(VALUE str, int mutable));
 
-#define GLOBAL_SYMBOLS_ENTER(symbols) rb_symbols_t *symbols = &ruby_global_symbols; RB_VM_LOCK_ENTER()
-#define GLOBAL_SYMBOLS_LEAVE()        RB_VM_LOCK_LEAVE()
+#define GLOBAL_SYMBOLS_ENTER(symbols) \
+ rb_symbols_t *symbols = &ruby_global_symbols; \
+ RB_VM_LOCK_ENTER()
+#define GLOBAL_SYMBOLS_LEAVE() RB_VM_LOCK_LEAVE()
 
 ID
 rb_id_attrset(ID id)
@@ -118,31 +121,36 @@ rb_id_attrset(ID id)
 
     if (!is_notop_id(id)) {
         switch (id) {
-          case tAREF: case tASET:
-            return tASET;	/* only exception */
+            case tAREF:
+            case tASET:
+                return tASET; /* only exception */
         }
-        rb_name_error(id, "cannot make operator ID :%"PRIsVALUE" attrset",
-                      rb_id2str(id));
+        rb_name_error(id, "cannot make operator ID :%" PRIsVALUE " attrset",
+          rb_id2str(id));
     }
     else {
         scope = id_type(id);
         switch (scope) {
-          case ID_LOCAL: case ID_INSTANCE: case ID_GLOBAL:
-          case ID_CONST: case ID_CLASS: case ID_JUNK:
-            break;
-          case ID_ATTRSET:
-            return id;
-          default:
-            {
-                if ((str = lookup_id_str(id)) != 0) {
-                    rb_name_error(id, "cannot make unknown type ID %d:%"PRIsVALUE" attrset",
-                                  scope, str);
+            case ID_LOCAL:
+            case ID_INSTANCE:
+            case ID_GLOBAL:
+            case ID_CONST:
+            case ID_CLASS:
+            case ID_JUNK:
+                break;
+            case ID_ATTRSET:
+                return id;
+            default:
+                {
+                    if ((str = lookup_id_str(id)) != 0) {
+                        rb_name_error(id, "cannot make unknown type ID %d:%" PRIsVALUE " attrset",
+                          scope, str);
+                    }
+                    else {
+                        rb_name_error_str(Qnil, "cannot make unknown type anonymous ID %d:%" PRIxVALUE " attrset",
+                          scope, (VALUE)id);
+                    }
                 }
-                else {
-                    rb_name_error_str(Qnil, "cannot make unknown type anonymous ID %d:%"PRIxVALUE" attrset",
-                                      scope, (VALUE)id);
-                }
-            }
         }
     }
 
@@ -158,8 +166,8 @@ rb_id_attrset(ID id)
             "class",
             "junk",
         };
-        rb_name_error(id, "cannot make anonymous %.*s ID %"PRIxVALUE" attrset",
-                      (int)sizeof(id_types[0]), id_types[scope], (VALUE)id);
+        rb_name_error(id, "cannot make anonymous %.*s ID %" PRIxVALUE " attrset",
+          (int)sizeof(id_types[0]), id_types[scope], (VALUE)id);
     }
     str = rb_str_dup(str);
     rb_str_cat(str, "=", 1);
@@ -234,19 +242,22 @@ rb_sym_constant_char_p(const char *name, long nlen, rb_encoding *enc)
         OnigUChar fold[ONIGENC_GET_CASE_FOLD_CODES_MAX_NUM];
         const OnigUChar *beg = (const OnigUChar *)name;
         int r = enc->mbc_case_fold(ONIGENC_CASE_FOLD,
-                                   &beg, (const OnigUChar *)end,
-                                   fold, enc);
+          &beg, (const OnigUChar *)end,
+          fold, enc);
         if (r > 0 && (r != len || memcmp(fold, name, r)))
             return TRUE;
     }
     return FALSE;
 }
 
-#define IDSET_ATTRSET_FOR_SYNTAX ((1U<<ID_LOCAL)|(1U<<ID_CONST))
-#define IDSET_ATTRSET_FOR_INTERN (~(~0U<<(1<<ID_SCOPE_SHIFT)) & ~(1U<<ID_ATTRSET))
+#define IDSET_ATTRSET_FOR_SYNTAX ((1U << ID_LOCAL) | (1U << ID_CONST))
+#define IDSET_ATTRSET_FOR_INTERN (~(~0U << (1 << ID_SCOPE_SHIFT)) & ~(1U << ID_ATTRSET))
 
 struct enc_synmane_type_leading_chars_tag {
-    const enum { invalid, stophere, needmore, } kind;
+    const enum { invalid,
+        stophere,
+        needmore,
+    } kind;
     const enum ruby_id_types type;
     const long nread;
 };
@@ -259,105 +270,238 @@ enc_synmane_type_leading_chars(const char *name, long len, rb_encoding *enc, int
     const char *m = name;
     const char *e = m + len;
 
-    if (! rb_enc_asciicompat(enc)) {
-        return (t) { invalid, 0, 0, };
+    if (!rb_enc_asciicompat(enc)) {
+        return (t) {
+            invalid,
+            0,
+            0,
+        };
     }
-    else if (! m) {
-        return (t) { invalid, 0, 0, };
+    else if (!m) {
+        return (t) {
+            invalid,
+            0,
+            0,
+        };
     }
-    else if ( len <= 0 ) {
-        return (t) { invalid, 0, 0, };
+    else if (len <= 0) {
+        return (t) {
+            invalid,
+            0,
+            0,
+        };
     }
     switch (*m) {
-      case '\0':
-        return (t) { invalid, 0, 0, };
+        case '\0':
+            return (t) {
+                invalid,
+                0,
+                0,
+            };
 
-      case '$':
-        if (is_special_global_name(++m, e, enc)) {
-            return (t) { stophere, ID_GLOBAL, len, };
-        }
-        else {
-            return (t) { needmore, ID_GLOBAL, 1, };
-        }
-
-      case '@':
-        switch (*++m) {
-          default:  return (t) { needmore, ID_INSTANCE, 1, };
-          case '@': return (t) { needmore, ID_CLASS,    2, };
-        }
-
-      case '<':
-        switch (*++m) {
-          default:  return (t) { stophere, ID_JUNK, 1, };
-          case '<': return (t) { stophere, ID_JUNK, 2, };
-          case '=':
-            switch (*++m) {
-              default:  return (t) { stophere, ID_JUNK, 2, };
-              case '>': return (t) { stophere, ID_JUNK, 3, };
-            }
-        }
-
-      case '>':
-        switch (*++m) {
-          default:            return (t) { stophere, ID_JUNK, 1, };
-          case '>': case '=': return (t) { stophere, ID_JUNK, 2, };
-        }
-
-      case '=':
-        switch (*++m) {
-          default:  return (t) { invalid,  0,       1, };
-          case '~': return (t) { stophere, ID_JUNK, 2, };
-          case '=':
-            switch (*++m) {
-              default:  return (t) { stophere, ID_JUNK, 2, };
-              case '=': return (t) { stophere, ID_JUNK, 3, };
-            }
-        }
-
-      case '*':
-        switch (*++m) {
-          default:  return (t) { stophere, ID_JUNK, 1, };
-          case '*': return (t) { stophere, ID_JUNK, 2, };
-        }
-
-      case '+': case '-':
-        switch (*++m) {
-          default:  return (t) { stophere, ID_JUNK, 1, };
-          case '@': return (t) { stophere, ID_JUNK, 2, };
-        }
-
-      case '|': case '^': case '&': case '/': case '%': case '~': case '`':
-        return (t) { stophere, ID_JUNK, 1, };
-
-      case '[':
-        switch (*++m) {
-          default: return (t) { needmore, ID_JUNK, 0, };
-          case ']':
-            switch (*++m) {
-              default:  return (t) { stophere, ID_JUNK, 2, };
-              case '=': return (t) { stophere, ID_JUNK, 3, };
-            }
-        }
-
-      case '!':
-        switch (*++m) {
-          case '=': case '~': return (t) { stophere, ID_JUNK, 2, };
-          default:
-            if (allowed_attrset & (1U << ID_JUNK)) {
-                return (t) { needmore, ID_JUNK, 1, };
+        case '$':
+            if (is_special_global_name(++m, e, enc)) {
+                return (t) {
+                    stophere,
+                    ID_GLOBAL,
+                    len,
+                };
             }
             else {
-                return (t) { stophere, ID_JUNK, 1, };
+                return (t) {
+                    needmore,
+                    ID_GLOBAL,
+                    1,
+                };
             }
-        }
 
-      default:
-        if (rb_sym_constant_char_p(name, len, enc)) {
-            return (t) { needmore, ID_CONST, 0, };
-        }
-        else {
-            return (t) { needmore, ID_LOCAL, 0, };
-        }
+        case '@':
+            switch (*++m) {
+                default: return (t) {
+                    needmore,
+                    ID_INSTANCE,
+                    1,
+                };
+                case '@': return (t) {
+                    needmore,
+                    ID_CLASS,
+                    2,
+                };
+            }
+
+        case '<':
+            switch (*++m) {
+                default: return (t) {
+                    stophere,
+                    ID_JUNK,
+                    1,
+                };
+                case '<': return (t) {
+                    stophere,
+                    ID_JUNK,
+                    2,
+                };
+                case '=':
+                    switch (*++m) {
+                        default: return (t) {
+                            stophere,
+                            ID_JUNK,
+                            2,
+                        };
+                        case '>': return (t) {
+                            stophere,
+                            ID_JUNK,
+                            3,
+                        };
+                    }
+            }
+
+        case '>':
+            switch (*++m) {
+                default: return (t) {
+                    stophere,
+                    ID_JUNK,
+                    1,
+                };
+                case '>':
+                case '=': return (t) {
+                    stophere,
+                    ID_JUNK,
+                    2,
+                };
+            }
+
+        case '=':
+            switch (*++m) {
+                default: return (t) {
+                    invalid,
+                    0,
+                    1,
+                };
+                case '~': return (t) {
+                    stophere,
+                    ID_JUNK,
+                    2,
+                };
+                case '=':
+                    switch (*++m) {
+                        default: return (t) {
+                            stophere,
+                            ID_JUNK,
+                            2,
+                        };
+                        case '=': return (t) {
+                            stophere,
+                            ID_JUNK,
+                            3,
+                        };
+                    }
+            }
+
+        case '*':
+            switch (*++m) {
+                default: return (t) {
+                    stophere,
+                    ID_JUNK,
+                    1,
+                };
+                case '*': return (t) {
+                    stophere,
+                    ID_JUNK,
+                    2,
+                };
+            }
+
+        case '+':
+        case '-':
+            switch (*++m) {
+                default: return (t) {
+                    stophere,
+                    ID_JUNK,
+                    1,
+                };
+                case '@': return (t) {
+                    stophere,
+                    ID_JUNK,
+                    2,
+                };
+            }
+
+        case '|':
+        case '^':
+        case '&':
+        case '/':
+        case '%':
+        case '~':
+        case '`':
+            return (t) {
+                stophere,
+                ID_JUNK,
+                1,
+            };
+
+        case '[':
+            switch (*++m) {
+                default: return (t) {
+                    needmore,
+                    ID_JUNK,
+                    0,
+                };
+                case ']':
+                    switch (*++m) {
+                        default: return (t) {
+                            stophere,
+                            ID_JUNK,
+                            2,
+                        };
+                        case '=': return (t) {
+                            stophere,
+                            ID_JUNK,
+                            3,
+                        };
+                    }
+            }
+
+        case '!':
+            switch (*++m) {
+                case '=':
+                case '~': return (t) {
+                    stophere,
+                    ID_JUNK,
+                    2,
+                };
+                default:
+                    if (allowed_attrset & (1U << ID_JUNK)) {
+                        return (t) {
+                            needmore,
+                            ID_JUNK,
+                            1,
+                        };
+                    }
+                    else {
+                        return (t) {
+                            stophere,
+                            ID_JUNK,
+                            1,
+                        };
+                    }
+            }
+
+        default:
+            if (rb_sym_constant_char_p(name, len, enc)) {
+                return (t) {
+                    needmore,
+                    ID_CONST,
+                    0,
+                };
+            }
+            else {
+                return (t) {
+                    needmore,
+                    ID_LOCAL,
+                    0,
+                };
+            }
     }
 }
 #undef t
@@ -366,38 +510,39 @@ int
 rb_enc_symname_type(const char *name, long len, rb_encoding *enc, unsigned int allowed_attrset)
 {
     const struct enc_synmane_type_leading_chars_tag f =
-        enc_synmane_type_leading_chars(name, len, enc, allowed_attrset);
+      enc_synmane_type_leading_chars(name, len, enc, allowed_attrset);
     const char *m = name + f.nread;
     const char *e = name + len;
     int type = (int)f.type;
 
     switch (f.kind) {
-      case invalid:  return -1;
-      case stophere: break;
-      case needmore:
+        case invalid: return -1;
+        case stophere: break;
+        case needmore:
 
-        if (m >= e || (*m != '_' && !ISALPHA(*m) && ISASCII(*m))) {
-            if (len > 1 && *(e-1) == '=') {
-                type = rb_enc_symname_type(name, len-1, enc, allowed_attrset);
-                if (allowed_attrset & (1U << type)) return ID_ATTRSET;
+            if (m >= e || (*m != '_' && !ISALPHA(*m) && ISASCII(*m))) {
+                if (len > 1 && *(e - 1) == '=') {
+                    type = rb_enc_symname_type(name, len - 1, enc, allowed_attrset);
+                    if (allowed_attrset & (1U << type)) return ID_ATTRSET;
+                }
+                return -1;
             }
-            return -1;
-        }
-        while (m < e && is_identchar(m, e, enc)) m += rb_enc_mbclen(m, e, enc);
-        if (m >= e) break;
-        switch (*m) {
-          case '!': case '?':
-            if (type == ID_GLOBAL || type == ID_CLASS || type == ID_INSTANCE) return -1;
-            type = ID_JUNK;
-            ++m;
-            if (m + 1 < e || *m != '=') break;
-            /* fall through */
-          case '=':
-            if (!(allowed_attrset & (1U << type))) return -1;
-            type = ID_ATTRSET;
-            ++m;
-            break;
-        }
+            while (m < e && is_identchar(m, e, enc)) m += rb_enc_mbclen(m, e, enc);
+            if (m >= e) break;
+            switch (*m) {
+                case '!':
+                case '?':
+                    if (type == ID_GLOBAL || type == ID_CLASS || type == ID_INSTANCE) return -1;
+                    type = ID_JUNK;
+                    ++m;
+                    if (m + 1 < e || *m != '=') break;
+                    /* fall through */
+                case '=':
+                    if (!(allowed_attrset & (1U << type))) return -1;
+                    type = ID_ATTRSET;
+                    ++m;
+                    break;
+            }
     }
 
     return m == e ? type : -1;
@@ -458,7 +603,7 @@ get_id_serial_entry(rb_id_serial_t num, ID id, const enum id_entry_type t)
                     if (id) {
                         VALUE sym = result;
                         if (t != ID_ENTRY_SYM)
-                          sym = rb_ary_entry(ary, pos + ID_ENTRY_SYM);
+                            sym = rb_ary_entry(ary, pos + ID_ENTRY_SYM);
                         if (STATIC_SYM_P(sym)) {
                             if (STATIC_SYM2ID(sym) != id) result = 0;
                         }
@@ -506,8 +651,8 @@ static int
 register_sym_update_callback(st_data_t *key, st_data_t *value, st_data_t arg, int existing)
 {
     if (existing) {
-        rb_fatal("symbol :% "PRIsVALUE" is already registered with %"PRIxVALUE,
-                 (VALUE)*key, (VALUE)*value);
+        rb_fatal("symbol :% " PRIsVALUE " is already registered with %" PRIxVALUE,
+          (VALUE)*key, (VALUE)*value);
     }
     *value = arg;
     return ST_CONTINUE;
@@ -521,7 +666,7 @@ register_sym(rb_symbols_t *symbols, VALUE str, VALUE sym)
 
 #if SYMBOL_DEBUG
     st_update(symbols->str_sym, (st_data_t)str,
-              register_sym_update_callback, (st_data_t)sym);
+      register_sym_update_callback, (st_data_t)sym);
 #else
     st_add_direct(symbols->str_sym, (st_data_t)str, (st_data_t)sym);
 #endif
@@ -571,11 +716,11 @@ sym_check_asciionly(VALUE str)
 {
     if (!rb_enc_asciicompat(rb_enc_get(str))) return FALSE;
     switch (rb_enc_str_coderange(str)) {
-      case ENC_CODERANGE_BROKEN:
-        rb_raise(rb_eEncodingError, "invalid symbol in encoding %s :%+"PRIsVALUE,
-                 rb_enc_name(rb_enc_get(str)), str);
-      case ENC_CODERANGE_7BIT:
-        return TRUE;
+        case ENC_CODERANGE_BROKEN:
+            rb_raise(rb_eEncodingError, "invalid symbol in encoding %s :%+" PRIsVALUE,
+              rb_enc_name(rb_enc_get(str)), str);
+        case ENC_CODERANGE_7BIT:
+            return TRUE;
     }
     return FALSE;
 }
@@ -609,7 +754,7 @@ must_be_dynamic_symbol(VALUE x)
 #endif
 
 static VALUE
-dsymbol_alloc(rb_symbols_t *symbols, const VALUE klass, const VALUE str, rb_encoding * const enc, const ID type)
+dsymbol_alloc(rb_symbols_t *symbols, const VALUE klass, const VALUE str, rb_encoding *const enc, const ID type)
 {
     ASSERT_vm_locking();
 
@@ -671,8 +816,8 @@ lookup_str_id(VALUE str)
             if (id & ~ID_SCOPE_MASK) return id;
         }
         else {
-            rb_bug("non-symbol object %s:%"PRIxVALUE" for %"PRIsVALUE" in symbol table",
-                   rb_builtin_class_name(sym), sym, str);
+            rb_bug("non-symbol object %s:%" PRIxVALUE " for %" PRIsVALUE " in symbol table",
+              rb_builtin_class_name(sym), sym, str);
         }
     }
     return (ID)0;
@@ -770,8 +915,8 @@ intern_str(VALUE str, int mutable)
     }
     if ((nid = next_id_base()) == (ID)-1) {
         str = rb_str_ellipsize(str, 20);
-        rb_raise(rb_eRuntimeError, "symbol table overflow (symbol %"PRIsVALUE")",
-                 str);
+        rb_raise(rb_eRuntimeError, "symbol table overflow (symbol %" PRIsVALUE ")",
+          str);
     }
     id |= nid;
     id |= ID_STATIC_SYM;
@@ -913,7 +1058,7 @@ rb_sym2id(VALUE sym)
     }
     else {
         rb_raise(rb_eTypeError, "wrong argument type %s (expected Symbol)",
-                 rb_builtin_class_name(sym));
+          rb_builtin_class_name(sym));
     }
     return id;
 }
@@ -1002,7 +1147,6 @@ symbols_i(st_data_t key, st_data_t value, st_data_t arg)
         rb_ary_push(ary, sym);
         return ST_CONTINUE;
     }
-
 }
 
 VALUE
@@ -1101,8 +1245,8 @@ rb_check_id(volatile VALUE *namep)
     else if (!RB_TYPE_P(name, T_STRING)) {
         tmp = rb_check_string_type(name);
         if (NIL_P(tmp)) {
-            rb_raise(rb_eTypeError, "%+"PRIsVALUE" is not a symbol nor a string",
-                     name);
+            rb_raise(rb_eTypeError, "%+" PRIsVALUE " is not a symbol nor a string",
+              name);
         }
         name = tmp;
         *namep = name;
@@ -1134,7 +1278,6 @@ rb_get_symbol_id(VALUE name)
     }
 }
 
-
 VALUE
 rb_check_symbol(volatile VALUE *namep)
 {
@@ -1160,8 +1303,8 @@ rb_check_symbol(volatile VALUE *namep)
     else if (!RB_TYPE_P(name, T_STRING)) {
         tmp = rb_check_string_type(name);
         if (NIL_P(tmp)) {
-            rb_raise(rb_eTypeError, "%+"PRIsVALUE" is not a symbol nor a string",
-                     name);
+            rb_raise(rb_eTypeError, "%+" PRIsVALUE " is not a symbol nor a string",
+              name);
         }
         name = tmp;
         *namep = name;

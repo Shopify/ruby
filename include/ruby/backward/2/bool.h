@@ -1,4 +1,4 @@
-#ifndef RUBY_BACKWARD2_BOOL_H                        /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_BACKWARD2_BOOL_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_BACKWARD2_BOOL_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -29,7 +29,7 @@
 
 #ifndef TRUE
 # define TRUE true
-#elif ! TRUE
+#elif !TRUE
 # error TRUE must be true
 #endif
 

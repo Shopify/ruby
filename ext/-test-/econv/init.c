@@ -1,6 +1,10 @@
 #include "ruby.h"
 
-#define init(n) {void Init_econv_##n(VALUE klass); Init_econv_##n(klass);}
+#define init(n) \
+ { \
+  void Init_econv_##n(VALUE klass); \
+  Init_econv_##n(klass); \
+ }
 
 void
 Init_econv(void)

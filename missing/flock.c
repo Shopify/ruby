@@ -3,7 +3,7 @@
 
 #if defined _WIN32
 #elif defined __wasi__
-#include <errno.h>
+# include <errno.h>
 
 int
 flock(int fd, int operation)
@@ -29,9 +29,9 @@ flock(int fd, int operation)
 #  define LOCK_UN 8
 # endif
 
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
+# include <fcntl.h>
+# include <unistd.h>
+# include <errno.h>
 
 int
 flock(int fd, int operation)
@@ -39,18 +39,18 @@ flock(int fd, int operation)
     struct flock lock;
 
     switch (operation & ~LOCK_NB) {
-    case LOCK_SH:
-	lock.l_type = F_RDLCK;
-	break;
-    case LOCK_EX:
-	lock.l_type = F_WRLCK;
-	break;
-    case LOCK_UN:
-	lock.l_type = F_UNLCK;
-	break;
-    default:
-	errno = EINVAL;
-	return -1;
+        case LOCK_SH:
+            lock.l_type = F_RDLCK;
+            break;
+        case LOCK_EX:
+            lock.l_type = F_WRLCK;
+            break;
+        case LOCK_UN:
+            lock.l_type = F_UNLCK;
+            break;
+        default:
+            errno = EINVAL;
+            return -1;
     }
     lock.l_whence = SEEK_SET;
     lock.l_start = lock.l_len = 0L;
@@ -60,8 +60,8 @@ flock(int fd, int operation)
 
 #elif defined(HAVE_LOCKF)
 
-#include <unistd.h>
-#include <errno.h>
+# include <unistd.h>
+# include <errno.h>
 
 /*  Emulate flock() with lockf() or fcntl().  This is just to increase
     portability of scripts.  The calls might not be completely
@@ -70,16 +70,16 @@ flock(int fd, int operation)
 */
 
 # ifndef F_ULOCK
-#  define F_ULOCK	0	/* Unlock a previously locked region */
+#  define F_ULOCK 0 /* Unlock a previously locked region */
 # endif
 # ifndef F_LOCK
-#  define F_LOCK	1	/* Lock a region for exclusive use */
+#  define F_LOCK 1 /* Lock a region for exclusive use */
 # endif
 # ifndef F_TLOCK
-#  define F_TLOCK	2	/* Test and lock a region for exclusive use */
+#  define F_TLOCK 2 /* Test and lock a region for exclusive use */
 # endif
 # ifndef F_TEST
-#  define F_TEST	3	/* Test a region for other processes locks */
+#  define F_TEST 3 /* Test a region for other processes locks */
 # endif
 
 /* These are the flock() constants.  Since this systems doesn't have
@@ -103,30 +103,30 @@ flock(int fd, int operation)
 {
     switch (operation) {
 
-	/* LOCK_SH - get a shared lock */
-      case LOCK_SH:
-        rb_notimplement();
-        return -1;
-	/* LOCK_EX - get an exclusive lock */
-      case LOCK_EX:
-	return lockf (fd, F_LOCK, 0);
+            /* LOCK_SH - get a shared lock */
+        case LOCK_SH:
+            rb_notimplement();
+            return -1;
+            /* LOCK_EX - get an exclusive lock */
+        case LOCK_EX:
+            return lockf(fd, F_LOCK, 0);
 
-	/* LOCK_SH|LOCK_NB - get a non-blocking shared lock */
-      case LOCK_SH|LOCK_NB:
-        rb_notimplement();
-        return -1;
-	/* LOCK_EX|LOCK_NB - get a non-blocking exclusive lock */
-      case LOCK_EX|LOCK_NB:
-	return lockf (fd, F_TLOCK, 0);
+            /* LOCK_SH|LOCK_NB - get a non-blocking shared lock */
+        case LOCK_SH | LOCK_NB:
+            rb_notimplement();
+            return -1;
+            /* LOCK_EX|LOCK_NB - get a non-blocking exclusive lock */
+        case LOCK_EX | LOCK_NB:
+            return lockf(fd, F_TLOCK, 0);
 
-	/* LOCK_UN - unlock */
-      case LOCK_UN:
-	return lockf (fd, F_ULOCK, 0);
+            /* LOCK_UN - unlock */
+        case LOCK_UN:
+            return lockf(fd, F_ULOCK, 0);
 
-	/* Default - can't decipher operation */
-      default:
-	errno = EINVAL;
-        return -1;
+            /* Default - can't decipher operation */
+        default:
+            errno = EINVAL;
+            return -1;
     }
 }
 #else

@@ -1,4 +1,4 @@
-#ifndef RUBY_DEFINES_H                               /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_DEFINES_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_DEFINES_H 1
 /**
  * @file
@@ -88,7 +88,7 @@
 # /** This is expanded to nothing for non-GCC compilers. */
 # define RB_GNUC_EXTENSION __extension__
 # /** This is expanded to the passed token for non-GCC compilers. */
-# define RB_GNUC_EXTENSION_BLOCK(x) __extension__ ({ x; })
+# define RB_GNUC_EXTENSION_BLOCK(x) __extension__({ x; })
 #else
 # define RB_GNUC_EXTENSION
 # define RB_GNUC_EXTENSION_BLOCK(x) (x)

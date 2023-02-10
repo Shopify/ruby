@@ -22,7 +22,11 @@ static VALUE folerecord_inspect(VALUE self);
 
 static const rb_data_type_t olerecord_datatype = {
     "win32ole_record",
-    {NULL, olerecord_free, olerecord_size,},
+    {
+      NULL,
+      olerecord_free,
+      olerecord_size,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -39,7 +43,7 @@ recordinfo_from_itypelib(ITypeLib *pTypeLib, VALUE name, IRecordInfo **ppri)
     count = pTypeLib->lpVtbl->GetTypeInfoCount(pTypeLib);
     for (i = 0; i < count; i++) {
         hr = pTypeLib->lpVtbl->GetDocumentation(pTypeLib, i,
-                                                &bstr, NULL, NULL, NULL);
+          &bstr, NULL, NULL, NULL);
         if (FAILED(hr))
             continue;
 
@@ -114,7 +118,8 @@ ole_rec2variant(VALUE rec, VARIANT *var)
         V_RECORDINFO(var) = pri;
         V_RECORD(var) = prec->pdata;
         V_VT(var) = VT_RECORD;
-    } else {
+    }
+    else {
         rb_raise(eWIN32OLERuntimeError, "failed to retrieve IRecordInfo interface");
     }
 }
@@ -213,7 +218,8 @@ create_win32ole_record(IRecordInfo *pri, void *prec)
  */
 
 static void
-olerecord_free(void *ptr) {
+olerecord_free(void *ptr)
+{
     struct olerecorddata *pvar = ptr;
     OLE_FREE(pvar->pri);
     if (pvar->pdata) {
@@ -242,7 +248,8 @@ olerecord_size(const void *ptr)
 }
 
 static VALUE
-folerecord_s_allocate(VALUE klass) {
+folerecord_s_allocate(VALUE klass)
+{
     VALUE obj = Qnil;
     struct olerecorddata *pvar;
     obj = TypedData_Make_Struct(klass, struct olerecorddata, &olerecord_datatype, pvar);
@@ -279,7 +286,8 @@ folerecord_s_allocate(VALUE klass) {
  *
  */
 static VALUE
-folerecord_initialize(VALUE self, VALUE typename, VALUE oleobj) {
+folerecord_initialize(VALUE self, VALUE typename, VALUE oleobj)
+{
     HRESULT hr;
     ITypeLib *pTypeLib = NULL;
     IRecordInfo *pri = NULL;
@@ -292,17 +300,20 @@ folerecord_initialize(VALUE self, VALUE typename, VALUE oleobj) {
     }
 
     hr = S_OK;
-    if(rb_obj_is_kind_of(oleobj, cWIN32OLE)) {
+    if (rb_obj_is_kind_of(oleobj, cWIN32OLE)) {
         hr = typelib_from_val(oleobj, &pTypeLib);
-    } else if (rb_obj_is_kind_of(oleobj, cWIN32OLE_TYPELIB)) {
+    }
+    else if (rb_obj_is_kind_of(oleobj, cWIN32OLE_TYPELIB)) {
         pTypeLib = itypelib(oleobj);
         OLE_ADDREF(pTypeLib);
         if (pTypeLib) {
             hr = S_OK;
-        } else {
+        }
+        else {
             hr = E_FAIL;
         }
-    } else {
+    }
+    else {
         rb_raise(rb_eArgError, "2nd argument should be WIN32OLE object or WIN32OLE_TYPELIB object");
     }
 
@@ -411,10 +422,10 @@ olerecord_ivar_set(VALUE self, VALUE name, VALUE val)
     long len;
     char *p;
     VALUE fields;
-    len  = RSTRING_LEN(name);
+    len = RSTRING_LEN(name);
     p = RSTRING_PTR(name);
-    if (p[len-1] == '=') {
-        name = rb_str_subseq(name, 0, len-1);
+    if (p[len - 1] == '=') {
+        name = rb_str_subseq(name, 0, len - 1);
     }
     fields = rb_ivar_get(self, rb_intern("fields"));
     rb_hash_fetch(fields, name);
@@ -465,7 +476,8 @@ folerecord_method_missing(int argc, VALUE *argv, VALUE self)
 
     if (argc == 1) {
         return olerecord_ivar_get(self, name);
-    } else if (argc == 2) {
+    }
+    else if (argc == 2) {
         return olerecord_ivar_set(self, name, argv[1]);
     }
     return Qnil;
@@ -503,7 +515,7 @@ static VALUE
 folerecord_ole_instance_variable_get(VALUE self, VALUE name)
 {
     VALUE sname;
-    if(!RB_TYPE_P(name, T_STRING) && !RB_TYPE_P(name, T_SYMBOL)) {
+    if (!RB_TYPE_P(name, T_STRING) && !RB_TYPE_P(name, T_SYMBOL)) {
         rb_raise(rb_eTypeError, "wrong argument type (expected String or Symbol)");
     }
     sname = name;
@@ -542,7 +554,7 @@ static VALUE
 folerecord_ole_instance_variable_set(VALUE self, VALUE name, VALUE val)
 {
     VALUE sname;
-    if(!RB_TYPE_P(name, T_STRING) && !RB_TYPE_P(name, T_SYMBOL)) {
+    if (!RB_TYPE_P(name, T_STRING) && !RB_TYPE_P(name, T_SYMBOL)) {
         rb_raise(rb_eTypeError, "wrong argument type (expected String or Symbol)");
     }
     sname = name;
@@ -584,9 +596,9 @@ folerecord_inspect(VALUE self)
         tname = rb_inspect(tname);
     }
     field = rb_inspect(folerecord_to_h(self));
-    return rb_sprintf("#<WIN32OLE_RECORD(%"PRIsVALUE") %"PRIsVALUE">",
-                      tname,
-                      field);
+    return rb_sprintf("#<WIN32OLE_RECORD(%" PRIsVALUE ") %" PRIsVALUE ">",
+      tname,
+      field);
 }
 
 VALUE cWIN32OLE_RECORD;

@@ -1,4 +1,4 @@
-#ifndef RUBY_ATOMIC_H                                /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_ATOMIC_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_ATOMIC_H
 /**
  * @file
@@ -27,11 +27,11 @@
 #include "ruby/internal/config.h"
 
 #ifdef STDC_HEADERS
-# include <stddef.h>            /* size_t */
+# include <stddef.h> /* size_t */
 #endif
 
 #ifdef HAVE_SYS_TYPES_H
-# include <sys/types.h>         /* ssize_t */
+# include <sys/types.h> /* ssize_t */
 #endif
 
 #if RBIMPL_COMPILER_SINCE(MSVC, 13, 0, 0)
@@ -136,7 +136,7 @@ typedef unsigned int rb_atomic_t;
  * @retval  otherwise  Something else is at `var`; not updated.
  */
 #define RUBY_ATOMIC_CAS(var, oldval, newval) \
-    rbimpl_atomic_cas(&(var), (oldval), (newval))
+ rbimpl_atomic_cas(&(var), (oldval), (newval))
 
 /**
  * Identical to #RUBY_ATOMIC_EXCHANGE, except for the return type.
@@ -220,7 +220,7 @@ typedef unsigned int rb_atomic_t;
  * @post    `var` holds `val`.
  */
 #define RUBY_ATOMIC_SIZE_EXCHANGE(var, val) \
-    rbimpl_atomic_size_exchange(&(var), (val))
+ rbimpl_atomic_size_exchange(&(var), (val))
 
 /**
  * Identical to #RUBY_ATOMIC_CAS, except it expects its arguments are `size_t`.
@@ -234,7 +234,7 @@ typedef unsigned int rb_atomic_t;
  * @retval  otherwise  Something else is at `var`; not updated.
  */
 #define RUBY_ATOMIC_SIZE_CAS(var, oldval, newval) \
-    rbimpl_atomic_size_cas(&(var), (oldval), (newval))
+ rbimpl_atomic_size_cas(&(var), (oldval), (newval))
 
 /**
  * Identical to #RUBY_ATOMIC_ADD, except it expects its arguments are `size_t`.
@@ -277,7 +277,7 @@ typedef unsigned int rb_atomic_t;
  * some pointers, most notably function pointers.
  */
 #define RUBY_ATOMIC_PTR_EXCHANGE(var, val) \
-    RBIMPL_CAST(rbimpl_atomic_ptr_exchange((void **)&(var), (void *)val))
+ RBIMPL_CAST(rbimpl_atomic_ptr_exchange((void **)&(var), (void *)val))
 
 /**
  * Identical to #RUBY_ATOMIC_CAS, except it expects its arguments are `void*`.
@@ -291,7 +291,7 @@ typedef unsigned int rb_atomic_t;
  * @retval  otherwise  Something else is at `var`; not updated.
  */
 #define RUBY_ATOMIC_PTR_CAS(var, oldval, newval) \
-    RBIMPL_CAST(rbimpl_atomic_ptr_cas((void **)&(var), (oldval), (newval)))
+ RBIMPL_CAST(rbimpl_atomic_ptr_cas((void **)&(var), (oldval), (newval)))
 
 /**
  * Identical  to #RUBY_ATOMIC_EXCHANGE,  except  it expects  its arguments  are
@@ -305,7 +305,7 @@ typedef unsigned int rb_atomic_t;
  * @post    `var` holds `val`.
  */
 #define RUBY_ATOMIC_VALUE_EXCHANGE(var, val) \
-    rbimpl_atomic_value_exchange(&(var), (val))
+ rbimpl_atomic_value_exchange(&(var), (val))
 
 /**
  * Identical to #RUBY_ATOMIC_CAS, except it  expects its arguments are ::VALUE.
@@ -319,7 +319,7 @@ typedef unsigned int rb_atomic_t;
  * @retval  otherwise  Something else is at `var`; not updated.
  */
 #define RUBY_ATOMIC_VALUE_CAS(var, oldval, newval) \
-    rbimpl_atomic_value_cas(&(var), (oldval), (newval))
+ rbimpl_atomic_value_cas(&(var), (oldval), (newval))
 
 /** @cond INTERNAL_MACRO */
 RBIMPL_ATTR_ARTIFICIAL()
@@ -622,10 +622,10 @@ rbimpl_atomic_or(volatile rb_atomic_t *ptr, rb_atomic_t val)
 #elif defined(_WIN32) && defined(__GNUC__)
     /* This was for old MinGW.  Maybe not needed any longer? */
     __asm__(
-        "lock\n\t"
-        "orl\t%1, %0"
-        : "=m"(ptr)
-        : "Ir"(val));
+      "lock\n\t"
+      "orl\t%1, %0"
+      : "=m"(ptr)
+      : "Ir"(val));
 
 #elif defined(_WIN32) && defined(_M_IX86)
     __asm mov eax, ptr;
@@ -774,7 +774,7 @@ rbimpl_atomic_cas(volatile rb_atomic_t *ptr, rb_atomic_t oldval, rb_atomic_t new
 
 #elif defined(HAVE_GCC_ATOMIC_BUILTINS)
     __atomic_compare_exchange_n(
-        ptr, &oldval, newval, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+      ptr, &oldval, newval, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
     return oldval;
 
 #elif defined(HAVE_GCC_SYNC_BUILTINS)
@@ -817,7 +817,7 @@ rbimpl_atomic_size_cas(volatile size_t *ptr, size_t oldval, size_t newval)
 
 #elif defined(HAVE_GCC_ATOMIC_BUILTINS)
     __atomic_compare_exchange_n(
-        ptr, &oldval, newval, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+      ptr, &oldval, newval, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
     return oldval;
 
 #elif defined(HAVE_GCC_SYNC_BUILTINS)
@@ -858,7 +858,6 @@ rbimpl_atomic_ptr_cas(void **ptr, const void *oldval, const void *newval)
     void *pold = RBIMPL_CAST((void *)oldval);
     void *pnew = RBIMPL_CAST((void *)newval);
     return atomic_cas_ptr(ptr, pold, pnew);
-
 
 #else
     RBIMPL_STATIC_ASSERT(sizeof_voidp, sizeof *ptr == sizeof(size_t));

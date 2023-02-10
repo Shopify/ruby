@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ATTR_CONSTEXPR_H                      /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ATTR_CONSTEXPR_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ATTR_CONSTEXPR_H
 /**
  * @file
@@ -24,7 +24,7 @@
 #include "ruby/internal/compiler_is.h"
 
 /** @cond INTERNAL_MACRO */
-#if ! defined(__cplusplus)
+#if !defined(__cplusplus)
 # /* Makes no sense. */
 # define RBIMPL_HAS_ATTR_CONSTEXPR_CXX11 0
 # define RBIMPL_HAS_ATTR_CONSTEXPR_CXX14 0
@@ -66,7 +66,7 @@
 # define RBIMPL_ATTR_CONSTEXPR(_) constexpr
 
 #elif RBIMPL_HAS_ATTR_CONSTEXPR_CXX11
-# define RBIMPL_ATTR_CONSTEXPR(_) RBIMPL_ATTR_CONSTEXPR_ ## _
+# define RBIMPL_ATTR_CONSTEXPR(_) RBIMPL_ATTR_CONSTEXPR_##_
 # define RBIMPL_ATTR_CONSTEXPR_CXX11 constexpr
 # define RBIMPL_ATTR_CONSTEXPR_CXX14 /* void */
 

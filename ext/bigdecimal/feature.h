@@ -27,11 +27,11 @@
 #
 # ifdef __has_builtin
 #  if defined(__INTEL_COMPILER)
-#  /* :TODO: Intel  C Compiler  has __has_builtin (since  19.1 maybe?),  and is
+#   /* :TODO: Intel  C Compiler  has __has_builtin (since  19.1 maybe?),  and is
 #   * reportedly  broken.  We  have to  skip them.   However the  situation can
 #   * change.  They might improve someday.  We need to revisit here later. */
-#  elif defined(__GNUC__) && ! __has_builtin(__builtin_alloca)
-#  /* FreeBSD's   <sys/cdefs.h>   defines   its   own   *broken*   version   of
+#  elif defined(__GNUC__) && !__has_builtin(__builtin_alloca)
+#   /* FreeBSD's   <sys/cdefs.h>   defines   its   own   *broken*   version   of
 #   * __has_builtin.   Cygwin  copied  that  content  to be  a  victim  of  the
 #   * broken-ness.  We don't take them into account. */
 #  else
@@ -43,21 +43,21 @@
 #  define BIGDECIMAL_HAS_BUILTIN(_) __has_builtin(_)
 #
 # elif defined(__GNUC__)
-#  define BIGDECIMAL_HAS_BUILTIN(_) BIGDECIMAL_HAS_BUILTIN_ ## _
+#  define BIGDECIMAL_HAS_BUILTIN(_) BIGDECIMAL_HAS_BUILTIN_##_
 #  if defined(__GNUC__) && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 6))
-#   define BIGDECIMAL_HAS_BUILTIN___builtin_clz  1
+#   define BIGDECIMAL_HAS_BUILTIN___builtin_clz 1
 #   define BIGDECIMAL_HAS_BUILTIN___builtin_clzl 1
 #  else
-#   define BIGDECIMAL_HAS_BUILTIN___builtin_clz  0
+#   define BIGDECIMAL_HAS_BUILTIN___builtin_clz 0
 #   define BIGDECIMAL_HAS_BUILTIN___builtin_clzl 0
 #  endif
 # elif defined(_MSC_VER)
 #  define BIGDECIMAL_HAS_BUILTIN(_) 0
 #
 # else
-#  define BIGDECIMAL_HAS_BUILTIN(_) BIGDECIMAL_HAS_BUILTIN_ ## _
-#  define BIGDECIMAL_HAS_BUILTIN___builtin_clz   HAVE_BUILTIN___BUILTIN_CLZ
-#  define BIGDECIMAL_HAS_BUILTIN___builtin_clzl  HAVE_BUILTIN___BUILTIN_CLZL
+#  define BIGDECIMAL_HAS_BUILTIN(_) BIGDECIMAL_HAS_BUILTIN_##_
+#  define BIGDECIMAL_HAS_BUILTIN___builtin_clz HAVE_BUILTIN___BUILTIN_CLZ
+#  define BIGDECIMAL_HAS_BUILTIN___builtin_clzl HAVE_BUILTIN___BUILTIN_CLZL
 # endif
 #endif /* RBIMPL_HAS_BUILTIN */
 

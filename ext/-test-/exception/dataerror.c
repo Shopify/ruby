@@ -13,7 +13,7 @@ dataerror_free(void *ptr)
 
 static const rb_data_type_t dataerror_type = {
     "Bug #9167",
-    {dataerror_mark, dataerror_free},
+    { dataerror_mark, dataerror_free },
 };
 
 static VALUE

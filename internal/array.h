@@ -1,4 +1,4 @@
-#ifndef INTERNAL_ARRAY_H                                 /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_ARRAY_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_ARRAY_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -9,18 +9,18 @@
  * @brief      Internal header for Array.
  */
 #include "ruby/internal/config.h"
-#include <stddef.h>                 /* for size_t */
+#include <stddef.h> /* for size_t */
 #include "internal/static_assert.h" /* for STATIC_ASSERT */
-#include "ruby/internal/stdbool.h"         /* for bool */
-#include "ruby/ruby.h"              /* for RARRAY_LEN */
+#include "ruby/internal/stdbool.h" /* for bool */
+#include "ruby/ruby.h" /* for RARRAY_LEN */
 
 #ifndef ARRAY_DEBUG
-# define ARRAY_DEBUG (0+RUBY_DEBUG)
+# define ARRAY_DEBUG (0 + RUBY_DEBUG)
 #endif
 
-#define RARRAY_SHARED_FLAG      ELTS_SHARED
+#define RARRAY_SHARED_FLAG ELTS_SHARED
 #define RARRAY_SHARED_ROOT_FLAG FL_USER12
-#define RARRAY_PTR_IN_USE_FLAG  FL_USER14
+#define RARRAY_PTR_IN_USE_FLAG FL_USER14
 
 /* array.c */
 VALUE rb_ary_last(int, const VALUE *, VALUE);
@@ -79,7 +79,7 @@ RBIMPL_ATTR_MAYBE_UNUSED()
 static inline int
 ary_should_not_be_shared_and_embedded(VALUE ary)
 {
-    return !FL_ALL_RAW(ary, RARRAY_SHARED_FLAG|RARRAY_EMBED_FLAG);
+    return !FL_ALL_RAW(ary, RARRAY_SHARED_FLAG | RARRAY_EMBED_FLAG);
 }
 
 static inline bool
@@ -139,14 +139,14 @@ RARY_TRANSIENT_UNSET(VALUE ary)
 #if RBIMPL_HAS_WARNING("-Wgnu-zero-variadic-macro-arguments")
 # /* Skip it; clang -pedantic doesn't like the following */
 #elif defined(__GNUC__) && defined(HAVE_VA_ARGS_MACRO)
-#define rb_ary_new_from_args(n, ...) \
-    __extension__ ({ \
-        const VALUE args_to_new_ary[] = {__VA_ARGS__}; \
-        if (__builtin_constant_p(n)) { \
-            STATIC_ASSERT(rb_ary_new_from_args, numberof(args_to_new_ary) == (n)); \
-        } \
-        rb_ary_new_from_values(numberof(args_to_new_ary), args_to_new_ary); \
-    })
+# define rb_ary_new_from_args(n, ...) \
+  __extension__({ \
+const VALUE args_to_new_ary[] = { __VA_ARGS__ }; \
+if (__builtin_constant_p(n)) { \
+STATIC_ASSERT(rb_ary_new_from_args, numberof(args_to_new_ary) == (n)); \
+}    \
+rb_ary_new_from_values(numberof(args_to_new_ary), args_to_new_ary); \
+  })
 #endif
 
 #undef RARRAY_AREF

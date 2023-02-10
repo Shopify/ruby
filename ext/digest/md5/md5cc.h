@@ -8,10 +8,9 @@
  * compatibility, as well as Apple does. */
 #endif
 
-#define MD5_BLOCK_LENGTH	CC_MD5_BLOCK_BYTES
+#define MD5_BLOCK_LENGTH CC_MD5_BLOCK_BYTES
 
-static DEFINE_UPDATE_FUNC_FOR_UINT(MD5)
-static DEFINE_FINISH_FUNC_FROM_FINAL(MD5)
+static DEFINE_UPDATE_FUNC_FOR_UINT(MD5) static DEFINE_FINISH_FUNC_FROM_FINAL(MD5)
 
 #undef MD5_Update
 #undef MD5_Finish

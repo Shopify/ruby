@@ -18,11 +18,11 @@
 #if USE_YJIT && !defined(MJIT_HEADER) // MJIT and YJIT can't be enabled simultaneously
 
 // We generate x86 or arm64 assembly
-#if defined(_WIN32) ? defined(_M_AMD64) : (defined(__x86_64__) || defined(__aarch64__))
+# if defined(_WIN32) ? defined(_M_AMD64) : (defined(__x86_64__) || defined(__aarch64__))
 // x86_64 platforms without mingw/msys or x64-mswin
-#else
-# error YJIT unsupported platform
-#endif
+# else
+#  error YJIT unsupported platform
+# endif
 
 // Expose these as declarations since we are building YJIT.
 bool rb_yjit_enabled_p(void);
@@ -47,23 +47,77 @@ void rb_yjit_tracing_invalidate_all(void);
 // !USE_YJIT
 // In these builds, YJIT could never be turned on. Provide dummy implementations.
 
-static inline bool rb_yjit_enabled_p(void) { return false; }
-static inline unsigned rb_yjit_call_threshold(void) { return UINT_MAX; }
-static inline void rb_yjit_invalidate_all_method_lookup_assumptions(void) {}
-static inline void rb_yjit_cme_invalidate(rb_callable_method_entry_t *cme) {}
-static inline void rb_yjit_collect_vm_usage_insn(int insn) {}
-static inline void rb_yjit_collect_binding_alloc(void) {}
-static inline void rb_yjit_collect_binding_set(void) {}
-static inline bool rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec) { return false; }
-static inline void rb_yjit_init(void) {}
-static inline void rb_yjit_bop_redefined(int redefined_flag, enum ruby_basic_operators bop) {}
-static inline void rb_yjit_constant_state_changed(ID id) {}
-static inline void rb_yjit_iseq_mark(void *payload) {}
-static inline void rb_yjit_iseq_update_references(void *payload) {}
-static inline void rb_yjit_iseq_free(void *payload) {}
-static inline void rb_yjit_before_ractor_spawn(void) {}
-static inline void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic, unsigned insn_idx) {}
-static inline void rb_yjit_tracing_invalidate_all(void) {}
+static inline bool
+rb_yjit_enabled_p(void)
+{
+    return false;
+}
+static inline unsigned
+rb_yjit_call_threshold(void)
+{
+    return UINT_MAX;
+}
+static inline void
+rb_yjit_invalidate_all_method_lookup_assumptions(void)
+{
+}
+static inline void
+rb_yjit_cme_invalidate(rb_callable_method_entry_t *cme)
+{
+}
+static inline void
+rb_yjit_collect_vm_usage_insn(int insn)
+{
+}
+static inline void
+rb_yjit_collect_binding_alloc(void)
+{
+}
+static inline void
+rb_yjit_collect_binding_set(void)
+{
+}
+static inline bool
+rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec)
+{
+    return false;
+}
+static inline void
+rb_yjit_init(void)
+{
+}
+static inline void
+rb_yjit_bop_redefined(int redefined_flag, enum ruby_basic_operators bop)
+{
+}
+static inline void
+rb_yjit_constant_state_changed(ID id)
+{
+}
+static inline void
+rb_yjit_iseq_mark(void *payload)
+{
+}
+static inline void
+rb_yjit_iseq_update_references(void *payload)
+{
+}
+static inline void
+rb_yjit_iseq_free(void *payload)
+{
+}
+static inline void
+rb_yjit_before_ractor_spawn(void)
+{
+}
+static inline void
+rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic, unsigned insn_idx)
+{
+}
+static inline void
+rb_yjit_tracing_invalidate_all(void)
+{
+}
 
 #endif // #if USE_YJIT
 

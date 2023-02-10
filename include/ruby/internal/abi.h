@@ -24,14 +24,20 @@
  * In released versions of Ruby, this number is not defined since teeny
  * versions of Ruby should guarantee ABI compatibility.
  */
+
+// clang really doesn't like it when there is a space between the # and define
+// here. It introduces wa macro redefinition warning in
+// .ext/include/{arch}/ruby/config.h
+// clang-format off
 #define RUBY_ABI_VERSION 0
+// clang-format on
 
 /* Windows does not support weak symbols so ruby_abi_version will not exist
  * in the shared library. */
-#if defined(HAVE_FUNC_WEAK) && !defined(_WIN32) && !defined(__MINGW32__) && !defined(__CYGWIN__)
-# define RUBY_DLN_CHECK_ABI
-#endif
-#endif  /* RUBY_ABI_VERSION */
+# if defined(HAVE_FUNC_WEAK) && !defined(_WIN32) && !defined(__MINGW32__) && !defined(__CYGWIN__)
+#  define RUBY_DLN_CHECK_ABI
+# endif
+#endif /* RUBY_ABI_VERSION */
 
 #ifdef RUBY_DLN_CHECK_ABI
 

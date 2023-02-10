@@ -12,9 +12,9 @@
 
 /* interface */
 
-# ifdef __CYGWIN__
+#ifdef __CYGWIN__
 # undef _WIN32
-# endif
+#endif
 
 #define USE_VM_CLOCK 1
 

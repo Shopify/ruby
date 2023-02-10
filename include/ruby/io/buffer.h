@@ -93,4 +93,4 @@ VALUE rb_io_buffer_pwrite(VALUE self, VALUE io, rb_off_t from, size_t length, si
 
 RBIMPL_SYMBOL_EXPORT_END()
 
-#endif  /* RUBY_IO_BUFFER_H */
+#endif /* RUBY_IO_BUFFER_H */

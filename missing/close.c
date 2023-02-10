@@ -7,35 +7,35 @@
 
 #undef getpeername
 int
-ruby_getpeername(int s, struct sockaddr * name,
-         socklen_t * namelen)
+ruby_getpeername(int s, struct sockaddr *name,
+  socklen_t *namelen)
 {
     int err = errno;
     errno = 0;
     s = getpeername(s, name, namelen);
     if (errno == ECONNRESET) {
-	errno = 0;
-	s = 0;
+        errno = 0;
+        s = 0;
     }
     else if (errno == 0)
-	errno = err;
+        errno = err;
     return s;
 }
 
 #undef getsockname
 int
-ruby_getsockname(int s, struct sockaddr * name,
-         socklen_t * namelen)
+ruby_getsockname(int s, struct sockaddr *name,
+  socklen_t *namelen)
 {
     int err = errno;
     errno = 0;
     s = getsockname(s, name, namelen);
     if (errno == ECONNRESET) {
-	errno = 0;
-	s = 0;
+        errno = 0;
+        s = 0;
     }
     else if (errno == 0)
-	errno = err;
+        errno = err;
     return s;
 }
 
@@ -47,11 +47,11 @@ ruby_shutdown(int s, int how)
     errno = 0;
     s = shutdown(s, how);
     if (errno == ECONNRESET) {
-	errno = 0;
-	s = 0;
+        errno = 0;
+        s = 0;
     }
     else if (errno == 0)
-	errno = err;
+        errno = err;
     return s;
 }
 
@@ -63,10 +63,10 @@ ruby_close(int s)
     errno = 0;
     s = close(s);
     if (errno == ECONNRESET) {
-	errno = 0;
-	s = 0;
+        errno = 0;
+        s = 0;
     }
     else if (errno == 0)
-	errno = err;
+        errno = err;
     return s;
 }

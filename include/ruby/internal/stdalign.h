@@ -1,4 +1,4 @@
-#ifndef RBIMPL_STDALIGN_H                            /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_STDALIGN_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_STDALIGN_H
 /**
  * @file
@@ -92,7 +92,7 @@
 # define RBIMPL_ALIGNOF(T) (static_cast<size_t>(ruby::rbimpl_alignof<T>::value))
 
 namespace ruby {
-template<typename T>
+template <typename T>
 struct rbimpl_alignof {
     typedef struct {
         char _;
@@ -128,7 +128,8 @@ struct rbimpl_alignof {
 #  */
 # /* see: http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2083.htm */
 # /* see: http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2350.htm */
-# define RBIMPL_ALIGNOF(T) offsetof(struct { char _; T t; }, t)
+# define RBIMPL_ALIGNOF(T) offsetof( \
+   struct { char _; T t; }, t)
 
 #endif
 

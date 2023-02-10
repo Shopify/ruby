@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ROBJECT_H                             /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ROBJECT_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ROBJECT_H
 /**
  * @file
@@ -40,12 +40,12 @@
  * @param   obj  An object, which is in fact an ::RObject.
  * @return  The passed object casted to ::RObject.
  */
-#define ROBJECT(obj)          RBIMPL_CAST((struct RObject *)(obj))
+#define ROBJECT(obj) RBIMPL_CAST((struct RObject *)(obj))
 /** @cond INTERNAL_MACRO */
 #define ROBJECT_EMBED_LEN_MAX ROBJECT_EMBED_LEN_MAX
-#define ROBJECT_EMBED         ROBJECT_EMBED
-#define ROBJECT_IV_CAPACITY   ROBJECT_IV_CAPACITY
-#define ROBJECT_IVPTR         ROBJECT_IVPTR
+#define ROBJECT_EMBED ROBJECT_EMBED
+#define ROBJECT_IV_CAPACITY ROBJECT_IV_CAPACITY
+#define ROBJECT_IVPTR ROBJECT_IVPTR
 /** @endcond */
 
 /**

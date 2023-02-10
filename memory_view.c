@@ -14,20 +14,20 @@
 #include "vm_sync.h"
 
 #if SIZEOF_INTPTR_T == SIZEOF_LONG_LONG
-#   define INTPTR2NUM LL2NUM
-#   define UINTPTR2NUM ULL2NUM
+# define INTPTR2NUM LL2NUM
+# define UINTPTR2NUM ULL2NUM
 #elif SIZEOF_INTPTR_T == SIZEOF_LONG
-#   define INTPTR2NUM LONG2NUM
-#   define UINTPTR2NUM ULONG2NUM
+# define INTPTR2NUM LONG2NUM
+# define UINTPTR2NUM ULONG2NUM
 #else
-#   define INTPTR2NUM INT2NUM
-#   define UINTPTR2NUM UINT2NUM
+# define INTPTR2NUM INT2NUM
+# define UINTPTR2NUM UINT2NUM
 #endif
 
-
-#define STRUCT_ALIGNOF(T, result) do { \
-    (result) = RUBY_ALIGNOF(T); \
-} while(0)
+#define STRUCT_ALIGNOF(T, result) \
+ do { \
+  (result) = RUBY_ALIGNOF(T); \
+ } while (0)
 
 // Exported Object Registry
 
@@ -61,9 +61,9 @@ exported_object_registry_free(void *ptr)
 const rb_data_type_t rb_memory_view_exported_object_registry_data_type = {
     "memory_view/exported_object_registry",
     {
-        exported_object_registry_mark,
-        exported_object_registry_free,
-        0,
+      exported_object_registry_mark,
+      exported_object_registry_free,
+      0,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -120,9 +120,9 @@ static ID id_memory_view;
 static const rb_data_type_t memory_view_entry_data_type = {
     "memory_view/entry",
     {
-        0,
-        0,
-        0,
+      0,
+      0,
+      0,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -133,8 +133,8 @@ rb_memory_view_register(VALUE klass, const rb_memory_view_entry_t *entry)
 {
     Check_Type(klass, T_CLASS);
     VALUE entry_obj = rb_ivar_lookup(klass, id_memory_view, Qnil);
-    if (! NIL_P(entry_obj)) {
-        rb_warning("Duplicated registration of memory view to %"PRIsVALUE, klass);
+    if (!NIL_P(entry_obj)) {
+        rb_warning("Duplicated registration of memory view to %" PRIsVALUE, klass);
         return false;
     }
     else {
@@ -187,7 +187,7 @@ rb_memory_view_fill_contiguous_strides(const ssize_t ndim, const ssize_t item_si
             n *= shape[i];
         }
     }
-    else {  // column-major
+    else { // column-major
         for (i = 0; i < ndim; ++i) {
             strides[i] = n;
             n *= shape[i];
@@ -247,40 +247,40 @@ get_format_size(const char *format, bool *native_p, ssize_t *alignment, endianne
     int i = 1;
     while (format[i]) {
         switch (format[i]) {
-          case '!':
-          case '_':
-            if (strchr(native_types, type_char)) {
-                *native_p = true;
+            case '!':
+            case '_':
+                if (strchr(native_types, type_char)) {
+                    *native_p = true;
+                    ++i;
+                }
+                else {
+                    if (error) {
+                        *error = rb_exc_new_str(rb_eArgError,
+                          rb_sprintf("Unable to specify native size for '%c'", type_char));
+                    }
+                    return -1;
+                }
+                continue;
+
+            case '<':
+            case '>':
+                if (!strchr(endianness_types, type_char)) {
+                    if (error) {
+                        *error = rb_exc_new_str(rb_eArgError,
+                          rb_sprintf("Unable to specify endianness for '%c'", type_char));
+                    }
+                    return -1;
+                }
+                if (*endianness != ENDIANNESS_NATIVE) {
+                    *error = rb_exc_new_cstr(rb_eArgError, "Unable to use both '<' and '>' multiple times");
+                    return -1;
+                }
+                *endianness = (format[i] == '<') ? ENDIANNESS_LITTLE : ENDIANNESS_BIG;
                 ++i;
-            }
-            else {
-                if (error) {
-                    *error = rb_exc_new_str(rb_eArgError,
-                                            rb_sprintf("Unable to specify native size for '%c'", type_char));
-                }
-                return -1;
-            }
-            continue;
+                continue;
 
-          case '<':
-          case '>':
-            if (!strchr(endianness_types, type_char)) {
-                if (error) {
-                    *error = rb_exc_new_str(rb_eArgError,
-                                            rb_sprintf("Unable to specify endianness for '%c'", type_char));
-                }
-                return -1;
-            }
-            if (*endianness != ENDIANNESS_NATIVE) {
-                *error = rb_exc_new_cstr(rb_eArgError, "Unable to use both '<' and '>' multiple times");
-                return -1;
-            }
-            *endianness = (format[i] == '<') ? ENDIANNESS_LITTLE : ENDIANNESS_BIG;
-            ++i;
-            continue;
-
-          default:
-            break;
+            default:
+                break;
         }
 
         break;
@@ -291,7 +291,7 @@ get_format_size(const char *format, bool *native_p, ssize_t *alignment, endianne
     if ('0' <= ch && ch <= '9') {
         ssize_t n = 0;
         while ('0' <= (ch = format[i]) && ch <= '9') {
-            n = 10*n + ruby_digit36_to_number_table[ch];
+            n = 10 * n + ruby_digit36_to_number_table[ch];
             ++i;
         }
         *count = n;
@@ -300,76 +300,76 @@ get_format_size(const char *format, bool *native_p, ssize_t *alignment, endianne
     *next_format = &format[i];
 
     switch (type_char) {
-      case 'x':  // padding
-        return 1;
+        case 'x': // padding
+            return 1;
 
-      case 'c':  // signed char
-      case 'C':  // unsigned char
-        return sizeof(char);
+        case 'c': // signed char
+        case 'C': // unsigned char
+            return sizeof(char);
 
-      case 's':  // s for int16_t, s! for signed short
-      case 'S':  // S for uint16_t, S! for unsigned short
-        if (*native_p) {
-            STRUCT_ALIGNOF(short, *alignment);
-            return sizeof(short);
-        }
-        // fall through
+        case 's': // s for int16_t, s! for signed short
+        case 'S': // S for uint16_t, S! for unsigned short
+            if (*native_p) {
+                STRUCT_ALIGNOF(short, *alignment);
+                return sizeof(short);
+            }
+            // fall through
 
-      case 'n':  // n for big-endian 16bit unsigned integer
-      case 'v':  // v for little-endian 16bit unsigned integer
-        STRUCT_ALIGNOF(int16_t, *alignment);
-        return 2;
+        case 'n': // n for big-endian 16bit unsigned integer
+        case 'v': // v for little-endian 16bit unsigned integer
+            STRUCT_ALIGNOF(int16_t, *alignment);
+            return 2;
 
-      case 'i':  // i and i! for signed int
-      case 'I':  // I and I! for unsigned int
-        STRUCT_ALIGNOF(int, *alignment);
-        return sizeof(int);
+        case 'i': // i and i! for signed int
+        case 'I': // I and I! for unsigned int
+            STRUCT_ALIGNOF(int, *alignment);
+            return sizeof(int);
 
-      case 'l':  // l for int32_t, l! for signed long
-      case 'L':  // L for uint32_t, L! for unsigned long
-        if (*native_p) {
-            STRUCT_ALIGNOF(long, *alignment);
-            return sizeof(long);
-        }
-        // fall through
+        case 'l': // l for int32_t, l! for signed long
+        case 'L': // L for uint32_t, L! for unsigned long
+            if (*native_p) {
+                STRUCT_ALIGNOF(long, *alignment);
+                return sizeof(long);
+            }
+            // fall through
 
-      case 'N':  // N for big-endian 32bit unsigned integer
-      case 'V':  // V for little-endian 32bit unsigned integer
-        STRUCT_ALIGNOF(int32_t, *alignment);
-        return 4;
+        case 'N': // N for big-endian 32bit unsigned integer
+        case 'V': // V for little-endian 32bit unsigned integer
+            STRUCT_ALIGNOF(int32_t, *alignment);
+            return 4;
 
-      case 'f':  // f for native float
-      case 'e':  // e for little-endian float
-      case 'g':  // g for big-endian float
-        STRUCT_ALIGNOF(float, *alignment);
-        return sizeof(float);
+        case 'f': // f for native float
+        case 'e': // e for little-endian float
+        case 'g': // g for big-endian float
+            STRUCT_ALIGNOF(float, *alignment);
+            return sizeof(float);
 
-      case 'q':  // q for int64_t, q! for signed long long
-      case 'Q':  // Q for uint64_t, Q! for unsigned long long
-        if (*native_p) {
-            STRUCT_ALIGNOF(LONG_LONG, *alignment);
-            return sizeof(LONG_LONG);
-        }
-        STRUCT_ALIGNOF(int64_t, *alignment);
-        return 8;
+        case 'q': // q for int64_t, q! for signed long long
+        case 'Q': // Q for uint64_t, Q! for unsigned long long
+            if (*native_p) {
+                STRUCT_ALIGNOF(LONG_LONG, *alignment);
+                return sizeof(LONG_LONG);
+            }
+            STRUCT_ALIGNOF(int64_t, *alignment);
+            return 8;
 
-      case 'd':  // d for native double
-      case 'E':  // E for little-endian double
-      case 'G':  // G for big-endian double
-        STRUCT_ALIGNOF(double, *alignment);
-        return sizeof(double);
+        case 'd': // d for native double
+        case 'E': // E for little-endian double
+        case 'G': // G for big-endian double
+            STRUCT_ALIGNOF(double, *alignment);
+            return sizeof(double);
 
-      case 'j':  // j for intptr_t
-      case 'J':  // J for uintptr_t
-        STRUCT_ALIGNOF(intptr_t, *alignment);
-        return sizeof(intptr_t);
+        case 'j': // j for intptr_t
+        case 'J': // J for uintptr_t
+            STRUCT_ALIGNOF(intptr_t, *alignment);
+            return sizeof(intptr_t);
 
-      default:
-        *alignment = -1;
-        if (error) {
-            *error = rb_exc_new_str(rb_eArgError, rb_sprintf("Invalid type character '%c'", type_char));
-        }
-        return -1;
+        default:
+            *alignment = -1;
+            if (error) {
+                *error = rb_exc_new_str(rb_eArgError, rb_sprintf("Invalid type character '%c'", type_char));
+            }
+            return -1;
     }
 }
 
@@ -387,8 +387,8 @@ calculate_padding(ssize_t total, ssize_t alignment_size)
 
 ssize_t
 rb_memory_view_parse_item_format(const char *format,
-                                 rb_memory_view_item_component_t **members,
-                                 size_t *n_members, const char **err)
+  rb_memory_view_item_component_t **members,
+  size_t *n_members, const char **err)
 {
     if (format == NULL) return 1;
 
@@ -399,7 +399,7 @@ rb_memory_view_parse_item_format(const char *format,
     ssize_t max_alignment_size = 0;
 
     const char *p = format;
-    if (*p == '|') {  // alignment specifier
+    if (*p == '|') { // alignment specifier
         alignment = true;
         ++format;
         ++p;
@@ -465,23 +465,23 @@ rb_memory_view_parse_item_format(const char *format,
 #endif
 
                 switch (type_char) {
-                  case 'e':
-                  case 'E':
-                  case 'v':
-                  case 'V':
-                    little_endian_p = true;
-                    break;
-                  case 'g':
-                  case 'G':
-                  case 'n':
-                  case 'N':
-                    little_endian_p = false;
-                    break;
-                  default:
-                    break;
+                    case 'e':
+                    case 'E':
+                    case 'v':
+                    case 'V':
+                        little_endian_p = true;
+                        break;
+                    case 'g':
+                    case 'G':
+                    case 'n':
+                    case 'N':
+                        little_endian_p = false;
+                        break;
+                    default:
+                        break;
                 }
 
-                buf[i++] = (rb_memory_view_item_component_t){
+                buf[i++] = (rb_memory_view_item_component_t) {
                     .format = type_char,
                     .native_size_p = native_size_p,
                     .little_endian_p = little_endian_p,
@@ -622,90 +622,90 @@ extract_item_member(const uint8_t *ptr, const rb_memory_view_item_component_t *m
     }
 
     switch (member->format) {
-      case 's':
-        if (member->native_size_p) {
-            return INT2FIX(val.s);
-        }
-        else {
-            return INT2FIX(val.i16);
-        }
+        case 's':
+            if (member->native_size_p) {
+                return INT2FIX(val.s);
+            }
+            else {
+                return INT2FIX(val.i16);
+            }
 
-      case 'S':
-      case 'n':
-      case 'v':
-        if (member->native_size_p) {
-            return UINT2NUM(val.us);
-        }
-        else {
-            return INT2FIX(val.u16);
-        }
+        case 'S':
+        case 'n':
+        case 'v':
+            if (member->native_size_p) {
+                return UINT2NUM(val.us);
+            }
+            else {
+                return INT2FIX(val.u16);
+            }
 
-      case 'i':
-        return INT2NUM(val.i);
+        case 'i':
+            return INT2NUM(val.i);
 
-      case 'I':
-        return UINT2NUM(val.ui);
+        case 'I':
+            return UINT2NUM(val.ui);
 
-      case 'l':
-        if (member->native_size_p) {
-            return LONG2NUM(val.l);
-        }
-        else {
-            return LONG2NUM(val.i32);
-        }
+        case 'l':
+            if (member->native_size_p) {
+                return LONG2NUM(val.l);
+            }
+            else {
+                return LONG2NUM(val.i32);
+            }
 
-      case 'L':
-      case 'N':
-      case 'V':
-        if (member->native_size_p) {
-            return ULONG2NUM(val.ul);
-        }
-        else {
-            return ULONG2NUM(val.u32);
-        }
+        case 'L':
+        case 'N':
+        case 'V':
+            if (member->native_size_p) {
+                return ULONG2NUM(val.ul);
+            }
+            else {
+                return ULONG2NUM(val.u32);
+            }
 
-      case 'f':
-      case 'e':
-      case 'g':
-        return DBL2NUM(val.f);
+        case 'f':
+        case 'e':
+        case 'g':
+            return DBL2NUM(val.f);
 
-      case 'q':
-        if (member->native_size_p) {
-            return LL2NUM(val.ll);
-        }
-        else {
+        case 'q':
+            if (member->native_size_p) {
+                return LL2NUM(val.ll);
+            }
+            else {
 #if SIZEOF_INT64_T == SIZEOF_LONG
-            return LONG2NUM(val.i64);
+                return LONG2NUM(val.i64);
 #else
-            return LL2NUM(val.i64);
+                return LL2NUM(val.i64);
 #endif
-        }
+            }
 
-      case 'Q':
-        if (member->native_size_p) {
-            return ULL2NUM(val.ull);
-        }
-        else {
+        case 'Q':
+            if (member->native_size_p) {
+                return ULL2NUM(val.ull);
+            }
+            else {
 #if SIZEOF_UINT64_T == SIZEOF_LONG
-            return ULONG2NUM(val.u64);
+                return ULONG2NUM(val.u64);
 #else
-            return ULL2NUM(val.u64);
+                return ULL2NUM(val.u64);
 #endif
-        }
+            }
 
-      case 'd':
-      case 'E':
-      case 'G':
-        return DBL2NUM(val.d);
+        case 'd':
+        case 'E':
+        case 'G':
+            return DBL2NUM(val.d);
 
-      case 'j':
-        return INTPTR2NUM(val.iptr);
+        case 'j':
+            return INTPTR2NUM(val.iptr);
 
-      case 'J':
-        return UINTPTR2NUM(val.uptr);
+        case 'J':
+            return UINTPTR2NUM(val.uptr);
 
-      default:
-        UNREACHABLE_RETURN(Qnil);
+        default:
+            UNREACHABLE_RETURN(Qnil);
     }
 }
 
@@ -752,12 +752,12 @@ rb_memory_view_prepare_item_desc(rb_memory_view_t *view)
     if (view->item_desc.components == NULL) {
         const char *err;
         rb_memory_view_item_component_t **p_components =
-            (rb_memory_view_item_component_t **)&view->item_desc.components;
+          (rb_memory_view_item_component_t **)&view->item_desc.components;
         ssize_t n = rb_memory_view_parse_item_format(view->format, p_components, &view->item_desc.length, &err);
         if (n < 0) {
             rb_raise(rb_eRuntimeError,
-                     "Unable to parse item format at %"PRIdSIZE" in \"%s\"",
-                     (err - view->format), view->format);
+              "Unable to parse item format at %" PRIdSIZE " in \"%s\"",
+              (err - view->format), view->format);
         }
     }
 }
@@ -792,7 +792,7 @@ lookup_memory_view_entry(VALUE klass)
         entry_obj = rb_ivar_lookup(klass, id_memory_view, Qnil);
     }
 
-    if (! rb_typeddata_is_kind_of(entry_obj, &memory_view_entry_data_type))
+    if (!rb_typeddata_is_kind_of(entry_obj, &memory_view_entry_data_type))
         return NULL;
 
     return (const rb_memory_view_entry_t *)RTYPEDDATA_DATA(entry_obj);
@@ -805,14 +805,14 @@ rb_memory_view_available_p(VALUE obj)
     VALUE klass = CLASS_OF(obj);
     const rb_memory_view_entry_t *entry = lookup_memory_view_entry(klass);
     if (entry)
-        return (* entry->available_p_func)(obj);
+        return (*entry->available_p_func)(obj);
     else
         return false;
 }
 
 /* Obtain a memory view from obj, and substitute the information to view. */
 bool
-rb_memory_view_get(VALUE obj, rb_memory_view_t* view, int flags)
+rb_memory_view_get(VALUE obj, rb_memory_view_t *view, int flags)
 {
     VALUE klass = CLASS_OF(obj);
     const rb_memory_view_entry_t *entry = lookup_memory_view_entry(klass);
@@ -834,7 +834,7 @@ rb_memory_view_get(VALUE obj, rb_memory_view_t* view, int flags)
 
 /* Release the memory view obtained from obj. */
 bool
-rb_memory_view_release(rb_memory_view_t* view)
+rb_memory_view_release(rb_memory_view_t *view)
 {
     const rb_memory_view_entry_t *entry = view->_memory_view_entry;
     if (entry) {
@@ -863,8 +863,8 @@ Init_MemoryView(void)
     // exported_object_table is referred through rb_memory_view_exported_object_registry
     // in -test-/memory_view extension.
     VALUE obj = TypedData_Wrap_Struct(
-        0, &rb_memory_view_exported_object_registry_data_type,
-        exported_object_table);
+      0, &rb_memory_view_exported_object_registry_data_type,
+      exported_object_table);
     rb_gc_register_mark_object(obj);
     rb_memory_view_exported_object_registry = obj;
 

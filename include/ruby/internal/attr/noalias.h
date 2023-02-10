@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ATTR_NOALIAS_H                        /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ATTR_NOALIAS_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ATTR_NOALIAS_H
 /**
  * @file

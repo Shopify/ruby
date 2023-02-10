@@ -1,4 +1,4 @@
-#ifndef RBIMPL_INTERN_SELECT_WIN32_H                 /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_INTERN_SELECT_WIN32_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_INTERN_SELECT_WIN32_H
 /**
  * @file
@@ -20,7 +20,7 @@
  *             extension libraries.  They could be written in C++98.
  * @brief      Public APIs to provide ::rb_fd_select().
  */
-#include "ruby/internal/dosish.h"      /* for rb_w32_select */
+#include "ruby/internal/dosish.h" /* for rb_w32_select */
 #include "ruby/internal/attr/nonnull.h"
 #include "ruby/internal/attr/pure.h"
 #include "ruby/internal/attr/noalias.h"
@@ -28,13 +28,13 @@
 #include "ruby/assert.h"
 
 /**@cond INTERNAL_MACRO */
-#define rb_fd_zero  rb_fd_zero
-#define rb_fd_clr   rb_fd_clr
+#define rb_fd_zero rb_fd_zero
+#define rb_fd_clr rb_fd_clr
 #define rb_fd_isset rb_fd_isset
-#define rb_fd_copy  rb_fd_copy
-#define rb_fd_dup   rb_fd_dup
-#define rb_fd_ptr   rb_fd_ptr
-#define rb_fd_max   rb_fd_max
+#define rb_fd_copy rb_fd_copy
+#define rb_fd_dup rb_fd_dup
+#define rb_fd_ptr rb_fd_ptr
+#define rb_fd_max rb_fd_max
 /** @endcond */
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
@@ -47,8 +47,8 @@ struct timeval;
  * on modern platforms.
  */
 typedef struct {
-    int capa;                   /**< Maximum allowed number of FDs. */
-    fd_set *fdset;              /**< File descriptors buffer. */
+    int capa; /**< Maximum allowed number of FDs. */
+    fd_set *fdset; /**< File descriptors buffer. */
 } rb_fdset_t;
 
 RBIMPL_ATTR_NONNULL(())
@@ -212,11 +212,11 @@ static inline int
 rb_fd_select(int n, rb_fdset_t *rfds, rb_fdset_t *wfds, rb_fdset_t *efds, struct timeval *timeout)
 {
     return rb_w32_select(
-        n,
-        rfds ? rfds->fdset : NULL,
-        wfds ? wfds->fdset : NULL,
-        efds ? efds->fdset : NULL,
-        timeout);
+      n,
+      rfds ? rfds->fdset : NULL,
+      wfds ? wfds->fdset : NULL,
+      efds ? efds->fdset : NULL,
+      timeout);
 }
 
 RBIMPL_ATTR_NONNULL(())

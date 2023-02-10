@@ -1,4 +1,4 @@
-#ifndef RBIMPL_STATIC_ASSERT_H                       /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_STATIC_ASSERT_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_STATIC_ASSERT_H
 /**
  * @file
@@ -67,11 +67,11 @@
 
 #elif defined(RBIMPL_STATIC_ASSERT0)
 # define RBIMPL_STATIC_ASSERT(name, expr) \
-    RBIMPL_STATIC_ASSERT0(expr, # name ": " # expr)
+  RBIMPL_STATIC_ASSERT0(expr, #name ": " #expr)
 
 #else
 # define RBIMPL_STATIC_ASSERT(name, expr) \
-    typedef int static_assert_ ## name ## _check[1 - 2 * !(expr)]
+  typedef int static_assert_##name##_check[1 - 2 * !(expr)]
 #endif
 
 #endif /* RBIMPL_STATIC_ASSERT_H */

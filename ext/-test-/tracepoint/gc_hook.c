@@ -45,7 +45,7 @@ set_gc_hook(VALUE module, VALUE proc, rb_event_flag_t event, const char *tp_str,
 
     /* disable previous keys */
     if (rb_ivar_defined(module, tp_key) != 0 &&
-        RTEST(tpval = rb_ivar_get(module, tp_key))) {
+      RTEST(tpval = rb_ivar_get(module, tp_key))) {
         rb_tracepoint_disable(tpval);
         rb_ivar_set(module, tp_key, Qnil);
     }
@@ -67,14 +67,14 @@ static VALUE
 set_after_gc_start(VALUE module, VALUE proc)
 {
     return set_gc_hook(module, proc, RUBY_INTERNAL_EVENT_GC_START,
-                       "__set_after_gc_start_tpval__", "__set_after_gc_start_proc__");
+      "__set_after_gc_start_tpval__", "__set_after_gc_start_proc__");
 }
 
 static VALUE
 start_after_gc_exit(VALUE module, VALUE proc)
 {
     return set_gc_hook(module, proc, RUBY_INTERNAL_EVENT_GC_EXIT,
-                       "__set_after_gc_exit_tpval__", "__set_after_gc_exit_proc__");
+      "__set_after_gc_exit_tpval__", "__set_after_gc_exit_proc__");
 }
 
 void

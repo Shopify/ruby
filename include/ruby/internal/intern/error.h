@@ -1,4 +1,4 @@
-#ifndef RBIMPL_INTERN_ERROR_H                        /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_INTERN_ERROR_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_INTERN_ERROR_H
 /**
  * @file
@@ -32,13 +32,13 @@
  * the function's last  (max) argument, that means the function  does not check
  * upper limit.
  */
-#define UNLIMITED_ARGUMENTS     (-1)
+#define UNLIMITED_ARGUMENTS (-1)
 
-#define rb_exc_new2             rb_exc_new_cstr  /**< @old{rb_exc_new_cstr} */
-#define rb_exc_new3             rb_exc_new_str  /**< @old{rb_exc_new_str} */
+#define rb_exc_new2 rb_exc_new_cstr /**< @old{rb_exc_new_cstr} */
+#define rb_exc_new3 rb_exc_new_str /**< @old{rb_exc_new_str} */
 
 /** @cond INTERNAL_MACRO */
-#define rb_check_arity          rb_check_arity
+#define rb_check_arity rb_check_arity
 /** @endcond */
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
@@ -244,12 +244,13 @@ RBIMPL_SYMBOL_EXPORT_END()
  *
  * Does anyone use this?  Remain not deleted for compatibility.
  */
-#define rb_check_frozen_internal(obj) do { \
-        VALUE frozen_obj = (obj); \
-        if (RB_UNLIKELY(RB_OBJ_FROZEN(frozen_obj))) { \
-            rb_error_frozen_object(frozen_obj); \
-        } \
-    } while (0)
+#define rb_check_frozen_internal(obj) \
+ do { \
+  VALUE frozen_obj = (obj); \
+  if (RB_UNLIKELY(RB_OBJ_FROZEN(frozen_obj))) { \
+   rb_error_frozen_object(frozen_obj); \
+  } \
+ } while (0)
 
 /** @alias{rb_check_frozen} */
 static inline void

@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ARITHMETIC_INTPTR_T_H                 /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ARITHMETIC_INTPTR_T_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ARITHMETIC_INTPTR_T_H
 /**
  * @file
@@ -29,7 +29,7 @@
 #include "ruby/internal/value.h"
 #include "ruby/internal/dllexport.h"
 
-#define rb_int_new  rb_int2inum  /**< @alias{rb_int2inum} */
+#define rb_int_new rb_int2inum /**< @alias{rb_int2inum} */
 #define rb_uint_new rb_uint2inum /**< @alias{rb_uint2inum} */
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()

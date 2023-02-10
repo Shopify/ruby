@@ -11,56 +11,62 @@
 
 #ifndef OPENSSL_NO_TS
 
-#define NewTSRequest(klass) \
-    TypedData_Wrap_Struct((klass), &ossl_ts_req_type, 0)
-#define SetTSRequest(obj, req) do { \
-    if (!(req)) { \
-        ossl_raise(rb_eRuntimeError, "TS_REQ wasn't initialized."); \
-    } \
-    RTYPEDDATA_DATA(obj) = (req); \
-} while (0)
-#define GetTSRequest(obj, req) do { \
-    TypedData_Get_Struct((obj), TS_REQ, &ossl_ts_req_type, (req)); \
-    if (!(req)) { \
-        ossl_raise(rb_eRuntimeError, "TS_REQ wasn't initialized."); \
-    } \
-} while (0)
+# define NewTSRequest(klass) \
+  TypedData_Wrap_Struct((klass), &ossl_ts_req_type, 0)
+# define SetTSRequest(obj, req) \
+  do { \
+   if (!(req)) { \
+    ossl_raise(rb_eRuntimeError, "TS_REQ wasn't initialized."); \
+   } \
+   RTYPEDDATA_DATA(obj) = (req); \
+  } while (0)
+# define GetTSRequest(obj, req) \
+  do { \
+   TypedData_Get_Struct((obj), TS_REQ, &ossl_ts_req_type, (req)); \
+   if (!(req)) { \
+    ossl_raise(rb_eRuntimeError, "TS_REQ wasn't initialized."); \
+   } \
+  } while (0)
 
-#define NewTSResponse(klass) \
-    TypedData_Wrap_Struct((klass), &ossl_ts_resp_type, 0)
-#define SetTSResponse(obj, resp) do { \
-    if (!(resp)) { \
-        ossl_raise(rb_eRuntimeError, "TS_RESP wasn't initialized."); \
-    } \
-    RTYPEDDATA_DATA(obj) = (resp); \
-} while (0)
-#define GetTSResponse(obj, resp) do { \
-    TypedData_Get_Struct((obj), TS_RESP, &ossl_ts_resp_type, (resp)); \
-    if (!(resp)) { \
-        ossl_raise(rb_eRuntimeError, "TS_RESP wasn't initialized."); \
-    } \
-} while (0)
+# define NewTSResponse(klass) \
+  TypedData_Wrap_Struct((klass), &ossl_ts_resp_type, 0)
+# define SetTSResponse(obj, resp) \
+  do { \
+   if (!(resp)) { \
+    ossl_raise(rb_eRuntimeError, "TS_RESP wasn't initialized."); \
+   } \
+   RTYPEDDATA_DATA(obj) = (resp); \
+  } while (0)
+# define GetTSResponse(obj, resp) \
+  do { \
+   TypedData_Get_Struct((obj), TS_RESP, &ossl_ts_resp_type, (resp)); \
+   if (!(resp)) { \
+    ossl_raise(rb_eRuntimeError, "TS_RESP wasn't initialized."); \
+   } \
+  } while (0)
 
-#define NewTSTokenInfo(klass) \
-    TypedData_Wrap_Struct((klass), &ossl_ts_token_info_type, 0)
-#define SetTSTokenInfo(obj, info) do { \
-    if (!(info)) { \
-        ossl_raise(rb_eRuntimeError, "TS_TST_INFO wasn't initialized."); \
-    } \
-    RTYPEDDATA_DATA(obj) = (info); \
-} while (0)
-#define GetTSTokenInfo(obj, info) do { \
-    TypedData_Get_Struct((obj), TS_TST_INFO, &ossl_ts_token_info_type, (info)); \
-    if (!(info)) { \
-        ossl_raise(rb_eRuntimeError, "TS_TST_INFO wasn't initialized."); \
-    } \
-} while (0)
+# define NewTSTokenInfo(klass) \
+  TypedData_Wrap_Struct((klass), &ossl_ts_token_info_type, 0)
+# define SetTSTokenInfo(obj, info) \
+  do { \
+   if (!(info)) { \
+    ossl_raise(rb_eRuntimeError, "TS_TST_INFO wasn't initialized."); \
+   } \
+   RTYPEDDATA_DATA(obj) = (info); \
+  } while (0)
+# define GetTSTokenInfo(obj, info) \
+  do { \
+   TypedData_Get_Struct((obj), TS_TST_INFO, &ossl_ts_token_info_type, (info)); \
+   if (!(info)) { \
+    ossl_raise(rb_eRuntimeError, "TS_TST_INFO wasn't initialized."); \
+   } \
+  } while (0)
 
-#define ossl_tsfac_get_default_policy_id(o)      rb_attr_get((o),rb_intern("@default_policy_id"))
-#define ossl_tsfac_get_serial_number(o)          rb_attr_get((o),rb_intern("@serial_number"))
-#define ossl_tsfac_get_gen_time(o)               rb_attr_get((o),rb_intern("@gen_time"))
-#define ossl_tsfac_get_additional_certs(o)       rb_attr_get((o),rb_intern("@additional_certs"))
-#define ossl_tsfac_get_allowed_digests(o)        rb_attr_get((o),rb_intern("@allowed_digests"))
+# define ossl_tsfac_get_default_policy_id(o) rb_attr_get((o), rb_intern("@default_policy_id"))
+# define ossl_tsfac_get_serial_number(o) rb_attr_get((o), rb_intern("@serial_number"))
+# define ossl_tsfac_get_gen_time(o) rb_attr_get((o), rb_intern("@gen_time"))
+# define ossl_tsfac_get_additional_certs(o) rb_attr_get((o), rb_intern("@additional_certs"))
+# define ossl_tsfac_get_allowed_digests(o) rb_attr_get((o), rb_intern("@allowed_digests"))
 
 static VALUE mTimestamp;
 static VALUE eTimestampError;
@@ -81,9 +87,12 @@ ossl_ts_req_free(void *ptr)
 static const rb_data_type_t ossl_ts_req_type = {
     "OpenSSL/Timestamp/Request",
     {
-        0, ossl_ts_req_free,
+      0,
+      ossl_ts_req_free,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY,
+    0,
+    0,
+    RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
 static void
@@ -92,26 +101,32 @@ ossl_ts_resp_free(void *ptr)
     TS_RESP_free(ptr);
 }
 
-static  const rb_data_type_t ossl_ts_resp_type = {
+static const rb_data_type_t ossl_ts_resp_type = {
     "OpenSSL/Timestamp/Response",
     {
-        0, ossl_ts_resp_free,
+      0,
+      ossl_ts_resp_free,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY,
+    0,
+    0,
+    RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
 static void
 ossl_ts_token_info_free(void *ptr)
 {
-        TS_TST_INFO_free(ptr);
+    TS_TST_INFO_free(ptr);
 }
 
 static const rb_data_type_t ossl_ts_token_info_type = {
     "OpenSSL/Timestamp/TokenInfo",
     {
-        0, ossl_ts_token_info_free,
+      0,
+      ossl_ts_token_info_free,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY,
+    0,
+    0,
+    RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
 static VALUE
@@ -121,26 +136,26 @@ asn1_to_der(void *template, int (*i2d)(void *template, unsigned char **pp))
     int len;
     unsigned char *p;
 
-    if((len = i2d(template, NULL)) <= 0)
+    if ((len = i2d(template, NULL)) <= 0)
         ossl_raise(eTimestampError, "Error when encoding to DER");
     str = rb_str_new(0, len);
     p = (unsigned char *)RSTRING_PTR(str);
-    if(i2d(template, &p) <= 0)
+    if (i2d(template, &p) <= 0)
         ossl_raise(eTimestampError, "Error when encoding to DER");
-    rb_str_set_len(str, p - (unsigned char*)RSTRING_PTR(str));
+    rb_str_set_len(str, p - (unsigned char *)RSTRING_PTR(str));
 
     return str;
 }
 
-static ASN1_OBJECT*
+static ASN1_OBJECT *
 obj_to_asn1obj(VALUE obj)
 {
     ASN1_OBJECT *a1obj;
 
     StringValue(obj);
     a1obj = OBJ_txt2obj(RSTRING_PTR(obj), 0);
-    if(!a1obj) a1obj = OBJ_txt2obj(RSTRING_PTR(obj), 1);
-    if(!a1obj) ossl_raise(eASN1Error, "invalid OBJECT ID");
+    if (!a1obj) a1obj = OBJ_txt2obj(RSTRING_PTR(obj), 1);
+    if (!a1obj) ossl_raise(eASN1Error, "invalid OBJECT ID");
 
     return a1obj;
 }
@@ -159,7 +174,7 @@ get_asn1obj(ASN1_OBJECT *obj)
     int nid;
     if ((nid = OBJ_obj2nid(obj)) != NID_undef)
         ret = rb_str_new2(OBJ_nid2sn(nid));
-    else{
+    else {
         if (!(out = BIO_new(BIO_s_mem())))
             ossl_raise(eX509AttrError, NULL);
         i2a_ASN1_OBJECT(out, obj);
@@ -203,7 +218,7 @@ ossl_ts_req_initialize(int argc, VALUE *argv, VALUE self)
     BIO *in;
     VALUE arg;
 
-    if(rb_scan_args(argc, argv, "01", &arg) == 0) {
+    if (rb_scan_args(argc, argv, "01", &arg) == 0) {
         return self;
     }
 
@@ -409,7 +424,7 @@ static VALUE
 ossl_ts_req_get_nonce(VALUE self)
 {
     TS_REQ *req;
-    const ASN1_INTEGER * nonce;
+    const ASN1_INTEGER *nonce;
 
     GetTSRequest(self, req);
     if (!(nonce = TS_REQ_get_nonce(req)))
@@ -454,7 +469,7 @@ ossl_ts_req_get_cert_requested(VALUE self)
     TS_REQ *req;
 
     GetTSRequest(self, req);
-    return TS_REQ_get_cert_req(req) ? Qtrue: Qfalse;
+    return TS_REQ_get_cert_req(req) ? Qtrue : Qfalse;
 }
 
 /*
@@ -534,7 +549,7 @@ ossl_ts_resp_initialize(VALUE self, VALUE der)
     BIO *in;
 
     der = ossl_to_der_if_possible(der);
-    in  = ossl_obj2bio(&der);
+    in = ossl_obj2bio(&der);
     ts_resp = d2i_TS_RESP_bio(in, &ts_resp);
     BIO_free(in);
     if (!ts_resp) {
@@ -599,13 +614,13 @@ ossl_ts_resp_get_failure_info(VALUE self)
     TS_RESP *resp;
     TS_STATUS_INFO *si;
 
-    /* The ASN1_BIT_STRING_get_bit changed from 1.0.0. to 1.1.0, making this
+/* The ASN1_BIT_STRING_get_bit changed from 1.0.0. to 1.1.0, making this
      * const. */
-    #if defined(HAVE_TS_STATUS_INFO_GET0_FAILURE_INFO)
+# if defined(HAVE_TS_STATUS_INFO_GET0_FAILURE_INFO)
     const ASN1_BIT_STRING *fi;
-    #else
+# else
     ASN1_BIT_STRING *fi;
-    #endif
+# endif
 
     GetTSResponse(self, resp);
     si = TS_RESP_get_status_info(resp);
@@ -644,7 +659,7 @@ ossl_ts_resp_get_status_text(VALUE self)
 {
     TS_RESP *resp;
     TS_STATUS_INFO *si;
-    const STACK_OF(ASN1_UTF8STRING) *text;
+    const STACK_OF(ASN1_UTF8STRING) * text;
     ASN1_UTF8STRING *current;
     int i;
     VALUE ret = rb_ary_new();
@@ -786,7 +801,7 @@ ossl_ts_resp_verify(int argc, VALUE *argv, VALUE self)
     X509_STORE *x509st;
     TS_VERIFY_CTX *ctx;
     STACK_OF(X509) *x509inter = NULL;
-    PKCS7* p7;
+    PKCS7 *p7;
     X509 *cert;
     int status, i, ok;
 
@@ -806,7 +821,8 @@ ossl_ts_resp_verify(int argc, VALUE *argv, VALUE self)
             TS_VERIFY_CTX_free(ctx);
             rb_jump_tag(status);
         }
-    } else if (!(x509inter = sk_X509_new_null())) {
+    }
+    else if (!(x509inter = sk_X509_new_null())) {
         TS_VERIFY_CTX_free(ctx);
         ossl_raise(eTimestampError, "sk_X509_new_null");
     }
@@ -816,7 +832,7 @@ ossl_ts_resp_verify(int argc, VALUE *argv, VALUE self)
         sk_X509_pop_free(x509inter, X509_free);
         ossl_raise(eTimestampError, "TS_RESP_get_token");
     }
-    for (i=0; i < sk_X509_num(p7->d.sign->cert); i++) {
+    for (i = 0; i < sk_X509_num(p7->d.sign->cert); i++) {
         cert = sk_X509_value(p7->d.sign->cert, i);
         if (!sk_X509_push(x509inter, cert)) {
             sk_X509_pop_free(x509inter, X509_free);
@@ -875,7 +891,7 @@ ossl_ts_token_info_initialize(VALUE self, VALUE der)
     BIO *in;
 
     der = ossl_to_der_if_possible(der);
-    in  = ossl_obj2bio(&der);
+    in = ossl_obj2bio(&der);
     info = d2i_TS_TST_INFO_bio(in, &info);
     BIO_free(in);
     if (!info) {
@@ -1083,11 +1099,11 @@ ossl_tsfac_serial_cb(struct TS_resp_ctx *ctx, void *data)
 }
 
 static int
-#if !defined(LIBRESSL_VERSION_NUMBER)
+# if !defined(LIBRESSL_VERSION_NUMBER)
 ossl_tsfac_time_cb(struct TS_resp_ctx *ctx, void *data, long *sec, long *usec)
-#else
+# else
 ossl_tsfac_time_cb(struct TS_resp_ctx *ctx, void *data, time_t *sec, long *usec)
-#endif
+# endif
 {
     *sec = *((long *)data);
     *usec = 0;
@@ -1135,7 +1151,7 @@ ossl_tsfac_create_ts(VALUE self, VALUE key, VALUE certificate, VALUE request)
 {
     VALUE serial_number, def_policy_id, gen_time, additional_certs, allowed_digests;
     VALUE str;
-    STACK_OF(X509) *inter_certs;
+    STACK_OF(X509) * inter_certs;
     VALUE tsresp, ret = Qnil;
     EVP_PKEY *sign_key;
     X509 *tsa_cert;
@@ -1146,7 +1162,7 @@ ossl_tsfac_create_ts(VALUE self, VALUE key, VALUE certificate, VALUE request)
     ASN1_INTEGER *asn1_serial = NULL;
     ASN1_OBJECT *def_policy_id_obj = NULL;
     long lgen_time;
-    const char * err_msg = NULL;
+    const char *err_msg = NULL;
     int status = 0;
 
     tsresp = NewTSResponse(cTimestampResponse);
@@ -1174,7 +1190,7 @@ ossl_tsfac_create_ts(VALUE self, VALUE key, VALUE certificate, VALUE request)
         goto end;
     }
     if (!NIL_P(def_policy_id) && !TS_REQ_get_policy_id(req)) {
-        def_policy_id_obj = (ASN1_OBJECT*)rb_protect(obj_to_asn1obj_i, (VALUE)def_policy_id, &status);
+        def_policy_id_obj = (ASN1_OBJECT *)rb_protect(obj_to_asn1obj_i, (VALUE)def_policy_id, &status);
         if (status)
             goto end;
     }
@@ -1194,7 +1210,7 @@ ossl_tsfac_create_ts(VALUE self, VALUE key, VALUE certificate, VALUE request)
     if (rb_obj_is_kind_of(additional_certs, rb_cArray)) {
         inter_certs = ossl_protect_x509_ary2sk(additional_certs, &status);
         if (status)
-                goto end;
+            goto end;
 
         /* this dups the sk_X509 and ups each cert's ref count */
         TS_RESP_CTX_set_certs(ctx, inter_certs);
@@ -1227,7 +1243,7 @@ ossl_tsfac_create_ts(VALUE self, VALUE key, VALUE certificate, VALUE request)
     if (status)
         goto end;
 
-    req_bio = (BIO*)rb_protect(ossl_obj2bio_i, (VALUE)&str, &status);
+    req_bio = (BIO *)rb_protect(ossl_obj2bio_i, (VALUE)&str, &status);
     if (status)
         goto end;
 
@@ -1263,9 +1279,9 @@ end:
 void
 Init_ossl_ts(void)
 {
-    #if 0
+# if 0
     mOSSL = rb_define_module("OpenSSL"); /* let rdoc know about mOSSL */
-    #endif
+# endif
 
     /*
      * Possible return value for +Response#failure_info+. Indicates that the

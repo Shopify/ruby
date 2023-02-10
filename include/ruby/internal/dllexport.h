@@ -1,4 +1,4 @@
-#ifndef RBIMPL_DLLEXPORT_H                           /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_DLLEXPORT_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_DLLEXPORT_H
 /**
  * @file
@@ -52,7 +52,7 @@
 #endif
 
 #ifndef RUBY_SYMBOL_EXPORT_END
-# define RUBY_SYMBOL_EXPORT_END   /* end */
+# define RUBY_SYMBOL_EXPORT_END /* end */
 #endif
 
 #ifndef RUBY_FUNC_EXPORTED
@@ -69,16 +69,16 @@
 /* These macros are used for functions which are exported only for MJIT
    and NOT ensured to be exported in future versions. */
 
-#if ! defined(MJIT_HEADER)
+#if !defined(MJIT_HEADER)
 # define MJIT_FUNC_EXPORTED RUBY_FUNC_EXPORTED
-#elif ! RBIMPL_COMPILER_IS(MSVC)
+#elif !RBIMPL_COMPILER_IS(MSVC)
 # define MJIT_FUNC_EXPORTED RUBY_FUNC_EXPORTED
 #else
 # define MJIT_FUNC_EXPORTED static
 #endif
 
 #define MJIT_SYMBOL_EXPORT_BEGIN RUBY_SYMBOL_EXPORT_BEGIN
-#define MJIT_SYMBOL_EXPORT_END   RUBY_SYMBOL_EXPORT_END
+#define MJIT_SYMBOL_EXPORT_END RUBY_SYMBOL_EXPORT_END
 
 /* On mswin, MJIT header transformation can't be used since cl.exe can't output
    preprocessed output preserving macros. So this `MJIT_STATIC` is needed
@@ -96,7 +96,9 @@
 #if defined(__DOXYGEN__)
 # define RBIMPL_SYMBOL_EXPORT_BEGIN() /* void */
 #elif defined(__cplusplus)
-# define RBIMPL_SYMBOL_EXPORT_BEGIN() RUBY_SYMBOL_EXPORT_BEGIN extern "C" {
+# define RBIMPL_SYMBOL_EXPORT_BEGIN() \
+  RUBY_SYMBOL_EXPORT_BEGIN extern "C" \
+  {
 #else
 # define RBIMPL_SYMBOL_EXPORT_BEGIN() RUBY_SYMBOL_EXPORT_BEGIN
 #endif
@@ -105,8 +107,10 @@
 #if defined(__DOXYGEN__)
 # define RBIMPL_SYMBOL_EXPORT_END() /* void */
 #elif defined(__cplusplus)
-# define RBIMPL_SYMBOL_EXPORT_END() } RUBY_SYMBOL_EXPORT_END
+# define RBIMPL_SYMBOL_EXPORT_END() \
+  } \
+  RUBY_SYMBOL_EXPORT_END
 #else
-# define RBIMPL_SYMBOL_EXPORT_END()   RUBY_SYMBOL_EXPORT_END
+# define RBIMPL_SYMBOL_EXPORT_END() RUBY_SYMBOL_EXPORT_END
 #endif
 #endif /* RBIMPL_DLLEXPORT_H */

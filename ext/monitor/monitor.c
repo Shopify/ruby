@@ -24,8 +24,12 @@ monitor_memsize(const void *ptr)
 
 static const rb_data_type_t monitor_data_type = {
     "monitor",
-    {monitor_mark, RUBY_TYPED_DEFAULT_FREE, monitor_memsize,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED
+    {
+      monitor_mark,
+      RUBY_TYPED_DEFAULT_FREE,
+      monitor_memsize,
+    },
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
 };
 
 static VALUE
@@ -178,7 +182,7 @@ monitor_wait_for_cond(VALUE monitor, VALUE cond, VALUE timeout)
     };
 
     return rb_ensure(monitor_wait_for_cond_body, (VALUE)&data,
-                     monitor_enter_for_cond, (VALUE)&data);
+      monitor_enter_for_cond, (VALUE)&data);
 }
 
 static VALUE

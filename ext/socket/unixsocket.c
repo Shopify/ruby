@@ -21,32 +21,32 @@ static VALUE
 unixsock_connect_internal(VALUE a)
 {
     struct unixsock_arg *arg = (struct unixsock_arg *)a;
-    return (VALUE)rsock_connect(arg->fd, (struct sockaddr*)arg->sockaddr,
-                                arg->sockaddrlen, 0, NULL);
+    return (VALUE)rsock_connect(arg->fd, (struct sockaddr *)arg->sockaddr,
+      arg->sockaddrlen, 0, NULL);
 }
 
 static VALUE
 unixsock_path_value(VALUE path)
 {
-#ifdef __linux__
-#define TO_STR_FOR_LINUX_ABSTRACT_NAMESPACE 0
+# ifdef __linux__
+#  define TO_STR_FOR_LINUX_ABSTRACT_NAMESPACE 0
 
     VALUE name = path;
-#if TO_STR_FOR_LINUX_ABSTRACT_NAMESPACE
+#  if TO_STR_FOR_LINUX_ABSTRACT_NAMESPACE
     const int isstr = !NIL_P(name = rb_check_string_type(name));
-#else
+#  else
     const int isstr = RB_TYPE_P(name, T_STRING);
-#endif
+#  endif
     if (isstr) {
         if (RSTRING_LEN(name) == 0 || RSTRING_PTR(name)[0] == '\0') {
-            return name;             /* ignore encoding */
+            return name; /* ignore encoding */
         }
     }
-#endif
-#ifdef _WIN32
+# endif
+# ifdef _WIN32
     /* UNIXSocket requires UTF-8 per spec. */
     path = rb_str_export_to_enc(path, rb_utf8_encoding());
-#endif
+# endif
     return rb_get_path(path);
 }
 
@@ -63,7 +63,7 @@ rsock_init_unixsock(VALUE sock, VALUE path, int server)
     INIT_SOCKADDR_UN(&sockaddr, sizeof(struct sockaddr_un));
     if (sizeof(sockaddr.sun_path) < (size_t)RSTRING_LEN(path)) {
         rb_raise(rb_eArgError, "too long unix socket path (%ldbytes given but %dbytes max)",
-            RSTRING_LEN(path), (int)sizeof(sockaddr.sun_path));
+          RSTRING_LEN(path), (int)sizeof(sockaddr.sun_path));
     }
     memcpy(sockaddr.sun_path, RSTRING_PTR(path), RSTRING_LEN(path));
     sockaddrlen = rsock_unix_sockaddr_len(path);
@@ -74,7 +74,7 @@ rsock_init_unixsock(VALUE sock, VALUE path, int server)
     }
 
     if (server) {
-        status = bind(fd, (struct sockaddr*)&sockaddr, sockaddrlen);
+        status = bind(fd, (struct sockaddr *)&sockaddr, sockaddrlen);
     }
     else {
         int prot;
@@ -150,7 +150,7 @@ unix_path(VALUE sock)
         struct sockaddr_un addr;
         socklen_t len = (socklen_t)sizeof(addr);
         socklen_t len0 = len;
-        if (getsockname(fptr->fd, (struct sockaddr*)&addr, &len) < 0)
+        if (getsockname(fptr->fd, (struct sockaddr *)&addr, &len) < 0)
             rsock_sys_fail_path("getsockname(2)", fptr->pathv);
         if (len0 < len) len = len0;
         fptr->pathv = rb_obj_freeze(rsock_unixpath_str(&addr, len));
@@ -190,24 +190,24 @@ unix_recvfrom(int argc, VALUE *argv, VALUE sock)
     return rsock_s_recvfrom(sock, argc, argv, RECV_UNIX);
 }
 
-#if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL) && defined(SCM_RIGHTS)
-#define FD_PASSING_BY_MSG_CONTROL 1
-#else
-#define FD_PASSING_BY_MSG_CONTROL 0
-#endif
+# if defined(HAVE_STRUCT_MSGHDR_MSG_CONTROL) && defined(SCM_RIGHTS)
+#  define FD_PASSING_BY_MSG_CONTROL 1
+# else
+#  define FD_PASSING_BY_MSG_CONTROL 0
+# endif
 
-#if defined(HAVE_STRUCT_MSGHDR_MSG_ACCRIGHTS)
-#define FD_PASSING_BY_MSG_ACCRIGHTS 1
-#else
-#define FD_PASSING_BY_MSG_ACCRIGHTS 0
-#endif
+# if defined(HAVE_STRUCT_MSGHDR_MSG_ACCRIGHTS)
+#  define FD_PASSING_BY_MSG_ACCRIGHTS 1
+# else
+#  define FD_PASSING_BY_MSG_ACCRIGHTS 0
+# endif
 
 struct iomsg_arg {
     int fd;
     struct msghdr msg;
 };
 
-#if defined(HAVE_SENDMSG) && (FD_PASSING_BY_MSG_CONTROL || FD_PASSING_BY_MSG_ACCRIGHTS)
+# if defined(HAVE_SENDMSG) && (FD_PASSING_BY_MSG_CONTROL || FD_PASSING_BY_MSG_ACCRIGHTS)
 static VALUE
 sendmsg_blocking(void *data)
 {
@@ -242,12 +242,12 @@ unix_send_io(VALUE sock, VALUE val)
     struct iovec vec[1];
     char buf[1];
 
-#if FD_PASSING_BY_MSG_CONTROL
+#  if FD_PASSING_BY_MSG_CONTROL
     union {
         struct cmsghdr hdr;
-        char pad[sizeof(struct cmsghdr)+8+sizeof(int)+8];
+        char pad[sizeof(struct cmsghdr) + 8 + sizeof(int) + 8];
     } cmsg;
-#endif
+#  endif
 
     if (rb_obj_is_kind_of(val, rb_cIO)) {
         rb_io_t *valfptr;
@@ -273,19 +273,19 @@ unix_send_io(VALUE sock, VALUE val)
     arg.msg.msg_iov = vec;
     arg.msg.msg_iovlen = 1;
 
-#if FD_PASSING_BY_MSG_CONTROL
+#  if FD_PASSING_BY_MSG_CONTROL
     arg.msg.msg_control = (caddr_t)&cmsg;
     arg.msg.msg_controllen = (socklen_t)CMSG_LEN(sizeof(int));
     arg.msg.msg_flags = 0;
-    MEMZERO((char*)&cmsg, char, sizeof(cmsg));
+    MEMZERO((char *)&cmsg, char, sizeof(cmsg));
     cmsg.hdr.cmsg_len = (socklen_t)CMSG_LEN(sizeof(int));
     cmsg.hdr.cmsg_level = SOL_SOCKET;
     cmsg.hdr.cmsg_type = SCM_RIGHTS;
     memcpy(CMSG_DATA(&cmsg.hdr), &fd, sizeof(int));
-#else
+#  else
     arg.msg.msg_accrights = (caddr_t)&fd;
     arg.msg.msg_accrightslen = sizeof(fd);
-#endif
+#  endif
 
     arg.fd = fptr->fd;
     while ((int)BLOCKING_REGION_FD(sendmsg_blocking, &arg) == -1) {
@@ -295,11 +295,11 @@ unix_send_io(VALUE sock, VALUE val)
 
     return Qnil;
 }
-#else
-#define unix_send_io rb_f_notimplement
-#endif
+# else
+#  define unix_send_io rb_f_notimplement
+# endif
 
-#if defined(HAVE_RECVMSG) && (FD_PASSING_BY_MSG_CONTROL || FD_PASSING_BY_MSG_ACCRIGHTS)
+# if defined(HAVE_RECVMSG) && (FD_PASSING_BY_MSG_CONTROL || FD_PASSING_BY_MSG_ACCRIGHTS)
 static VALUE
 recvmsg_blocking(void *data)
 {
@@ -350,12 +350,12 @@ unix_recv_io(int argc, VALUE *argv, VALUE sock)
     };
 
     int fd;
-#if FD_PASSING_BY_MSG_CONTROL
+#  if FD_PASSING_BY_MSG_CONTROL
     union {
         struct cmsghdr hdr;
-        char pad[sizeof(struct cmsghdr)+8+sizeof(int)+8];
+        char pad[sizeof(struct cmsghdr) + 8 + sizeof(int) + 8];
     } cmsg;
-#endif
+#  endif
 
     rb_scan_args(argc, argv, "02", &klass, &mode);
     if (argc == 0)
@@ -374,7 +374,7 @@ retry:
     arg.msg.msg_iov = vec;
     arg.msg.msg_iovlen = 1;
 
-#if FD_PASSING_BY_MSG_CONTROL
+#  if FD_PASSING_BY_MSG_CONTROL
     arg.msg.msg_control = (caddr_t)&cmsg;
     arg.msg.msg_controllen = (socklen_t)CMSG_SPACE(sizeof(int));
     arg.msg.msg_flags = 0;
@@ -383,11 +383,11 @@ retry:
     cmsg.hdr.cmsg_type = SCM_RIGHTS;
     fd = -1;
     memcpy(CMSG_DATA(&cmsg.hdr), &fd, sizeof(int));
-#else
+#  else
     arg.msg.msg_accrights = (caddr_t)&fd;
     arg.msg.msg_accrightslen = sizeof(fd);
     fd = -1;
-#endif
+#  endif
 
     arg.fd = fptr->fd;
     while ((int)BLOCKING_REGION_FD(recvmsg_blocking, &arg) == -1) {
@@ -408,7 +408,7 @@ retry:
             rsock_syserr_fail_path(e, "recvmsg(2)", fptr->pathv);
     }
 
-#if FD_PASSING_BY_MSG_CONTROL
+#  if FD_PASSING_BY_MSG_CONTROL
     if (arg.msg.msg_controllen < (socklen_t)sizeof(struct cmsghdr)) {
         /* FreeBSD and Linux both get here when we're out of FDs */
         if (!(gc_reason & GC_REASON_TRUNCATE)) {
@@ -417,46 +417,46 @@ retry:
             goto retry;
         }
         rb_raise(rb_eSocket,
-                 "file descriptor was not passed (msg_controllen=%d smaller than sizeof(struct cmsghdr)=%d)",
-                 (int)arg.msg.msg_controllen, (int)sizeof(struct cmsghdr));
+          "file descriptor was not passed (msg_controllen=%d smaller than sizeof(struct cmsghdr)=%d)",
+          (int)arg.msg.msg_controllen, (int)sizeof(struct cmsghdr));
     }
     if (cmsg.hdr.cmsg_level != SOL_SOCKET) {
         rb_raise(rb_eSocket,
-                 "file descriptor was not passed (cmsg_level=%d, %d expected)",
-                 cmsg.hdr.cmsg_level, SOL_SOCKET);
+          "file descriptor was not passed (cmsg_level=%d, %d expected)",
+          cmsg.hdr.cmsg_level, SOL_SOCKET);
     }
     if (cmsg.hdr.cmsg_type != SCM_RIGHTS) {
         rb_raise(rb_eSocket,
-                 "file descriptor was not passed (cmsg_type=%d, %d expected)",
-                 cmsg.hdr.cmsg_type, SCM_RIGHTS);
+          "file descriptor was not passed (cmsg_type=%d, %d expected)",
+          cmsg.hdr.cmsg_type, SCM_RIGHTS);
     }
     if (arg.msg.msg_controllen < (socklen_t)CMSG_LEN(sizeof(int))) {
         rb_raise(rb_eSocket,
-                 "file descriptor was not passed (msg_controllen=%d smaller than CMSG_LEN(sizeof(int))=%d)",
-                 (int)arg.msg.msg_controllen, (int)CMSG_LEN(sizeof(int)));
+          "file descriptor was not passed (msg_controllen=%d smaller than CMSG_LEN(sizeof(int))=%d)",
+          (int)arg.msg.msg_controllen, (int)CMSG_LEN(sizeof(int)));
     }
     if ((socklen_t)CMSG_SPACE(sizeof(int)) < arg.msg.msg_controllen) {
         rb_raise(rb_eSocket,
-                 "file descriptor was not passed (msg_controllen=%d bigger than CMSG_SPACE(sizeof(int))=%d)",
-                 (int)arg.msg.msg_controllen, (int)CMSG_SPACE(sizeof(int)));
+          "file descriptor was not passed (msg_controllen=%d bigger than CMSG_SPACE(sizeof(int))=%d)",
+          (int)arg.msg.msg_controllen, (int)CMSG_SPACE(sizeof(int)));
     }
     if (cmsg.hdr.cmsg_len != CMSG_LEN(sizeof(int))) {
         rsock_discard_cmsg_resource(&arg.msg, 0);
         rb_raise(rb_eSocket,
-                 "file descriptor was not passed (cmsg_len=%d, %d expected)",
-                 (int)cmsg.hdr.cmsg_len, (int)CMSG_LEN(sizeof(int)));
+          "file descriptor was not passed (cmsg_len=%d, %d expected)",
+          (int)cmsg.hdr.cmsg_len, (int)CMSG_LEN(sizeof(int)));
     }
-#else
+#  else
     if (arg.msg.msg_accrightslen != sizeof(fd)) {
         rb_raise(rb_eSocket,
-                 "file descriptor was not passed (accrightslen=%d, %d expected)",
-                 arg.msg.msg_accrightslen, (int)sizeof(fd));
+          "file descriptor was not passed (accrightslen=%d, %d expected)",
+          arg.msg.msg_accrightslen, (int)sizeof(fd));
     }
-#endif
+#  endif
 
-#if FD_PASSING_BY_MSG_CONTROL
+#  if FD_PASSING_BY_MSG_CONTROL
     memcpy(&fd, CMSG_DATA(&cmsg.hdr), sizeof(int));
-#endif
+#  endif
 
     rb_update_max_fd(fd);
     rb_maygvl_fd_fix_cloexec(fd);
@@ -474,9 +474,9 @@ retry:
         return rb_funcallv(klass, for_fd, ff_argc, ff_argv);
     }
 }
-#else
-#define unix_recv_io rb_f_notimplement
-#endif
+# else
+#  define unix_recv_io rb_f_notimplement
+# endif
 
 /*
  * call-seq:
@@ -499,7 +499,7 @@ unix_addr(VALUE sock)
 
     GetOpenFile(sock, fptr);
 
-    if (getsockname(fptr->fd, (struct sockaddr*)&addr, &len) < 0)
+    if (getsockname(fptr->fd, (struct sockaddr *)&addr, &len) < 0)
         rsock_sys_fail_path("getsockname(2)", fptr->pathv);
     if (len0 < len) len = len0;
     return rsock_unixaddr(&addr, len);
@@ -527,7 +527,7 @@ unix_peeraddr(VALUE sock)
 
     GetOpenFile(sock, fptr);
 
-    if (getpeername(fptr->fd, (struct sockaddr*)&addr, &len) < 0)
+    if (getpeername(fptr->fd, (struct sockaddr *)&addr, &len) < 0)
         rsock_sys_fail_path("getpeername(2)", fptr->pathv);
     if (len0 < len) len = len0;
     return rsock_unixaddr(&addr, len);

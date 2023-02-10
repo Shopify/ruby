@@ -9,8 +9,8 @@
 #endif
 
 struct __rb_wasm_asyncify_jmp_buf {
-    void* top;
-    void* end;
+    void *top;
+    void *end;
     char buffer[WASM_SETJMP_STACK_BUFFER_SIZE];
 };
 
@@ -48,7 +48,6 @@ NOINLINE(void _rb_wasm_longjmp(rb_wasm_jmp_buf *env, int payload));
 // Used by the top level Asyncify handling in wasm/runtime.c
 void *rb_wasm_handle_jmp_unwind(void);
 
-
 //
 // POSIX-compatible declarations
 //
@@ -57,7 +56,6 @@ typedef rb_wasm_jmp_buf jmp_buf;
 
 #define setjmp(env) rb_wasm_setjmp(env)
 #define longjmp(env, payload) rb_wasm_longjmp(env, payload)
-
 
 typedef void (*rb_wasm_try_catch_func_t)(void *ctx);
 
@@ -74,9 +72,9 @@ struct rb_wasm_try_catch {
 
 void
 rb_wasm_try_catch_init(struct rb_wasm_try_catch *try_catch,
-                       rb_wasm_try_catch_func_t try_f,
-                       rb_wasm_try_catch_func_t catch_f,
-                       void *context);
+  rb_wasm_try_catch_func_t try_f,
+  rb_wasm_try_catch_func_t catch_f,
+  void *context);
 
 // Run, catch longjmp thrown by run, and re-catch longjmp thrown by catch, ...
 //

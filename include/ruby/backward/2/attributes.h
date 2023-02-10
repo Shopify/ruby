@@ -1,4 +1,4 @@
-#ifndef RUBY_BACKWARD2_ATTRIBUTES_H                  /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_BACKWARD2_ATTRIBUTES_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_BACKWARD2_ATTRIBUTES_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -57,22 +57,23 @@
 #define DEPRECATED(x) RBIMPL_ATTR_DEPRECATED(("")) x
 
 #undef DEPRECATED_BY
-#define DEPRECATED_BY(n,x) RBIMPL_ATTR_DEPRECATED(("by: " # n)) x
+#define DEPRECATED_BY(n, x) RBIMPL_ATTR_DEPRECATED(("by: " #n)) x
 
 #undef DEPRECATED_TYPE
 #if defined(__GNUC__)
-# define DEPRECATED_TYPE(mesg, decl)                      \
-    _Pragma("message \"DEPRECATED_TYPE is deprecated\""); \
-    decl RBIMPL_ATTR_DEPRECATED(mseg)
+# define DEPRECATED_TYPE(mesg, decl) \
+  _Pragma("message \"DEPRECATED_TYPE is deprecated\""); \
+  decl RBIMPL_ATTR_DEPRECATED(mseg)
 #elif defined(_MSC_VER)
 # pragma deprecated(DEPRECATED_TYPE)
-# define DEPRECATED_TYPE(mesg, decl)                              \
-    __pragma(message(__FILE__"("STRINGIZE(__LINE__)"): warning: " \
-                     "DEPRECATED_TYPE is deprecated"))            \
-    decl RBIMPL_ATTR_DEPRECATED(mseg)
+# define DEPRECATED_TYPE(mesg, decl) \
+  __pragma(message(__FILE__ "(" STRINGIZE(__LINE__)"): warning: " \
+                                                   "DEPRECATED_TYPE is deprecated")) \
+    decl \
+    RBIMPL_ATTR_DEPRECATED(mseg)
 #else
-# define DEPRECATED_TYPE(mesg, decl)                    \
-    <-<-"DEPRECATED_TYPE is deprecated"->->
+# define DEPRECATED_TYPE(mesg, decl) \
+  < - < -"DEPRECATED_TYPE is deprecated"->->
 #endif
 
 #undef RUBY_CXX_DEPRECATED
@@ -106,8 +107,8 @@
 #define COLDFUNC RBIMPL_ATTR_COLD()
 
 #define PRINTF_ARGS(decl, string_index, first_to_check) \
-    RBIMPL_ATTR_FORMAT(RBIMPL_PRINTF_FORMAT, (string_index), (first_to_check)) \
-    decl
+ RBIMPL_ATTR_FORMAT(RBIMPL_PRINTF_FORMAT, (string_index), (first_to_check)) \
+ decl
 
 #undef RUBY_ATTR_ALLOC_SIZE
 #define RUBY_ATTR_ALLOC_SIZE RBIMPL_ATTR_ALLOC_SIZE
@@ -119,43 +120,45 @@
 #define RUBY_ATTR_RETURNS_NONNULL RBIMPL_ATTR_RETURNS_NONNULL()
 
 #ifndef FUNC_MINIMIZED
-#define FUNC_MINIMIZED(x) x
+# define FUNC_MINIMIZED(x) x
 #endif
 
 #ifndef FUNC_UNOPTIMIZED
-#define FUNC_UNOPTIMIZED(x) x
+# define FUNC_UNOPTIMIZED(x) x
 #endif
 
 #ifndef RUBY_ALIAS_FUNCTION_TYPE
-#define RUBY_ALIAS_FUNCTION_TYPE(type, prot, name, args) \
-    FUNC_MINIMIZED(type prot) {return (type)name args;}
+# define RUBY_ALIAS_FUNCTION_TYPE(type, prot, name, args) \
+  FUNC_MINIMIZED(type prot) { return (type)name args; }
 #endif
 
 #ifndef RUBY_ALIAS_FUNCTION_VOID
-#define RUBY_ALIAS_FUNCTION_VOID(prot, name, args) \
-    FUNC_MINIMIZED(void prot) {name args;}
+# define RUBY_ALIAS_FUNCTION_VOID(prot, name, args) \
+  FUNC_MINIMIZED(void prot) { name args; }
 #endif
 
 #ifndef RUBY_ALIAS_FUNCTION
-#define RUBY_ALIAS_FUNCTION(prot, name, args) \
-    RUBY_ALIAS_FUNCTION_TYPE(VALUE, prot, name, args)
+# define RUBY_ALIAS_FUNCTION(prot, name, args) \
+  RUBY_ALIAS_FUNCTION_TYPE(VALUE, prot, name, args)
 #endif
 
 #undef RUBY_FUNC_NONNULL
 #define RUBY_FUNC_NONNULL(n, x) RBIMPL_ATTR_NONNULL(n) x
 
-#undef  NORETURN
+#undef NORETURN
 #define NORETURN(x) RBIMPL_ATTR_NORETURN() x
 #define NORETURN_STYLE_NEW
 
 #undef PACKED_STRUCT
 #define PACKED_STRUCT(x) \
-    RBIMPL_ATTR_PACKED_STRUCT_BEGIN() x RBIMPL_ATTR_PACKED_STRUCT_END()
+ RBIMPL_ATTR_PACKED_STRUCT_BEGIN() \
+ x RBIMPL_ATTR_PACKED_STRUCT_END()
 
 #undef PACKED_STRUCT_UNALIGNED
 #define PACKED_STRUCT_UNALIGNED(x) \
-    RBIMPL_ATTR_PACKED_STRUCT_UNALIGNED_BEGIN() x \
-    RBIMPL_ATTR_PACKED_STRUCT_UNALIGNED_END()
+ RBIMPL_ATTR_PACKED_STRUCT_UNALIGNED_BEGIN() \
+ x \
+ RBIMPL_ATTR_PACKED_STRUCT_UNALIGNED_END()
 
 #undef RB_UNUSED_VAR
 #define RB_UNUSED_VAR(x) x RBIMPL_ATTR_MAYBE_UNUSED()

@@ -2,9 +2,10 @@
 
 static const rb_data_type_t test_data = {
     "typed_data",
-    {0, ruby_xfree, 0},
-    NULL, NULL,
-    0/* deferred free */,
+    { 0, ruby_xfree, 0 },
+    NULL,
+    NULL,
+    0 /* deferred free */,
 };
 
 static VALUE

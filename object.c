@@ -64,19 +64,19 @@ static VALUE rb_cFalseClass_to_s;
 
 /*! \cond INTERNAL_MACRO */
 
-#define id_eq               idEq
-#define id_eql              idEqlP
-#define id_match            idEqTilde
-#define id_inspect          idInspect
-#define id_init_copy        idInitialize_copy
-#define id_init_clone       idInitialize_clone
-#define id_init_dup         idInitialize_dup
-#define id_const_missing    idConst_missing
-#define id_to_f             idTo_f
+#define id_eq idEq
+#define id_eql idEqlP
+#define id_match idEqTilde
+#define id_inspect idInspect
+#define id_init_copy idInitialize_copy
+#define id_init_clone idInitialize_clone
+#define id_init_dup idInitialize_dup
+#define id_const_missing idConst_missing
+#define id_to_f idTo_f
 
 #define CLASS_OR_MODULE_P(obj) \
-    (!SPECIAL_CONST_P(obj) && \
-     (BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE))
+ (!SPECIAL_CONST_P(obj) && \
+   (BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE))
 
 /*! \endcond */
 
@@ -115,7 +115,7 @@ rb_obj_setup(VALUE obj, VALUE klass, VALUE type)
  *  meaningful semantics in +case+ statements.
  */
 #define case_equal rb_equal
-    /* The default implementation of #=== is
+/* The default implementation of #=== is
      * to call #== with the rb_equal() optimization. */
 
 VALUE
@@ -230,7 +230,7 @@ VALUE
 rb_class_real(VALUE cl)
 {
     while (cl &&
-        ((RBASIC(cl)->flags & FL_SINGLETON) || BUILTIN_TYPE(cl) == T_ICLASS)) {
+      ((RBASIC(cl)->flags & FL_SINGLETON) || BUILTIN_TYPE(cl) == T_ICLASS)) {
         cl = RCLASS_SUPER(cl);
     }
     return cl;
@@ -272,10 +272,10 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
     RUBY_ASSERT(!RB_TYPE_P(obj, T_CLASS) && !RB_TYPE_P(obj, T_MODULE));
 
     RUBY_ASSERT(BUILTIN_TYPE(dest) == BUILTIN_TYPE(obj));
-    rb_shape_t * src_shape = rb_shape_get_shape(obj);
+    rb_shape_t *src_shape = rb_shape_get_shape(obj);
 
     if (rb_shape_id(src_shape) == OBJ_TOO_COMPLEX_SHAPE_ID) {
-        struct rb_id_table * table = rb_id_table_create(rb_id_table_size(ROBJECT_IV_HASH(obj)));
+        struct rb_id_table *table = rb_id_table_create(rb_id_table_size(ROBJECT_IV_HASH(obj)));
 
         rb_ivar_foreach(obj, rb_obj_evacuate_ivs_to_hash_table, (st_data_t)table);
         rb_shape_set_too_complex(dest);
@@ -286,9 +286,9 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
     }
 
     uint32_t src_num_ivs = RBASIC_IV_COUNT(obj);
-    rb_shape_t * shape_to_set_on_dest = src_shape;
-    VALUE * src_buf;
-    VALUE * dest_buf;
+    rb_shape_t *shape_to_set_on_dest = src_shape;
+    VALUE *src_buf;
+    VALUE *dest_buf;
 
     if (!src_num_ivs) {
         return;
@@ -302,7 +302,7 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
     src_buf = ROBJECT_IVPTR(obj);
     dest_buf = ROBJECT_IVPTR(dest);
 
-    rb_shape_t * initial_shape = rb_shape_get_shape(dest);
+    rb_shape_t *initial_shape = rb_shape_get_shape(dest);
 
     if (initial_shape->size_pool_index != src_shape->size_pool_index) {
         RUBY_ASSERT(initial_shape->type == SHAPE_T_OBJECT);
@@ -332,9 +332,9 @@ init_copy(VALUE dest, VALUE obj)
     if (OBJ_FROZEN(dest)) {
         rb_raise(rb_eTypeError, "[bug] frozen object (%s) allocated", rb_obj_classname(dest));
     }
-    RBASIC(dest)->flags &= ~(T_MASK|FL_EXIVAR);
+    RBASIC(dest)->flags &= ~(T_MASK | FL_EXIVAR);
     // Copies the shape id from obj to dest
-    RBASIC(dest)->flags |= RBASIC(obj)->flags & (T_MASK|FL_EXIVAR);
+    RBASIC(dest)->flags |= RBASIC(obj)->flags & (T_MASK | FL_EXIVAR);
     rb_copy_wb_protected_attribute(dest, obj);
     rb_copy_generic_ivar(dest, obj);
     rb_gc_copy_finalizer(dest, obj);
@@ -352,15 +352,15 @@ special_object_p(VALUE obj)
 {
     if (SPECIAL_CONST_P(obj)) return TRUE;
     switch (BUILTIN_TYPE(obj)) {
-      case T_BIGNUM:
-      case T_FLOAT:
-      case T_SYMBOL:
-      case T_RATIONAL:
-      case T_COMPLEX:
-        /* not a comprehensive list */
-        return TRUE;
-      default:
-        return FALSE;
+        case T_BIGNUM:
+        case T_FLOAT:
+        case T_SYMBOL:
+        case T_RATIONAL:
+        case T_COMPLEX:
+            /* not a comprehensive list */
+            return TRUE;
+        default:
+            return FALSE;
     }
 }
 
@@ -368,12 +368,12 @@ static VALUE
 obj_freeze_opt(VALUE freeze)
 {
     switch (freeze) {
-      case Qfalse:
-      case Qtrue:
-      case Qnil:
-        break;
-      default:
-        rb_raise(rb_eArgError, "unexpected value for freeze: %"PRIsVALUE, rb_obj_class(freeze));
+        case Qfalse:
+        case Qtrue:
+        case Qnil:
+            break;
+        default:
+            rb_raise(rb_eArgError, "unexpected value for freeze: %" PRIsVALUE, rb_obj_class(freeze));
     }
 
     return freeze;
@@ -419,8 +419,8 @@ static VALUE
 immutable_obj_clone(VALUE obj, VALUE kwfreeze)
 {
     if (kwfreeze == Qfalse)
-        rb_raise(rb_eArgError, "can't unfreeze %"PRIsVALUE,
-                 rb_obj_class(obj));
+        rb_raise(rb_eArgError, "can't unfreeze %" PRIsVALUE,
+          rb_obj_class(obj));
     return obj;
 }
 
@@ -441,45 +441,47 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
     init_copy(clone, obj);
 
     switch (kwfreeze) {
-      case Qnil:
-        rb_funcall(clone, id_init_clone, 1, obj);
-        RBASIC(clone)->flags |= RBASIC(obj)->flags & FL_FREEZE;
-        if (RB_OBJ_FROZEN(obj)) {
-            rb_shape_transition_shape_frozen(clone);
-        }
-        break;
-      case Qtrue: {
-        static VALUE freeze_true_hash;
-        if (!freeze_true_hash) {
-            freeze_true_hash = rb_hash_new();
-            rb_gc_register_mark_object(freeze_true_hash);
-            rb_hash_aset(freeze_true_hash, ID2SYM(idFreeze), Qtrue);
-            rb_obj_freeze(freeze_true_hash);
-        }
+        case Qnil:
+            rb_funcall(clone, id_init_clone, 1, obj);
+            RBASIC(clone)->flags |= RBASIC(obj)->flags & FL_FREEZE;
+            if (RB_OBJ_FROZEN(obj)) {
+                rb_shape_transition_shape_frozen(clone);
+            }
+            break;
+        case Qtrue:
+            {
+                static VALUE freeze_true_hash;
+                if (!freeze_true_hash) {
+                    freeze_true_hash = rb_hash_new();
+                    rb_gc_register_mark_object(freeze_true_hash);
+                    rb_hash_aset(freeze_true_hash, ID2SYM(idFreeze), Qtrue);
+                    rb_obj_freeze(freeze_true_hash);
+                }
 
-        argv[0] = obj;
-        argv[1] = freeze_true_hash;
-        rb_funcallv_kw(clone, id_init_clone, 2, argv, RB_PASS_KEYWORDS);
-        RBASIC(clone)->flags |= FL_FREEZE;
-        rb_shape_transition_shape_frozen(clone);
-        break;
-      }
-      case Qfalse: {
-        static VALUE freeze_false_hash;
-        if (!freeze_false_hash) {
-            freeze_false_hash = rb_hash_new();
-            rb_gc_register_mark_object(freeze_false_hash);
-            rb_hash_aset(freeze_false_hash, ID2SYM(idFreeze), Qfalse);
-            rb_obj_freeze(freeze_false_hash);
-        }
+                argv[0] = obj;
+                argv[1] = freeze_true_hash;
+                rb_funcallv_kw(clone, id_init_clone, 2, argv, RB_PASS_KEYWORDS);
+                RBASIC(clone)->flags |= FL_FREEZE;
+                rb_shape_transition_shape_frozen(clone);
+                break;
+            }
+        case Qfalse:
+            {
+                static VALUE freeze_false_hash;
+                if (!freeze_false_hash) {
+                    freeze_false_hash = rb_hash_new();
+                    rb_gc_register_mark_object(freeze_false_hash);
+                    rb_hash_aset(freeze_false_hash, ID2SYM(idFreeze), Qfalse);
+                    rb_obj_freeze(freeze_false_hash);
+                }
 
-        argv[0] = obj;
-        argv[1] = freeze_false_hash;
-        rb_funcallv_kw(clone, id_init_clone, 2, argv, RB_PASS_KEYWORDS);
-        break;
-      }
-      default:
-        rb_bug("invalid kwfreeze passed to mutable_obj_clone");
+                argv[0] = obj;
+                argv[1] = freeze_false_hash;
+                rb_funcallv_kw(clone, id_init_clone, 2, argv, RB_PASS_KEYWORDS);
+                break;
+            }
+        default:
+            rb_bug("invalid kwfreeze passed to mutable_obj_clone");
     }
 
     return clone;
@@ -642,7 +644,7 @@ rb_any_to_s(VALUE obj)
     VALUE str;
     VALUE cname = rb_class_name(CLASS_OF(obj));
 
-    str = rb_sprintf("#<%"PRIsVALUE":%p>", cname, (void*)obj);
+    str = rb_sprintf("#<%" PRIsVALUE ":%p>", cname, (void *)obj);
 
     return str;
 }
@@ -675,13 +677,14 @@ inspect_i(st_data_t k, st_data_t v, st_data_t a)
     if (CLASS_OF(value) == 0) return ST_CONTINUE;
     if (!rb_is_instance_id(id)) return ST_CONTINUE;
     if (RSTRING_PTR(str)[0] == '-') { /* first element */
-        RSTRING_PTR(str)[0] = '#';
+        RSTRING_PTR(str)
+        [0] = '#';
         rb_str_cat2(str, " ");
     }
     else {
         rb_str_cat2(str, ", ");
     }
-    rb_str_catf(str, "%"PRIsVALUE"=", rb_id2str(id));
+    rb_str_catf(str, "%" PRIsVALUE "=", rb_id2str(id));
     rb_str_buf_append(str, rb_inspect(value));
 
     return ST_CONTINUE;
@@ -697,7 +700,8 @@ inspect_obj(VALUE obj, VALUE str, int recur)
         rb_ivar_foreach(obj, inspect_i, str);
     }
     rb_str_cat2(str, ">");
-    RSTRING_PTR(str)[0] = '#';
+    RSTRING_PTR(str)
+    [0] = '#';
 
     return str;
 }
@@ -736,7 +740,7 @@ rb_obj_inspect(VALUE obj)
         VALUE str;
         VALUE c = rb_class_name(CLASS_OF(obj));
 
-        str = rb_sprintf("-<%"PRIsVALUE":%p", c, (void*)obj);
+        str = rb_sprintf("-<%" PRIsVALUE ":%p", c, (void *)obj);
         return rb_exec_recursive(inspect_obj, obj, str);
     }
     else {
@@ -748,13 +752,13 @@ static VALUE
 class_or_module_required(VALUE c)
 {
     switch (OBJ_BUILTIN_TYPE(c)) {
-      case T_MODULE:
-      case T_CLASS:
-      case T_ICLASS:
-        break;
+        case T_MODULE:
+        case T_CLASS:
+        case T_ICLASS:
+            break;
 
-      default:
-        rb_raise(rb_eTypeError, "class or module required");
+        default:
+            rb_raise(rb_eTypeError, "class or module required");
     }
     return c;
 }
@@ -879,7 +883,6 @@ rb_obj_is_kind_of(VALUE obj, VALUE c)
     }
 }
 
-
 static VALUE
 class_search_ancestor(VALUE cl, VALUE c)
 {
@@ -899,7 +902,6 @@ rb_class_search_ancestor(VALUE cl, VALUE c)
     c = class_or_module_required(c);
     return class_search_ancestor(cl, RCLASS_ORIGIN(c));
 }
-
 
 /*
  * Document-method: inherited
@@ -1247,7 +1249,6 @@ rb_obj_frozen_p(VALUE obj)
     return RBOOL(OBJ_FROZEN(obj));
 }
 
-
 /*
  * Document-class: NilClass
  *
@@ -1338,7 +1339,6 @@ nil_match(VALUE obj1, VALUE obj2)
  *  <code>true</code> to be used in logical expressions.
  */
 
-
 /*
  * call-seq:
  *   true.to_s   ->  "true"
@@ -1351,7 +1351,6 @@ rb_true_to_s(VALUE obj)
 {
     return rb_cTrueClass_to_s;
 }
-
 
 /*
  *  call-seq:
@@ -1389,7 +1388,6 @@ true_or(VALUE obj, VALUE obj2)
     return Qtrue;
 }
 
-
 /*
  *  call-seq:
  *     true ^ obj   -> !obj
@@ -1404,7 +1402,6 @@ true_xor(VALUE obj, VALUE obj2)
 {
     return rb_obj_not(obj2);
 }
-
 
 /*
  *  Document-class: FalseClass
@@ -1444,7 +1441,6 @@ false_and(VALUE obj, VALUE obj2)
 {
     return Qfalse;
 }
-
 
 /*
  *  call-seq:
@@ -1493,7 +1489,6 @@ rb_true(VALUE obj)
  *    nil.nil?          #=> true
  */
 
-
 MJIT_FUNC_EXPORTED VALUE
 rb_false(VALUE obj)
 {
@@ -1514,7 +1509,6 @@ rb_obj_not_match(VALUE obj1, VALUE obj2)
     VALUE result = rb_funcall(obj1, id_match, 1, obj2);
     return rb_obj_not(result);
 }
-
 
 /*
  *  call-seq:
@@ -1669,14 +1663,14 @@ rb_class_inherited_p(VALUE mod, VALUE arg)
         if (arg_depth < mod_depth) {
             // check if mod < arg
             return RCLASS_SUPERCLASSES(mod)[arg_depth] == arg ?
-                Qtrue :
-                Qnil;
+              Qtrue :
+              Qnil;
         }
         else if (arg_depth > mod_depth) {
             // check if mod > arg
             return RCLASS_SUPERCLASSES(arg)[mod_depth] == mod ?
-                Qfalse :
-                Qnil;
+              Qfalse :
+              Qnil;
         }
         else {
             // Depths match, and we know they aren't equal: no relation
@@ -1717,7 +1711,6 @@ rb_mod_lt(VALUE mod, VALUE arg)
     if (mod == arg) return Qfalse;
     return rb_class_inherited_p(mod, arg);
 }
-
 
 /*
  * call-seq:
@@ -1836,7 +1829,7 @@ rb_mod_initialize_exec(VALUE module)
 
 /* :nodoc: */
 static VALUE
-rb_mod_initialize_clone(int argc, VALUE* argv, VALUE clone)
+rb_mod_initialize_clone(int argc, VALUE *argv, VALUE clone)
 {
     VALUE ret, orig, opts;
     rb_scan_args(argc, argv, "1:", &orig, &opts);
@@ -1906,8 +1899,8 @@ rb_class_initialize(int argc, VALUE *argv, VALUE klass)
 void
 rb_undefined_alloc(VALUE klass)
 {
-    rb_raise(rb_eTypeError, "allocator undefined for %"PRIsVALUE,
-             klass);
+    rb_raise(rb_eTypeError, "allocator undefined for %" PRIsVALUE,
+      klass);
 }
 
 static rb_alloc_func_t class_get_alloc_func(VALUE klass);
@@ -1940,8 +1933,8 @@ rb_class_alloc_m(VALUE klass)
 {
     rb_alloc_func_t allocator = class_get_alloc_func(klass);
     if (!rb_obj_respond_to(klass, rb_intern("allocate"), 1)) {
-        rb_raise(rb_eTypeError, "calling %"PRIsVALUE".allocate is prohibited",
-                 klass);
+        rb_raise(rb_eTypeError, "calling %" PRIsVALUE ".allocate is prohibited",
+          klass);
     }
     return class_call_alloc_func(allocator, klass);
 }
@@ -2094,18 +2087,18 @@ static const char bad_attr_name[] = "invalid attribute name `%1$s'";
 #define id_for_var(obj, name, type) id_for_setter(obj, name, type, bad_##type##_name)
 /*! \private */
 #define id_for_setter(obj, name, type, message) \
-    check_setter_id(obj, &(name), rb_is_##type##_id, rb_is_##type##_name, message, strlen(message))
+ check_setter_id(obj, &(name), rb_is_##type##_id, rb_is_##type##_name, message, strlen(message))
 static ID
 check_setter_id(VALUE obj, VALUE *pname,
-                int (*valid_id_p)(ID), int (*valid_name_p)(VALUE),
-                const char *message, size_t message_len)
+  int (*valid_id_p)(ID), int (*valid_name_p)(VALUE),
+  const char *message, size_t message_len)
 {
     ID id = rb_check_id(pname);
     VALUE name = *pname;
 
     if (id ? !valid_id_p(id) : !valid_name_p(name)) {
         rb_name_err_raise_str(rb_fstring_new(message, message_len),
-                              obj, name);
+          obj, name);
     }
     return id;
 }
@@ -2150,7 +2143,7 @@ rb_mod_attr_reader(int argc, VALUE *argv, VALUE klass)
     int i;
     VALUE names = rb_ary_new2(argc);
 
-    for (i=0; i<argc; i++) {
+    for (i = 0; i < argc; i++) {
         ID id = id_for_attr(klass, argv[i]);
         rb_attr(klass, id, TRUE, FALSE, TRUE);
         rb_ary_push(names, ID2SYM(id));
@@ -2206,7 +2199,7 @@ rb_mod_attr_writer(int argc, VALUE *argv, VALUE klass)
     int i;
     VALUE names = rb_ary_new2(argc);
 
-    for (i=0; i<argc; i++) {
+    for (i = 0; i < argc; i++) {
         ID id = id_for_attr(klass, argv[i]);
         rb_attr(klass, id, FALSE, TRUE, TRUE);
         rb_ary_push(names, ID2SYM(rb_id_attrset(id)));
@@ -2238,7 +2231,7 @@ rb_mod_attr_accessor(int argc, VALUE *argv, VALUE klass)
     int i;
     VALUE names = rb_ary_new2(argc * 2);
 
-    for (i=0; i<argc; i++) {
+    for (i = 0; i < argc; i++) {
         ID id = id_for_attr(klass, argv[i]);
 
         rb_attr(klass, id, TRUE, TRUE, TRUE);
@@ -2335,8 +2328,8 @@ rb_mod_const_get(int argc, VALUE *argv, VALUE mod)
 
         if (pbeg == p) goto wrong_name;
 
-        id = rb_check_id_cstr(pbeg, len = p-pbeg, enc);
-        beglen = pbeg-path;
+        id = rb_check_id_cstr(pbeg, len = p - pbeg, enc);
+        beglen = pbeg - path;
 
         if (p < pend && p[0] == ':') {
             if (p + 2 >= pend || p[1] != ':') goto wrong_name;
@@ -2345,8 +2338,8 @@ rb_mod_const_get(int argc, VALUE *argv, VALUE mod)
         }
 
         if (!RB_TYPE_P(mod, T_MODULE) && !RB_TYPE_P(mod, T_CLASS)) {
-            rb_raise(rb_eTypeError, "%"PRIsVALUE" does not refer to class/module",
-                     QUOTE(name));
+            rb_raise(rb_eTypeError, "%" PRIsVALUE " does not refer to class/module",
+              QUOTE(name));
         }
 
         if (!id) {
@@ -2386,7 +2379,7 @@ rb_mod_const_get(int argc, VALUE *argv, VALUE mod)
 
     return mod;
 
-  wrong_name:
+wrong_name:
     rb_name_err_raise(wrong_constant_name, mod, name);
     UNREACHABLE_RETURN(Qundef);
 }
@@ -2508,8 +2501,8 @@ rb_mod_const_defined(int argc, VALUE *argv, VALUE mod)
 
         if (pbeg == p) goto wrong_name;
 
-        id = rb_check_id_cstr(pbeg, len = p-pbeg, enc);
-        beglen = pbeg-path;
+        id = rb_check_id_cstr(pbeg, len = p - pbeg, enc);
+        beglen = pbeg - path;
 
         if (p < pend && p[0] == ':') {
             if (p + 2 >= pend || p[1] != ':') goto wrong_name;
@@ -2558,14 +2551,14 @@ rb_mod_const_defined(int argc, VALUE *argv, VALUE mod)
 #endif
 
         if (p < pend && !RB_TYPE_P(mod, T_MODULE) && !RB_TYPE_P(mod, T_CLASS)) {
-            rb_raise(rb_eTypeError, "%"PRIsVALUE" does not refer to class/module",
-                     QUOTE(name));
+            rb_raise(rb_eTypeError, "%" PRIsVALUE " does not refer to class/module",
+              QUOTE(name));
         }
     }
 
     return Qtrue;
 
-  wrong_name:
+wrong_name:
     rb_name_err_raise(wrong_constant_name, mod, name);
     UNREACHABLE_RETURN(Qundef);
 }
@@ -2668,8 +2661,8 @@ rb_mod_const_source_location(int argc, VALUE *argv, VALUE mod)
 
         if (pbeg == p) goto wrong_name;
 
-        id = rb_check_id_cstr(pbeg, len = p-pbeg, enc);
-        beglen = pbeg-path;
+        id = rb_check_id_cstr(pbeg, len = p - pbeg, enc);
+        beglen = pbeg - path;
 
         if (p < pend && p[0] == ':') {
             if (p + 2 >= pend || p[1] != ':') goto wrong_name;
@@ -2700,8 +2693,8 @@ rb_mod_const_source_location(int argc, VALUE *argv, VALUE mod)
                 mod = rb_const_get_at(mod, id);
             }
             if (!RB_TYPE_P(mod, T_MODULE) && !RB_TYPE_P(mod, T_CLASS)) {
-                rb_raise(rb_eTypeError, "%"PRIsVALUE" does not refer to class/module",
-                         QUOTE(name));
+                rb_raise(rb_eTypeError, "%" PRIsVALUE " does not refer to class/module",
+                  QUOTE(name));
             }
         }
         else {
@@ -2718,7 +2711,7 @@ rb_mod_const_source_location(int argc, VALUE *argv, VALUE mod)
 
     return loc;
 
-  wrong_name:
+wrong_name:
     rb_name_err_raise(wrong_constant_name, mod, name);
     UNREACHABLE_RETURN(Qundef);
 }
@@ -2841,7 +2834,7 @@ rb_mod_cvar_get(VALUE obj, VALUE iv)
 
     if (!id) {
         rb_name_err_raise("uninitialized class variable %1$s in %2$s",
-                          obj, iv);
+          obj, iv);
     }
     return rb_cvar_get(obj, id);
 }
@@ -2926,7 +2919,10 @@ static const struct conv_method_tbl {
     const char method[6];
     unsigned short id;
 } conv_method_names[] = {
-#define M(n) {#n, (unsigned short)idTo_##n}
+#define M(n) \
+ { \
+#  n, (unsigned short)idTo_##n \
+ }
     M(int),
     M(ary),
     M(str),
@@ -2948,12 +2944,12 @@ conv_method_index(const char *method)
 {
     static const char prefix[] = "to_";
 
-    if (strncmp(prefix, method, sizeof(prefix)-1) == 0) {
-        const char *const meth = &method[sizeof(prefix)-1];
+    if (strncmp(prefix, method, sizeof(prefix) - 1) == 0) {
+        const char *const meth = &method[sizeof(prefix) - 1];
         int i;
-        for (i=0; i < numberof(conv_method_names); i++) {
+        for (i = 0; i < numberof(conv_method_names); i++) {
             if (conv_method_names[i].method[0] == meth[0] &&
-                strcmp(conv_method_names[i].method, meth) == 0) {
+              strcmp(conv_method_names[i].method, meth) == 0) {
                 return i;
             }
         }
@@ -2968,18 +2964,18 @@ convert_type_with_id(VALUE val, const char *tname, ID method, int raise, int ind
     if (UNDEF_P(r)) {
         if (raise) {
             const char *msg =
-                ((index < 0 ? conv_method_index(rb_id2name(method)) : index)
-                 < IMPLICIT_CONVERSIONS) ?
-                "no implicit conversion of" : "can't convert";
+              ((index < 0 ? conv_method_index(rb_id2name(method)) : index) < IMPLICIT_CONVERSIONS) ?
+              "no implicit conversion of" :
+              "can't convert";
             const char *cname = NIL_P(val) ? "nil" :
-                val == Qtrue ? "true" :
-                val == Qfalse ? "false" :
-                NULL;
+              val == Qtrue                 ? "true" :
+              val == Qfalse                ? "false" :
+                                             NULL;
             if (cname)
                 rb_raise(rb_eTypeError, "%s %s into %s", msg, cname, tname);
-            rb_raise(rb_eTypeError, "%s %"PRIsVALUE" into %s", msg,
-                     rb_obj_class(val),
-                     tname);
+            rb_raise(rb_eTypeError, "%s %" PRIsVALUE " into %s", msg,
+              rb_obj_class(val),
+              tname);
         }
         return Qnil;
     }
@@ -2991,7 +2987,8 @@ convert_type(VALUE val, const char *tname, const char *method, int raise)
 {
     int i = conv_method_index(method);
     ID m = i < numberof(conv_method_names) ?
-        conv_method_names[i].id : rb_intern(method);
+      conv_method_names[i].id :
+      rb_intern(method);
     return convert_type_with_id(val, tname, m, raise, i);
 }
 
@@ -3002,8 +2999,8 @@ conversion_mismatch(VALUE val, const char *tname, const char *method, VALUE resu
 {
     VALUE cname = rb_obj_class(val);
     rb_raise(rb_eTypeError,
-             "can't convert %"PRIsVALUE" to %s (%"PRIsVALUE"#%s gives %"PRIsVALUE")",
-             cname, tname, cname, method, rb_obj_class(result));
+      "can't convert %" PRIsVALUE " to %s (%" PRIsVALUE "#%s gives %" PRIsVALUE ")",
+      cname, tname, cname, method, rb_obj_class(result));
 }
 
 VALUE
@@ -3065,7 +3062,7 @@ rb_check_convert_type_with_id(VALUE val, int type, const char *tname, ID method)
 }
 
 #define try_to_int(val, mid, raise) \
-    convert_type_with_id(val, "Integer", mid, raise, -1)
+ convert_type_with_id(val, "Integer", mid, raise, -1)
 
 ALWAYS_INLINE(static VALUE rb_to_integer_with_id_exception(VALUE val, const char *method, ID mid, int raise));
 /* Integer specific rb_check_convert_type_with_id */
@@ -3083,7 +3080,7 @@ rb_to_integer_with_id_exception(VALUE val, const char *method, ID mid, int raise
     return v;
 }
 #define rb_to_integer(val, method, mid) \
-    rb_to_integer_with_id_exception(val, method, mid, TRUE)
+ rb_to_integer_with_id_exception(val, method, mid, TRUE)
 
 VALUE
 rb_check_to_integer(VALUE val, const char *method)
@@ -3130,10 +3127,10 @@ rb_convert_to_integer(VALUE val, int base, int raise_exception)
     if (base) {
         tmp = rb_check_string_type(val);
 
-        if (! NIL_P(tmp)) {
-            val =  tmp;
+        if (!NIL_P(tmp)) {
+            val = tmp;
         }
-        else if (! raise_exception) {
+        else if (!raise_exception) {
             return Qnil;
         }
         else {
@@ -3189,25 +3186,26 @@ int
 rb_bool_expected(VALUE obj, const char *flagname, int raise)
 {
     switch (obj) {
-      case Qtrue:
-        return TRUE;
-      case Qfalse:
-        return FALSE;
-      default: {
-        static const char message[] = "expected true or false as %s: %+"PRIsVALUE;
-        if (raise) {
-            rb_raise(rb_eArgError, message, flagname, obj);
-        }
-        rb_warning(message, flagname, obj);
-        return !NIL_P(obj);
-      }
+        case Qtrue:
+            return TRUE;
+        case Qfalse:
+            return FALSE;
+        default:
+            {
+                static const char message[] = "expected true or false as %s: %+" PRIsVALUE;
+                if (raise) {
+                    rb_raise(rb_eArgError, message, flagname, obj);
+                }
+                rb_warning(message, flagname, obj);
+                return !NIL_P(obj);
+            }
     }
 }
 
 int
 rb_opts_exception_p(VALUE opts, int default_value)
 {
-    static const ID kwds[1] = {idException};
+    static const ID kwds[1] = { idException };
     VALUE exception;
     if (rb_get_kwargs(opts, kwds, 0, 1, &exception))
         return rb_bool_expected(exception, "exception", TRUE);
@@ -3318,7 +3316,7 @@ rb_f_integer(int argc, VALUE *argv, VALUE obj)
             narg = 2;
         }
         if (argc > narg) {
-            VALUE hash = rb_check_hash_type(argv[argc-1]);
+            VALUE hash = rb_check_hash_type(argv[argc - 1]);
             if (!NIL_P(hash)) {
                 opts = rb_extract_keywords(&hash);
                 if (!hash) --argc;
@@ -3339,10 +3337,10 @@ rb_cstr_to_dbl_raise(const char *p, int badcheck, int raise, int *error)
     double d;
     const char *ellipsis = "";
     int w;
-    enum {max_width = 20};
+    enum { max_width = 20 };
 #define OutOfRange() ((end - p > max_width) ? \
-                      (w = max_width, ellipsis = "...") : \
-                      (w = (int)(end - p), ellipsis = ""))
+    (w = max_width, ellipsis = "...") : \
+    (w = (int)(end - p), ellipsis = ""))
 
     if (!p) return 0.0;
     q = p;
@@ -3372,10 +3370,14 @@ rb_cstr_to_dbl_raise(const char *p, int badcheck, int raise, int *error)
         char prev = 0;
         int dot_seen = FALSE;
 
-        switch (*p) {case '+': case '-': prev = *n++ = *p++;}
+        switch (*p) {
+            case '+':
+            case '-': prev = *n++ = *p++;
+        }
         if (*p == '0') {
             prev = *n++ = '0';
-            while (*++p == '0');
+            while (*++p == '0')
+                ;
         }
         while (p < end && n < e) prev = *n++ = *p++;
         while (*p) {
@@ -3390,10 +3392,14 @@ rb_cstr_to_dbl_raise(const char *p, int badcheck, int raise, int *error)
             if (e == init_e && (prev == 'e' || prev == 'E' || prev == 'p' || prev == 'P')) {
                 e = buf + sizeof(buf) - 1;
                 *n++ = prev;
-                switch (*p) {case '+': case '-': prev = *n++ = *p++;}
+                switch (*p) {
+                    case '+':
+                    case '-': prev = *n++ = *p++;
+                }
                 if (*p == '0') {
                     prev = *n++ = '0';
-                    while (*++p == '0');
+                    while (*++p == '0')
+                        ;
                 }
                 continue;
             }
@@ -3436,7 +3442,7 @@ rb_cstr_to_dbl_raise(const char *p, int badcheck, int raise, int *error)
     }
     return d;
 
-  bad:
+bad:
     if (raise) {
         rb_invalid_str(q, "Float()");
         UNREACHABLE_RETURN(nan(""));
@@ -3473,7 +3479,7 @@ rb_str_to_dbl_raise(VALUE str, int badcheck, int raise, int *error)
                 return 0.0;
             }
         }
-        if (s[len]) {		/* no sentinel somehow */
+        if (s[len]) { /* no sentinel somehow */
             char *p = ALLOCV(v, (size_t)len + 1);
             MEMCPY(p, s, char, len);
             p[len] = '\0';
@@ -3498,11 +3504,11 @@ rb_str_to_dbl(VALUE str, int badcheck)
 #define fix2dbl_without_to_f(x) (double)FIX2LONG(x)
 #define big2dbl_without_to_f(x) rb_big2dbl(x)
 #define int2dbl_without_to_f(x) \
-    (FIXNUM_P(x) ? fix2dbl_without_to_f(x) : big2dbl_without_to_f(x))
+ (FIXNUM_P(x) ? fix2dbl_without_to_f(x) : big2dbl_without_to_f(x))
 #define num2dbl_without_to_f(x) \
-    (FIXNUM_P(x) ? fix2dbl_without_to_f(x) : \
+ (FIXNUM_P(x)            ? fix2dbl_without_to_f(x) : \
      RB_BIGNUM_TYPE_P(x) ? big2dbl_without_to_f(x) : \
-     (Check_Type(x, T_FLOAT), RFLOAT_VALUE(x)))
+                           (Check_Type(x, T_FLOAT), RFLOAT_VALUE(x)))
 static inline double
 rat2dbl_without_to_f(VALUE x)
 {
@@ -3512,14 +3518,14 @@ rat2dbl_without_to_f(VALUE x)
 }
 
 #define special_const_to_float(val, pre, post) \
-    switch (val) { \
-      case Qnil: \
-        rb_raise_static(rb_eTypeError, pre "nil" post); \
-      case Qtrue: \
-        rb_raise_static(rb_eTypeError, pre "true" post); \
-      case Qfalse: \
-        rb_raise_static(rb_eTypeError, pre "false" post); \
-    }
+ switch (val) { \
+  case Qnil: \
+   rb_raise_static(rb_eTypeError, pre "nil" post); \
+  case Qtrue: \
+   rb_raise_static(rb_eTypeError, pre "true" post); \
+  case Qfalse: \
+   rb_raise_static(rb_eTypeError, pre "false" post); \
+ }
 /*! \endcond */
 
 static inline void
@@ -3553,16 +3559,16 @@ to_float(VALUE *valp, int raise_exception)
     else {
         int type = BUILTIN_TYPE(val);
         switch (type) {
-          case T_FLOAT:
-            return T_FLOAT;
-          case T_BIGNUM:
-            *valp = DBL2NUM(big2dbl_without_to_f(val));
-            return T_FLOAT;
-          case T_RATIONAL:
-            *valp = DBL2NUM(rat2dbl_without_to_f(val));
-            return T_FLOAT;
-          case T_STRING:
-            return T_STRING;
+            case T_FLOAT:
+                return T_FLOAT;
+            case T_BIGNUM:
+                *valp = DBL2NUM(big2dbl_without_to_f(val));
+                return T_FLOAT;
+            case T_RATIONAL:
+                *valp = DBL2NUM(rat2dbl_without_to_f(val));
+                return T_FLOAT;
+            case T_STRING:
+                return T_STRING;
         }
     }
     return T_NONE;
@@ -3578,18 +3584,18 @@ static VALUE
 rb_convert_to_float(VALUE val, int raise_exception)
 {
     switch (to_float(&val, raise_exception)) {
-      case T_FLOAT:
-        return val;
-      case T_STRING:
-        if (!raise_exception) {
-            int e = 0;
-            double x = rb_str_to_dbl_raise(val, TRUE, raise_exception, &e);
-            return e ? Qnil : DBL2NUM(x);
-        }
-        return DBL2NUM(rb_str_to_dbl(val, TRUE));
-      case T_NONE:
-        if (SPECIAL_CONST_P(val) && !raise_exception)
-            return Qnil;
+        case T_FLOAT:
+            return val;
+        case T_STRING:
+            if (!raise_exception) {
+                int e = 0;
+                double x = rb_str_to_dbl_raise(val, TRUE, raise_exception, &e);
+                return e ? Qnil : DBL2NUM(x);
+            }
+            return DBL2NUM(rb_str_to_dbl(val, TRUE));
+        case T_NONE:
+            if (SPECIAL_CONST_P(val) && !raise_exception)
+                return Qnil;
     }
 
     if (!raise_exception) {
@@ -3627,8 +3633,8 @@ static VALUE
 numeric_to_float(VALUE val)
 {
     if (!rb_obj_is_kind_of(val, rb_cNumeric)) {
-        rb_raise(rb_eTypeError, "can't convert %"PRIsVALUE" into Float",
-                 rb_obj_class(val));
+        rb_raise(rb_eTypeError, "can't convert %" PRIsVALUE " into Float",
+          rb_obj_class(val));
     }
     return rb_convert_type_with_id(val, T_FLOAT, "Float", id_to_f);
 }
@@ -3637,8 +3643,8 @@ VALUE
 rb_to_float(VALUE val)
 {
     switch (to_float(&val, TRUE)) {
-      case T_FLOAT:
-        return val;
+        case T_FLOAT:
+            return val;
     }
     return numeric_to_float(val);
 }
@@ -3677,18 +3683,18 @@ rb_num_to_dbl(VALUE val)
     }
     else {
         switch (BUILTIN_TYPE(val)) {
-          case T_FLOAT:
-            return rb_float_noflonum_value(val);
-          case T_BIGNUM:
-            if (basic_to_f_p(rb_cInteger))
-                return big2dbl_without_to_f(val);
-            break;
-          case T_RATIONAL:
-            if (basic_to_f_p(rb_cRational))
-                return rat2dbl_without_to_f(val);
-            break;
-          default:
-            break;
+            case T_FLOAT:
+                return rb_float_noflonum_value(val);
+            case T_BIGNUM:
+                if (basic_to_f_p(rb_cInteger))
+                    return big2dbl_without_to_f(val);
+                break;
+            case T_RATIONAL:
+                if (basic_to_f_p(rb_cRational))
+                    return rat2dbl_without_to_f(val);
+                break;
+            default:
+                break;
         }
     }
     val = numeric_to_float(val);
@@ -3711,16 +3717,16 @@ rb_num2dbl(VALUE val)
     }
     else {
         switch (BUILTIN_TYPE(val)) {
-          case T_FLOAT:
-            return rb_float_noflonum_value(val);
-          case T_BIGNUM:
-            return big2dbl_without_to_f(val);
-          case T_RATIONAL:
-            return rat2dbl_without_to_f(val);
-          case T_STRING:
-            rb_raise(rb_eTypeError, "no implicit conversion to float from string");
-          default:
-            break;
+            case T_FLOAT:
+                return rb_float_noflonum_value(val);
+            case T_BIGNUM:
+                return big2dbl_without_to_f(val);
+            case T_RATIONAL:
+                return rat2dbl_without_to_f(val);
+            case T_STRING:
+                rb_raise(rb_eTypeError, "no implicit conversion to float from string");
+            default:
+                break;
         }
     }
     val = rb_convert_type_with_id(val, T_FLOAT, "Float", id_to_f);
@@ -3735,7 +3741,6 @@ rb_String(VALUE val)
         tmp = rb_convert_type_with_id(val, T_STRING, "String", idTo_s);
     return tmp;
 }
-
 
 /*
  *  call-seq:
@@ -3868,8 +3873,8 @@ static void
 no_dig_method(int found, VALUE recv, ID mid, int argc, const VALUE *argv, VALUE data)
 {
     if (!found) {
-        rb_raise(rb_eTypeError, "%"PRIsVALUE" does not have #dig method",
-                 CLASS_OF(data));
+        rb_raise(rb_eTypeError, "%" PRIsVALUE " does not have #dig method",
+          CLASS_OF(data));
     }
 }
 
@@ -3877,37 +3882,37 @@ no_dig_method(int found, VALUE recv, ID mid, int argc, const VALUE *argv, VALUE 
 VALUE
 rb_obj_dig(int argc, VALUE *argv, VALUE obj, VALUE notfound)
 {
-    struct dig_method hash = {Qnil}, ary = {Qnil}, strt = {Qnil};
+    struct dig_method hash = { Qnil }, ary = { Qnil }, strt = { Qnil };
 
     for (; argc > 0; ++argv, --argc) {
         if (NIL_P(obj)) return notfound;
         if (!SPECIAL_CONST_P(obj)) {
             switch (BUILTIN_TYPE(obj)) {
-              case T_HASH:
-                if (dig_basic_p(obj, &hash)) {
-                    obj = rb_hash_aref(obj, *argv);
-                    continue;
-                }
-                break;
-              case T_ARRAY:
-                if (dig_basic_p(obj, &ary)) {
-                    obj = rb_ary_at(obj, *argv);
-                    continue;
-                }
-                break;
-              case T_STRUCT:
-                if (dig_basic_p(obj, &strt)) {
-                    obj = rb_struct_lookup(obj, *argv);
-                    continue;
-                }
-                break;
-              default:
-                break;
+                case T_HASH:
+                    if (dig_basic_p(obj, &hash)) {
+                        obj = rb_hash_aref(obj, *argv);
+                        continue;
+                    }
+                    break;
+                case T_ARRAY:
+                    if (dig_basic_p(obj, &ary)) {
+                        obj = rb_ary_at(obj, *argv);
+                        continue;
+                    }
+                    break;
+                case T_STRUCT:
+                    if (dig_basic_p(obj, &strt)) {
+                        obj = rb_struct_lookup(obj, *argv);
+                        continue;
+                    }
+                    break;
+                default:
+                    break;
             }
         }
         return rb_check_funcall_with_hook_kw(obj, id_dig, argc, argv,
-                                          no_dig_method, obj,
-                                          RB_NO_KEYWORDS);
+          no_dig_method, obj,
+          RB_NO_KEYWORDS);
     }
     return obj;
 }
@@ -3992,7 +3997,6 @@ f_sprintf(int c, const VALUE *v, VALUE _)
  *    obj--->OtherClass---------->(OtherClass)-----------...
  *
  */
-
 
 /*  Document-class: BasicObject
  *
@@ -4371,7 +4375,7 @@ InitVM_Object(void)
     rb_define_method(rb_mKernel, "instance_variable_set", rb_obj_ivar_set_m, 2);
     rb_define_method(rb_mKernel, "instance_variable_defined?", rb_obj_ivar_defined, 1);
     rb_define_method(rb_mKernel, "remove_instance_variable",
-                     rb_obj_remove_instance_variable, 1); /* in variable.c */
+      rb_obj_remove_instance_variable, 1); /* in variable.c */
 
     rb_define_method(rb_mKernel, "instance_of?", rb_obj_is_instance_of, 1);
     rb_define_method(rb_mKernel, "kind_of?", rb_obj_is_kind_of, 1);
@@ -4406,17 +4410,17 @@ InitVM_Object(void)
     rb_define_method(rb_cModule, "freeze", rb_mod_freeze, 0);
     rb_define_method(rb_cModule, "===", rb_mod_eqq, 1);
     rb_define_method(rb_cModule, "==", rb_obj_equal, 1);
-    rb_define_method(rb_cModule, "<=>",  rb_mod_cmp, 1);
-    rb_define_method(rb_cModule, "<",  rb_mod_lt, 1);
+    rb_define_method(rb_cModule, "<=>", rb_mod_cmp, 1);
+    rb_define_method(rb_cModule, "<", rb_mod_lt, 1);
     rb_define_method(rb_cModule, "<=", rb_class_inherited_p, 1);
-    rb_define_method(rb_cModule, ">",  rb_mod_gt, 1);
+    rb_define_method(rb_cModule, ">", rb_mod_gt, 1);
     rb_define_method(rb_cModule, ">=", rb_mod_ge, 1);
     rb_define_method(rb_cModule, "initialize_copy", rb_mod_init_copy, 1); /* in class.c */
     rb_define_method(rb_cModule, "to_s", rb_mod_to_s, 0);
     rb_define_alias(rb_cModule, "inspect", "to_s");
     rb_define_method(rb_cModule, "included_modules", rb_mod_included_modules, 0); /* in class.c */
     rb_define_method(rb_cModule, "include?", rb_mod_include_p, 1); /* in class.c */
-    rb_define_method(rb_cModule, "name", rb_mod_name, 0);  /* in variable.c */
+    rb_define_method(rb_cModule, "name", rb_mod_name, 0); /* in variable.c */
     rb_define_method(rb_cModule, "ancestors", rb_mod_ancestors, 0); /* in class.c */
 
     rb_define_method(rb_cModule, "attr", rb_mod_attr, -1);
@@ -4430,13 +4434,13 @@ InitVM_Object(void)
     rb_define_method(rb_cModule, "initialize_clone", rb_mod_initialize_clone, -1);
     rb_define_method(rb_cModule, "instance_methods", rb_class_instance_methods, -1); /* in class.c */
     rb_define_method(rb_cModule, "public_instance_methods",
-                     rb_class_public_instance_methods, -1);    /* in class.c */
+      rb_class_public_instance_methods, -1); /* in class.c */
     rb_define_method(rb_cModule, "protected_instance_methods",
-                     rb_class_protected_instance_methods, -1); /* in class.c */
+      rb_class_protected_instance_methods, -1); /* in class.c */
     rb_define_method(rb_cModule, "private_instance_methods",
-                     rb_class_private_instance_methods, -1);   /* in class.c */
+      rb_class_private_instance_methods, -1); /* in class.c */
     rb_define_method(rb_cModule, "undefined_instance_methods",
-                     rb_class_undefined_instance_methods, 0); /* in class.c */
+      rb_class_undefined_instance_methods, 0); /* in class.c */
 
     rb_define_method(rb_cModule, "constants", rb_mod_constants, -1); /* in variable.c */
     rb_define_method(rb_cModule, "const_get", rb_mod_const_get, -1);
@@ -4444,13 +4448,13 @@ InitVM_Object(void)
     rb_define_method(rb_cModule, "const_defined?", rb_mod_const_defined, -1);
     rb_define_method(rb_cModule, "const_source_location", rb_mod_const_source_location, -1);
     rb_define_private_method(rb_cModule, "remove_const",
-                             rb_mod_remove_const, 1); /* in variable.c */
+      rb_mod_remove_const, 1); /* in variable.c */
     rb_define_method(rb_cModule, "const_missing",
-                     rb_mod_const_missing, 1); /* in variable.c */
+      rb_mod_const_missing, 1); /* in variable.c */
     rb_define_method(rb_cModule, "class_variables",
-                     rb_mod_class_variables, -1); /* in variable.c */
+      rb_mod_class_variables, -1); /* in variable.c */
     rb_define_method(rb_cModule, "remove_class_variable",
-                     rb_mod_remove_cvar, 1); /* in variable.c */
+      rb_mod_remove_cvar, 1); /* in variable.c */
     rb_define_method(rb_cModule, "class_variable_get", rb_mod_cvar_get, 1);
     rb_define_method(rb_cModule, "class_variable_set", rb_mod_cvar_set, 2);
     rb_define_method(rb_cModule, "class_variable_defined?", rb_mod_cvar_defined, 1);

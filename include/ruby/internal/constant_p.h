@@ -1,4 +1,4 @@
-#ifndef RBIMPL_CONSTANT_P_H                          /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_CONSTANT_P_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_CONSTANT_P_H
 /**
  * @file

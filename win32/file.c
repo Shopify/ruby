@@ -57,7 +57,7 @@ static inline size_t
 remove_invalid_alternative_data(wchar_t *wfullpath, size_t size)
 {
     static const wchar_t prime[] = L":$DATA";
-    enum { prime_len = (sizeof(prime) / sizeof(wchar_t)) -1 };
+    enum { prime_len = (sizeof(prime) / sizeof(wchar_t)) - 1 };
 
     if (size <= prime_len || _wcsnicmp(wfullpath + size - prime_len, prime, prime_len) != 0)
         return size;
@@ -189,7 +189,7 @@ replace_to_long_name(wchar_t **wfullpath, size_t size, size_t buffer_size)
     }
 
     if ((pos >= *wfullpath + 2) &&
-        (*wfullpath)[0] == L'\\' && (*wfullpath)[1] == L'\\') {
+      (*wfullpath)[0] == L'\\' && (*wfullpath)[1] == L'\\') {
         /* UNC path: no short file name, and needs Network Share
          * Management functions instead of FindFirstFile. */
         if (pos == *wfullpath + 2) {
@@ -210,7 +210,7 @@ replace_to_long_name(wchar_t **wfullpath, size_t size, size_t buffer_size)
 
         FindClose(find_handle);
         size = trail_pos + file_len;
-        if (size > (buffer_size ? buffer_size-1 : oldsize)) {
+        if (size > (buffer_size ? buffer_size - 1 : oldsize)) {
             wchar_t *buf = ALLOC_N(wchar_t, (size + 1));
             wcsncpy(buf, *wfullpath, trail_pos);
             if (!buffer_size)
@@ -248,7 +248,7 @@ append_wstr(VALUE dst, const WCHAR *ws, ssize_t len, UINT cp, rb_encoding *enc)
         rb_str_set_len(dst, olen + nlen);
     }
     else {
-        const int replaceflags = ECONV_UNDEF_REPLACE|ECONV_INVALID_REPLACE;
+        const int replaceflags = ECONV_UNDEF_REPLACE | ECONV_INVALID_REPLACE;
         char *utf8str = wstr_to_mbstr(CP_UTF8, ws, (int)len, &nlen);
         rb_econv_t *ec = rb_econv_open("UTF-8", rb_enc_name(enc), replaceflags);
         dst = rb_econv_append(ec, utf8str, nlen, dst, replaceflags);
@@ -266,7 +266,7 @@ rb_default_home_dir(VALUE result)
         rb_raise(rb_eArgError, "couldn't find HOME environment -- expanding `~'");
     }
     append_wstr(result, dir, -1,
-                       CP_UTF8, rb_utf8_encoding());
+      CP_UTF8, rb_utf8_encoding());
 
     xfree(dir);
     return result;
@@ -312,7 +312,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
 #if SIZEOF_INT < SIZEOF_LONG
         if ((long)(int)path_len != path_len) {
             rb_raise(rb_eRangeError, "path (%ld bytes) is too long",
-                     path_len);
+              path_len);
         }
 #endif
         wpath = mbstr_to_wstr(cp, RSTRING_PTR(path), path_len, &wpath_len);
@@ -322,7 +322,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
     /* determine if we need the user's home directory */
     /* expand '~' only if NOT rb_file_absolute_path() where `abs_mode` is 1 */
     if (abs_mode == 0 && wpath_len > 0 && wpath_pos[0] == L'~' &&
-        (wpath_len == 1 || IS_DIR_SEPARATOR_P(wpath_pos[1]))) {
+      (wpath_len == 1 || IS_DIR_SEPARATOR_P(wpath_pos[1]))) {
         whome = rb_w32_home_dir();
         if (whome == NULL) {
             free(wpath);
@@ -370,7 +370,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
     else if (abs_mode == 0 && wpath_len >= 2 && wpath_pos[0] == L'~') {
         result = rb_str_new_cstr("can't find user ");
         result = append_wstr(result, wpath_pos + 1, user_length_in_path(wpath_pos + 1, wpath_len - 1),
-                             path_cp, path_encoding);
+          path_cp, path_encoding);
 
         if (wpath)
             free(wpath);
@@ -392,7 +392,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
             if ((long)(int)dir_len != dir_len) {
                 if (wpath) free(wpath);
                 rb_raise(rb_eRangeError, "base directory (%ld bytes) is too long",
-                         dir_len);
+                  dir_len);
             }
 #endif
             wdir = mbstr_to_wstr(cp, RSTRING_PTR(dir), dir_len, &wdir_len);
@@ -400,7 +400,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
         }
 
         if (abs_mode == 0 && wdir_len > 0 && wdir_pos[0] == L'~' &&
-            (wdir_len == 1 || IS_DIR_SEPARATOR_P(wdir_pos[1]))) {
+          (wdir_len == 1 || IS_DIR_SEPARATOR_P(wdir_pos[1]))) {
             whome = rb_w32_home_dir();
             if (whome == NULL) {
                 free(wpath);
@@ -451,7 +451,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
         else if (abs_mode == 0 && wdir_len >= 2 && wdir_pos[0] == L'~') {
             result = rb_str_new_cstr("can't find user ");
             result = append_wstr(result, wdir_pos + 1, user_length_in_path(wdir_pos + 1, wdir_len - 1),
-                                 path_cp, path_encoding);
+              path_cp, path_encoding);
             if (wpath)
                 free(wpath);
 
@@ -478,7 +478,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
         wdir_len = 0;
     }
     else if (!ignore_dir && wpath_len >= 1 && IS_DIR_SEPARATOR_P(wpath[0]) &&
-             !dir_drive && !(wdir_len >= 2 && IS_DIR_UNC_P(wdir))) {
+      !dir_drive && !(wdir_len >= 2 && IS_DIR_UNC_P(wdir))) {
         /* ignore dir since path has root slash and dir doesn't have drive or UNC root */
         ignore_dir = 1;
         wdir_len = 0;
@@ -544,8 +544,8 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
 
     /* Remove any trailing slashes */
     if (IS_DIR_SEPARATOR_P(wfullpath[size - 1]) &&
-        wfullpath[size - 2] != L':' &&
-        !(size == 2 && IS_DIR_UNC_P(wfullpath))) {
+      wfullpath[size - 2] != L':' &&
+      !(size == 2 && IS_DIR_UNC_P(wfullpath))) {
         size -= 1;
         wfullpath[size] = L'\0';
     }
@@ -598,20 +598,20 @@ rb_file_load_ok(const char *path)
     DWORD attr;
     int ret = 1;
     long len;
-    wchar_t* wpath;
+    wchar_t *wpath;
 
     wpath = mbstr_to_wstr(CP_UTF8, path, -1, &len);
     if (!wpath) return 0;
 
     attr = GetFileAttributesW(wpath);
     if (attr == INVALID_FILE_ATTRIBUTES ||
-        (attr & FILE_ATTRIBUTE_DIRECTORY)) {
+      (attr & FILE_ATTRIBUTE_DIRECTORY)) {
         ret = 0;
     }
     else {
         HANDLE h = CreateFileW(wpath, GENERIC_READ,
-                               FILE_SHARE_READ | FILE_SHARE_WRITE,
-                               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+          FILE_SHARE_READ | FILE_SHARE_WRITE,
+          NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (h != INVALID_HANDLE_VALUE) {
             CloseHandle(h);
         }

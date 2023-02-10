@@ -23,7 +23,7 @@ test_select(VALUE self)
     FD_SET(sd, &write);
     FD_SET(sd, &error);
 
-    select(sd+1, &read, &write, &error, &zero);
+    select(sd + 1, &read, &write, &error, &zero);
 
     return Qtrue;
 }

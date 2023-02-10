@@ -24,7 +24,7 @@ struct traceobj_arg {
     VALUE newobj_trace;
     VALUE freeobj_trace;
     st_table *object_table; /* obj (VALUE) -> allocation_info */
-    st_table *str_table;    /* cstr -> refcount */
+    st_table *str_table; /* cstr -> refcount */
     struct traceobj_arg *prev_traceobj_arg;
 };
 
@@ -39,12 +39,12 @@ make_unique_str(st_table *tbl, const char *str, long len)
         char *result;
 
         if (st_lookup(tbl, (st_data_t)str, &n)) {
-            st_insert(tbl, (st_data_t)str, n+1);
+            st_insert(tbl, (st_data_t)str, n + 1);
             st_get_key(tbl, (st_data_t)str, &n);
             result = (char *)n;
         }
         else {
-            result = (char *)ruby_xmalloc(len+1);
+            result = (char *)ruby_xmalloc(len + 1);
             strncpy(result, str, len);
             result[len] = 0;
             st_add_direct(tbl, (st_data_t)result, 1);
@@ -66,7 +66,7 @@ delete_unique_str(st_table *tbl, const char *str)
             ruby_xfree((char *)n);
         }
         else {
-            st_insert(tbl, (st_data_t)str, n-1);
+            st_insert(tbl, (st_data_t)str, n - 1);
         }
     }
 }
@@ -216,7 +216,7 @@ allocation_info_tracer_compact(void *ptr)
     struct traceobj_arg *trace_arg = (struct traceobj_arg *)ptr;
 
     if (trace_arg->object_table &&
-            st_foreach_with_replace(trace_arg->object_table, hash_foreach_should_replace_key, hash_replace_key, 0)) {
+      st_foreach_with_replace(trace_arg->object_table, hash_foreach_should_replace_key, hash_replace_key, 0)) {
         rb_raise(rb_eRuntimeError, "hash modified during iteration");
     }
 }
@@ -224,17 +224,17 @@ allocation_info_tracer_compact(void *ptr)
 static const rb_data_type_t allocation_info_tracer_type = {
     "ObjectTracing/allocation_info_tracer",
     {
-        allocation_info_tracer_mark,
-        allocation_info_tracer_free, /* Never called because global */
-        allocation_info_tracer_memsize,
-        allocation_info_tracer_compact,
+      allocation_info_tracer_mark,
+      allocation_info_tracer_free, /* Never called because global */
+      allocation_info_tracer_memsize,
+      allocation_info_tracer_compact,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
 static VALUE traceobj_arg;
 static struct traceobj_arg *tmp_trace_arg; /* TODO: Do not use global variables */
-static int tmp_keep_remains;               /* TODO: Do not use global variables */
+static int tmp_keep_remains; /* TODO: Do not use global variables */
 
 static struct traceobj_arg *
 get_traceobj_arg(void)
@@ -377,8 +377,10 @@ object_allocations_reporter_i(st_data_t key, st_data_t val, st_data_t ptr)
     struct allocation_info *info = (struct allocation_info *)val;
 
     fprintf(out, "-- %p (%s F: %p, ", (void *)obj, info->living ? "live" : "dead", (void *)info->flags);
-    if (info->class_path) fprintf(out, "C: %s", info->class_path);
-    else                  fprintf(out, "C: %p", (void *)info->klass);
+    if (info->class_path)
+        fprintf(out, "C: %s", info->class_path);
+    else
+        fprintf(out, "C: %p", (void *)info->klass);
     fprintf(out, "@%s:%lu", info->path ? info->path : "", info->line);
     if (!NIL_P(info->mid)) {
         VALUE m = rb_sym2str(info->mid);

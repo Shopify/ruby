@@ -24,7 +24,11 @@ static VALUE folevariable_inspect(VALUE self);
 
 static const rb_data_type_t olevariable_datatype = {
     "win32ole_variable",
-    {NULL, olevariable_free, olevariable_size,},
+    {
+      NULL,
+      olevariable_free,
+      olevariable_size,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -53,7 +57,7 @@ create_win32ole_variable(ITypeInfo *pTypeInfo, UINT index, VALUE name)
 {
     struct olevariabledata *pvar;
     VALUE obj = TypedData_Make_Struct(cWIN32OLE_VARIABLE, struct olevariabledata,
-                                      &olevariable_datatype, pvar);
+      &olevariable_datatype, pvar);
     pvar->pTypeInfo = pTypeInfo;
     OLE_ADDREF(pTypeInfo);
     pvar->index = index;
@@ -172,7 +176,7 @@ ole_variable_value(ITypeInfo *pTypeInfo, UINT var_index)
     hr = pTypeInfo->lpVtbl->GetVarDesc(pTypeInfo, var_index, &pVarDesc);
     if (FAILED(hr))
         return Qnil;
-    if(pVarDesc->varkind == VAR_CONST)
+    if (pVarDesc->varkind == VAR_CONST)
         val = ole_variant2val(V_UNION1(pVarDesc, lpvarValue));
     pTypeInfo->lpVtbl->ReleaseVarDesc(pTypeInfo, pVarDesc);
     return val;
@@ -216,9 +220,7 @@ ole_variable_visible(ITypeInfo *pTypeInfo, UINT var_index)
     hr = pTypeInfo->lpVtbl->GetVarDesc(pTypeInfo, var_index, &pVarDesc);
     if (FAILED(hr))
         return visible;
-    if (!(pVarDesc->wVarFlags & (VARFLAG_FHIDDEN |
-                                 VARFLAG_FRESTRICTED |
-                                 VARFLAG_FNONBROWSABLE))) {
+    if (!(pVarDesc->wVarFlags & (VARFLAG_FHIDDEN | VARFLAG_FRESTRICTED | VARFLAG_FNONBROWSABLE))) {
         visible = Qtrue;
     }
     pTypeInfo->lpVtbl->ReleaseVarDesc(pTypeInfo, pVarDesc);
@@ -262,21 +264,21 @@ ole_variable_kind(ITypeInfo *pTypeInfo, UINT var_index)
     hr = pTypeInfo->lpVtbl->GetVarDesc(pTypeInfo, var_index, &pVarDesc);
     if (FAILED(hr))
         return kind;
-    switch(pVarDesc->varkind) {
-    case VAR_PERINSTANCE:
-        kind = rb_str_new2("PERINSTANCE");
-        break;
-    case VAR_STATIC:
-        kind = rb_str_new2("STATIC");
-        break;
-    case VAR_CONST:
-        kind = rb_str_new2("CONSTANT");
-        break;
-    case VAR_DISPATCH:
-        kind = rb_str_new2("DISPATCH");
-        break;
-    default:
-        break;
+    switch (pVarDesc->varkind) {
+        case VAR_PERINSTANCE:
+            kind = rb_str_new2("PERINSTANCE");
+            break;
+        case VAR_STATIC:
+            kind = rb_str_new2("STATIC");
+            break;
+        case VAR_CONST:
+            kind = rb_str_new2("CONSTANT");
+            break;
+        case VAR_DISPATCH:
+            kind = rb_str_new2("DISPATCH");
+            break;
+        default:
+            break;
     }
     pTypeInfo->lpVtbl->ReleaseVarDesc(pTypeInfo, pVarDesc);
     return kind;
@@ -361,13 +363,14 @@ folevariable_inspect(VALUE self)
 {
     VALUE v = rb_inspect(folevariable_value(self));
     VALUE n = folevariable_name(self);
-    VALUE detail = rb_sprintf("%"PRIsVALUE"=%"PRIsVALUE, n, v);
+    VALUE detail = rb_sprintf("%" PRIsVALUE "=%" PRIsVALUE, n, v);
     return make_inspect("WIN32OLE_VARIABLE", detail);
 }
 
 VALUE cWIN32OLE_VARIABLE;
 
-void Init_win32ole_variable(void)
+void
+Init_win32ole_variable(void)
 {
     cWIN32OLE_VARIABLE = rb_define_class_under(cWIN32OLE, "Variable", rb_cObject);
     rb_define_const(rb_cObject, "WIN32OLE_VARIABLE", cWIN32OLE_VARIABLE);

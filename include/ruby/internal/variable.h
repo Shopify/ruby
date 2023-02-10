@@ -1,4 +1,4 @@
-#ifndef RBIMPL_VARIABLE_H                            /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_VARIABLE_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_VARIABLE_H
 /**
  * @file
@@ -43,14 +43,14 @@ typedef VALUE rb_gvar_getter_t(ID id, VALUE *data);
  * @param[in]      id    The variable name.
  * @param[in,out]  data  Where the value is to be stored.
  */
-typedef void  rb_gvar_setter_t(VALUE val, ID id, VALUE *data);
+typedef void rb_gvar_setter_t(VALUE val, ID id, VALUE *data);
 
 /**
  * Type that represents a global variable marker function.
  *
  * @param[in]  var  Where the value is to be stored.
  */
-typedef void  rb_gvar_marker_t(VALUE *var);
+typedef void rb_gvar_marker_t(VALUE *var);
 
 /**
  * @deprecated

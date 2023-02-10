@@ -69,60 +69,60 @@
 
 #if USE_MJIT
 
-#include "constant.h"
-#include "id_table.h"
-#include "internal.h"
-#include "internal/class.h"
-#include "internal/cmdlineopt.h"
-#include "internal/cont.h"
-#include "internal/file.h"
-#include "internal/hash.h"
-#include "internal/process.h"
-#include "internal/warnings.h"
-#include "vm_sync.h"
-#include "ractor_core.h"
+# include "constant.h"
+# include "id_table.h"
+# include "internal.h"
+# include "internal/class.h"
+# include "internal/cmdlineopt.h"
+# include "internal/cont.h"
+# include "internal/file.h"
+# include "internal/hash.h"
+# include "internal/process.h"
+# include "internal/warnings.h"
+# include "vm_sync.h"
+# include "ractor_core.h"
 
-#ifdef __sun
-#define __EXTENSIONS__ 1
-#endif
+# ifdef __sun
+#  define __EXTENSIONS__ 1
+# endif
 
-#include "vm_core.h"
-#include "vm_callinfo.h"
-#include "mjit.h"
-#include "mjit_c.h"
-#include "gc.h"
-#include "ruby_assert.h"
-#include "ruby/debug.h"
-#include "ruby/thread.h"
-#include "ruby/version.h"
-#include "builtin.h"
-#include "insns.inc"
-#include "insns_info.inc"
-#include "internal/compile.h"
+# include "vm_core.h"
+# include "vm_callinfo.h"
+# include "mjit.h"
+# include "mjit_c.h"
+# include "gc.h"
+# include "ruby_assert.h"
+# include "ruby/debug.h"
+# include "ruby/thread.h"
+# include "ruby/version.h"
+# include "builtin.h"
+# include "insns.inc"
+# include "insns_info.inc"
+# include "internal/compile.h"
 
-#include <sys/wait.h>
-#include <sys/time.h>
-#include <dlfcn.h>
-#include <errno.h>
-#ifdef HAVE_FCNTL_H
-#include <fcntl.h>
-#endif
-#ifdef HAVE_SYS_PARAM_H
-# include <sys/param.h>
-#endif
-#include "dln.h"
+# include <sys/wait.h>
+# include <sys/time.h>
+# include <dlfcn.h>
+# include <errno.h>
+# ifdef HAVE_FCNTL_H
+#  include <fcntl.h>
+# endif
+# ifdef HAVE_SYS_PARAM_H
+#  include <sys/param.h>
+# endif
+# include "dln.h"
 
-#include "ruby/util.h"
-#undef strdup // ruby_strdup may trigger GC
+# include "ruby/util.h"
+# undef strdup // ruby_strdup may trigger GC
 
-#ifndef MAXPATHLEN
-# define MAXPATHLEN 1024
-#endif
+# ifndef MAXPATHLEN
+#  define MAXPATHLEN 1024
+# endif
 
 // Atomically set function pointer if possible.
-#define MJIT_ATOMIC_SET(var, val) (void)ATOMIC_PTR_EXCHANGE(var, val)
+# define MJIT_ATOMIC_SET(var, val) (void)ATOMIC_PTR_EXCHANGE(var, val)
 
-#define MJIT_TMP_PREFIX "_ruby_mjit_"
+# define MJIT_TMP_PREFIX "_ruby_mjit_"
 
 extern void rb_native_mutex_lock(rb_nativethread_lock_t *lock);
 extern void rb_native_mutex_unlock(rb_nativethread_lock_t *lock);
@@ -183,7 +183,9 @@ static char *pch_file;
 static rb_pid_t pch_owner_pid;
 // Status of the precompiled header creation.  The status is
 // shared by the workers and the pch thread.
-static enum {PCH_NOT_READY, PCH_FAILED, PCH_SUCCESS} pch_status;
+static enum { PCH_NOT_READY,
+    PCH_FAILED,
+    PCH_SUCCESS } pch_status;
 
 // The start timestamp of current compilation
 static double current_cc_ms = 0.0; // TODO: make this part of unit?
@@ -195,58 +197,58 @@ static pid_t current_cc_pid = 0; // TODO: make this part of unit?
 // Name of the header file.
 static char *header_file;
 
-#include "mjit_config.h"
+# include "mjit_config.h"
 
-#if defined(__GNUC__) && \
-     (!defined(__clang__) || \
-      (defined(__clang__) && (defined(__FreeBSD__) || defined(__GLIBC__))))
-# define GCC_PIC_FLAGS "-Wfatal-errors", "-fPIC", "-shared", "-w", "-pipe",
-# define MJIT_CFLAGS_PIPE 1
-#else
-# define GCC_PIC_FLAGS /* empty */
-# define MJIT_CFLAGS_PIPE 0
-#endif
+# if defined(__GNUC__) && \
+   (!defined(__clang__) || \
+     (defined(__clang__) && (defined(__FreeBSD__) || defined(__GLIBC__))))
+#  define GCC_PIC_FLAGS "-Wfatal-errors", "-fPIC", "-shared", "-w", "-pipe",
+#  define MJIT_CFLAGS_PIPE 1
+# else
+#  define GCC_PIC_FLAGS /* empty */
+#  define MJIT_CFLAGS_PIPE 0
+# endif
 
 // Use `-nodefaultlibs -nostdlib` for GCC where possible, which does not work on cygwin, AIX, and OpenBSD.
 // This seems to improve MJIT performance on GCC.
-#if defined __GNUC__ && !defined __clang__ && !defined(__CYGWIN__) && !defined(_AIX) && !defined(__OpenBSD__)
-# define GCC_NOSTDLIB_FLAGS "-nodefaultlibs", "-nostdlib",
-#else
-# define GCC_NOSTDLIB_FLAGS // empty
-#endif
+# if defined __GNUC__ && !defined __clang__ && !defined(__CYGWIN__) && !defined(_AIX) && !defined(__OpenBSD__)
+#  define GCC_NOSTDLIB_FLAGS "-nodefaultlibs", "-nostdlib",
+# else
+#  define GCC_NOSTDLIB_FLAGS // empty
+# endif
 
 static const char *const CC_COMMON_ARGS[] = {
     MJIT_CC_COMMON MJIT_CFLAGS GCC_PIC_FLAGS
-    NULL
+      NULL
 };
 
-static const char *const CC_DEBUG_ARGS[] = {MJIT_DEBUGFLAGS NULL};
-static const char *const CC_OPTIMIZE_ARGS[] = {MJIT_OPTFLAGS NULL};
+static const char *const CC_DEBUG_ARGS[] = { MJIT_DEBUGFLAGS NULL };
+static const char *const CC_OPTIMIZE_ARGS[] = { MJIT_OPTFLAGS NULL };
 
-static const char *const CC_LDSHARED_ARGS[] = {MJIT_LDSHARED MJIT_CFLAGS GCC_PIC_FLAGS NULL};
-static const char *const CC_DLDFLAGS_ARGS[] = {MJIT_DLDFLAGS NULL};
+static const char *const CC_LDSHARED_ARGS[] = { MJIT_LDSHARED MJIT_CFLAGS GCC_PIC_FLAGS NULL };
+static const char *const CC_DLDFLAGS_ARGS[] = { MJIT_DLDFLAGS NULL };
 // `CC_LINKER_ARGS` are linker flags which must be passed to `-c` as well.
 static const char *const CC_LINKER_ARGS[] = {
-#if defined __GNUC__ && !defined __clang__ && !defined(__OpenBSD__)
+# if defined __GNUC__ && !defined __clang__ && !defined(__OpenBSD__)
     "-nostartfiles",
-#endif
+# endif
     GCC_NOSTDLIB_FLAGS NULL
 };
 
 static const char *const CC_LIBS[] = {
-#if defined(__CYGWIN__)
+# if defined(__CYGWIN__)
     MJIT_LIBS // mswin, cygwin
-#endif
-#if defined __GNUC__ && !defined __clang__
+# endif
+# if defined __GNUC__ && !defined __clang__
     "-lgcc", // cygwin, and GCC platforms using `-nodefaultlibs -nostdlib`
-#endif
-#if defined __ANDROID__
+# endif
+# if defined __ANDROID__
     "-lm", // to avoid 'cannot locate symbol "modf" referenced by .../_ruby_mjit_XXX.so"'
-#endif
+# endif
     NULL
 };
 
-#define CC_CODEFLAG_ARGS (mjit_opts.debug ? CC_DEBUG_ARGS : CC_OPTIMIZE_ARGS)
+# define CC_CODEFLAG_ARGS (mjit_opts.debug ? CC_DEBUG_ARGS : CC_OPTIMIZE_ARGS)
 
 // Print the arguments according to FORMAT to stderr only if MJIT
 // verbose option value is more or equal to LEVEL.
@@ -261,7 +263,7 @@ verbose(int level, const char *format, ...)
         // Creating `format + '\n'` to atomically print format and '\n'.
         memcpy(full_format, format, len);
         full_format[len] = '\n';
-        full_format[len+1] = '\0';
+        full_format[len + 1] = '\0';
 
         va_start(args, format);
         vfprintf(stderr, full_format, args);
@@ -355,35 +357,35 @@ static pid_t mjit_pid = 0;
 static int
 sprint_uniq_filename(char *str, size_t size, unsigned long id, const char *prefix, const char *suffix)
 {
-    return snprintf(str, size, "%s/%sp%"PRI_PIDT_PREFIX"uu%lu%s", tmp_dir, prefix, mjit_pid, id, suffix);
+    return snprintf(str, size, "%s/%sp%" PRI_PIDT_PREFIX "uu%lu%s", tmp_dir, prefix, mjit_pid, id, suffix);
 }
 
 // Return time in milliseconds as a double.
-#ifdef __APPLE__
+# ifdef __APPLE__
 double ruby_real_ms_time(void);
-# define real_ms_time() ruby_real_ms_time()
-#else
+#  define real_ms_time() ruby_real_ms_time()
+# else
 static double
 real_ms_time(void)
 {
-# ifdef HAVE_CLOCK_GETTIME
-    struct timespec  tv;
-#  ifdef CLOCK_MONOTONIC
+#  ifdef HAVE_CLOCK_GETTIME
+    struct timespec tv;
+#   ifdef CLOCK_MONOTONIC
     const clockid_t c = CLOCK_MONOTONIC;
-#  else
+#   else
     const clockid_t c = CLOCK_REALTIME;
-#  endif
+#   endif
 
     clock_gettime(c, &tv);
     return tv.tv_nsec / 1000000.0 + tv.tv_sec * 1000.0;
-# else
-    struct timeval  tv;
+#  else
+    struct timeval tv;
 
     gettimeofday(&tv, NULL);
     return tv.tv_usec / 1000.0 + tv.tv_sec * 1000.0;
-# endif
+#  endif
 }
-#endif
+# endif
 
 // Return the best unit from list.  The best is the first
 // high priority unit or the unit whose iseq has the biggest number
@@ -393,7 +395,8 @@ get_from_list(struct rb_mjit_unit_list *list)
 {
     // Find iseq with max total_calls
     struct rb_mjit_unit *unit = NULL, *next, *best = NULL;
-    ccan_list_for_each_safe(&list->head, unit, next, unode) {
+    ccan_list_for_each_safe(&list->head, unit, next, unode)
+    {
         if (unit->iseq == NULL) { // ISeq is GCed.
             remove_from_list(unit, list);
             free_unit(unit);
@@ -417,7 +420,7 @@ args_len(char *const *args)
 {
     size_t i;
 
-    for (i = 0; (args[i]) != NULL;i++)
+    for (i = 0; (args[i]) != NULL; i++)
         ;
     return i;
 }
@@ -451,9 +454,12 @@ form_args(int num, ...)
 }
 
 COMPILER_WARNING_PUSH
-#if __has_warning("-Wdeprecated-declarations") || RBIMPL_COMPILER_IS(GCC)
+# if __has_warning("-Wdeprecated-declarations") || RBIMPL_COMPILER_IS(GCC)
+// clang-format off
+// There's no way to tell clang format to not add spaces around binary operators.
 COMPILER_WARNING_IGNORED(-Wdeprecated-declarations)
-#endif
+// clang-format on
+# endif
 // Start an OS process of absolute executable path with arguments `argv`.
 // Return PID of the process.
 static pid_t
@@ -505,13 +511,13 @@ exec_process(const char *path, char *const argv[])
 {
     int stat, exit_code = -2;
     pid_t pid = start_process(path, argv);
-    for (;pid > 0;) {
+    for (; pid > 0;) {
         pid_t r = waitpid(pid, &stat, 0);
         if (r == -1) {
             if (errno == EINTR) continue;
-            fprintf(stderr, "[%"PRI_PIDT_PREFIX"d] waitpid(%lu): %s (SIGCHLD=%d,%u)\n",
-                    getpid(), (unsigned long)pid, strerror(errno),
-                    RUBY_SIGCHLD, SIGCHLD_LOSSY);
+            fprintf(stderr, "[%" PRI_PIDT_PREFIX "d] waitpid(%lu): %s (SIGCHLD=%d,%u)\n",
+              getpid(), (unsigned long)pid, strerror(errno),
+              RUBY_SIGCHLD, SIGCHLD_LOSSY);
             break;
         }
         else if (r == pid) {
@@ -569,14 +575,14 @@ sprint_funcname(char *funcname, size_t funcname_size, const struct rb_mjit_unit 
 }
 
 static const int c_file_access_mode =
-#ifdef O_BINARY
-    O_BINARY|
-#endif
-    O_WRONLY|O_EXCL|O_CREAT;
+# ifdef O_BINARY
+  O_BINARY |
+# endif
+  O_WRONLY | O_EXCL | O_CREAT;
 
-#define append_str2(p, str, len) ((char *)memcpy((p), str, (len))+(len))
-#define append_str(p, str) append_str2(p, str, sizeof(str)-1)
-#define append_lit(p, str) append_str2(p, str, rb_strlen_lit(str))
+# define append_str2(p, str, len) ((char *)memcpy((p), str, (len)) + (len))
+# define append_str(p, str) append_str2(p, str, sizeof(str) - 1)
+# define append_lit(p, str) append_str2(p, str, rb_strlen_lit(str))
 
 // The function producing the pre-compiled header.
 static void
@@ -590,7 +596,9 @@ make_pch(void)
         // -nodefaultlibs is a linker flag, but it may affect cc1 behavior on Gentoo, which should NOT be changed on pch:
         // https://gitweb.gentoo.org/proj/gcc-patches.git/tree/7.3.0/gentoo/13_all_default-ssp-fix.patch
         GCC_NOSTDLIB_FLAGS
-        "-o", pch_file, header_file,
+        "-o",
+        pch_file,
+        header_file,
         NULL,
     };
 
@@ -627,13 +635,13 @@ c_compile(const char *c_file, const char *so_file)
 
 # if defined(__MACH__)
     extern VALUE rb_libruby_selfpath;
-    const char *loader_args[] = {"-bundle_loader", StringValuePtr(rb_libruby_selfpath), NULL};
+    const char *loader_args[] = { "-bundle_loader", StringValuePtr(rb_libruby_selfpath), NULL };
 # else
-    const char *loader_args[] = {NULL};
+    const char *loader_args[] = { NULL };
 # endif
 
     char **args = form_args(8, CC_LDSHARED_ARGS, CC_CODEFLAG_ARGS, cc_added_args,
-                            so_args, loader_args, CC_LIBS, CC_DLDFLAGS_ARGS, CC_LINKER_ARGS);
+      so_args, loader_args, CC_LIBS, CC_DLDFLAGS_ARGS, CC_LINKER_ARGS);
     if (args == NULL) return 1;
 
     int exit_code = exec_process(cc_path, args);
@@ -683,7 +691,8 @@ mjit_batch(struct rb_mjit_unit *unit)
 
     bool success = true;
     struct rb_mjit_unit *child_unit = 0;
-    ccan_list_for_each(&unit->units.head, child_unit, unode) {
+    ccan_list_for_each(&unit->units.head, child_unit, unode)
+    {
         if (!success) continue;
         if (child_unit->iseq == NULL) continue; // ISEQ is GCed
 
@@ -729,8 +738,10 @@ mjit_compact(struct rb_mjit_unit *unit)
 
     bool success = true;
     struct rb_mjit_unit *batch_unit = 0, *child_unit = 0;
-    ccan_list_for_each(&active_units.head, batch_unit, unode) {
-        ccan_list_for_each(&batch_unit->units.head, child_unit, unode) {
+    ccan_list_for_each(&active_units.head, batch_unit, unode)
+    {
+        ccan_list_for_each(&batch_unit->units.head, child_unit, unode)
+        {
             if (!success) continue;
             if (child_unit->iseq == NULL) continue; // ISEQ is GCed
 
@@ -772,7 +783,8 @@ load_batch_funcs_from_so(struct rb_mjit_unit *unit, char *c_file, char *so_file)
         remove_so_file(so_file, unit);
 
     struct rb_mjit_unit *child_unit = 0;
-    ccan_list_for_each(&unit->units.head, child_unit, unode) {
+    ccan_list_for_each(&unit->units.head, child_unit, unode)
+    {
         char funcname[MAXPATHLEN];
         sprint_funcname(funcname, sizeof(funcname), child_unit);
 
@@ -788,8 +800,8 @@ load_batch_funcs_from_so(struct rb_mjit_unit *unit, char *c_file, char *so_file)
             MJIT_ATOMIC_SET(ISEQ_BODY(iseq)->jit_func, (jit_func_t)func);
 
             verbose(1, "JIT success: %s@%s:%d",
-                    RSTRING_PTR(ISEQ_BODY(iseq)->location.label),
-                    RSTRING_PTR(rb_iseq_path(iseq)), ISEQ_BODY(iseq)->location.first_lineno);
+              RSTRING_PTR(ISEQ_BODY(iseq)->location.label),
+              RSTRING_PTR(rb_iseq_path(iseq)), ISEQ_BODY(iseq)->location.first_lineno);
         }
         else {
             verbose(1, "JIT skip: A compiled method has been GCed");
@@ -818,8 +830,10 @@ load_compact_funcs_from_so(struct rb_mjit_unit *unit, char *c_file, char *so_fil
         remove_so_file(so_file, unit);
 
     struct rb_mjit_unit *batch_unit = 0, *child_unit = 0;
-    ccan_list_for_each(&active_units.head, batch_unit, unode) {
-        ccan_list_for_each(&batch_unit->units.head, child_unit, unode) {
+    ccan_list_for_each(&active_units.head, batch_unit, unode)
+    {
+        ccan_list_for_each(&batch_unit->units.head, child_unit, unode)
+        {
             if (child_unit->iseq == NULL) continue; // ISEQ is GCed
 
             char funcname[MAXPATHLEN];
@@ -840,28 +854,28 @@ load_compact_funcs_from_so(struct rb_mjit_unit *unit, char *c_file, char *so_fil
     verbose(1, "JIT compaction (%.1fms): Compacted %d methods %s -> %s", end_time - current_cc_ms, active_units_length, c_file, so_file);
 }
 
-#ifndef __clang__
+# ifndef __clang__
 static const char *
 header_name_end(const char *s)
 {
     const char *e = s + strlen(s);
-# ifdef __GNUC__ // don't chomp .pch for mswin
+#  ifdef __GNUC__ // don't chomp .pch for mswin
     static const char suffix[] = ".gch";
 
     // chomp .gch suffix
-    if (e > s+sizeof(suffix)-1 && strcmp(e-sizeof(suffix)+1, suffix) == 0) {
-        e -= sizeof(suffix)-1;
+    if (e > s + sizeof(suffix) - 1 && strcmp(e - sizeof(suffix) + 1, suffix) == 0) {
+        e -= sizeof(suffix) - 1;
     }
-# endif
+#  endif
     return e;
 }
-#endif
+# endif
 
 // Print platform-specific prerequisites in generated code.
 static void
 compile_prelude(FILE *f)
 {
-#ifndef __clang__ // -include-pch is used for Clang
+# ifndef __clang__ // -include-pch is used for Clang
     const char *s = pch_file;
     const char *e = header_name_end(s);
 
@@ -869,13 +883,14 @@ compile_prelude(FILE *f)
     // print pch_file except .gch for gcc, but keep .pch for mswin
     for (; s < e; s++) {
         switch (*s) {
-          case '\\': case '"':
-            fputc('\\', f);
+            case '\\':
+            case '"':
+                fputc('\\', f);
         }
         fputc(*s, f);
     }
     fprintf(f, "\"\n");
-#endif
+# endif
 }
 
 static pid_t
@@ -991,7 +1006,8 @@ mjit_update_references(const rb_iseq_t *iseq)
     // `ISEQ_BODY(iseq)->mjit_unit` anymore (because new one replaces that). So we need to check them too.
     // TODO: we should be able to reduce the number of units checked here.
     struct rb_mjit_unit *unit = NULL;
-    ccan_list_for_each(&stale_units.head, unit, unode) {
+    ccan_list_for_each(&stale_units.head, unit, unode)
+    {
         if (unit->iseq == iseq) {
             unit->iseq = (rb_iseq_t *)rb_gc_location((VALUE)unit->iseq);
         }
@@ -1016,7 +1032,8 @@ mjit_free_iseq(const rb_iseq_t *iseq)
     // `ISEQ_BODY(iseq)->mjit_unit` anymore (because new one replaces that). So we need to check them too.
     // TODO: we should be able to reduce the number of units checked here.
     struct rb_mjit_unit *unit = NULL;
-    ccan_list_for_each(&stale_units.head, unit, unode) {
+    ccan_list_for_each(&stale_units.head, unit, unode)
+    {
         if (unit->iseq == iseq) {
             unit->iseq = NULL;
         }
@@ -1031,7 +1048,8 @@ free_list(struct rb_mjit_unit_list *list, bool close_handle_p)
 {
     struct rb_mjit_unit *unit = 0, *next;
 
-    ccan_list_for_each_safe(&list->head, unit, next, unode) {
+    ccan_list_for_each_safe(&list->head, unit, next, unode)
+    {
         ccan_list_del(&unit->unode);
         if (!close_handle_p) unit->handle = NULL; /* Skip dlclose in free_unit() */
 
@@ -1052,7 +1070,7 @@ free_list(struct rb_mjit_unit_list *list, bool close_handle_p)
     list->length = 0;
 }
 
-static struct rb_mjit_unit*
+static struct rb_mjit_unit *
 create_unit(enum rb_mjit_unit_type type)
 {
     struct rb_mjit_unit *unit = ZALLOC_N(struct rb_mjit_unit, 1);
@@ -1064,7 +1082,7 @@ create_unit(enum rb_mjit_unit_type type)
     return unit;
 }
 
-static struct rb_mjit_unit*
+static struct rb_mjit_unit *
 create_iseq_unit(const rb_iseq_t *iseq)
 {
     struct rb_mjit_unit *unit = create_unit(MJIT_UNIT_ISEQ);
@@ -1181,21 +1199,21 @@ mjit_notify_waitpid(int exit_code)
     char so_file[MAXPATHLEN];
     sprint_uniq_filename(so_file, (int)sizeof(so_file), current_cc_unit->id, MJIT_TMP_PREFIX, DLEXT);
     switch (current_cc_unit->type) {
-      case MJIT_UNIT_ISEQ:
-        rb_bug("unreachable: current_cc_unit->type must not be MJIT_UNIT_ISEQ");
-      case MJIT_UNIT_BATCH:
-        load_batch_funcs_from_so(current_cc_unit, c_file, so_file);
-        current_cc_unit = NULL;
+        case MJIT_UNIT_ISEQ:
+            rb_bug("unreachable: current_cc_unit->type must not be MJIT_UNIT_ISEQ");
+        case MJIT_UNIT_BATCH:
+            load_batch_funcs_from_so(current_cc_unit, c_file, so_file);
+            current_cc_unit = NULL;
 
-        // Run compaction if it should
-        if (!stop_worker_p) {
-            check_compaction();
-        }
-        break;
-      case MJIT_UNIT_COMPACT:
-        load_compact_funcs_from_so(current_cc_unit, c_file, so_file);
-        current_cc_unit = NULL;
-        break;
+            // Run compaction if it should
+            if (!stop_worker_p) {
+                check_compaction();
+            }
+            break;
+        case MJIT_UNIT_COMPACT:
+            load_compact_funcs_from_so(current_cc_unit, c_file, so_file);
+            current_cc_unit = NULL;
+            break;
     }
 
     // Skip further compilation if mjit_finish is trying to stop it
@@ -1210,9 +1228,7 @@ static inline int
 mjit_target_iseq_p(const rb_iseq_t *iseq)
 {
     struct rb_iseq_constant_body *body = ISEQ_BODY(iseq);
-    return (body->type == ISEQ_TYPE_METHOD || body->type == ISEQ_TYPE_BLOCK)
-        && !body->builtin_inline_p
-        && strcmp("<internal:mjit>", RSTRING_PTR(rb_iseq_path(iseq))) != 0;
+    return (body->type == ISEQ_TYPE_METHOD || body->type == ISEQ_TYPE_BLOCK) && !body->builtin_inline_p && strcmp("<internal:mjit>", RSTRING_PTR(rb_iseq_path(iseq))) != 0;
 }
 
 // RubyVM::MJIT
@@ -1228,13 +1244,14 @@ static VALUE rb_cMJITICPtr = 0;
 // RubyVM::MJIT::Compiler
 static VALUE rb_mMJITHooks = 0;
 
-#define WITH_MJIT_DISABLED(stmt) do { \
-    bool original_call_p = mjit_call_p; \
-    mjit_call_p = false; \
-    stmt; \
-    mjit_call_p = original_call_p; \
-    if (mjit_cancel_p) mjit_call_p = false; \
-} while (0);
+# define WITH_MJIT_DISABLED(stmt) \
+  do { \
+   bool original_call_p = mjit_call_p; \
+   mjit_call_p = false; \
+   stmt; \
+   mjit_call_p = original_call_p; \
+   if (mjit_cancel_p) mjit_call_p = false; \
+  } while (0);
 
 // Hook MJIT when BOP is redefined.
 MJIT_FUNC_EXPORTED void
@@ -1373,7 +1390,7 @@ rb_mjit_add_iseq_to_process(const rb_iseq_t *iseq)
 }
 
 // For this timeout seconds, mjit_finish will wait for JIT compilation finish.
-#define MJIT_WAIT_TIMEOUT_SECONDS 5
+# define MJIT_WAIT_TIMEOUT_SECONDS 5
 
 static void
 mjit_wait(struct rb_mjit_unit *unit)
@@ -1401,7 +1418,7 @@ mjit_wait(struct rb_mjit_unit *unit)
     }
 }
 
-struct rb_mjit_compile_info*
+struct rb_mjit_compile_info *
 rb_mjit_iseq_compile_info(const struct rb_iseq_constant_body *body)
 {
     VM_ASSERT(body->mjit_unit != NULL);
@@ -1415,7 +1432,7 @@ mjit_recompile(const rb_iseq_t *iseq)
         return;
 
     verbose(1, "JIT recompile: %s@%s:%d", RSTRING_PTR(ISEQ_BODY(iseq)->location.label),
-            RSTRING_PTR(rb_iseq_path(iseq)), ISEQ_BODY(iseq)->location.first_lineno);
+      RSTRING_PTR(rb_iseq_path(iseq)), ISEQ_BODY(iseq)->location.first_lineno);
     VM_ASSERT(ISEQ_BODY(iseq)->mjit_unit != NULL);
 
     mjit_add_iseq_to_process(iseq, &ISEQ_BODY(iseq)->mjit_unit->compile_info);
@@ -1469,19 +1486,19 @@ static bool
 init_header_filename(void)
 {
     int fd;
-#ifdef LOAD_RELATIVE
+# ifdef LOAD_RELATIVE
     // Root path of the running ruby process. Equal to RbConfig::TOPDIR.
     VALUE basedir_val;
-#endif
+# endif
     const char *basedir = "";
     size_t baselen = 0;
     char *p;
 
-#ifdef LOAD_RELATIVE
+# ifdef LOAD_RELATIVE
     basedir_val = ruby_prefix_path;
     basedir = StringValuePtr(basedir_val);
     baselen = RSTRING_LEN(basedir_val);
-#else
+# else
     if (getenv("MJIT_SEARCH_BUILD_DIR")) {
         // This path is not intended to be used on production, but using build directory's
         // header file here because people want to run `make test-all` without running
@@ -1499,15 +1516,15 @@ init_header_filename(void)
             verbose(1, "Non-file header file path: %s", hdr);
         }
         else if ((st.st_uid != getuid()) || (st.st_mode & 022) ||
-                 !rb_path_check(hdr)) {
+          !rb_path_check(hdr)) {
             verbose(1, "Unsafe header file: uid=%ld mode=%#o %s",
-                    (long)st.st_uid, (unsigned)st.st_mode, hdr);
+              (long)st.st_uid, (unsigned)st.st_mode, hdr);
             return FALSE;
         }
         else {
             // Do not pass PRELOADENV to child processes, on
             // multi-arch environment
-            verbose(3, "PRELOADENV("PRELOADENV")=%s", getenv(PRELOADENV));
+            verbose(3, "PRELOADENV(" PRELOADENV ")=%s", getenv(PRELOADENV));
             // assume no other PRELOADENV in test-all
             unsetenv(PRELOADENV);
             verbose(3, "MJIT_HEADER: %s", hdr);
@@ -1516,7 +1533,7 @@ init_header_filename(void)
         }
     }
     else
-#endif
+# endif
     {
         // A name of the header file included in any C file generated by MJIT for iseqs.
         static const char header_name[] = MJIT_HEADER_INSTALL_DIR "/" MJIT_MIN_HEADER_NAME;
@@ -1544,7 +1561,7 @@ static char *
 system_default_tmpdir(void)
 {
     // c.f. ext/etc/etc.c:etc_systmpdir()
-#if defined _CS_DARWIN_USER_TEMP_DIR
+# if defined _CS_DARWIN_USER_TEMP_DIR
     char path[MAXPATHLEN];
     size_t len = confstr(_CS_DARWIN_USER_TEMP_DIR, path, sizeof(path));
     if (len > 0) {
@@ -1557,7 +1574,7 @@ system_default_tmpdir(void)
         }
         return tmpdir;
     }
-#endif
+# endif
     return 0;
 }
 
@@ -1568,19 +1585,19 @@ check_tmpdir(const char *dir)
 
     if (!dir) return FALSE;
     if (stat(dir, &st)) return FALSE;
-#ifndef S_ISDIR
-#   define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
-#endif
+# ifndef S_ISDIR
+#  define S_ISDIR(m) (((m)&S_IFMT) == S_IFDIR)
+# endif
     if (!S_ISDIR(st.st_mode)) return FALSE;
-#ifndef S_IWOTH
-#   define S_IWOTH 002
-#endif
+# ifndef S_IWOTH
+#  define S_IWOTH 002
+# endif
     if (st.st_mode & S_IWOTH) {
-#ifdef S_ISVTX
+# ifdef S_ISVTX
         if (!(st.st_mode & S_ISVTX)) return FALSE;
-#else
+# else
         return FALSE;
-#endif
+# endif
     }
     if (access(dir, W_OK)) return FALSE;
     return TRUE;
@@ -1591,7 +1608,7 @@ system_tmpdir(void)
 {
     char *tmpdir;
 # define RETURN_ENV(name) \
-    if (check_tmpdir(tmpdir = getenv(name))) return ruby_strdup(tmpdir)
+  if (check_tmpdir(tmpdir = getenv(name))) return ruby_strdup(tmpdir)
     RETURN_ENV("TMPDIR");
     RETURN_ENV("TMP");
     tmpdir = system_default_tmpdir();
@@ -1601,11 +1618,11 @@ system_tmpdir(void)
 }
 
 // Minimum value for JIT cache size.
-#define MIN_CACHE_SIZE 10
+# define MIN_CACHE_SIZE 10
 // Default permitted number of units with a JIT code kept in memory.
-#define DEFAULT_MAX_CACHE_SIZE 100
+# define DEFAULT_MAX_CACHE_SIZE 100
 // A default threshold used to add iseq to JIT.
-#define DEFAULT_CALL_THRESHOLD 10000
+# define DEFAULT_CALL_THRESHOLD 10000
 
 // Start MJIT worker. Return TRUE if worker is successfully started.
 static bool
@@ -1617,7 +1634,7 @@ start_worker(void)
 }
 
 // There's no strndup on Windows
-static char*
+static char *
 ruby_strndup(const char *str, size_t n)
 {
     char *ret = xmalloc(n + 1);
@@ -1653,10 +1670,10 @@ split_flags(const char *flags)
     return ret;
 }
 
-#define opt_match_noarg(s, l, name) \
-    opt_match(s, l, name) && (*(s) ? (rb_warn("argument to --mjit-" name " is ignored"), 1) : 1)
-#define opt_match_arg(s, l, name) \
-    opt_match(s, l, name) && (*(s) ? 1 : (rb_raise(rb_eRuntimeError, "--mjit-" name " needs an argument"), 0))
+# define opt_match_noarg(s, l, name) \
+  opt_match(s, l, name) && (*(s) ? (rb_warn("argument to --mjit-" name " is ignored"), 1) : 1)
+# define opt_match_arg(s, l, name) \
+  opt_match(s, l, name) && (*(s) ? 1 : (rb_raise(rb_eRuntimeError, "--mjit-" name " needs an argument"), 0))
 
 void
 mjit_setup_options(const char *s, struct mjit_options *mjit_opt)
@@ -1695,24 +1712,21 @@ mjit_setup_options(const char *s, struct mjit_options *mjit_opt)
     }
     else {
         rb_raise(rb_eRuntimeError,
-                 "invalid MJIT option `%s' (--help will show valid MJIT options)", s);
+          "invalid MJIT option `%s' (--help will show valid MJIT options)", s);
     }
 }
 
-#define M(shortopt, longopt, desc) RUBY_OPT_MESSAGE(shortopt, longopt, desc)
+# define M(shortopt, longopt, desc) RUBY_OPT_MESSAGE(shortopt, longopt, desc)
 const struct ruby_opt_message mjit_option_messages[] = {
-    M("--mjit-warnings",           "", "Enable printing JIT warnings"),
-    M("--mjit-debug",              "", "Enable JIT debugging (very slow), or add cflags if specified"),
-    M("--mjit-wait",               "", "Wait until JIT compilation finishes every time (for testing)"),
-    M("--mjit-save-temps",         "", "Save JIT temporary files in $TMP or /tmp (for testing)"),
-    M("--mjit-verbose=num",        "", "Print JIT logs of level num or less to stderr (default: 0)"),
-    M("--mjit-max-cache=num",      "", "Max number of methods to be JIT-ed in a cache (default: "
-      STRINGIZE(DEFAULT_MAX_CACHE_SIZE) ")"),
-    M("--mjit-call-threshold=num", "", "Number of calls to trigger JIT (for testing, default: "
-      STRINGIZE(DEFAULT_CALL_THRESHOLD) ")"),
-    {0}
-};
-#undef M
+    M("--mjit-warnings", "", "Enable printing JIT warnings"),
+    M("--mjit-debug", "", "Enable JIT debugging (very slow), or add cflags if specified"),
+    M("--mjit-wait", "", "Wait until JIT compilation finishes every time (for testing)"),
+    M("--mjit-save-temps", "", "Save JIT temporary files in $TMP or /tmp (for testing)"),
+    M("--mjit-verbose=num", "", "Print JIT logs of level num or less to stderr (default: 0)"),
+    M("--mjit-max-cache=num", "", "Max number of methods to be JIT-ed in a cache (default: " STRINGIZE(DEFAULT_MAX_CACHE_SIZE) ")"),
+      M("--mjit-call-threshold=num", "", "Number of calls to trigger JIT (for testing, default: " STRINGIZE(DEFAULT_CALL_THRESHOLD) ")"),
+        { 0 } };
+# undef M
 
 // Initialize MJIT.  Start a thread creating the precompiled header and
 // processing ISeqs.  The function should be called first for using MJIT.
@@ -1761,7 +1775,7 @@ mjit_init(const struct mjit_options *opts)
     memcpy((void *)cc_common_args, CC_COMMON_ARGS, sizeof(CC_COMMON_ARGS));
     cc_added_args = split_flags(opts->debug_flags);
     xfree(opts->debug_flags);
-#if MJIT_CFLAGS_PIPE
+# if MJIT_CFLAGS_PIPE
     // Filter out `-save-temps`. It's a C compiler flag used by update-deps and not compatible with `-pipe`.
     for (size_t i = 0, j = 0; i < sizeof(CC_COMMON_ARGS) / sizeof(char *); i++) {
         if (CC_COMMON_ARGS[i] && strncmp("-save-temps", CC_COMMON_ARGS[i], strlen("-save-temps")) == 0)
@@ -1769,7 +1783,7 @@ mjit_init(const struct mjit_options *opts)
         cc_common_args[j] = CC_COMMON_ARGS[i];
         j++;
     }
-#endif
+# endif
 
     tmp_dir = system_tmpdir();
     verbose(2, "MJIT: tmp_dir is %s", tmp_dir);
@@ -1903,13 +1917,18 @@ mjit_finish(bool close_handle_p)
     if (!mjit_opts.save_temps && getpid() == pch_owner_pid && pch_status == PCH_SUCCESS && !mjit_opts.custom)
         remove_file(pch_file);
 
-    xfree(header_file); header_file = NULL;
-    xfree((void *)cc_common_args); cc_common_args = NULL;
+    xfree(header_file);
+    header_file = NULL;
+    xfree((void *)cc_common_args);
+    cc_common_args = NULL;
     for (char **flag = cc_added_args; *flag != NULL; flag++)
         xfree(*flag);
-    xfree((void *)cc_added_args); cc_added_args = NULL;
-    xfree(tmp_dir); tmp_dir = NULL;
-    xfree(pch_file); pch_file = NULL;
+    xfree((void *)cc_added_args);
+    cc_added_args = NULL;
+    xfree(tmp_dir);
+    tmp_dir = NULL;
+    xfree(pch_file);
+    pch_file = NULL;
 
     mjit_call_p = false;
     free_list(&unit_queue, close_handle_p);
@@ -1940,7 +1959,8 @@ mjit_mark(void)
 
     // Mark JIT-compiled ISEQs
     struct rb_mjit_unit *unit = NULL;
-    ccan_list_for_each(&active_units.head, unit, unode) {
+    ccan_list_for_each(&active_units.head, unit, unode)
+    {
         rb_gc_mark((VALUE)unit->iseq);
     }
 
@@ -1974,7 +1994,7 @@ mjit_compile(FILE *f, const rb_iseq_t *iseq, const char *funcname, int id)
 
     VALUE iseq_ptr = rb_funcall(rb_cMJITIseqPtr, rb_intern("new"), 1, ULONG2NUM((size_t)iseq));
     VALUE src = rb_funcall(rb_cMJITCompiler, rb_intern("compile"), 3,
-                           iseq_ptr, rb_str_new_cstr(funcname), INT2NUM(id));
+      iseq_ptr, rb_str_new_cstr(funcname), INT2NUM(id));
     if (!NIL_P(src)) {
         fprintf(f, "%s", RSTRING_PTR(src));
     }
@@ -1983,6 +2003,6 @@ mjit_compile(FILE *f, const rb_iseq_t *iseq, const char *funcname, int id)
     return !NIL_P(src);
 }
 
-#include "mjit.rbinc"
+# include "mjit.rbinc"
 
 #endif // USE_MJIT

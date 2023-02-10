@@ -1,4 +1,4 @@
-#ifndef RBIMPL_COMPILER_IS_GCC_H                     /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_COMPILER_IS_GCC_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_COMPILER_IS_GCC_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -23,7 +23,7 @@
 #include "ruby/internal/compiler_is/clang.h"
 #include "ruby/internal/compiler_is/intel.h"
 
-#if ! defined(__GNUC__)
+#if !defined(__GNUC__)
 # define RBIMPL_COMPILER_IS_GCC 0
 
 #elif RBIMPL_COMPILER_IS(Apple)

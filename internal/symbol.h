@@ -1,4 +1,4 @@
-#ifndef INTERNAL_SYMBOL_H                                /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_SYMBOL_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_SYMBOL_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -8,8 +8,8 @@
  *             file COPYING are met.  Consult the file for details.
  * @brief      Internal header for Symbol.
  */
-#include "ruby/ruby.h"          /* for VALUE */
-#include "ruby/encoding.h"      /* for rb_encoding */
+#include "ruby/ruby.h" /* for VALUE */
+#include "ruby/encoding.h" /* for rb_encoding */
 #include "internal/compilers.h" /* for __has_builtin */
 
 #ifdef rb_sym_intern_ascii_cstr
@@ -33,10 +33,10 @@ void rb_gc_free_dsymbol(VALUE);
 int rb_static_id_valid_p(ID id);
 
 #if __has_builtin(__builtin_constant_p)
-#define rb_sym_intern_ascii_cstr(ptr) \
-    (__builtin_constant_p(ptr) ? \
-        rb_sym_intern_ascii((ptr), (long)strlen(ptr)) : \
-        rb_sym_intern_ascii_cstr(ptr))
+# define rb_sym_intern_ascii_cstr(ptr) \
+  (__builtin_constant_p(ptr) ? \
+      rb_sym_intern_ascii((ptr), (long)strlen(ptr)) : \
+      rb_sym_intern_ascii_cstr(ptr))
 #endif
 
 #endif /* INTERNAL_SYMBOL_H */

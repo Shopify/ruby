@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ERROR_H                               /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ERROR_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ERROR_H
 /**
  * @file
@@ -54,7 +54,8 @@ typedef enum {
 } rb_warning_category_t;
 
 /** for rb_readwrite_sys_fail first argument */
-enum rb_io_wait_readwrite {RB_IO_WAIT_READABLE, RB_IO_WAIT_WRITABLE};
+enum rb_io_wait_readwrite { RB_IO_WAIT_READABLE,
+    RB_IO_WAIT_WRITABLE };
 /** @cond INTERNAL_MACRO */
 #define RB_IO_WAIT_READABLE RB_IO_WAIT_READABLE
 #define RB_IO_WAIT_WRITABLE RB_IO_WAIT_WRITABLE
@@ -321,7 +322,7 @@ void rb_notimplement(void);
  * @param[in]  msg                  Additional message.
  * @retval     rb_eSystemCallError  An exception for the errno.
  */
-VALUE rb_syserr_new(int err, const char * msg);
+VALUE rb_syserr_new(int err, const char *msg);
 
 /**
  * Identical to rb_syserr_new(),  except it takes the message  in Ruby's String
@@ -467,7 +468,7 @@ VALUE *rb_ruby_debug_ptr(void);
  * @retval  Qfalse     Interpreter not in debug mode.
  * @retval  otherwise  Interpreter is in debug mode.
  */
-#define ruby_debug   (*rb_ruby_debug_ptr())
+#define ruby_debug (*rb_ruby_debug_ptr())
 
 /* reports if `-W' specified */
 RBIMPL_ATTR_NONNULL((1))

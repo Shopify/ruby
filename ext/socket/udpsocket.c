@@ -43,8 +43,7 @@ udp_init(int argc, VALUE *argv, VALUE sock)
     return rsock_init_sock(sock, fd);
 }
 
-struct udp_arg
-{
+struct udp_arg {
     struct rb_addrinfo *res;
     rb_io_t *fptr;
 };
@@ -92,7 +91,7 @@ udp_connect(VALUE sock, VALUE host, VALUE port)
     GetOpenFile(sock, arg.fptr);
     arg.res = rsock_addrinfo(host, port, rsock_fd_family(arg.fptr->fd), SOCK_DGRAM, 0);
     ret = rb_ensure(udp_connect_internal, (VALUE)&arg,
-                    rsock_freeaddrinfo, (VALUE)arg.res);
+      rsock_freeaddrinfo, (VALUE)arg.res);
     if (!ret) rsock_sys_fail_host_port("connect(2)", host, port);
     return INT2FIX(0);
 }
@@ -137,7 +136,7 @@ udp_bind(VALUE sock, VALUE host, VALUE port)
     GetOpenFile(sock, arg.fptr);
     arg.res = rsock_addrinfo(host, port, rsock_fd_family(arg.fptr->fd), SOCK_DGRAM, 0);
     ret = rb_ensure(udp_bind_internal, (VALUE)&arg,
-                    rsock_freeaddrinfo, (VALUE)arg.res);
+      rsock_freeaddrinfo, (VALUE)arg.res);
     if (!ret) rsock_sys_fail_host_port("bind(2)", host, port);
     return INT2FIX(0);
 }
@@ -157,7 +156,7 @@ udp_send_internal(VALUE v)
 
     rb_io_check_closed(fptr = arg->fptr);
     for (res = arg->res->ai; res; res = res->ai_next) {
-      retry:
+    retry:
         arg->sarg.fd = fptr->fd;
         arg->sarg.to = res->ai_addr;
         arg->sarg.tolen = res->ai_addrlen;
@@ -217,7 +216,7 @@ udp_send(int argc, VALUE *argv, VALUE sock)
     arg.sarg.flags = NUM2INT(flags);
     arg.res = rsock_addrinfo(host, port, rsock_fd_family(arg.fptr->fd), SOCK_DGRAM, 0);
     ret = rb_ensure(udp_send_internal, (VALUE)&arg,
-                    rsock_freeaddrinfo, (VALUE)arg.res);
+      rsock_freeaddrinfo, (VALUE)arg.res);
     if (!ret) rsock_sys_fail_host_port("sendto(2)", host, port);
     return ret;
 }
@@ -246,5 +245,5 @@ rsock_init_udpsocket(void)
 
     /* for ext/socket/lib/socket.rb use only: */
     rb_define_private_method(rb_cUDPSocket,
-                             "__recvfrom_nonblock", udp_recvfrom_nonblock, 4);
+      "__recvfrom_nonblock", udp_recvfrom_nonblock, 4);
 }

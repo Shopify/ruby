@@ -9,53 +9,60 @@
 RUBY_EXTERN void rb_write_error_str(VALUE mesg);
 
 typedef struct {
-    struct IEventSinkVtbl * lpVtbl;
+    struct IEventSinkVtbl *lpVtbl;
 } IEventSink, *PEVENTSINK;
 
 typedef struct IEventSinkVtbl IEventSinkVtbl;
 
 struct IEventSinkVtbl {
-    STDMETHOD(QueryInterface)(
-        PEVENTSINK,
-        REFIID,
-        LPVOID *);
-    STDMETHOD_(ULONG, AddRef)(PEVENTSINK);
-    STDMETHOD_(ULONG, Release)(PEVENTSINK);
+    STDMETHOD(QueryInterface)
+    (
+      PEVENTSINK,
+      REFIID,
+      LPVOID *);
+    STDMETHOD_(ULONG, AddRef)
+    (PEVENTSINK);
+    STDMETHOD_(ULONG, Release)
+    (PEVENTSINK);
 
-    STDMETHOD(GetTypeInfoCount)(
-        PEVENTSINK,
-        UINT *);
-    STDMETHOD(GetTypeInfo)(
-        PEVENTSINK,
-        UINT,
-        LCID,
-        ITypeInfo **);
-    STDMETHOD(GetIDsOfNames)(
-        PEVENTSINK,
-        REFIID,
-        OLECHAR **,
-        UINT,
-        LCID,
-        DISPID *);
-    STDMETHOD(Invoke)(
-        PEVENTSINK,
-        DISPID,
-        REFIID,
-        LCID,
-        WORD,
-        DISPPARAMS *,
-        VARIANT *,
-        EXCEPINFO *,
-        UINT *);
+    STDMETHOD(GetTypeInfoCount)
+    (
+      PEVENTSINK,
+      UINT *);
+    STDMETHOD(GetTypeInfo)
+    (
+      PEVENTSINK,
+      UINT,
+      LCID,
+      ITypeInfo **);
+    STDMETHOD(GetIDsOfNames)
+    (
+      PEVENTSINK,
+      REFIID,
+      OLECHAR **,
+      UINT,
+      LCID,
+      DISPID *);
+    STDMETHOD(Invoke)
+    (
+      PEVENTSINK,
+      DISPID,
+      REFIID,
+      LCID,
+      WORD,
+      DISPPARAMS *,
+      VARIANT *,
+      EXCEPINFO *,
+      UINT *);
 };
 
 typedef struct tagIEVENTSINKOBJ {
     const IEventSinkVtbl *lpVtbl;
     DWORD m_cRef;
     IID m_iid;
-    long  m_event_id;
+    long m_event_id;
     ITypeInfo *pTypeInfo;
-}IEVENTSINKOBJ, *PIEVENTSINKOBJ;
+} IEVENTSINKOBJ, *PIEVENTSINKOBJ;
 
 struct oleeventdata {
     DWORD dwCookie;
@@ -69,13 +76,15 @@ static ID id_events;
 
 VALUE cWIN32OLE_EVENT;
 
-STDMETHODIMP EVENTSINK_QueryInterface(PEVENTSINK, REFIID, LPVOID*);
-STDMETHODIMP_(ULONG) EVENTSINK_AddRef(PEVENTSINK);
-STDMETHODIMP_(ULONG) EVENTSINK_Release(PEVENTSINK);
-STDMETHODIMP EVENTSINK_GetTypeInfoCount(PEVENTSINK, UINT*);
-STDMETHODIMP EVENTSINK_GetTypeInfo(PEVENTSINK, UINT, LCID, ITypeInfo**);
-STDMETHODIMP EVENTSINK_GetIDsOfNames(PEVENTSINK, REFIID, OLECHAR**, UINT, LCID, DISPID*);
-STDMETHODIMP EVENTSINK_Invoke(PEVENTSINK, DISPID, REFIID, LCID, WORD, DISPPARAMS*, VARIANT*, EXCEPINFO*, UINT*);
+STDMETHODIMP EVENTSINK_QueryInterface(PEVENTSINK, REFIID, LPVOID *);
+STDMETHODIMP_(ULONG)
+EVENTSINK_AddRef(PEVENTSINK);
+STDMETHODIMP_(ULONG)
+EVENTSINK_Release(PEVENTSINK);
+STDMETHODIMP EVENTSINK_GetTypeInfoCount(PEVENTSINK, UINT *);
+STDMETHODIMP EVENTSINK_GetTypeInfo(PEVENTSINK, UINT, LCID, ITypeInfo **);
+STDMETHODIMP EVENTSINK_GetIDsOfNames(PEVENTSINK, REFIID, OLECHAR **, UINT, LCID, DISPID *);
+STDMETHODIMP EVENTSINK_Invoke(PEVENTSINK, DISPID, REFIID, LCID, WORD, DISPPARAMS *, VARIANT *, EXCEPINFO *, UINT *);
 
 static const IEventSinkVtbl vtEventSink = {
     EVENTSINK_QueryInterface,
@@ -99,7 +108,7 @@ static HRESULT find_coclass(ITypeInfo *pTypeInfo, TYPEATTR *pTypeAttr, ITypeInfo
 static HRESULT find_default_source_from_typeinfo(ITypeInfo *pTypeInfo, TYPEATTR *pTypeAttr, ITypeInfo **ppTypeInfo);
 static HRESULT find_default_source(VALUE ole, IID *piid, ITypeInfo **ppTypeInfo);
 static long ole_search_event_at(VALUE ary, VALUE ev);
-static VALUE ole_search_event(VALUE ary, VALUE ev, BOOL  *is_default);
+static VALUE ole_search_event(VALUE ary, VALUE ev, BOOL *is_default);
 static VALUE ole_search_handler_method(VALUE handler, VALUE ev, BOOL *is_default_handler);
 static void ole_delete_event(VALUE ary, VALUE ev);
 static void oleevent_free(void *ptr);
@@ -120,26 +129,30 @@ static VALUE fev_get_handler(VALUE self);
 static VALUE evs_push(VALUE ev);
 static VALUE evs_delete(long i);
 static VALUE evs_entry(long i);
-static long  evs_length(void);
-
+static long evs_length(void);
 
 static const rb_data_type_t oleevent_datatype = {
     "win32ole_event",
-    {NULL, oleevent_free, oleevent_size,},
+    {
+      NULL,
+      oleevent_free,
+      oleevent_size,
+    },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
-STDMETHODIMP EVENTSINK_Invoke(
-    PEVENTSINK pEventSink,
-    DISPID dispid,
-    REFIID riid,
-    LCID lcid,
-    WORD wFlags,
-    DISPPARAMS *pdispparams,
-    VARIANT *pvarResult,
-    EXCEPINFO *pexcepinfo,
-    UINT *puArgErr
-    ) {
+STDMETHODIMP
+EVENTSINK_Invoke(
+  PEVENTSINK pEventSink,
+  DISPID dispid,
+  REFIID riid,
+  LCID lcid,
+  WORD wFlags,
+  DISPPARAMS *pdispparams,
+  VARIANT *pvarResult,
+  EXCEPINFO *pexcepinfo,
+  UINT *puArgErr)
+{
 
     HRESULT hr;
     BSTR bstr;
@@ -167,7 +180,7 @@ STDMETHODIMP EVENTSINK_Invoke(
         return NOERROR;
     }
     hr = pTypeInfo->lpVtbl->GetNames(pTypeInfo, dispid,
-                                     &bstr, 1, &count);
+      &bstr, 1, &count);
     if (FAILED(hr)) {
         return NOERROR;
     }
@@ -177,7 +190,8 @@ STDMETHODIMP EVENTSINK_Invoke(
         handler = rb_ary_entry(event, 0);
         mid = rb_intern("call");
         is_outarg = rb_ary_entry(event, 3);
-    } else {
+    }
+    else {
         handler = rb_ivar_get(obj, rb_intern("handler"));
         if (handler == Qnil) {
             return NOERROR;
@@ -195,7 +209,7 @@ STDMETHODIMP EVENTSINK_Invoke(
 
     /* make argument of event handler */
     for (i = 0; i < pdispparams->cArgs; ++i) {
-        pvar = &pdispparams->rgvarg[pdispparams->cArgs-i-1];
+        pvar = &pdispparams->rgvarg[pdispparams->cArgs - i - 1];
         rb_ary_push(args, ole_variant2val(pvar));
     }
     outargv = Qnil;
@@ -218,10 +232,11 @@ STDMETHODIMP EVENTSINK_Invoke(
     if (state != 0) {
         rescue_callback(Qnil);
     }
-    if(RB_TYPE_P(result, T_HASH)) {
+    if (RB_TYPE_P(result, T_HASH)) {
         hash2ptr_dispparams(result, pTypeInfo, dispid, pdispparams);
         result = hash2result(result);
-    }else if (is_outarg == Qtrue && RB_TYPE_P(outargv, T_ARRAY)) {
+    }
+    else if (is_outarg == Qtrue && RB_TYPE_P(outargv, T_ARRAY)) {
         ary2ptr_dispparams(outargv, pdispparams);
     }
 
@@ -235,13 +250,13 @@ STDMETHODIMP EVENTSINK_Invoke(
 
 STDMETHODIMP
 EVENTSINK_QueryInterface(
-    PEVENTSINK pEV,
-    REFIID     iid,
-    LPVOID*    ppv
-    ) {
+  PEVENTSINK pEV,
+  REFIID iid,
+  LPVOID *ppv)
+{
     if (IsEqualIID(iid, &IID_IUnknown) ||
-        IsEqualIID(iid, &IID_IDispatch) ||
-        IsEqualIID(iid, &((PIEVENTSINKOBJ)pEV)->m_iid)) {
+      IsEqualIID(iid, &IID_IDispatch) ||
+      IsEqualIID(iid, &((PIEVENTSINKOBJ)pEV)->m_iid)) {
         *ppv = pEV;
     }
     else {
@@ -254,49 +269,53 @@ EVENTSINK_QueryInterface(
 
 STDMETHODIMP_(ULONG)
 EVENTSINK_AddRef(
-    PEVENTSINK pEV
-    ){
+  PEVENTSINK pEV)
+{
     PIEVENTSINKOBJ pEVObj = (PIEVENTSINKOBJ)pEV;
     return ++pEVObj->m_cRef;
 }
 
-STDMETHODIMP_(ULONG) EVENTSINK_Release(
-    PEVENTSINK pEV
-    ) {
+STDMETHODIMP_(ULONG)
+EVENTSINK_Release(
+  PEVENTSINK pEV)
+{
     PIEVENTSINKOBJ pEVObj = (PIEVENTSINKOBJ)pEV;
     --pEVObj->m_cRef;
-    if(pEVObj->m_cRef != 0)
+    if (pEVObj->m_cRef != 0)
         return pEVObj->m_cRef;
     EVENTSINK_Destructor(pEVObj);
     return 0;
 }
 
-STDMETHODIMP EVENTSINK_GetTypeInfoCount(
-    PEVENTSINK pEV,
-    UINT *pct
-    ) {
+STDMETHODIMP
+EVENTSINK_GetTypeInfoCount(
+  PEVENTSINK pEV,
+  UINT *pct)
+{
     *pct = 0;
     return NOERROR;
 }
 
-STDMETHODIMP EVENTSINK_GetTypeInfo(
-    PEVENTSINK pEV,
-    UINT info,
-    LCID lcid,
-    ITypeInfo **pInfo
-    ) {
+STDMETHODIMP
+EVENTSINK_GetTypeInfo(
+  PEVENTSINK pEV,
+  UINT info,
+  LCID lcid,
+  ITypeInfo **pInfo)
+{
     *pInfo = NULL;
     return DISP_E_BADINDEX;
 }
 
-STDMETHODIMP EVENTSINK_GetIDsOfNames(
-    PEVENTSINK pEventSink,
-    REFIID riid,
-    OLECHAR **szNames,
-    UINT cNames,
-    LCID lcid,
-    DISPID *pDispID
-    ) {
+STDMETHODIMP
+EVENTSINK_GetIDsOfNames(
+  PEVENTSINK pEventSink,
+  REFIID riid,
+  OLECHAR **szNames,
+  UINT cNames,
+  LCID lcid,
+  DISPID *pDispID)
+{
     ITypeInfo *pTypeInfo;
     PIEVENTSINKOBJ pEV = (PIEVENTSINKOBJ)pEventSink;
     pTypeInfo = pEV->pTypeInfo;
@@ -311,7 +330,7 @@ EVENTSINK_Constructor(void)
 {
     PIEVENTSINKOBJ pEv;
     pEv = ALLOC_N(IEVENTSINKOBJ, 1);
-    if(pEv == NULL) return NULL;
+    if (pEv == NULL) return NULL;
     pEv->lpVtbl = &vtEventSink;
     pEv->m_cRef = 0;
     pEv->m_event_id = 0;
@@ -321,9 +340,9 @@ EVENTSINK_Constructor(void)
 
 void
 EVENTSINK_Destructor(
-    PIEVENTSINKOBJ pEVObj
-    ) {
-    if(pEVObj != NULL) {
+  PIEVENTSINKOBJ pEVObj)
+{
+    if (pEVObj != NULL) {
         OLE_RELEASE(pEVObj->pTypeInfo);
         free(pEVObj);
         pEVObj = NULL;
@@ -334,67 +353,67 @@ static void
 ole_val2ptr_variant(VALUE val, VARIANT *var)
 {
     switch (TYPE(val)) {
-    case T_STRING:
-        if (V_VT(var) == (VT_BSTR | VT_BYREF)) {
-            *V_BSTRREF(var) = ole_vstr2wc(val);
-        }
-        break;
-    case T_FIXNUM:
-        switch(V_VT(var)) {
-        case (VT_UI1 | VT_BYREF) :
-            *V_UI1REF(var) = RB_NUM2CHR(val);
+        case T_STRING:
+            if (V_VT(var) == (VT_BSTR | VT_BYREF)) {
+                *V_BSTRREF(var) = ole_vstr2wc(val);
+            }
             break;
-        case (VT_I2 | VT_BYREF) :
-            *V_I2REF(var) = (short)RB_NUM2INT(val);
+        case T_FIXNUM:
+            switch (V_VT(var)) {
+                case (VT_UI1 | VT_BYREF):
+                    *V_UI1REF(var) = RB_NUM2CHR(val);
+                    break;
+                case (VT_I2 | VT_BYREF):
+                    *V_I2REF(var) = (short)RB_NUM2INT(val);
+                    break;
+                case (VT_I4 | VT_BYREF):
+                    *V_I4REF(var) = RB_NUM2INT(val);
+                    break;
+                case (VT_R4 | VT_BYREF):
+                    *V_R4REF(var) = (float)RB_NUM2INT(val);
+                    break;
+                case (VT_R8 | VT_BYREF):
+                    *V_R8REF(var) = RB_NUM2INT(val);
+                    break;
+                default:
+                    break;
+            }
             break;
-        case (VT_I4 | VT_BYREF) :
-            *V_I4REF(var) = RB_NUM2INT(val);
+        case T_FLOAT:
+            switch (V_VT(var)) {
+                case (VT_I2 | VT_BYREF):
+                    *V_I2REF(var) = (short)RB_NUM2INT(val);
+                    break;
+                case (VT_I4 | VT_BYREF):
+                    *V_I4REF(var) = RB_NUM2INT(val);
+                    break;
+                case (VT_R4 | VT_BYREF):
+                    *V_R4REF(var) = (float)NUM2DBL(val);
+                    break;
+                case (VT_R8 | VT_BYREF):
+                    *V_R8REF(var) = NUM2DBL(val);
+                    break;
+                default:
+                    break;
+            }
             break;
-        case (VT_R4 | VT_BYREF) :
-            *V_R4REF(var) = (float)RB_NUM2INT(val);
+        case T_BIGNUM:
+            if (V_VT(var) == (VT_R8 | VT_BYREF)) {
+                *V_R8REF(var) = rb_big2dbl(val);
+            }
             break;
-        case (VT_R8 | VT_BYREF) :
-            *V_R8REF(var) = RB_NUM2INT(val);
+        case T_TRUE:
+            if (V_VT(var) == (VT_BOOL | VT_BYREF)) {
+                *V_BOOLREF(var) = VARIANT_TRUE;
+            }
+            break;
+        case T_FALSE:
+            if (V_VT(var) == (VT_BOOL | VT_BYREF)) {
+                *V_BOOLREF(var) = VARIANT_FALSE;
+            }
             break;
         default:
             break;
-        }
-        break;
-    case T_FLOAT:
-        switch(V_VT(var)) {
-        case (VT_I2 | VT_BYREF) :
-            *V_I2REF(var) = (short)RB_NUM2INT(val);
-            break;
-        case (VT_I4 | VT_BYREF) :
-            *V_I4REF(var) = RB_NUM2INT(val);
-            break;
-        case (VT_R4 | VT_BYREF) :
-            *V_R4REF(var) = (float)NUM2DBL(val);
-            break;
-        case (VT_R8 | VT_BYREF) :
-            *V_R8REF(var) = NUM2DBL(val);
-            break;
-        default:
-            break;
-        }
-        break;
-    case T_BIGNUM:
-        if (V_VT(var) == (VT_R8 | VT_BYREF)) {
-            *V_R8REF(var) = rb_big2dbl(val);
-        }
-        break;
-    case T_TRUE:
-        if (V_VT(var) == (VT_BOOL | VT_BYREF)) {
-            *V_BOOLREF(var) = VARIANT_TRUE;
-        }
-        break;
-    case T_FALSE:
-        if (V_VT(var) == (VT_BOOL | VT_BYREF)) {
-            *V_BOOLREF(var) = VARIANT_FALSE;
-        }
-        break;
-    default:
-        break;
     }
 }
 
@@ -410,8 +429,8 @@ hash2ptr_dispparams(VALUE hash, ITypeInfo *pTypeInfo, DISPID dispid, DISPPARAMS 
     len = 0;
     bstrs = ALLOCA_N(BSTR, pdispparams->cArgs + 1);
     hr = pTypeInfo->lpVtbl->GetNames(pTypeInfo, dispid,
-                                     bstrs, pdispparams->cArgs + 1,
-                                     &len);
+      bstrs, pdispparams->cArgs + 1,
+      &len);
     if (FAILED(hr))
         return;
 
@@ -422,7 +441,7 @@ hash2ptr_dispparams(VALUE hash, ITypeInfo *pTypeInfo, DISPID dispid, DISPPARAMS 
             val = rb_hash_aref(hash, key);
         if (val == Qnil)
             val = rb_hash_aref(hash, rb_str_intern(key));
-        pvar = &pdispparams->rgvarg[pdispparams->cArgs-i-1];
+        pvar = &pdispparams->rgvarg[pdispparams->cArgs - i - 1];
         ole_val2ptr_variant(val, pvar);
     }
 }
@@ -443,9 +462,9 @@ ary2ptr_dispparams(VALUE ary, DISPPARAMS *pdispparams)
     int i;
     VALUE v;
     VARIANT *pvar;
-    for(i = 0; i < RARRAY_LEN(ary) && (unsigned int) i < pdispparams->cArgs; i++) {
+    for (i = 0; i < RARRAY_LEN(ary) && (unsigned int)i < pdispparams->cArgs; i++) {
         v = rb_ary_entry(ary, i);
-        pvar = &pdispparams->rgvarg[pdispparams->cArgs-i-1];
+        pvar = &pdispparams->rgvarg[pdispparams->cArgs - i - 1];
         ole_val2ptr_variant(v, pvar);
     }
 }
@@ -469,7 +488,7 @@ rescue_callback(VALUE arg)
     VALUE bt = rb_funcall(e, rb_intern("backtrace"), 0);
     VALUE msg = rb_funcall(e, rb_intern("message"), 0);
     bt = rb_ary_entry(bt, 0);
-    error = rb_sprintf("%"PRIsVALUE": %"PRIsVALUE" (%s)\n", bt, msg, rb_obj_classname(e));
+    error = rb_sprintf("%" PRIsVALUE ": %" PRIsVALUE " (%s)\n", bt, msg, rb_obj_classname(e));
     rb_write_error_str(error);
     rb_backtrace();
     ruby_finalize();
@@ -498,7 +517,7 @@ find_iid(VALUE ole, char *pitf, IID *piid, ITypeInfo **ppTypeInfo)
     char *pstr;
 
     BOOL is_found = FALSE;
-    LCID    lcid = cWIN32OLE_lcid;
+    LCID lcid = cWIN32OLE_lcid;
 
     pole = oledata_get_struct(ole);
 
@@ -509,49 +528,49 @@ find_iid(VALUE ole, char *pitf, IID *piid, ITypeInfo **ppTypeInfo)
         return hr;
 
     hr = pTypeInfo->lpVtbl->GetContainingTypeLib(pTypeInfo,
-                                                 &pTypeLib,
-                                                 &index);
+      &pTypeLib,
+      &index);
     OLE_RELEASE(pTypeInfo);
     if (FAILED(hr))
         return hr;
 
     if (!pitf) {
         hr = pTypeLib->lpVtbl->GetTypeInfoOfGuid(pTypeLib,
-                                                 piid,
-                                                 ppTypeInfo);
+          piid,
+          ppTypeInfo);
         OLE_RELEASE(pTypeLib);
         return hr;
     }
     count = pTypeLib->lpVtbl->GetTypeInfoCount(pTypeLib);
     for (index = 0; index < count; index++) {
         hr = pTypeLib->lpVtbl->GetTypeInfo(pTypeLib,
-                                           index,
-                                           &pTypeInfo);
+          index,
+          &pTypeInfo);
         if (FAILED(hr))
             break;
         hr = OLE_GET_TYPEATTR(pTypeInfo, &pTypeAttr);
 
-        if(FAILED(hr)) {
+        if (FAILED(hr)) {
             OLE_RELEASE(pTypeInfo);
             break;
         }
-        if(pTypeAttr->typekind == TKIND_COCLASS) {
+        if (pTypeAttr->typekind == TKIND_COCLASS) {
             for (type = 0; type < pTypeAttr->cImplTypes; type++) {
                 hr = pTypeInfo->lpVtbl->GetRefTypeOfImplType(pTypeInfo,
-                                                             type,
-                                                             &RefType);
+                  type,
+                  &RefType);
                 if (FAILED(hr))
                     break;
                 hr = pTypeInfo->lpVtbl->GetRefTypeInfo(pTypeInfo,
-                                                       RefType,
-                                                       &pImplTypeInfo);
+                  RefType,
+                  &pImplTypeInfo);
                 if (FAILED(hr))
                     break;
 
                 hr = pImplTypeInfo->lpVtbl->GetDocumentation(pImplTypeInfo,
-                                                             -1,
-                                                             &bstr,
-                                                             NULL, NULL, NULL);
+                  -1,
+                  &bstr,
+                  NULL, NULL, NULL);
                 if (FAILED(hr)) {
                     OLE_RELEASE(pImplTypeInfo);
                     break;
@@ -559,7 +578,7 @@ find_iid(VALUE ole, char *pitf, IID *piid, ITypeInfo **ppTypeInfo)
                 pstr = ole_wc2mb(bstr);
                 if (strcmp(pitf, pstr) == 0) {
                     hr = pImplTypeInfo->lpVtbl->GetTypeAttr(pImplTypeInfo,
-                                                            &pImplTypeAttr);
+                      &pImplTypeAttr);
                     if (SUCCEEDED(hr)) {
                         is_found = TRUE;
                         *piid = pImplTypeAttr->guid;
@@ -568,7 +587,7 @@ find_iid(VALUE ole, char *pitf, IID *piid, ITypeInfo **ppTypeInfo)
                             (*ppTypeInfo)->lpVtbl->AddRef((*ppTypeInfo));
                         }
                         pImplTypeInfo->lpVtbl->ReleaseTypeAttr(pImplTypeInfo,
-                                                               pImplTypeAttr);
+                          pImplTypeAttr);
                     }
                 }
                 free(pstr);
@@ -584,17 +603,17 @@ find_iid(VALUE ole, char *pitf, IID *piid, ITypeInfo **ppTypeInfo)
             break;
     }
     OLE_RELEASE(pTypeLib);
-    if(!is_found)
+    if (!is_found)
         return E_NOINTERFACE;
     return hr;
 }
 
 static HRESULT
 find_coclass(
-    ITypeInfo *pTypeInfo,
-    TYPEATTR *pTypeAttr,
-    ITypeInfo **pCOTypeInfo,
-    TYPEATTR **pCOTypeAttr)
+  ITypeInfo *pTypeInfo,
+  TYPEATTR *pTypeAttr,
+  ITypeInfo **pCOTypeInfo,
+  TYPEATTR **pCOTypeAttr)
 {
     HRESULT hr = E_NOINTERFACE;
     ITypeLib *pTypeLib;
@@ -603,7 +622,7 @@ find_coclass(
     ITypeInfo *pTypeInfo2;
     TYPEATTR *pTypeAttr2;
     int flags;
-    int i,j;
+    int i, j;
     HREFTYPE href;
     ITypeInfo *pRefTypeInfo;
     TYPEATTR *pRefTypeAttr;
@@ -640,7 +659,7 @@ find_coclass(
             if (FAILED(hr))
                 continue;
             hr = OLE_GET_TYPEATTR(pRefTypeInfo, &pRefTypeAttr);
-            if (FAILED(hr))  {
+            if (FAILED(hr)) {
                 OLE_RELEASE(pRefTypeInfo);
                 continue;
             }
@@ -658,7 +677,8 @@ find_coclass(
         *pCOTypeInfo = pTypeInfo2;
         *pCOTypeAttr = pTypeAttr2;
         hr = S_OK;
-    } else {
+    }
+    else {
         hr = E_NOINTERFACE;
     }
     return hr;
@@ -666,9 +686,9 @@ find_coclass(
 
 static HRESULT
 find_default_source_from_typeinfo(
-    ITypeInfo *pTypeInfo,
-    TYPEATTR *pTypeAttr,
-    ITypeInfo **ppTypeInfo)
+  ITypeInfo *pTypeInfo,
+  TYPEATTR *pTypeAttr,
+  ITypeInfo **ppTypeInfo)
 {
     int i = 0;
     HRESULT hr = E_NOINTERFACE;
@@ -685,14 +705,14 @@ find_default_source_from_typeinfo(
            we just hope that it is a dispinterface :-)
         */
         if ((flags & IMPLTYPEFLAG_FDEFAULT) &&
-            (flags & IMPLTYPEFLAG_FSOURCE)) {
+          (flags & IMPLTYPEFLAG_FSOURCE)) {
 
             hr = pTypeInfo->lpVtbl->GetRefTypeOfImplType(pTypeInfo,
-                                                         i, &hRefType);
+              i, &hRefType);
             if (FAILED(hr))
                 continue;
             hr = pTypeInfo->lpVtbl->GetRefTypeInfo(pTypeInfo,
-                                                   hRefType, ppTypeInfo);
+              hRefType, ppTypeInfo);
             if (SUCCEEDED(hr))
                 break;
         }
@@ -719,13 +739,13 @@ find_default_source(VALUE ole, IID *piid, ITypeInfo **ppTypeInfo)
     pole = oledata_get_struct(ole);
     pDispatch = pole->pDispatch;
     hr = pDispatch->lpVtbl->QueryInterface(pDispatch,
-                                           &IID_IProvideClassInfo2,
-                                           &p);
+      &IID_IProvideClassInfo2,
+      &p);
     if (SUCCEEDED(hr)) {
         pProvideClassInfo2 = p;
         hr = pProvideClassInfo2->lpVtbl->GetGUID(pProvideClassInfo2,
-                                                 GUIDKIND_DEFAULT_SOURCE_DISP_IID,
-                                                 piid);
+          GUIDKIND_DEFAULT_SOURCE_DISP_IID,
+          piid);
         OLE_RELEASE(pProvideClassInfo2);
         if (SUCCEEDED(hr)) {
             hr = find_iid(ole, NULL, piid, ppTypeInfo);
@@ -735,16 +755,16 @@ find_default_source(VALUE ole, IID *piid, ITypeInfo **ppTypeInfo)
         return hr;
     }
     hr = pDispatch->lpVtbl->QueryInterface(pDispatch,
-            &IID_IProvideClassInfo,
-            &p);
+      &IID_IProvideClassInfo,
+      &p);
     if (SUCCEEDED(hr)) {
         pProvideClassInfo = p;
         hr = pProvideClassInfo->lpVtbl->GetClassInfo(pProvideClassInfo,
-                                                     &pTypeInfo);
+          &pTypeInfo);
         OLE_RELEASE(pProvideClassInfo);
     }
     if (FAILED(hr)) {
-        hr = pDispatch->lpVtbl->GetTypeInfo(pDispatch, 0, cWIN32OLE_lcid, &pTypeInfo );
+        hr = pDispatch->lpVtbl->GetTypeInfo(pDispatch, 0, cWIN32OLE_lcid, &pTypeInfo);
     }
     if (FAILED(hr))
         return hr;
@@ -793,16 +813,16 @@ ole_search_event_at(VALUE ary, VALUE ev)
     long i, len;
     long ret = -1;
     len = RARRAY_LEN(ary);
-    for(i = 0; i < len; i++) {
+    for (i = 0; i < len; i++) {
         event = rb_ary_entry(ary, i);
         event_name = rb_ary_entry(event, 1);
-        if(NIL_P(event_name) && NIL_P(ev)) {
+        if (NIL_P(event_name) && NIL_P(ev)) {
             ret = i;
             break;
         }
         else if (RB_TYPE_P(ev, T_STRING) &&
-                 RB_TYPE_P(event_name, T_STRING) &&
-                 rb_str_cmp(ev, event_name) == 0) {
+          RB_TYPE_P(event_name, T_STRING) &&
+          rb_str_cmp(ev, event_name) == 0) {
             ret = i;
             break;
         }
@@ -811,7 +831,7 @@ ole_search_event_at(VALUE ary, VALUE ev)
 }
 
 static VALUE
-ole_search_event(VALUE ary, VALUE ev, BOOL  *is_default)
+ole_search_event(VALUE ary, VALUE ev, BOOL *is_default)
 {
     VALUE event;
     VALUE def_event;
@@ -820,10 +840,10 @@ ole_search_event(VALUE ary, VALUE ev, BOOL  *is_default)
     *is_default = FALSE;
     def_event = Qnil;
     len = RARRAY_LEN(ary);
-    for(i = 0; i < len; i++) {
+    for (i = 0; i < len; i++) {
         event = rb_ary_entry(ary, i);
         event_name = rb_ary_entry(event, 1);
-        if(NIL_P(event_name)) {
+        if (NIL_P(event_name)) {
             *is_default = TRUE;
             def_event = event;
         }
@@ -841,7 +861,7 @@ ole_search_handler_method(VALUE handler, VALUE ev, BOOL *is_default_handler)
     VALUE mid;
 
     *is_default_handler = FALSE;
-    mid = rb_to_id(rb_sprintf("on%"PRIsVALUE, ev));
+    mid = rb_to_id(rb_sprintf("on%" PRIsVALUE, ev));
     if (rb_respond_to(handler, mid)) {
         return mid;
     }
@@ -862,7 +882,6 @@ ole_delete_event(VALUE ary, VALUE ev)
         rb_ary_delete_at(ary, at);
     }
 }
-
 
 static void
 oleevent_free(void *ptr)
@@ -920,7 +939,7 @@ ev_advise(int argc, VALUE *argv, VALUE self)
         rb_raise(rb_eTypeError, "1st parameter must be WIN32OLE object");
     }
 
-    if(!RB_TYPE_P(itf, T_NIL)) {
+    if (!RB_TYPE_P(itf, T_NIL)) {
         pitf = StringValuePtr(itf);
         hr = find_iid(ole, pitf, &iid, &pTypeInfo);
     }
@@ -934,18 +953,18 @@ ev_advise(int argc, VALUE *argv, VALUE self)
     pole = oledata_get_struct(ole);
     pDispatch = pole->pDispatch;
     hr = pDispatch->lpVtbl->QueryInterface(pDispatch,
-                                           &IID_IConnectionPointContainer,
-                                           &p);
+      &IID_IConnectionPointContainer,
+      &p);
     if (FAILED(hr)) {
         OLE_RELEASE(pTypeInfo);
         ole_raise(hr, eWIN32OLEQueryInterfaceError,
-                  "failed to query IConnectionPointContainer");
+          "failed to query IConnectionPointContainer");
     }
     pContainer = p;
 
     hr = pContainer->lpVtbl->FindConnectionPoint(pContainer,
-                                                 &iid,
-                                                 &pConnectionPoint);
+      &iid,
+      &pConnectionPoint);
     OLE_RELEASE(pContainer);
     if (FAILED(hr)) {
         OLE_RELEASE(pTypeInfo);
@@ -954,8 +973,8 @@ ev_advise(int argc, VALUE *argv, VALUE self)
     pIEV = EVENTSINK_Constructor();
     pIEV->m_iid = iid;
     hr = pConnectionPoint->lpVtbl->Advise(pConnectionPoint,
-                                          (IUnknown*)pIEV,
-                                          &dwCookie);
+      (IUnknown *)pIEV,
+      &dwCookie);
     if (FAILED(hr)) {
         ole_raise(hr, eWIN32OLEQueryInterfaceError, "Advise Error");
     }
@@ -996,7 +1015,7 @@ static void
 ole_msg_loop(void)
 {
     MSG msg;
-    while(PeekMessage(&msg,NULL,0,0,PM_REMOVE)) {
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
@@ -1037,8 +1056,8 @@ ev_on_event(int argc, VALUE *argv, VALUE self, VALUE is_ary_arg)
         rb_raise(eWIN32OLERuntimeError, "IConnectionPoint not found. You must call advise at first.");
     }
     rb_scan_args(argc, argv, "01*", &event, &args);
-    if(!NIL_P(event)) {
-        if(!RB_TYPE_P(event, T_STRING) && !RB_TYPE_P(event, T_SYMBOL)) {
+    if (!NIL_P(event)) {
+        if (!RB_TYPE_P(event, T_STRING) && !RB_TYPE_P(event, T_SYMBOL)) {
             rb_raise(rb_eTypeError, "wrong argument type (expected String or Symbol)");
         }
         if (RB_TYPE_P(event, T_SYMBOL)) {
@@ -1127,8 +1146,8 @@ fev_off_event(int argc, VALUE *argv, VALUE self)
     VALUE events;
 
     rb_scan_args(argc, argv, "01", &event);
-    if(!NIL_P(event)) {
-        if(!RB_TYPE_P(event, T_STRING) && !RB_TYPE_P(event, T_SYMBOL)) {
+    if (!NIL_P(event)) {
+        if (!RB_TYPE_P(event, T_STRING) && !RB_TYPE_P(event, T_SYMBOL)) {
             rb_raise(rb_eTypeError, "wrong argument type (expected String or Symbol)");
         }
         if (RB_TYPE_P(event, T_SYMBOL)) {

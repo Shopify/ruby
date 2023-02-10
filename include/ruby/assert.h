@@ -1,4 +1,4 @@
-#ifndef RUBY_ASSERT_H                                /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_ASSERT_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_ASSERT_H
 /**
  * @file
@@ -57,9 +57,9 @@
  * - `(!!0)-1` (== `0-1` == `-1`) when RUBY_DEBUG is defined as 0, and
  * - `(!!n)-1` (== `1-1` ==  `0`) when RUBY_DEBUG is defined as something else.
  */
-#if ! defined(RUBY_DEBUG)
+#if !defined(RUBY_DEBUG)
 # define RBIMPL_RUBY_DEBUG 0
-#elif !!RUBY_DEBUG-1 < 0
+#elif !!RUBY_DEBUG - 1 < 0
 # define RBIMPL_RUBY_DEBUG 0
 #else
 # define RBIMPL_RUBY_DEBUG 1
@@ -148,7 +148,7 @@ RBIMPL_SYMBOL_EXPORT_END()
  * @param  mesg  The message to display.
  */
 #define RUBY_ASSERT_FAIL(mesg) \
-    rb_assert_failure(__FILE__, __LINE__, RBIMPL_ASSERT_FUNC, mesg)
+ rb_assert_failure(__FILE__, __LINE__, RBIMPL_ASSERT_FUNC, mesg)
 
 /**
  * Asserts that the expression is truthy.  If not aborts with the message.
@@ -157,7 +157,7 @@ RBIMPL_SYMBOL_EXPORT_END()
  * @param  mesg  The message to display on failure.
  */
 #define RUBY_ASSERT_MESG(expr, mesg) \
-    (RB_LIKELY(expr) ? RBIMPL_ASSERT_NOTHING : RUBY_ASSERT_FAIL(mesg))
+ (RB_LIKELY(expr) ? RBIMPL_ASSERT_NOTHING : RUBY_ASSERT_FAIL(mesg))
 
 /**
  * A variant of #RUBY_ASSERT that does not interface with #RUBY_DEBUG.
@@ -172,7 +172,7 @@ RBIMPL_SYMBOL_EXPORT_END()
  * @param  expr  What supposedly evaluates to true.
  */
 #if RUBY_DEBUG
-# define RUBY_ASSERT(expr) RUBY_ASSERT_MESG((expr), #expr)
+# define RUBY_ASSERT(expr) RUBY_ASSERT_MESG((expr), # expr)
 #else
 # define RUBY_ASSERT(expr) RBIMPL_ASSERT_NOTHING
 #endif
@@ -189,7 +189,7 @@ RBIMPL_SYMBOL_EXPORT_END()
 #if defined(NDEBUG)
 # define RUBY_ASSERT_NDEBUG(expr) RBIMPL_ASSERT_NOTHING
 #else
-# define RUBY_ASSERT_NDEBUG(expr) RUBY_ASSERT_MESG((expr), #expr)
+# define RUBY_ASSERT_NDEBUG(expr) RUBY_ASSERT_MESG((expr), # expr)
 #endif
 
 /**
@@ -200,7 +200,7 @@ RBIMPL_SYMBOL_EXPORT_END()
 # define RUBY_ASSERT_MESG_WHEN(cond, expr, mesg) RUBY_ASSERT_MESG((expr), (mesg))
 #else
 # define RUBY_ASSERT_MESG_WHEN(cond, expr, mesg) \
-    ((cond) ? RUBY_ASSERT_MESG((expr), (mesg)) : RBIMPL_ASSERT_NOTHING)
+  ((cond) ? RUBY_ASSERT_MESG((expr), (mesg)) : RBIMPL_ASSERT_NOTHING)
 #endif
 
 /**
@@ -225,7 +225,7 @@ RBIMPL_SYMBOL_EXPORT_END()
 #elif defined(RUBY_ASSERT_NOASSUME)
 # /* See commit d300a734414ef6de7e8eb563b7cc4389c455ed08 */
 # define RBIMPL_ASSERT_OR_ASSUME(expr) RBIMPL_ASSERT_NOTHING
-#elif ! defined(RBIMPL_HAVE___ASSUME)
+#elif !defined(RBIMPL_HAVE___ASSUME)
 # define RBIMPL_ASSERT_OR_ASSUME(expr) RBIMPL_ASSERT_NOTHING
 #else
 # define RBIMPL_ASSERT_OR_ASSUME(expr) RBIMPL_ASSUME(expr)

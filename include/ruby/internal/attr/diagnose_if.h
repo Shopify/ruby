@@ -1,4 +1,4 @@
-#ifndef RBIMPL_ATTR_DIAGNOSE_IF_H                    /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_ATTR_DIAGNOSE_IF_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_ATTR_DIAGNOSE_IF_H
 /**
  * @file
@@ -28,12 +28,15 @@
 # /* https://bugs.llvm.org/show_bug.cgi?id=34319 */
 # define RBIMPL_ATTR_DIAGNOSE_IF(_, __, ___) /* void */
 
+// clang-format off
+// There's no way to tell clang format to not add spaces around binary operators.
 #elif RBIMPL_HAS_ATTRIBUTE(diagnose_if)
 # define RBIMPL_ATTR_DIAGNOSE_IF(_, __, ___) \
-    RBIMPL_WARNING_PUSH() \
-    RBIMPL_WARNING_IGNORED(-Wgcc-compat) \
-    __attribute__((__diagnose_if__(_, __, ___))) \
-    RBIMPL_WARNING_POP()
+  RBIMPL_WARNING_PUSH() \
+  RBIMPL_WARNING_IGNORED(-Wgcc-compat) \
+  __attribute__((__diagnose_if__(_, __, ___))) \
+  RBIMPL_WARNING_POP()
+// clang-format on
 
 #else
 # define RBIMPL_ATTR_DIAGNOSE_IF(_, __, ___) /* void */

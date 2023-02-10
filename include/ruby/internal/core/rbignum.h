@@ -1,4 +1,4 @@
-#ifndef RBIMPL_RBIGNUM_H                             /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_RBIGNUM_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_RBIGNUM_H
 /**
  * @file
@@ -74,7 +74,7 @@ static inline bool
 RBIGNUM_NEGATIVE_P(VALUE b)
 {
     RBIMPL_ASSERT_TYPE(b, RUBY_T_BIGNUM);
-    return ! RBIGNUM_POSITIVE_P(b);
+    return !RBIGNUM_POSITIVE_P(b);
 }
 
 #endif /* RBIMPL_RBIGNUM_H */

@@ -1,4 +1,4 @@
-#ifndef RB_DEBUG_H                                   /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RB_DEBUG_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RB_DEBUG_H 1
 /**
  * @file
@@ -585,7 +585,6 @@ RBIMPL_ATTR_NONNULL(())
  */
 VALUE rb_tracearg_object(rb_trace_arg_t *trace_arg);
 
-
 /** @} */
 
 /**
@@ -652,7 +651,7 @@ int rb_postponed_job_register_one(unsigned int flags, rb_postponed_job_func_t fu
 /* undocumented advanced tracing APIs */
 
 typedef enum {
-    RUBY_EVENT_HOOK_FLAG_SAFE    = 0x01,
+    RUBY_EVENT_HOOK_FLAG_SAFE = 0x01,
     RUBY_EVENT_HOOK_FLAG_DELETED = 0x02,
     RUBY_EVENT_HOOK_FLAG_RAW_ARG = 0x04
 } rb_event_hook_flag_t;

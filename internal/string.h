@@ -1,4 +1,4 @@
-#ifndef INTERNAL_STRING_H                                /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_STRING_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_STRING_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -9,14 +9,14 @@
  * @brief      Internal header for String.
  */
 #include "ruby/internal/config.h"
-#include <stddef.h>             /* for size_t */
+#include <stddef.h> /* for size_t */
 #include "internal/compilers.h" /* for __has_builtin */
-#include "ruby/internal/stdbool.h"     /* for bool */
-#include "ruby/encoding.h"      /* for rb_encoding */
-#include "ruby/ruby.h"          /* for VALUE */
+#include "ruby/internal/stdbool.h" /* for bool */
+#include "ruby/encoding.h" /* for rb_encoding */
+#include "ruby/ruby.h" /* for VALUE */
 
-#define STR_NOEMBED      FL_USER1
-#define STR_SHARED       FL_USER2 /* = ELTS_SHARED */
+#define STR_NOEMBED FL_USER1
+#define STR_SHARED FL_USER2 /* = ELTS_SHARED */
 
 #ifdef rb_fstring_cstr
 # undef rb_fstring_cstr
@@ -35,7 +35,7 @@ VALUE rb_str_locktmp_ensure(VALUE str, VALUE (*func)(VALUE), VALUE arg);
 VALUE rb_str_chomp_string(VALUE str, VALUE chomp);
 VALUE rb_external_str_with_enc(VALUE str, rb_encoding *eenc);
 VALUE rb_str_cat_conv_enc_opts(VALUE newstr, long ofs, const char *ptr, long len,
-                               rb_encoding *from, int ecflags, VALUE ecopts);
+  rb_encoding *from, int ecflags, VALUE ecopts);
 VALUE rb_enc_str_scrub(rb_encoding *enc, VALUE str, VALUE repl);
 VALUE rb_str_escape(VALUE str);
 size_t rb_str_memsize(VALUE);
@@ -100,7 +100,7 @@ QUOTE_ID(ID i)
 static inline bool
 STR_EMBED_P(VALUE str)
 {
-    return ! FL_TEST_RAW(str, STR_NOEMBED);
+    return !FL_TEST_RAW(str, STR_NOEMBED);
 }
 
 static inline bool
@@ -140,8 +140,8 @@ rb_str_eql_internal(const VALUE str1, const VALUE str2)
 
 #if __has_builtin(__builtin_constant_p)
 # define rb_fstring_cstr(str) \
-    (__builtin_constant_p(str) ? \
-        rb_fstring_new((str), (long)strlen(str)) : \
-        (rb_fstring_cstr)(str))
+  (__builtin_constant_p(str) ? \
+      rb_fstring_new((str), (long)strlen(str)) : \
+      (rb_fstring_cstr)(str))
 #endif
 #endif /* INTERNAL_STRING_H */

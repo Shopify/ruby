@@ -1,4 +1,4 @@
-#ifndef RUBY_RE_H                                    /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RUBY_RE_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RUBY_RE_H 1
 /**
  * @file
@@ -22,7 +22,7 @@
 #include "ruby/internal/core/rmatch.h"
 #include "ruby/internal/dllexport.h"
 
-struct re_registers;            /* Defined in onigmo.h */
+struct re_registers; /* Defined in onigmo.h */
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
 

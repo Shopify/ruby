@@ -88,21 +88,20 @@ genrand_real(struct MT *mt)
 }
 
 static const double dbl_reduce_scale = /* 2**(-DBL_MANT_DIG) */
-    (1.0
-     / (double)(DBL_MANT_DIG > 2*31 ? (1ul<<31) : 1.0)
-     / (double)(DBL_MANT_DIG > 1*31 ? (1ul<<31) : 1.0)
-     / (double)(1ul<<(DBL_MANT_DIG%31)));
+  (1.0 / (double)(DBL_MANT_DIG > 2 * 31 ? (1ul << 31) : 1.0) / (double)(DBL_MANT_DIG > 1 * 31 ? (1ul << 31) : 1.0) / (double)(1ul << (DBL_MANT_DIG % 31)));
 
 static double
 int_pair_to_real_exclusive(uint32_t a, uint32_t b)
 {
     static const int a_shift = DBL_MANT_DIG < 64 ?
-        (64-DBL_MANT_DIG)/2 : 0;
+      (64 - DBL_MANT_DIG) / 2 :
+      0;
     static const int b_shift = DBL_MANT_DIG < 64 ?
-        (65-DBL_MANT_DIG)/2 : 0;
+      (65 - DBL_MANT_DIG) / 2 :
+      0;
     a >>= a_shift;
     b >>= b_shift;
-    return (a*(double)(1ul<<(32-b_shift))+b)*dbl_reduce_scale;
+    return (a * (double)(1ul << (32 - b_shift)) + b) * dbl_reduce_scale;
 }
 
 /* generates a random number on [0,1] with 53-bit resolution*/
@@ -202,21 +201,23 @@ rb_genrand_real(void)
     return genrand_real(mt);
 }
 
-#define SIZEOF_INT32 (31/CHAR_BIT + 1)
+#define SIZEOF_INT32 (31 / CHAR_BIT + 1)
 
 static double
 int_pair_to_real_inclusive(uint32_t a, uint32_t b)
 {
     double r;
-    enum {dig = DBL_MANT_DIG};
-    enum {dig_u = dig-32, dig_r64 = 64-dig, bmask = ~(~0u<<(dig_r64))};
+    enum { dig = DBL_MANT_DIG };
+    enum { dig_u = dig - 32,
+        dig_r64 = 64 - dig,
+        bmask = ~(~0u << (dig_r64)) };
 #if defined HAVE_UINT128_T
     const uint128_t m = ((uint128_t)1 << dig) | 1;
     uint128_t x = ((uint128_t)a << 32) | b;
     r = (double)(uint64_t)((x * m) >> 64);
 #elif defined HAVE_UINT64_T && !MSC_VERSION_BEFORE(1300)
     uint64_t x = ((uint64_t)a << dig_u) +
-        (((uint64_t)b + (a >> dig_u)) >> dig_r64);
+      (((uint64_t)b + (a >> dig_u)) >> dig_r64);
     r = (double)x;
 #else
     /* shift then add to get rid of overflow */
@@ -228,7 +229,7 @@ int_pair_to_real_inclusive(uint32_t a, uint32_t b)
 
 VALUE rb_cRandom;
 #define id_minus '-'
-#define id_plus  '+'
+#define id_plus '+'
 static ID id_rand, id_bytes;
 NORETURN(static void domain_error(void));
 
@@ -252,9 +253,9 @@ random_memsize(const void *ptr)
 const rb_data_type_t rb_random_data_type = {
     "random",
     {
-        random_mark,
-        random_free,
-        random_memsize,
+      random_mark,
+      random_free,
+      random_memsize,
     },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -271,9 +272,9 @@ random_mt_memsize(const void *ptr)
 static const rb_data_type_t random_mt_type = {
     "random/MT",
     {
-        random_mt_mark,
-        random_mt_free,
-        random_mt_memsize,
+      random_mt_mark,
+      random_mt_free,
+      random_mt_memsize,
     },
     &rb_random_data_type,
     (void *)&random_mt_if,
@@ -310,7 +311,7 @@ try_get_rnd(VALUE obj)
     rb_random_t *rnd = DATA_PTR(obj);
     if (!rnd) {
         rb_raise(rb_eArgError, "uninitialized random: %s",
-                 RTYPEDDATA_TYPE(obj)->wrap_struct_name);
+          RTYPEDDATA_TYPE(obj)->wrap_struct_name);
     }
     return rnd;
 }
@@ -346,7 +347,7 @@ rand_init_default(const rb_random_interface_t *rng, rb_random_t *rnd)
 {
     VALUE seed, buf0 = 0;
     size_t len = roomof(rng->default_seed_bits, 32);
-    uint32_t *buf = ALLOCV_N(uint32_t, buf0, len+1);
+    uint32_t *buf = ALLOCV_N(uint32_t, buf0, len + 1);
 
     fill_random_seed(buf, len);
     rng->init(rnd, buf, len);
@@ -368,14 +369,14 @@ rand_init(const rb_random_interface_t *rng, rb_random_t *rnd, VALUE seed)
     if (len == 0) len = 1;
     buf = ALLOCV_N(uint32_t, buf0, len);
     sign = rb_integer_pack(seed, buf, len, sizeof(uint32_t), 0,
-        INTEGER_PACK_LSWORD_FIRST|INTEGER_PACK_NATIVE_BYTE_ORDER);
+      INTEGER_PACK_LSWORD_FIRST | INTEGER_PACK_NATIVE_BYTE_ORDER);
     if (sign < 0)
         sign = -sign;
     if (len <= 1) {
         rng->init_int32(rnd, len ? buf[0] : 0);
     }
     else {
-        if (sign != 2 && buf[len-1] == 1) /* remove leading-zero-guard */
+        if (sign != 2 && buf[len - 1] == 1) /* remove leading-zero-guard */
             len--;
         rng->init(rnd, buf, len);
     }
@@ -401,16 +402,15 @@ random_init(int argc, VALUE *argv, VALUE obj)
 
     if (!rng) {
         rb_raise(rb_eTypeError, "undefined random interface: %s",
-                 RTYPEDDATA_TYPE(obj)->wrap_struct_name);
+          RTYPEDDATA_TYPE(obj)->wrap_struct_name);
     }
 
     unsigned int major = rng->version.major;
     unsigned int minor = rng->version.minor;
     if (major != RUBY_RANDOM_INTERFACE_VERSION_MAJOR) {
-        rb_raise(rb_eTypeError, "Random interface version "
-                 STRINGIZE(RUBY_RANDOM_INTERFACE_VERSION_MAJOR) "."
-                 STRINGIZE(RUBY_RANDOM_INTERFACE_VERSION_MINOR) " "
-                 "expected: %d.%d", major, minor);
+        rb_raise(rb_eTypeError, "Random interface version " STRINGIZE(RUBY_RANDOM_INTERFACE_VERSION_MAJOR) "." STRINGIZE(RUBY_RANDOM_INTERFACE_VERSION_MINOR) " "
+                                                                                                                                                              "expected: %d.%d",
+                                  major, minor);
     }
     argc = rb_check_arity(argc, 0, 1);
     rb_check_frozen(obj);
@@ -436,16 +436,16 @@ random_init(int argc, VALUE *argv, VALUE obj)
 static int
 fill_random_bytes_urandom(void *seed, size_t size)
 {
-     unsigned char *p = (unsigned char *)seed;
-     while (size) {
+    unsigned char *p = (unsigned char *)seed;
+    while (size) {
         size_t len = size < MAX_SEED_LEN_PER_READ ? size : MAX_SEED_LEN_PER_READ;
         if (getentropy(p, len) != 0) {
             return -1;
         }
         p += len;
         size -= len;
-     }
-     return 0;
+    }
+    return 0;
 }
 #elif USE_DEV_URANDOM
 static int
@@ -458,12 +458,13 @@ fill_random_bytes_urandom(void *seed, size_t size)
     */
     int fd = rb_cloexec_open("/dev/urandom",
 # ifdef O_NONBLOCK
-                             O_NONBLOCK|
+      O_NONBLOCK |
 # endif
 # ifdef O_NOCTTY
-                             O_NOCTTY|
+        O_NOCTTY |
 # endif
-                             O_RDONLY, 0);
+        O_RDONLY,
+      0);
     struct stat statbuf;
     ssize_t ret = 0;
     size_t offset = 0;
@@ -472,7 +473,7 @@ fill_random_bytes_urandom(void *seed, size_t size)
     rb_update_max_fd(fd);
     if (fstat(fd, &statbuf) == 0 && S_ISCHR(statbuf.st_mode)) {
         do {
-            ret = read(fd, ((char*)seed) + offset, size - offset);
+            ret = read(fd, ((char *)seed) + offset, size - offset);
             if (ret < 0) {
                 close(fd);
                 return -1;
@@ -487,12 +488,12 @@ fill_random_bytes_urandom(void *seed, size_t size)
 # define fill_random_bytes_urandom(seed, size) -1
 #endif
 
-#if ! defined HAVE_GETRANDOM && defined __linux__ && defined __NR_getrandom
+#if !defined HAVE_GETRANDOM && defined __linux__ && defined __NR_getrandom
 # ifndef GRND_NONBLOCK
-#   define GRND_NONBLOCK 0x0001	/* not defined in musl libc */
+#  define GRND_NONBLOCK 0x0001 /* not defined in musl libc */
 # endif
 # define getrandom(ptr, size, flags) \
-    (ssize_t)syscall(__NR_getrandom, (ptr), (size), (flags))
+  (ssize_t) syscall(__NR_getrandom, (ptr), (size), (flags))
 # define HAVE_GETRANDOM 1
 #endif
 
@@ -501,40 +502,40 @@ fill_random_bytes_urandom(void *seed, size_t size)
 
 # if defined(USE_COMMON_RANDOM)
 # elif defined MAC_OS_X_VERSION_10_10 && MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_10
-#   define USE_COMMON_RANDOM 1
+#  define USE_COMMON_RANDOM 1
 # else
-#   define USE_COMMON_RANDOM 0
+#  define USE_COMMON_RANDOM 0
 # endif
 # if USE_COMMON_RANDOM
-#   include <CommonCrypto/CommonCryptoError.h> /* for old Xcode */
-#   include <CommonCrypto/CommonRandom.h>
+#  include <CommonCrypto/CommonCryptoError.h> /* for old Xcode */
+#  include <CommonCrypto/CommonRandom.h>
 # else
-#   include <Security/SecRandom.h>
+#  include <Security/SecRandom.h>
 # endif
 
 static int
 fill_random_bytes_syscall(void *seed, size_t size, int unused)
 {
-#if USE_COMMON_RANDOM
+# if USE_COMMON_RANDOM
     CCRNGStatus status = CCRandomGenerateBytes(seed, size);
     int failed = status != kCCSuccess;
-#else
+# else
     int status = SecRandomCopyBytes(kSecRandomDefault, size, seed);
     int failed = status != errSecSuccess;
-#endif
+# endif
 
     if (failed) {
 # if 0
-# if USE_COMMON_RANDOM
+#  if USE_COMMON_RANDOM
         /* How to get the error message? */
         fprintf(stderr, "CCRandomGenerateBytes failed: %d\n", status);
-# else
+#  else
         CFStringRef s = SecCopyErrorMessageString(status, NULL);
         const char *m = s ? CFStringGetCStringPtr(s, kCFStringEncodingUTF8) : NULL;
         fprintf(stderr, "SecRandomCopyBytes failed: %d: %s\n", status,
                 m ? m : "unknown");
         if (s) CFRelease(s);
-# endif
+#  endif
 # endif
         return -1;
     }
@@ -544,20 +545,20 @@ fill_random_bytes_syscall(void *seed, size_t size, int unused)
 static int
 fill_random_bytes_syscall(void *buf, size_t size, int unused)
 {
-#if (defined(__OpenBSD__) && OpenBSD >= 201411) || \
-    (defined(__NetBSD__)  && __NetBSD_Version__ >= 700000000) || \
-    (defined(__FreeBSD__) && __FreeBSD_version >= 1200079)
+# if (defined(__OpenBSD__) && OpenBSD >= 201411) || \
+   (defined(__NetBSD__) && __NetBSD_Version__ >= 700000000) || \
+   (defined(__FreeBSD__) && __FreeBSD_version >= 1200079)
     arc4random_buf(buf, size);
     return 0;
-#else
+# else
     return -1;
-#endif
+# endif
 }
 #elif defined(_WIN32)
 
-#ifndef DWORD_MAX
-# define DWORD_MAX (~(DWORD)0UL)
-#endif
+# ifndef DWORD_MAX
+#  define DWORD_MAX (~(DWORD)0UL)
+# endif
 
 # if defined(CRYPT_VERIFYCONTEXT)
 STATIC_ASSERT(sizeof_HCRYPTPROV, sizeof(HCRYPTPROV) == sizeof(size_t));
@@ -588,12 +589,12 @@ fill_random_bytes_crypt(void *seed, size_t size)
         old_prov = (HCRYPTPROV)ATOMIC_SIZE_CAS(perm_prov, 0, prov);
         if (LIKELY(!old_prov)) { /* no other threads acquired */
             if (prov != INVALID_HCRYPTPROV) {
-#undef RUBY_UNTYPED_DATA_WARNING
-#define RUBY_UNTYPED_DATA_WARNING 0
+#  undef RUBY_UNTYPED_DATA_WARNING
+#  define RUBY_UNTYPED_DATA_WARNING 0
                 rb_gc_register_mark_object(Data_Wrap_Struct(0, 0, release_crypt, &perm_prov));
             }
         }
-        else {			/* another thread acquired */
+        else { /* another thread acquired */
             if (prov != INVALID_HCRYPTPROV) {
                 CryptReleaseContext(prov, 0);
             }
@@ -610,7 +611,7 @@ fill_random_bytes_crypt(void *seed, size_t size)
     return 0;
 }
 # else
-#   define fill_random_bytes_crypt(seed, size) -1
+#  define fill_random_bytes_crypt(seed, size) -1
 # endif
 
 static int
@@ -644,7 +645,7 @@ fill_random_bytes_syscall(void *seed, size_t size, int need_secure)
             flags = GRND_NONBLOCK;
         do {
             errno = 0;
-            ssize_t ret = getrandom(((char*)seed) + offset, size - offset, flags);
+            ssize_t ret = getrandom(((char *)seed) + offset, size - offset, flags);
             if (ret == -1) {
                 ATOMIC_SET(try_syscall, 0);
                 return -1;
@@ -708,20 +709,20 @@ make_seed_value(uint32_t *ptr, size_t len)
 {
     VALUE seed;
 
-    if (ptr[len-1] <= 1) {
+    if (ptr[len - 1] <= 1) {
         /* set leading-zero-guard */
         ptr[len++] = 1;
     }
 
     seed = rb_integer_unpack(ptr, len, sizeof(uint32_t), 0,
-        INTEGER_PACK_LSWORD_FIRST|INTEGER_PACK_NATIVE_BYTE_ORDER);
+      INTEGER_PACK_LSWORD_FIRST | INTEGER_PACK_NATIVE_BYTE_ORDER);
 
     return seed;
 }
 
 #define with_random_seed(size, add) \
-    for (uint32_t seedbuf[(size)+(add)], loop = (fill_random_seed(seedbuf, (size)), 1); \
-         loop; explicit_bzero(seedbuf, (size)*sizeof(seedbuf[0])), loop = 0)
+ for (uint32_t seedbuf[(size) + (add)], loop = (fill_random_seed(seedbuf, (size)), 1); \
+      loop; explicit_bzero(seedbuf, (size) * sizeof(seedbuf[0])), loop = 0)
 
 /*
  * call-seq: Random.new_seed -> integer
@@ -735,7 +736,8 @@ static VALUE
 random_seed(VALUE _)
 {
     VALUE v;
-    with_random_seed(DEFAULT_SEED_CNT, 1) {
+    with_random_seed(DEFAULT_SEED_CNT, 1)
+    {
         v = make_seed_value(seedbuf, DEFAULT_SEED_CNT);
     }
     return v;
@@ -810,8 +812,8 @@ static VALUE
 mt_state(const struct MT *mt)
 {
     return rb_integer_unpack(mt->state, numberof(mt->state),
-        sizeof(*mt->state), 0,
-        INTEGER_PACK_LSWORD_FIRST|INTEGER_PACK_NATIVE_BYTE_ORDER);
+      sizeof(*mt->state), 0,
+      INTEGER_PACK_LSWORD_FIRST | INTEGER_PACK_NATIVE_BYTE_ORDER);
 }
 
 /* :nodoc: */
@@ -870,19 +872,19 @@ rand_mt_load(VALUE obj, VALUE dump)
     rb_check_copyable(obj, dump);
     Check_Type(dump, T_ARRAY);
     switch (RARRAY_LEN(dump)) {
-      case 3:
-        seed = RARRAY_AREF(dump, 2);
-      case 2:
-        left = RARRAY_AREF(dump, 1);
-      case 1:
-        state = RARRAY_AREF(dump, 0);
-        break;
-      default:
-        rb_raise(rb_eArgError, "wrong dump data");
+        case 3:
+            seed = RARRAY_AREF(dump, 2);
+        case 2:
+            left = RARRAY_AREF(dump, 1);
+        case 1:
+            state = RARRAY_AREF(dump, 0);
+            break;
+        default:
+            rb_raise(rb_eArgError, "wrong dump data");
     }
     rb_integer_pack(state, mt->state, numberof(mt->state),
-        sizeof(*mt->state), 0,
-        INTEGER_PACK_LSWORD_FIRST|INTEGER_PACK_NATIVE_BYTE_ORDER);
+      sizeof(*mt->state), 0,
+      INTEGER_PACK_LSWORD_FIRST | INTEGER_PACK_NATIVE_BYTE_ORDER);
     x = NUM2ULONG(left);
     if (x > numberof(mt->state)) {
         rb_raise(rb_eArgError, "wrong value");
@@ -989,9 +991,9 @@ limited_rand(const rb_random_interface_t *rng, rb_random_t *rnd, unsigned long l
 #if 4 < SIZEOF_LONG
     if (0xffffffff < limit) {
         int i;
-      retry:
+    retry:
         val = 0;
-        for (i = SIZEOF_LONG/SIZEOF_INT32-1; 0 <= i; i--) {
+        for (i = SIZEOF_LONG / SIZEOF_INT32 - 1; 0 <= i; i--) {
             if ((mask >> (i * 32)) & 0xffffffff) {
                 val |= (unsigned long)rng->get_int32(rnd) << (i * 32);
                 val &= mask;
@@ -1024,16 +1026,16 @@ limited_big_rand(const rb_random_interface_t *rng, rb_random_t *rnd, VALUE limit
     VALUE val;
 
     len = rb_absint_numwords(limit, 32, NULL);
-    tmp = ALLOCV_N(uint32_t, vtmp, len*2);
+    tmp = ALLOCV_N(uint32_t, vtmp, len * 2);
     lim_array = tmp;
     rnd_array = tmp + len;
     rb_integer_pack(limit, lim_array, len, sizeof(uint32_t), 0,
-        INTEGER_PACK_LSWORD_FIRST|INTEGER_PACK_NATIVE_BYTE_ORDER);
+      INTEGER_PACK_LSWORD_FIRST | INTEGER_PACK_NATIVE_BYTE_ORDER);
 
-  retry:
+retry:
     mask = 0;
     boundary = 1;
-    for (i = len-1; 0 <= i; i--) {
+    for (i = len - 1; 0 <= i; i--) {
         uint32_t r = 0;
         uint32_t lim = lim_array[i];
         mask = mask ? 0xffffffff : (uint32_t)make_mask(lim);
@@ -1049,7 +1051,7 @@ limited_big_rand(const rb_random_interface_t *rng, rb_random_t *rnd, VALUE limit
         rnd_array[i] = r;
     }
     val = rb_integer_unpack(rnd_array, len, sizeof(uint32_t), 0,
-        INTEGER_PACK_LSWORD_FIRST|INTEGER_PACK_NATIVE_BYTE_ORDER);
+      INTEGER_PACK_LSWORD_FIRST | INTEGER_PACK_NATIVE_BYTE_ORDER);
     ALLOCV_END(vtmp);
 
     return val;
@@ -1108,7 +1110,7 @@ random_real(VALUE obj, rb_random_t *rnd, int excl)
     uint32_t a, b;
 
     if (!rnd) {
-        uint32_t x[2] = {0, 0};
+        uint32_t x[2] = { 0, 0 };
         obj_random_bytes(obj, x, sizeof(x));
         a = x[0];
         b = x[1];
@@ -1155,12 +1157,12 @@ static inline VALUE
 ulong_to_num_plus_1(unsigned long n)
 {
 #if HAVE_LONG_LONG
-    return ULL2NUM((LONG_LONG)n+1);
+    return ULL2NUM((LONG_LONG)n + 1);
 #else
     if (n >= ULONG_MAX) {
         return rb_big_plus(ULONG2NUM(n), INT2FIX(1));
     }
-    return ULONG2NUM(n+1);
+    return ULONG2NUM(n + 1);
 #endif
 }
 
@@ -1173,12 +1175,15 @@ random_ulong_limited(VALUE obj, rb_random_t *rnd, unsigned long limit)
         const int n = w > 32 ? sizeof(unsigned long) : sizeof(uint32_t);
         const unsigned long mask = ~(~0UL << w);
         const unsigned long full =
-            (size_t)n >= sizeof(unsigned long) ? ~0UL :
-            ~(~0UL << n * CHAR_BIT);
+          (size_t)n >= sizeof(unsigned long) ? ~0UL :
+                                               ~(~0UL << n * CHAR_BIT);
         unsigned long val, bits = 0, rest = 0;
         do {
             if (mask & ~rest) {
-                union {uint32_t u32; unsigned long ul;} buf;
+                union {
+                    uint32_t u32;
+                    unsigned long ul;
+                } buf;
                 obj_random_bytes(obj, &buf, n);
                 rest = full;
                 bits = (n == sizeof(uint32_t)) ? buf.u32 : buf.ul;
@@ -1222,10 +1227,10 @@ random_ulong_limited_big(VALUE obj, rb_random_t *rnd, VALUE vmax)
         uint32_t mask = (uint32_t)~0 >> nlz;
         uint32_t *lim_array = tmp;
         uint32_t *rnd_array = tmp + len;
-        int flag = INTEGER_PACK_MSWORD_FIRST|INTEGER_PACK_NATIVE_BYTE_ORDER;
+        int flag = INTEGER_PACK_MSWORD_FIRST | INTEGER_PACK_NATIVE_BYTE_ORDER;
         rb_integer_pack(vmax, lim_array, len, sizeof(uint32_t), 0, flag);
 
-      retry:
+    retry:
         obj_random_bytes(obj, rnd_array, len * sizeof(uint32_t));
         rnd_array[0] &= mask;
         for (i = 0; i < len; ++i) {
@@ -1270,7 +1275,7 @@ random_bytes(VALUE obj, VALUE len)
 
 void
 rb_rand_bytes_int32(rb_random_get_int32_func *get_int32,
-                    rb_random_t *rnd, void *p, size_t n)
+  rb_random_t *rnd, void *p, size_t n)
 {
     char *ptr = p;
     unsigned int r, i;
@@ -1396,18 +1401,18 @@ NORETURN(static void invalid_argument(VALUE));
 static void
 invalid_argument(VALUE arg0)
 {
-    rb_raise(rb_eArgError, "invalid argument - %"PRIsVALUE, arg0);
+    rb_raise(rb_eArgError, "invalid argument - %" PRIsVALUE, arg0);
 }
 
 static VALUE
 check_random_number(VALUE v, const VALUE *argv)
 {
     switch (v) {
-      case Qfalse:
-        (void)NUM2LONG(argv[0]);
-        break;
-      case Qnil:
-        invalid_argument(argv[0]);
+        case Qfalse:
+            (void)NUM2LONG(argv[0]);
+            break;
+        case Qnil:
+            invalid_argument(argv[0]);
     }
     return v;
 }
@@ -1423,7 +1428,7 @@ float_value(VALUE v)
 }
 
 static inline VALUE
-rand_range(VALUE obj, rb_random_t* rnd, VALUE range)
+rand_range(VALUE obj, rb_random_t *rnd, VALUE range)
 {
     VALUE beg = Qundef, end = Qundef, vmax, v;
     int excl = 0;
@@ -1435,7 +1440,7 @@ rand_range(VALUE obj, rb_random_t* rnd, VALUE range)
         long max;
         vmax = v;
         v = Qnil;
-      fixnum:
+    fixnum:
         if (FIXNUM_P(vmax)) {
             if ((max = FIX2LONG(vmax) - excl) >= 0) {
                 unsigned long r = random_ulong_limited(obj, rnd, (unsigned long)max);
@@ -1482,18 +1487,19 @@ rand_range(VALUE obj, rb_random_t* rnd, VALUE range)
         return LONG2NUM(x);
     }
     switch (TYPE(v)) {
-      case T_NIL:
-        break;
-      case T_BIGNUM:
-        return rb_big_plus(v, beg);
-      case T_FLOAT: {
-        VALUE f = rb_check_to_float(beg);
-        if (!NIL_P(f)) {
-            return DBL2NUM(RFLOAT_VALUE(v) + RFLOAT_VALUE(f));
-        }
-      }
-      default:
-        return rb_funcallv(beg, id_plus, 1, &v);
+        case T_NIL:
+            break;
+        case T_BIGNUM:
+            return rb_big_plus(v, beg);
+        case T_FLOAT:
+            {
+                VALUE f = rb_check_to_float(beg);
+                if (!NIL_P(f)) {
+                    return DBL2NUM(RFLOAT_VALUE(v) + RFLOAT_VALUE(f));
+                }
+            }
+        default:
+            return rb_funcallv(beg, id_plus, 1, &v);
     }
 
     return v;
@@ -1585,8 +1591,10 @@ rand_random_number(int argc, VALUE *argv, VALUE obj)
 {
     rb_random_t *rnd = try_get_rnd(obj);
     VALUE v = rand_random(argc, argv, obj, rnd);
-    if (NIL_P(v)) v = rand_random(0, 0, obj, rnd);
-    else if (!v) invalid_argument(argv[0]);
+    if (NIL_P(v))
+        v = rand_random(0, 0, obj, rnd);
+    else if (!v)
+        invalid_argument(argv[0]);
     return v;
 }
 
@@ -1698,15 +1706,15 @@ random_s_rand(int argc, VALUE *argv, VALUE obj)
 #define sip_hash13 ruby_sip_hash13
 #if !defined _WIN32 && !defined BYTE_ORDER
 # ifdef WORDS_BIGENDIAN
-#   define BYTE_ORDER BIG_ENDIAN
+#  define BYTE_ORDER BIG_ENDIAN
 # else
-#   define BYTE_ORDER LITTLE_ENDIAN
+#  define BYTE_ORDER LITTLE_ENDIAN
 # endif
 # ifndef LITTLE_ENDIAN
-#   define LITTLE_ENDIAN 1234
+#  define LITTLE_ENDIAN 1234
 # endif
 # ifndef BIG_ENDIAN
-#   define BIG_ENDIAN    4321
+#  define BIG_ENDIAN 4321
 # endif
 #endif
 #include "siphash.c"
@@ -1764,7 +1772,8 @@ Init_RandomSeedCore(void)
     */
     struct MT mt;
 
-    with_random_seed(DEFAULT_SEED_CNT, 0) {
+    with_random_seed(DEFAULT_SEED_CNT, 0)
+    {
         init_by_array(&mt, seedbuf, DEFAULT_SEED_CNT);
     }
 

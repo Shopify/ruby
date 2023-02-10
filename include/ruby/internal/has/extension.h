@@ -1,4 +1,4 @@
-#ifndef RBIMPL_HAS_EXTENSION_H                       /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_HAS_EXTENSION_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_HAS_EXTENSION_H
 /**
  * @file

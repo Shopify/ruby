@@ -37,17 +37,21 @@ tcp_init(int argc, VALUE *argv, VALUE sock)
     }
 
     rb_scan_args(argc, argv, "22:", &remote_host, &remote_serv,
-                        &local_host, &local_serv, &opt);
+      &local_host, &local_serv, &opt);
 
     if (!NIL_P(opt)) {
         rb_get_kwargs(opt, keyword_ids, 0, 2, kwargs);
-        if (kwargs[0] != Qundef) { resolv_timeout = kwargs[0]; }
-        if (kwargs[1] != Qundef) { connect_timeout = kwargs[1]; }
+        if (kwargs[0] != Qundef) {
+            resolv_timeout = kwargs[0];
+        }
+        if (kwargs[1] != Qundef) {
+            connect_timeout = kwargs[1];
+        }
     }
 
     return rsock_init_inetsock(sock, remote_host, remote_serv,
-                               local_host, local_serv, INET_CLIENT,
-                               resolv_timeout, connect_timeout);
+      local_host, local_serv, INET_CLIENT,
+      resolv_timeout, connect_timeout);
 }
 
 static VALUE
@@ -80,7 +84,7 @@ tcp_s_gethostbyname(VALUE obj, VALUE host)
 {
     rb_warn("TCPSocket.gethostbyname is deprecated; use Addrinfo.getaddrinfo instead.");
     struct rb_addrinfo *res =
-        rsock_addrinfo(host, Qnil, AF_UNSPEC, SOCK_STREAM, AI_CANONNAME);
+      rsock_addrinfo(host, Qnil, AF_UNSPEC, SOCK_STREAM, AI_CANONNAME);
     return rsock_make_hostent(host, res, tcp_sockaddr);
 }
 

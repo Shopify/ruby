@@ -14,7 +14,7 @@ bug_str_cstr_term(VALUE str)
     s = StringValueCStr(str);
     rb_gc();
     enc = rb_enc_get(str);
-    c = rb_enc_codepoint(&s[len], &s[len+rb_enc_mbminlen(enc)], enc);
+    c = rb_enc_codepoint(&s[len], &s[len + rb_enc_mbminlen(enc)], enc);
     return INT2NUM(c);
 }
 
@@ -25,7 +25,8 @@ bug_str_cstr_unterm(VALUE str, VALUE c)
 
     rb_str_modify(str);
     len = RSTRING_LEN(str);
-    RSTRING_PTR(str)[len] = NUM2CHR(c);
+    RSTRING_PTR(str)
+    [len] = NUM2CHR(c);
     return str;
 }
 
@@ -99,13 +100,14 @@ bug_str_s_cstr_term_char(VALUE self, VALUE str)
 }
 
 #define TERM_LEN(str) rb_enc_mbminlen(rb_enc_get(str))
-#define TERM_FILL(ptr, termlen) do {\
-    char *const term_fill_ptr = (ptr);\
-    const int term_fill_len = (termlen);\
-    *term_fill_ptr = '\0';\
-    if (UNLIKELY(term_fill_len > 1))\
-        memset(term_fill_ptr, 0, term_fill_len);\
-} while (0)
+#define TERM_FILL(ptr, termlen) \
+ do { \
+  char *const term_fill_ptr = (ptr); \
+  const int term_fill_len = (termlen); \
+  *term_fill_ptr = '\0'; \
+  if (UNLIKELY(term_fill_len > 1)) \
+   memset(term_fill_ptr, 0, term_fill_len); \
+ } while (0)
 
 static VALUE
 bug_str_s_cstr_noembed(VALUE self, VALUE str)

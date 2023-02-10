@@ -20,9 +20,12 @@ nconf_free(void *conf)
 static const rb_data_type_t ossl_config_type = {
     "OpenSSL/CONF",
     {
-        0, nconf_free,
+      0,
+      nconf_free,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY,
+    0,
+    0,
+    RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
 CONF *
@@ -224,7 +227,7 @@ static VALUE
 config_get_section(VALUE self, VALUE section)
 {
     CONF *conf = GetConfig(self);
-    STACK_OF(CONF_VALUE) *sk;
+    STACK_OF(CONF_VALUE) * sk;
     int i, entries;
     VALUE hash;
 
@@ -238,7 +241,7 @@ config_get_section(VALUE self, VALUE section)
     for (i = 0; i < entries; i++) {
         CONF_VALUE *entry = sk_CONF_VALUE_value(sk, i);
         rb_hash_aset(hash, rb_str_new_cstr(entry->name),
-                     rb_str_new_cstr(entry->value));
+          rb_str_new_cstr(entry->value));
     }
     return hash;
 }
@@ -254,21 +257,21 @@ get_conf_section_doall_arg(CONF_VALUE *cv, VALUE *aryp)
 /* IMPLEMENT_LHASH_DOALL_ARG_CONST() requires >= OpenSSL 1.1.0 */
 static IMPLEMENT_LHASH_DOALL_ARG_FN(get_conf_section, CONF_VALUE, VALUE)
 
-/*
+  /*
  * call-seq:
  *    config.sections -> array of string
  *
  * Get the names of all sections in the current configuration.
  */
-static VALUE
-config_get_sections(VALUE self)
+  static VALUE
+  config_get_sections(VALUE self)
 {
     CONF *conf = GetConfig(self);
     VALUE ary;
 
     ary = rb_ary_new();
     lh_doall_arg((_LHASH *)conf->data, LHASH_DOALL_ARG_FN(get_conf_section),
-                 &ary);
+      &ary);
     return ary;
 }
 
@@ -276,7 +279,7 @@ static void
 dump_conf_value_doall_arg(CONF_VALUE *cv, VALUE *strp)
 {
     VALUE str = *strp;
-    STACK_OF(CONF_VALUE) *sk;
+    STACK_OF(CONF_VALUE) * sk;
     int i, num;
 
     if (cv->name)
@@ -286,7 +289,7 @@ dump_conf_value_doall_arg(CONF_VALUE *cv, VALUE *strp)
     rb_str_cat_cstr(str, "[ ");
     rb_str_cat_cstr(str, cv->section);
     rb_str_cat_cstr(str, " ]\n");
-    for (i = 0; i < num; i++){
+    for (i = 0; i < num; i++) {
         CONF_VALUE *v = sk_CONF_VALUE_value(sk, i);
         rb_str_cat_cstr(str, v->name ? v->name : "None");
         rb_str_cat_cstr(str, "=");
@@ -298,7 +301,7 @@ dump_conf_value_doall_arg(CONF_VALUE *cv, VALUE *strp)
 
 static IMPLEMENT_LHASH_DOALL_ARG_FN(dump_conf_value, CONF_VALUE, VALUE)
 
-/*
+  /*
  * call-seq:
  *    config.to_s -> string
  *
@@ -328,22 +331,22 @@ static IMPLEMENT_LHASH_DOALL_ARG_FN(dump_conf_value, CONF_VALUE, VALUE)
  *         foo=bar
  *         baz=buz
  */
-static VALUE
-config_to_s(VALUE self)
+  static VALUE
+  config_to_s(VALUE self)
 {
     CONF *conf = GetConfig(self);
     VALUE str;
 
     str = rb_str_new(NULL, 0);
     lh_doall_arg((_LHASH *)conf->data, LHASH_DOALL_ARG_FN(dump_conf_value),
-                 &str);
+      &str);
     return str;
 }
 
 static void
 each_conf_value_doall_arg(CONF_VALUE *cv, void *unused)
 {
-    STACK_OF(CONF_VALUE) *sk;
+    STACK_OF(CONF_VALUE) * sk;
     VALUE section;
     int i, num;
 
@@ -352,7 +355,7 @@ each_conf_value_doall_arg(CONF_VALUE *cv, void *unused)
     sk = (STACK_OF(CONF_VALUE) *)cv->value;
     num = sk_CONF_VALUE_num(sk);
     section = rb_str_new_cstr(cv->section);
-    for (i = 0; i < num; i++){
+    for (i = 0; i < num; i++) {
         CONF_VALUE *v = sk_CONF_VALUE_value(sk, i);
         VALUE name = v->name ? rb_str_new_cstr(v->name) : Qnil;
         VALUE value = v->value ? rb_str_new_cstr(v->value) : Qnil;
@@ -362,7 +365,7 @@ each_conf_value_doall_arg(CONF_VALUE *cv, void *unused)
 
 static IMPLEMENT_LHASH_DOALL_ARG_FN(each_conf_value, CONF_VALUE, void)
 
-/*
+  /*
  * call-seq:
  *    config.each { |section, key, value| }
  *
@@ -372,15 +375,15 @@ static IMPLEMENT_LHASH_DOALL_ARG_FN(each_conf_value, CONF_VALUE, void)
  *      # ...
  *    end
  */
-static VALUE
-config_each(VALUE self)
+  static VALUE
+  config_each(VALUE self)
 {
     CONF *conf = GetConfig(self);
 
     RETURN_ENUMERATOR(self, 0, 0);
 
     lh_doall_arg((_LHASH *)conf->data, LHASH_DOALL_ARG_FN(each_conf_value),
-                 NULL);
+      NULL);
     return self;
 }
 

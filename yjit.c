@@ -31,8 +31,8 @@
 
 // For mmapp(), sysconf()
 #ifndef _WIN32
-#include <unistd.h>
-#include <sys/mman.h>
+# include <unistd.h>
+# include <sys/mman.h>
 #endif
 
 #include <errno.h>
@@ -85,7 +85,7 @@ rb_yjit_mark_executable(void *mem_block, uint32_t mem_size)
     }
     if (mprotect(mem_block, mem_size, PROT_READ | PROT_EXEC)) {
         rb_bug("Couldn't make JIT page (%p, %lu bytes) executable, errno: %s\n",
-            mem_block, (unsigned long)mem_size, strerror(errno));
+          mem_block, (unsigned long)mem_size, strerror(errno));
     }
 }
 
@@ -119,11 +119,11 @@ rb_yjit_icache_invalidate(void *start, void *end)
 #ifdef __GNUC__
     __builtin___clear_cache(start, end);
 #elif defined(__aarch64__)
-#error No instruction cache clear available with this compiler on Aarch64!
+# error No instruction cache clear available with this compiler on Aarch64!
 #endif
 }
 
-# define PTR2NUM(x)   (rb_int2inum((intptr_t)(void *)(x)))
+#define PTR2NUM(x) (rb_int2inum((intptr_t)(void *)(x)))
 
 // For a given raw_sample (frame), set the hash with the caller's
 // name, file, and line number. Return the  hash with collected frame_info.
@@ -160,7 +160,7 @@ rb_yjit_add_frame(VALUE hash, VALUE frame)
             rb_hash_aset(frame_info, ID2SYM(rb_intern("line")), line);
         }
 
-       rb_hash_aset(hash, frame_id, frame_info);
+        rb_hash_aset(hash, frame_id, frame_info);
     }
 }
 
@@ -230,7 +230,7 @@ rb_yjit_get_page_size(void)
 
     return (uint32_t)page_size;
 #else
-#error "YJIT supports POSIX only for now"
+# error "YJIT supports POSIX only for now"
 #endif
 }
 
@@ -261,65 +261,62 @@ rb_yjit_reserve_addr_space(uint32_t mem_size)
 #ifndef _WIN32
     uint8_t *mem_block;
 
-    // On Linux
-    #if defined(MAP_FIXED_NOREPLACE) && defined(_SC_PAGESIZE)
-        uint32_t const page_size = (uint32_t)sysconf(_SC_PAGESIZE);
-        uint8_t *const cfunc_sample_addr = (void *)&rb_yjit_reserve_addr_space;
-        uint8_t *const probe_region_end = cfunc_sample_addr + INT32_MAX;
-        // Align the requested address to page size
-        uint8_t *req_addr = align_ptr(cfunc_sample_addr, page_size);
+// On Linux
+# if defined(MAP_FIXED_NOREPLACE) && defined(_SC_PAGESIZE)
+    uint32_t const page_size = (uint32_t)sysconf(_SC_PAGESIZE);
+    uint8_t *const cfunc_sample_addr = (void *)&rb_yjit_reserve_addr_space;
+    uint8_t *const probe_region_end = cfunc_sample_addr + INT32_MAX;
+    // Align the requested address to page size
+    uint8_t *req_addr = align_ptr(cfunc_sample_addr, page_size);
 
-        // Probe for addresses close to this function using MAP_FIXED_NOREPLACE
-        // to improve odds of being in range for 32-bit relative call instructions.
-        do {
-            mem_block = mmap(
-                req_addr,
-                mem_size,
-                PROT_NONE,
-                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
-                -1,
-                0
-            );
-
-            // If we succeeded, stop
-            if (mem_block != MAP_FAILED) {
-                break;
-            }
-
-            // +4MB
-            req_addr += 4 * 1024 * 1024;
-        } while (req_addr < probe_region_end);
-
-    // On MacOS and other platforms
-    #else
-        // Try to map a chunk of memory as executable
+    // Probe for addresses close to this function using MAP_FIXED_NOREPLACE
+    // to improve odds of being in range for 32-bit relative call instructions.
+    do {
         mem_block = mmap(
-            (void *)rb_yjit_reserve_addr_space,
-            mem_size,
-            PROT_NONE,
-            MAP_PRIVATE | MAP_ANONYMOUS,
-            -1,
-            0
-        );
-    #endif
+          req_addr,
+          mem_size,
+          PROT_NONE,
+          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
+          -1,
+          0);
+
+        // If we succeeded, stop
+        if (mem_block != MAP_FAILED) {
+            break;
+        }
+
+        // +4MB
+        req_addr += 4 * 1024 * 1024;
+    } while (req_addr < probe_region_end);
+
+// On MacOS and other platforms
+# else
+    // Try to map a chunk of memory as executable
+    mem_block = mmap(
+      (void *)rb_yjit_reserve_addr_space,
+      mem_size,
+      PROT_NONE,
+      MAP_PRIVATE | MAP_ANONYMOUS,
+      -1,
+      0);
+# endif
 
     // Fallback
     if (mem_block == MAP_FAILED) {
         // Try again without the address hint (e.g., valgrind)
         mem_block = mmap(
-            NULL,
-            mem_size,
-            PROT_NONE,
-            MAP_PRIVATE | MAP_ANONYMOUS,
-            -1,
-            0
-        );
+          NULL,
+          mem_size,
+          PROT_NONE,
+          MAP_PRIVATE | MAP_ANONYMOUS,
+          -1,
+          0);
     }
 
     // Check that the memory mapping was successful
     if (mem_block == MAP_FAILED) {
         perror("ruby: yjit: mmap:");
-        if(errno == ENOMEM) {
+        if (errno == ENOMEM) {
             // No crash report if it's only insufficient memory
             exit(EXIT_FAILURE);
         }
@@ -534,7 +531,8 @@ rb_get_cme_def_type(const rb_callable_method_entry_t *cme)
 {
     if (UNDEFINED_METHOD_ENTRY_P(cme)) {
         return VM_METHOD_TYPE_UNDEF;
-    } else {
+    }
+    else {
         return cme->def->type;
     }
 }
@@ -586,7 +584,7 @@ rb_get_mct_argc(const rb_method_cfunc_t *mct)
 void *
 rb_get_mct_func(const rb_method_cfunc_t *mct)
 {
-    return (void*)mct->func; // this field is defined as type VALUE (*func)(ANYARGS)
+    return (void *)mct->func; // this field is defined as type VALUE (*func)(ANYARGS)
 }
 
 const rb_iseq_t *
@@ -736,7 +734,6 @@ rb_optimized_call(VALUE *recv, rb_execution_context_t *ec, int argc, VALUE *argv
     return rb_vm_invoke_proc(ec, proc, argc, argv, kw_splat, block_handler);
 }
 
-
 // If true, the iseq is leaf and it can be replaced by a single C call.
 bool
 rb_leaf_invokebuiltin_iseq_p(const rb_iseq_t *iseq)
@@ -745,10 +742,9 @@ rb_leaf_invokebuiltin_iseq_p(const rb_iseq_t *iseq)
     unsigned int leave_len = insn_len(BIN(leave));
 
     return (iseq->body->iseq_size == (invokebuiltin_len + leave_len) &&
-        rb_vm_insn_addr2opcode((void *)iseq->body->iseq_encoded[0]) == BIN(opt_invokebuiltin_delegate_leave) &&
-        rb_vm_insn_addr2opcode((void *)iseq->body->iseq_encoded[invokebuiltin_len]) == BIN(leave) &&
-        iseq->body->builtin_inline_p
-    );
+      rb_vm_insn_addr2opcode((void *)iseq->body->iseq_encoded[0]) == BIN(opt_invokebuiltin_delegate_leave) &&
+      rb_vm_insn_addr2opcode((void *)iseq->body->iseq_encoded[invokebuiltin_len]) == BIN(leave) &&
+      iseq->body->builtin_inline_p);
 }
 
 // Return an rb_builtin_function if the iseq contains only that leaf builtin function.
@@ -775,7 +771,7 @@ rb_get_ec_cfp(const rb_execution_context_t *ec)
 VALUE *
 rb_get_cfp_pc(struct rb_control_frame_struct *cfp)
 {
-    return (VALUE*)cfp->pc;
+    return (VALUE *)cfp->pc;
 }
 
 VALUE *
@@ -800,7 +796,7 @@ rb_iseq_t *
 rb_cfp_get_iseq(struct rb_control_frame_struct *cfp)
 {
     // TODO(alan) could assert frame type here to make sure that it's a ruby frame with an iseq.
-    return (rb_iseq_t*)cfp->iseq;
+    return (rb_iseq_t *)cfp->iseq;
 }
 
 VALUE
@@ -812,14 +808,14 @@ rb_get_cfp_self(struct rb_control_frame_struct *cfp)
 VALUE *
 rb_get_cfp_ep(struct rb_control_frame_struct *cfp)
 {
-    return (VALUE*)cfp->ep;
+    return (VALUE *)cfp->ep;
 }
 
 const VALUE *
 rb_get_cfp_ep_level(struct rb_control_frame_struct *cfp, uint32_t lv)
 {
     uint32_t i;
-    const VALUE *ep = (VALUE*)cfp->ep;
+    const VALUE *ep = (VALUE *)cfp->ep;
     for (i = 0; i < lv; i++) {
         ep = VM_ENV_PREV_EP(ep);
     }
@@ -1071,7 +1067,7 @@ void rb_yjit_root_mark(void *ptr); // in Rust
 // TODO: make this write barrier protected
 static const rb_data_type_t yjit_root_type = {
     "yjit_root",
-    {rb_yjit_root_mark, yjit_root_free, yjit_root_memsize, yjit_root_update_references},
+    { rb_yjit_root_mark, yjit_root_free, yjit_root_memsize, yjit_root_update_references },
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 

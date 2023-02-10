@@ -1,4 +1,4 @@
-#ifndef INTERNAL_IO_H                                    /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_IO_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_IO_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -8,8 +8,8 @@
  *             file COPYING are met.  Consult the file for details.
  * @brief      Internal header for IO.
  */
-#include "ruby/ruby.h"          /* for VALUE */
-#include "ruby/io.h"            /* for rb_io_t */
+#include "ruby/ruby.h" /* for VALUE */
+#include "ruby/io.h" /* for rb_io_t */
 
 /* io.c */
 void ruby_set_inplace_mode(const char *);

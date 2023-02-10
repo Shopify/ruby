@@ -7,14 +7,14 @@ static VALUE
 coderange_int2sym(int coderange)
 {
     switch (coderange) {
-      case ENC_CODERANGE_7BIT:
-        return sym_7bit;
-      case ENC_CODERANGE_VALID:
-        return sym_valid;
-      case ENC_CODERANGE_UNKNOWN:
-        return sym_unknown;
-      case ENC_CODERANGE_BROKEN:
-        return sym_broken;
+        case ENC_CODERANGE_7BIT:
+            return sym_7bit;
+        case ENC_CODERANGE_VALID:
+            return sym_valid;
+        case ENC_CODERANGE_UNKNOWN:
+            return sym_unknown;
+        case ENC_CODERANGE_BROKEN:
+            return sym_broken;
     }
     rb_bug("wrong condition of coderange");
     UNREACHABLE_RETURN(Qnil);

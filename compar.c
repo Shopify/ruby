@@ -35,8 +35,8 @@ rb_cmperr(VALUE x, VALUE y)
     else {
         classname = rb_obj_class(y);
     }
-    rb_raise(rb_eArgError, "comparison of %"PRIsVALUE" with %"PRIsVALUE" failed",
-             rb_obj_class(x), classname);
+    rb_raise(rb_eArgError, "comparison of %" PRIsVALUE " with %" PRIsVALUE " failed",
+      rb_obj_class(x), classname);
 }
 
 static VALUE
@@ -222,7 +222,7 @@ cmp_clamp(int argc, VALUE *argv, VALUE x)
         VALUE range = min;
         if (!rb_range_values(range, &min, &max, &excl)) {
             rb_raise(rb_eTypeError, "wrong argument type %s (expected Range)",
-                     rb_builtin_class_name(range));
+              rb_builtin_class_name(range));
         }
         if (!NIL_P(max)) {
             if (excl) rb_raise(rb_eArgError, "cannot clamp with an exclusive range");

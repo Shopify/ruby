@@ -1,4 +1,4 @@
-#ifndef RBIMPL_HAS_FEATURE_H                         /*-*-C++-*-vi:se ft=cpp:*/
+#ifndef RBIMPL_HAS_FEATURE_H /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_HAS_FEATURE_H
 /**
  * @file
