@@ -905,7 +905,7 @@ str_alloc_embed(VALUE klass, size_t capa)
 #endif
 
     RVARGC_NEWOBJ_OF(str, struct RString, klass,
-                     T_STRING | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), size);
+                     T_STRING | FL_WB_PROTECTED, size);
 
     return (VALUE)str;
 }
@@ -914,7 +914,7 @@ static inline VALUE
 str_alloc_heap(VALUE klass)
 {
     RVARGC_NEWOBJ_OF(str, struct RString, klass,
-                     T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString));
+                     T_STRING | STR_NOEMBED | FL_WB_PROTECTED, sizeof(struct RString));
 
     return (VALUE)str;
 }
@@ -1744,7 +1744,7 @@ ec_str_alloc_embed(struct rb_execution_context_struct *ec, VALUE klass, size_t c
 #endif
 
     RB_RVARGC_EC_NEWOBJ_OF(ec, str, struct RString, klass,
-                           T_STRING | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), size);
+                           T_STRING | FL_WB_PROTECTED, size);
 
     return (VALUE)str;
 }
@@ -1753,7 +1753,7 @@ static inline VALUE
 ec_str_alloc_heap(struct rb_execution_context_struct *ec, VALUE klass)
 {
     RB_RVARGC_EC_NEWOBJ_OF(ec, str, struct RString, klass,
-                           T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString));
+                           T_STRING | STR_NOEMBED | FL_WB_PROTECTED, sizeof(struct RString));
 
     return (VALUE)str;
 }

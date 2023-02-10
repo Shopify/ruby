@@ -1497,7 +1497,7 @@ rb_hash_foreach(VALUE hash, rb_foreach_func *func, VALUE farg)
 static VALUE
 hash_alloc_flags(VALUE klass, VALUE flags, VALUE ifnone)
 {
-    const VALUE wb = (RGENGC_WB_PROTECTED_HASH ? FL_WB_PROTECTED : 0);
+    const VALUE wb = FL_WB_PROTECTED;
     NEWOBJ_OF(hash, struct RHash, klass, T_HASH | wb | flags);
 
     RHASH_SET_IFNONE((VALUE)hash, ifnone);
