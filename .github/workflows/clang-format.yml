@@ -1,12 +1,5 @@
 name: Clang Format
 on:
-  push:
-    paths-ignore:
-      - 'doc/**'
-      - '**/man'
-      - '**.md'
-      - '**.rdoc'
-      - '**/.document'
   pull_request:
     paths-ignore:
       - 'doc/**'
