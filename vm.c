@@ -3198,7 +3198,7 @@ rb_execution_context_mark(const rb_execution_context_t *ec)
     if (ec->machine.stack_start && ec->machine.stack_end &&
         ec != GET_EC() /* marked for current ec at the first stage of marking */
         ) {
-        rb_gc_mark_machine_stack(ec);
+        rb_gc_mark_machine_stack((uintptr_t)ec);
         rb_gc_mark_locations((VALUE *)&ec->machine.regs,
                              (VALUE *)(&ec->machine.regs) +
                              sizeof(ec->machine.regs) / (sizeof(VALUE)));

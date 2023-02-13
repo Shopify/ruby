@@ -261,6 +261,8 @@ struct rb_objspace;
 struct rb_objspace *rb_objspace_alloc(void);
 void rb_objspace_free(struct rb_objspace *);
 void rb_objspace_call_finalizer(struct rb_objspace *);
+void rb_gc_mark_machine_stack(const uintptr_t ec);
+
 /* exports for objspace module */
 size_t rb_objspace_data_type_memsize(VALUE obj);
 void rb_objspace_reachable_objects_from(VALUE obj, void (func)(VALUE, void *), void *data);

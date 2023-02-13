@@ -6861,9 +6861,9 @@ each_machine_stack_value(const rb_execution_context_t *ec, void (*cb)(rb_objspac
 }
 
 void
-rb_gc_mark_machine_stack(const rb_execution_context_t *ec)
+rb_gc_mark_machine_stack(const uintptr_t ec)
 {
-    each_machine_stack_value(ec, gc_mark_maybe);
+    each_machine_stack_value((const rb_execution_context_t *)ec, gc_mark_maybe);
 }
 
 static void
