@@ -3601,12 +3601,8 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             RB_DEBUG_COUNTER_INC(obj_hash_st);
         }
 #endif
-        if (!RHASH_AR_TABLE_P(obj)) {
-            GC_ASSERT(RHASH_ST_TABLE_P(obj));
-            st_free_table(RHASH(obj)->as.st);
-        }
-#if !RHASH_INLINE_AR_TABLE
-        else {
+        if (RHASH_AR_TABLE_P(obj)) {
+#if !RHASH_INLINE_TABLE
             struct ar_table_struct *tab = RHASH(obj)->as.ar;
 
             if (tab) {
@@ -3617,8 +3613,20 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                     ruby_xfree(tab);
                 }
             }
-        }
 #endif
+        }
+        else {
+            GC_ASSERT(RHASH_ST_TABLE_P(obj));
+
+#if RHASH_INLINE_TABLE
+            st_table *tab = RHASH_ST_TABLE(obj);
+
+            if (tab->bins != NULL) free(tab->bins);
+            free(tab->entries);
+#else
+            st_free_table(RHASH(obj)->as.st);
+#endif
+        }
         break;
       case T_REGEXP:
         if (RANY(obj)->as.regexp.ptr) {
@@ -4961,10 +4969,9 @@ obj_memsize_of(VALUE obj, int use_all_types)
         break;
       case T_HASH:
         if (RHASH_AR_TABLE_P(obj)) {
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
             if (RHASH_AR_TABLE(obj) != NULL) {
-                size_t rb_hash_ar_table_size(void);
-                size += rb_hash_ar_table_size();
+                size += sizeof(ar_table);
             }
 #endif
         }
@@ -6687,7 +6694,7 @@ mark_hash(rb_objspace_t *objspace, VALUE hash)
         rb_hash_stlike_foreach(hash, mark_keyvalue, (st_data_t)objspace);
     }
 
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
     if (RHASH_AR_TABLE_P(hash)) {
         if (LIKELY(during_gc) && RHASH_TRANSIENT_P(hash)) {
             rb_transient_heap_mark(hash, RHASH_AR_TABLE(hash));
@@ -8517,7 +8524,7 @@ gc_compact_destination_pool(rb_objspace_t *objspace, rb_size_pool_t *src_pool, V
         break;
 
       case T_HASH:
-        obj_size = rb_hash_size_as_embedded(src);
+        obj_size = RHASH_SLOT_SIZE;
         break;
 
         default:
@@ -13670,7 +13677,7 @@ rb_raw_obj_info_buitin_type(char *const buff, const size_t buff_size, const VALU
             break;
           }
           case T_HASH: {
-#if RHASH_INLINE_AR_TABLE
+#if RHASH_INLINE_TABLE
             APPEND_F("[%c%c] %"PRIdSIZE,
                      RHASH_AR_TABLE_P(obj) ? 'A' : 'S',
                      ' ',

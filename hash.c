@@ -378,31 +378,6 @@ typedef st_index_t st_hash_t;
 #define RHASH_AR_TABLE_REF(hash, n) (&RHASH_AR_TABLE(hash)->pairs[n])
 #define RHASH_AR_CLEARED_HINT 0xff
 
-typedef struct ar_table_pair_struct {
-    VALUE key;
-    VALUE val;
-} ar_table_pair;
-
-typedef struct ar_table_struct {
-    /* 64bit CPU: 8B * 2 * 8 = 128B */
-    ar_table_pair pairs[RHASH_AR_TABLE_MAX_SIZE];
-} ar_table;
-
-#if RHASH_INLINE_AR_TABLE
-# define RHASH_EMBED_SIZE (offsetof(struct RHash, as.st) + sizeof(ar_table))
-#endif
-
-size_t
-rb_hash_size_as_embedded(VALUE hash)
-{
-#if RHASH_INLINE_AR_TABLE
-    if (RHASH_AR_TABLE_P(hash)) {
-        return RHASH_EMBED_SIZE;
-    } 
-#endif
-    return sizeof(struct RHash);
-}
-
 static inline st_hash_t
 ar_do_hash(st_data_t key)
 {
@@ -543,7 +518,7 @@ hash_verify_(VALUE hash, const char *file, int line)
         HASH_ASSERT(RHASH_AR_TABLE_SIZE_RAW(hash) == 0);
         HASH_ASSERT(RHASH_AR_TABLE_BOUND_RAW(hash) == 0);
     }
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
 #if USE_TRANSIENT_HEAP
     if (RHASH_TRANSIENT_P(hash)) {
         volatile st_data_t MAYBE_UNUSED(key) = RHASH_AR_TABLE_REF(hash, 0)->key; /* read */
@@ -551,7 +526,7 @@ hash_verify_(VALUE hash, const char *file, int line)
         HASH_ASSERT(rb_transient_heap_managed_ptr_p(RHASH_AR_TABLE(hash)));
     }
 #endif
-#endif /* !RHASH_INLINE_AR_TABLE */
+#endif /* !RHASH_INLINE_TABLE */
     return hash;
 }
 
@@ -577,28 +552,40 @@ RHASH_TABLE_EMPTY_P(VALUE hash)
     return RHASH_SIZE(hash) == 0;
 }
 
+#define RHASH_SET_ST_FLAG(h)          FL_SET_RAW(h, RHASH_ST_TABLE_FLAG)
+#define RHASH_UNSET_ST_FLAG(h)        FL_UNSET_RAW(h, RHASH_ST_TABLE_FLAG)
+
+#if RHASH_INLINE_TABLE
+static void
+hash_st_table_init(VALUE hash, const struct st_hash_type *type, st_index_t size)
+{
+    st_init_existing_table_with_size(RHASH_ST_TABLE(hash), type, size);
+    RHASH_SET_ST_FLAG(hash);
+}
+#endif
+
 void
 rb_hash_st_table_set(VALUE hash, st_table *st)
 {
     HASH_ASSERT(st != NULL);
-    FL_SET_RAW((hash), RHASH_ST_TABLE_FLAG);
+    RHASH_SET_ST_FLAG(hash);
+
+#if RHASH_INLINE_TABLE
+    *RHASH_ST_TABLE(hash) = *st;
+#else
     RHASH(hash)->as.st = st;
+#endif
 }
 
+#if !RHASH_INLINE_TABLE
 static void
 hash_ar_table_set(VALUE hash, ar_table *ar)
 {
     HASH_ASSERT(RHASH_AR_TABLE_P(hash));
-#if RHASH_INLINE_AR_TABLE
-    *(RHASH_AR_TABLE(hash)) = *ar;
-#else
     RHASH(hash)->as.ar = ar;
-#endif
     hash_verify(hash);
 }
-
-#define RHASH_SET_ST_FLAG(h)          FL_SET_RAW(h, RHASH_ST_TABLE_FLAG)
-#define RHASH_UNSET_ST_FLAG(h)        FL_UNSET_RAW(h, RHASH_ST_TABLE_FLAG)
+#endif
 
 static inline void
 RHASH_AR_TABLE_BOUND_SET(VALUE h, st_index_t n)
@@ -654,9 +641,7 @@ RHASH_AR_TABLE_CLEAR(VALUE h)
     RBASIC(h)->flags &= ~RHASH_AR_TABLE_SIZE_MASK;
     RBASIC(h)->flags &= ~RHASH_AR_TABLE_BOUND_MASK;
 
-#if RHASH_INLINE_AR_TABLE
-    memset(RHASH_AR_TABLE(h), 0, sizeof(ar_table));
-#else
+#if !RHASH_INLINE_TABLE
     hash_ar_table_set(h, NULL);
 #endif
 }
@@ -664,7 +649,7 @@ RHASH_AR_TABLE_CLEAR(VALUE h)
 static ar_table*
 ar_alloc_table(VALUE hash)
 {
-#if RHASH_INLINE_AR_TABLE
+#if RHASH_INLINE_TABLE
     ar_table *tab = RHASH_AR_TABLE(hash);
     memset(tab, 0, sizeof(ar_table));
 #else
@@ -677,10 +662,9 @@ ar_alloc_table(VALUE hash)
         RHASH_UNSET_TRANSIENT_FLAG(hash);
         tab = (ar_table*)ruby_xmalloc(sizeof(ar_table));
     }
-#endif
 
-    // RHASH_UNSET_ST_FLAG(hash);
-    // hash_ar_table_set(hash, tab);
+    hash_ar_table_set(hash, tab);
+#endif
 
     RHASH_AR_TABLE_SIZE_SET(hash, 0);
     RHASH_AR_TABLE_BOUND_SET(hash, 0);
@@ -750,7 +734,7 @@ ar_find_entry(VALUE hash, st_hash_t hash_value, st_data_t key)
 static inline void
 ar_free_and_clear_table(VALUE hash)
 {
-#if RHASH_INLINE_AR_TABLE
+#if RHASH_INLINE_TABLE
     RHASH_AR_TABLE_CLEAR(hash);
 #else
     ar_table *tab = RHASH_AR_TABLE(hash);
@@ -778,28 +762,35 @@ ar_try_convert_table(VALUE hash)
 
     const unsigned size = RHASH_AR_TABLE_SIZE(hash);
 
-    st_table *new_tab;
-    st_index_t i;
-
     if (size < RHASH_AR_TABLE_MAX_SIZE) {
         return;
     }
 
-    new_tab = st_init_table_with_size(&objhash, size * 2);
+#if RHASH_INLINE_TABLE
+    st_table tab;
+    st_table *new_tab = &tab;
+    rb_st_init_existing_table_with_size(new_tab, &objhash, size * 2);
+#else
+    st_table *new_tab = st_init_table_with_size(&objhash, size * 2);
+#endif
 
-    for (i = 0; i < RHASH_AR_TABLE_MAX_BOUND; i++) {
+    for (st_index_t i = 0; i < RHASH_AR_TABLE_MAX_BOUND; i++) {
         ar_table_pair *pair = RHASH_AR_TABLE_REF(hash, i);
         st_add_direct(new_tab, pair->key, pair->val);
     }
+    
     ar_free_and_clear_table(hash);
     RHASH_ST_TABLE_SET(hash, new_tab);
-    return;
 }
 
 static st_table *
 ar_force_convert_table(VALUE hash, const char *file, int line)
 {
     st_table *new_tab;
+#if RHASH_INLINE_TABLE
+    st_table tab;
+    new_tab = &tab;
+#endif
 
     if (RHASH_ST_TABLE_P(hash)) {
         return RHASH_ST_TABLE(hash);
@@ -808,13 +799,11 @@ ar_force_convert_table(VALUE hash, const char *file, int line)
     if (RHASH_AR_TABLE(hash)) {
         unsigned i, bound = RHASH_AR_TABLE_BOUND(hash);
 
-#if defined(RHASH_CONVERT_TABLE_DEBUG) && RHASH_CONVERT_TABLE_DEBUG
-        rb_obj_info_dump(hash);
-        fprintf(stderr, "force_convert: %s:%d\n", file, line);
-        RB_DEBUG_COUNTER_INC(obj_hash_force_convert);
-#endif
-
+#if RHASH_INLINE_TABLE
+        rb_st_init_existing_table_with_size(new_tab, &objhash, RHASH_AR_TABLE_SIZE(hash));
+#else
         new_tab = st_init_table_with_size(&objhash, RHASH_AR_TABLE_SIZE(hash));
+#endif
 
         for (i = 0; i < bound; i++) {
             if (ar_cleared_entry(hash, i)) continue;
@@ -825,9 +814,18 @@ ar_force_convert_table(VALUE hash, const char *file, int line)
         ar_free_and_clear_table(hash);
     }
     else {
+#if RHASH_INLINE_TABLE
+        rb_st_init_existing_table_with_size(new_tab, &objhash, 0);
+#else
         new_tab = st_init_table(&objhash);
+#endif
     }
+
     RHASH_ST_TABLE_SET(hash, new_tab);
+
+#if RHASH_INLINE_TABLE
+    new_tab = RHASH_ST_TABLE(hash);
+#endif
 
     return new_tab;
 }
@@ -1234,7 +1232,7 @@ ar_copy(VALUE hash1, VALUE hash2)
     ar_table *new_tab = RHASH_AR_TABLE(hash1);
 
     if (new_tab == NULL) {
-#if RHASH_INLINE_AR_TABLE
+#if RHASH_INLINE_TABLE
         new_tab = ar_alloc_table(hash1);
 #else
         new_tab = (ar_table*) rb_transient_heap_alloc(hash1, sizeof(ar_table));
@@ -1248,15 +1246,14 @@ ar_copy(VALUE hash1, VALUE hash2)
 #endif
     }
 
-#if RHASH_INLINE_AR_TABLE
-    memcpy(new_tab, old_tab, sizeof(ar_table));
-#else
     *new_tab = *old_tab;
-#endif
     RHASH(hash1)->ar_hint.word = RHASH(hash2)->ar_hint.word;
     RHASH_AR_TABLE_BOUND_SET(hash1, RHASH_AR_TABLE_BOUND(hash2));
     RHASH_AR_TABLE_SIZE_SET(hash1, RHASH_AR_TABLE_SIZE(hash2));
+
+#if !RHASH_INLINE_TABLE
     hash_ar_table_set(hash1, new_tab);
+#endif
 
     rb_gc_writebarrier_remember(hash1);
 
@@ -1276,7 +1273,7 @@ ar_clear(VALUE hash)
     }
 }
 
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
 #if USE_TRANSIENT_HEAP
 void
 rb_hash_transient_heap_evacuate(VALUE hash, int promote)
@@ -1303,7 +1300,7 @@ rb_hash_transient_heap_evacuate(VALUE hash, int promote)
     hash_verify(hash);
 }
 #endif
-#endif /* !RHASH_INLINE_AR_TABLE */
+#endif /* !RHASH_INLINE_TABLE */
 
 typedef int st_foreach_func(st_data_t, st_data_t, st_data_t);
 
@@ -1541,14 +1538,7 @@ hash_alloc_flags(VALUE klass, VALUE flags, VALUE ifnone)
 {
     const VALUE wb = (RGENGC_WB_PROTECTED_HASH ? FL_WB_PROTECTED : 0);
 
-    size_t size =
-#if RHASH_INLINE_AR_TABLE
-        RHASH_EMBED_SIZE;
-#else
-        sizeof(struct RHash);
-#endif
-
-    RVARGC_NEWOBJ_OF(hash, struct RHash, klass, T_HASH | wb | flags, size);
+    RVARGC_NEWOBJ_OF(hash, struct RHash, klass, T_HASH | wb | flags, RHASH_SLOT_SIZE);
 
     RHASH_SET_IFNONE((VALUE)hash, ifnone);
 
@@ -1592,13 +1582,17 @@ rb_hash_new_with_size(st_index_t size)
         /* do nothing */
     }
     else if (size > RHASH_AR_TABLE_MAX_SIZE) {
+#if RHASH_INLINE_TABLE
+        hash_st_table_init(ret, &objhash, size);
+#else
         RHASH_ST_TABLE_SET(ret, st_init_table_with_size(&objhash, size));
+#endif
     }
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
     else {
         ar_alloc_table(ret);
     }
-#endif /* !RHASH_INLINE_AR_TABLE */
+#endif /* !RHASH_INLINE_TABLE */
     return ret;
 }
 
@@ -2058,23 +2052,34 @@ rb_hash_rehash(VALUE hash)
     rb_hash_modify_check(hash);
     if (RHASH_AR_TABLE_P(hash)) {
         tmp = hash_alloc(0);
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
         ar_alloc_table(tmp);
 #endif
         rb_hash_foreach(hash, rb_hash_rehash_i, (VALUE)tmp);
         ar_free_and_clear_table(hash);
         ar_copy(hash, tmp);
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
         ar_free_and_clear_table(tmp);
 #endif
     }
     else if (RHASH_ST_TABLE_P(hash)) {
         st_table *old_tab = RHASH_ST_TABLE(hash);
         tmp = hash_alloc(0);
+
+#if RHASH_INLINE_TABLE
+        hash_st_table_init(tmp, old_tab->type, old_tab->num_entries);
+        tbl = RHASH_ST_TABLE(tmp);
+#else
         tbl = st_init_table_with_size(old_tab->type, old_tab->num_entries);
         RHASH_ST_TABLE_SET(tmp, tbl);
+#endif
+
         rb_hash_foreach(hash, rb_hash_rehash_i, (VALUE)tmp);
+
+#if !RHASH_INLINE_TABLE
         st_free_table(old_tab);
+#endif
+
         RHASH_ST_TABLE_SET(hash, tbl);
         RHASH_ST_CLEAR(tmp);
     }
@@ -3015,13 +3020,19 @@ rb_hash_replace(VALUE hash, VALUE hash2)
         ar_free_and_clear_table(hash);
     }
     else {
+#if !RHASH_INLINE_TABLE
         st_free_table(RHASH_ST_TABLE(hash));
+#endif
         RHASH_ST_CLEAR(hash);
     }
     hash_copy(hash, hash2);
     if (RHASH_EMPTY_P(hash2) && RHASH_ST_TABLE_P(hash2)) {
         /* ident hash */
+#if RHASH_INLINE_TABLE
+        hash_st_table_init(hash, RHASH_TYPE(hash2), 0);
+#else
         RHASH_ST_TABLE_SET(hash, st_init_table_with_size(RHASH_TYPE(hash2), 0));
+#endif
     }
 
     rb_gc_writebarrier_remember(hash);
@@ -4402,8 +4413,6 @@ rb_hash_compact_bang(VALUE hash)
     return Qnil;
 }
 
-static st_table *rb_init_identtable_with_size(st_index_t size);
-
 /*
  *  call-seq:
  *    hash.compare_by_identity -> self
@@ -4445,10 +4454,20 @@ rb_hash_compare_by_id(VALUE hash)
     HASH_ASSERT(RHASH_ST_TABLE_P(hash));
 
     tmp = hash_alloc(0);
-    identtable = rb_init_identtable_with_size(RHASH_SIZE(hash));
+#if RHASH_INLINE_TABLE
+    hash_st_table_init(tmp, &identhash, RHASH_SIZE(hash));
+    identtable = RHASH_ST_TABLE(tmp);
+#else
+    identtable = st_init_table_with_size(&identhash, RHASH_SIZE(hash));
     RHASH_ST_TABLE_SET(tmp, identtable);
+#endif
+
     rb_hash_foreach(hash, rb_hash_rehash_i, (VALUE)tmp);
+
+#if !RHASH_INLINE_TABLE
     st_free_table(RHASH_ST_TABLE(hash));
+#endif
+
     RHASH_ST_TABLE_SET(hash, identtable);
     RHASH_ST_CLEAR(tmp);
 
@@ -4472,7 +4491,11 @@ VALUE
 rb_ident_hash_new(void)
 {
     VALUE hash = rb_hash_new();
+#if RHASH_INLINE_TABLE
+    hash_st_table_init(hash, &identhash, 0);
+#else
     RHASH_ST_TABLE_SET(hash, st_init_table(&identhash));
+#endif
     return hash;
 }
 
@@ -4480,7 +4503,11 @@ VALUE
 rb_ident_hash_new_with_size(st_index_t size)
 {
     VALUE hash = rb_hash_new();
+#if RHASH_INLINE_TABLE
+    hash_st_table_init(hash, &identhash, size);
+#else
     RHASH_ST_TABLE_SET(hash, st_init_table_with_size(&identhash, size));
+#endif
     return hash;
 }
 
@@ -4488,12 +4515,6 @@ st_table *
 rb_init_identtable(void)
 {
     return st_init_table(&identhash);
-}
-
-static st_table *
-rb_init_identtable_with_size(st_index_t size)
-{
-    return st_init_table_with_size(&identhash, size);
 }
 
 static int

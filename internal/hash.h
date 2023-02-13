@@ -41,7 +41,17 @@ enum ruby_rhash_flags {
     RHASH_LEV_MAX = 127, /* 7 bits */
 };
 
-#define RHASH_INLINE_AR_TABLE (SHAPE_IN_BASIC_FLAGS && USE_RVARGC)
+#define RHASH_INLINE_TABLE (SIZE_POOL_COUNT > 1)
+
+typedef struct ar_table_pair_struct {
+    VALUE key;
+    VALUE val;
+} ar_table_pair;
+
+typedef struct ar_table_struct {
+    /* 64bit CPU: 8B * 2 * 8 = 128B */
+    ar_table_pair pairs[RHASH_AR_TABLE_MAX_SIZE];
+} ar_table;
 
 struct RHash {
     struct RBasic basic;
@@ -50,15 +60,25 @@ struct RHash {
         ar_hint_t ary[RHASH_AR_TABLE_MAX_SIZE];
         VALUE word;
     } ar_hint;
+#if !RHASH_INLINE_TABLE
     union {
         st_table *st;
-#if !RHASH_INLINE_AR_TABLE
-        struct ar_table_struct *ar; /* possibly 0 */
-#endif
+        ar_table *ar; /* possibly 0 */
     } as;
+#endif
 };
 
 #define RHASH(obj) ((struct RHash *)(obj))
+
+#if RHASH_INLINE_TABLE
+# ifndef MAX
+#  define MAX(a, b) (((a) > (b)) ? (a) : (b))
+# endif
+
+# define RHASH_SLOT_SIZE (sizeof(struct RHash) + MAX(sizeof(ar_table), sizeof(st_table)))
+#else
+# define RHASH_SLOT_SIZE (sizeof(struct RHash))
+#endif
 
 #ifdef RHASH_IFNONE
 # undef RHASH_IFNONE
@@ -103,7 +123,7 @@ static inline struct ar_table_struct *RHASH_AR_TABLE(VALUE h);
 static inline st_table *RHASH_ST_TABLE(VALUE h);
 static inline size_t RHASH_ST_SIZE(VALUE h);
 static inline void RHASH_ST_CLEAR(VALUE h);
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
 static inline bool RHASH_TRANSIENT_P(VALUE h);
 static inline void RHASH_SET_TRANSIENT_FLAG(VALUE h);
 static inline void RHASH_UNSET_TRANSIENT_FLAG(VALUE h);
@@ -137,8 +157,8 @@ RHASH_AR_TABLE_P(VALUE h)
 static inline struct ar_table_struct *
 RHASH_AR_TABLE(VALUE h)
 {
-#if RHASH_INLINE_AR_TABLE
-    return (struct ar_table_struct *)((uintptr_t)h + offsetof(struct RHash, as.st));
+#if RHASH_INLINE_TABLE
+    return (struct ar_table_struct *)((uintptr_t)h + sizeof(struct RHash));
 #else
     return RHASH(h)->as.ar;
 #endif
@@ -147,7 +167,11 @@ RHASH_AR_TABLE(VALUE h)
 static inline st_table *
 RHASH_ST_TABLE(VALUE h)
 {
+#if RHASH_INLINE_TABLE
+    return (st_table *)((uintptr_t)h + sizeof(struct RHash));
+#else
     return RHASH(h)->as.st;
+#endif
 }
 
 static inline VALUE
@@ -188,7 +212,11 @@ RHASH_ST_SIZE(VALUE h)
 static inline void
 RHASH_ST_CLEAR(VALUE h)
 {
+#if RHASH_INLINE_TABLE
+    memset(RHASH_ST_TABLE(h), 0, sizeof(st_table));
+#else
     RHASH(h)->as.st = NULL;
+#endif
     FL_UNSET_RAW(h, RHASH_ST_TABLE_FLAG);
 }
 
@@ -200,7 +228,7 @@ RHASH_AR_TABLE_SIZE_RAW(VALUE h)
     return (unsigned)ret;
 }
 
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
 static inline bool
 RHASH_TRANSIENT_P(VALUE h)
 {
@@ -226,6 +254,6 @@ RHASH_UNSET_TRANSIENT_FLAG(VALUE h)
     FL_UNSET_RAW(h, RHASH_TRANSIENT_FLAG);
 #endif
 }
-#endif /* !RHASH_INLINE_AR_TABLE */
+#endif /* !RHASH_INLINE_TABLE */
 
 #endif /* INTERNAL_HASH_H */

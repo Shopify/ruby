@@ -3256,7 +3256,7 @@ obj_traverse_replace_i(VALUE obj, struct obj_traverse_replace_data *data)
         break;
       case T_HASH:
         {
-#if !RHASH_INLINE_AR_TABLE
+#if !RHASH_INLINE_TABLE
 #if USE_TRANSIENT_HEAP
             if (data->move) rb_hash_transient_heap_evacuate(obj, TRUE);
 #endif
