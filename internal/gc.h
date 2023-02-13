@@ -255,6 +255,12 @@ void rb_gc_mark_and_move(VALUE *ptr);
 } while (0)
 
 RUBY_SYMBOL_EXPORT_BEGIN
+
+// Extract headers used outside of gc into gc headers
+struct rb_objspace;
+struct rb_objspace *rb_objspace_alloc(void);
+void rb_objspace_free(struct rb_objspace *);
+void rb_objspace_call_finalizer(struct rb_objspace *);
 /* exports for objspace module */
 size_t rb_objspace_data_type_memsize(VALUE obj);
 void rb_objspace_reachable_objects_from(VALUE obj, void (func)(VALUE, void *), void *data);

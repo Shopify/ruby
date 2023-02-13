@@ -92,6 +92,7 @@ extern int ruby_assert_critical_section_entered;
 #include "internal.h"
 #include "internal/array.h"
 #include "internal/basic_operators.h"
+#include "internal/gc.h"
 #include "internal/serial.h"
 #include "internal/vm.h"
 #include "method.h"
@@ -103,7 +104,6 @@ extern int ruby_assert_critical_section_entered;
 #include "shape.h"
 
 #include "ruby/thread_native.h"
-
 /*
  * implementation selector of get_insn_info algorithm
  *   0: linear search
@@ -598,11 +598,6 @@ typedef struct rb_at_exit_list {
     rb_vm_at_exit_func *func;
     struct rb_at_exit_list *next;
 } rb_at_exit_list;
-
-struct rb_objspace;
-struct rb_objspace *rb_objspace_alloc(void);
-void rb_objspace_free(struct rb_objspace *);
-void rb_objspace_call_finalizer(struct rb_objspace *);
 
 typedef struct rb_hook_list_struct {
     struct rb_event_hook_struct *hooks;
