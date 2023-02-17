@@ -133,16 +133,14 @@ struct rb_objspace; /* in vm_core.h */
 # undef RB_NEWOBJ_OF
 #endif
 
-#define RB_RVARGC_NEWOBJ_OF(ec, var, T, c, f, s) \
+#define RVARGC_NEWOBJ_OF(var, T, c, f, s, ec) \
   T *(var) = (T *)(((f) & FL_WB_PROTECTED) ? \
                    rb_wb_protected_newobj_of((ec) ? (ec) : GET_EC(), (c), (f) & ~FL_WB_PROTECTED, s) : \
                    rb_wb_unprotected_newobj_of((c), (f), s))
 
-/* optimized version of NEWOBJ() */
-#define RB_NEWOBJ_OF(var, T, c, f) RB_RVARGC_NEWOBJ_OF(NULL, var, T, c, f, RVALUE_SIZE)
-
+#define RB_NEWOBJ_OF(var, T, c, f) RVARGC_NEWOBJ_OF(var, T, c, f, RVALUE_SIZE, NULL)
 #define NEWOBJ_OF(var, T, c, f) RB_NEWOBJ_OF((var), T, (c), (f))
-#define RVARGC_NEWOBJ_OF(var, T, c, f, s, ec) RB_RVARGC_NEWOBJ_OF((ec), (var), T, (c), (f), (s))
+
 #define RB_OBJ_GC_FLAGS_MAX 6   /* used in ext/objspace */
 
 #ifndef USE_UNALIGNED_MEMBER_ACCESS
