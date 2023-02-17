@@ -46,6 +46,8 @@
     RBIMPL_CAST((int)(sizeof(VALUE[RBIMPL_RVALUE_EMBED_LEN_MAX]) / (sizeof(T))))
 /** @endcond */
 
+#define RVALUE_SIZE (sizeof(struct RBasic) + sizeof(VALUE[RBIMPL_RVALUE_EMBED_LEN_MAX]))
+
 /**
  * This is an enum because GDB wants it (rather than a macro).  People need not
  * bother.
