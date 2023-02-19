@@ -15,6 +15,17 @@ Note: We're only listing outstanding class updates.
 
     * `Array#pack` now raises ArgumentError for unknown directives. [[Bug #19150]]
 
+* Range
+
+    * `Range#step` now consistently has a semantics of iterating by using `+` operator
+      for all types, not only numerics. [[Feature #18368]]
+
+      ```ruby
+      (Time.utc(2022, 2, 24)..).step(24*60*60).take(3)
+      #=> [2022-02-24 00:00:00 UTC, 2022-02-25 00:00:00 UTC, 2022-02-26 00:00:00 UTC]
+      ```
+
+
 * String
 
     * `String#unpack` now raises ArgumentError for unknown directives. [[Bug #19150]]
@@ -65,3 +76,4 @@ changelog for details of the default gems or bundled gems.
 
 [Bug #19150]:     https://bugs.ruby-lang.org/issues/19150
 [Feature #19314]: https://bugs.ruby-lang.org/issues/19314
+[Feature #18368]: https://bugs.ruby-lang.org/issues/18368
