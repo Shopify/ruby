@@ -26,7 +26,6 @@ void *rb_transient_heap_alloc(VALUE obj, size_t req_size);
 void  rb_transient_heap_mark(VALUE obj, const void *ptr);
 
 /* used by gc.c */
-void rb_transient_heap_promote(VALUE obj);
 void rb_transient_heap_start_marking(int full_marking);
 void rb_transient_heap_finish_marking(void);
 void rb_transient_heap_update_references(void);

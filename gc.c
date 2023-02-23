@@ -1721,7 +1721,6 @@ RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(rb_objspace_t *objspace, struct heap_page *pag
 {
     MARK_IN_BITMAP(&page->uncollectible_bits[0], obj);
     objspace->rgengc.old_objects++;
-    rb_transient_heap_promote(obj);
 
 #if RGENGC_PROFILE >= 2
     objspace->profile.total_promoted_count++;

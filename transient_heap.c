@@ -97,10 +97,6 @@ struct transient_heap {
     int total_blocks;
     enum transient_heap_status status;
 
-    VALUE *promoted_objects;
-    int promoted_objects_size;
-    int promoted_objects_index;
-
     struct transient_heap_block *arena;
     int arena_index; /* increment only */
 };
@@ -452,15 +448,6 @@ Init_TransientHeap(void)
         connect_to_free_blocks(theap, transient_heap_block_alloc(theap));
     }
     theap->using_blocks = transient_heap_allocatable_block(theap);
-
-    theap->promoted_objects_size = TRANSIENT_HEAP_PROMOTED_DEFAULT_SIZE;
-    theap->promoted_objects_index = 0;
-    /* should not use ALLOC_N to be free from GC */
-    theap->promoted_objects = malloc(sizeof(VALUE) * theap->promoted_objects_size);
-    STATIC_ASSERT(
-        integer_overflow,
-        sizeof(VALUE) <= SIZE_MAX / TRANSIENT_HEAP_PROMOTED_DEFAULT_SIZE);
-    if (theap->promoted_objects == NULL) rb_bug("Init_TransientHeap: malloc failed.");
 }
 
 static struct transient_heap_block *
@@ -625,48 +612,6 @@ transient_heap_ptr(VALUE obj, int error)
     return ptr;
 }
 
-static void
-transient_heap_promote_add(struct transient_heap* theap, VALUE obj)
-{
-    if (TRANSIENT_HEAP_DEBUG >= 3) fprintf(stderr, "rb_transient_heap_promote: %s\n", rb_obj_info(obj));
-
-    if (TRANSIENT_HEAP_DEBUG_DONT_PROMOTE) {
-        /* duplicate check */
-        int i;
-        for (i=0; i<theap->promoted_objects_index; i++) {
-            if (theap->promoted_objects[i] == obj) return;
-        }
-    }
-
-    if (theap->promoted_objects_size <= theap->promoted_objects_index) {
-        theap->promoted_objects_size *= 2;
-        if (TRANSIENT_HEAP_DEBUG >= 1) fprintf(stderr, "rb_transient_heap_promote: expand table to %d\n", theap->promoted_objects_size);
-        if (UNLIKELY((size_t)theap->promoted_objects_size > SIZE_MAX / sizeof(VALUE))) {
-            /* realloc failure due to integer overflow */
-            theap->promoted_objects = NULL;
-        }
-        else {
-            theap->promoted_objects = realloc(theap->promoted_objects, theap->promoted_objects_size * sizeof(VALUE));
-        }
-        if (theap->promoted_objects == NULL) rb_bug("rb_transient_heap_promote: realloc failed");
-    }
-    theap->promoted_objects[theap->promoted_objects_index++] = obj;
-}
-
-void
-rb_transient_heap_promote(VALUE obj)
-{
-    ASSERT_vm_locking();
-
-    if (transient_heap_ptr(obj, FALSE)) {
-        struct transient_heap* theap = transient_heap_get();
-        transient_heap_promote_add(theap, obj);
-    }
-    else {
-        /* ignore */
-    }
-}
-
 static struct transient_alloc_header *
 alloc_header(struct transient_heap_block* block, int index)
 {
@@ -791,11 +736,7 @@ transient_heap_evacuate(void *dmy)
             RUBY_DEBUG_LOG("start gc_disabled:%d", RTEST(gc_disabled));
 
             if (TRANSIENT_HEAP_DEBUG >= 1) {
-                int i;
                 fprintf(stderr, "!! transient_heap_evacuate start total_blocks:%d\n", theap->total_blocks);
-                if (TRANSIENT_HEAP_DEBUG >= 4) {
-                    for (i=0; i<theap->promoted_objects_index; i++) fprintf(stderr, "%4d %s\n", i, rb_obj_info(theap->promoted_objects[i]));
-                }
             }
             if (TRANSIENT_HEAP_DEBUG >= 2) transient_heap_dump(theap);
 
@@ -903,11 +844,6 @@ rb_transient_heap_update_references(void)
 
     transient_heap_blocks_update_refs(theap, theap->using_blocks, "using_blocks");
     transient_heap_blocks_update_refs(theap, theap->marked_blocks, "marked_blocks");
-
-    for (i=0; i<theap->promoted_objects_index; i++) {
-        VALUE obj = theap->promoted_objects[i];
-        theap->promoted_objects[i] = rb_gc_location(obj);
-    }
 }
 
 void
@@ -918,8 +854,8 @@ rb_transient_heap_start_marking(int full_marking)
 
     struct transient_heap* theap = transient_heap_get();
 
-    if (TRANSIENT_HEAP_DEBUG >= 1) fprintf(stderr, "!! rb_transient_heap_start_marking objects:%d blocks:%d promoted:%d full_marking:%d\n",
-                                           theap->total_objects, theap->total_blocks, theap->promoted_objects_index, full_marking);
+    if (TRANSIENT_HEAP_DEBUG >= 1) fprintf(stderr, "!! rb_transient_heap_start_marking objects:%d blocks:%d full_marking:%d\n",
+                                           theap->total_objects, theap->total_blocks, full_marking);
     if (TRANSIENT_HEAP_DEBUG >= 2) transient_heap_dump(theap);
 
     blocks_clear_marked_index(theap->marked_blocks);
@@ -943,20 +879,6 @@ rb_transient_heap_start_marking(int full_marking)
     TH_ASSERT(theap->status == transient_heap_none);
     transient_heap_update_status(theap, transient_heap_marking);
     theap->total_marked_objects = 0;
-
-    if (full_marking) {
-        theap->promoted_objects_index = 0;
-    }
-    else { /* mark promoted objects */
-        int i;
-        for (i=0; i<theap->promoted_objects_index; i++) {
-            VALUE obj = theap->promoted_objects[i];
-            const void *ptr = transient_heap_ptr(obj, TRUE);
-            if (ptr) {
-                rb_transient_heap_mark(obj, ptr);
-            }
-        }
-    }
 
     transient_heap_verify(theap);
 }
