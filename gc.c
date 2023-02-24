@@ -759,6 +759,8 @@ typedef struct rb_objspace {
     size_t total_allocated_objects;
     VALUE next_object_id;
 
+    void *typed_data_current_embed_pointer;
+
     rb_size_pool_t size_pools[SIZE_POOL_COUNT];
 
     struct {
@@ -3142,8 +3144,30 @@ rb_data_typed_object_wrap(VALUE klass, void *datap, const rb_data_type_t *type)
 VALUE
 rb_data_typed_object_zalloc(VALUE klass, size_t size, const rb_data_type_t *type)
 {
-    VALUE obj = rb_data_typed_object_wrap(klass, 0, type);
-    RTYPEDDATA(obj)->data = xcalloc(1, size);
+    size_t embed_size = sizeof(struct RTypedData) + size;
+    bool embed = false;
+
+    if (type->flags & RUBY_TYPED_FREE_IMMEDIATELY && rb_gc_size_allocatable_p(embed_size)) {
+        size_t size_pool_idx = size_pool_idx_for_size(embed_size);
+        size_t slot_size = size_pool_slot_size(size_pool_idx);
+        
+        embed = (slot_size - embed_size) <= 8;
+    }
+    
+    VALUE obj;
+    if (embed) {
+        RBIMPL_NONNULL_ARG(type);
+        if (klass) rb_data_object_check(klass);
+        bool wb_protected = (type->flags & RUBY_FL_WB_PROTECTED) || !type->function.dmark;
+        obj = newobj_of(klass, T_DATA | RUBY_TYPED_DATA | RUBY_TYPED_DATA_EMBEDED, (VALUE)type, Qfalse, Qfalse, wb_protected, embed_size);
+        RTYPEDDATA(obj)->data = (&RTYPEDDATA(obj)->data) + 1;
+        memset(RTYPEDDATA(obj)->data, 0, size);
+    }
+    else {
+        obj = rb_data_typed_object_wrap(klass, 0, type);
+        RTYPEDDATA(obj)->data = xcalloc(1, size);
+    }
+
     return obj;
 }
 
@@ -3382,8 +3406,12 @@ rb_cc_table_free(VALUE klass)
 static inline void
 make_zombie(rb_objspace_t *objspace, VALUE obj, void (*dfree)(void *), void *data)
 {
+    bool embed_typed_data = (RB_TYPE_P(obj, T_DATA) && RTYPEDDATA_P(obj) && FL_TEST(obj, RUBY_TYPED_DATA_EMBEDED));
     struct RZombie *zombie = RZOMBIE(obj);
     zombie->basic.flags = T_ZOMBIE | (zombie->basic.flags & FL_SEEN_OBJ_ID);
+    if (embed_typed_data) {
+        zombie->basic.flags |= RUBY_TYPED_DATA_EMBEDED;
+    }
     zombie->dfree = dfree;
     zombie->data = data;
     VALUE prev, next = heap_pages_deferred_final;
@@ -3583,12 +3611,16 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             void (*dfree)(void *);
             void *data = DATA_PTR(obj);
 
+            objspace->typed_data_current_embed_pointer = NULL;
             if (RTYPEDDATA_P(obj)) {
                 free_immediately = (RANY(obj)->as.typeddata.type->flags & RUBY_TYPED_FREE_IMMEDIATELY) != 0;
                 dfree = RANY(obj)->as.typeddata.type->function.dfree;
                 if (0 && free_immediately == 0) {
                     /* to expose non-free-immediate T_DATA */
                     fprintf(stderr, "not immediate -> %s\n", RANY(obj)->as.typeddata.type->wrap_struct_name);
+                }
+                if (FL_TEST(obj, RUBY_TYPED_DATA_EMBEDED)) {
+                    objspace->typed_data_current_embed_pointer = RTYPEDDATA(obj)->data;
                 }
             }
             else {
@@ -4395,6 +4427,12 @@ run_final(rb_objspace_t *objspace, VALUE zombie)
     st_data_t key, table;
 
     if (RZOMBIE(zombie)->dfree) {
+        if (FL_TEST(zombie, RUBY_TYPED_DATA_EMBEDED)) {
+            objspace->typed_data_current_embed_pointer = RZOMBIE(zombie)->data;
+        }
+        else {
+            objspace->typed_data_current_embed_pointer = NULL;
+        }
         RZOMBIE(zombie)->dfree(RZOMBIE(zombie)->data);
     }
 
@@ -4555,7 +4593,14 @@ rb_objspace_call_finalizer(rb_objspace_t *objspace)
                 if (RTYPEDDATA_P(vp)) {
                     RDATA(p)->dfree = RANY(p)->as.typeddata.type->function.dfree;
                 }
-                RANY(p)->as.free.flags = 0;
+                if (RTYPEDDATA_P(vp) && FL_TEST(vp, RUBY_TYPED_DATA_EMBEDED)) {
+                    objspace->typed_data_current_embed_pointer = RTYPEDDATA_DATA(vp);
+                }
+                else {
+                    objspace->typed_data_current_embed_pointer = NULL;
+                }
+
+                // RANY(p)->as.free.flags = 0; WTF?
                 if (RANY(p)->as.data.dfree == RUBY_DEFAULT_FREE) {
                     xfree(DATA_PTR(p));
                 }
@@ -9870,50 +9915,39 @@ gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj)
       case T_MOVED:
       case T_ZOMBIE:
         return FALSE;
+      default:
+        break;
+    }
+    
+    switch (BUILTIN_TYPE(obj)) {
       case T_SYMBOL:
         if (DYNAMIC_SYM_P(obj) && (RSYMBOL(obj)->id & ~ID_SCOPE_MASK)) {
             return FALSE;
         }
-        /* fall through */
-      case T_STRING:
-      case T_OBJECT:
-      case T_FLOAT:
-      case T_IMEMO:
-      case T_ARRAY:
-      case T_BIGNUM:
-      case T_ICLASS:
-      case T_MODULE:
-      case T_REGEXP:
+        break;
       case T_DATA:
-      case T_MATCH:
-      case T_STRUCT:
-      case T_HASH:
-      case T_FILE:
-      case T_COMPLEX:
-      case T_RATIONAL:
-      case T_NODE:
-      case T_CLASS:
-        if (FL_TEST(obj, FL_FINALIZE)) {
-            /* The finalizer table is a numtable. It looks up objects by address.
-             * We can't mark the keys in the finalizer table because that would
-             * prevent the objects from being collected.  This check prevents
-             * objects that are keys in the finalizer table from being moved
-             * without directly pinning them. */
-            if (st_is_member(finalizer_table, obj)) {
-                return FALSE;
-            }
+        if (FL_TEST(obj, RUBY_TYPED_DATA_EMBEDED)) {
+            return FALSE;
         }
-        GC_ASSERT(RVALUE_MARKED(obj));
-        GC_ASSERT(!RVALUE_PINNED(obj));
-
-        return TRUE;
-
+        break;
       default:
-        rb_bug("gc_is_moveable_obj: unreachable (%d)", (int)BUILTIN_TYPE(obj));
         break;
     }
 
-    return FALSE;
+    if (FL_TEST(obj, FL_FINALIZE)) {
+        /* The finalizer table is a numtable. It looks up objects by address.
+         * We can't mark the keys in the finalizer table because that would
+         * prevent the objects from being collected.  This check prevents
+         * objects that are keys in the finalizer table from being moved
+         * without directly pinning them. */
+        if (st_is_member(finalizer_table, obj)) {
+            return FALSE;
+        }
+    }
+    GC_ASSERT(RVALUE_MARKED(obj));
+    GC_ASSERT(!RVALUE_PINNED(obj));
+
+    return TRUE;
 }
 
 /* Used in places that could malloc, which can cause the GC to run. We need to
@@ -12500,6 +12534,12 @@ objspace_xfree(rb_objspace_t *objspace, void *ptr, size_t old_size)
          */
         return;
     }
+
+    if (ptr == objspace->typed_data_current_embed_pointer) {
+        objspace->typed_data_current_embed_pointer = NULL;
+        return;
+    }
+
 #if CALC_EXACT_MALLOC_SIZE
     struct malloc_obj_info *info = (struct malloc_obj_info *)ptr - 1;
     ptr = info;

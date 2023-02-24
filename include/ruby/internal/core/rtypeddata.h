@@ -43,7 +43,12 @@
 /**
  * @private
  */
-#define RUBY_TYPED_DATA         RUBY_FL_USER0
+#define RUBY_TYPED_DATA             RUBY_FL_USER0
+
+/**
+ * @private
+ */
+#define RUBY_TYPED_DATA_EMBEDED     RUBY_FL_USER1
 
 /**
  * @private
@@ -357,6 +362,7 @@ struct RTypedData {
     /** Pointer to the actual C level struct that you want to wrap. */
     void *data;
 };
+
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
 RBIMPL_ATTR_NONNULL((3))
