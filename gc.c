@@ -3136,14 +3136,14 @@ rb_data_typed_object_wrap(VALUE klass, void *datap, const rb_data_type_t *type)
     RBIMPL_NONNULL_ARG(type);
     if (klass) rb_data_object_check(klass);
     bool wb_protected = (type->flags & RUBY_FL_WB_PROTECTED) || !type->function.dmark;
-    return newobj_of(klass, T_DATA, (VALUE)type, (VALUE)1, (VALUE)datap, wb_protected, sizeof(struct RTypedData));
+    return newobj_of(klass, T_DATA | RUBY_TYPED_DATA, (VALUE)type, (VALUE)datap, Qfalse, wb_protected, sizeof(struct RTypedData));
 }
 
 VALUE
 rb_data_typed_object_zalloc(VALUE klass, size_t size, const rb_data_type_t *type)
 {
     VALUE obj = rb_data_typed_object_wrap(klass, 0, type);
-    DATA_PTR(obj) = xcalloc(1, size);
+    RTYPEDDATA(obj)->data = xcalloc(1, size);
     return obj;
 }
 

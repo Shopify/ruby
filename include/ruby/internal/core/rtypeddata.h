@@ -42,6 +42,11 @@
 
 /**
  * @private
+ */
+#define RUBY_TYPED_DATA         RUBY_FL_USER0
+
+/**
+ * @private
  *
  * @deprecated  This macro once was a thing in the old days, but makes no sense
  *              any  longer today.   Exists  here  for backwards  compatibility
@@ -349,15 +354,6 @@ struct RTypedData {
      */
     const rb_data_type_t *type;
 
-    /**
-     * This has to be always 1.
-     *
-     * @internal
-     *
-     * Why, then, this is not a const ::VALUE?
-     */
-    VALUE typed_flag;
-
     /** Pointer to the actual C level struct that you want to wrap. */
     void *data;
 };
@@ -523,7 +519,7 @@ RBIMPL_ATTR_ARTIFICIAL()
 static inline bool
 rbimpl_rtypeddata_p(VALUE obj)
 {
-    return RTYPEDDATA(obj)->typed_flag == 1;
+    return FL_TEST(obj, RUBY_TYPED_DATA);
 }
 
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()
