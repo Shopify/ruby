@@ -836,6 +836,9 @@ void
 rb_transient_heap_evacuate(void)
 {
     transient_heap_evacuate(NULL);
+    struct transient_heap* theap = transient_heap_get();
+
+    theap->promoted_objects_index = 0;
 }
 
 static void

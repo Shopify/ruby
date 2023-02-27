@@ -9853,7 +9853,7 @@ gc_promote_object_i(void *vstart, void *vend, size_t stride, void *data)
 }
 
 static VALUE
-gc_start_internal(rb_execution_context_t *ec, VALUE self, VALUE full_mark, VALUE immediate_mark, VALUE immediate_sweep, VALUE compact, VALUE promote)
+gc_start_internal(rb_execution_context_t *ec, VALUE self, VALUE full_mark, VALUE immediate_mark, VALUE immediate_sweep, VALUE compact)
 {
     rb_objspace_t *objspace = &rb_objspace;
     unsigned int reason = (GPR_FLAG_FULL_MARK |
@@ -9876,20 +9876,21 @@ gc_start_internal(rb_execution_context_t *ec, VALUE self, VALUE full_mark, VALUE
     garbage_collect(objspace, reason);
     gc_finalize_deferred(objspace);
 
-    if (RTEST(promote)) {
-        /* The transient heap need to be evacuated before we promote objects */
-        rb_transient_heap_evacuate();
-        objspace_each_objects(objspace, gc_promote_object_i, NULL, TRUE);
-        rb_transient_heap_evacuate();
-    }
-
     return Qnil;
 }
 
 void
 rb_gc_prepare_heap(void)
 {
-    gc_start_internal(NULL, Qtrue, Qtrue, Qtrue, Qtrue, Qtrue, Qtrue);
+    rb_objspace_t *objspace = &rb_objspace;
+    // Nobody in the list
+    gc_start_internal(NULL, Qtrue, Qtrue, Qtrue, Qtrue, Qtrue);
+    // somebody got added
+
+    /* The transient heap need to be evacuated before we promote objects */
+    objspace_each_objects(objspace, gc_promote_object_i, NULL, TRUE);
+    rb_transient_heap_evacuate();
+    // Shouldn't be anything in the THEAP anymre, right?
 }
 
 static int
@@ -10971,7 +10972,7 @@ static VALUE
 gc_compact(VALUE self)
 {
     /* Run GC with compaction enabled */
-    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qtrue, Qfalse);
+    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qtrue);
 
     return gc_compact_stats(self);
 }
@@ -10986,7 +10987,7 @@ gc_verify_compaction_references(rb_execution_context_t *ec, VALUE self, VALUE do
     rb_objspace_t *objspace = &rb_objspace;
 
     /* Clear the heap. */
-    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qfalse, Qfalse);
+    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qfalse);
     size_t growth_slots = gc_params.heap_init_slots;
 
     if (RTEST(double_heap)) {
@@ -11019,7 +11020,7 @@ gc_verify_compaction_references(rb_execution_context_t *ec, VALUE self, VALUE do
     }
     RB_VM_LOCK_LEAVE();
 
-    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qtrue, Qfalse);
+    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qtrue);
 
     objspace_reachable_objects_from_root(objspace, root_obj_check_moved_i, NULL);
     objspace_each_objects(objspace, heap_check_moved_i, NULL, TRUE);
