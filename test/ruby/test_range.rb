@@ -282,8 +282,9 @@ class TestRange < Test::Unit::TestCase
       assert_equal([0, 2, 4, 6, 8].map(&conv), (from..).step(step).take(5))
 
       # beginless
-      assert_raise(TypeError) { (..to).step(step) {} }
+      assert_raise(ArgumentError) { (..to).step(step) {} }
       assert_kind_of(Enumerator::ArithmeticSequence, (..to).step(step))
+      # This is inconsistent, but so it is implemented by ArithmeticSequence
       assert_raise(TypeError) { (..to).step(step).to_a }
 
       # negative step
@@ -419,8 +420,8 @@ class TestRange < Test::Unit::TestCase
     assert_equal(%w[a aa aaa], ('a'...).step('a').take(3))
 
     # beginless
-    assert_raise(TypeError) { (...'aaa').step('a') {} }
-    assert_raise(TypeError) { (...'aaa').step('a') }
+    assert_raise(ArgumentError) { (...'aaa').step('a') {} }
+    assert_raise(ArgumentError) { (...'aaa').step('a') }
 
     # step is not provided
     assert_raise(ArgumentError) { ('a'...'aaaa').step }

@@ -452,14 +452,14 @@ range_step(int argc, VALUE *argv, VALUE range)
 
         // ...but generic Enumerator from beginless range is useless and probably an error.
         if (NIL_P(b)) {
-            rb_raise(rb_eTypeError, "#step for non-numeric beginless ranges is meaningless");
+            rb_raise(rb_eArgError, "#step for non-numeric beginless ranges is meaningless");
         }
 
         RETURN_SIZED_ENUMERATOR(range, argc, argv, 0);
     }
 
     if (NIL_P(b)) {
-        rb_raise(rb_eTypeError, "#step iteration for beginless ranges is meaningless");
+        rb_raise(rb_eArgError, "#step iteration for beginless ranges is meaningless");
     }
 
     if (FIXNUM_P(b) && NIL_P(e) && FIXNUM_P(step)) {
