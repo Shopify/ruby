@@ -339,6 +339,9 @@ class TestRange < Test::Unit::TestCase
       assert_kind_of(Enumerator::ArithmeticSequence, (from..).step)
       assert_equal([0, 1, 2, 3, 4].map(&conv), (from..).step.take(5))
 
+      # default + beginless range
+      assert_kind_of(Enumerator::ArithmeticSequence, (..to).step)
+
       # step is not numeric
 
       to = conv.(5)

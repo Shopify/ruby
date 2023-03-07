@@ -430,9 +430,10 @@ range_step(int argc, VALUE *argv, VALUE range)
     if(rb_check_arity(argc, 0, 1))
         step = argv[0];
     else {
-        if (!b_num_p)
+        if (b_num_p || (NIL_P(b) && e_num_p))
+            step = INT2FIX(1);
+        else
             rb_raise(rb_eArgError, "step is required for non-numeric ranges");
-        step = INT2FIX(1);
     }
 
     const VALUE step_num_p = rb_obj_is_kind_of(step, rb_cNumeric);
