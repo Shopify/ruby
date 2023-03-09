@@ -228,7 +228,7 @@ static inline long
 str_embed_capa(VALUE str)
 {
 #if USE_RVARGC
-    return rb_gc_obj_slot_size(str) - offsetof(struct RString, as.embed.ary);
+    return rb_gc_embed_capa(str);
 #else
     return RSTRING_EMBED_LEN_MAX + 1;
 #endif
