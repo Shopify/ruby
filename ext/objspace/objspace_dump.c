@@ -706,7 +706,7 @@ objspace_dump(VALUE os, VALUE obj, VALUE output)
 {
     struct dump_config dc = {0,};
     if (!RB_SPECIAL_CONST_P(obj)) {
-        dc.cur_page_slot_size = rb_gc_obj_slot_size(obj);
+        dc.cur_page_slot_size = obj - rb_gc_obj_allocation_end(obj);
     }
 
     dump_output(&dc, output, Qnil, Qnil, Qnil);
