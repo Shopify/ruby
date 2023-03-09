@@ -2626,6 +2626,24 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
 }
 
 size_t
+rb_gc_embed_capa(VALUE obj)
+{
+    size_t capa;
+    switch (BUILTIN_TYPE(obj)) {
+        case T_ARRAY:
+            capa = rb_gc_obj_slot_size(obj) - offsetof(struct RArray, as.ary);
+            break;
+        case T_STRING:
+            capa = rb_gc_obj_slot_size(obj) - offsetof(struct RString, as.embed.ary);
+            break;
+        default:
+            capa = rb_gc_obj_slot_size(obj) - sizeof(struct RVALUE);
+            break;
+    }
+    return capa;
+}
+
+ size_t
 rb_gc_obj_slot_size(VALUE obj)
 {
     return GET_HEAP_PAGE(obj)->slot_size - RVALUE_OVERHEAD;

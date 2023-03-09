@@ -189,7 +189,7 @@ static long
 ary_embed_capa(VALUE ary)
 {
 #if USE_RVARGC
-    size_t size = rb_gc_obj_slot_size(ary) - offsetof(struct RArray, as.ary);
+    size_t size = rb_gc_embed_capa(ary);
     assert(size % sizeof(VALUE) == 0);
     return size / sizeof(VALUE);
 #else
