@@ -2643,6 +2643,12 @@ rb_gc_embed_capa(VALUE obj)
     return capa;
 }
 
+uintptr_t
+rb_gc_obj_allocation_end(VALUE obj)
+{
+    return (uintptr_t)((obj) + rb_gc_obj_slot_size(obj));
+}
+
  size_t
 rb_gc_obj_slot_size(VALUE obj)
 {

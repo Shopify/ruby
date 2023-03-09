@@ -328,7 +328,7 @@ rb_ractor_id(const rb_ractor_t *r)
 }
 
 #if RACTOR_CHECK_MODE > 0
-# define RACTOR_BELONGING_ID(obj) (*(uint32_t *)(((uintptr_t)(obj)) + rb_gc_obj_slot_size(obj)))
+# define RACTOR_BELONGING_ID(obj) (*(uint32_t *)(rb_gc_obj_allocation_end(obj)))
 
 uint32_t rb_ractor_current_id(void);
 
