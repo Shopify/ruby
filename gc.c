@@ -2625,6 +2625,12 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
     return obj;
 }
 
+static size_t
+rb_gc_obj_slot_size(VALUE obj)
+{
+    return GET_HEAP_PAGE(obj)->slot_size - RVALUE_OVERHEAD;
+}
+
 size_t
 rb_gc_embed_capa(VALUE obj)
 {
@@ -2647,12 +2653,6 @@ uintptr_t
 rb_gc_obj_allocation_end(VALUE obj)
 {
     return (uintptr_t)((obj) + rb_gc_obj_slot_size(obj));
-}
-
- size_t
-rb_gc_obj_slot_size(VALUE obj)
-{
-    return GET_HEAP_PAGE(obj)->slot_size - RVALUE_OVERHEAD;
 }
 
 static inline size_t

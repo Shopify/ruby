@@ -272,7 +272,6 @@ void rb_objspace_each_objects_without_setup(
     void *data);
 
 uintptr_t rb_gc_obj_allocation_end(VALUE obj);
-size_t rb_gc_obj_slot_size(VALUE obj);
 
 VALUE rb_gc_disable_no_rest(void);
 
