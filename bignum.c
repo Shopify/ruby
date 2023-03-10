@@ -3023,7 +3023,7 @@ rb_big_resize(VALUE big, size_t len)
 static VALUE
 bignew_1(VALUE klass, size_t len, int sign)
 {
-    RVARGC_NEWOBJ_OF(big, struct RBignum, klass,
+    NEWOBJ_OF(big, struct RBignum, klass,
             T_BIGNUM | (RGENGC_WB_PROTECTED_BIGNUM ? FL_WB_PROTECTED : 0), sizeof(struct RBignum));
     VALUE bigv = (VALUE)big;
     BIGNUM_SET_SIGN(bigv, sign);

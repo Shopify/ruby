@@ -391,7 +391,7 @@ k_numeric_p(VALUE x)
 inline static VALUE
 nucomp_s_new_internal(VALUE klass, VALUE real, VALUE imag)
 {
-    RVARGC_NEWOBJ_OF(obj, struct RComplex, klass,
+    NEWOBJ_OF(obj, struct RComplex, klass,
             T_COMPLEX | (RGENGC_WB_PROTECTED_COMPLEX ? FL_WB_PROTECTED : 0), sizeof(struct RComplex));
 
     RCOMPLEX_SET_REAL(obj, real);
