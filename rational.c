@@ -414,7 +414,7 @@ inline static VALUE
 nurat_s_new_internal(VALUE klass, VALUE num, VALUE den)
 {
     RVARGC_NEWOBJ_OF(obj, struct RRational, klass, T_RATIONAL | (RGENGC_WB_PROTECTED_RATIONAL ? FL_WB_PROTECTED : 0),
-            sizeof(struct RRational), NULL);
+            sizeof(struct RRational));
 
     RATIONAL_SET_NUM((VALUE)obj, num);
     RATIONAL_SET_DEN((VALUE)obj, den);

@@ -795,8 +795,7 @@ ary_alloc_embed(VALUE klass, long capa)
     assert(size <= sizeof(struct RArray));
 #endif
     RVARGC_NEWOBJ_OF(ary, struct RArray, klass,
-                     T_ARRAY | RARRAY_EMBED_FLAG | (RGENGC_WB_PROTECTED_ARRAY ? FL_WB_PROTECTED : 0),
-                     size, NULL);
+            T_ARRAY | RARRAY_EMBED_FLAG | (RGENGC_WB_PROTECTED_ARRAY ? FL_WB_PROTECTED : 0), size);
     /* Created array is:
      *   FL_SET_EMBED((VALUE)ary);
      *   ARY_SET_EMBED_LEN((VALUE)ary, 0);
@@ -808,8 +807,7 @@ static VALUE
 ary_alloc_heap(VALUE klass)
 {
     RVARGC_NEWOBJ_OF(ary, struct RArray, klass,
-                     T_ARRAY | (RGENGC_WB_PROTECTED_ARRAY ? FL_WB_PROTECTED : 0),
-                     sizeof(struct RArray), NULL);
+            T_ARRAY | (RGENGC_WB_PROTECTED_ARRAY ? FL_WB_PROTECTED : 0), sizeof(struct RArray));
     return (VALUE)ary;
 }
 

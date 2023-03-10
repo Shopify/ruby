@@ -905,7 +905,7 @@ str_alloc_embed(VALUE klass, size_t capa)
 #endif
 
     RVARGC_NEWOBJ_OF(str, struct RString, klass,
-                     T_STRING | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), size, NULL);
+            T_STRING | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), size);
 
     return (VALUE)str;
 }
@@ -914,7 +914,7 @@ static inline VALUE
 str_alloc_heap(VALUE klass)
 {
     RVARGC_NEWOBJ_OF(str, struct RString, klass,
-                     T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString), NULL);
+            T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString));
 
     return (VALUE)str;
 }

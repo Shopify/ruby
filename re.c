@@ -961,7 +961,7 @@ VALUE rb_cMatch;
 static VALUE
 match_alloc(VALUE klass)
 {
-    RVARGC_NEWOBJ_OF(match, struct RMatch, klass, T_MATCH | (RGENGC_WB_PROTECTED_MATCH ? FL_WB_PROTECTED : 0), sizeof(struct RMatch), NULL);
+    RVARGC_NEWOBJ_OF(match, struct RMatch, klass, T_MATCH | (RGENGC_WB_PROTECTED_MATCH ? FL_WB_PROTECTED : 0), sizeof(struct RMatch));
 
     match->str = Qfalse;
     match->rmatch = 0;
@@ -3270,7 +3270,7 @@ rb_reg_initialize_str(VALUE obj, VALUE str, int options, onig_errmsg_buffer err,
 static VALUE
 rb_reg_s_alloc(VALUE klass)
 {
-    RVARGC_NEWOBJ_OF(re, struct RRegexp, klass, T_REGEXP | (RGENGC_WB_PROTECTED_REGEXP ? FL_WB_PROTECTED : 0), sizeof(struct RRegexp), NULL);
+    RVARGC_NEWOBJ_OF(re, struct RRegexp, klass, T_REGEXP | (RGENGC_WB_PROTECTED_REGEXP ? FL_WB_PROTECTED : 0), sizeof(struct RRegexp));
 
     re->ptr = 0;
     RB_OBJ_WRITE(re, &re->src, 0);
