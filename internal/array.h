@@ -48,7 +48,6 @@ VALUE rb_ary_behead(VALUE, long);
 VALUE rb_ary_aref1(VALUE ary, VALUE i);
 
 struct rb_execution_context_struct;
-VALUE rb_ec_ary_new_from_values(struct rb_execution_context_struct *ec, long n, const VALUE *elts);
 
 // YJIT needs this function to never allocate and never raise
 static inline VALUE

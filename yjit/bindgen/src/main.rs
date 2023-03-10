@@ -140,7 +140,7 @@ fn main() {
         .allowlist_function("rb_yjit_rb_ary_subseq_length")
 
         // From internal/array.h
-        .allowlist_function("rb_ec_ary_new_from_values")
+        .allowlist_function("rb_ary_new_from_values")
         .allowlist_function("rb_ary_tmp_new_from_values")
 
         // From include/ruby/internal/intern/class.h
@@ -214,7 +214,7 @@ fn main() {
         .allowlist_function("rb_str_intern")
 
         // From internal/string.h
-        .allowlist_function("rb_ec_str_resurrect")
+        .allowlist_function("rb_str_resurrect")
         .allowlist_function("rb_str_concat_literals")
         .allowlist_function("rb_obj_as_string_result")
 

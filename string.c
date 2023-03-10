@@ -1734,31 +1734,6 @@ str_replace(VALUE str, VALUE str2)
 }
 
 static inline VALUE
-ec_str_alloc_embed(struct rb_execution_context_struct *ec, VALUE klass, size_t capa)
-{
-    size_t size = rb_str_embed_size(capa);
-    assert(size > 0);
-    assert(rb_gc_size_allocatable_p(size));
-#if !USE_RVARGC
-    assert(size <= sizeof(struct RString));
-#endif
-
-    RVARGC_NEWOBJ_OF(str, struct RString, klass,
-            T_STRING | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), size, ec);
-
-    return (VALUE)str;
-}
-
-static inline VALUE
-ec_str_alloc_heap(struct rb_execution_context_struct *ec, VALUE klass)
-{
-    RVARGC_NEWOBJ_OF(str, struct RString, klass,
-            T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString), ec);
-
-    return (VALUE)str;
-}
-
-static inline VALUE
 str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
 {
     const VALUE flag_mask =
@@ -1816,20 +1791,6 @@ str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
 }
 
 static inline VALUE
-ec_str_duplicate(struct rb_execution_context_struct *ec, VALUE klass, VALUE str)
-{
-    VALUE dup;
-    if (FL_TEST(str, STR_NOEMBED)) {
-        dup = ec_str_alloc_heap(ec, klass);
-    }
-    else {
-        dup = ec_str_alloc_embed(ec, klass, RSTRING_EMBED_LEN(str) + TERM_LEN(str));
-    }
-
-    return str_duplicate_setup(klass, str, dup);
-}
-
-static inline VALUE
 str_duplicate(VALUE klass, VALUE str)
 {
     VALUE dup;
@@ -1854,13 +1815,6 @@ rb_str_resurrect(VALUE str)
 {
     RUBY_DTRACE_CREATE_HOOK(STRING, RSTRING_LEN(str));
     return str_duplicate(rb_cString, str);
-}
-
-VALUE
-rb_ec_str_resurrect(struct rb_execution_context_struct *ec, VALUE str)
-{
-    RUBY_DTRACE_CREATE_HOOK(STRING, RSTRING_LEN(str));
-    return ec_str_duplicate(ec, rb_cString, str);
 }
 
 /*

@@ -125,6 +125,33 @@ module RubyVM::RJIT # :nodoc: all
       Primitive.cexpr! 'SIZET2NUM((size_t)rb_get_symbol_id(name))'
     end
 
+    def rb_ary_new_from_values
+      Primitive.cexpr! 'SIZET2NUM((size_t)rb_ary_new_from_values)'
+    end
+
+    def rb_vm_splat_array
+      Primitive.cstmt! %{
+        extern VALUE rb_vm_splat_array(VALUE flag, VALUE array);
+        return SIZET2NUM((size_t)rb_vm_splat_array);
+      }
+    end
+
+    def rb_str_resurrect
+      Primitive.cexpr! 'SIZET2NUM((size_t)rb_str_resurrect)'
+    end
+
+    def rb_hash_new_with_size
+      Primitive.cexpr! 'SIZET2NUM((size_t)rb_hash_new_with_size)'
+    end
+
+    def rb_hash_new
+      Primitive.cexpr! 'SIZET2NUM((size_t)rb_hash_new)'
+    end
+
+    def rb_hash_bulk_insert
+      Primitive.cexpr! 'SIZET2NUM((size_t)rb_hash_bulk_insert)'
+    end
+
     def rb_vm_frame_method_entry(cfp)
       _cfp = cfp.to_i
       cme_addr = Primitive.cexpr! 'SIZET2NUM((size_t)rb_vm_frame_method_entry((const rb_control_frame_t *)NUM2SIZET(_cfp)))'
@@ -534,14 +561,6 @@ module RubyVM::RJIT # :nodoc: all
 
   def C.rb_backref_get
     Primitive.cexpr! %q{ SIZET2NUM((size_t)rb_backref_get) }
-  end
-
-  def C.rb_ec_ary_new_from_values
-    Primitive.cexpr! %q{ SIZET2NUM((size_t)rb_ec_ary_new_from_values) }
-  end
-
-  def C.rb_ec_str_resurrect
-    Primitive.cexpr! %q{ SIZET2NUM((size_t)rb_ec_str_resurrect) }
   end
 
   def C.rb_ensure_iv_list_size

@@ -750,9 +750,8 @@ module RubyVM::RJIT
       # Save the PC and SP because the callee will allocate
       jit_prepare_routine_call(jit, ctx, asm)
 
-      asm.mov(C_ARGS[0], EC)
-      asm.mov(C_ARGS[1], to_value(put_val))
-      asm.call(C.rb_ec_str_resurrect)
+      asm.mov(C_ARGS[0], to_value(put_val))
+      asm.call(C.rb_str_resurrect)
 
       stack_top = ctx.stack_push
       asm.mov(stack_top, C_RET)
@@ -885,11 +884,10 @@ module RubyVM::RJIT
         values_ptr = :rax
       end
 
-      # call rb_ec_ary_new_from_values(struct rb_execution_context_struct *ec, long n, const VALUE *elts);
-      asm.mov(C_ARGS[0], EC)
-      asm.mov(C_ARGS[1], n)
-      asm.mov(C_ARGS[2], values_ptr)
-      asm.call(C.rb_ec_ary_new_from_values)
+      # call rb_ary_new_from_values(struct rb_execution_context_struct *ec, long n, const VALUE *elts);
+      asm.mov(C_ARGS[0], n)
+      asm.mov(C_ARGS[1], values_ptr)
+      asm.call(C.rb_ary_new_from_values)
 
       ctx.stack_pop(n)
       stack_ret = ctx.stack_push

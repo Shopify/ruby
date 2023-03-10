@@ -1219,11 +1219,10 @@ fn gen_newarray(
         asm.lea(values_opnd)
     };
 
-    // call rb_ec_ary_new_from_values(struct rb_execution_context_struct *ec, long n, const VALUE *elts);
+    // call rb_ary_new_from_values(struct rb_execution_context_struct *ec, long n, const VALUE *elts);
     let new_ary = asm.ccall(
-        rb_ec_ary_new_from_values as *const u8,
+        rb_ary_new_from_values as *const u8,
         vec![
-            EC,
             Opnd::UImm(n.into()),
             values_ptr
         ]
@@ -1836,8 +1835,8 @@ fn gen_putstring(
     jit_prepare_routine_call(jit, ctx, asm);
 
     let str_opnd = asm.ccall(
-        rb_ec_str_resurrect as *const u8,
-        vec![EC, put_val.into()]
+        rb_str_resurrect as *const u8,
+        vec![put_val.into()]
     );
 
     let stack_top = ctx.stack_push(Type::CString);
@@ -5873,9 +5872,8 @@ fn gen_send_iseq(
             };
 
             let new_ary = asm.ccall(
-                rb_ec_ary_new_from_values as *const u8,
+                rb_ary_new_from_values as *const u8,
                 vec![
-                    EC,
                     Opnd::UImm(n.into()),
                     values_ptr
                 ]
@@ -6051,8 +6049,6 @@ fn gen_send_iseq(
         }
         argc = lead_num;
     }
-
-
 
     // Points to the receiver operand on the stack unless a captured environment is used
     let recv = match captured_opnd {

@@ -388,7 +388,7 @@ putstring
 ()
 (VALUE val)
 {
-    val = rb_ec_str_resurrect(ec, str);
+    val = rb_str_resurrect(str);
 }
 
 /* put concatenate strings */
@@ -452,7 +452,7 @@ newarray
 (VALUE val)
 // attr rb_snum_t sp_inc = 1 - (rb_snum_t)num;
 {
-    val = rb_ec_ary_new_from_values(ec, num, STACK_ADDR_FROM_TOP(num));
+    val = rb_ary_new_from_values(num, STACK_ADDR_FROM_TOP(num));
 }
 
 /* put new array initialized with num values on the stack. There

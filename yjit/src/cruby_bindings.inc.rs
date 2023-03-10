@@ -1092,6 +1092,7 @@ extern "C" {
     pub static mut rb_cTrueClass: VALUE;
     pub fn rb_obj_class(obj: VALUE) -> VALUE;
     pub fn rb_ary_new_capa(capa: ::std::os::raw::c_long) -> VALUE;
+    pub fn rb_ary_new_from_values(n: ::std::os::raw::c_long, elts: *const VALUE) -> VALUE;
     pub fn rb_ary_store(ary: VALUE, key: ::std::os::raw::c_long, val: VALUE);
     pub fn rb_ary_dup(ary: VALUE) -> VALUE;
     pub fn rb_ary_resurrect(ary: VALUE) -> VALUE;
@@ -1120,6 +1121,7 @@ extern "C" {
     ) -> VALUE;
     pub fn rb_str_buf_append(dst: VALUE, src: VALUE) -> VALUE;
     pub fn rb_str_dup(str_: VALUE) -> VALUE;
+    pub fn rb_str_resurrect(str_: VALUE) -> VALUE;
     pub fn rb_str_intern(str_: VALUE) -> VALUE;
     pub fn rb_ivar_get(obj: VALUE, name: ID) -> VALUE;
     pub fn rb_ivar_defined(obj: VALUE, name: ID) -> VALUE;
@@ -1130,11 +1132,6 @@ extern "C" {
         arg1: VALUE,
         arg2: ::std::os::raw::c_long,
         arg3: *const VALUE,
-    ) -> VALUE;
-    pub fn rb_ec_ary_new_from_values(
-        ec: *mut rb_execution_context_struct,
-        n: ::std::os::raw::c_long,
-        elts: *const VALUE,
     ) -> VALUE;
     pub fn rb_method_entry_at(obj: VALUE, id: ID) -> *const rb_method_entry_t;
     pub fn rb_callable_method_entry(klass: VALUE, id: ID) -> *const rb_callable_method_entry_t;
@@ -1168,7 +1165,6 @@ extern "C" {
     pub fn rb_ensure_iv_list_size(obj: VALUE, len: u32, newsize: u32);
     pub fn rb_obj_as_string_result(str_: VALUE, obj: VALUE) -> VALUE;
     pub fn rb_str_concat_literals(num: usize, strary: *const VALUE) -> VALUE;
-    pub fn rb_ec_str_resurrect(ec: *mut rb_execution_context_struct, str_: VALUE) -> VALUE;
     pub fn rb_hash_stlike_foreach(
         hash: VALUE,
         func: st_foreach_callback_func,
