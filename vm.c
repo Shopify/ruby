@@ -2372,7 +2372,9 @@ vm_exec(rb_execution_context_t *ec)
         rb_ec_raised_reset(ec, RAISED_STACKOVERFLOW | RAISED_NOMEMORY);
         while (UNDEF_P(result = vm_exec_handle_exception(ec, state, result, &initial))) {
             /* caught a jump, exec the handler */
-            result = vm_exec_core(ec, initial);
+            if (UNDEF_P(result = jit_exec(ec))) {
+                result = vm_exec_core(ec, initial);
+            }
           vm_loop_start:
             VM_ASSERT(ec->tag == &_tag);
             /* when caught `throw`, `tag.state` is set. */
