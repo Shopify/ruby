@@ -13,7 +13,7 @@
 
 struct rb_thread_struct;        /* in vm_core.h */
 
-#define RB_VM_SAVE_MACHINE_CONTEXT(th)				\
+#define RB_THREAD_SAVE_MACHINE_CONTEXT(th)				\
     do {							\
         FLUSH_REGISTER_WINDOWS;					\
         setjmp((th)->ec->machine.regs);				\
