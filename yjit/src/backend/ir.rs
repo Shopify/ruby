@@ -446,7 +446,7 @@ pub enum Insn {
 
     /// Make sure `size_size` temps are spilled to the VM stack. Assume
     /// `temps_spilled` temps have already been spilled.
-    SpillTemps { stack_size: u8, sp_offset: i8, spilled_size: u8 },
+    SpillTemps { stack_size: u8, sp_offset: i8, spilled_temps: [bool; MAX_TEMP_REGS] },
 
     // Low-level instruction to store a value to memory.
     Store { dest: Opnd, src: Opnd },
@@ -856,7 +856,7 @@ impl fmt::Debug for Insn {
 }
 
 /// Maximum number of temp slots that could be on a register
-const MAX_TEMP_REGS: usize = 8;
+pub const MAX_TEMP_REGS: usize = 8;
 
 /// Object into which we assemble instructions to be
 /// optimized and lowered
@@ -882,18 +882,14 @@ pub struct Assembler
 impl Assembler
 {
     pub fn new() -> Self {
-        Self::new_with_spilled_size(0)
+        Self::new_with_spilled_temps([false; MAX_TEMP_REGS])
     }
 
-    pub fn new_with_spilled_size(spilled_size: u8) -> Self {
-        let mut spilled_temps = [false; 8];
-        for i in 0..usize::min(spilled_size as usize, spilled_temps.len()) {
-            spilled_temps[i] = true;
-        }
+    pub fn new_with_spilled_temps(spilled_temps: [bool; MAX_TEMP_REGS]) -> Self {
         Self::new_with_label_names(Vec::default(), spilled_temps)
     }
 
-    pub fn new_with_label_names(label_names: Vec<String>, initial_temps: [bool; 8]) -> Self {
+    pub fn new_with_label_names(label_names: Vec<String>, initial_temps: [bool; MAX_TEMP_REGS]) -> Self {
         Self {
             insns: Vec::default(),
             live_ranges: Vec::default(),
@@ -943,10 +939,12 @@ impl Assembler
         // the allocation state to Contexts and side exits before reaching `asm.compile()`.
         let regs = Self::get_temp_regs();
         match insn {
-            Insn::SpillTemps { stack_size, sp_offset, spilled_size } => {
+            Insn::SpillTemps { stack_size, sp_offset, spilled_temps: other_spilled } => {
                 // Propagate spilled_temps from inline code to outlined code
-                for stack_idx in 0..usize::min(spilled_size as usize, MAX_TEMP_REGS) {
-                    spilled_temps[stack_idx] = true;
+                for stack_idx in 0..MAX_TEMP_REGS {
+                    if other_spilled[stack_idx] {
+                        spilled_temps[stack_idx] = true;
+                    }
                 }
 
                 // Using u8::max to spill only registers that have not been spilled
@@ -1006,11 +1004,11 @@ impl Assembler
         while let Some((index, mut insn)) = iterator.next_unmapped() {
             let prev_spilled = if index == 0 { asm.initial_temps } else { spilled_temps[index - 1] };
             match insn {
-                Insn::SpillTemps { stack_size, sp_offset, spilled_size } => {
+                Insn::SpillTemps { stack_size, sp_offset, spilled_temps: other_spilled } => {
                     // Using u8::max to spill only registers that have not been spilled
-                    for stack_idx in (spilled_size as usize)..usize::min(stack_size as usize, MAX_TEMP_REGS) {
+                    for stack_idx in 0..usize::min(stack_size as usize, MAX_TEMP_REGS) {
                         // Spill if a register is allocated to the index
-                        if !prev_spilled[stack_idx] && regs.len() > 0 {
+                        if !other_spilled[stack_idx] && !prev_spilled[stack_idx] && regs.len() > 0 {
                             let offset = sp_offset - (stack_size as i8) + (stack_idx as i8);
                             let reg_idx = stack_idx % regs.len(); // Share a register across indexes with the same modulo
                             asm.mov(Opnd::mem(64, SP, (offset as i32) * SIZEOF_VALUE_I32), Opnd::Reg(regs[reg_idx]));
@@ -1666,10 +1664,9 @@ impl Assembler {
         self.push_insn(Insn::SpillTemps {
             stack_size: ctx.get_stack_size(),
             sp_offset: ctx.get_sp_offset(),
-            spilled_size: ctx.spilled_size,
+            spilled_temps: ctx.get_spilled_temps(),
         });
-        // Each Assembler keeps increasing spilled_size
-        ctx.spilled_size = u8::max(ctx.spilled_size, ctx.get_stack_size());
+        ctx.spill_temps(ctx.get_stack_size());
     }
 
     pub fn store(&mut self, dest: Opnd, src: Opnd) {
