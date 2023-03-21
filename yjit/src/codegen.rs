@@ -2297,6 +2297,7 @@ fn gen_setinstancevariable(
                 }
 
                 if needs_extension {
+                    asm.spill_temps(ctx);
                     // Generate the C call so that runtime code will increase
                     // the capacity and set the buffer.
                     asm.ccall(rb_ensure_iv_list_size as *const u8,
@@ -2347,6 +2348,7 @@ fn gen_setinstancevariable(
             asm.jbe(skip_wb);
 
             asm.comment("write barrier");
+            asm.spill_temps(ctx);
             asm.ccall(
                 rb_gc_writebarrier as *const u8,
                 vec![
@@ -2774,6 +2776,7 @@ fn gen_equality_specialized(
         }
 
         // Call rb_str_eql_internal(a, b)
+        asm.spill_temps(ctx);
         let val = asm.ccall(
             if gen_eq { rb_str_eql_internal } else { rb_str_neq_internal } as *const u8,
             vec![a_opnd, b_opnd],
@@ -2891,6 +2894,7 @@ fn gen_opt_aref(
         // Call VALUE rb_ary_entry_internal(VALUE ary, long offset).
         // It never raises or allocates, so we don't need to write to cfp->pc.
         {
+            asm.spill_temps(ctx);
             let idx_reg = asm.rshift(idx_reg, Opnd::UImm(1)); // Convert fixnum to int
             let val = asm.ccall(rb_ary_entry_internal as *const u8, vec![recv_opnd, idx_reg]);
 
@@ -3253,6 +3257,7 @@ fn gen_opt_mod(
         asm.je(side_exit);
 
         // Call rb_fix_mod_fix(VALUE recv, VALUE obj)
+        asm.spill_temps(ctx);
         let ret = asm.ccall(rb_fix_mod_fix as *const u8, vec![arg0, arg1]);
 
         // Push the return value onto the stack
@@ -4105,6 +4110,7 @@ fn jit_rb_mod_eqq(
     // Ruby methods with these inputs.
     // Note the difference in approach from Kernel#is_a? because we don't get a free guard for the
     // right hand side.
+    asm.spill_temps(ctx);
     let lhs = ctx.stack_opnd(1); // the module
     let rhs = ctx.stack_opnd(0);
     let ret = asm.ccall(rb_obj_is_kind_of as *const u8, vec![rhs, lhs]);
@@ -4243,6 +4249,7 @@ fn jit_rb_str_bytesize(
 ) -> bool {
     asm.comment("String#bytesize");
 
+    asm.spill_temps(ctx);
     let recv = ctx.stack_pop(1);
     let ret_opnd = asm.ccall(rb_str_bytesize as *const u8, vec![recv]);
 
@@ -4380,6 +4387,7 @@ fn jit_rb_str_concat(
     asm.jnz(enc_mismatch);
 
     // If encodings match, call the simple append function and jump to return
+    asm.spill_temps(ctx);
     let ret_opnd = asm.ccall(rb_yjit_str_simple_append as *const u8, vec![recv, concat_arg]);
     let ret_label = asm.new_label("func_return");
     asm.mov(stack_ret, ret_opnd);
@@ -4981,6 +4989,7 @@ fn gen_send_cfunc(
         let imemo_ci = VALUE(ci as usize);
         assert_ne!(0, unsafe { rb_IMEMO_TYPE_P(imemo_ci, imemo_callinfo) },
             "we assume all callinfos with kwargs are on the GC heap");
+        asm.spill_temps(ctx);
         let sp = asm.lea(ctx.sp_opnd(0));
         let kwargs = asm.ccall(build_kwhash as *const u8, vec![imemo_ci.into(), sp]);
 
@@ -6121,6 +6130,7 @@ fn gen_struct_aset(
 
     asm.comment("struct aset");
 
+    asm.spill_temps(ctx);
     let val = ctx.stack_pop(1);
     let recv = ctx.stack_pop(1);
 
@@ -6239,6 +6249,7 @@ fn gen_send_general(
             if flags & VM_CALL_FCALL == 0 {
                 // otherwise we need an ancestry check to ensure the receiver is valid to be called
                 // as protected
+                asm.spill_temps(ctx);
                 jit_protected_callee_ancestry_guard(asm, ocb, cme, side_exit);
             }
         }
@@ -6449,6 +6460,8 @@ fn gen_send_general(
                             2, // We have string or symbol, so max depth is 2
                             type_mismatch_exit
                         );
+
+                        asm.spill_temps(ctx);
 
                         // Need to do this here so we don't have too many live
                         // values for the register allocator.
@@ -7339,6 +7352,7 @@ fn gen_opt_getconstant_path(
         let inline_cache = asm.load(Opnd::const_ptr(ic as *const u8));
 
         // Call function to verify the cache. It doesn't allocate or call methods.
+        asm.spill_temps(ctx);
         let ret_val = asm.ccall(
             rb_vm_ic_hit_p as *const u8,
             vec![inline_cache, Opnd::mem(64, CFP, RUBY_OFFSET_CFP_EP)]
