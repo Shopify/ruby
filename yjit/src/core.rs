@@ -352,6 +352,9 @@ impl From<Opnd> for YARVOpnd {
     }
 }
 
+/// Bitmap that manages whether eight temps are spilled or not.
+pub type SpilledTemps = u8;
+
 /// Code generation context
 /// Contains information we can use to specialize/optimize code
 /// There are a lot of context objects so we try to keep the size small.
@@ -365,7 +368,7 @@ pub struct Context {
     sp_offset: i8,
 
     // The number of stack temps spilled to the stack
-    spilled_temps: [bool; MAX_TEMP_REGS],
+    spilled_temps: SpilledTemps,
 
     // Depth of this block in the sidechain (eg: inline-cache chain)
     chain_depth: u8,
@@ -1268,22 +1271,44 @@ impl Block {
     }
 }
 
+pub trait BitMap {
+    fn get(self, index: usize) -> bool;
+
+    fn set(&mut self, index: usize, value: bool);
+}
+
+impl BitMap for SpilledTemps {
+    fn get(self, index: usize) -> bool {
+        assert!(index < MAX_TEMP_REGS);
+        (self >> index) & 1 == 1
+    }
+
+    fn set(&mut self, index: usize, value: bool) {
+        assert!(index < MAX_TEMP_REGS);
+        if value {
+            *self = *self | (1 << index);
+        } else {
+            *self = *self & !(1 << index);
+        }
+    }
+}
+
 impl Context {
-    pub fn get_spilled_temps(&self) -> [bool; MAX_TEMP_REGS] {
+    pub fn get_spilled_temps(&self) -> SpilledTemps {
         self.spilled_temps
     }
 
     /// Increase the number of spilled temps
     pub fn spill_temps(&mut self, spilled_size: u8) {
         for stack_idx in 0..usize::min(spilled_size as usize, MAX_TEMP_REGS) {
-            self.spilled_temps[stack_idx] = true;
+            self.spilled_temps.set(stack_idx, true);
         }
     }
 
     /// Decrease the number of spilled temps
     pub fn unspill_temps(&mut self, spilled_size: u8) {
         for stack_idx in (spilled_size as usize)..MAX_TEMP_REGS {
-            self.spilled_temps[stack_idx] = false;
+            self.spilled_temps.set(stack_idx, false);
         }
     }
 
@@ -2593,6 +2618,33 @@ mod tests {
         assert_eq!(Type::Unknown.diff(Type::UnknownImm), TypeDiff::Incompatible);
         assert_eq!(Type::Unknown.diff(Type::Fixnum), TypeDiff::Incompatible);
         assert_eq!(Type::Fixnum.diff(Type::UnknownHeap), TypeDiff::Incompatible);
+    }
+
+    #[test]
+    fn spilled_temps() {
+        let mut spilled_temps: SpilledTemps = 0;
+
+        // 0 means every slot is not spilled
+        for stack_idx in 0..MAX_TEMP_REGS {
+            assert_eq!(false, spilled_temps.get(stack_idx));
+        }
+
+        // Set 0, 2, 7
+        spilled_temps.set(0, true);
+        spilled_temps.set(2, true);
+        spilled_temps.set(3, true);
+        spilled_temps.set(3, false);
+        spilled_temps.set(7, true);
+
+        // Get 0..8
+        assert_eq!(true, spilled_temps.get(0));
+        assert_eq!(false, spilled_temps.get(1));
+        assert_eq!(true, spilled_temps.get(2));
+        assert_eq!(false, spilled_temps.get(3));
+        assert_eq!(false, spilled_temps.get(4));
+        assert_eq!(false, spilled_temps.get(5));
+        assert_eq!(false, spilled_temps.get(6));
+        assert_eq!(true, spilled_temps.get(7));
     }
 
     #[test]

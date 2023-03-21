@@ -11,7 +11,7 @@ use crate::cruby::{VALUE, SIZEOF_VALUE_I32};
 use crate::stats::incr_counter;
 use crate::virtualmem::{CodePtr};
 use crate::asm::{CodeBlock, uimm_num_bits, imm_num_bits};
-use crate::core::{Context, Type, TempMapping};
+use crate::core::{BitMap, Context, Type, TempMapping, SpilledTemps};
 use crate::options::*;
 
 #[cfg(target_arch = "x86_64")]
@@ -446,7 +446,7 @@ pub enum Insn {
 
     /// Make sure `size_size` temps are spilled to the VM stack. Assume
     /// `temps_spilled` temps have already been spilled.
-    SpillTemps { stack_size: u8, sp_offset: i8, spilled_temps: [bool; MAX_TEMP_REGS] },
+    SpillTemps { stack_size: u8, sp_offset: i8, spilled_temps: SpilledTemps },
 
     // Low-level instruction to store a value to memory.
     Store { dest: Opnd, src: Opnd },
@@ -870,10 +870,10 @@ pub struct Assembler
 
     /// Parallel vec with insns
     /// Bitmap of spilled stack slot indexes of this insn
-    pub(super) spilled_temps: Vec<[bool; MAX_TEMP_REGS]>,
+    pub(super) spilled_temps: Vec<SpilledTemps>,
 
     /// Bitmap of spilled stack slot indexes before the first insn
-    pub(super) initial_temps: [bool; MAX_TEMP_REGS],
+    pub(super) initial_temps: SpilledTemps,
 
     /// Names of labels
     pub(super) label_names: Vec<String>,
@@ -882,14 +882,14 @@ pub struct Assembler
 impl Assembler
 {
     pub fn new() -> Self {
-        Self::new_with_spilled_temps([false; MAX_TEMP_REGS])
+        Self::new_with_spilled_temps(0)
     }
 
-    pub fn new_with_spilled_temps(spilled_temps: [bool; MAX_TEMP_REGS]) -> Self {
+    pub fn new_with_spilled_temps(spilled_temps: SpilledTemps) -> Self {
         Self::new_with_label_names(Vec::default(), spilled_temps)
     }
 
-    pub fn new_with_label_names(label_names: Vec<String>, initial_temps: [bool; MAX_TEMP_REGS]) -> Self {
+    pub fn new_with_label_names(label_names: Vec<String>, initial_temps: SpilledTemps) -> Self {
         Self {
             insns: Vec::default(),
             live_ranges: Vec::default(),
@@ -942,18 +942,17 @@ impl Assembler
             Insn::SpillTemps { stack_size, sp_offset, spilled_temps: other_spilled } => {
                 // Propagate spilled_temps from inline code to outlined code
                 for stack_idx in 0..MAX_TEMP_REGS {
-                    if other_spilled[stack_idx] {
-                        spilled_temps[stack_idx] = true;
+                    if other_spilled.get(stack_idx) {
+                        spilled_temps.set(stack_idx, true);
                     }
                 }
 
-                // Using u8::max to spill only registers that have not been spilled
                 for stack_idx in 0..usize::min(stack_size as usize, MAX_TEMP_REGS) {
                     // Spill if a register is allocated to the index
-                    if !spilled_temps[stack_idx] && regs.len() > 0 {
+                    if !spilled_temps.get(stack_idx) && regs.len() > 0 {
                         let offset = sp_offset - (stack_size as i8) + (stack_idx as i8);
                         let reg_idx = stack_idx % regs.len(); // Share a register across indexes with the same modulo
-                        spilled_temps[stack_idx] = true;
+                        spilled_temps.set(stack_idx, true);
                     }
                 }
             }
@@ -962,13 +961,13 @@ impl Assembler
                 while let Some(opnd) = opnd_iter.next() {
                     if let Opnd::Stack { idx, stack_size, sp_offset, num_bits } = *opnd {
                         let stack_idx = (stack_size as i32 - idx - 1) as usize;
-                        if stack_idx < MAX_TEMP_REGS && !spilled_temps[stack_idx] && regs.len() > 0 {
+                        if stack_idx < MAX_TEMP_REGS && !spilled_temps.get(stack_idx) && regs.len() > 0 {
                             let reg_idx = stack_idx % regs.len(); // Share a register across indexes with the same modulo
                             // Spill if other registers share the same reg_idx
                             let mut other_idx = stack_idx as isize - regs.len() as isize;
                             while other_idx >= 0 {
-                                if !spilled_temps[other_idx as usize] {
-                                    spilled_temps[other_idx as usize] = true;
+                                if !spilled_temps.get(other_idx as usize) {
+                                    spilled_temps.set(other_idx as usize, true);
                                 }
                                 other_idx -= regs.len() as isize;
                             }
@@ -1005,10 +1004,9 @@ impl Assembler
             let prev_spilled = if index == 0 { asm.initial_temps } else { spilled_temps[index - 1] };
             match insn {
                 Insn::SpillTemps { stack_size, sp_offset, spilled_temps: other_spilled } => {
-                    // Using u8::max to spill only registers that have not been spilled
                     for stack_idx in 0..usize::min(stack_size as usize, MAX_TEMP_REGS) {
                         // Spill if a register is allocated to the index
-                        if !other_spilled[stack_idx] && !prev_spilled[stack_idx] && regs.len() > 0 {
+                        if !other_spilled.get(stack_idx) && !prev_spilled.get(stack_idx) && regs.len() > 0 {
                             let offset = sp_offset - (stack_size as i8) + (stack_idx as i8);
                             let reg_idx = stack_idx % regs.len(); // Share a register across indexes with the same modulo
                             asm.mov(Opnd::mem(64, SP, (offset as i32) * SIZEOF_VALUE_I32), Opnd::Reg(regs[reg_idx]));
@@ -1022,12 +1020,12 @@ impl Assembler
                         *opnd = iterator.map_opnd(*opnd);
                         if let Opnd::Stack { idx, stack_size, sp_offset, num_bits } = *opnd {
                             let stack_idx = (stack_size as i32 - idx - 1) as usize;
-                            *opnd = if stack_idx < MAX_TEMP_REGS && !prev_spilled[stack_idx] && regs.len() > 0 {
+                            *opnd = if stack_idx < MAX_TEMP_REGS && !prev_spilled.get(stack_idx) && regs.len() > 0 {
                                 let reg_idx = stack_idx % regs.len(); // Share a register across indexes with the same modulo
                                 // Spill if other registers share the same reg_idx
                                 let mut other_idx = stack_idx as isize - regs.len() as isize;
                                 while other_idx >= 0 {
-                                    if !prev_spilled[other_idx as usize] {
+                                    if !prev_spilled.get(other_idx as usize) {
                                         let offset = sp_offset - (stack_size as i8) + (other_idx as i8);
                                         asm.mov(Opnd::mem(64, SP, (offset as i32) * SIZEOF_VALUE_I32), Opnd::Reg(regs[reg_idx]));
                                         incr_counter!(temp_spills);
