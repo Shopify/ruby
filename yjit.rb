@@ -249,6 +249,7 @@ module RubyVM::YJIT
       print_counters(stats, prefix: 'expandarray_', prompt: 'expandarray exit reasons: ')
       print_counters(stats, prefix: 'opt_getinlinecache_', prompt: 'opt_getinlinecache exit reasons: ')
       print_counters(stats, prefix: 'invalidate_', prompt: 'invalidation reasons: ')
+      print_counters(stats, prefix: 'spill_', prompt: 'stack temp spill reasons: ')
 
       # Number of failed compiler invocations
       compilation_failure = stats[:compilation_failure]

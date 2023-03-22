@@ -355,6 +355,13 @@ make_counters! {
     temp_reg_opnds,
     temp_mem_opnds,
     temp_spills,
+
+    spill_c_args,
+    spill_iseq_args,
+    spill_ccall,
+    spill_save_sp,
+    spill_block_end,
+    spill_side_exit,
 }
 
 //===========================================================================

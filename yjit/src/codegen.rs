@@ -214,6 +214,7 @@ macro_rules! gen_counter_incr {
         }
     };
 }
+pub(crate) use gen_counter_incr;
 
 macro_rules! counted_exit {
     ($ocb:tt, $existing_side_exit:tt, $counter_name:ident) => {
@@ -257,6 +258,7 @@ fn jit_save_pc(jit: &JITState, asm: &mut Assembler) {
 /// Note: this will change the current value of REG_SP,
 ///       which could invalidate memory operands
 fn gen_save_sp(asm: &mut Assembler, ctx: &mut Context) {
+    gen_counter_incr!(asm, spill_save_sp);
     asm.spill_temps(ctx);
     if ctx.get_sp_offset() != 0 {
         asm.comment("save SP to CFP");
@@ -462,6 +464,7 @@ fn gen_outlined_exit(exit_pc: *mut VALUE, ctx: &Context, ocb: &mut OutlinedCb) -
     let mut asm = Assembler::new_with_spilled_temps(ctx.get_spilled_temps());
 
     // Spill before returning to the interpreter
+    gen_counter_incr!(asm, spill_side_exit);
     asm.spill_temps(&mut ctx.clone());
 
     gen_exit(exit_pc, ctx, &mut asm);
@@ -689,6 +692,7 @@ fn jump_to_next_insn(
     // chain_depth > 0 from the same instruction.
     let mut reset_depth = current_context.clone();
     reset_depth.reset_chain_depth();
+    gen_counter_incr!(asm, spill_block_end);
     asm.spill_temps(&mut reset_depth);
 
     let jump_block = BlockId {
@@ -818,6 +822,7 @@ pub fn gen_single_block(
             }
 
             // Spill before returning to the interpreter
+            gen_counter_incr!(asm, spill_side_exit);
             asm.spill_temps(&mut ctx);
 
             let mut block = jit.block.borrow_mut();
@@ -2297,6 +2302,7 @@ fn gen_setinstancevariable(
                 }
 
                 if needs_extension {
+                    gen_counter_incr!(asm, spill_ccall);
                     asm.spill_temps(ctx);
                     // Generate the C call so that runtime code will increase
                     // the capacity and set the buffer.
@@ -2348,6 +2354,7 @@ fn gen_setinstancevariable(
             asm.jbe(skip_wb);
 
             asm.comment("write barrier");
+            gen_counter_incr!(asm, spill_ccall);
             asm.spill_temps(ctx);
             asm.ccall(
                 rb_gc_writebarrier as *const u8,
@@ -2776,6 +2783,7 @@ fn gen_equality_specialized(
         }
 
         // Call rb_str_eql_internal(a, b)
+        gen_counter_incr!(asm, spill_ccall);
         asm.spill_temps(ctx);
         let val = asm.ccall(
             if gen_eq { rb_str_eql_internal } else { rb_str_neq_internal } as *const u8,
@@ -2894,6 +2902,7 @@ fn gen_opt_aref(
         // Call VALUE rb_ary_entry_internal(VALUE ary, long offset).
         // It never raises or allocates, so we don't need to write to cfp->pc.
         {
+            gen_counter_incr!(asm, spill_ccall);
             asm.spill_temps(ctx);
             let idx_reg = asm.rshift(idx_reg, Opnd::UImm(1)); // Convert fixnum to int
             let val = asm.ccall(rb_ary_entry_internal as *const u8, vec![recv_opnd, idx_reg]);
@@ -3257,6 +3266,7 @@ fn gen_opt_mod(
         asm.je(side_exit);
 
         // Call rb_fix_mod_fix(VALUE recv, VALUE obj)
+        gen_counter_incr!(asm, spill_ccall);
         asm.spill_temps(ctx);
         let ret = asm.ccall(rb_fix_mod_fix as *const u8, vec![arg0, arg1]);
 
@@ -3570,6 +3580,7 @@ fn gen_branchif(
     let val_type = ctx.get_opnd_type(StackOpnd(0));
     let val_opnd = ctx.stack_pop(1);
 
+    gen_counter_incr!(asm, spill_block_end);
     asm.spill_temps(ctx);
     if let Some(result) = val_type.known_truthy() {
         let target = if result { jump_block } else { next_block };
@@ -3622,6 +3633,7 @@ fn gen_branchunless(
     let val_type = ctx.get_opnd_type(StackOpnd(0));
     let val_opnd = ctx.stack_pop(1);
 
+    gen_counter_incr!(asm, spill_block_end);
     asm.spill_temps(ctx);
     if let Some(result) = val_type.known_truthy() {
         let target = if result { next_block } else { jump_block };
@@ -3677,6 +3689,7 @@ fn gen_branchnil(
     let val_type = ctx.get_opnd_type(StackOpnd(0));
     let val_opnd = ctx.stack_pop(1);
 
+    gen_counter_incr!(asm, spill_block_end);
     asm.spill_temps(ctx);
     if let Some(result) = val_type.known_nil() {
         let target = if result { jump_block } else { next_block };
@@ -4110,6 +4123,7 @@ fn jit_rb_mod_eqq(
     // Ruby methods with these inputs.
     // Note the difference in approach from Kernel#is_a? because we don't get a free guard for the
     // right hand side.
+    gen_counter_incr!(asm, spill_ccall);
     asm.spill_temps(ctx);
     let lhs = ctx.stack_opnd(1); // the module
     let rhs = ctx.stack_opnd(0);
@@ -4249,6 +4263,7 @@ fn jit_rb_str_bytesize(
 ) -> bool {
     asm.comment("String#bytesize");
 
+    gen_counter_incr!(asm, spill_ccall);
     asm.spill_temps(ctx);
     let recv = ctx.stack_pop(1);
     let ret_opnd = asm.ccall(rb_str_bytesize as *const u8, vec![recv]);
@@ -4387,6 +4402,7 @@ fn jit_rb_str_concat(
     asm.jnz(enc_mismatch);
 
     // If encodings match, call the simple append function and jump to return
+    gen_counter_incr!(asm, spill_ccall);
     asm.spill_temps(ctx);
     let ret_opnd = asm.ccall(rb_yjit_str_simple_append as *const u8, vec![recv, concat_arg]);
     let ret_label = asm.new_label("func_return");
@@ -4989,6 +5005,7 @@ fn gen_send_cfunc(
         let imemo_ci = VALUE(ci as usize);
         assert_ne!(0, unsafe { rb_IMEMO_TYPE_P(imemo_ci, imemo_callinfo) },
             "we assume all callinfos with kwargs are on the GC heap");
+        gen_counter_incr!(asm, spill_ccall);
         asm.spill_temps(ctx);
         let sp = asm.lea(ctx.sp_opnd(0));
         let kwargs = asm.ccall(build_kwhash as *const u8, vec![imemo_ci.into(), sp]);
@@ -5002,6 +5019,7 @@ fn gen_send_cfunc(
     let sp = asm.lea(ctx.sp_opnd(0));
 
     // Arguments must be spilled before popped from ctx
+    gen_counter_incr!(asm, spill_c_args);
     asm.spill_temps(ctx);
 
     // Pop the C function arguments from the stack (in the caller)
@@ -5663,6 +5681,7 @@ fn gen_send_iseq(
             let stack_ret = ctx.stack_push(Type::Unknown);
             asm.mov(stack_ret, Qnil.into());
         }
+        gen_counter_incr!(asm, spill_iseq_args);
         asm.spill_temps(ctx);
     }
 
@@ -5813,6 +5832,7 @@ fn gen_send_iseq(
         // explicitly given a value and have a non-constant default.
         let unspec_opnd = VALUE::fixnum_from_usize(unspecified_bits).as_u64();
         asm.mov(ctx.stack_push(Type::Unknown), unspec_opnd.into());
+        gen_counter_incr!(asm, spill_iseq_args);
         asm.spill_temps(ctx);
         ctx.stack_pop(1);
     }
@@ -5844,6 +5864,7 @@ fn gen_send_iseq(
             asm.mov(stack_opnd, Opnd::mem(64, array_opnd, SIZEOF_VALUE_I32 * i));
         }
         argc = lead_num;
+        gen_counter_incr!(asm, spill_iseq_args);
         asm.spill_temps(ctx);
     }
 
@@ -5920,6 +5941,7 @@ fn gen_send_iseq(
             let stack_ret = ctx.stack_push(Type::CArray);
             asm.mov(stack_ret, new_ary);
         }
+        gen_counter_incr!(asm, spill_iseq_args);
         asm.spill_temps(ctx);
     }
 
@@ -6131,6 +6153,7 @@ fn gen_struct_aset(
 
     asm.comment("struct aset");
 
+    gen_counter_incr!(asm, spill_ccall);
     asm.spill_temps(ctx);
     let val = ctx.stack_pop(1);
     let recv = ctx.stack_pop(1);
@@ -6250,6 +6273,7 @@ fn gen_send_general(
             if flags & VM_CALL_FCALL == 0 {
                 // otherwise we need an ancestry check to ensure the receiver is valid to be called
                 // as protected
+                gen_counter_incr!(asm, spill_ccall);
                 asm.spill_temps(ctx);
                 jit_protected_callee_ancestry_guard(asm, ocb, cme, side_exit);
             }
@@ -6462,6 +6486,7 @@ fn gen_send_general(
                             type_mismatch_exit
                         );
 
+                        gen_counter_incr!(asm, spill_ccall);
                         asm.spill_temps(ctx);
 
                         // Need to do this here so we don't have too many live
@@ -7353,6 +7378,7 @@ fn gen_opt_getconstant_path(
         let inline_cache = asm.load(Opnd::const_ptr(ic as *const u8));
 
         // Call function to verify the cache. It doesn't allocate or call methods.
+        gen_counter_incr!(asm, spill_ccall);
         asm.spill_temps(ctx);
         let ret_val = asm.ccall(
             rb_vm_ic_hit_p as *const u8,
