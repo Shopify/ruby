@@ -116,7 +116,7 @@ enum ruby_rarray_flags {
      * 3rd parties must  not be aware that  there even is more than  one way to
      * store array elements.  It was a bad idea to expose this to them.
      */
-    RARRAY_EMBED_FLAG      = RUBY_FL_USER1,
+    RARRAY_EMBED_FLAG      = RUBY_FL_USER1
 
     /* RUBY_FL_USER2 is for ELTS_SHARED */
 
@@ -130,10 +130,8 @@ enum ruby_rarray_flags {
      * 3rd parties must  not be aware that  there even is more than  one way to
      * store array elements.  It was a bad idea to expose this to them.
      */
-#if USE_RVARGC
-    RARRAY_EMBED_LEN_MASK  = RUBY_FL_USER9 | RUBY_FL_USER8 | RUBY_FL_USER7 | RUBY_FL_USER6 |
-                                 RUBY_FL_USER5 | RUBY_FL_USER4 | RUBY_FL_USER3
-#else
+#if !USE_RVARGC
+    ,
     RARRAY_EMBED_LEN_MASK  = RUBY_FL_USER4 | RUBY_FL_USER3
 #endif
 
@@ -156,27 +154,26 @@ enum ruby_rarray_flags {
 #endif
 };
 
+
+#if !USE_RVARGC
 /**
  * This is an enum because GDB wants it (rather than a macro).  People need not
  * bother.
  */
 enum ruby_rarray_consts {
-    /** Where ::RARRAY_EMBED_LEN_MASK resides. */
-    RARRAY_EMBED_LEN_SHIFT = RUBY_FL_USHIFT + 3
-
-#if !USE_RVARGC
-    ,
-
     /** Max possible number elements that can be embedded. */
     RARRAY_EMBED_LEN_MAX   = RBIMPL_EMBED_LEN_MAX_OF(VALUE)
-#endif
 };
+#endif
 
 /** Ruby's array. */
 struct RArray {
 
     /** Basic part, including flags and class. */
     struct RBasic basic;
+
+    /** Number of elements of the array. */
+    long len;
 
     /** Array's specific fields. */
     union {
@@ -186,9 +183,6 @@ struct RArray {
          * pattern.
          */
         struct {
-
-            /** Number of elements of the array. */
-            long len;
 
             /** Auxiliary info. */
             union {
@@ -276,6 +270,7 @@ void rb_ary_detransient(VALUE a);
 #endif
 RBIMPL_SYMBOL_EXPORT_END()
 
+#if !USE_RVARGC
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()
 RBIMPL_ATTR_ARTIFICIAL()
 /**
@@ -304,6 +299,7 @@ RARRAY_EMBED_LEN(VALUE ary)
     f >>= RARRAY_EMBED_LEN_SHIFT;
     return RBIMPL_CAST((long)f);
 }
+#endif
 
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()
 /**
@@ -318,12 +314,16 @@ rb_array_len(VALUE a)
 {
     RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY);
 
+#if USE_RVARGC
+    return RARRAY(a)->len;
+#else
     if (RB_FL_ANY_RAW(a, RARRAY_EMBED_FLAG)) {
         return RARRAY_EMBED_LEN(a);
     }
     else {
         return RARRAY(a)->as.heap.len;
     }
+#endif
 }
 
 RBIMPL_ATTR_ARTIFICIAL()

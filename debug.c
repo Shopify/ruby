@@ -62,7 +62,9 @@ const union {
     enum ruby_rstring_consts    rstring_consts;
 #endif
     enum ruby_rarray_flags      rarray_flags;
+#if !USE_RVARGC
     enum ruby_rarray_consts     rarray_consts;
+#endif
     enum {
         RUBY_FMODE_READABLE		= FMODE_READABLE,
         RUBY_FMODE_WRITABLE		= FMODE_WRITABLE,

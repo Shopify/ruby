@@ -407,7 +407,7 @@ rjit_exit_traces(void)
 
 // An offsetof implementation that works for unnamed struct and union.
 // Multiplying 8 for compatibility with libclang's offsetof.
-#define OFFSETOF(ptr, member) RB_SIZE2NUM(((char *)&ptr.member - (char*)&ptr) * 8)
+#define OFFSETOF(ptr, member) RB_SIZE2NUM(((char *)&((ptr).member )- (char*)&(ptr)) * 8)
 
 #define SIZEOF(type) RB_SIZE2NUM(sizeof(type))
 #define SIGNED_TYPE_P(type) RBOOL((type)(-1) < (type)(1))
