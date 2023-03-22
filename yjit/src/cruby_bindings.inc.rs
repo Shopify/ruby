@@ -244,11 +244,8 @@ pub type st_foreach_callback_func = ::std::option::Option<
     ) -> ::std::os::raw::c_int,
 >;
 pub const RARRAY_EMBED_FLAG: ruby_rarray_flags = 8192;
-pub const RARRAY_EMBED_LEN_MASK: ruby_rarray_flags = 4161536;
 pub const RARRAY_TRANSIENT_FLAG: ruby_rarray_flags = 33554432;
 pub type ruby_rarray_flags = u32;
-pub const RARRAY_EMBED_LEN_SHIFT: ruby_rarray_consts = 15;
-pub type ruby_rarray_consts = u32;
 pub const RMODULE_IS_REFINEMENT: ruby_rmodule_flags = 32768;
 pub type ruby_rmodule_flags = u32;
 pub const ROBJECT_EMBED: ruby_robject_flags = 8192;
@@ -1061,6 +1058,10 @@ pub type ruby_vminsn_type = u32;
 pub type rb_iseq_callback = ::std::option::Option<
     unsafe extern "C" fn(arg1: *const rb_iseq_t, arg2: *mut ::std::os::raw::c_void),
 >;
+pub const RUBY_OFFSET_RARRAY_AS_HEAP_LEN: rarray_offsets = 16;
+pub const RUBY_OFFSET_RARRAY_AS_HEAP_PTR: rarray_offsets = 32;
+pub const RUBY_OFFSET_RARRAY_AS_ARY: rarray_offsets = 24;
+pub type rarray_offsets = u32;
 pub const RUBY_OFFSET_RSTRING_AS_HEAP_LEN: rstring_offsets = 16;
 pub const RUBY_OFFSET_RSTRING_EMBED_LEN: rstring_offsets = 16;
 pub type rstring_offsets = u32;

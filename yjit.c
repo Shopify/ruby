@@ -37,6 +37,13 @@
 
 #include <errno.h>
 
+// Field offsets for the RArray struct
+enum rarray_offsets {
+    RUBY_OFFSET_RARRAY_AS_HEAP_LEN = offsetof(struct RArray, len),
+    RUBY_OFFSET_RARRAY_AS_HEAP_PTR = offsetof(struct RArray, as.heap.ptr),
+    RUBY_OFFSET_RARRAY_AS_ARY = offsetof(struct RArray, as.ary),
+};
+
 // Field offsets for the RString struct
 enum rstring_offsets {
     RUBY_OFFSET_RSTRING_AS_HEAP_LEN = offsetof(struct RString, as.heap.len),

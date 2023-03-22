@@ -1549,7 +1549,7 @@ fn gen_expandarray(
     // Load the address of the embedded array into REG1.
     // (struct RArray *)(obj)->as.ary
     let array_reg = asm.load(array_opnd);
-    let ary_opnd = asm.lea(Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RARRAY_AS_ARY));
+    let ary_opnd = asm.lea(Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RARRAY_AS_ARY as i32));
 
     // Conditionally load the address of the heap array into REG1.
     // (struct RArray *)(obj)->as.heap.ptr
@@ -1558,7 +1558,7 @@ fn gen_expandarray(
     let heap_ptr_opnd = Opnd::mem(
         usize::BITS as u8,
         asm.load(array_opnd),
-        RUBY_OFFSET_RARRAY_AS_HEAP_PTR,
+        RUBY_OFFSET_RARRAY_AS_HEAP_PTR as i32,
     );
     let ary_opnd = asm.csel_nz(ary_opnd, heap_ptr_opnd);
 
@@ -5133,33 +5133,16 @@ fn gen_send_cfunc(
 fn get_array_len(asm: &mut Assembler, array_opnd: Opnd) -> Opnd {
     asm.comment("get array length for embedded or heap");
 
-    // Pull out the embed flag to check if it's an embedded array.
-    let array_reg = match array_opnd {
-        Opnd::Reg(_) => array_opnd,
-        _ => asm.load(array_opnd),
-    };
-    let flags_opnd = Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RBASIC_FLAGS);
-
     // Get the length of the array
-    let emb_len_opnd = asm.and(flags_opnd, (RARRAY_EMBED_LEN_MASK as u64).into());
-    let emb_len_opnd = asm.rshift(emb_len_opnd, (RARRAY_EMBED_LEN_SHIFT as u64).into());
-
-    // Conditionally move the length of the heap array
-    let flags_opnd = Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RBASIC_FLAGS);
-    asm.test(flags_opnd, (RARRAY_EMBED_FLAG as u64).into());
-
     let array_reg = match array_opnd {
         Opnd::Reg(_) => array_opnd,
         _ => asm.load(array_opnd),
     };
-    let array_len_opnd = Opnd::mem(
+    Opnd::mem(
         std::os::raw::c_long::BITS as u8,
         array_reg,
-        RUBY_OFFSET_RARRAY_AS_HEAP_LEN,
-    );
-
-    // Select the array length value
-    asm.csel_nz(emb_len_opnd, array_len_opnd)
+        RUBY_OFFSET_RARRAY_AS_HEAP_LEN as i32,
+    )
 }
 
 // Generate RARRAY_CONST_PTR_TRANSIENT (part of RARRAY_AREF)
@@ -5171,11 +5154,11 @@ fn get_array_ptr(asm: &mut Assembler, array_reg: Opnd) -> Opnd {
     let heap_ptr_opnd = Opnd::mem(
         usize::BITS as u8,
         array_reg,
-        RUBY_OFFSET_RARRAY_AS_HEAP_PTR,
+        RUBY_OFFSET_RARRAY_AS_HEAP_PTR as i32,
     );
     // Load the address of the embedded array
     // (struct RArray *)(obj)->as.ary
-    let ary_opnd = asm.lea(Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RARRAY_AS_ARY));
+    let ary_opnd = asm.lea(Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RARRAY_AS_ARY as i32));
     asm.csel_nz(ary_opnd, heap_ptr_opnd)
 }
 
@@ -5203,11 +5186,11 @@ fn move_rest_args_to_stack(array: Opnd, num_args: u32, ctx: &mut Context, asm: &
     let heap_ptr_opnd = Opnd::mem(
         usize::BITS as u8,
         array_reg,
-        RUBY_OFFSET_RARRAY_AS_HEAP_PTR,
+        RUBY_OFFSET_RARRAY_AS_HEAP_PTR as i32,
     );
     // Load the address of the embedded array
     // (struct RArray *)(obj)->as.ary
-    let ary_opnd = asm.lea(Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RARRAY_AS_ARY));
+    let ary_opnd = asm.lea(Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RARRAY_AS_ARY as i32));
     let ary_opnd = asm.csel_nz(ary_opnd, heap_ptr_opnd);
 
     for i in 0..num_args {
@@ -5235,27 +5218,12 @@ fn push_splat_args(required_args: u32, ctx: &mut Context, asm: &mut Assembler, o
 
     asm.comment("Get array length for embedded or heap");
 
-    // Pull out the embed flag to check if it's an embedded array.
-    let flags_opnd = Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RBASIC_FLAGS);
-
     // Get the length of the array
-    let emb_len_opnd = asm.and(flags_opnd, (RARRAY_EMBED_LEN_MASK as u64).into());
-    let emb_len_opnd = asm.rshift(emb_len_opnd, (RARRAY_EMBED_LEN_SHIFT as u64).into());
-
-    // Conditionally move the length of the heap array
-    let flags_opnd = Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RBASIC_FLAGS);
-    asm.test(flags_opnd, (RARRAY_EMBED_FLAG as u64).into());
-
-    // Need to repeat this here to deal with register allocation
-    let array_opnd = ctx.stack_opnd(0);
-    let array_reg = asm.load(array_opnd);
-
     let array_len_opnd = Opnd::mem(
         std::os::raw::c_long::BITS as u8,
         array_reg,
-        RUBY_OFFSET_RARRAY_AS_HEAP_LEN,
+        RUBY_OFFSET_RARRAY_AS_HEAP_LEN as i32,
     );
-    let array_len_opnd = asm.csel_nz(emb_len_opnd, array_len_opnd);
 
     asm.comment("Side exit if length doesn't not equal remaining args");
     asm.cmp(array_len_opnd, required_args.into());
@@ -5290,11 +5258,11 @@ fn push_splat_args(required_args: u32, ctx: &mut Context, asm: &mut Assembler, o
         let heap_ptr_opnd = Opnd::mem(
             usize::BITS as u8,
             array_reg,
-            RUBY_OFFSET_RARRAY_AS_HEAP_PTR,
+            RUBY_OFFSET_RARRAY_AS_HEAP_PTR as i32,
         );
         // Load the address of the embedded array
         // (struct RArray *)(obj)->as.ary
-        let ary_opnd = asm.lea(Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RARRAY_AS_ARY));
+        let ary_opnd = asm.lea(Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RARRAY_AS_ARY as i32));
         let ary_opnd = asm.csel_nz(ary_opnd, heap_ptr_opnd);
 
         for i in 0..required_args {
