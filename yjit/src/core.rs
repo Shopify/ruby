@@ -2278,7 +2278,7 @@ pub fn gen_direct_jump(jit: &mut JITState, ctx: &Context, target0: BlockId, asm:
     let mut branch = branchref.borrow_mut();
 
     let mut target_ctx = ctx.clone();
-    gen_counter_incr!(asm, spill_block_end);
+    gen_counter_incr!(asm, spill_block_direct_jump);
     asm.spill_temps(&mut target_ctx);
     let mut new_target = BranchTarget::Stub(Box::new(BranchStub {
         address: None,
@@ -2330,7 +2330,7 @@ pub fn defer_compilation(
     }
 
     let mut next_ctx = cur_ctx.clone();
-    gen_counter_incr!(asm, spill_block_end);
+    gen_counter_incr!(asm, spill_block_defer_compilation);
     asm.spill_temps(&mut next_ctx);
 
     if next_ctx.chain_depth == u8::MAX {

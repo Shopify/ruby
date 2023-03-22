@@ -692,7 +692,7 @@ fn jump_to_next_insn(
     // chain_depth > 0 from the same instruction.
     let mut reset_depth = current_context.clone();
     reset_depth.reset_chain_depth();
-    gen_counter_incr!(asm, spill_block_end);
+    gen_counter_incr!(asm, spill_block_jump_to_next_insn);
     asm.spill_temps(&mut reset_depth);
 
     let jump_block = BlockId {
@@ -3580,7 +3580,7 @@ fn gen_branchif(
     let val_type = ctx.get_opnd_type(StackOpnd(0));
     let val_opnd = ctx.stack_pop(1);
 
-    gen_counter_incr!(asm, spill_block_end);
+    gen_counter_incr!(asm, spill_block_branch_insn);
     asm.spill_temps(ctx);
     if let Some(result) = val_type.known_truthy() {
         let target = if result { jump_block } else { next_block };
@@ -3633,7 +3633,7 @@ fn gen_branchunless(
     let val_type = ctx.get_opnd_type(StackOpnd(0));
     let val_opnd = ctx.stack_pop(1);
 
-    gen_counter_incr!(asm, spill_block_end);
+    gen_counter_incr!(asm, spill_block_branch_insn);
     asm.spill_temps(ctx);
     if let Some(result) = val_type.known_truthy() {
         let target = if result { next_block } else { jump_block };
@@ -3689,7 +3689,7 @@ fn gen_branchnil(
     let val_type = ctx.get_opnd_type(StackOpnd(0));
     let val_opnd = ctx.stack_pop(1);
 
-    gen_counter_incr!(asm, spill_block_end);
+    gen_counter_incr!(asm, spill_block_branch_insn);
     asm.spill_temps(ctx);
     if let Some(result) = val_type.known_nil() {
         let target = if result { jump_block } else { next_block };

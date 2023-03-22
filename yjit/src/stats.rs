@@ -360,8 +360,11 @@ make_counters! {
     spill_iseq_args,
     spill_ccall,
     spill_save_sp,
-    spill_block_end,
     spill_side_exit,
+    spill_block_direct_jump,
+    spill_block_defer_compilation,
+    spill_block_jump_to_next_insn,
+    spill_block_branch_insn,
 }
 
 //===========================================================================
