@@ -2277,13 +2277,15 @@ pub fn gen_direct_jump(jit: &mut JITState, ctx: &Context, target0: BlockId, asm:
     let branchref = make_branch_entry(jit, &jit.get_block(), BranchGenFn::JumpToTarget0(BranchShape::Default));
     let mut branch = branchref.borrow_mut();
 
+    let mut target_ctx = ctx.clone();
+    asm.spill_temps(&mut target_ctx);
     let mut new_target = BranchTarget::Stub(Box::new(BranchStub {
         address: None,
-        ctx: ctx.clone(),
+        ctx: target_ctx.clone(),
         id: target0,
     }));
 
-    let maybe_block = find_block_version(target0, ctx);
+    let maybe_block = find_block_version(target0, &target_ctx);
 
     // If the block already exists
     if let Some(blockref) = maybe_block {
