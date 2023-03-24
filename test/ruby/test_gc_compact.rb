@@ -433,7 +433,6 @@ class TestGCCompact < Test::Unit::TestCase
       stats = GC.verify_compaction_references(expand_heap: true, toward: :empty)
 
       assert_operator(stats[:moved_down][:T_HASH], :>=, HASH_COUNT)
-      assert_include(ObjectSpace.dump(ary[0]), '"slot_size":' + GC::INTERNAL_CONSTANTS[:BASE_SLOT_SIZE].to_s)
     end;
   end
 

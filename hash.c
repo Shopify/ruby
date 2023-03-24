@@ -393,13 +393,21 @@ ar_do_hash_hint(st_hash_t hash_value)
 static inline ar_hint_t
 ar_hint(VALUE hash, unsigned int index)
 {
+#if USE_RVARGC
+    return RHASH_AR_TABLE(hash)->ar_hint.ary[index];
+#else
     return RHASH(hash)->ar_hint.ary[index];
+#endif
 }
 
 static inline void
 ar_hint_set_hint(VALUE hash, unsigned int index, ar_hint_t hint)
 {
+#if USE_RVARGC
+    RHASH_AR_TABLE(hash)->ar_hint.ary[index] = hint;
+#else
     RHASH(hash)->ar_hint.ary[index] = hint;
+#endif
 }
 
 static inline void
@@ -684,7 +692,12 @@ static unsigned
 ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
 {
     unsigned i, bound = RHASH_AR_TABLE_BOUND(hash);
-    const ar_hint_t *hints = RHASH(hash)->ar_hint.ary;
+    const ar_hint_t *hints =
+#if USE_RVARGC
+        RHASH_AR_TABLE(hash)->ar_hint.ary;
+#else
+        RHASH(hash)->ar_hint.ary;
+#endif
 
     /* if table is NULL, then bound also should be 0 */
 
@@ -1247,7 +1260,11 @@ ar_copy(VALUE hash1, VALUE hash2)
     }
 
     *new_tab = *old_tab;
+#if USE_RVARGC
+    RHASH_AR_TABLE(hash1)->ar_hint.word = RHASH_AR_TABLE(hash2)->ar_hint.word;
+#else
     RHASH(hash1)->ar_hint.word = RHASH(hash2)->ar_hint.word;
+#endif
     RHASH_AR_TABLE_BOUND_SET(hash1, RHASH_AR_TABLE_BOUND(hash2));
     RHASH_AR_TABLE_SIZE_SET(hash1, RHASH_AR_TABLE_SIZE(hash2));
 
