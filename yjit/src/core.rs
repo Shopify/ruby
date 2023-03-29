@@ -371,6 +371,29 @@ impl From<Opnd> for YARVOpnd {
     }
 }
 
+/// Maximum index of stack temps that could be in a register
+pub const MAX_LIVE_TEMPS: usize = 8;
+
+/// Bitmap of which stack temps are in a register
+#[derive(Copy, Clone, Default, PartialEq, Debug)]
+pub struct LiveTemps(u8);
+
+impl LiveTemps {
+    fn get(&mut self, index: usize) -> bool {
+        assert!(index < MAX_LIVE_TEMPS);
+        (self.0 >> index) & 1 == 1
+    }
+
+    fn set(&mut self, index: usize, value: bool) {
+        assert!(index < MAX_LIVE_TEMPS);
+        if value {
+            self.0 = self.0 | (1 << index);
+        } else {
+            self.0 = self.0 & !(1 << index);
+        }
+    }
+}
+
 /// Code generation context
 /// Contains information we can use to specialize/optimize code
 /// There are a lot of context objects so we try to keep the size small.
@@ -382,6 +405,9 @@ pub struct Context {
     // Offset of the JIT SP relative to the interpreter SP
     // This represents how far the JIT's SP is from the "real" SP
     sp_offset: i8,
+
+    /// Bitmap of which stack temps are in a register
+    live_temps: LiveTemps,
 
     // Depth of this block in the sidechain (eg: inline-cache chain)
     chain_depth: u8,
@@ -1333,6 +1359,7 @@ pub fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context {
         let mut generic_ctx = Context::default();
         generic_ctx.stack_size = ctx.stack_size;
         generic_ctx.sp_offset = ctx.sp_offset;
+        generic_ctx.live_temps = ctx.live_temps;
 
         debug_assert_ne!(
             TypeDiff::Incompatible,
@@ -1835,6 +1862,10 @@ impl Context {
         }
 
         if dst.sp_offset != src.sp_offset {
+            return TypeDiff::Incompatible;
+        }
+
+        if dst.live_temps != src.live_temps {
             return TypeDiff::Incompatible;
         }
 
@@ -3029,6 +3060,33 @@ mod tests {
         assert_eq!(Type::Unknown.diff(Type::UnknownImm), TypeDiff::Incompatible);
         assert_eq!(Type::Unknown.diff(Type::Fixnum), TypeDiff::Incompatible);
         assert_eq!(Type::Fixnum.diff(Type::UnknownHeap), TypeDiff::Incompatible);
+    }
+
+    #[test]
+    fn live_temps() {
+        let mut live_temps = LiveTemps(0);
+
+        // 0 means every slot is not spilled
+        for stack_idx in 0..MAX_LIVE_TEMPS {
+            assert_eq!(live_temps.get(stack_idx), false);
+        }
+
+        // Set 0, 2, 7
+        live_temps.set(0, true);
+        live_temps.set(2, true);
+        live_temps.set(3, true);
+        live_temps.set(3, false);
+        live_temps.set(7, true);
+
+        // Get 0..8
+        assert_eq!(live_temps.get(0), true);
+        assert_eq!(live_temps.get(1), false);
+        assert_eq!(live_temps.get(2), true);
+        assert_eq!(live_temps.get(3), false);
+        assert_eq!(live_temps.get(4), false);
+        assert_eq!(live_temps.get(5), false);
+        assert_eq!(live_temps.get(6), false);
+        assert_eq!(live_temps.get(7), true);
     }
 
     #[test]

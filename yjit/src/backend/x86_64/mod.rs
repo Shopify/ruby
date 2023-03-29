@@ -10,6 +10,7 @@ use crate::codegen::{JITState};
 use crate::cruby::*;
 use crate::backend::ir::*;
 use crate::codegen::CodegenGlobals;
+use crate::options::*;
 
 // Use the x86 register type for this platform
 pub type Reg = X86Reg;
@@ -95,6 +96,13 @@ impl Assembler
             RCX_REG,
             RDX_REG,
         ]
+    }
+
+    /// Get the list of registers that can be used for stack temps.
+    pub fn get_temp_regs() -> Vec<Reg> {
+        let num_regs = get_option!(temp_regs);
+        let mut regs = vec![RSI_REG, RDI_REG, R8_REG, R9_REG, R10_REG, R11_REG];
+        regs.drain(0..num_regs).collect()
     }
 
     /// Get a list of all of the caller-save registers
