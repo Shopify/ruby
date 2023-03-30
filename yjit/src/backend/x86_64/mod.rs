@@ -101,7 +101,7 @@ impl Assembler
     /// Get the list of registers that can be used for stack temps.
     pub fn get_temp_regs() -> Vec<Reg> {
         let num_regs = get_option!(temp_regs);
-        let mut regs = vec![RSI_REG, RDI_REG, R8_REG, R9_REG, R10_REG, R11_REG];
+        let mut regs = vec![RSI_REG, RDI_REG, R8_REG, R9_REG, R10_REG];
         regs.drain(0..num_regs).collect()
     }
 
@@ -724,6 +724,9 @@ impl Assembler
                         nop(cb, (JMP_PTR_BYTES - code_size) as u32);
                     }
                 }
+                Insn::LiveTemps(_) |
+                Insn::SpillTemp(_) |
+                Insn::ReloadTemp(_) => unreachable!("lower_stack should remove {:?}", insn),
 
                 // We want to keep the panic here because some instructions that
                 // we feed to the backend could get lowered into other

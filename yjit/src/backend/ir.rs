@@ -7,11 +7,13 @@ use std::fmt;
 use std::convert::From;
 use std::io::Write;
 use std::mem::take;
+use crate::codegen::gen_counter_incr;
 use crate::cruby::{VALUE, SIZEOF_VALUE_I32};
 use crate::virtualmem::{CodePtr};
 use crate::asm::{CodeBlock, uimm_num_bits, imm_num_bits};
-use crate::core::{Context, Type, TempMapping};
+use crate::core::{Context, Type, TempMapping, LiveTemps, MAX_LIVE_TEMPS};
 use crate::options::*;
+use crate::stats::*;
 
 #[cfg(target_arch = "x86_64")]
 use crate::backend::x86_64::*;
@@ -73,7 +75,7 @@ pub enum Opnd
     InsnOut{ idx: usize, num_bits: u8 },
 
     // Pointer to a slot on the VM stack
-    Stack { idx: i32, sp_offset: i8, num_bits: u8 },
+    Stack { idx: i32, stack_size: u8, sp_offset: i8, num_bits: u8 },
 
     // Low-level operands, for lowering
     Imm(i64),           // Raw signed immediate
@@ -162,7 +164,7 @@ impl Opnd
             Opnd::Reg(reg) => Some(Opnd::Reg(reg.with_num_bits(num_bits))),
             Opnd::Mem(Mem { base, disp, .. }) => Some(Opnd::Mem(Mem { base, disp, num_bits })),
             Opnd::InsnOut { idx, .. } => Some(Opnd::InsnOut { idx, num_bits }),
-            Opnd::Stack { idx, sp_offset, .. } => Some(Opnd::Stack { idx, sp_offset, num_bits }),
+            Opnd::Stack { idx, stack_size, sp_offset, .. } => Some(Opnd::Stack { idx, stack_size, sp_offset, num_bits }),
             _ => None,
         }
     }
@@ -215,6 +217,16 @@ impl Opnd
     /// them are different sizes this will panic.
     pub fn match_num_bits(opnds: &[Opnd]) -> u8 {
         Self::match_num_bits_iter(opnds.iter())
+    }
+
+    /// Calculate Opnd::Stack's index from the stack bottom.
+    pub fn stack_idx(&self) -> u8 {
+        match self {
+            Opnd::Stack { idx, stack_size, .. } => {
+                (*stack_size as isize - *idx as isize - 1) as u8
+            },
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -408,6 +420,9 @@ pub enum Insn {
     /// Take a specific register. Signal the register allocator to not use it.
     LiveReg { opnd: Opnd, out: Opnd },
 
+    /// Update live stack temps without spill or reload
+    LiveTemps(LiveTemps),
+
     // A low-level instruction that loads a value into a register.
     Load { opnd: Opnd, out: Opnd },
 
@@ -440,8 +455,14 @@ pub enum Insn {
     // Mark a position in the generated code
     PosMarker(PosMarkerFn),
 
+    /// Load a stack temp from memory into a register
+    ReloadTemp(Opnd),
+
     /// Shift a value right by a certain amount (signed).
     RShift { opnd: Opnd, shift: Opnd, out: Opnd },
+
+    /// Spill a stack temp from a register into memory
+    SpillTemp(Opnd),
 
     // Low-level instruction to store a value to memory.
     Store { dest: Opnd, src: Opnd },
@@ -514,6 +535,7 @@ impl Insn {
             Insn::LeaLabel { .. } => "LeaLabel",
             Insn::Lea { .. } => "Lea",
             Insn::LiveReg { .. } => "LiveReg",
+            Insn::LiveTemps(_) => "LiveTemps",
             Insn::Load { .. } => "Load",
             Insn::LoadInto { .. } => "LoadInto",
             Insn::LoadSExt { .. } => "LoadSExt",
@@ -523,7 +545,9 @@ impl Insn {
             Insn::Or { .. } => "Or",
             Insn::PadInvalPatch => "PadEntryExit",
             Insn::PosMarker(_) => "PosMarker",
+            Insn::ReloadTemp(_) => "ReloadTemp",
             Insn::RShift { .. } => "RShift",
+            Insn::SpillTemp(_) => "SpillTemp",
             Insn::Store { .. } => "Store",
             Insn::Sub { .. } => "Sub",
             Insn::Test { .. } => "Test",
@@ -658,6 +682,7 @@ impl<'a> Iterator for InsnOpndIterator<'a> {
             Insn::Jz(_) |
             Insn::Label(_) |
             Insn::LeaLabel { .. } |
+            Insn::LiveTemps(_) |
             Insn::PadInvalPatch |
             Insn::PosMarker(_) => None,
             Insn::CPopInto(opnd) |
@@ -668,7 +693,9 @@ impl<'a> Iterator for InsnOpndIterator<'a> {
             Insn::LiveReg { opnd, .. } |
             Insn::Load { opnd, .. } |
             Insn::LoadSExt { opnd, .. } |
-            Insn::Not { opnd, .. } => {
+            Insn::Not { opnd, .. } |
+            Insn::ReloadTemp(opnd) |
+            Insn::SpillTemp(opnd) => {
                 match self.idx {
                     0 => {
                         self.idx += 1;
@@ -755,6 +782,7 @@ impl<'a> InsnOpndMutIterator<'a> {
             Insn::Jz(_) |
             Insn::Label(_) |
             Insn::LeaLabel { .. } |
+            Insn::LiveTemps(_) |
             Insn::PadInvalPatch |
             Insn::PosMarker(_) => None,
             Insn::CPopInto(opnd) |
@@ -765,7 +793,9 @@ impl<'a> InsnOpndMutIterator<'a> {
             Insn::LiveReg { opnd, .. } |
             Insn::Load { opnd, .. } |
             Insn::LoadSExt { opnd, .. } |
-            Insn::Not { opnd, .. } => {
+            Insn::Not { opnd, .. } |
+            Insn::ReloadTemp(opnd) |
+            Insn::SpillTemp(opnd) => {
                 match self.idx {
                     0 => {
                         self.idx += 1;
@@ -857,6 +887,10 @@ pub struct Assembler
     /// Index of the last insn using the output of this insn
     pub(super) live_ranges: Vec<usize>,
 
+    /// Parallel vec with insns
+    /// Bitmap of which temps are in a register for this insn
+    pub(super) live_temps: Vec<LiveTemps>,
+
     /// Names of labels
     pub(super) label_names: Vec<String>,
 }
@@ -871,6 +905,7 @@ impl Assembler
         Self {
             insns: Vec::default(),
             live_ranges: Vec::default(),
+            live_temps: Vec::default(),
             label_names
         }
     }
@@ -905,8 +940,26 @@ impl Assembler
             }
         }
 
+        // Update live stack temps for this instruction
+        let mut live_temps = *self.live_temps.last().unwrap_or(&LiveTemps::default());
+        match insn {
+            Insn::LiveTemps(next_temps) => {
+                live_temps = next_temps;
+            }
+            Insn::SpillTemp(opnd) => {
+                assert_eq!(live_temps.get(opnd.stack_idx()), true);
+                live_temps.set(opnd.stack_idx(), false);
+            }
+            Insn::ReloadTemp(opnd) => {
+                assert_eq!(live_temps.get(opnd.stack_idx()), false);
+                live_temps.set(opnd.stack_idx(), true);
+            }
+            _ => {}
+        }
+
         self.insns.push(insn);
         self.live_ranges.push(insn_idx);
+        self.live_temps.push(live_temps);
     }
 
     /// Create a new label instance that we can jump to
@@ -926,13 +979,22 @@ impl Assembler
         let mut iterator = self.into_draining_iter();
 
         while let Some((index, mut insn)) = iterator.next_unmapped() {
-            let mut opnd_iter = insn.opnd_iter_mut();
-            while let Some(opnd) = opnd_iter.next() {
-                if let Opnd::Stack { idx, sp_offset, num_bits } = *opnd {
-                    *opnd = Opnd::mem(num_bits, SP, (sp_offset as i32 - idx - 1) * SIZEOF_VALUE_I32);
+            match &insn {
+                Insn::SpillTemp(_) => { incr_counter!(temp_spill) }
+                Insn::ReloadTemp(_) => { incr_counter!(temp_reload) }
+                _ => {
+                    let mut opnd_iter = insn.opnd_iter_mut();
+                    while let Some(opnd) = opnd_iter.next() {
+                        if let Opnd::Stack { idx, sp_offset, num_bits, .. } = *opnd {
+                            incr_counter!(temp_mem_opnd);
+                            *opnd = Opnd::mem(num_bits, SP, (sp_offset as i32 - idx - 1) * SIZEOF_VALUE_I32);
+                        }
+                    }
                 }
             }
+
             asm.push_insn(insn);
+            iterator.map_insn_index(&mut asm);
         }
 
         asm

@@ -289,6 +289,7 @@ macro_rules! gen_counter_incr {
         }
     };
 }
+pub(crate) use gen_counter_incr;
 
 macro_rules! counted_exit {
     ($jit:tt, $ctx:tt, $ocb:tt, $counter_name:ident) => {

@@ -1059,6 +1059,9 @@ impl Assembler
                         nop(cb);
                     }
                 }
+                Insn::LiveTemps(_) |
+                Insn::SpillTemp(_) |
+                Insn::ReloadTemp(_) => unreachable!("lower_stack should remove {:?}", insn),
             };
 
             // On failure, jump to the next page and retry the current insn

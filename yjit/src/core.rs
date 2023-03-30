@@ -372,19 +372,19 @@ impl From<Opnd> for YARVOpnd {
 }
 
 /// Maximum index of stack temps that could be in a register
-pub const MAX_LIVE_TEMPS: usize = 8;
+pub const MAX_LIVE_TEMPS: u8 = 8;
 
 /// Bitmap of which stack temps are in a register
 #[derive(Copy, Clone, Default, PartialEq, Debug)]
 pub struct LiveTemps(u8);
 
 impl LiveTemps {
-    fn get(&mut self, index: usize) -> bool {
+    pub fn get(&mut self, index: u8) -> bool {
         assert!(index < MAX_LIVE_TEMPS);
         (self.0 >> index) & 1 == 1
     }
 
-    fn set(&mut self, index: usize, value: bool) {
+    pub fn set(&mut self, index: u8, value: bool) {
         assert!(index < MAX_LIVE_TEMPS);
         if value {
             self.0 = self.0 | (1 << index);
@@ -1666,7 +1666,7 @@ impl Context {
 
     /// Get an operand pointing to a slot on the temp stack
     pub fn stack_opnd(&self, idx: i32) -> Opnd {
-        Opnd::Stack { idx, sp_offset: self.sp_offset, num_bits: 64 }
+        Opnd::Stack { idx, stack_size: self.stack_size, sp_offset: self.sp_offset, num_bits: 64 }
     }
 
     /// Get the type of an instruction operand
