@@ -2359,6 +2359,7 @@ fn gen_setinstancevariable(
             exit_counter!(setivar_megamorphic),
         );
 
+        asm.spill_temps(ctx); // for ccall (must be done before write_val is popped)
         let write_val;
 
         match ivar_index {
@@ -2450,7 +2451,6 @@ fn gen_setinstancevariable(
             asm.jbe(skip_wb);
 
             asm.comment("write barrier");
-            asm.spill_temps(ctx); // for ccall
             asm.ccall(
                 rb_gc_writebarrier as *const u8,
                 vec![
@@ -3364,6 +3364,7 @@ fn gen_opt_mod(
         guard_two_fixnums(jit, ctx, asm, ocb);
 
         // Get the operands and destination from the stack
+        asm.spill_temps(ctx); // for ccall (must be done before stack_pop)
         let arg1 = ctx.stack_pop(1);
         let arg0 = ctx.stack_pop(1);
 
@@ -3372,7 +3373,6 @@ fn gen_opt_mod(
         asm.je(side_exit(jit, ctx, ocb));
 
         // Call rb_fix_mod_fix(VALUE recv, VALUE obj)
-        asm.spill_temps(ctx); // for ccall
         let ret = asm.ccall(rb_fix_mod_fix as *const u8, vec![arg0, arg1]);
 
         // Push the return value onto the stack
@@ -4029,7 +4029,7 @@ fn jit_guard_known_klass(
 // Calls to protected callees only go through when self.is_a?(klass_that_defines_the_callee).
 fn jit_protected_callee_ancestry_guard(
     jit: &mut JITState,
-    ctx: &Context,
+    ctx: &mut Context,
     asm: &mut Assembler,
     ocb: &mut OutlinedCb,
     cme: *const rb_callable_method_entry_t,
@@ -4039,6 +4039,7 @@ fn jit_protected_callee_ancestry_guard(
     // Note: PC isn't written to current control frame as rb_is_kind_of() shouldn't raise.
     // VALUE rb_obj_is_kind_of(VALUE obj, VALUE klass);
 
+    asm.spill_temps(ctx); // for ccall
     let val = asm.ccall(
         rb_obj_is_kind_of as *mut u8,
         vec![
@@ -4400,6 +4401,7 @@ fn jit_rb_str_bytesize(
 ) -> bool {
     asm.comment("String#bytesize");
 
+    asm.spill_temps(ctx); // for ccall (must be done before stack_pop)
     let recv = ctx.stack_pop(1);
     let ret_opnd = asm.ccall(rb_str_bytesize as *const u8, vec![recv]);
 
@@ -4516,9 +4518,6 @@ fn jit_rb_str_concat(
     );
     asm.test(flags_xor, Opnd::UImm(RUBY_ENCODING_MASK as u64));
 
-    // Push once, use the resulting operand in both branches below.
-    let stack_ret = ctx.stack_push(asm, Type::CString);
-
     let enc_mismatch = asm.new_label("enc_mismatch");
     asm.jnz(enc_mismatch);
 
@@ -4526,12 +4525,16 @@ fn jit_rb_str_concat(
     asm.spill_temps(ctx); // for ccall
     let ret_opnd = asm.ccall(rb_yjit_str_simple_append as *const u8, vec![recv, concat_arg]);
     let ret_label = asm.new_label("func_return");
+    let stack_ret = ctx.stack_push(asm, Type::CString);
     asm.mov(stack_ret, ret_opnd);
+    ctx.stack_pop(1); // forget stack_ret to re-push after ccall
     asm.jmp(ret_label);
 
     // If encodings are different, use a slower encoding-aware concatenate
     asm.write_label(enc_mismatch);
+    asm.spill_temps(ctx); // for ccall
     let ret_opnd = asm.ccall(rb_str_buf_append as *const u8, vec![recv, concat_arg]);
+    let stack_ret = ctx.stack_push(asm, Type::CString);
     asm.mov(stack_ret, ret_opnd);
     // Drop through to return
 
@@ -6289,10 +6292,10 @@ fn gen_struct_aset(
 
     asm.comment("struct aset");
 
+    asm.spill_temps(ctx); // for ccall (must be done before stack_pop)
     let val = ctx.stack_pop(1);
     let recv = ctx.stack_pop(1);
 
-    asm.spill_temps(ctx); // for ccall
     let val = asm.ccall(RSTRUCT_SET as *const u8, vec![recv, (off as i64).into(), val]);
 
     let ret = ctx.stack_push(asm, Type::Unknown);
@@ -7489,6 +7492,7 @@ fn gen_opt_getconstant_path(
         let inline_cache = asm.load(Opnd::const_ptr(ic as *const u8));
 
         // Call function to verify the cache. It doesn't allocate or call methods.
+        asm.spill_temps(ctx); // for ccall
         let ret_val = asm.ccall(
             rb_vm_ic_hit_p as *const u8,
             vec![inline_cache, Opnd::mem(64, CFP, RUBY_OFFSET_CFP_EP)]
