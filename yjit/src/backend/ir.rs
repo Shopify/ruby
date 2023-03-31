@@ -941,7 +941,7 @@ impl Assembler
         }
 
         // Update live stack temps for this instruction
-        let mut live_temps = *self.live_temps.last().unwrap_or(&LiveTemps::default());
+        let mut live_temps = self.get_live_temps();
         match insn {
             Insn::LiveTemps(next_temps) => {
                 live_temps = next_temps;
@@ -960,6 +960,11 @@ impl Assembler
         self.insns.push(insn);
         self.live_ranges.push(insn_idx);
         self.live_temps.push(live_temps);
+    }
+
+    /// Get stack temps that are currently in a register
+    fn get_live_temps(&self) -> LiveTemps {
+        *self.live_temps.last().unwrap_or(&LiveTemps::default())
     }
 
     /// Create a new label instance that we can jump to
@@ -1380,6 +1385,7 @@ impl Assembler {
     }
 
     pub fn ccall(&mut self, fptr: *const u8, opnds: Vec<Opnd>) -> Opnd {
+        assert_eq!(self.get_live_temps(), LiveTemps::default(), "temps must be spilled before ccall");
         let out = self.next_opnd_out(Opnd::match_num_bits(&opnds));
         self.push_insn(Insn::CCall { fptr, opnds, out });
         out

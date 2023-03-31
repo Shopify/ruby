@@ -1582,10 +1582,10 @@ impl Context {
 
     /// Push one new value on the temp stack with an explicit mapping
     /// Return a pointer to the new stack top
-    pub fn stack_push_mapping(&mut self, (mapping, temp_type): (TempMapping, Type)) -> Opnd {
+    pub fn stack_push_mapping(&mut self, asm: &mut Assembler, (mapping, temp_type): (TempMapping, Type)) -> Opnd {
         // If type propagation is disabled, store no types
         if get_option!(no_type_prop) {
-            return self.stack_push_mapping((mapping, Type::Unknown));
+            return self.stack_push_mapping(asm, (mapping, Type::Unknown));
         }
 
         let stack_size: usize = self.stack_size.into();
@@ -1608,22 +1608,22 @@ impl Context {
 
     /// Push one new value on the temp stack
     /// Return a pointer to the new stack top
-    pub fn stack_push(&mut self, val_type: Type) -> Opnd {
-        return self.stack_push_mapping((MapToStack, val_type));
+    pub fn stack_push(&mut self, asm: &mut Assembler, val_type: Type) -> Opnd {
+        return self.stack_push_mapping(asm, (MapToStack, val_type));
     }
 
     /// Push the self value on the stack
-    pub fn stack_push_self(&mut self) -> Opnd {
-        return self.stack_push_mapping((MapToSelf, Type::Unknown));
+    pub fn stack_push_self(&mut self, asm: &mut Assembler) -> Opnd {
+        return self.stack_push_mapping(asm, (MapToSelf, Type::Unknown));
     }
 
     /// Push a local variable on the stack
-    pub fn stack_push_local(&mut self, local_idx: usize) -> Opnd {
+    pub fn stack_push_local(&mut self, asm: &mut Assembler, local_idx: usize) -> Opnd {
         if local_idx >= MAX_LOCAL_TYPES {
-            return self.stack_push(Type::Unknown);
+            return self.stack_push(asm, Type::Unknown);
         }
 
-        return self.stack_push_mapping((MapToLocal((local_idx as u8).into()), Type::Unknown));
+        return self.stack_push_mapping(asm, (MapToLocal((local_idx as u8).into()), Type::Unknown));
     }
 
     // Pop N values off the stack
@@ -3096,7 +3096,7 @@ mod tests {
 
         // Try pushing an operand and getting its type
         let mut ctx = Context::default();
-        ctx.stack_push(Type::Fixnum);
+        ctx.stack_push(&mut Assembler::new(), Type::Fixnum);
         let top_type = ctx.get_opnd_type(StackOpnd(0));
         assert!(top_type == Type::Fixnum);
 
