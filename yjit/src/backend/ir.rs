@@ -429,7 +429,7 @@ pub enum Insn {
     /// Take a specific register. Signal the register allocator to not use it.
     LiveReg { opnd: Opnd, out: Opnd },
 
-    /// Update live stack temps without spill or reload
+    /// Update live stack temps without spill
     LiveTemps(LiveTemps),
 
     // A low-level instruction that loads a value into a register.
@@ -463,9 +463,6 @@ pub enum Insn {
 
     // Mark a position in the generated code
     PosMarker(PosMarkerFn),
-
-    /// Load a stack temp from memory into a register
-    ReloadTemp(Opnd),
 
     /// Shift a value right by a certain amount (signed).
     RShift { opnd: Opnd, shift: Opnd, out: Opnd },
@@ -554,7 +551,6 @@ impl Insn {
             Insn::Or { .. } => "Or",
             Insn::PadInvalPatch => "PadEntryExit",
             Insn::PosMarker(_) => "PosMarker",
-            Insn::ReloadTemp(_) => "ReloadTemp",
             Insn::RShift { .. } => "RShift",
             Insn::SpillTemp(_) => "SpillTemp",
             Insn::Store { .. } => "Store",
@@ -703,7 +699,6 @@ impl<'a> Iterator for InsnOpndIterator<'a> {
             Insn::Load { opnd, .. } |
             Insn::LoadSExt { opnd, .. } |
             Insn::Not { opnd, .. } |
-            Insn::ReloadTemp(opnd) |
             Insn::SpillTemp(opnd) => {
                 match self.idx {
                     0 => {
@@ -803,7 +798,6 @@ impl<'a> InsnOpndMutIterator<'a> {
             Insn::Load { opnd, .. } |
             Insn::LoadSExt { opnd, .. } |
             Insn::Not { opnd, .. } |
-            Insn::ReloadTemp(opnd) |
             Insn::SpillTemp(opnd) => {
                 match self.idx {
                     0 => {
@@ -959,10 +953,6 @@ impl Assembler
                 assert_eq!(live_temps.get(opnd.stack_idx()), true);
                 live_temps.set(opnd.stack_idx(), false);
             }
-            Insn::ReloadTemp(opnd) => {
-                assert_eq!(live_temps.get(opnd.stack_idx()), false);
-                live_temps.set(opnd.stack_idx(), true);
-            }
             _ => {}
         }
 
@@ -1021,10 +1011,6 @@ impl Assembler
                 Insn::SpillTemp(opnd) => {
                     incr_counter!(temp_spill);
                     asm.mov(mem_opnd(opnd), reg_opnd(opnd, &regs));
-                }
-                Insn::ReloadTemp(opnd) => {
-                    incr_counter!(temp_reload);
-                    asm.mov(reg_opnd(opnd, &regs), mem_opnd(opnd));
                 }
                 _ => {
                     // next_mapped() doesn't map out_opnd. So we need to map it here.

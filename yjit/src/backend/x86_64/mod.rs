@@ -719,8 +719,7 @@ impl Assembler
                 }
                 Insn::LiveReg { .. } |
                 Insn::LiveTemps(_) |
-                Insn::SpillTemp(_) |
-                Insn::ReloadTemp(_) => (), // just a reg alloc signal, no code
+                Insn::SpillTemp(_) => (), // just a reg alloc signal, no code
                 Insn::PadInvalPatch => {
                     let code_size = cb.get_write_pos().saturating_sub(std::cmp::max(start_write_pos, cb.page_start_pos()));
                     if code_size < JMP_PTR_BYTES {
