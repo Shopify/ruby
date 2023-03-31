@@ -851,6 +851,7 @@ pub fn gen_single_block(
 
     // Create a backend assembler instance
     let mut asm = Assembler::new();
+    asm.set_live_temps(ctx.get_live_temps());
 
     #[cfg(feature = "disasm")]
     if get_option_ref!(dump_disasm).is_some() {

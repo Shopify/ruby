@@ -718,15 +718,15 @@ impl Assembler
                     emit_csel(cb, *truthy, *falsy, *out, cmovl);
                 }
                 Insn::LiveReg { .. } |
-                Insn::LiveTemps(_) => (), // just a reg alloc signal, no code
+                Insn::LiveTemps(_) |
+                Insn::SpillTemp(_) |
+                Insn::ReloadTemp(_) => (), // just a reg alloc signal, no code
                 Insn::PadInvalPatch => {
                     let code_size = cb.get_write_pos().saturating_sub(std::cmp::max(start_write_pos, cb.page_start_pos()));
                     if code_size < JMP_PTR_BYTES {
                         nop(cb, (JMP_PTR_BYTES - code_size) as u32);
                     }
                 }
-                Insn::SpillTemp(_) |
-                Insn::ReloadTemp(_) => unreachable!("lower_stack should lower {:?}", insn),
 
                 // We want to keep the panic here because some instructions that
                 // we feed to the backend could get lowered into other

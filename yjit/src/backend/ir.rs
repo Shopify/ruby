@@ -989,33 +989,66 @@ impl Assembler
     /// Convert Stack operands to memory operands
     pub fn lower_stack(mut self) -> Assembler
     {
+        // Convert Opnd::Stack to Opnd::Mem
+        fn mem_opnd(opnd: &Opnd) -> Opnd {
+            if let Opnd::Stack { idx, sp_offset, num_bits, .. } = *opnd {
+                incr_counter!(temp_mem_opnd);
+                Opnd::mem(num_bits, SP, (sp_offset as i32 - idx - 1) * SIZEOF_VALUE_I32)
+            } else {
+                unreachable!()
+            }
+        }
+
+        // Convert Opnd::Stack to Opnd::Mem
+        fn reg_opnd(opnd: &Opnd, regs: &Vec<Reg>) -> Opnd {
+            if let Opnd::Stack { num_bits, .. } = *opnd {
+                incr_counter!(temp_reg_opnd);
+                Opnd::Reg(regs[opnd.reg_idx()]).with_num_bits(num_bits).unwrap()
+            } else {
+                unreachable!()
+            }
+        }
+
         let mut asm = Assembler::new_with_label_names(take(&mut self.label_names));
         let regs = Assembler::get_temp_regs();
         let live_temps = take(&mut self.live_temps);
         let mut iterator = self.into_draining_iter();
 
-        while let Some((index, mut insn)) = iterator.next_unmapped() {
+        while let Some((index, mut insn)) = iterator.next_mapped() {
             match &insn {
-                Insn::LiveTemps(_) => {} // not needed after lower_stack
-                Insn::SpillTemp(_) => { incr_counter!(temp_spill) }
-                Insn::ReloadTemp(_) => { incr_counter!(temp_reload) }
+                // The original insn is pushed to the new asm to satisfy ccall's live_temps assertion.
+                Insn::LiveTemps(_) => {} // noop
+                Insn::SpillTemp(opnd) => {
+                    incr_counter!(temp_spill);
+                    asm.mov(mem_opnd(opnd), reg_opnd(opnd, &regs));
+                }
+                Insn::ReloadTemp(opnd) => {
+                    incr_counter!(temp_reload);
+                    asm.mov(reg_opnd(opnd, &regs), mem_opnd(opnd));
+                }
                 _ => {
+                    // next_mapped() doesn't map out_opnd. So we need to map it here.
+                    if insn.out_opnd().is_some() {
+                        let out_num_bits = Opnd::match_num_bits_iter(insn.opnd_iter());
+                        let out = insn.out_opnd_mut().unwrap();
+                        *out = asm.next_opnd_out(out_num_bits);
+                    }
+
+                    // Lower Opnd::Stack to Opnd::Reg or Opnd::Mem
                     let mut opnd_iter = insn.opnd_iter_mut();
                     while let Some(opnd) = opnd_iter.next() {
                         if let Opnd::Stack { idx, stack_size, sp_offset, num_bits } = *opnd {
                             *opnd = if opnd.stack_idx() < MAX_LIVE_TEMPS && live_temps[index].get(opnd.stack_idx()) {
-                                incr_counter!(temp_reg_opnd);
-                                Opnd::Reg(regs[opnd.reg_idx()]).with_num_bits(num_bits).unwrap()
-                                // Opnd::mem(num_bits, SP, (sp_offset as i32 - idx - 1) * SIZEOF_VALUE_I32)
+                                reg_opnd(opnd, &regs)
                             } else {
-                                incr_counter!(temp_mem_opnd);
-                                Opnd::mem(num_bits, SP, (sp_offset as i32 - idx - 1) * SIZEOF_VALUE_I32)
+                                mem_opnd(opnd)
                             };
                         }
                     }
                 }
             }
             asm.push_insn(insn);
+            iterator.map_insn_index(&mut asm);
         }
 
         asm
@@ -1048,9 +1081,23 @@ impl Assembler
     /// Spill all live stack temps from registers to the stack
     pub fn spill_temps(&mut self, ctx: &mut Context) {
         assert_eq!(self.get_live_temps(), ctx.get_live_temps());
+
         if self.get_live_temps() != LiveTemps::default() {
             self.comment(&format!("spill_temps: {:08b} -> {:08b}", self.get_live_temps().as_u8(), LiveTemps::default().as_u8()));
-            //
+
+            // Spill live stack temps below the stack_size
+            for stack_idx in 0..u8::min(MAX_LIVE_TEMPS, ctx.get_stack_size()) {
+                if self.get_live_temps().get(stack_idx) {
+                    let idx = ctx.get_stack_size() - 1 - stack_idx;
+                    self.spill_temp(ctx.stack_opnd(idx.into()));
+                    assert!(!self.get_live_temps().get(stack_idx));
+                }
+            }
+
+            // Forget registers above the stack_size
+            let live_temps = LiveTemps::default();
+            self.set_live_temps(live_temps);
+            ctx.set_live_temps(live_temps);
         }
     }
 
@@ -1668,6 +1715,12 @@ impl Assembler {
             self.comment(&format!("live_temps: {:08b} -> {:08b}", self.get_live_temps().as_u8(), live_temps.as_u8()));
             self.push_insn(Insn::LiveTemps(live_temps));
         }
+    }
+
+    /// SPill a stack temp from a register to the stack
+    pub fn spill_temp(&mut self, opnd: Opnd) {
+        assert!(self.get_live_temps().get(opnd.stack_idx()));
+        self.push_insn(Insn::SpillTemp(opnd));
     }
 
     pub fn store(&mut self, dest: Opnd, src: Opnd) {

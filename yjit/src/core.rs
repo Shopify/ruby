@@ -1569,6 +1569,10 @@ impl Context {
         self.live_temps
     }
 
+    pub fn set_live_temps(&mut self, live_temps: LiveTemps) {
+        self.live_temps = live_temps;
+    }
+
     pub fn get_chain_depth(&self) -> u8 {
         self.chain_depth
     }
