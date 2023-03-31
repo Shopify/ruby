@@ -728,7 +728,7 @@ impl PendingBranch {
         // The branch struct is uninitialized right now but as a stable address.
         // We make sure the stub runs after the branch is initialized.
         let branch_struct_addr = self.uninit_branch.as_ptr() as usize;
-        let stub_addr = gen_branch_stub(ocb, branch_struct_addr, target_idx);
+        let stub_addr = gen_branch_stub(ctx, ocb, branch_struct_addr, target_idx);
 
         if let Some(stub_addr) = stub_addr {
             // Fill the branch target with a stub
@@ -2513,6 +2513,7 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
 /// Generate a "stub", a piece of code that calls the compiler back when run.
 /// A piece of code that redeems for more code; a thunk for code.
 fn gen_branch_stub(
+    ctx: &Context,
     ocb: &mut OutlinedCb,
     branch_struct_address: usize,
     target_idx: u32,
@@ -2523,7 +2524,17 @@ fn gen_branch_stub(
     let stub_addr = ocb.get_write_ptr();
 
     let mut asm = Assembler::new();
+    asm.set_live_temps(ctx.live_temps);
     asm.comment("branch stub hit");
+
+    // Save caller-saved registers before C_ARG_OPNDS get clobbered.
+    // Spill all registers for consistency with the trampoline.
+    for &reg in caller_saved_temp_regs().iter() {
+        asm.cpush(reg);
+    }
+
+    // Spill temps to the VM stack as well for jit.peek_at_stack()
+    asm.spill_temps(&mut ctx.clone());
 
     // Set up the arguments unique to this stub for:
     //
@@ -2569,12 +2580,27 @@ pub fn gen_branch_stub_hit_trampoline(ocb: &mut OutlinedCb) -> CodePtr {
         ]
     );
 
+    // Restore caller-saved registers for stack temps
+    for &reg in caller_saved_temp_regs().iter().rev() {
+        asm.cpop_into(reg);
+    }
+
     // Jump to the address returned by the branch_stub_hit() call
     asm.jmp_opnd(jump_addr);
 
     asm.compile(ocb);
 
     code_ptr
+}
+
+/// Return registers to be pushed and popped on branch_stub_hit.
+/// The return value may include an extra register for x86 alignment.
+fn caller_saved_temp_regs() -> Vec<Opnd> {
+    let mut regs = Assembler::get_temp_regs();
+    if regs.len() % 2 == 1 {
+        regs.push(*regs.last().unwrap()); // x86 alignment
+    }
+    regs.iter().map(|&reg| Opnd::Reg(reg)).collect()
 }
 
 impl Assembler
@@ -2935,7 +2961,7 @@ pub fn invalidate_block_version(blockref: &BlockRef) {
         }
 
         // Create a stub for this branch target
-        let stub_addr = gen_branch_stub(ocb, branchref.as_ptr() as usize, target_idx as u32);
+        let stub_addr = gen_branch_stub(&block.ctx, ocb, branchref.as_ptr() as usize, target_idx as u32);
 
         // In case we were unable to generate a stub (e.g. OOM). Use the block's
         // exit instead of a stub for the block. It's important that we

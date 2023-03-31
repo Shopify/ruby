@@ -1082,23 +1082,27 @@ impl Assembler
     pub fn spill_temps(&mut self, ctx: &mut Context) {
         assert_eq!(self.get_live_temps(), ctx.get_live_temps());
 
+        // Forget registers above the stack top
+        let mut live_temps = self.get_live_temps();
+        for stack_idx in ctx.get_stack_size()..MAX_LIVE_TEMPS {
+            live_temps.set(stack_idx, false);
+        }
+        self.set_live_temps(live_temps);
+
+        // Spill live stack temps
         if self.get_live_temps() != LiveTemps::default() {
             self.comment(&format!("spill_temps: {:08b} -> {:08b}", self.get_live_temps().as_u8(), LiveTemps::default().as_u8()));
-
-            // Spill live stack temps below the stack_size
             for stack_idx in 0..u8::min(MAX_LIVE_TEMPS, ctx.get_stack_size()) {
                 if self.get_live_temps().get(stack_idx) {
                     let idx = ctx.get_stack_size() - 1 - stack_idx;
                     self.spill_temp(ctx.stack_opnd(idx.into()));
-                    assert!(!self.get_live_temps().get(stack_idx));
                 }
             }
-
-            // Forget registers above the stack_size
-            let live_temps = LiveTemps::default();
-            self.set_live_temps(live_temps);
-            ctx.set_live_temps(live_temps);
         }
+
+        // Every stack temp should have been spilled
+        assert_eq!(self.get_live_temps(), LiveTemps::default());
+        ctx.set_live_temps(self.get_live_temps());
     }
 
     /// Sets the out field on the various instructions that require allocated
@@ -1717,7 +1721,7 @@ impl Assembler {
         }
     }
 
-    /// SPill a stack temp from a register to the stack
+    /// Spill a stack temp from a register to the stack
     pub fn spill_temp(&mut self, opnd: Opnd) {
         assert!(self.get_live_temps().get(opnd.stack_idx()));
         self.push_insn(Insn::SpillTemp(opnd));

@@ -851,7 +851,6 @@ pub fn gen_single_block(
 
     // Create a backend assembler instance
     let mut asm = Assembler::new();
-    asm.set_live_temps(ctx.get_live_temps());
 
     #[cfg(feature = "disasm")]
     if get_option_ref!(dump_disasm).is_some() {
@@ -859,6 +858,7 @@ pub fn gen_single_block(
         let chain_depth = if ctx.get_chain_depth() > 0 { format!(", chain_depth: {}", ctx.get_chain_depth()) } else { "".to_string() };
         asm.comment(&format!("Block: {} (ISEQ offset: {}{})", iseq_get_location(blockid.iseq, blockid_idx), blockid_idx, chain_depth));
     }
+    asm.set_live_temps(ctx.get_live_temps());
 
     // For each instruction to compile
     // NOTE: could rewrite this loop with a std::iter::Iterator
@@ -5113,6 +5113,9 @@ fn gen_send_cfunc(
     // Copy SP because REG_SP will get overwritten
     let sp = asm.lea(ctx.sp_opnd(0));
 
+    // Arguments must be spilled before popped from ctx
+    asm.spill_temps(ctx);
+
     // Pop the C function arguments from the stack (in the caller)
     ctx.stack_pop((argc + 1).try_into().unwrap());
 
@@ -6048,7 +6051,8 @@ fn gen_send_iseq(
         argc = lead_num;
     }
 
-
+    // Spill stack temps to let the callee use them
+    asm.spill_temps(ctx);
 
     // Points to the receiver operand on the stack unless a captured environment is used
     let recv = match captured_opnd {
@@ -6134,7 +6138,13 @@ fn gen_send_iseq(
     // the return value in case of JIT-to-JIT return.
     let mut return_ctx = ctx.clone();
     return_ctx.stack_pop(sp_offset.try_into().unwrap());
-    return_ctx.stack_push(asm, Type::Unknown);
+    let return_val = return_ctx.stack_push(asm, Type::Unknown);
+    if return_val.stack_idx() < MAX_LIVE_TEMPS {
+        // The callee writes a return value on stack. Update live_temps accordingly.
+        let mut live_temps = return_ctx.get_live_temps();
+        live_temps.set(return_val.stack_idx(), false);
+        return_ctx.set_live_temps(live_temps);
+    }
     return_ctx.set_sp_offset(1);
     return_ctx.reset_chain_depth();
 
