@@ -1614,7 +1614,9 @@ impl Context {
 
         // Allocate a register to the stack operand
         assert_eq!(self.live_temps, asm.get_live_temps());
-        self.live_temps = asm.alloc_temp(self.stack_size);
+        if self.stack_size < MAX_LIVE_TEMPS {
+            self.live_temps = asm.alloc_temp(self.stack_size);
+        }
 
         self.stack_size += 1;
         self.sp_offset += 1;

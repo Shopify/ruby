@@ -2388,6 +2388,7 @@ fn gen_setinstancevariable(
                 if needs_extension {
                     // Generate the C call so that runtime code will increase
                     // the capacity and set the buffer.
+                    asm.spill_temps(ctx); // for ccall
                     asm.ccall(rb_ensure_iv_list_size as *const u8,
                               vec![
                                   recv,
@@ -2436,6 +2437,7 @@ fn gen_setinstancevariable(
             asm.jbe(skip_wb);
 
             asm.comment("write barrier");
+            asm.spill_temps(ctx); // for ccall
             asm.ccall(
                 rb_gc_writebarrier as *const u8,
                 vec![
@@ -2899,6 +2901,7 @@ fn gen_equality_specialized(
         }
 
         // Call rb_str_eql_internal(a, b)
+        asm.spill_temps(ctx); // for ccall
         let val = asm.ccall(
             if gen_eq { rb_str_eql_internal } else { rb_str_neq_internal } as *const u8,
             vec![a_opnd, b_opnd],
@@ -3013,6 +3016,7 @@ fn gen_opt_aref(
         // Call VALUE rb_ary_entry_internal(VALUE ary, long offset).
         // It never raises or allocates, so we don't need to write to cfp->pc.
         {
+            asm.spill_temps(ctx); // for ccall
             let idx_reg = asm.rshift(idx_reg, Opnd::UImm(1)); // Convert fixnum to int
             let val = asm.ccall(rb_ary_entry_internal as *const u8, vec![recv_opnd, idx_reg]);
 
@@ -3355,6 +3359,7 @@ fn gen_opt_mod(
         asm.je(side_exit(jit, ctx, ocb));
 
         // Call rb_fix_mod_fix(VALUE recv, VALUE obj)
+        asm.spill_temps(ctx); // for ccall
         let ret = asm.ccall(rb_fix_mod_fix as *const u8, vec![arg0, arg1]);
 
         // Push the return value onto the stack
@@ -4238,6 +4243,7 @@ fn jit_rb_mod_eqq(
     }
 
     asm.comment("Module#===");
+    asm.spill_temps(ctx); // for ccall
     // By being here, we know that the receiver is a T_MODULE or a T_CLASS, because Module#=== can
     // only live on these objects. With that, we can call rb_obj_is_kind_of() without
     // jit_prepare_routine_call() or a control frame push because it can't raise, allocate, or call
@@ -4359,6 +4365,7 @@ fn jit_rb_str_uplus(
     asm.jz(ret_label);
 
     // Str is frozen - duplicate it
+    asm.spill_temps(ctx); // for ccall
     let ret_opnd = asm.ccall(rb_str_dup as *const u8, vec![recv_opnd]);
     asm.mov(stack_ret, ret_opnd);
 
@@ -4503,6 +4510,7 @@ fn jit_rb_str_concat(
     asm.jnz(enc_mismatch);
 
     // If encodings match, call the simple append function and jump to return
+    asm.spill_temps(ctx); // for ccall
     let ret_opnd = asm.ccall(rb_yjit_str_simple_append as *const u8, vec![recv, concat_arg]);
     let ret_label = asm.new_label("func_return");
     asm.mov(stack_ret, ret_opnd);
@@ -5103,6 +5111,7 @@ fn gen_send_cfunc(
         assert_ne!(0, unsafe { rb_IMEMO_TYPE_P(imemo_ci, imemo_callinfo) },
             "we assume all callinfos with kwargs are on the GC heap");
         let sp = asm.lea(ctx.sp_opnd(0));
+        asm.spill_temps(ctx); // for ccall
         let kwargs = asm.ccall(build_kwhash as *const u8, vec![imemo_ci.into(), sp]);
 
         // Replace the stack location at the start of kwargs with the new hash
@@ -5844,6 +5853,7 @@ fn gen_send_iseq(
                 move_rest_args_to_stack(array, diff, jit, ctx, asm, ocb);
 
                 // We will now slice the array to give us a new array of the correct size
+                asm.spill_temps(ctx); // for ccall
                 let ret = asm.ccall(rb_yjit_rb_ary_subseq_length as *const u8, vec![array, Opnd::UImm(diff as u64)]);
                 let stack_ret = ctx.stack_push(asm, Type::TArray);
                 asm.mov(stack_ret, ret);
@@ -6269,6 +6279,7 @@ fn gen_struct_aset(
     let val = ctx.stack_pop(1);
     let recv = ctx.stack_pop(1);
 
+    asm.spill_temps(ctx); // for ccall
     let val = asm.ccall(RSTRUCT_SET as *const u8, vec![recv, (off as i64).into(), val]);
 
     let ret = ctx.stack_push(asm, Type::Unknown);
@@ -6592,6 +6603,7 @@ fn gen_send_general(
                         // values for the register allocator.
                         let name_opnd = asm.load(name_opnd);
 
+                        asm.spill_temps(ctx); // for ccall
                         let symbol_id_opnd = asm.ccall(rb_get_symbol_id as *const u8, vec![name_opnd]);
 
                         asm.comment("chain_guard_send");
@@ -7271,6 +7283,7 @@ fn gen_toregexp(
     asm.mov(stack_ret, val);
 
     // Clear the temp array.
+    asm.spill_temps(ctx); // for ccall
     asm.ccall(rb_ary_clear as *const u8, vec![ary]);
 
     KeepCompiling
