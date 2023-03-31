@@ -379,7 +379,7 @@ pub const MAX_LIVE_TEMPS: u8 = 8;
 pub struct LiveTemps(u8);
 
 impl LiveTemps {
-    pub fn get(&mut self, index: u8) -> bool {
+    pub fn get(&self, index: u8) -> bool {
         assert!(index < MAX_LIVE_TEMPS);
         (self.0 >> index) & 1 == 1
     }
@@ -391,6 +391,10 @@ impl LiveTemps {
         } else {
             self.0 = self.0 & !(1 << index);
         }
+    }
+
+    pub fn as_u8(&self) -> u8 {
+        self.0
     }
 }
 
@@ -1561,6 +1565,10 @@ impl Context {
         self.sp_offset = offset;
     }
 
+    pub fn get_live_temps(&self) -> LiveTemps {
+        self.live_temps
+    }
+
     pub fn get_chain_depth(&self) -> u8 {
         self.chain_depth
     }
@@ -1599,6 +1607,10 @@ impl Context {
                 assert!((idx as usize) < MAX_LOCAL_TYPES);
             }
         }
+
+        // Allocate a register to the stack operand
+        assert_eq!(self.live_temps, asm.get_live_temps());
+        self.live_temps = asm.alloc_temp(self.stack_size);
 
         self.stack_size += 1;
         self.sp_offset += 1;

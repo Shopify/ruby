@@ -289,7 +289,6 @@ macro_rules! gen_counter_incr {
         }
     };
 }
-pub(crate) use gen_counter_incr;
 
 macro_rules! counted_exit {
     ($jit:tt, $ctx:tt, $ocb:tt, $counter_name:ident) => {
@@ -315,6 +314,7 @@ fn jit_save_pc(jit: &JITState, asm: &mut Assembler) {
 /// Note: this will change the current value of REG_SP,
 ///       which could invalidate memory operands
 fn gen_save_sp(asm: &mut Assembler, ctx: &mut Context) {
+    asm.spill_temps(ctx);
     if ctx.get_sp_offset() != 0 {
         asm.comment("save SP to CFP");
         let stack_pointer = ctx.sp_opnd(0);
@@ -906,7 +906,7 @@ pub fn gen_single_block(
             gen_counter_incr!(asm, exec_instruction);
 
             // Add a comment for the name of the YARV instruction
-            asm.comment(&format!("Insn: {}", insn_name(opcode)));
+            asm.comment(&format!("Insn: {} (stack_size: {})", insn_name(opcode), ctx.get_stack_size()));
 
             // If requested, dump instructions for debugging
             if get_option!(dump_insns) {
