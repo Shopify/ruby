@@ -40,6 +40,13 @@ type InsnGenFn = fn(
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus;
 
+/// Subset of Context that matters for generating a side exit.
+#[derive(Eq, Hash, PartialEq)]
+struct SideExitContext {
+    sp_offset: i8,
+    live_temps: LiveTemps,
+}
+
 /// Ephemeral code generation state.
 /// Represents a [core::Block] while we build it.
 pub struct JITState {
@@ -68,8 +75,8 @@ pub struct JITState {
     stack_size_for_pc: u8,
 
     /// Side exit to the instruction being compiled. See :side-exit:.
-    /// For the current PC, CodePtr is cached for each sp_offset key.
-    side_exit_for_pc: HashMap<i8, CodePtr>,
+    /// For the current PC, it's cached for each (sp_offset, live_temps).
+    side_exit_for_pc: HashMap<SideExitContext, CodePtr>,
 
     /// Execution context when compilation started
     /// This allows us to peek at run-time values
@@ -471,6 +478,9 @@ fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, asm: &mut Assembler) {
         asm.comment(&format!("exit to interpreter on {}", insn_name(opcode as usize)));
     }
 
+    // Spill stack temps before returning to the interpreter
+    asm.spill_temps(&mut ctx.clone());
+
     // Generate the code to exit to the interpreters
     // Write the adjusted SP back into the CFP
     if ctx.get_sp_offset() != 0 {
@@ -518,6 +528,7 @@ fn gen_outlined_exit(exit_pc: *mut VALUE, ctx: &Context, ocb: &mut OutlinedCb) -
     let mut cb = ocb.unwrap();
     let exit_code = cb.get_write_ptr();
     let mut asm = Assembler::new();
+    asm.set_live_temps(ctx.get_live_temps());
 
     gen_exit(exit_pc, ctx, &mut asm);
 
@@ -545,10 +556,12 @@ fn side_exit(jit: &mut JITState, ctx: &Context, ocb: &mut OutlinedCb) -> Target 
     // sp_offset because gen_outlined_exit uses ctx.sp_offset to move SP.
     let ctx = ctx.with_stack_size(jit.stack_size_for_pc);
 
-    match jit.side_exit_for_pc.get(&ctx.get_sp_offset()) {
+    // Cache a side exit for each (sp_offset, live_temps).
+    let exit_ctx = SideExitContext { sp_offset: ctx.get_sp_offset(), live_temps: ctx.get_live_temps() };
+    match jit.side_exit_for_pc.get(&exit_ctx) {
         None => {
             let exit_code = gen_outlined_exit(jit.pc, &ctx, ocb);
-            jit.side_exit_for_pc.insert(ctx.get_sp_offset(), exit_code);
+            jit.side_exit_for_pc.insert(exit_ctx, exit_code);
             exit_code.as_side_exit()
         }
         Some(code_ptr) => code_ptr.as_side_exit()

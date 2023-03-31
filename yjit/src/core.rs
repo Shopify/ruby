@@ -375,7 +375,7 @@ impl From<Opnd> for YARVOpnd {
 pub const MAX_LIVE_TEMPS: u8 = 8;
 
 /// Bitmap of which stack temps are in a register
-#[derive(Copy, Clone, Default, PartialEq, Debug)]
+#[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
 pub struct LiveTemps(u8);
 
 impl LiveTemps {
