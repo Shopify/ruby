@@ -372,7 +372,7 @@ impl From<Opnd> for YARVOpnd {
 }
 
 /// Maximum index of stack temps that could be in a register
-pub const MAX_LIVE_TEMPS: u8 = 8;
+pub const MAX_REG_TEMPS: u8 = 8;
 
 /// Bitmap of which stack temps are in a register
 #[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
@@ -380,12 +380,12 @@ pub struct LiveTemps(u8);
 
 impl LiveTemps {
     pub fn get(&self, index: u8) -> bool {
-        assert!(index < MAX_LIVE_TEMPS);
+        assert!(index < MAX_REG_TEMPS);
         (self.0 >> index) & 1 == 1
     }
 
     pub fn set(&mut self, index: u8, value: bool) {
-        assert!(index < MAX_LIVE_TEMPS);
+        assert!(index < MAX_REG_TEMPS);
         if value {
             self.0 = self.0 | (1 << index);
         } else {
@@ -1614,7 +1614,7 @@ impl Context {
 
         // Allocate a register to the stack operand
         assert_eq!(self.live_temps, asm.get_live_temps());
-        if self.stack_size < MAX_LIVE_TEMPS {
+        if self.stack_size < MAX_REG_TEMPS {
             self.live_temps = asm.alloc_temp(self.stack_size);
         }
 
@@ -3111,7 +3111,7 @@ mod tests {
         let mut live_temps = LiveTemps(0);
 
         // 0 means every slot is not spilled
-        for stack_idx in 0..MAX_LIVE_TEMPS {
+        for stack_idx in 0..MAX_REG_TEMPS {
             assert_eq!(live_temps.get(stack_idx), false);
         }
 

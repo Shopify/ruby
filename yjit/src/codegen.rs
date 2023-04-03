@@ -6165,7 +6165,7 @@ fn gen_send_iseq(
     let mut return_ctx = ctx.clone();
     return_ctx.stack_pop(sp_offset.try_into().unwrap());
     let return_val = return_ctx.stack_push(asm, Type::Unknown);
-    if return_val.stack_idx() < MAX_LIVE_TEMPS {
+    if return_val.stack_idx() < MAX_REG_TEMPS {
         // The callee writes a return value on stack. Update live_temps accordingly.
         let mut live_temps = return_ctx.get_live_temps();
         live_temps.set(return_val.stack_idx(), false);

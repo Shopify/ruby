@@ -10,7 +10,7 @@ use std::mem::take;
 use crate::cruby::{VALUE, SIZEOF_VALUE_I32};
 use crate::virtualmem::{CodePtr};
 use crate::asm::{CodeBlock, uimm_num_bits, imm_num_bits};
-use crate::core::{Context, Type, TempMapping, LiveTemps, MAX_LIVE_TEMPS};
+use crate::core::{Context, Type, TempMapping, LiveTemps, MAX_REG_TEMPS};
 use crate::options::*;
 use crate::stats::*;
 
@@ -1024,7 +1024,7 @@ impl Assembler
                     let mut opnd_iter = insn.opnd_iter_mut();
                     while let Some(opnd) = opnd_iter.next() {
                         if let Opnd::Stack { idx, stack_size, sp_offset, num_bits } = *opnd {
-                            *opnd = if opnd.stack_idx() < MAX_LIVE_TEMPS && live_temps[index].get(opnd.stack_idx()) {
+                            *opnd = if opnd.stack_idx() < MAX_REG_TEMPS && live_temps[index].get(opnd.stack_idx()) {
                                 reg_opnd(opnd, &regs)
                             } else {
                                 mem_opnd(opnd)
@@ -1070,7 +1070,7 @@ impl Assembler
 
         // Forget registers above the stack top
         let mut live_temps = self.get_live_temps();
-        for stack_idx in ctx.get_stack_size()..MAX_LIVE_TEMPS {
+        for stack_idx in ctx.get_stack_size()..MAX_REG_TEMPS {
             live_temps.set(stack_idx, false);
         }
         self.set_live_temps(live_temps);
@@ -1078,7 +1078,7 @@ impl Assembler
         // Spill live stack temps
         if self.get_live_temps() != LiveTemps::default() {
             self.comment(&format!("spill_temps: {:08b} -> {:08b}", self.get_live_temps().as_u8(), LiveTemps::default().as_u8()));
-            for stack_idx in 0..u8::min(MAX_LIVE_TEMPS, ctx.get_stack_size()) {
+            for stack_idx in 0..u8::min(MAX_REG_TEMPS, ctx.get_stack_size()) {
                 if self.get_live_temps().get(stack_idx) {
                     let idx = ctx.get_stack_size() - 1 - stack_idx;
                     self.spill_temp(ctx.stack_opnd(idx.into()));
