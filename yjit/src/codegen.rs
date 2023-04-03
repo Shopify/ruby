@@ -898,6 +898,14 @@ pub fn gen_single_block(
         jit.stack_size_for_pc = ctx.get_stack_size();
         jit.side_exit_for_pc.clear();
 
+        // stack_pop doesn't immediately deallocate a register for stack temps,
+        // but it's safe to do so at this instruction boundary.
+        assert_eq!(asm.get_reg_temps(), ctx.get_reg_temps());
+        for stack_idx in ctx.get_stack_size()..MAX_REG_TEMPS {
+            ctx.dealloc_temp_reg(stack_idx);
+        }
+        asm.set_reg_temps(ctx.get_reg_temps());
+
         // If previous instruction requested to record the boundary
         if jit.record_boundary_patch_point {
             // Generate an exit to this instruction and record it
@@ -6167,9 +6175,7 @@ fn gen_send_iseq(
     let return_val = return_ctx.stack_push(asm, Type::Unknown);
     if return_val.stack_idx() < MAX_REG_TEMPS {
         // The callee writes a return value on stack. Update reg_temps accordingly.
-        let mut reg_temps = return_ctx.get_reg_temps();
-        reg_temps.set(return_val.stack_idx(), false);
-        return_ctx.set_reg_temps(reg_temps);
+        return_ctx.dealloc_temp_reg(return_val.stack_idx());
     }
     return_ctx.set_sp_offset(1);
     return_ctx.reset_chain_depth();

@@ -10,7 +10,7 @@ use std::mem::take;
 use crate::cruby::{VALUE, SIZEOF_VALUE_I32};
 use crate::virtualmem::{CodePtr};
 use crate::asm::{CodeBlock, uimm_num_bits, imm_num_bits};
-use crate::core::{Context, Type, TempMapping, RegTemps, MAX_REG_TEMPS};
+use crate::core::{Context, Type, TempMapping, RegTemps, MAX_REG_TEMPS, MAX_TEMP_TYPES};
 use crate::options::*;
 use crate::stats::*;
 
@@ -955,6 +955,12 @@ impl Assembler
             }
             _ => {}
         }
+        // Assert no conflict
+        for stack_idx in 0..MAX_REG_TEMPS {
+            if reg_temps.get(stack_idx) {
+                assert!(!reg_temps.conflicts_with(stack_idx));
+            }
+        }
 
         self.insns.push(insn);
         self.live_ranges.push(insn_idx);
@@ -1041,27 +1047,22 @@ impl Assembler
     }
 
     /// Allocate a register to a stack temp if available.
-    pub fn alloc_temp(&mut self, stack_idx: u8) -> RegTemps {
-        let mut reg_temps = self.get_reg_temps();
-        if get_option!(num_temp_regs) > 0 {
-            // Check if there's a stack temp in a register that shares the same modulo.
-            let mut conflict = false;
-            let mut other_idx = stack_idx as isize - get_option!(num_temp_regs) as isize;
-            while other_idx >= 0 {
-                if reg_temps.get(other_idx as u8) {
-                    conflict = true;
-                    break;
-                }
-                other_idx -= get_option!(num_temp_regs) as isize;
-            }
-
-            // Allocate a register if there's no conflict
-            if !conflict {
-                reg_temps.set(stack_idx, true);
-                self.set_reg_temps(reg_temps);
-            }
+    pub fn alloc_temp_reg(&mut self, ctx: &mut Context, stack_idx: u8) {
+        if get_option!(num_temp_regs) == 0 {
+            return;
         }
-        reg_temps
+
+        assert_eq!(self.get_reg_temps(), ctx.get_reg_temps());
+        let mut reg_temps = self.get_reg_temps();
+
+        // Allocate a register if there's no conflict.
+        if reg_temps.conflicts_with(stack_idx) {
+            assert!(!reg_temps.get(stack_idx));
+        } else {
+            reg_temps.set(stack_idx, true);
+            self.set_reg_temps(reg_temps);
+            ctx.set_reg_temps(reg_temps);
+        }
     }
 
     /// Spill all live stack temps from registers to the stack

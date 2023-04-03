@@ -396,6 +396,18 @@ impl RegTemps {
     pub fn as_u8(&self) -> u8 {
         self.0
     }
+
+    /// Return true if there's a register that conflicts with a given stack_idx.
+    pub fn conflicts_with(&self, stack_idx: u8) -> bool {
+        let mut other_idx = stack_idx as isize - get_option!(num_temp_regs) as isize;
+        while other_idx >= 0 {
+            if self.get(other_idx as u8) {
+                return true;
+            }
+            other_idx -= get_option!(num_temp_regs) as isize;
+        }
+        false
+    }
 }
 
 /// Code generation context
@@ -1592,6 +1604,13 @@ impl Context {
         return Opnd::mem(64, SP, offset);
     }
 
+    /// Stop using a register for a given stack temp.
+    pub fn dealloc_temp_reg(&mut self, stack_idx: u8) {
+        let mut reg_temps = self.get_reg_temps();
+        reg_temps.set(stack_idx, false);
+        self.set_reg_temps(reg_temps);
+    }
+
     /// Push one new value on the temp stack with an explicit mapping
     /// Return a pointer to the new stack top
     pub fn stack_push_mapping(&mut self, asm: &mut Assembler, (mapping, temp_type): (TempMapping, Type)) -> Opnd {
@@ -1615,7 +1634,7 @@ impl Context {
         // Allocate a register to the stack operand
         assert_eq!(self.reg_temps, asm.get_reg_temps());
         if self.stack_size < MAX_REG_TEMPS {
-            self.reg_temps = asm.alloc_temp(self.stack_size);
+            asm.alloc_temp_reg(self, self.stack_size);
         }
 
         self.stack_size += 1;
