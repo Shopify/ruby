@@ -232,7 +232,7 @@ impl Opnd
     pub fn reg_idx(&self) -> usize {
         match self {
             Opnd::Stack { .. } => {
-                self.stack_idx() as usize % get_option!(temp_regs)
+                self.stack_idx() as usize % get_option!(num_temp_regs)
             },
             _ => unreachable!(),
         }
@@ -1043,16 +1043,16 @@ impl Assembler
     /// Allocate a register to a stack temp if available.
     pub fn alloc_temp(&mut self, stack_idx: u8) -> LiveTemps {
         let mut live_temps = self.get_live_temps();
-        if get_option!(temp_regs) > 0 {
+        if get_option!(num_temp_regs) > 0 {
             // Check if there's a stack temp in a register that shares the same modulo.
             let mut conflict = false;
-            let mut other_idx = stack_idx as isize - get_option!(temp_regs) as isize;
+            let mut other_idx = stack_idx as isize - get_option!(num_temp_regs) as isize;
             while other_idx >= 0 {
                 if live_temps.get(other_idx as u8) {
                     conflict = true;
                     break;
                 }
-                other_idx -= get_option!(temp_regs) as isize;
+                other_idx -= get_option!(num_temp_regs) as isize;
             }
 
             // Allocate a register if there's no conflict

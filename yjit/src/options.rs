@@ -23,7 +23,7 @@ pub struct Options {
     pub max_versions: usize,
 
     // The number of registers allocated for stack temps
-    pub temp_regs: usize,
+    pub num_temp_regs: usize,
 
     // Capture and print out stats
     pub gen_stats: bool,
@@ -55,7 +55,7 @@ pub static mut OPTIONS: Options = Options {
     greedy_versioning: false,
     no_type_prop: false,
     max_versions: 4,
-    temp_regs: 0,
+    num_temp_regs: 0,
     gen_stats: false,
     gen_trace_exits: false,
     pause: false,
@@ -146,7 +146,7 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
         },
 
         ("temp-regs", _) => match opt_val.parse() {
-            Ok(n) => unsafe { OPTIONS.temp_regs = n },
+            Ok(n) => unsafe { OPTIONS.num_temp_regs = n },
             Err(_) => {
                 return None;
             }
