@@ -718,7 +718,7 @@ impl Assembler
                     emit_csel(cb, *truthy, *falsy, *out, cmovl);
                 }
                 Insn::LiveReg { .. } |
-                Insn::LiveTemps(_) |
+                Insn::RegTemps(_) |
                 Insn::SpillTemp(_) => (), // just a reg alloc signal, no code
                 Insn::PadInvalPatch => {
                     let code_size = cb.get_write_pos().saturating_sub(std::cmp::max(start_write_pos, cb.page_start_pos()));

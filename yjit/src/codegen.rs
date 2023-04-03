@@ -44,7 +44,7 @@ type InsnGenFn = fn(
 #[derive(Eq, Hash, PartialEq)]
 struct SideExitContext {
     sp_offset: i8,
-    live_temps: LiveTemps,
+    reg_temps: RegTemps,
 }
 
 /// Ephemeral code generation state.
@@ -75,7 +75,7 @@ pub struct JITState {
     stack_size_for_pc: u8,
 
     /// Side exit to the instruction being compiled. See :side-exit:.
-    /// For the current PC, it's cached for each (sp_offset, live_temps).
+    /// For the current PC, it's cached for each (sp_offset, reg_temps).
     side_exit_for_pc: HashMap<SideExitContext, CodePtr>,
 
     /// Execution context when compilation started
@@ -528,7 +528,7 @@ fn gen_outlined_exit(exit_pc: *mut VALUE, ctx: &Context, ocb: &mut OutlinedCb) -
     let mut cb = ocb.unwrap();
     let exit_code = cb.get_write_ptr();
     let mut asm = Assembler::new();
-    asm.set_live_temps(ctx.get_live_temps());
+    asm.set_reg_temps(ctx.get_reg_temps());
 
     gen_exit(exit_pc, ctx, &mut asm);
 
@@ -556,8 +556,8 @@ fn side_exit(jit: &mut JITState, ctx: &Context, ocb: &mut OutlinedCb) -> Target 
     // sp_offset because gen_outlined_exit uses ctx.sp_offset to move SP.
     let ctx = ctx.with_stack_size(jit.stack_size_for_pc);
 
-    // Cache a side exit for each (sp_offset, live_temps).
-    let exit_ctx = SideExitContext { sp_offset: ctx.get_sp_offset(), live_temps: ctx.get_live_temps() };
+    // Cache a side exit for each (sp_offset, reg_temps).
+    let exit_ctx = SideExitContext { sp_offset: ctx.get_sp_offset(), reg_temps: ctx.get_reg_temps() };
     match jit.side_exit_for_pc.get(&exit_ctx) {
         None => {
             let exit_code = gen_outlined_exit(jit.pc, &ctx, ocb);
@@ -871,7 +871,7 @@ pub fn gen_single_block(
         let chain_depth = if ctx.get_chain_depth() > 0 { format!(", chain_depth: {}", ctx.get_chain_depth()) } else { "".to_string() };
         asm.comment(&format!("Block: {} (ISEQ offset: {}{})", iseq_get_location(blockid.iseq, blockid_idx), blockid_idx, chain_depth));
     }
-    asm.set_live_temps(ctx.get_live_temps());
+    asm.set_reg_temps(ctx.get_reg_temps());
 
     // For each instruction to compile
     // NOTE: could rewrite this loop with a std::iter::Iterator
@@ -6166,10 +6166,10 @@ fn gen_send_iseq(
     return_ctx.stack_pop(sp_offset.try_into().unwrap());
     let return_val = return_ctx.stack_push(asm, Type::Unknown);
     if return_val.stack_idx() < MAX_REG_TEMPS {
-        // The callee writes a return value on stack. Update live_temps accordingly.
-        let mut live_temps = return_ctx.get_live_temps();
-        live_temps.set(return_val.stack_idx(), false);
-        return_ctx.set_live_temps(live_temps);
+        // The callee writes a return value on stack. Update reg_temps accordingly.
+        let mut reg_temps = return_ctx.get_reg_temps();
+        reg_temps.set(return_val.stack_idx(), false);
+        return_ctx.set_reg_temps(reg_temps);
     }
     return_ctx.set_sp_offset(1);
     return_ctx.reset_chain_depth();

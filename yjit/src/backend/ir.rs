@@ -10,7 +10,7 @@ use std::mem::take;
 use crate::cruby::{VALUE, SIZEOF_VALUE_I32};
 use crate::virtualmem::{CodePtr};
 use crate::asm::{CodeBlock, uimm_num_bits, imm_num_bits};
-use crate::core::{Context, Type, TempMapping, LiveTemps, MAX_REG_TEMPS};
+use crate::core::{Context, Type, TempMapping, RegTemps, MAX_REG_TEMPS};
 use crate::options::*;
 use crate::stats::*;
 
@@ -430,7 +430,7 @@ pub enum Insn {
     LiveReg { opnd: Opnd, out: Opnd },
 
     /// Update live stack temps without spill
-    LiveTemps(LiveTemps),
+    RegTemps(RegTemps),
 
     // A low-level instruction that loads a value into a register.
     Load { opnd: Opnd, out: Opnd },
@@ -541,7 +541,7 @@ impl Insn {
             Insn::LeaLabel { .. } => "LeaLabel",
             Insn::Lea { .. } => "Lea",
             Insn::LiveReg { .. } => "LiveReg",
-            Insn::LiveTemps(_) => "LiveTemps",
+            Insn::RegTemps(_) => "RegTemps",
             Insn::Load { .. } => "Load",
             Insn::LoadInto { .. } => "LoadInto",
             Insn::LoadSExt { .. } => "LoadSExt",
@@ -687,7 +687,7 @@ impl<'a> Iterator for InsnOpndIterator<'a> {
             Insn::Jz(_) |
             Insn::Label(_) |
             Insn::LeaLabel { .. } |
-            Insn::LiveTemps(_) |
+            Insn::RegTemps(_) |
             Insn::PadInvalPatch |
             Insn::PosMarker(_) => None,
             Insn::CPopInto(opnd) |
@@ -786,7 +786,7 @@ impl<'a> InsnOpndMutIterator<'a> {
             Insn::Jz(_) |
             Insn::Label(_) |
             Insn::LeaLabel { .. } |
-            Insn::LiveTemps(_) |
+            Insn::RegTemps(_) |
             Insn::PadInvalPatch |
             Insn::PosMarker(_) => None,
             Insn::CPopInto(opnd) |
@@ -892,7 +892,7 @@ pub struct Assembler
 
     /// Parallel vec with insns
     /// Bitmap of which temps are in a register for this insn
-    pub(super) live_temps: Vec<LiveTemps>,
+    pub(super) reg_temps: Vec<RegTemps>,
 
     /// Names of labels
     pub(super) label_names: Vec<String>,
@@ -908,7 +908,7 @@ impl Assembler
         Self {
             insns: Vec::default(),
             live_ranges: Vec::default(),
-            live_temps: Vec::default(),
+            reg_temps: Vec::default(),
             label_names
         }
     }
@@ -944,26 +944,26 @@ impl Assembler
         }
 
         // Update live stack temps for this instruction
-        let mut live_temps = self.get_live_temps();
+        let mut reg_temps = self.get_reg_temps();
         match insn {
-            Insn::LiveTemps(next_temps) => {
-                live_temps = next_temps;
+            Insn::RegTemps(next_temps) => {
+                reg_temps = next_temps;
             }
             Insn::SpillTemp(opnd) => {
-                assert_eq!(live_temps.get(opnd.stack_idx()), true);
-                live_temps.set(opnd.stack_idx(), false);
+                assert_eq!(reg_temps.get(opnd.stack_idx()), true);
+                reg_temps.set(opnd.stack_idx(), false);
             }
             _ => {}
         }
 
         self.insns.push(insn);
         self.live_ranges.push(insn_idx);
-        self.live_temps.push(live_temps);
+        self.reg_temps.push(reg_temps);
     }
 
     /// Get stack temps that are currently in a register
-    pub fn get_live_temps(&self) -> LiveTemps {
-        *self.live_temps.last().unwrap_or(&LiveTemps::default())
+    pub fn get_reg_temps(&self) -> RegTemps {
+        *self.reg_temps.last().unwrap_or(&RegTemps::default())
     }
 
     /// Create a new label instance that we can jump to
@@ -1001,13 +1001,13 @@ impl Assembler
 
         let mut asm = Assembler::new_with_label_names(take(&mut self.label_names));
         let regs = Assembler::get_temp_regs();
-        let live_temps = take(&mut self.live_temps);
+        let reg_temps = take(&mut self.reg_temps);
         let mut iterator = self.into_draining_iter();
 
         while let Some((index, mut insn)) = iterator.next_mapped() {
             match &insn {
-                // The original insn is pushed to the new asm to satisfy ccall's live_temps assertion.
-                Insn::LiveTemps(_) => {} // noop
+                // The original insn is pushed to the new asm to satisfy ccall's reg_temps assertion.
+                Insn::RegTemps(_) => {} // noop
                 Insn::SpillTemp(opnd) => {
                     incr_counter!(temp_spill);
                     asm.mov(mem_opnd(opnd), reg_opnd(opnd, &regs));
@@ -1024,7 +1024,7 @@ impl Assembler
                     let mut opnd_iter = insn.opnd_iter_mut();
                     while let Some(opnd) = opnd_iter.next() {
                         if let Opnd::Stack { idx, stack_size, sp_offset, num_bits } = *opnd {
-                            *opnd = if opnd.stack_idx() < MAX_REG_TEMPS && live_temps[index].get(opnd.stack_idx()) {
+                            *opnd = if opnd.stack_idx() < MAX_REG_TEMPS && reg_temps[index].get(opnd.stack_idx()) {
                                 reg_opnd(opnd, &regs)
                             } else {
                                 mem_opnd(opnd)
@@ -1041,14 +1041,14 @@ impl Assembler
     }
 
     /// Allocate a register to a stack temp if available.
-    pub fn alloc_temp(&mut self, stack_idx: u8) -> LiveTemps {
-        let mut live_temps = self.get_live_temps();
+    pub fn alloc_temp(&mut self, stack_idx: u8) -> RegTemps {
+        let mut reg_temps = self.get_reg_temps();
         if get_option!(num_temp_regs) > 0 {
             // Check if there's a stack temp in a register that shares the same modulo.
             let mut conflict = false;
             let mut other_idx = stack_idx as isize - get_option!(num_temp_regs) as isize;
             while other_idx >= 0 {
-                if live_temps.get(other_idx as u8) {
+                if reg_temps.get(other_idx as u8) {
                     conflict = true;
                     break;
                 }
@@ -1057,29 +1057,29 @@ impl Assembler
 
             // Allocate a register if there's no conflict
             if !conflict {
-                live_temps.set(stack_idx, true);
-                self.set_live_temps(live_temps);
+                reg_temps.set(stack_idx, true);
+                self.set_reg_temps(reg_temps);
             }
         }
-        live_temps
+        reg_temps
     }
 
     /// Spill all live stack temps from registers to the stack
     pub fn spill_temps(&mut self, ctx: &mut Context) {
-        assert_eq!(self.get_live_temps(), ctx.get_live_temps());
+        assert_eq!(self.get_reg_temps(), ctx.get_reg_temps());
 
         // Forget registers above the stack top
-        let mut live_temps = self.get_live_temps();
+        let mut reg_temps = self.get_reg_temps();
         for stack_idx in ctx.get_stack_size()..MAX_REG_TEMPS {
-            live_temps.set(stack_idx, false);
+            reg_temps.set(stack_idx, false);
         }
-        self.set_live_temps(live_temps);
+        self.set_reg_temps(reg_temps);
 
         // Spill live stack temps
-        if self.get_live_temps() != LiveTemps::default() {
-            self.comment(&format!("spill_temps: {:08b} -> {:08b}", self.get_live_temps().as_u8(), LiveTemps::default().as_u8()));
+        if self.get_reg_temps() != RegTemps::default() {
+            self.comment(&format!("spill_temps: {:08b} -> {:08b}", self.get_reg_temps().as_u8(), RegTemps::default().as_u8()));
             for stack_idx in 0..u8::min(MAX_REG_TEMPS, ctx.get_stack_size()) {
-                if self.get_live_temps().get(stack_idx) {
+                if self.get_reg_temps().get(stack_idx) {
                     let idx = ctx.get_stack_size() - 1 - stack_idx;
                     self.spill_temp(ctx.stack_opnd(idx.into()));
                 }
@@ -1087,8 +1087,8 @@ impl Assembler
         }
 
         // Every stack temp should have been spilled
-        assert_eq!(self.get_live_temps(), LiveTemps::default());
-        ctx.set_live_temps(self.get_live_temps());
+        assert_eq!(self.get_reg_temps(), RegTemps::default());
+        ctx.set_reg_temps(self.get_reg_temps());
     }
 
     /// Sets the out field on the various instructions that require allocated
@@ -1471,7 +1471,7 @@ impl Assembler {
     }
 
     pub fn ccall(&mut self, fptr: *const u8, opnds: Vec<Opnd>) -> Opnd {
-        assert_eq!(self.get_live_temps(), LiveTemps::default(), "temps must be spilled before ccall");
+        assert_eq!(self.get_reg_temps(), RegTemps::default(), "temps must be spilled before ccall");
         let out = self.next_opnd_out(Opnd::match_num_bits(&opnds));
         self.push_insn(Insn::CCall { fptr, opnds, out });
         out
@@ -1700,16 +1700,16 @@ impl Assembler {
     }
 
     /// Update which stack temps are in a register
-    pub fn set_live_temps(&mut self, live_temps: LiveTemps) {
-        if self.get_live_temps() != live_temps {
-            self.comment(&format!("live_temps: {:08b} -> {:08b}", self.get_live_temps().as_u8(), live_temps.as_u8()));
-            self.push_insn(Insn::LiveTemps(live_temps));
+    pub fn set_reg_temps(&mut self, reg_temps: RegTemps) {
+        if self.get_reg_temps() != reg_temps {
+            self.comment(&format!("reg_temps: {:08b} -> {:08b}", self.get_reg_temps().as_u8(), reg_temps.as_u8()));
+            self.push_insn(Insn::RegTemps(reg_temps));
         }
     }
 
     /// Spill a stack temp from a register to the stack
     pub fn spill_temp(&mut self, opnd: Opnd) {
-        assert!(self.get_live_temps().get(opnd.stack_idx()));
+        assert!(self.get_reg_temps().get(opnd.stack_idx()));
         self.push_insn(Insn::SpillTemp(opnd));
     }
 

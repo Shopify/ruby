@@ -1054,7 +1054,7 @@ impl Assembler
                     csel(cb, out.into(), truthy.into(), falsy.into(), Condition::GE);
                 }
                 Insn::LiveReg { .. } |
-                Insn::LiveTemps(_) |
+                Insn::RegTemps(_) |
                 Insn::SpillTemp(_) => (), // just a reg alloc signal, no code
                 Insn::PadInvalPatch => {
                     while (cb.get_write_pos().saturating_sub(std::cmp::max(start_write_pos, cb.page_start_pos()))) < JMP_PTR_BYTES && !cb.has_dropped_bytes() {

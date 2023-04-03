@@ -376,9 +376,9 @@ pub const MAX_REG_TEMPS: u8 = 8;
 
 /// Bitmap of which stack temps are in a register
 #[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
-pub struct LiveTemps(u8);
+pub struct RegTemps(u8);
 
-impl LiveTemps {
+impl RegTemps {
     pub fn get(&self, index: u8) -> bool {
         assert!(index < MAX_REG_TEMPS);
         (self.0 >> index) & 1 == 1
@@ -411,7 +411,7 @@ pub struct Context {
     sp_offset: i8,
 
     /// Bitmap of which stack temps are in a register
-    live_temps: LiveTemps,
+    reg_temps: RegTemps,
 
     // Depth of this block in the sidechain (eg: inline-cache chain)
     chain_depth: u8,
@@ -1363,7 +1363,7 @@ pub fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context {
         let mut generic_ctx = Context::default();
         generic_ctx.stack_size = ctx.stack_size;
         generic_ctx.sp_offset = ctx.sp_offset;
-        generic_ctx.live_temps = ctx.live_temps;
+        generic_ctx.reg_temps = ctx.reg_temps;
 
         debug_assert_ne!(
             TypeDiff::Incompatible,
@@ -1565,12 +1565,12 @@ impl Context {
         self.sp_offset = offset;
     }
 
-    pub fn get_live_temps(&self) -> LiveTemps {
-        self.live_temps
+    pub fn get_reg_temps(&self) -> RegTemps {
+        self.reg_temps
     }
 
-    pub fn set_live_temps(&mut self, live_temps: LiveTemps) {
-        self.live_temps = live_temps;
+    pub fn set_reg_temps(&mut self, reg_temps: RegTemps) {
+        self.reg_temps = reg_temps;
     }
 
     pub fn get_chain_depth(&self) -> u8 {
@@ -1613,9 +1613,9 @@ impl Context {
         }
 
         // Allocate a register to the stack operand
-        assert_eq!(self.live_temps, asm.get_live_temps());
+        assert_eq!(self.reg_temps, asm.get_reg_temps());
         if self.stack_size < MAX_REG_TEMPS {
-            self.live_temps = asm.alloc_temp(self.stack_size);
+            self.reg_temps = asm.alloc_temp(self.stack_size);
         }
 
         self.stack_size += 1;
@@ -1883,7 +1883,7 @@ impl Context {
             return TypeDiff::Incompatible;
         }
 
-        if dst.live_temps != src.live_temps {
+        if dst.reg_temps != src.reg_temps {
             return TypeDiff::Incompatible;
         }
 
@@ -2526,7 +2526,7 @@ fn gen_branch_stub(
     let stub_addr = ocb.get_write_ptr();
 
     let mut asm = Assembler::new();
-    asm.set_live_temps(ctx.live_temps);
+    asm.set_reg_temps(ctx.reg_temps);
     asm.comment("branch stub hit");
 
     // Save caller-saved registers before C_ARG_OPNDS get clobbered.
@@ -3107,30 +3107,30 @@ mod tests {
     }
 
     #[test]
-    fn live_temps() {
-        let mut live_temps = LiveTemps(0);
+    fn reg_temps() {
+        let mut reg_temps = RegTemps(0);
 
         // 0 means every slot is not spilled
         for stack_idx in 0..MAX_REG_TEMPS {
-            assert_eq!(live_temps.get(stack_idx), false);
+            assert_eq!(reg_temps.get(stack_idx), false);
         }
 
         // Set 0, 2, 7
-        live_temps.set(0, true);
-        live_temps.set(2, true);
-        live_temps.set(3, true);
-        live_temps.set(3, false);
-        live_temps.set(7, true);
+        reg_temps.set(0, true);
+        reg_temps.set(2, true);
+        reg_temps.set(3, true);
+        reg_temps.set(3, false);
+        reg_temps.set(7, true);
 
         // Get 0..8
-        assert_eq!(live_temps.get(0), true);
-        assert_eq!(live_temps.get(1), false);
-        assert_eq!(live_temps.get(2), true);
-        assert_eq!(live_temps.get(3), false);
-        assert_eq!(live_temps.get(4), false);
-        assert_eq!(live_temps.get(5), false);
-        assert_eq!(live_temps.get(6), false);
-        assert_eq!(live_temps.get(7), true);
+        assert_eq!(reg_temps.get(0), true);
+        assert_eq!(reg_temps.get(1), false);
+        assert_eq!(reg_temps.get(2), true);
+        assert_eq!(reg_temps.get(3), false);
+        assert_eq!(reg_temps.get(4), false);
+        assert_eq!(reg_temps.get(5), false);
+        assert_eq!(reg_temps.get(6), false);
+        assert_eq!(reg_temps.get(7), true);
     }
 
     #[test]
