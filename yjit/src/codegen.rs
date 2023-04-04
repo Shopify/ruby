@@ -2898,6 +2898,9 @@ fn gen_equality_specialized(
         let equal = asm.new_label("equal");
         let ret = asm.new_label("ret");
 
+        // Spill for ccall. For safety, unconditionally spill temps before branching.
+        asm.spill_temps(ctx);
+
         // If they are equal by identity, return true
         asm.cmp(a_opnd, b_opnd);
         asm.je(equal);
@@ -2922,7 +2925,6 @@ fn gen_equality_specialized(
         }
 
         // Call rb_str_eql_internal(a, b)
-        asm.spill_temps(ctx); // for ccall
         let val = asm.ccall(
             if gen_eq { rb_str_eql_internal } else { rb_str_neq_internal } as *const u8,
             vec![a_opnd, b_opnd],
