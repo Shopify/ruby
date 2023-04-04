@@ -995,7 +995,7 @@ impl Assembler
             }
         }
 
-        // Convert Opnd::Stack to Opnd::Mem
+        // Convert Opnd::Stack to Opnd::Reg
         fn reg_opnd(opnd: &Opnd, regs: &Vec<Reg>) -> Opnd {
             if let Opnd::Stack { num_bits, .. } = *opnd {
                 incr_counter!(temp_reg_opnd);
