@@ -4461,7 +4461,6 @@ fn jit_rb_str_empty_p(
     );
 
     let recv_opnd = ctx.stack_pop(1);
-    let out_opnd = ctx.stack_push(asm, Type::UnknownImm);
 
     asm.comment("get string length");
     let str_len_opnd = Opnd::mem(
@@ -4472,6 +4471,7 @@ fn jit_rb_str_empty_p(
 
     asm.cmp(str_len_opnd, Opnd::UImm(0));
     let string_empty = asm.csel_e(Qtrue.into(), Qfalse.into());
+    let out_opnd = ctx.stack_push(asm, Type::UnknownImm);
     asm.mov(out_opnd, string_empty);
 
     return true;
