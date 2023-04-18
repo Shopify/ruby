@@ -6979,8 +6979,13 @@ rgengc_check_relation(rb_objspace_t *objspace, VALUE obj)
 
     if (old_parent) { /* parent object is old */
         if (RVALUE_WB_UNPROTECTED(obj)) {
-            if (gc_remember_unprotected(objspace, obj)) {
-                gc_report(2, objspace, "relation: (O->S) %s -> %s\n", obj_info(old_parent), obj_info(obj));
+            if (UNLIKELY(objspace->flags.delay_promotion)) {
+                rgengc_remember(objspace, old_parent);
+            }
+            else {
+                if (gc_remember_unprotected(objspace, obj)) {
+                    gc_report(2, objspace, "relation: (O->S) %s -> %s\n", obj_info(old_parent), obj_info(obj));
+                }
             }
         }
         else {
@@ -9027,7 +9032,12 @@ gc_writebarrier_incremental(VALUE a, VALUE b, rb_objspace_t *objspace)
             }
             else {
                 gc_report(1, objspace, "gc_writebarrier_incremental: [LL] %p -> %s\n", (void *)a, obj_info(b));
-                gc_remember_unprotected(objspace, b);
+                if (UNLIKELY(objspace->flags.delay_promotion)) {
+                    rgengc_remember(objspace, a);
+                }
+                else {
+                    gc_remember_unprotected(objspace, b);
+                }
             }
         }
 
