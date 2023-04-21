@@ -280,6 +280,7 @@ fn jit_save_pc(jit: &JITState, asm: &mut Assembler) {
 /// Note: this will change the current value of REG_SP,
 ///       which could invalidate memory operands
 fn gen_save_sp(asm: &mut Assembler) {
+    incr_counter!(spill_ccall_alloc);
     asm.spill_temps();
     if asm.ctx.get_sp_offset() != 0 {
         asm.comment("save SP to CFP");
@@ -2247,6 +2248,7 @@ fn gen_setinstancevariable(
             Counter::setivar_megamorphic,
         );
 
+        incr_counter!(spill_ccall_no_alloc);
         asm.spill_temps(); // for ccall (must be done before write_val is popped)
         let write_val;
 
@@ -2771,6 +2773,7 @@ fn gen_equality_specialized(
         let ret = asm.new_label("ret");
 
         // Spill for ccall. For safety, unconditionally spill temps before branching.
+        incr_counter!(spill_ccall_no_alloc);
         asm.spill_temps();
 
         // If they are equal by identity, return true
@@ -2906,6 +2909,7 @@ fn gen_opt_aref(
         // Call VALUE rb_ary_entry_internal(VALUE ary, long offset).
         // It never raises or allocates, so we don't need to write to cfp->pc.
         {
+            incr_counter!(spill_ccall_no_alloc);
             asm.spill_temps(); // for ccall
             let idx_reg = asm.rshift(idx_reg, Opnd::UImm(1)); // Convert fixnum to int
             let val = asm.ccall(rb_ary_entry_internal as *const u8, vec![recv_opnd, idx_reg]);
@@ -3230,6 +3234,7 @@ fn gen_opt_mod(
         guard_two_fixnums(jit, asm, ocb);
 
         // Get the operands and destination from the stack
+        incr_counter!(spill_ccall_no_alloc);
         asm.spill_temps(); // for ccall (must be done before stack_pop)
         let arg1 = asm.stack_pop(1);
         let arg0 = asm.stack_pop(1);
@@ -3939,6 +3944,7 @@ fn jit_protected_callee_ancestry_guard(
     // Note: PC isn't written to current control frame as rb_is_kind_of() shouldn't raise.
     // VALUE rb_obj_is_kind_of(VALUE obj, VALUE klass);
 
+    incr_counter!(spill_ccall_no_alloc);
     asm.spill_temps(); // for ccall
     let val = asm.ccall(
         rb_obj_is_kind_of as *mut u8,
@@ -4151,6 +4157,7 @@ fn jit_rb_mod_eqq(
     }
 
     asm.comment("Module#===");
+    incr_counter!(spill_ccall_no_alloc);
     asm.spill_temps(); // for ccall
     // By being here, we know that the receiver is a T_MODULE or a T_CLASS, because Module#=== can
     // only live on these objects. With that, we can call rb_obj_is_kind_of() without
@@ -4279,6 +4286,7 @@ fn jit_rb_int_div(
     guard_two_fixnums(jit, asm, ocb);
 
     asm.comment("Integer#/");
+    incr_counter!(spill_ccall_no_alloc);
     asm.spill_temps(); // for ccall (must be done before stack_pop)
     let obj = asm.stack_pop(1);
     let recv = asm.stack_pop(1);
@@ -4313,6 +4321,7 @@ fn jit_rb_int_aref(
     guard_two_fixnums(jit, asm, ocb);
 
     asm.comment("Integer#[]");
+    incr_counter!(spill_ccall_no_alloc);
     asm.spill_temps(); // for ccall (must be done before stack_pop)
     let obj = asm.stack_pop(1);
     let recv = asm.stack_pop(1);
@@ -4359,6 +4368,7 @@ fn jit_rb_str_uplus(
     asm.jz(ret_label);
 
     // Str is frozen - duplicate it
+    incr_counter!(spill_ccall_alloc);
     asm.spill_temps(); // for ccall
     let ret_opnd = asm.ccall(rb_str_dup as *const u8, vec![recv_opnd]);
     asm.mov(stack_ret, ret_opnd);
@@ -4380,6 +4390,7 @@ fn jit_rb_str_bytesize(
 ) -> bool {
     asm.comment("String#bytesize");
 
+    incr_counter!(spill_ccall_no_alloc);
     asm.spill_temps(); // for ccall (must be done before stack_pop)
     let recv = asm.stack_pop(1);
     let ret_opnd = asm.ccall(rb_str_bytesize as *const u8, vec![recv]);
@@ -4498,6 +4509,7 @@ fn jit_rb_str_concat(
     asm.jnz(enc_mismatch);
 
     // If encodings match, call the simple append function and jump to return
+    incr_counter!(spill_ccall_alloc);
     asm.spill_temps(); // for ccall
     let ret_opnd = asm.ccall(rb_yjit_str_simple_append as *const u8, vec![recv, concat_arg]);
     let ret_label = asm.new_label("func_return");
@@ -4508,6 +4520,7 @@ fn jit_rb_str_concat(
 
     // If encodings are different, use a slower encoding-aware concatenate
     asm.write_label(enc_mismatch);
+    incr_counter!(spill_ccall_alloc);
     asm.spill_temps(); // for ccall
     let ret_opnd = asm.ccall(rb_str_buf_append as *const u8, vec![recv, concat_arg]);
     let stack_ret = asm.stack_push(Type::CString);
@@ -4895,6 +4908,10 @@ fn gen_push_frame(
     }
 
     // Spill stack temps to let the callee use them (must be done before changing SP)
+    match frame.iseq {
+        Some(_) => { incr_counter!(spill_method_ruby) }
+        None => { incr_counter!(spill_method_c) }
+    }
     asm.spill_temps();
 
     if set_sp_cfp {
@@ -5937,6 +5954,7 @@ fn gen_send_iseq(
                 move_rest_args_to_stack(array, diff, asm);
 
                 // We will now slice the array to give us a new array of the correct size
+                incr_counter!(spill_ccall_no_alloc);
                 asm.spill_temps(); // for ccall
                 let ret = asm.ccall(rb_yjit_rb_ary_subseq_length as *const u8, vec![array, Opnd::UImm(diff as u64)]);
                 let stack_ret = asm.stack_push(Type::TArray);
@@ -6365,6 +6383,7 @@ fn gen_struct_aset(
 
     asm.comment("struct aset");
 
+    incr_counter!(spill_ccall_no_alloc);
     asm.spill_temps(); // for ccall (must be done before stack_pop)
     let val = asm.stack_pop(1);
     let recv = asm.stack_pop(1);
@@ -6686,6 +6705,7 @@ fn gen_send_general(
                         // values for the register allocator.
                         let name_opnd = asm.load(name_opnd);
 
+                        incr_counter!(spill_ccall_no_alloc);
                         asm.spill_temps(); // for ccall
                         let symbol_id_opnd = asm.ccall(rb_get_symbol_id as *const u8, vec![name_opnd]);
 
@@ -7341,6 +7361,7 @@ fn gen_toregexp(
     asm.mov(stack_ret, val);
 
     // Clear the temp array.
+    incr_counter!(spill_ccall_no_alloc);
     asm.spill_temps(); // for ccall
     asm.ccall(rb_ary_clear as *const u8, vec![ary]);
 
@@ -7530,6 +7551,7 @@ fn gen_opt_getconstant_path(
         let inline_cache = asm.load(Opnd::const_ptr(ic as *const u8));
 
         // Call function to verify the cache. It doesn't allocate or call methods.
+        incr_counter!(spill_ccall_no_alloc);
         asm.spill_temps(); // for ccall
         let ret_val = asm.ccall(
             rb_vm_ic_hit_p as *const u8,

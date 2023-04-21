@@ -412,6 +412,11 @@ make_counters! {
     temp_reg_opnd,
     temp_mem_opnd,
     temp_spill,
+
+    spill_method_c,
+    spill_method_ruby,
+    spill_ccall_alloc,
+    spill_ccall_no_alloc,
 }
 
 //===========================================================================
