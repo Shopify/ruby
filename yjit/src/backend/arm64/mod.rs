@@ -1153,6 +1153,7 @@ impl Assembler
 
     /// Optimize and compile the stored instructions
     pub fn compile_with_regs(self, cb: &mut CodeBlock, ocb: Option<&mut OutlinedCb>, regs: Vec<Reg>) -> Vec<u32> {
+        println!("before split: {:#?}", self.insns);
         let asm = self.arm64_split();
         let mut asm = asm.alloc_regs(regs);
 
