@@ -85,6 +85,8 @@ pub enum Opnd
         stack_size: u8,
         /// ctx.sp_offset when this operand is made. Used with idx for Opnd::Mem.
         sp_offset: i8,
+        /// Immediate value if it's known by the Context.
+        known_imm: Option<VALUE>,
         /// ctx.reg_temps when this operand is read. Used for register allocation.
         reg_temps: Option<RegTemps>
     },
@@ -176,7 +178,8 @@ impl Opnd
             Opnd::Reg(reg) => Some(Opnd::Reg(reg.with_num_bits(num_bits))),
             Opnd::Mem(Mem { base, disp, .. }) => Some(Opnd::Mem(Mem { base, disp, num_bits })),
             Opnd::InsnOut { idx, .. } => Some(Opnd::InsnOut { idx, num_bits }),
-            Opnd::Stack { idx, stack_size, sp_offset, reg_temps, .. } => Some(Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps }),
+            Opnd::Stack { idx, stack_size, sp_offset, known_imm, reg_temps, .. } =>
+                Some(Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, reg_temps }),
             _ => None,
         }
     }
@@ -1003,12 +1006,13 @@ impl Assembler
                     self.live_ranges[*idx] = insn_idx;
                 }
                 // Set current ctx.reg_temps to Opnd::Stack.
-                Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps: None } => {
+                Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, reg_temps: None } => {
                     *opnd = Opnd::Stack {
                         idx: *idx,
                         num_bits: *num_bits,
                         stack_size: *stack_size,
                         sp_offset: *sp_offset,
+                        known_imm: *known_imm,
                         reg_temps: Some(self.ctx.get_reg_temps()),
                     };
                 }
@@ -1086,9 +1090,13 @@ impl Assembler
         }
 
         match opnd {
-            Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps } => {
+            Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, reg_temps } => {
                 if opnd.stack_idx() < MAX_REG_TEMPS && reg_temps.unwrap().get(opnd.stack_idx()) {
-                    reg_opnd(opnd)
+                    if let Some(known_imm) = *known_imm {
+                        Opnd::UImm(known_imm.as_u64())
+                    } else {
+                        reg_opnd(opnd)
+                    }
                 } else {
                     mem_opnd(opnd)
                 }
@@ -1150,10 +1158,10 @@ impl Assembler
 
         // Move the stack operand from a register to memory
         match opnd {
-            Opnd::Stack { idx, num_bits, stack_size, sp_offset, .. } => {
+            Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, .. } => {
                 self.mov(
-                    Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps: Some(mem_temps) },
-                    Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps: Some(reg_temps) },
+                    Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, reg_temps: Some(mem_temps) },
+                    Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, reg_temps: Some(reg_temps) },
                 );
             }
             _ => unreachable!(),

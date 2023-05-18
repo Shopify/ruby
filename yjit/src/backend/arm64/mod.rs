@@ -597,7 +597,11 @@ impl Assembler
                             };
                             asm.mov(*dest, value);
                         },
-                        _ => unreachable!()
+                        (Opnd::UImm(dest), Opnd::UImm(src)) if dest == src => {
+                            // Skip writing a known immediate in Opnd::Stack
+                            asm.comment(&format!("known immediate: 0x{:x}", dest))
+                        },
+                        _ => unreachable!("dest: {:#?}, src: {:#?}", dest, src)
                     };
                 },
                 Insn::Not { opnd, .. } => {
