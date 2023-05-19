@@ -85,6 +85,8 @@ pub enum Opnd
         stack_size: u8,
         /// ctx.sp_offset when this operand is made. Used with idx for Opnd::Mem.
         sp_offset: i8,
+        /// Immediate value if it's known by the Context.
+        known_imm: Option<VALUE>,
         /// ctx.reg_temps when this operand is read. Used for register allocation.
         reg_temps: Option<RegTemps>
     },
@@ -176,7 +178,8 @@ impl Opnd
             Opnd::Reg(reg) => Some(Opnd::Reg(reg.with_num_bits(num_bits))),
             Opnd::Mem(Mem { base, disp, .. }) => Some(Opnd::Mem(Mem { base, disp, num_bits })),
             Opnd::InsnOut { idx, .. } => Some(Opnd::InsnOut { idx, num_bits }),
-            Opnd::Stack { idx, stack_size, sp_offset, reg_temps, .. } => Some(Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps }),
+            Opnd::Stack { idx, stack_size, sp_offset, known_imm, reg_temps, .. } =>
+                Some(Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, reg_temps }),
             _ => None,
         }
     }
@@ -658,6 +661,17 @@ impl Insn {
         }
     }
 
+    /// Return a mutable reference to the dest operand for this instruction
+    /// if it has one.
+    pub fn dest_opnd_mut(&mut self) -> Option<&mut Opnd> {
+        match self {
+            Insn::LoadInto { dest, .. } |
+            Insn::Mov { dest, .. } |
+            Insn::Store { dest, .. } => Some(dest),
+            _ => None
+        }
+    }
+
     /// Returns the target for this instruction if there is one.
     pub fn target(&self) -> Option<&Target> {
         match self {
@@ -1003,12 +1017,13 @@ impl Assembler
                     self.live_ranges[*idx] = insn_idx;
                 }
                 // Set current ctx.reg_temps to Opnd::Stack.
-                Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps: None } => {
+                Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, reg_temps: None } => {
                     *opnd = Opnd::Stack {
                         idx: *idx,
                         num_bits: *num_bits,
                         stack_size: *stack_size,
                         sp_offset: *sp_offset,
+                        known_imm: *known_imm,
                         reg_temps: Some(self.ctx.get_reg_temps()),
                     };
                 }
@@ -1063,7 +1078,7 @@ impl Assembler
     }
 
     /// Convert Opnd::Stack to Opnd::Mem or Opnd::Reg
-    pub fn lower_stack_opnd(&self, opnd: &Opnd) -> Opnd {
+    pub fn lower_stack_opnd(&self, opnd: &Opnd, allow_imm: bool) -> Opnd {
         // Convert Opnd::Stack to Opnd::Mem
         fn mem_opnd(opnd: &Opnd) -> Opnd {
             if let Opnd::Stack { idx, sp_offset, num_bits, .. } = *opnd {
@@ -1086,9 +1101,12 @@ impl Assembler
         }
 
         match opnd {
-            Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps } => {
+            Opnd::Stack { known_imm, reg_temps, .. } => {
                 if opnd.stack_idx() < MAX_REG_TEMPS && reg_temps.unwrap().get(opnd.stack_idx()) {
-                    reg_opnd(opnd)
+                    match *known_imm {
+                        Some(known_imm) if allow_imm => Opnd::UImm(known_imm.as_u64()),
+                        _ => reg_opnd(opnd),
+                    }
                 } else {
                     mem_opnd(opnd)
                 }
@@ -1150,10 +1168,10 @@ impl Assembler
 
         // Move the stack operand from a register to memory
         match opnd {
-            Opnd::Stack { idx, num_bits, stack_size, sp_offset, .. } => {
+            Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, .. } => {
                 self.mov(
-                    Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps: Some(mem_temps) },
-                    Opnd::Stack { idx, num_bits, stack_size, sp_offset, reg_temps: Some(reg_temps) },
+                    Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, reg_temps: Some(mem_temps) },
+                    Opnd::Stack { idx, num_bits, stack_size, sp_offset, known_imm, reg_temps: Some(reg_temps) },
                 );
             }
             _ => unreachable!(),

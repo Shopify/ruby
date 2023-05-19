@@ -1990,6 +1990,11 @@ impl Assembler {
             num_bits: 64,
             stack_size: self.ctx.stack_size,
             sp_offset: self.ctx.sp_offset,
+            known_imm: if 0 <= idx && idx < self.ctx.get_stack_size() as i32 {
+                self.ctx.get_opnd_type(StackOpnd(idx.try_into().unwrap())).known_exact_value()
+            } else {
+                None
+            },
             reg_temps: None, // push_insn will set this
         }
     }

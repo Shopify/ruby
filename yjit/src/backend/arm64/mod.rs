@@ -382,6 +382,15 @@ impl Assembler
         let mut iterator = self.into_draining_iter();
 
         while let Some((index, mut insn)) = iterator.next_mapped() {
+            // Immediates don't work for dest operands. Lower them to something else first.
+            let mut dest_imm = None;
+            if let Some(dest) = insn.dest_opnd_mut() {
+                if let Opnd::Stack { known_imm, .. } = dest {
+                    dest_imm = known_imm.map(|imm| imm.as_u64());
+                    *dest = asm.lower_stack_opnd(dest, false);
+                }
+            }
+
             // Here we're going to map the operands of the instruction to load
             // any Opnd::Value operands into registers if they are heap objects
             // such that only the Op::Load instruction needs to handle that
@@ -400,7 +409,7 @@ impl Assembler
                         }
                     },
                     Opnd::Stack { .. } => {
-                        *opnd = asm.lower_stack_opnd(opnd);
+                        *opnd = asm.lower_stack_opnd(opnd, true);
                     }
                     _ => {}
                 };
@@ -587,6 +596,10 @@ impl Assembler
                         (Opnd::Reg(_), Opnd::Mem(_)) => {
                             let value = split_memory_address(asm, *src);
                             asm.load_into(*dest, value);
+                        },
+                        // If it's writing a known immediate, do nothing.
+                        (Opnd::Reg(_), Opnd::UImm(imm)) if dest_imm == Some(*imm) => {
+                            asm.comment(&format!("known immediate: 0x{:x}", imm))
                         },
                         // Otherwise we'll use the normal mov instruction.
                         (Opnd::Reg(_), _) => {
