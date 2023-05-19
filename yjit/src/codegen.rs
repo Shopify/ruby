@@ -261,14 +261,20 @@ fn gen_counter_incr(asm: &mut Assembler, counter: Counter) {
 // Save the incremented PC on the CFP
 // This is necessary when callees can raise or allocate
 fn jit_save_pc(jit: &JITState, asm: &mut Assembler) {
-    let pc: *mut VALUE = jit.get_pc();
-    let ptr: *mut VALUE = unsafe {
-        let cur_insn_len = insn_len(jit.get_opcode()) as isize;
-        pc.offset(cur_insn_len)
-    };
+    let cur_insn_len = insn_len(jit.get_opcode()) as IseqIdx;
 
     asm.comment("save PC to CFP");
-    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_PC), Opnd::const_ptr(ptr as *const u8));
+    if let Some(pc_idx) = asm.ctx.get_pc_idx() {
+        let offset = ((jit.insn_idx + cur_insn_len) as i64 - pc_idx as i64) * SIZEOF_VALUE as i64;
+        if offset != 0 {
+            let pc = asm.add(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_PC), offset.into());
+            asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_PC), pc);
+        }
+    } else {
+        let ptr: *mut VALUE = unsafe { jit.get_pc().offset(cur_insn_len as isize) };
+        asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_PC), Opnd::const_ptr(ptr as *const u8));
+    }
+    asm.ctx.set_pc_idx(Some(jit.insn_idx + cur_insn_len))
 }
 
 /// Save the current SP on the CFP
