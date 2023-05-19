@@ -63,6 +63,9 @@ pub struct JITState {
     /// PC of the instruction being compiled
     pc: *mut VALUE,
 
+    /// PC that has been saved by jit_save_pc last time
+    saved_pc: Option<*mut VALUE>,
+
     /// stack_size when it started to compile the current instruction.
     stack_size_for_pc: u8,
 
@@ -109,6 +112,7 @@ impl JITState {
             insn_idx: 0,
             opcode: 0,
             pc: ptr::null_mut::<VALUE>(),
+            saved_pc: None,
             stack_size_for_pc: starting_ctx.get_stack_size(),
             pending_outgoing: vec![],
             ec,
@@ -260,15 +264,18 @@ fn gen_counter_incr(asm: &mut Assembler, counter: Counter) {
 
 // Save the incremented PC on the CFP
 // This is necessary when callees can raise or allocate
-fn jit_save_pc(jit: &JITState, asm: &mut Assembler) {
+fn jit_save_pc(jit: &mut JITState, asm: &mut Assembler) {
     let pc: *mut VALUE = jit.get_pc();
     let ptr: *mut VALUE = unsafe {
         let cur_insn_len = insn_len(jit.get_opcode()) as isize;
         pc.offset(cur_insn_len)
     };
 
-    asm.comment("save PC to CFP");
-    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_PC), Opnd::const_ptr(ptr as *const u8));
+    if jit.saved_pc != Some(pc) {
+        asm.comment("save PC to CFP");
+        asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_PC), Opnd::const_ptr(ptr as *const u8));
+        jit.saved_pc = Some(pc);
+    }
 }
 
 /// Save the current SP on the CFP
