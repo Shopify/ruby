@@ -81,6 +81,7 @@ module SyncDefaultGems
     syntax_suggest: ["ruby/syntax_suggest", "main"],
     un: "ruby/un",
     win32ole: "ruby/win32ole",
+    yarp: "ruby/yarp",
   }
 
   CLASSICAL_DEFAULT_BRANCH = "master"
@@ -416,6 +417,24 @@ module SyncDefaultGems
       rm_rf(%w[spec/syntax_suggest libexec/syntax_suggest])
       cp_r("#{upstream}/spec", "spec/syntax_suggest")
       cp_r("#{upstream}/exe/syntax_suggest", "libexec/syntax_suggest")
+    when "yarp"
+      # We don't want to remove yarp_init.c, so we temporarily move it
+      # out of the yarp dir, wipe the yarp dir, and then put it back
+      mv("yarp/yarp_init.c", ".")
+      rm_rf(%w[test/yarp yarp])
+      system("ruby #{upstream}/bin/template.rb")
+      cp_r("#{upstream}/ext/yarp", "yarp")
+      cp_r("#{upstream}/lib/.", "lib")
+      cp_r("#{upstream}/test", "test/yarp")
+
+      cp_r("#{upstream}/src/.", "yarp")
+      cp_r("#{upstream}/include/yarp/.", "yarp")
+      cp_r("#{upstream}/include/yarp.h", "yarp")
+      rm("yarp/extconf.rb")
+
+      mv("yarp_init.c", "yarp/")
+
+       # `git checkout ext/yarp/depend ext/yarp/README.md` # TODO: FIX ME
     else
       sync_lib gem, upstream
     end

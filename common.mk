@@ -153,6 +153,7 @@ COMMONOBJS    = array.$(OBJEXT) \
 		vm_sync.$(OBJEXT) \
 		vm_trace.$(OBJEXT) \
 		weakmap.$(OBJEXT) \
+		$(YARP_FILES) \
 		$(YJIT_OBJ) \
 		$(YJIT_LIBOBJ) \
 		$(COROUTINE_OBJ) \
@@ -160,6 +161,60 @@ COMMONOBJS    = array.$(OBJEXT) \
 		$(BUILTIN_ENCOBJS) \
 		$(BUILTIN_TRANSOBJS) \
 		$(MISSING)
+
+YARP_FILES = yarp/compile.$(OBJEXT) \
+		yarp/diagnostic.$(OBJEXT) \
+		yarp/enc/ascii.$(OBJEXT) \
+		yarp/enc/big5.$(OBJEXT) \
+		yarp/enc/euc_jp.$(OBJEXT) \
+		yarp/enc/iso_8859_1.$(OBJEXT) \
+		yarp/enc/iso_8859_10.$(OBJEXT) \
+		yarp/enc/iso_8859_11.$(OBJEXT) \
+		yarp/enc/iso_8859_13.$(OBJEXT) \
+		yarp/enc/iso_8859_14.$(OBJEXT) \
+		yarp/enc/iso_8859_15.$(OBJEXT) \
+		yarp/enc/iso_8859_16.$(OBJEXT) \
+		yarp/enc/iso_8859_2.$(OBJEXT) \
+		yarp/enc/iso_8859_3.$(OBJEXT) \
+		yarp/enc/iso_8859_4.$(OBJEXT) \
+		yarp/enc/iso_8859_5.$(OBJEXT) \
+		yarp/enc/iso_8859_6.$(OBJEXT) \
+		yarp/enc/iso_8859_7.$(OBJEXT) \
+		yarp/enc/iso_8859_8.$(OBJEXT) \
+		yarp/enc/iso_8859_9.$(OBJEXT) \
+		yarp/enc/shared.$(OBJEXT) \
+		yarp/enc/shift_jis.$(OBJEXT) \
+		yarp/enc/unicode.$(OBJEXT) \
+		yarp/enc/windows_1251.$(OBJEXT) \
+		yarp/enc/windows_1252.$(OBJEXT) \
+		yarp/enc/windows_31j.$(OBJEXT) \
+		yarp/missing.$(OBJEXT) \
+		yarp/api_node.$(OBJEXT) \
+		yarp/api_pack.$(OBJEXT) \
+		yarp/node.$(OBJEXT) \
+		yarp/pack.$(OBJEXT) \
+		yarp/prettyprint.$(OBJEXT) \
+		yarp/regexp.$(OBJEXT) \
+		yarp/serialize.$(OBJEXT) \
+		yarp/token_type.$(OBJEXT) \
+		yarp/unescape.$(OBJEXT) \
+		yarp/util/yp_buffer.$(OBJEXT) \
+		yarp/util/yp_char.$(OBJEXT) \
+		yarp/util/yp_conversion.$(OBJEXT) \
+		yarp/util/yp_list.$(OBJEXT) \
+		yarp/util/yp_state_stack.$(OBJEXT) \
+		yarp/util/yp_string.$(OBJEXT) \
+		yarp/util/yp_string_list.$(OBJEXT) \
+		yarp/util/yp_strpbrk.$(OBJEXT) \
+		yarp/yarp.$(OBJEXT) \
+		yarp/yarp_init.$(OBJEXT) \
+		yarp/extension.$(OBJEXT)
+
+$(YARP_FILES): $(YARP_BUILD_DIR)/.time $(YARP_BUILD_DIR)/enc/.time $(YARP_BUILD_DIR)/util/.time
+
+$(YARP_BUILD_DIR)/.time $(YARP_BUILD_DIR)/enc/.time $(YARP_BUILD_DIR)/util/.time:
+	$(Q) $(MAKEDIRS) $(@D)
+	@$(NULLCMD) > $@
 
 EXPORTOBJS    = $(DLNOBJ) \
 		localeinit.$(OBJEXT) \
