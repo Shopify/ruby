@@ -1,0 +1,41 @@
+ProgramNode(0...28)(
+  [],
+  StatementsNode(0...28)(
+    [CallNode(0...28)(
+       nil,
+       nil,
+       IDENTIFIER(0...1)("p"),
+       nil,
+       ArgumentsNode(2...21)(
+         [LambdaNode(2...13)(
+            [],
+            (2...4),
+            nil,
+            StatementsNode(7...13)(
+              [SymbolNode(7...13)(
+                 SYMBOL_BEGIN(7...8)(":"),
+                 IDENTIFIER(8...13)("hello"),
+                 nil,
+                 "hello"
+               )]
+            )
+          ),
+          KeywordHashNode(17...21)(
+            [AssocNode(17...21)(
+               SymbolNode(17...19)(
+                 nil,
+                 LABEL(17...18)("a"),
+                 LABEL_END(18...19)(":"),
+                 "a"
+               ),
+               IntegerNode(20...21)(),
+               nil
+             )]
+          )]
+       ),
+       nil,
+       BlockNode(22...28)([], nil, nil, (22...24), (25...28)),
+       "p"
+     )]
+  )
+)

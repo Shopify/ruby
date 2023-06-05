@@ -1,0 +1,39 @@
+ProgramNode(6...88)(
+  [IDENTIFIER(6...12)("string")],
+  StatementsNode(6...88)(
+    [LocalVariableWriteNode(6...31)(
+       (6...12),
+       CallNode(15...31)(
+         InterpolatedStringNode(15...71)(
+           (15...25),
+           [StringNode(32...57)(
+              nil,
+              (32...57),
+              nil,
+              "        very long string\n"
+            )],
+           (57...71)
+         ),
+         DOT(25...26)("."),
+         IDENTIFIER(26...31)("strip"),
+         nil,
+         nil,
+         nil,
+         nil,
+         "strip"
+       ),
+       (13...14),
+       0
+     ),
+     CallNode(77...88)(
+       nil,
+       nil,
+       IDENTIFIER(77...81)("puts"),
+       nil,
+       ArgumentsNode(82...88)([LocalVariableReadNode(82...88)(0)]),
+       nil,
+       nil,
+       "puts"
+     )]
+  )
+)

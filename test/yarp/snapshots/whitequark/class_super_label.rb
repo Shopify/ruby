@@ -1,0 +1,30 @@
+ProgramNode(0...20)(
+  [],
+  StatementsNode(0...20)(
+    [ClassNode(0...20)(
+       [],
+       (0...5),
+       ConstantReadNode(6...9)(),
+       (10...11),
+       CallNode(12...15)(
+         nil,
+         nil,
+         IDENTIFIER(12...13)("a"),
+         nil,
+         ArgumentsNode(13...15)(
+           [SymbolNode(13...15)(
+              SYMBOL_BEGIN(13...14)(":"),
+              IDENTIFIER(14...15)("b"),
+              nil,
+              "b"
+            )]
+         ),
+         nil,
+         nil,
+         "a"
+       ),
+       nil,
+       (17...20)
+     )]
+  )
+)

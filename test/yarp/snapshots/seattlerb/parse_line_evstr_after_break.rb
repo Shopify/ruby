@@ -1,0 +1,28 @@
+ProgramNode(0...11)(
+  [],
+  StatementsNode(0...11)(
+    [StringConcatNode(0...11)(
+       StringNode(0...3)((0...1), (1...2), (2...3), "a"),
+       InterpolatedStringNode(5...11)(
+         (5...6),
+         [StringInterpolatedNode(6...10)(
+            (6...8),
+            StatementsNode(8...9)(
+              [CallNode(8...9)(
+                 nil,
+                 nil,
+                 IDENTIFIER(8...9)("b"),
+                 nil,
+                 nil,
+                 nil,
+                 nil,
+                 "b"
+               )]
+            ),
+            (9...10)
+          )],
+         (10...11)
+       )
+     )]
+  )
+)

@@ -1,0 +1,33 @@
+ProgramNode(0...24)(
+  [],
+  StatementsNode(0...24)(
+    [IfNode(0...24)(
+       (0...2),
+       CallNode(3...15)(
+         nil,
+         nil,
+         IDENTIFIER(3...7)("test"),
+         nil,
+         ArgumentsNode(8...15)(
+           [StringNode(8...10)((8...9), (9...10), nil, "d"),
+            CallNode(12...15)(
+              nil,
+              nil,
+              IDENTIFIER(12...15)("dir"),
+              nil,
+              nil,
+              nil,
+              nil,
+              "dir"
+            )]
+         ),
+         nil,
+         nil,
+         "test"
+       ),
+       nil,
+       nil,
+       (21...24)
+     )]
+  )
+)

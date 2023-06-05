@@ -1,0 +1,28 @@
+ProgramNode(0...12)(
+  [],
+  StatementsNode(0...12)(
+    [IfNode(0...12)(
+       (0...2),
+       CallNode(3...7)(
+         nil,
+         nil,
+         IDENTIFIER(3...4)("f"),
+         nil,
+         ArgumentsNode(5...7)(
+           [SymbolNode(5...7)(
+              SYMBOL_BEGIN(5...6)(":"),
+              IDENTIFIER(6...7)("x"),
+              nil,
+              "x"
+            )]
+         ),
+         nil,
+         nil,
+         "f"
+       ),
+       nil,
+       nil,
+       (9...12)
+     )]
+  )
+)

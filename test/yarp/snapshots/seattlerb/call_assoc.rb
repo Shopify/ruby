@@ -1,0 +1,23 @@
+ProgramNode(0...7)(
+  [],
+  StatementsNode(0...7)(
+    [CallNode(0...7)(
+       nil,
+       nil,
+       IDENTIFIER(0...1)("f"),
+       PARENTHESIS_LEFT(1...2)("("),
+       ArgumentsNode(2...6)(
+         [KeywordHashNode(2...6)(
+            [AssocNode(2...6)(
+               IntegerNode(2...3)(),
+               IntegerNode(5...6)(),
+               (3...5)
+             )]
+          )]
+       ),
+       PARENTHESIS_RIGHT(6...7)(")"),
+       nil,
+       "f"
+     )]
+  )
+)

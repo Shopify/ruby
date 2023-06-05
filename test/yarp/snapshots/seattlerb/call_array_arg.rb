@@ -1,0 +1,32 @@
+ProgramNode(0...13)(
+  [],
+  StatementsNode(0...13)(
+    [CallNode(0...13)(
+       IntegerNode(0...1)(),
+       nil,
+       EQUAL_EQUAL(2...4)("=="),
+       nil,
+       ArgumentsNode(5...13)(
+         [ArrayNode(5...13)(
+            [SymbolNode(6...8)(
+               SYMBOL_BEGIN(6...7)(":"),
+               IDENTIFIER(7...8)("b"),
+               nil,
+               "b"
+             ),
+             SymbolNode(10...12)(
+               SYMBOL_BEGIN(10...11)(":"),
+               IDENTIFIER(11...12)("c"),
+               nil,
+               "c"
+             )],
+            (5...6),
+            (12...13)
+          )]
+       ),
+       nil,
+       nil,
+       "=="
+     )]
+  )
+)

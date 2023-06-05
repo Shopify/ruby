@@ -1,0 +1,27 @@
+ProgramNode(0...7)(
+  [],
+  StatementsNode(0...7)(
+    [CallNode(0...5)(
+       nil,
+       nil,
+       IDENTIFIER(0...1)("a"),
+       nil,
+       ArgumentsNode(2...5)(
+         [StringNode(2...5)((2...3), (3...4), (4...5), "\n")]
+       ),
+       nil,
+       nil,
+       "a"
+     ),
+     CallNode(6...7)(
+       nil,
+       nil,
+       IDENTIFIER(6...7)("b"),
+       nil,
+       nil,
+       nil,
+       nil,
+       "b"
+     )]
+  )
+)

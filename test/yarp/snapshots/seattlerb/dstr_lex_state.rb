@@ -1,0 +1,32 @@
+ProgramNode(0...8)(
+  [],
+  StatementsNode(0...8)(
+    [InterpolatedStringNode(0...8)(
+       (0...1),
+       [StringInterpolatedNode(1...7)(
+          (1...3),
+          StatementsNode(3...6)(
+            [CallNode(3...6)(
+               nil,
+               nil,
+               IDENTIFIER(3...4)("p"),
+               nil,
+               ArgumentsNode(4...6)(
+                 [SymbolNode(4...6)(
+                    SYMBOL_BEGIN(4...5)(":"),
+                    IDENTIFIER(5...6)("a"),
+                    nil,
+                    "a"
+                  )]
+               ),
+               nil,
+               nil,
+               "p"
+             )]
+          ),
+          (6...7)
+        )],
+       (7...8)
+     )]
+  )
+)

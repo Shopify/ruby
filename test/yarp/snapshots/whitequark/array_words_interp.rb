@@ -1,0 +1,57 @@
+ProgramNode(0...38)(
+  [],
+  StatementsNode(0...38)(
+    [ArrayNode(0...14)(
+       [StringNode(3...6)(nil, (3...6), nil, "foo"),
+        InterpolatedStringNode(0...13)(
+          nil,
+          [StringInterpolatedNode(7...13)(
+             (7...9),
+             StatementsNode(9...12)(
+               [CallNode(9...12)(
+                  nil,
+                  nil,
+                  IDENTIFIER(9...12)("bar"),
+                  nil,
+                  nil,
+                  nil,
+                  nil,
+                  "bar"
+                )]
+             ),
+             (12...13)
+           )],
+          nil
+        )],
+       (0...3),
+       (13...14)
+     ),
+     ArrayNode(16...38)(
+       [StringNode(19...22)(nil, (19...22), nil, "foo"),
+        InterpolatedStringNode(0...37)(
+          nil,
+          [StringInterpolatedNode(23...29)(
+             (23...25),
+             StatementsNode(25...28)(
+               [CallNode(25...28)(
+                  nil,
+                  nil,
+                  IDENTIFIER(25...28)("bar"),
+                  nil,
+                  nil,
+                  nil,
+                  nil,
+                  "bar"
+                )]
+             ),
+             (28...29)
+           ),
+           StringNode(29...32)(nil, (29...32), nil, "foo"),
+           InstanceVariableReadNode(33...37)()],
+          nil
+        )],
+       (16...19),
+       (37...38)
+     )]
+  )
+)

@@ -1,0 +1,18 @@
+ProgramNode(0...18)(
+  [],
+  StatementsNode(0...18)(
+    [IfNode(0...18)(
+       (0...2),
+       IntegerNode(3...4)(),
+       nil,
+       IfNode(6...13)(
+         (6...11),
+         IntegerNode(12...13)(),
+         StatementsNode(0...0)([]),
+         nil,
+         nil
+       ),
+       (15...18)
+     )]
+  )
+)

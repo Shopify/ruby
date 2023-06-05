@@ -1,0 +1,34 @@
+ProgramNode(0...14)(
+  [],
+  StatementsNode(0...14)(
+    [InterpolatedStringNode(0...14)(
+       (0...1),
+       [StringInterpolatedNode(1...13)(
+          (1...3),
+          StatementsNode(3...9)(
+            [LambdaNode(3...9)(
+               [IDENTIFIER(6...9)("foo")],
+               (3...5),
+               BlockParametersNode(6...9)(
+                 ParametersNode(6...9)(
+                   [RequiredParameterNode(6...9)()],
+                   [],
+                   [],
+                   nil,
+                   [],
+                   nil,
+                   nil
+                 ),
+                 [],
+                 nil,
+                 nil
+               ),
+               nil
+             )]
+          ),
+          (12...13)
+        )],
+       (13...14)
+     )]
+  )
+)

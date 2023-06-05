@@ -1,0 +1,22 @@
+ProgramNode(0...204)(
+  [],
+  StatementsNode(0...204)(
+    [CallNode(0...204)(
+       nil,
+       nil,
+       IDENTIFIER(0...1)("x"),
+       nil,
+       ArgumentsNode(2...204)(
+         [StringNode(2...204)(
+            (2...3),
+            (3...203),
+            (203...204),
+            "\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n\\n"
+          )]
+       ),
+       nil,
+       nil,
+       "x"
+     )]
+  )
+)

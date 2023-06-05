@@ -1,0 +1,39 @@
+ProgramNode(0...30)(
+  [],
+  StatementsNode(0...30)(
+    [WhileNode(0...30)(
+       (0...5),
+       CallNode(6...18)(
+         CallNode(10...18)(
+           CallNode(10...13)(
+             nil,
+             nil,
+             IDENTIFIER(10...13)("var"),
+             nil,
+             nil,
+             nil,
+             nil,
+             "var"
+           ),
+           DOT(13...14)("."),
+           IDENTIFIER(14...18)("nil?"),
+           nil,
+           nil,
+           nil,
+           nil,
+           "nil?"
+         ),
+         nil,
+         KEYWORD_NOT(6...9)("not"),
+         nil,
+         nil,
+         nil,
+         nil,
+         "!"
+       ),
+       StatementsNode(21...26)(
+         [StringNode(21...26)((21...22), (22...25), (25...26), "foo")]
+       )
+     )]
+  )
+)

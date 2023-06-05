@@ -1,0 +1,24 @@
+ProgramNode(0...7)(
+  [],
+  StatementsNode(0...7)(
+    [LambdaNode(0...7)(
+       [LABEL(4...5)("k")],
+       (0...2),
+       BlockParametersNode(3...7)(
+         ParametersNode(4...6)(
+           [],
+           [],
+           [],
+           nil,
+           [KeywordParameterNode(4...6)((4...6), nil)],
+           nil,
+           nil
+         ),
+         [],
+         (3...4),
+         (6...7)
+       ),
+       nil
+     )]
+  )
+)

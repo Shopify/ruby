@@ -1,0 +1,28 @@
+ProgramNode(0...21)(
+  [],
+  StatementsNode(0...21)(
+    [CallNode(0...6)(
+       RegularExpressionNode(1...6)((1...2), (2...5), (5...6), "wat", 0),
+       nil,
+       BANG(0...1)("!"),
+       nil,
+       nil,
+       nil,
+       nil,
+       "!"
+     ),
+     IfNode(8...21)(
+       (8...10),
+       RegularExpressionNode(11...16)(
+         (11...12),
+         (12...15),
+         (15...16),
+         "wat",
+         0
+       ),
+       nil,
+       nil,
+       (18...21)
+     )]
+  )
+)

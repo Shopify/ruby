@@ -1,0 +1,39 @@
+ProgramNode(0...28)(
+  [],
+  StatementsNode(0...28)(
+    [CallNode(0...14)(
+       nil,
+       nil,
+       IDENTIFIER(0...1)("m"),
+       nil,
+       ArgumentsNode(2...14)(
+         [DefNode(2...14)(
+            (6...7),
+            nil,
+            nil,
+            nil,
+            [],
+            (2...5),
+            nil,
+            (7...8),
+            (8...9),
+            nil,
+            (11...14)
+          )]
+       ),
+       nil,
+       nil,
+       "m"
+     ),
+     CallNode(16...28)(
+       IntegerNode(16...17)(),
+       DOT(17...18)("."),
+       IDENTIFIER(18...21)("tap"),
+       nil,
+       nil,
+       nil,
+       BlockNode(22...28)([], nil, nil, (22...24), (25...28)),
+       "tap"
+     )]
+  )
+)

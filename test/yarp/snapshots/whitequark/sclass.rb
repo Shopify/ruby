@@ -1,0 +1,22 @@
+ProgramNode(0...22)(
+  [],
+  StatementsNode(0...22)(
+    [SingletonClassNode(0...22)(
+       [],
+       (0...5),
+       (6...8),
+       CallNode(9...12)(
+         nil,
+         nil,
+         IDENTIFIER(9...12)("foo"),
+         nil,
+         nil,
+         nil,
+         nil,
+         "foo"
+       ),
+       StatementsNode(14...17)([NilNode(14...17)()]),
+       (19...22)
+     )]
+  )
+)

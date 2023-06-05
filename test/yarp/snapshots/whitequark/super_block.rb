@@ -1,0 +1,36 @@
+ProgramNode(0...35)(
+  [],
+  StatementsNode(0...35)(
+    [ForwardingSuperNode(0...12)(
+       BlockNode(6...12)([], nil, nil, (6...8), (9...12))
+     ),
+     SuperNode(14...35)(
+       (14...19),
+       nil,
+       ArgumentsNode(20...28)(
+         [CallNode(20...23)(
+            nil,
+            nil,
+            IDENTIFIER(20...23)("foo"),
+            nil,
+            nil,
+            nil,
+            nil,
+            "foo"
+          ),
+          CallNode(25...28)(
+            nil,
+            nil,
+            IDENTIFIER(25...28)("bar"),
+            nil,
+            nil,
+            nil,
+            nil,
+            "bar"
+          )]
+       ),
+       nil,
+       BlockNode(29...35)([], nil, nil, (29...31), (32...35))
+     )]
+  )
+)

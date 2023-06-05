@@ -1,0 +1,31 @@
+ProgramNode(0...20)(
+  [],
+  StatementsNode(0...20)(
+    [BreakNode(0...20)(
+       ArgumentsNode(6...20)(
+         [CallNode(6...20)(
+            nil,
+            nil,
+            IDENTIFIER(6...9)("fun"),
+            nil,
+            ArgumentsNode(10...13)(
+              [CallNode(10...13)(
+                 nil,
+                 nil,
+                 IDENTIFIER(10...13)("foo"),
+                 nil,
+                 nil,
+                 nil,
+                 nil,
+                 "foo"
+               )]
+            ),
+            nil,
+            BlockNode(14...20)([], nil, nil, (14...16), (17...20)),
+            "fun"
+          )]
+       ),
+       (0...5)
+     )]
+  )
+)

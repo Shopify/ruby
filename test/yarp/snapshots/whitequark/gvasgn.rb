@@ -1,0 +1,10 @@
+ProgramNode(0...9)(
+  [],
+  StatementsNode(0...9)(
+    [GlobalVariableWriteNode(0...9)(
+       GLOBAL_VARIABLE(0...4)("$var"),
+       (5...6),
+       IntegerNode(7...9)()
+     )]
+  )
+)

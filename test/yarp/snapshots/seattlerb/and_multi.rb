@@ -1,0 +1,23 @@
+ProgramNode(0...27)(
+  [],
+  StatementsNode(0...27)(
+    [AndNode(0...27)(
+       AndNode(0...18)(
+         TrueNode(0...4)(),
+         CallNode(9...18)(
+           FalseNode(13...18)(),
+           nil,
+           KEYWORD_NOT(9...12)("not"),
+           nil,
+           nil,
+           nil,
+           nil,
+           "!"
+         ),
+         (5...8)
+       ),
+       TrueNode(23...27)(),
+       (19...22)
+     )]
+  )
+)

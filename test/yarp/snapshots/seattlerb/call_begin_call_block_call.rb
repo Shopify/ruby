@@ -1,0 +1,44 @@
+ProgramNode(0...22)(
+  [],
+  StatementsNode(0...22)(
+    [CallNode(0...22)(
+       nil,
+       nil,
+       IDENTIFIER(0...1)("a"),
+       nil,
+       ArgumentsNode(2...22)(
+         [BeginNode(2...22)(
+            (2...7),
+            StatementsNode(8...18)(
+              [CallNode(8...18)(
+                 CallNode(8...9)(
+                   nil,
+                   nil,
+                   IDENTIFIER(8...9)("b"),
+                   nil,
+                   nil,
+                   nil,
+                   nil,
+                   "b"
+                 ),
+                 DOT(9...10)("."),
+                 IDENTIFIER(10...11)("c"),
+                 nil,
+                 nil,
+                 nil,
+                 BlockNode(12...18)([], nil, nil, (12...14), (15...18)),
+                 "c"
+               )]
+            ),
+            nil,
+            nil,
+            nil,
+            (19...22)
+          )]
+       ),
+       nil,
+       nil,
+       "a"
+     )]
+  )
+)

@@ -1,0 +1,35 @@
+ProgramNode(0...38)(
+  [],
+  StatementsNode(0...38)(
+    [CaseNode(0...38)(
+       ConstantReadNode(5...10)(),
+       [InNode(11...24)(
+          ConstantReadNode(14...19)(),
+          StatementsNode(22...24)(
+            [SymbolNode(22...24)(
+               SYMBOL_BEGIN(22...23)(":"),
+               IDENTIFIER(23...24)("b"),
+               nil,
+               "b"
+             )]
+          ),
+          (11...13),
+          nil
+        )],
+       ElseNode(25...38)(
+         (25...29),
+         StatementsNode(32...34)(
+           [SymbolNode(32...34)(
+              SYMBOL_BEGIN(32...33)(":"),
+              IDENTIFIER(33...34)("c"),
+              nil,
+              "c"
+            )]
+         ),
+         (35...38)
+       ),
+       (0...4),
+       (35...38)
+     )]
+  )
+)

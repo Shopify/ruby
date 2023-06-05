@@ -1,0 +1,25 @@
+ProgramNode(0...11)(
+  [],
+  StatementsNode(0...11)(
+    [InterpolatedSymbolNode(0...11)(
+       SYMBOL_BEGIN(0...2)(":\""),
+       [StringInterpolatedNode(2...10)(
+          (2...4),
+          StatementsNode(4...9)(
+            [CallNode(4...9)(
+               nil,
+               nil,
+               IDENTIFIER(4...9)("field"),
+               nil,
+               nil,
+               nil,
+               nil,
+               "field"
+             )]
+          ),
+          (9...10)
+        )],
+       STRING_END(10...11)("\"")
+     )]
+  )
+)

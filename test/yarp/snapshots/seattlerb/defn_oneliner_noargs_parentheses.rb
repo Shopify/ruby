@@ -1,0 +1,29 @@
+ProgramNode(0...19)(
+  [],
+  StatementsNode(0...19)(
+    [DefNode(0...19)(
+       (4...8),
+       nil,
+       nil,
+       StatementsNode(13...19)(
+         [CallNode(13...19)(
+            nil,
+            nil,
+            IDENTIFIER(13...19)("system"),
+            nil,
+            nil,
+            nil,
+            nil,
+            "system"
+          )]
+       ),
+       [],
+       (0...3),
+       nil,
+       (8...9),
+       (9...10),
+       (11...12),
+       nil
+     )]
+  )
+)

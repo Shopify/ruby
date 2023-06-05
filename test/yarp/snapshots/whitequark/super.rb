@@ -1,0 +1,42 @@
+ProgramNode(0...30)(
+  [],
+  StatementsNode(0...30)(
+    [SuperNode(0...9)(
+       (0...5),
+       nil,
+       ArgumentsNode(6...9)(
+         [CallNode(6...9)(
+            nil,
+            nil,
+            IDENTIFIER(6...9)("foo"),
+            nil,
+            nil,
+            nil,
+            nil,
+            "foo"
+          )]
+       ),
+       nil,
+       nil
+     ),
+     SuperNode(11...18)((11...16), (16...17), nil, (17...18), nil),
+     SuperNode(20...30)(
+       (20...25),
+       (25...26),
+       ArgumentsNode(26...29)(
+         [CallNode(26...29)(
+            nil,
+            nil,
+            IDENTIFIER(26...29)("foo"),
+            nil,
+            nil,
+            nil,
+            nil,
+            "foo"
+          )]
+       ),
+       (29...30),
+       nil
+     )]
+  )
+)
