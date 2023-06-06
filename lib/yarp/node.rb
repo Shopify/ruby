@@ -4466,7 +4466,7 @@ module YARP
   module RegularExpressionFlags
     IGNORECASE = 1 << 0
     MULTILINE = 1 << 1
-    EXTEND = 1 << 2
+    EXTENDED = 1 << 2
     EUCJP = 1 << 3
     ASCII8BIT = 1 << 4
     WINDOWS31J = 1 << 5
