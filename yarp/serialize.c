@@ -453,7 +453,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             }
                 // serialize length
                 uint32_t length = yp_ulong_to_u32(buffer->length - offset - sizeof(uint32_t));
-                memcpy(buffer->value + length_offset, &length, sizeof(uint32_t));      
+                memcpy(buffer->value + length_offset, &length, sizeof(uint32_t));
             break;
         }
         case YP_NODE_DEFINED_NODE: {

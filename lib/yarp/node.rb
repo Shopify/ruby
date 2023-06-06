@@ -7,7 +7,7 @@ if you are looking to modify the template
 
 module YARP
   # Represents the use of the `alias` keyword.
-  # 
+  #
   #     alias foo bar
   #     ^^^^^^^^^^^^^
   class AliasNode < Node
@@ -49,7 +49,7 @@ module YARP
   end
 
   # Represents an alternation pattern in pattern matching.
-  # 
+  #
   #     foo => bar | baz
   #            ^^^^^^^^^
   class AlternationPatternNode < Node
@@ -91,7 +91,7 @@ module YARP
   end
 
   # Represents the use of the `&&` operator or the `and` keyword.
-  # 
+  #
   #     left and right
   #     ^^^^^^^^^^^^^^
   class AndNode < Node
@@ -133,7 +133,7 @@ module YARP
   end
 
   # Represents a set of arguments to a method or a keyword.
-  # 
+  #
   #     return foo, bar, baz
   #            ^^^^^^^^^^^^^
   class ArgumentsNode < Node
@@ -168,7 +168,7 @@ module YARP
 
   # Represents an array literal. This can be a regular array using brackets or
   # a special array using % like %w or %i.
-  # 
+  #
   #     [1, 2, 3]
   #     ^^^^^^^^^
   class ArrayNode < Node
@@ -210,19 +210,19 @@ module YARP
   end
 
   # Represents an array pattern in pattern matching.
-  # 
+  #
   #     foo in 1, 2
   #     ^^^^^^^^^^^
-  # 
+  #
   #     foo in [1, 2]
   #     ^^^^^^^^^^^^^
-  # 
+  #
   #     foo in *1
   #     ^^^^^^^^^
-  # 
+  #
   #     foo in Bar[]
   #     ^^^^^^^^^^^^
-  # 
+  #
   #     foo in Bar[1, 2, 3]
   #     ^^^^^^^^^^^^^^^^^^^
   class ArrayPatternNode < Node
@@ -276,7 +276,7 @@ module YARP
   end
 
   # Represents a hash key/value pair.
-  # 
+  #
   #     { a => b }
   #       ^^^^^^
   class AssocNode < Node
@@ -318,7 +318,7 @@ module YARP
   end
 
   # Represents a splat in a hash literal.
-  # 
+  #
   #     { **foo }
   #       ^^^^^
   class AssocSplatNode < Node
@@ -356,7 +356,7 @@ module YARP
   end
 
   # Represents a begin statement.
-  # 
+  #
   #     begin
   #       foo
   #     end
@@ -412,7 +412,7 @@ module YARP
   end
 
   # Represents block method arguments.
-  # 
+  #
   #     bar(&args)
   #     ^^^^^^^^^^
   class BlockArgumentNode < Node
@@ -450,7 +450,7 @@ module YARP
   end
 
   # Represents a block of ruby code.
-  # 
+  #
   # [1, 2, 3].each { |i| puts x }
   #                ^^^^^^^^^^^^^^
   class BlockNode < Node
@@ -500,7 +500,7 @@ module YARP
   end
 
   # Represents a block parameter to a method, block, or lambda definition.
-  # 
+  #
   #     def a(&b)
   #           ^^
   #     end
@@ -539,10 +539,10 @@ module YARP
   end
 
   # Represents a block's parameters declaration.
-  # 
+  #
   #     -> (a, b = 1; local) { }
   #        ^^^^^^^^^^^^^^^^^
-  # 
+  #
   #     foo do |a, b = 1; local|
   #            ^^^^^^^^^^^^^^^^^
   #     end
@@ -589,7 +589,7 @@ module YARP
   end
 
   # Represents the use of the `break` keyword.
-  # 
+  #
   #     break foo
   #     ^^^^^^^^^
   class BreakNode < Node
@@ -627,22 +627,22 @@ module YARP
   end
 
   # Represents a method call, in all of the various forms that can take.
-  # 
+  #
   #     foo
   #     ^^^
-  # 
+  #
   #     foo()
   #     ^^^^^
-  # 
+  #
   #     +foo
   #     ^^^^
-  # 
+  #
   #     foo + bar
   #     ^^^^^^^^^
-  # 
+  #
   #     foo.bar
   #     ^^^^^^^
-  # 
+  #
   #     foo&.bar
   #     ^^^^^^^^
   class CallNode < Node
@@ -704,7 +704,7 @@ module YARP
   end
 
   # Represents assigning to a local variable in pattern matching.
-  # 
+  #
   #     foo => [bar => baz]
   #            ^^^^^^^^^^^^
   class CapturePatternNode < Node
@@ -746,7 +746,7 @@ module YARP
   end
 
   # Represents the use of a case statement.
-  # 
+  #
   # case true
   # ^^^^^^^^^
   # when false
@@ -798,7 +798,7 @@ module YARP
   end
 
   # Represents a class declaration involving the `class` keyword.
-  # 
+  #
   #     class Foo end
   #     ^^^^^^^^^^^^^
   class ClassNode < Node
@@ -856,7 +856,7 @@ module YARP
   end
 
   # Represents referencing a class variable.
-  # 
+  #
   #     @@foo
   #     ^^^^^
   class ClassVariableReadNode < Node
@@ -886,7 +886,7 @@ module YARP
   end
 
   # Represents writing to a class variable.
-  # 
+  #
   #     @@foo = 1
   #     ^^^^^^^^^
   class ClassVariableWriteNode < Node
@@ -928,7 +928,7 @@ module YARP
   end
 
   # Represents accessing a constant through a path of `::` operators.
-  # 
+  #
   #     Foo::Bar
   #     ^^^^^^^^
   class ConstantPathNode < Node
@@ -970,10 +970,10 @@ module YARP
   end
 
   # Represents writing to a constant.
-  # 
+  #
   #     Foo = 1
   #     ^^^^^^^
-  # 
+  #
   #     Foo::Bar = 1
   #     ^^^^^^^^^^^^
   class ConstantPathWriteNode < Node
@@ -1015,7 +1015,7 @@ module YARP
   end
 
   # Represents referencing a constant.
-  # 
+  #
   #     Foo
   #     ^^^
   class ConstantReadNode < Node
@@ -1045,7 +1045,7 @@ module YARP
   end
 
   # Represents a method definition.
-  # 
+  #
   #     def method
   #     end
   #     ^^^^^^^^^^
@@ -1120,7 +1120,7 @@ module YARP
   end
 
   # Represents the use of the `defined?` keyword.
-  # 
+  #
   #     defined?(a)
   #     ^^^^^^^^^^^
   class DefinedNode < Node
@@ -1166,7 +1166,7 @@ module YARP
   end
 
   # Represents an `else` clause in a `case`, `if`, or `unless` statement.
-  # 
+  #
   #     if a then b else c end
   #                 ^^^^^^^^^^
   class ElseNode < Node
@@ -1208,7 +1208,7 @@ module YARP
   end
 
   # Represents an `ensure` clause in a `begin` statement.
-  # 
+  #
   #     begin
   #       foo
   #     ensure
@@ -1254,7 +1254,7 @@ module YARP
   end
 
   # Represents the use of the literal `false` keyword.
-  # 
+  #
   #     false
   #     ^^^^^
   class FalseNode < Node
@@ -1284,13 +1284,13 @@ module YARP
   end
 
   # Represents a find pattern in pattern matching.
-  # 
+  #
   #     foo in *bar, baz, *qux
   #     ^^^^^^^^^^^^^^^^^^^^^^
-  # 
+  #
   #     foo in [*bar, baz, *qux]
   #     ^^^^^^^^^^^^^^^^^^^^^^^^
-  # 
+  #
   #     foo in Foo(*bar, baz, *qux)
   #     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
   class FindPatternNode < Node
@@ -1344,7 +1344,7 @@ module YARP
   end
 
   # Represents a floating point number literal.
-  # 
+  #
   #     1.0
   #     ^^^
   class FloatNode < Node
@@ -1374,7 +1374,7 @@ module YARP
   end
 
   # Represents the use of the `for` keyword.
-  # 
+  #
   #     for i in a end
   #     ^^^^^^^^^^^^^^
   class ForNode < Node
@@ -1432,7 +1432,7 @@ module YARP
   end
 
   # Represents forwarding all arguments to this method to another method.
-  # 
+  #
   #     def foo(...)
   #       bar(...)
   #       ^^^^^^^^
@@ -1464,7 +1464,7 @@ module YARP
   end
 
   # Represents the use of the forwarding parameter in a method, block, or lambda declaration.
-  # 
+  #
   #     def foo(...)
   #             ^^^
   #     end
@@ -1495,7 +1495,7 @@ module YARP
   end
 
   # Represents the use of the `super` keyword without parentheses or arguments.
-  # 
+  #
   #     super
   #     ^^^^^
   class ForwardingSuperNode < Node
@@ -1529,7 +1529,7 @@ module YARP
   end
 
   # Represents referencing a global variable.
-  # 
+  #
   #     $foo
   #     ^^^^
   class GlobalVariableReadNode < Node
@@ -1563,7 +1563,7 @@ module YARP
   end
 
   # Represents writing to a global variable.
-  # 
+  #
   #     $foo = 1
   #     ^^^^^^^^
   class GlobalVariableWriteNode < Node
@@ -1605,7 +1605,7 @@ module YARP
   end
 
   # Represents a hash literal.
-  # 
+  #
   #     { a => b }
   #     ^^^^^^^^^^
   class HashNode < Node
@@ -1647,10 +1647,10 @@ module YARP
   end
 
   # Represents a hash pattern in pattern matching.
-  # 
+  #
   #     foo => { a: 1, b: 2 }
   #            ^^^^^^^^^^^^^^
-  # 
+  #
   #     foo => { a: 1, b: 2, **c }
   #            ^^^^^^^^^^^^^^^^^^^
   class HashPatternNode < Node
@@ -1700,10 +1700,10 @@ module YARP
   end
 
   # Represents the use of the `if` keyword, either in the block form or the modifier form.
-  # 
+  #
   #     bar if foo
   #     ^^^^^^^^^^
-  # 
+  #
   #     if foo then bar end
   #     ^^^^^^^^^^^^^^^^^^^
   class IfNode < Node
@@ -1753,7 +1753,7 @@ module YARP
   end
 
   # Represents an imaginary number literal.
-  # 
+  #
   #     1.0i
   #     ^^^^
   class ImaginaryNode < Node
@@ -1787,7 +1787,7 @@ module YARP
   end
 
   # Represents the use of the `in` keyword in a case statement.
-  # 
+  #
   #     case a; in b then c end
   #             ^^^^^^^^^^^
   class InNode < Node
@@ -1833,7 +1833,7 @@ module YARP
   end
 
   # Represents referencing an instance variable.
-  # 
+  #
   #     @foo
   #     ^^^^
   class InstanceVariableReadNode < Node
@@ -1863,7 +1863,7 @@ module YARP
   end
 
   # Represents writing to an instance variable.
-  # 
+  #
   #     @foo = 1
   #     ^^^^^^^^
   class InstanceVariableWriteNode < Node
@@ -1905,7 +1905,7 @@ module YARP
   end
 
   # Represents an integer number literal.
-  # 
+  #
   #     1
   #     ^
   class IntegerNode < Node
@@ -1935,7 +1935,7 @@ module YARP
   end
 
   # Represents a regular expression literal that contains interpolation.
-  # 
+  #
   #     /foo #{bar} baz/
   #     ^^^^^^^^^^^^^^^^
   class InterpolatedRegularExpressionNode < Node
@@ -1981,7 +1981,7 @@ module YARP
   end
 
   # Represents a string literal that contains interpolation.
-  # 
+  #
   #     "foo #{bar} baz"
   #     ^^^^^^^^^^^^^^^^
   class InterpolatedStringNode < Node
@@ -2023,7 +2023,7 @@ module YARP
   end
 
   # Represents a symbol literal that contains interpolation.
-  # 
+  #
   #     :"foo #{bar} baz"
   #     ^^^^^^^^^^^^^^^^^
   class InterpolatedSymbolNode < Node
@@ -2065,7 +2065,7 @@ module YARP
   end
 
   # Represents an xstring literal that contains interpolation.
-  # 
+  #
   #     `foo #{bar} baz`
   #     ^^^^^^^^^^^^^^^^
   class InterpolatedXStringNode < Node
@@ -2107,7 +2107,7 @@ module YARP
   end
 
   # Represents a hash literal without opening and closing braces.
-  # 
+  #
   #     foo(a: b)
   #         ^^^^
   class KeywordHashNode < Node
@@ -2141,11 +2141,11 @@ module YARP
   end
 
   # Represents a keyword parameter to a method, block, or lambda definition.
-  # 
+  #
   #     def a(b:)
   #           ^^
   #     end
-  # 
+  #
   #     def a(b: 1)
   #           ^^^^
   #     end
@@ -2184,7 +2184,7 @@ module YARP
   end
 
   # Represents a keyword rest parameter to a method, block, or lambda definition.
-  # 
+  #
   #     def a(**b)
   #           ^^^
   #     end
@@ -2223,7 +2223,7 @@ module YARP
   end
 
   # Represents using a lambda literal (not the lambda method call).
-  # 
+  #
   #     ->(value) { value * 2 }
   #     ^^^^^^^^^^^^^^^^^^^^^^^
   class LambdaNode < Node
@@ -2271,7 +2271,7 @@ module YARP
   # Represents reading a local variable. Note that this requires that a local
   # variable of the same name has already been written to in the same scope,
   # otherwise it is parsed as a method call.
-  # 
+  #
   #     foo
   #     ^^^
   class LocalVariableReadNode < Node
@@ -2305,7 +2305,7 @@ module YARP
   end
 
   # Represents writing to a local variable.
-  # 
+  #
   #     foo = 1
   #     ^^^^^^^
   class LocalVariableWriteNode < Node
@@ -2351,7 +2351,7 @@ module YARP
   end
 
   # Represents the use of the modifier `in` operator.
-  # 
+  #
   #     foo in bar
   #     ^^^^^^^^^^
   class MatchPredicateNode < Node
@@ -2393,7 +2393,7 @@ module YARP
   end
 
   # Represents the use of the `=>` operator.
-  # 
+  #
   #     foo => bar
   #     ^^^^^^^^^^
   class MatchRequiredNode < Node
@@ -2463,7 +2463,7 @@ module YARP
   end
 
   # Represents a module declaration involving the `module` keyword.
-  # 
+  #
   #     module Foo end
   #     ^^^^^^^^^^^^^^
   class ModuleNode < Node
@@ -2513,7 +2513,7 @@ module YARP
   end
 
   # Represents a multi-target expression.
-  # 
+  #
   #     a, b, c = 1, 2, 3
   #     ^^^^^^^^^^^^^^^^^
   class MultiWriteNode < Node
@@ -2563,7 +2563,7 @@ module YARP
   end
 
   # Represents the use of the `next` keyword.
-  # 
+  #
   #     next 1
   #     ^^^^^^
   class NextNode < Node
@@ -2601,7 +2601,7 @@ module YARP
   end
 
   # Represents the use of the `nil` keyword.
-  # 
+  #
   #     nil
   #     ^^^
   class NilNode < Node
@@ -2631,7 +2631,7 @@ module YARP
   end
 
   # Represents the use of `**nil` inside method arguments.
-  # 
+  #
   #     def a(**nil)
   #           ^^^^^
   #     end
@@ -2670,7 +2670,7 @@ module YARP
   end
 
   # Represents the use of the `&&=` operator for assignment.
-  # 
+  #
   #     target &&= value
   #     ^^^^^^^^^^^^^^^^
   class OperatorAndAssignmentNode < Node
@@ -2712,7 +2712,7 @@ module YARP
   end
 
   # Represents assigning to a value using an operator that isn't `=`.
-  # 
+  #
   #     foo += bar
   #     ^^^^^^^^^^
   class OperatorAssignmentNode < Node
@@ -2754,7 +2754,7 @@ module YARP
   end
 
   # Represents the use of the `||=` operator for assignment.
-  # 
+  #
   #     target ||= value
   #     ^^^^^^^^^^^^^^^^
   class OperatorOrAssignmentNode < Node
@@ -2796,7 +2796,7 @@ module YARP
   end
 
   # Represents an optional parameter to a method, block, or lambda definition.
-  # 
+  #
   #     def a(b = 1)
   #           ^^^^^
   #     end
@@ -2839,7 +2839,7 @@ module YARP
   end
 
   # Represents the use of the `||` operator or the `or` keyword.
-  # 
+  #
   #     left or right
   #     ^^^^^^^^^^^^^
   class OrNode < Node
@@ -2881,7 +2881,7 @@ module YARP
   end
 
   # Represents the list of parameters on a method, block, or lambda definition.
-  # 
+  #
   #     def a(b, c, d)
   #           ^^^^^^^
   #     end
@@ -2940,7 +2940,7 @@ module YARP
   end
 
   # Represents a parentesized expression
-  # 
+  #
   #     (10 + 34)
   #     ^^^^^^^^^
   class ParenthesesNode < Node
@@ -2983,7 +2983,7 @@ module YARP
 
   # Represents the use of the `^` operator for pinning an expression in a
   # pattern matching expression.
-  # 
+  #
   #     foo in ^(bar)
   #            ^^^^^^
   class PinnedExpressionNode < Node
@@ -3030,7 +3030,7 @@ module YARP
 
   # Represents the use of the `^` operator for pinning a variable in a pattern
   # matching expression.
-  # 
+  #
   #     foo in ^bar
   #            ^^^^
   class PinnedVariableNode < Node
@@ -3068,7 +3068,7 @@ module YARP
   end
 
   # Represents the use of the `END` keyword.
-  # 
+  #
   #     END { foo }
   #     ^^^^^^^^^^^
   class PostExecutionNode < Node
@@ -3114,7 +3114,7 @@ module YARP
   end
 
   # Represents the use of the `BEGIN` keyword.
-  # 
+  #
   #     BEGIN { foo }
   #     ^^^^^^^^^^^^^
   class PreExecutionNode < Node
@@ -3195,10 +3195,10 @@ module YARP
   end
 
   # Represents the use of the `..` or `...` operators.
-  # 
+  #
   #     1..2
   #     ^^^^
-  # 
+  #
   #     c if a =~ /left/ ... b =~ /right/
   #          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   class RangeNode < Node
@@ -3240,7 +3240,7 @@ module YARP
   end
 
   # Represents a rational number literal.
-  # 
+  #
   #     1.0r
   #     ^^^^
   class RationalNode < Node
@@ -3274,7 +3274,7 @@ module YARP
   end
 
   # Represents the use of the `redo` keyword.
-  # 
+  #
   #     redo
   #     ^^^^
   class RedoNode < Node
@@ -3304,7 +3304,7 @@ module YARP
   end
 
   # Represents a regular expression literal with no interpolation.
-  # 
+  #
   #     /foo/i
   #     ^^^^^^
   class RegularExpressionNode < Node
@@ -3354,7 +3354,7 @@ module YARP
   end
 
   # Represents a destructured required parameter node.
-  # 
+  #
   #     def foo((bar, baz))
   #             ^^^^^^^^^^
   #     end
@@ -3397,7 +3397,7 @@ module YARP
   end
 
   # Represents a required parameter to a method, block, or lambda definition.
-  # 
+  #
   #     def a(b)
   #           ^
   #     end
@@ -3428,7 +3428,7 @@ module YARP
   end
 
   # Represents an expression modified with a rescue.
-  # 
+  #
   #   foo rescue nil
   #   ^^^^^^^^^^^^^^
   class RescueModifierNode < Node
@@ -3470,7 +3470,7 @@ module YARP
   end
 
   # Represents a rescue statement.
-  # 
+  #
   #     begin
   #     rescue
   #       foo
@@ -3527,7 +3527,7 @@ module YARP
   end
 
   # Represents a rest parameter to a method, block, or lambda definition.
-  # 
+  #
   #     def a(*b)
   #           ^^
   #     end
@@ -3566,7 +3566,7 @@ module YARP
   end
 
   # Represents the use of the `retry` keyword.
-  # 
+  #
   #     retry
   #     ^^^^^
   class RetryNode < Node
@@ -3596,7 +3596,7 @@ module YARP
   end
 
   # Represents the use of the `return` keyword.
-  # 
+  #
   #     return 1
   #     ^^^^^^^^
   class ReturnNode < Node
@@ -3634,7 +3634,7 @@ module YARP
   end
 
   # Represents the `self` keyword.
-  # 
+  #
   #     self
   #     ^^^^
   class SelfNode < Node
@@ -3664,7 +3664,7 @@ module YARP
   end
 
   # Represents a singleton class declaration involving the `class` keyword.
-  # 
+  #
   #     class << self end
   #     ^^^^^^^^^^^^^^^^^
   class SingletonClassNode < Node
@@ -3718,7 +3718,7 @@ module YARP
   end
 
   # Represents the use of the `__ENCODING__` keyword.
-  # 
+  #
   #     __ENCODING__
   #     ^^^^^^^^^^^^
   class SourceEncodingNode < Node
@@ -3748,7 +3748,7 @@ module YARP
   end
 
   # Represents the use of the `__FILE__` keyword.
-  # 
+  #
   #     __FILE__
   #     ^^^^^^^^
   class SourceFileNode < Node
@@ -3782,7 +3782,7 @@ module YARP
   end
 
   # Represents the use of the `__LINE__` keyword.
-  # 
+  #
   #     __LINE__
   #     ^^^^^^^^
   class SourceLineNode < Node
@@ -3812,7 +3812,7 @@ module YARP
   end
 
   # Represents the use of the splat operator.
-  # 
+  #
   #     [*a]
   #      ^^
   class SplatNode < Node
@@ -3850,7 +3850,7 @@ module YARP
   end
 
   # Represents a set of statements contained within some scope.
-  # 
+  #
   #     foo; bar; baz
   #     ^^^^^^^^^^^^^
   class StatementsNode < Node
@@ -3884,7 +3884,7 @@ module YARP
   end
 
   # Represents the use of compile-time string concatenation.
-  # 
+  #
   #     "foo" "bar"
   #     ^^^^^^^^^^^
   class StringConcatNode < Node
@@ -3922,7 +3922,7 @@ module YARP
   end
 
   # Represents an interpolated set of statements within a string.
-  # 
+  #
   #     "foo #{bar}"
   #          ^^^^^^
   class StringInterpolatedNode < Node
@@ -3965,13 +3965,13 @@ module YARP
 
   # Represents a string literal, a string contained within a `%w` list, or
   # plain string content within an interpolated string.
-  # 
+  #
   #     "foo"
   #     ^^^^^
-  # 
+  #
   #     %w[foo]
   #        ^^^
-  # 
+  #
   #     "foo #{bar} baz"
   #      ^^^^      ^^^^
   class StringNode < Node
@@ -4017,10 +4017,10 @@ module YARP
   end
 
   # Represents the use of the `super` keyword with parentheses or arguments.
-  # 
+  #
   #     super()
   #     ^^^^^^^
-  # 
+  #
   #     super foo, bar
   #     ^^^^^^^^^^^^^^
   class SuperNode < Node
@@ -4070,10 +4070,10 @@ module YARP
   end
 
   # Represents a symbol literal or a symbol contained within a `%i` list.
-  # 
+  #
   #     :foo
   #     ^^^^
-  # 
+  #
   #     %i[foo]
   #        ^^^
   class SymbolNode < Node
@@ -4119,7 +4119,7 @@ module YARP
   end
 
   # Represents the use of the literal `true` keyword.
-  # 
+  #
   #     true
   #     ^^^^
   class TrueNode < Node
@@ -4149,7 +4149,7 @@ module YARP
   end
 
   # Represents the use of the `undef` keyword.
-  # 
+  #
   #     undef :foo, :bar, :baz
   #     ^^^^^^^^^^^^^^^^^^^^^^
   class UndefNode < Node
@@ -4187,10 +4187,10 @@ module YARP
   end
 
   # Represents the use of the `unless` keyword, either in the block form or the modifier form.
-  # 
+  #
   #     bar unless foo
   #     ^^^^^^^^^^^^^^
-  # 
+  #
   #     unless foo then bar end
   #     ^^^^^^^^^^^^^^^^^^^^^^^
   class UnlessNode < Node
@@ -4240,10 +4240,10 @@ module YARP
   end
 
   # Represents the use of the `until` keyword, either in the block form or the modifier form.
-  # 
+  #
   #     bar until foo
   #     ^^^^^^^^^^^^^
-  # 
+  #
   #     until foo do bar end
   #     ^^^^^^^^^^^^^^^^^^^^
   class UntilNode < Node
@@ -4327,10 +4327,10 @@ module YARP
   end
 
   # Represents the use of the `while` keyword, either in the block form or the modifier form.
-  # 
+  #
   #     bar while foo
   #     ^^^^^^^^^^^^^
-  # 
+  #
   #     while foo do bar end
   #     ^^^^^^^^^^^^^^^^^^^^
   class WhileNode < Node
@@ -4372,7 +4372,7 @@ module YARP
   end
 
   # Represents an xstring literal with no interpolation.
-  # 
+  #
   #     `foo`
   #     ^^^^^
   class XStringNode < Node
@@ -4418,7 +4418,7 @@ module YARP
   end
 
   # Represents the use of the `yield` keyword.
-  # 
+  #
   #     yield 1
   #     ^^^^^^^
   class YieldNode < Node
