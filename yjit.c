@@ -1127,6 +1127,7 @@ VALUE rb_yjit_code_gc(rb_execution_context_t *ec, VALUE self);
 VALUE rb_yjit_simulate_oom_bang(rb_execution_context_t *ec, VALUE self);
 VALUE rb_yjit_get_exit_locations(rb_execution_context_t *ec, VALUE self);
 VALUE rb_yjit_resume(rb_execution_context_t *ec, VALUE self);
+VALUE rb_yjit_pause(rb_execution_context_t *ec, VALUE self);
 
 // Preprocessed yjit.rb generated during build
 #include "yjit.rbinc"

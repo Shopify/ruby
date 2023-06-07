@@ -160,6 +160,15 @@ pub extern "C" fn rb_yjit_resume(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
     Qnil
 }
 
+#[no_mangle]
+pub extern "C" fn rb_yjit_pause(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
+    if yjit_enabled_p() {
+        COMPILE_NEW_ISEQS.store(false, Ordering::Release);
+    }
+
+    Qnil
+}
+
 /// Simulate a situation where we are out of executable memory
 #[no_mangle]
 pub extern "C" fn rb_yjit_simulate_oom_bang(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {

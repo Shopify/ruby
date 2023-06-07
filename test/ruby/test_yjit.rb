@@ -74,6 +74,35 @@ class TestYJIT < Test::Unit::TestCase
     end
   end
 
+  def test_pause_and_resume
+    program = <<~RUBY
+      def compiled_counts = RubyVM::YJIT.runtime_stats[:compiled_iseq_count]
+      def not_compiled = nil
+      def will_compile = nil
+      def with_yjit
+        RubyVM::YJIT.resume
+        yield
+        RubyVM::YJIT.pause
+      end
+
+      counts = []
+      with_yjit(&method(:will_compile))
+      counts << compiled_counts
+
+      not_compiled
+      counts << compiled_counts
+
+      if counts[0] > 0 && counts[0] == counts[1]
+        p :ok
+      else
+        p counts
+      end
+    RUBY
+    assert_in_out_err(%w[--yjit-pause --yjit-stats --yjit-call-threshold=1], program, success: true) do |stdout, stderr|
+      assert_equal([":ok"], stdout)
+    end
+  end
+
   def test_yjit_stats_and_v_no_error
     _stdout, stderr, _status = EnvUtil.invoke_ruby(%w(-v --yjit-stats), '', true, true)
     refute_includes(stderr, "NoMethodError")
