@@ -29,9 +29,14 @@ module RubyVM::YJIT
     Primitive.rb_yjit_reset_stats_bang
   end
 
-  # Resume YJIT compilation after paused on startup with --yjit-pause
+  # Resume YJIT compilation after paused on startup with --yjit-pause or with RubyVM::YJIT.pause
   def self.resume
     Primitive.rb_yjit_resume
+  end
+
+  # Pause YJIT compilation
+  def self.pause
+    Primitive.rb_yjit_pause
   end
 
   # If --yjit-trace-exits is enabled parse the hashes from
