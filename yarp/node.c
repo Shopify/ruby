@@ -169,7 +169,7 @@ yp_node_destroy(yp_parser_t *parser, yp_node_t *node) {
             }
             break;
         case YP_NODE_BLOCK_NODE:
-            yp_token_list_free(&((yp_block_node_t *)node)->locals);
+            yp_constant_id_list_free(&((yp_block_node_t *)node)->locals);
             if (((yp_block_node_t *)node)->parameters != NULL) {
                 yp_node_destroy(parser, (yp_node_t *)((yp_block_node_t *)node)->parameters);
             }
@@ -216,7 +216,7 @@ yp_node_destroy(yp_parser_t *parser, yp_node_t *node) {
             }
             break;
         case YP_NODE_CLASS_NODE:
-            yp_token_list_free(&((yp_class_node_t *)node)->locals);
+            yp_constant_id_list_free(&((yp_class_node_t *)node)->locals);
             yp_node_destroy(parser, (yp_node_t *)((yp_class_node_t *)node)->constant_path);
             if (((yp_class_node_t *)node)->superclass != NULL) {
                 yp_node_destroy(parser, (yp_node_t *)((yp_class_node_t *)node)->superclass);
@@ -256,7 +256,7 @@ yp_node_destroy(yp_parser_t *parser, yp_node_t *node) {
             if (((yp_def_node_t *)node)->statements != NULL) {
                 yp_node_destroy(parser, (yp_node_t *)((yp_def_node_t *)node)->statements);
             }
-            yp_token_list_free(&((yp_def_node_t *)node)->locals);
+            yp_constant_id_list_free(&((yp_def_node_t *)node)->locals);
             break;
         case YP_NODE_DEFINED_NODE:
             yp_node_destroy(parser, (yp_node_t *)((yp_defined_node_t *)node)->value);
@@ -368,7 +368,7 @@ yp_node_destroy(yp_parser_t *parser, yp_node_t *node) {
         case YP_NODE_KEYWORD_REST_PARAMETER_NODE:
             break;
         case YP_NODE_LAMBDA_NODE:
-            yp_token_list_free(&((yp_lambda_node_t *)node)->locals);
+            yp_constant_id_list_free(&((yp_lambda_node_t *)node)->locals);
             if (((yp_lambda_node_t *)node)->parameters != NULL) {
                 yp_node_destroy(parser, (yp_node_t *)((yp_lambda_node_t *)node)->parameters);
             }
@@ -394,7 +394,7 @@ yp_node_destroy(yp_parser_t *parser, yp_node_t *node) {
         case YP_NODE_MISSING_NODE:
             break;
         case YP_NODE_MODULE_NODE:
-            yp_token_list_free(&((yp_module_node_t *)node)->locals);
+            yp_constant_id_list_free(&((yp_module_node_t *)node)->locals);
             yp_node_destroy(parser, (yp_node_t *)((yp_module_node_t *)node)->constant_path);
             if (((yp_module_node_t *)node)->statements != NULL) {
                 yp_node_destroy(parser, (yp_node_t *)((yp_module_node_t *)node)->statements);
@@ -467,7 +467,7 @@ yp_node_destroy(yp_parser_t *parser, yp_node_t *node) {
             yp_node_destroy(parser, (yp_node_t *)((yp_pre_execution_node_t *)node)->statements);
             break;
         case YP_NODE_PROGRAM_NODE:
-            yp_token_list_free(&((yp_program_node_t *)node)->locals);
+            yp_constant_id_list_free(&((yp_program_node_t *)node)->locals);
             yp_node_destroy(parser, (yp_node_t *)((yp_program_node_t *)node)->statements);
             break;
         case YP_NODE_RANGE_NODE:
@@ -519,7 +519,7 @@ yp_node_destroy(yp_parser_t *parser, yp_node_t *node) {
         case YP_NODE_SELF_NODE:
             break;
         case YP_NODE_SINGLETON_CLASS_NODE:
-            yp_token_list_free(&((yp_singleton_class_node_t *)node)->locals);
+            yp_constant_id_list_free(&((yp_singleton_class_node_t *)node)->locals);
             yp_node_destroy(parser, (yp_node_t *)((yp_singleton_class_node_t *)node)->expression);
             if (((yp_singleton_class_node_t *)node)->statements != NULL) {
                 yp_node_destroy(parser, (yp_node_t *)((yp_singleton_class_node_t *)node)->statements);
@@ -616,40 +616,35 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
 
     switch (node->type) {
         case YP_NODE_ALIAS_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_alias_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_alias_node_t *)node)->new_name, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_alias_node_t *)node)->old_name, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_ALTERNATION_PATTERN_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_alternation_pattern_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_alternation_pattern_node_t *)node)->left, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_alternation_pattern_node_t *)node)->right, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_AND_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_and_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_and_node_t *)node)->left, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_and_node_t *)node)->right, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_ARGUMENTS_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_arguments_node_t);
             yp_node_list_memsize(&((yp_arguments_node_t *)node)->arguments, memsize);
             break;
         }
         case YP_NODE_ARRAY_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_array_node_t);
             yp_node_list_memsize(&((yp_array_node_t *)node)->elements, memsize);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_ARRAY_PATTERN_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_array_pattern_node_t);
             if (((yp_array_pattern_node_t *)node)->constant != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_array_pattern_node_t *)node)->constant, memsize);
             }
@@ -658,30 +653,25 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
                 yp_node_memsize_node((yp_node_t *)((yp_array_pattern_node_t *)node)->rest, memsize);
             }
             yp_node_list_memsize(&((yp_array_pattern_node_t *)node)->posts, memsize);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_ASSOC_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_assoc_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_assoc_node_t *)node)->key, memsize);
             if (((yp_assoc_node_t *)node)->value != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_assoc_node_t *)node)->value, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_ASSOC_SPLAT_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_assoc_splat_node_t);
             if (((yp_assoc_splat_node_t *)node)->value != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_assoc_splat_node_t *)node)->value, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_BEGIN_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_begin_node_t);
             if (((yp_begin_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_begin_node_t *)node)->statements, memsize);
             }
@@ -694,56 +684,47 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             if (((yp_begin_node_t *)node)->ensure_clause != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_begin_node_t *)node)->ensure_clause, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_BLOCK_ARGUMENT_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_block_argument_node_t);
             if (((yp_block_argument_node_t *)node)->expression != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_block_argument_node_t *)node)->expression, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_BLOCK_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += yp_token_list_memsize(&((yp_block_node_t *)node)->locals);
+            memsize->memsize += sizeof(yp_block_node_t);
+            memsize->memsize += yp_constant_id_list_memsize(&((yp_block_node_t *)node)->locals);
             if (((yp_block_node_t *)node)->parameters != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_block_node_t *)node)->parameters, memsize);
             }
             if (((yp_block_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_block_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_BLOCK_PARAMETER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_block_parameter_node_t);
             break;
         }
         case YP_NODE_BLOCK_PARAMETERS_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_block_parameters_node_t);
             if (((yp_block_parameters_node_t *)node)->parameters != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_block_parameters_node_t *)node)->parameters, memsize);
             }
             memsize->memsize += yp_token_list_memsize(&((yp_block_parameters_node_t *)node)->locals);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_BREAK_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_break_node_t);
             if (((yp_break_node_t *)node)->arguments != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_break_node_t *)node)->arguments, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_CALL_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_call_node_t);
             if (((yp_call_node_t *)node)->receiver != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_call_node_t *)node)->receiver, memsize);
             }
@@ -757,14 +738,13 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             break;
         }
         case YP_NODE_CAPTURE_PATTERN_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_capture_pattern_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_capture_pattern_node_t *)node)->value, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_capture_pattern_node_t *)node)->target, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_CASE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_case_node_t);
             if (((yp_case_node_t *)node)->predicate != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_case_node_t *)node)->predicate, memsize);
             }
@@ -772,63 +752,53 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             if (((yp_case_node_t *)node)->consequent != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_case_node_t *)node)->consequent, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_CLASS_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += yp_token_list_memsize(&((yp_class_node_t *)node)->locals);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_class_node_t);
+            memsize->memsize += yp_constant_id_list_memsize(&((yp_class_node_t *)node)->locals);
             yp_node_memsize_node((yp_node_t *)((yp_class_node_t *)node)->constant_path, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             if (((yp_class_node_t *)node)->superclass != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_class_node_t *)node)->superclass, memsize);
             }
             if (((yp_class_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_class_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_CLASS_VARIABLE_READ_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_class_variable_read_node_t);
             break;
         }
         case YP_NODE_CLASS_VARIABLE_WRITE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_class_variable_write_node_t);
             if (((yp_class_variable_write_node_t *)node)->value != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_class_variable_write_node_t *)node)->value, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_CONSTANT_PATH_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_constant_path_node_t);
             if (((yp_constant_path_node_t *)node)->parent != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_constant_path_node_t *)node)->parent, memsize);
             }
             yp_node_memsize_node((yp_node_t *)((yp_constant_path_node_t *)node)->child, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_CONSTANT_PATH_WRITE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_constant_path_write_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_constant_path_write_node_t *)node)->target, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             if (((yp_constant_path_write_node_t *)node)->value != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_constant_path_write_node_t *)node)->value, memsize);
             }
             break;
         }
         case YP_NODE_CONSTANT_READ_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_constant_read_node_t);
             break;
         }
         case YP_NODE_DEF_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_def_node_t);
             if (((yp_def_node_t *)node)->receiver != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_def_node_t *)node)->receiver, memsize);
             }
@@ -838,110 +808,88 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             if (((yp_def_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_def_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += yp_token_list_memsize(&((yp_def_node_t *)node)->locals);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += yp_constant_id_list_memsize(&((yp_def_node_t *)node)->locals);
             break;
         }
         case YP_NODE_DEFINED_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_defined_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_defined_node_t *)node)->value, memsize);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_ELSE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_else_node_t);
             if (((yp_else_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_else_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_ENSURE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_ensure_node_t);
             if (((yp_ensure_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_ensure_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_FALSE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_false_node_t);
             break;
         }
         case YP_NODE_FIND_PATTERN_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_find_pattern_node_t);
             if (((yp_find_pattern_node_t *)node)->constant != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_find_pattern_node_t *)node)->constant, memsize);
             }
             yp_node_memsize_node((yp_node_t *)((yp_find_pattern_node_t *)node)->left, memsize);
             yp_node_list_memsize(&((yp_find_pattern_node_t *)node)->requireds, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_find_pattern_node_t *)node)->right, memsize);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_FLOAT_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_float_node_t);
             break;
         }
         case YP_NODE_FOR_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_for_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_for_node_t *)node)->index, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_for_node_t *)node)->collection, memsize);
             if (((yp_for_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_for_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_FORWARDING_ARGUMENTS_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_forwarding_arguments_node_t);
             break;
         }
         case YP_NODE_FORWARDING_PARAMETER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_forwarding_parameter_node_t);
             break;
         }
         case YP_NODE_FORWARDING_SUPER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_forwarding_super_node_t);
             if (((yp_forwarding_super_node_t *)node)->block != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_forwarding_super_node_t *)node)->block, memsize);
             }
             break;
         }
         case YP_NODE_GLOBAL_VARIABLE_READ_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_global_variable_read_node_t);
             break;
         }
         case YP_NODE_GLOBAL_VARIABLE_WRITE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_global_variable_write_node_t);
             if (((yp_global_variable_write_node_t *)node)->value != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_global_variable_write_node_t *)node)->value, memsize);
             }
             break;
         }
         case YP_NODE_HASH_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_hash_node_t);
             yp_node_list_memsize(&((yp_hash_node_t *)node)->elements, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_HASH_PATTERN_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_hash_pattern_node_t);
             if (((yp_hash_pattern_node_t *)node)->constant != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_hash_pattern_node_t *)node)->constant, memsize);
             }
@@ -949,13 +897,10 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             if (((yp_hash_pattern_node_t *)node)->kwrest != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_hash_pattern_node_t *)node)->kwrest, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_IF_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_if_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_if_node_t *)node)->predicate, memsize);
             if (((yp_if_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_if_node_t *)node)->statements, memsize);
@@ -963,91 +908,75 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             if (((yp_if_node_t *)node)->consequent != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_if_node_t *)node)->consequent, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_IMAGINARY_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_imaginary_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_imaginary_node_t *)node)->numeric, memsize);
             break;
         }
         case YP_NODE_IN_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_in_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_in_node_t *)node)->pattern, memsize);
             if (((yp_in_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_in_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_INSTANCE_VARIABLE_READ_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_instance_variable_read_node_t);
             break;
         }
         case YP_NODE_INSTANCE_VARIABLE_WRITE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_instance_variable_write_node_t);
             if (((yp_instance_variable_write_node_t *)node)->value != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_instance_variable_write_node_t *)node)->value, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_INTEGER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_integer_node_t);
             break;
         }
         case YP_NODE_INTERPOLATED_REGULAR_EXPRESSION_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_interpolated_regular_expression_node_t);
             yp_node_list_memsize(&((yp_interpolated_regular_expression_node_t *)node)->parts, memsize);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(uint32_t);
             break;
         }
         case YP_NODE_INTERPOLATED_STRING_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_interpolated_string_node_t);
             yp_node_list_memsize(&((yp_interpolated_string_node_t *)node)->parts, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_INTERPOLATED_SYMBOL_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_interpolated_symbol_node_t);
             yp_node_list_memsize(&((yp_interpolated_symbol_node_t *)node)->parts, memsize);
             break;
         }
         case YP_NODE_INTERPOLATED_X_STRING_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_interpolated_x_string_node_t);
             yp_node_list_memsize(&((yp_interpolated_x_string_node_t *)node)->parts, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_KEYWORD_HASH_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_keyword_hash_node_t);
             yp_node_list_memsize(&((yp_keyword_hash_node_t *)node)->elements, memsize);
             break;
         }
         case YP_NODE_KEYWORD_PARAMETER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_keyword_parameter_node_t);
             if (((yp_keyword_parameter_node_t *)node)->value != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_keyword_parameter_node_t *)node)->value, memsize);
             }
             break;
         }
         case YP_NODE_KEYWORD_REST_PARAMETER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_keyword_rest_parameter_node_t);
             break;
         }
         case YP_NODE_LAMBDA_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += yp_token_list_memsize(&((yp_lambda_node_t *)node)->locals);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_lambda_node_t);
+            memsize->memsize += yp_constant_id_list_memsize(&((yp_lambda_node_t *)node)->locals);
             if (((yp_lambda_node_t *)node)->parameters != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_lambda_node_t *)node)->parameters, memsize);
             }
@@ -1057,114 +986,95 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             break;
         }
         case YP_NODE_LOCAL_VARIABLE_READ_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(uint32_t);
+            memsize->memsize += sizeof(yp_local_variable_read_node_t);
             break;
         }
         case YP_NODE_LOCAL_VARIABLE_WRITE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_local_variable_write_node_t);
             if (((yp_local_variable_write_node_t *)node)->value != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_local_variable_write_node_t *)node)->value, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(uint32_t);
             break;
         }
         case YP_NODE_MATCH_PREDICATE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_match_predicate_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_match_predicate_node_t *)node)->value, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_match_predicate_node_t *)node)->pattern, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_MATCH_REQUIRED_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_match_required_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_match_required_node_t *)node)->value, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_match_required_node_t *)node)->pattern, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_MISSING_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_missing_node_t);
             break;
         }
         case YP_NODE_MODULE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += yp_token_list_memsize(&((yp_module_node_t *)node)->locals);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_module_node_t);
+            memsize->memsize += yp_constant_id_list_memsize(&((yp_module_node_t *)node)->locals);
             yp_node_memsize_node((yp_node_t *)((yp_module_node_t *)node)->constant_path, memsize);
             if (((yp_module_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_module_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_MULTI_WRITE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_multi_write_node_t);
             yp_node_list_memsize(&((yp_multi_write_node_t *)node)->targets, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             if (((yp_multi_write_node_t *)node)->value != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_multi_write_node_t *)node)->value, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_NEXT_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_next_node_t);
             if (((yp_next_node_t *)node)->arguments != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_next_node_t *)node)->arguments, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_NIL_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_nil_node_t);
             break;
         }
         case YP_NODE_NO_KEYWORDS_PARAMETER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_no_keywords_parameter_node_t);
             break;
         }
         case YP_NODE_OPERATOR_AND_ASSIGNMENT_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_operator_and_assignment_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_operator_and_assignment_node_t *)node)->target, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_operator_and_assignment_node_t *)node)->value, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_OPERATOR_ASSIGNMENT_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_operator_assignment_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_operator_assignment_node_t *)node)->target, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_operator_assignment_node_t *)node)->value, memsize);
             break;
         }
         case YP_NODE_OPERATOR_OR_ASSIGNMENT_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_operator_or_assignment_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_operator_or_assignment_node_t *)node)->target, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_operator_or_assignment_node_t *)node)->value, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_OPTIONAL_PARAMETER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_optional_parameter_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_optional_parameter_node_t *)node)->value, memsize);
             break;
         }
         case YP_NODE_OR_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_or_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_or_node_t *)node)->left, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_or_node_t *)node)->right, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_PARAMETERS_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_parameters_node_t);
             yp_node_list_memsize(&((yp_parameters_node_t *)node)->requireds, memsize);
             yp_node_list_memsize(&((yp_parameters_node_t *)node)->optionals, memsize);
             yp_node_list_memsize(&((yp_parameters_node_t *)node)->posts, memsize);
@@ -1181,102 +1091,80 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             break;
         }
         case YP_NODE_PARENTHESES_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_parentheses_node_t);
             if (((yp_parentheses_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_parentheses_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_PINNED_EXPRESSION_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_pinned_expression_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_pinned_expression_node_t *)node)->expression, memsize);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_PINNED_VARIABLE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_pinned_variable_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_pinned_variable_node_t *)node)->variable, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_POST_EXECUTION_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_post_execution_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_post_execution_node_t *)node)->statements, memsize);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_PRE_EXECUTION_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_pre_execution_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_pre_execution_node_t *)node)->statements, memsize);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_PROGRAM_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += yp_token_list_memsize(&((yp_program_node_t *)node)->locals);
+            memsize->memsize += sizeof(yp_program_node_t);
+            memsize->memsize += yp_constant_id_list_memsize(&((yp_program_node_t *)node)->locals);
             yp_node_memsize_node((yp_node_t *)((yp_program_node_t *)node)->statements, memsize);
             break;
         }
         case YP_NODE_RANGE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_range_node_t);
             if (((yp_range_node_t *)node)->left != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_range_node_t *)node)->left, memsize);
             }
             if (((yp_range_node_t *)node)->right != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_range_node_t *)node)->right, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_RATIONAL_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_rational_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_rational_node_t *)node)->numeric, memsize);
             break;
         }
         case YP_NODE_REDO_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_redo_node_t);
             break;
         }
         case YP_NODE_REGULAR_EXPRESSION_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_regular_expression_node_t);
             memsize->memsize += yp_string_memsize(&((yp_regular_expression_node_t *)node)->unescaped);
-            memsize->memsize += sizeof(uint32_t);
             break;
         }
         case YP_NODE_REQUIRED_DESTRUCTURED_PARAMETER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_required_destructured_parameter_node_t);
             yp_node_list_memsize(&((yp_required_destructured_parameter_node_t *)node)->parameters, memsize);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_REQUIRED_PARAMETER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_required_parameter_node_t);
             break;
         }
         case YP_NODE_RESCUE_MODIFIER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_rescue_modifier_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_rescue_modifier_node_t *)node)->expression, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             yp_node_memsize_node((yp_node_t *)((yp_rescue_modifier_node_t *)node)->rescue_expression, memsize);
             break;
         }
         case YP_NODE_RESCUE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_rescue_node_t);
             yp_node_list_memsize(&((yp_rescue_node_t *)node)->exceptions, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             if (((yp_rescue_node_t *)node)->exception != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_rescue_node_t *)node)->exception, memsize);
             }
@@ -1289,119 +1177,102 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             break;
         }
         case YP_NODE_REST_PARAMETER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_rest_parameter_node_t);
             break;
         }
         case YP_NODE_RETRY_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_retry_node_t);
             break;
         }
         case YP_NODE_RETURN_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_return_node_t);
             if (((yp_return_node_t *)node)->arguments != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_return_node_t *)node)->arguments, memsize);
             }
             break;
         }
         case YP_NODE_SELF_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_self_node_t);
             break;
         }
         case YP_NODE_SINGLETON_CLASS_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += yp_token_list_memsize(&((yp_singleton_class_node_t *)node)->locals);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_singleton_class_node_t);
+            memsize->memsize += yp_constant_id_list_memsize(&((yp_singleton_class_node_t *)node)->locals);
             yp_node_memsize_node((yp_node_t *)((yp_singleton_class_node_t *)node)->expression, memsize);
             if (((yp_singleton_class_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_singleton_class_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_SOURCE_ENCODING_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_source_encoding_node_t);
             break;
         }
         case YP_NODE_SOURCE_FILE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_source_file_node_t);
             memsize->memsize += yp_string_memsize(&((yp_source_file_node_t *)node)->filepath);
             break;
         }
         case YP_NODE_SOURCE_LINE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_source_line_node_t);
             break;
         }
         case YP_NODE_SPLAT_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_splat_node_t);
             if (((yp_splat_node_t *)node)->expression != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_splat_node_t *)node)->expression, memsize);
             }
             break;
         }
         case YP_NODE_STATEMENTS_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_statements_node_t);
             yp_node_list_memsize(&((yp_statements_node_t *)node)->body, memsize);
             break;
         }
         case YP_NODE_STRING_CONCAT_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_string_concat_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_string_concat_node_t *)node)->left, memsize);
             yp_node_memsize_node((yp_node_t *)((yp_string_concat_node_t *)node)->right, memsize);
             break;
         }
         case YP_NODE_STRING_INTERPOLATED_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_string_interpolated_node_t);
             if (((yp_string_interpolated_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_string_interpolated_node_t *)node)->statements, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_STRING_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_string_node_t);
             memsize->memsize += yp_string_memsize(&((yp_string_node_t *)node)->unescaped);
             break;
         }
         case YP_NODE_SUPER_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_super_node_t);
             if (((yp_super_node_t *)node)->arguments != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_super_node_t *)node)->arguments, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             if (((yp_super_node_t *)node)->block != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_super_node_t *)node)->block, memsize);
             }
             break;
         }
         case YP_NODE_SYMBOL_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_symbol_node_t);
             memsize->memsize += yp_string_memsize(&((yp_symbol_node_t *)node)->unescaped);
             break;
         }
         case YP_NODE_TRUE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_true_node_t);
             break;
         }
         case YP_NODE_UNDEF_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
+            memsize->memsize += sizeof(yp_undef_node_t);
             yp_node_list_memsize(&((yp_undef_node_t *)node)->names, memsize);
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_UNLESS_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_unless_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_unless_node_t *)node)->predicate, memsize);
             if (((yp_unless_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_unless_node_t *)node)->statements, memsize);
@@ -1409,12 +1280,10 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             if (((yp_unless_node_t *)node)->consequent != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_unless_node_t *)node)->consequent, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
         case YP_NODE_UNTIL_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_until_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_until_node_t *)node)->predicate, memsize);
             if (((yp_until_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_until_node_t *)node)->statements, memsize);
@@ -1422,8 +1291,7 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             break;
         }
         case YP_NODE_WHEN_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_when_node_t);
             yp_node_list_memsize(&((yp_when_node_t *)node)->conditions, memsize);
             if (((yp_when_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_when_node_t *)node)->statements, memsize);
@@ -1431,8 +1299,7 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             break;
         }
         case YP_NODE_WHILE_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_while_node_t);
             yp_node_memsize_node((yp_node_t *)((yp_while_node_t *)node)->predicate, memsize);
             if (((yp_while_node_t *)node)->statements != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_while_node_t *)node)->statements, memsize);
@@ -1440,21 +1307,15 @@ yp_node_memsize_node(yp_node_t *node, yp_memsize_t *memsize) {
             break;
         }
         case YP_NODE_X_STRING_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_x_string_node_t);
             memsize->memsize += yp_string_memsize(&((yp_x_string_node_t *)node)->unescaped);
             break;
         }
         case YP_NODE_YIELD_NODE: {
-            memsize->memsize += sizeof(yp_node_t);
-            memsize->memsize += sizeof(yp_location_t);
-            memsize->memsize += sizeof(yp_location_t);
+            memsize->memsize += sizeof(yp_yield_node_t);
             if (((yp_yield_node_t *)node)->arguments != NULL) {
                 yp_node_memsize_node((yp_node_t *)((yp_yield_node_t *)node)->arguments, memsize);
             }
-            memsize->memsize += sizeof(yp_location_t);
             break;
         }
     }

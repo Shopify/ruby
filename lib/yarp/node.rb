@@ -454,7 +454,7 @@ module YARP
   # [1, 2, 3].each { |i| puts x }
   #                ^^^^^^^^^^^^^^
   class BlockNode < Node
-    # attr_reader locals: Array[Token]
+    # attr_reader locals: Array[Symbol]
     attr_reader :locals
 
     # attr_reader parameters: Node?
@@ -469,7 +469,7 @@ module YARP
     # attr_reader closing_loc: Location
     attr_reader :closing_loc
 
-    # def initialize: (locals: Array[Token], parameters: Node?, statements: Node?, opening_loc: Location, closing_loc: Location, start_offset: Integer, length: Integer) -> void
+    # def initialize: (locals: Array[Symbol], parameters: Node?, statements: Node?, opening_loc: Location, closing_loc: Location, start_offset: Integer, length: Integer) -> void
     def initialize(locals, parameters, statements, opening_loc, closing_loc, start_offset, length)
       @locals = locals
       @parameters = parameters
@@ -802,7 +802,7 @@ module YARP
   #     class Foo end
   #     ^^^^^^^^^^^^^
   class ClassNode < Node
-    # attr_reader locals: Array[Token]
+    # attr_reader locals: Array[Symbol]
     attr_reader :locals
 
     # attr_reader class_keyword_loc: Location
@@ -823,7 +823,7 @@ module YARP
     # attr_reader end_keyword_loc: Location
     attr_reader :end_keyword_loc
 
-    # def initialize: (locals: Array[Token], class_keyword_loc: Location, constant_path: Node, inheritance_operator_loc: Location?, superclass: Node?, statements: Node?, end_keyword_loc: Location, start_offset: Integer, length: Integer) -> void
+    # def initialize: (locals: Array[Symbol], class_keyword_loc: Location, constant_path: Node, inheritance_operator_loc: Location?, superclass: Node?, statements: Node?, end_keyword_loc: Location, start_offset: Integer, length: Integer) -> void
     def initialize(locals, class_keyword_loc, constant_path, inheritance_operator_loc, superclass, statements, end_keyword_loc, start_offset, length)
       @locals = locals
       @class_keyword_loc = class_keyword_loc
@@ -1062,7 +1062,7 @@ module YARP
     # attr_reader statements: Node?
     attr_reader :statements
 
-    # attr_reader locals: Array[Token]
+    # attr_reader locals: Array[Symbol]
     attr_reader :locals
 
     # attr_reader def_keyword_loc: Location
@@ -1083,7 +1083,7 @@ module YARP
     # attr_reader end_keyword_loc: Location?
     attr_reader :end_keyword_loc
 
-    # def initialize: (name_loc: Location, receiver: Node?, parameters: Node?, statements: Node?, locals: Array[Token], def_keyword_loc: Location, operator_loc: Location?, lparen_loc: Location?, rparen_loc: Location?, equal_loc: Location?, end_keyword_loc: Location?, start_offset: Integer, length: Integer) -> void
+    # def initialize: (name_loc: Location, receiver: Node?, parameters: Node?, statements: Node?, locals: Array[Symbol], def_keyword_loc: Location, operator_loc: Location?, lparen_loc: Location?, rparen_loc: Location?, equal_loc: Location?, end_keyword_loc: Location?, start_offset: Integer, length: Integer) -> void
     def initialize(name_loc, receiver, parameters, statements, locals, def_keyword_loc, operator_loc, lparen_loc, rparen_loc, equal_loc, end_keyword_loc, start_offset, length)
       @name_loc = name_loc
       @receiver = receiver
@@ -2227,7 +2227,7 @@ module YARP
   #     ->(value) { value * 2 }
   #     ^^^^^^^^^^^^^^^^^^^^^^^
   class LambdaNode < Node
-    # attr_reader locals: Array[Token]
+    # attr_reader locals: Array[Symbol]
     attr_reader :locals
 
     # attr_reader opening_loc: Location
@@ -2239,7 +2239,7 @@ module YARP
     # attr_reader statements: Node?
     attr_reader :statements
 
-    # def initialize: (locals: Array[Token], opening_loc: Location, parameters: Node?, statements: Node?, start_offset: Integer, length: Integer) -> void
+    # def initialize: (locals: Array[Symbol], opening_loc: Location, parameters: Node?, statements: Node?, start_offset: Integer, length: Integer) -> void
     def initialize(locals, opening_loc, parameters, statements, start_offset, length)
       @locals = locals
       @opening_loc = opening_loc
@@ -2275,11 +2275,15 @@ module YARP
   #     foo
   #     ^^^
   class LocalVariableReadNode < Node
+    # attr_reader constant_id: Symbol
+    attr_reader :constant_id
+
     # attr_reader depth: Integer
     attr_reader :depth
 
-    # def initialize: (depth: Integer, start_offset: Integer, length: Integer) -> void
-    def initialize(depth, start_offset, length)
+    # def initialize: (constant_id: Symbol, depth: Integer, start_offset: Integer, length: Integer) -> void
+    def initialize(constant_id, depth, start_offset, length)
+      @constant_id = constant_id
       @depth = depth
       @start_offset = start_offset
       @length = length
@@ -2300,7 +2304,7 @@ module YARP
 
     # def deconstruct_keys: (keys: Array[Symbol]) -> Hash[Symbol, nil | Node | Array[Node] | String | Token | Array[Token] | Location]
     def deconstruct_keys(keys)
-      { depth: depth, location: location }
+      { constant_id: constant_id, depth: depth, location: location }
     end
   end
 
@@ -2309,24 +2313,28 @@ module YARP
   #     foo = 1
   #     ^^^^^^^
   class LocalVariableWriteNode < Node
-    # attr_reader name_loc: Location
-    attr_reader :name_loc
-
-    # attr_reader value: Node?
-    attr_reader :value
-
-    # attr_reader operator_loc: Location?
-    attr_reader :operator_loc
+    # attr_reader constant_id: Symbol
+    attr_reader :constant_id
 
     # attr_reader depth: Integer
     attr_reader :depth
 
-    # def initialize: (name_loc: Location, value: Node?, operator_loc: Location?, depth: Integer, start_offset: Integer, length: Integer) -> void
-    def initialize(name_loc, value, operator_loc, depth, start_offset, length)
-      @name_loc = name_loc
-      @value = value
-      @operator_loc = operator_loc
+    # attr_reader value: Node?
+    attr_reader :value
+
+    # attr_reader name_loc: Location
+    attr_reader :name_loc
+
+    # attr_reader operator_loc: Location?
+    attr_reader :operator_loc
+
+    # def initialize: (constant_id: Symbol, depth: Integer, value: Node?, name_loc: Location, operator_loc: Location?, start_offset: Integer, length: Integer) -> void
+    def initialize(constant_id, depth, value, name_loc, operator_loc, start_offset, length)
+      @constant_id = constant_id
       @depth = depth
+      @value = value
+      @name_loc = name_loc
+      @operator_loc = operator_loc
       @start_offset = start_offset
       @length = length
     end
@@ -2346,7 +2354,7 @@ module YARP
 
     # def deconstruct_keys: (keys: Array[Symbol]) -> Hash[Symbol, nil | Node | Array[Node] | String | Token | Array[Token] | Location]
     def deconstruct_keys(keys)
-      { name_loc: name_loc, value: value, operator_loc: operator_loc, depth: depth, location: location }
+      { constant_id: constant_id, depth: depth, value: value, name_loc: name_loc, operator_loc: operator_loc, location: location }
     end
   end
 
@@ -2467,7 +2475,7 @@ module YARP
   #     module Foo end
   #     ^^^^^^^^^^^^^^
   class ModuleNode < Node
-    # attr_reader locals: Array[Token]
+    # attr_reader locals: Array[Symbol]
     attr_reader :locals
 
     # attr_reader module_keyword_loc: Location
@@ -2482,7 +2490,7 @@ module YARP
     # attr_reader end_keyword_loc: Location
     attr_reader :end_keyword_loc
 
-    # def initialize: (locals: Array[Token], module_keyword_loc: Location, constant_path: Node, statements: Node?, end_keyword_loc: Location, start_offset: Integer, length: Integer) -> void
+    # def initialize: (locals: Array[Symbol], module_keyword_loc: Location, constant_path: Node, statements: Node?, end_keyword_loc: Location, start_offset: Integer, length: Integer) -> void
     def initialize(locals, module_keyword_loc, constant_path, statements, end_keyword_loc, start_offset, length)
       @locals = locals
       @module_keyword_loc = module_keyword_loc
@@ -2801,6 +2809,9 @@ module YARP
   #           ^^^^^
   #     end
   class OptionalParameterNode < Node
+    # attr_reader constant_id: Symbol
+    attr_reader :constant_id
+
     # attr_reader name_loc: Location
     attr_reader :name_loc
 
@@ -2810,8 +2821,9 @@ module YARP
     # attr_reader value: Node
     attr_reader :value
 
-    # def initialize: (name_loc: Location, operator_loc: Location, value: Node, start_offset: Integer, length: Integer) -> void
-    def initialize(name_loc, operator_loc, value, start_offset, length)
+    # def initialize: (constant_id: Symbol, name_loc: Location, operator_loc: Location, value: Node, start_offset: Integer, length: Integer) -> void
+    def initialize(constant_id, name_loc, operator_loc, value, start_offset, length)
+      @constant_id = constant_id
       @name_loc = name_loc
       @operator_loc = operator_loc
       @value = value
@@ -2834,7 +2846,7 @@ module YARP
 
     # def deconstruct_keys: (keys: Array[Symbol]) -> Hash[Symbol, nil | Node | Array[Node] | String | Token | Array[Token] | Location]
     def deconstruct_keys(keys)
-      { name_loc: name_loc, operator_loc: operator_loc, value: value, location: location }
+      { constant_id: constant_id, name_loc: name_loc, operator_loc: operator_loc, value: value, location: location }
     end
   end
 
@@ -3161,13 +3173,13 @@ module YARP
 
   # The top level node of any parse tree.
   class ProgramNode < Node
-    # attr_reader locals: Array[Token]
+    # attr_reader locals: Array[Symbol]
     attr_reader :locals
 
     # attr_reader statements: Node
     attr_reader :statements
 
-    # def initialize: (locals: Array[Token], statements: Node, start_offset: Integer, length: Integer) -> void
+    # def initialize: (locals: Array[Symbol], statements: Node, start_offset: Integer, length: Integer) -> void
     def initialize(locals, statements, start_offset, length)
       @locals = locals
       @statements = statements
@@ -3402,8 +3414,12 @@ module YARP
   #           ^
   #     end
   class RequiredParameterNode < Node
-    # def initialize: (start_offset: Integer, length: Integer) -> void
-    def initialize(start_offset, length)
+    # attr_reader constant_id: Symbol
+    attr_reader :constant_id
+
+    # def initialize: (constant_id: Symbol, start_offset: Integer, length: Integer) -> void
+    def initialize(constant_id, start_offset, length)
+      @constant_id = constant_id
       @start_offset = start_offset
       @length = length
     end
@@ -3423,7 +3439,7 @@ module YARP
 
     # def deconstruct_keys: (keys: Array[Symbol]) -> Hash[Symbol, nil | Node | Array[Node] | String | Token | Array[Token] | Location]
     def deconstruct_keys(keys)
-      { location: location }
+      { constant_id: constant_id, location: location }
     end
   end
 
@@ -3668,7 +3684,7 @@ module YARP
   #     class << self end
   #     ^^^^^^^^^^^^^^^^^
   class SingletonClassNode < Node
-    # attr_reader locals: Array[Token]
+    # attr_reader locals: Array[Symbol]
     attr_reader :locals
 
     # attr_reader class_keyword_loc: Location
@@ -3686,7 +3702,7 @@ module YARP
     # attr_reader end_keyword_loc: Location
     attr_reader :end_keyword_loc
 
-    # def initialize: (locals: Array[Token], class_keyword_loc: Location, operator_loc: Location, expression: Node, statements: Node?, end_keyword_loc: Location, start_offset: Integer, length: Integer) -> void
+    # def initialize: (locals: Array[Symbol], class_keyword_loc: Location, operator_loc: Location, expression: Node, statements: Node?, end_keyword_loc: Location, start_offset: Integer, length: Integer) -> void
     def initialize(locals, class_keyword_loc, operator_loc, expression, statements, end_keyword_loc, start_offset, length)
       @locals = locals
       @class_keyword_loc = class_keyword_loc
@@ -5060,13 +5076,13 @@ module YARP
     end
 
     # Create a new LocalVariableReadNode node
-    def LocalVariableReadNode(depth)
-      LocalVariableReadNode.new(depth, 0, 0)
+    def LocalVariableReadNode(constant_id, depth)
+      LocalVariableReadNode.new(constant_id, depth, 0, 0)
     end
 
     # Create a new LocalVariableWriteNode node
-    def LocalVariableWriteNode(name_loc, value, operator_loc, depth)
-      LocalVariableWriteNode.new(name_loc, value, operator_loc, depth, 0, 0)
+    def LocalVariableWriteNode(constant_id, depth, value, name_loc, operator_loc)
+      LocalVariableWriteNode.new(constant_id, depth, value, name_loc, operator_loc, 0, 0)
     end
 
     # Create a new MatchPredicateNode node
@@ -5125,8 +5141,8 @@ module YARP
     end
 
     # Create a new OptionalParameterNode node
-    def OptionalParameterNode(name_loc, operator_loc, value)
-      OptionalParameterNode.new(name_loc, operator_loc, value, 0, 0)
+    def OptionalParameterNode(constant_id, name_loc, operator_loc, value)
+      OptionalParameterNode.new(constant_id, name_loc, operator_loc, value, 0, 0)
     end
 
     # Create a new OrNode node
@@ -5195,8 +5211,8 @@ module YARP
     end
 
     # Create a new RequiredParameterNode node
-    def RequiredParameterNode()
-      RequiredParameterNode.new(0, 0)
+    def RequiredParameterNode(constant_id)
+      RequiredParameterNode.new(constant_id, 0, 0)
     end
 
     # Create a new RescueModifierNode node

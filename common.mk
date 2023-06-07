@@ -162,7 +162,9 @@ COMMONOBJS    = array.$(OBJEXT) \
 		$(BUILTIN_TRANSOBJS) \
 		$(MISSING)
 
-YARP_FILES = yarp/compile.$(OBJEXT) \
+YARP_FILES = yarp/api_node.$(OBJEXT) \
+		yarp/api_pack.$(OBJEXT) \
+		yarp/compile.$(OBJEXT) \
 		yarp/diagnostic.$(OBJEXT) \
 		yarp/enc/ascii.$(OBJEXT) \
 		yarp/enc/big5.$(OBJEXT) \
@@ -189,8 +191,6 @@ YARP_FILES = yarp/compile.$(OBJEXT) \
 		yarp/enc/windows_1252.$(OBJEXT) \
 		yarp/enc/windows_31j.$(OBJEXT) \
 		yarp/missing.$(OBJEXT) \
-		yarp/api_node.$(OBJEXT) \
-		yarp/api_pack.$(OBJEXT) \
 		yarp/node.$(OBJEXT) \
 		yarp/pack.$(OBJEXT) \
 		yarp/prettyprint.$(OBJEXT) \
@@ -200,6 +200,7 @@ YARP_FILES = yarp/compile.$(OBJEXT) \
 		yarp/unescape.$(OBJEXT) \
 		yarp/util/yp_buffer.$(OBJEXT) \
 		yarp/util/yp_char.$(OBJEXT) \
+		yarp/util/yp_constant_pool.$(OBJEXT) \
 		yarp/util/yp_conversion.$(OBJEXT) \
 		yarp/util/yp_list.$(OBJEXT) \
 		yarp/util/yp_state_stack.$(OBJEXT) \

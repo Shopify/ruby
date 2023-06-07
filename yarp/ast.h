@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "yarp/util/yp_constant_pool.h"
 #include "yarp/util/yp_string.h"
 
 // This enum represents every type of token in the Ruby source.
@@ -412,7 +413,7 @@ typedef struct yp_block_argument_node {
 // BlockNode
 typedef struct yp_block_node {
     yp_node_t base;
-    yp_token_list_t locals;
+    yp_constant_id_list_t locals;
     struct yp_block_parameters_node *parameters;
     struct yp_node *statements;
     yp_location_t opening_loc;
@@ -476,7 +477,7 @@ typedef struct yp_case_node {
 // ClassNode
 typedef struct yp_class_node {
     yp_node_t base;
-    yp_token_list_t locals;
+    yp_constant_id_list_t locals;
     yp_location_t class_keyword_loc;
     struct yp_node *constant_path;
     yp_location_t inheritance_operator_loc;
@@ -526,7 +527,7 @@ typedef struct yp_def_node {
     struct yp_node *receiver;
     struct yp_parameters_node *parameters;
     struct yp_node *statements;
-    yp_token_list_t locals;
+    yp_constant_id_list_t locals;
     yp_location_t def_keyword_loc;
     yp_location_t operator_loc;
     yp_location_t lparen_loc;
@@ -740,7 +741,7 @@ typedef struct yp_keyword_rest_parameter_node {
 // LambdaNode
 typedef struct yp_lambda_node {
     yp_node_t base;
-    yp_token_list_t locals;
+    yp_constant_id_list_t locals;
     yp_location_t opening_loc;
     struct yp_block_parameters_node *parameters;
     struct yp_node *statements;
@@ -749,16 +750,18 @@ typedef struct yp_lambda_node {
 // LocalVariableReadNode
 typedef struct yp_local_variable_read_node {
     yp_node_t base;
+    yp_constant_id_t constant_id;
     uint32_t depth;
 } yp_local_variable_read_node_t;
 
 // LocalVariableWriteNode
 typedef struct yp_local_variable_write_node {
     yp_node_t base;
-    yp_location_t name_loc;
-    struct yp_node *value;
-    yp_location_t operator_loc;
+    yp_constant_id_t constant_id;
     uint32_t depth;
+    struct yp_node *value;
+    yp_location_t name_loc;
+    yp_location_t operator_loc;
 } yp_local_variable_write_node_t;
 
 // MatchPredicateNode
@@ -785,7 +788,7 @@ typedef struct yp_missing_node {
 // ModuleNode
 typedef struct yp_module_node {
     yp_node_t base;
-    yp_token_list_t locals;
+    yp_constant_id_list_t locals;
     yp_location_t module_keyword_loc;
     struct yp_node *constant_path;
     struct yp_node *statements;
@@ -848,6 +851,7 @@ typedef struct yp_operator_or_assignment_node {
 // OptionalParameterNode
 typedef struct yp_optional_parameter_node {
     yp_node_t base;
+    yp_constant_id_t constant_id;
     yp_location_t name_loc;
     yp_location_t operator_loc;
     struct yp_node *value;
@@ -918,7 +922,7 @@ typedef struct yp_pre_execution_node {
 // ProgramNode
 typedef struct yp_program_node {
     yp_node_t base;
-    yp_token_list_t locals;
+    yp_constant_id_list_t locals;
     struct yp_statements_node *statements;
 } yp_program_node_t;
 
@@ -962,6 +966,7 @@ typedef struct yp_required_destructured_parameter_node {
 // RequiredParameterNode
 typedef struct yp_required_parameter_node {
     yp_node_t base;
+    yp_constant_id_t constant_id;
 } yp_required_parameter_node_t;
 
 // RescueModifierNode
@@ -1010,7 +1015,7 @@ typedef struct yp_self_node {
 // SingletonClassNode
 typedef struct yp_singleton_class_node {
     yp_node_t base;
-    yp_token_list_t locals;
+    yp_constant_id_list_t locals;
     yp_location_t class_keyword_loc;
     yp_location_t operator_loc;
     struct yp_node *expression;

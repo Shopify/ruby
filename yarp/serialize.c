@@ -10,6 +10,8 @@
 #include "yarp/util/yp_buffer.h"
 #include "yarp/util/yp_conversion.h"
 
+#include <stdio.h>
+
 static void
 serialize_token(yp_parser_t *parser, yp_token_t *token, yp_buffer_t *buffer) {
     assert(token->start);
@@ -193,7 +195,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             uint32_t locals_size = yp_ulong_to_u32(((yp_block_node_t *)node)->locals.size);
             yp_buffer_append_u32(buffer, locals_size);
             for (uint32_t index = 0; index < locals_size; index++) {
-                serialize_token(parser, &((yp_block_node_t *)node)->locals.tokens[index], buffer);
+                yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_block_node_t *)node)->locals.ids[index]));
             }
             if (((yp_block_node_t *)node)->parameters == NULL) {
                 yp_buffer_append_u8(buffer, 0);
@@ -324,7 +326,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             uint32_t locals_size = yp_ulong_to_u32(((yp_class_node_t *)node)->locals.size);
             yp_buffer_append_u32(buffer, locals_size);
             for (uint32_t index = 0; index < locals_size; index++) {
-                serialize_token(parser, &((yp_class_node_t *)node)->locals.tokens[index], buffer);
+                yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_class_node_t *)node)->locals.ids[index]));
             }
             serialize_location(parser, &((yp_class_node_t *)node)->class_keyword_loc, buffer);
             yp_serialize_node(parser, (yp_node_t *)((yp_class_node_t *)node)->constant_path, buffer);
@@ -397,7 +399,6 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
                 // serialize length
                 // encoding of location u32s make us need to save this offset.
                 size_t length_offset = buffer->length;
-
                 yp_buffer_append_str(buffer, "\0\0\0\0", 4); /* consume 4 bytes, updated below */
             serialize_location(parser, &((yp_def_node_t *)node)->name_loc, buffer);
             if (((yp_def_node_t *)node)->receiver == NULL) {
@@ -418,7 +419,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             uint32_t locals_size = yp_ulong_to_u32(((yp_def_node_t *)node)->locals.size);
             yp_buffer_append_u32(buffer, locals_size);
             for (uint32_t index = 0; index < locals_size; index++) {
-                serialize_token(parser, &((yp_def_node_t *)node)->locals.tokens[index], buffer);
+                yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_def_node_t *)node)->locals.ids[index]));
             }
             serialize_location(parser, &((yp_def_node_t *)node)->def_keyword_loc, buffer);
             if (((yp_def_node_t *)node)->operator_loc.start == NULL) {
@@ -775,7 +776,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             uint32_t locals_size = yp_ulong_to_u32(((yp_lambda_node_t *)node)->locals.size);
             yp_buffer_append_u32(buffer, locals_size);
             for (uint32_t index = 0; index < locals_size; index++) {
-                serialize_token(parser, &((yp_lambda_node_t *)node)->locals.tokens[index], buffer);
+                yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_lambda_node_t *)node)->locals.ids[index]));
             }
             serialize_location(parser, &((yp_lambda_node_t *)node)->opening_loc, buffer);
             if (((yp_lambda_node_t *)node)->parameters == NULL) {
@@ -791,23 +792,25 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             break;
         }
         case YP_NODE_LOCAL_VARIABLE_READ_NODE: {
+            yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_local_variable_read_node_t *)node)->constant_id));
             yp_buffer_append_u32(buffer, ((yp_local_variable_read_node_t *)node)->depth);
             break;
         }
         case YP_NODE_LOCAL_VARIABLE_WRITE_NODE: {
-            serialize_location(parser, &((yp_local_variable_write_node_t *)node)->name_loc, buffer);
+            yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_local_variable_write_node_t *)node)->constant_id));
+            yp_buffer_append_u32(buffer, ((yp_local_variable_write_node_t *)node)->depth);
             if (((yp_local_variable_write_node_t *)node)->value == NULL) {
                 yp_buffer_append_u8(buffer, 0);
             } else {
                 yp_serialize_node(parser, (yp_node_t *)((yp_local_variable_write_node_t *)node)->value, buffer);
             }
+            serialize_location(parser, &((yp_local_variable_write_node_t *)node)->name_loc, buffer);
             if (((yp_local_variable_write_node_t *)node)->operator_loc.start == NULL) {
                 yp_buffer_append_u8(buffer, 0);
             } else {
                 yp_buffer_append_u8(buffer, 1);
                 serialize_location(parser, &((yp_local_variable_write_node_t *)node)->operator_loc, buffer);
             }
-            yp_buffer_append_u32(buffer, ((yp_local_variable_write_node_t *)node)->depth);
             break;
         }
         case YP_NODE_MATCH_PREDICATE_NODE: {
@@ -829,7 +832,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             uint32_t locals_size = yp_ulong_to_u32(((yp_module_node_t *)node)->locals.size);
             yp_buffer_append_u32(buffer, locals_size);
             for (uint32_t index = 0; index < locals_size; index++) {
-                serialize_token(parser, &((yp_module_node_t *)node)->locals.tokens[index], buffer);
+                yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_module_node_t *)node)->locals.ids[index]));
             }
             serialize_location(parser, &((yp_module_node_t *)node)->module_keyword_loc, buffer);
             yp_serialize_node(parser, (yp_node_t *)((yp_module_node_t *)node)->constant_path, buffer);
@@ -908,6 +911,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             break;
         }
         case YP_NODE_OPTIONAL_PARAMETER_NODE: {
+            yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_optional_parameter_node_t *)node)->constant_id));
             serialize_location(parser, &((yp_optional_parameter_node_t *)node)->name_loc, buffer);
             serialize_location(parser, &((yp_optional_parameter_node_t *)node)->operator_loc, buffer);
             yp_serialize_node(parser, (yp_node_t *)((yp_optional_parameter_node_t *)node)->value, buffer);
@@ -997,7 +1001,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             uint32_t locals_size = yp_ulong_to_u32(((yp_program_node_t *)node)->locals.size);
             yp_buffer_append_u32(buffer, locals_size);
             for (uint32_t index = 0; index < locals_size; index++) {
-                serialize_token(parser, &((yp_program_node_t *)node)->locals.tokens[index], buffer);
+                yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_program_node_t *)node)->locals.ids[index]));
             }
             yp_serialize_node(parser, (yp_node_t *)((yp_program_node_t *)node)->statements, buffer);
             break;
@@ -1044,6 +1048,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             break;
         }
         case YP_NODE_REQUIRED_PARAMETER_NODE: {
+            yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_required_parameter_node_t *)node)->constant_id));
             break;
         }
         case YP_NODE_RESCUE_MODIFIER_NODE: {
@@ -1111,7 +1116,7 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
             uint32_t locals_size = yp_ulong_to_u32(((yp_singleton_class_node_t *)node)->locals.size);
             yp_buffer_append_u32(buffer, locals_size);
             for (uint32_t index = 0; index < locals_size; index++) {
-                serialize_token(parser, &((yp_singleton_class_node_t *)node)->locals.tokens[index], buffer);
+                yp_buffer_append_u32(buffer, yp_ulong_to_u32(((yp_singleton_class_node_t *)node)->locals.ids[index]));
             }
             serialize_location(parser, &((yp_singleton_class_node_t *)node)->class_keyword_loc, buffer);
             serialize_location(parser, &((yp_singleton_class_node_t *)node)->operator_loc, buffer);
@@ -1326,6 +1331,44 @@ yp_serialize_node(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
                 serialize_location(parser, &((yp_yield_node_t *)node)->rparen_loc, buffer);
             }
             break;
+        }
+    }
+}
+
+void
+yp_serialize_content(yp_parser_t *parser, yp_node_t *node, yp_buffer_t *buffer) {
+    // Here we're going to leave space for the offset of the constant pool in
+    // the buffer.
+    size_t offset = buffer->length;
+    yp_buffer_append_zeroes(buffer, 4);
+
+    // Next, encode the length of the constant pool.
+    yp_buffer_append_u32(buffer, yp_ulong_to_u32(parser->constant_pool.size));
+
+    // Now we're going to serialize the content of the node.
+    yp_serialize_node(parser, node, buffer);
+
+    // Now we're going to serialize the offset of the constant pool back where
+    // we left space for it.
+    uint32_t length = yp_ulong_to_u32(buffer->length);
+    memcpy(buffer->value + offset, &length, sizeof(uint32_t));
+
+    // Now we're going to serialize the constant pool.
+    offset = buffer->length;
+    yp_buffer_append_zeroes(buffer, parser->constant_pool.size * 8);
+
+    yp_constant_t *constant;
+    for (size_t index = 0; index < parser->constant_pool.capacity; index++) {
+        constant = &parser->constant_pool.constants[index];
+
+        // If we find a constant at this index, serialize it at the correct
+        // index in the buffer.
+        if (constant->id != 0) {
+            size_t buffer_offset = offset + ((constant->id - 1) * 8);
+            size_t source_offset = yp_long_to_u32(constant->start - parser->start);
+
+            memcpy(buffer->value + buffer_offset, &source_offset, 4);
+            memcpy(buffer->value + buffer_offset + 4, &constant->length, 4);
         }
     }
 }
