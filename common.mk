@@ -19420,6 +19420,7 @@ yarp/serialize.$(OBJEXT): $(top_srcdir)/yarp/util/yp_string.h
 yarp/token_type.$(OBJEXT): $(top_srcdir)/yarp/ast.h
 yarp/token_type.$(OBJEXT): $(top_srcdir)/yarp/defines.h
 yarp/token_type.$(OBJEXT): $(top_srcdir)/yarp/token_type.c
+yarp/token_type.$(OBJEXT): $(top_srcdir)/yarp/util/yp_constant_pool.h
 yarp/token_type.$(OBJEXT): $(top_srcdir)/yarp/util/yp_string.h
 yarp/unescape.$(OBJEXT): $(top_srcdir)/yarp/defines.h
 yarp/unescape.$(OBJEXT): $(top_srcdir)/yarp/diagnostic.h
@@ -19434,6 +19435,8 @@ yarp/util/yp_buffer.$(OBJEXT): $(top_srcdir)/yarp/util/yp_buffer.h
 yarp/util/yp_char.$(OBJEXT): $(top_srcdir)/yarp/defines.h
 yarp/util/yp_char.$(OBJEXT): $(top_srcdir)/yarp/util/yp_char.c
 yarp/util/yp_char.$(OBJEXT): $(top_srcdir)/yarp/util/yp_char.h
+yarp/util/yp_constant_pool.$(OBJEXT): $(top_srcdir)/yarp/util/yp_constant_pool.c
+yarp/util/yp_constant_pool.$(OBJEXT): $(top_srcdir)/yarp/util/yp_constant_pool.h
 yarp/util/yp_conversion.$(OBJEXT): $(top_srcdir)/yarp/defines.h
 yarp/util/yp_conversion.$(OBJEXT): $(top_srcdir)/yarp/util/yp_conversion.c
 yarp/util/yp_conversion.$(OBJEXT): $(top_srcdir)/yarp/util/yp_conversion.h
