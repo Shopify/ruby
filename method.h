@@ -239,6 +239,7 @@ VALUE rb_method_entry_location(const rb_method_entry_t *me);
 void rb_free_method_entry(const rb_method_entry_t *me);
 
 const rb_method_entry_t *rb_method_entry_clone(const rb_method_entry_t *me);
+const rb_method_entry_t *rb_method_entry_dup(const rb_method_entry_t *me);
 const rb_callable_method_entry_t *rb_method_entry_complement_defined_class(const rb_method_entry_t *src_me, ID called_id, VALUE defined_class);
 void rb_method_entry_copy(rb_method_entry_t *dst, const rb_method_entry_t *src);
 
