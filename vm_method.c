@@ -702,6 +702,32 @@ rb_method_entry_clone(const rb_method_entry_t *src_me)
     return me;
 }
 
+const rb_method_entry_t *
+rb_method_entry_dup(const rb_method_entry_t *src_me)
+{
+    // Create an empty method definition.
+    rb_method_definition_t *def = rb_method_definition_create(src_me->def->type, src_me->def->original_id);
+
+    const rb_iseq_t *iseq = src_me->def->body.iseq.iseqptr;
+
+    // Duplicate the instruction sequence
+    VALUE str = rb_iseq_ibf_dump(iseq, Qnil);
+    const rb_iseq_t *new_iseq = rb_iseq_ibf_load(str);
+
+    // Assign the copied iseq to the new method definition
+    def->body.iseq.iseqptr = new_iseq;
+
+    // Create a new method entry
+    rb_method_entry_t *me = rb_method_entry_alloc(src_me->called_id, src_me->owner, src_me->defined_class, def);
+
+    if (METHOD_ENTRY_COMPLEMENTED(src_me)) {
+        method_definition_addref_complement(def);
+    }
+
+    METHOD_ENTRY_FLAGS_COPY(me, src_me);
+    return me;
+}
+
 MJIT_FUNC_EXPORTED const rb_callable_method_entry_t *
 rb_method_entry_complement_defined_class(const rb_method_entry_t *src_me, ID called_id, VALUE defined_class)
 {
