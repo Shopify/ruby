@@ -2429,6 +2429,23 @@ method_clone(VALUE self)
     return clone;
 }
 
+static VALUE
+method_dup(VALUE self)
+{
+    VALUE dup;
+    struct METHOD *orig, *data;
+
+    TypedData_Get_Struct(self, struct METHOD, &method_data_type, orig);
+    dup = TypedData_Make_Struct(CLASS_OF(self), struct METHOD, &method_data_type, data);
+    CLONESETUP(dup, self);
+    RB_OBJ_WRITE(dup, &data->recv, orig->recv);
+    RB_OBJ_WRITE(dup, &data->klass, orig->klass);
+    RB_OBJ_WRITE(dup, &data->iclass, orig->iclass);
+    RB_OBJ_WRITE(dup, &data->owner, orig->owner);
+    RB_OBJ_WRITE(dup, &data->me, rb_method_entry_dup(orig->me));
+    return dup;
+}
+
 /*  Document-method: Method#===
  *
  *  call-seq:
@@ -4354,6 +4371,7 @@ Init_Proc(void)
     rb_define_method(rb_cUnboundMethod, "eql?", unbound_method_eq, 1);
     rb_define_method(rb_cUnboundMethod, "hash", method_hash, 0);
     rb_define_method(rb_cUnboundMethod, "clone", method_clone, 0);
+    rb_define_method(rb_cUnboundMethod, "dup", method_dup, 0);
     rb_define_method(rb_cUnboundMethod, "arity", method_arity_m, 0);
     rb_define_method(rb_cUnboundMethod, "inspect", method_inspect, 0);
     rb_define_method(rb_cUnboundMethod, "to_s", method_inspect, 0);
