@@ -12,6 +12,11 @@ pub struct Options {
     // Threshold==1 means compile on first execution
     pub call_threshold: usize,
 
+    // How many compilation requests to skip before compiling new code
+    // This is used to let some execution proceed when we are compiling
+    // a lot of new code, to make warmup more gradual for heavy workloads
+    pub jit_interv: usize,
+
     // Generate versions greedily until the limit is hit
     pub greedy_versioning: bool,
 
@@ -55,6 +60,7 @@ pub struct Options {
 pub static mut OPTIONS: Options = Options {
     exec_mem_size: 64 * 1024 * 1024,
     call_threshold: 30,
+    jit_interv: 120,
     greedy_versioning: false,
     no_type_prop: false,
     max_versions: 4,
@@ -132,6 +138,13 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
 
         ("call-threshold", _) => match opt_val.parse() {
             Ok(n) => unsafe { OPTIONS.call_threshold = n },
+            Err(_) => {
+                return None;
+            }
+        },
+
+        ("jit-interv", _) => match opt_val.parse() {
+            Ok(n) => unsafe { OPTIONS.jit_interv = n },
             Err(_) => {
                 return None;
             }
