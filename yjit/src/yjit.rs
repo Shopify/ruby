@@ -6,13 +6,16 @@ use crate::options::*;
 use crate::stats::YjitExitLocations;
 
 use std::os::raw;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// For tracking whether the user enabled YJIT through command line arguments or environment
 /// variables. AtomicBool to avoid `unsafe`. On x86 it compiles to simple movs.
 /// See <https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html>
 /// See [rb_yjit_enabled_p]
 static YJIT_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// How many compilation requests YJIT received in total
+static YJIT_REQUEST_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// When false, we don't compile new iseqs, but might still service existing branch stubs.
 static COMPILE_NEW_ISEQS: AtomicBool = AtomicBool::new(false);
@@ -48,10 +51,20 @@ pub fn yjit_enabled_p() -> bool {
 #[no_mangle]
 pub extern "C" fn rb_yjit_threshold_hit(iseq: IseqPtr) -> bool {
 
-    let call_threshold = get_option!(call_threshold) as u64;
     let total_calls = unsafe { rb_get_iseq_body_total_calls(iseq) } as u64;
 
-    return total_calls == call_threshold;
+    if total_calls < get_option!(call_threshold) as u64 {
+        return false;
+    }
+
+    // Increment the request count
+    let req_count: usize = YJIT_REQUEST_COUNT.fetch_add(1, Ordering::Relaxed);
+
+    if req_count % get_option!(jit_interv) == 0 {
+        return true;
+    }
+
+    return false;
 }
 
 /// This function is called from C code
