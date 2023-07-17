@@ -426,19 +426,20 @@ jit_exec(rb_execution_context_t *ec)
 
     // Trigger JIT compilation as needed
     jit_func_t func;
-    if (yjit_enabled) {
-        if (body->total_calls == rb_yjit_call_threshold())  {
-            // If we couldn't generate any code for this iseq, then return
-            // Qundef so the interpreter will handle the call.
+    if (yjit_enabled && !body->jit_func) {
+
+        if (rb_yjit_threshold_hit(iseq)) {
             if (!rb_yjit_compile_iseq(iseq, ec)) {
                 return Qundef;
             }
         }
+
         // YJIT tried compiling this function once before and couldn't do
         // it, so return Qundef so the interpreter handles it.
         if ((func = body->jit_func) == 0) {
             return Qundef;
         }
+
     }
     else if (UNLIKELY(MJIT_FUNC_STATE_P(func = body->jit_func))) {
         return mjit_check_iseq(ec, iseq, body);
