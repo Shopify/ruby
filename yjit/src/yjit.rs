@@ -47,12 +47,16 @@ pub fn yjit_enabled_p() -> bool {
 
 /// Test whether we are ready to compile an ISEQ or not
 #[no_mangle]
-pub extern "C" fn rb_yjit_threshold_hit(iseq: IseqPtr) -> bool {
+pub extern "C" fn rb_yjit_threshold_hit(iseq: IseqPtr, ec: EcPtr) -> bool {
 
-    let call_threshold = get_option!(call_threshold) as u64;
+    let base_threshold = get_option!(call_threshold) as u64;
     let total_calls = unsafe { rb_get_iseq_body_total_calls(iseq) } as u64;
 
-    return total_calls == call_threshold;
+    let num_frames = unsafe { rb_ec_get_num_frames(ec) as u64 };
+    let depth_penalty_div = get_option!(depth_penalty_div) as u64;
+    let call_threshold = base_threshold + (num_frames / depth_penalty_div);
+
+    return total_calls >= call_threshold;
 }
 
 /// This function is called from C code

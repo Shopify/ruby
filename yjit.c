@@ -475,7 +475,7 @@ rb_insn_name(VALUE insn)
 }
 
 unsigned long
-rb_ec_get_num_frames(rb_execution_context_t *ec)
+rb_ec_get_num_frames(const rb_execution_context_t *ec)
 {
     rb_control_frame_t *stack_base = (rb_control_frame_t *)(ec->vm_stack + ec->vm_stack_size);
 
