@@ -474,6 +474,18 @@ rb_insn_name(VALUE insn)
     return insn_name(insn);
 }
 
+unsigned long
+rb_ec_get_num_frames(rb_execution_context_t *ec)
+{
+    rb_control_frame_t *stack_base = (rb_control_frame_t *)(ec->vm_stack + ec->vm_stack_size);
+
+    // Stack grows downwards
+    long num_frames = stack_base - ec->cfp;
+    assert (num_frames >= 0);
+
+    return (unsigned long)num_frames;
+}
+
 unsigned int
 rb_vm_ci_argc(const struct rb_callinfo *ci)
 {

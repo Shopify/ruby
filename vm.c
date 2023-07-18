@@ -393,6 +393,13 @@ jit_compile(rb_execution_context_t *ec)
     // Trigger JIT compilation as needed
     if (yjit_enabled) {
         if (rb_yjit_threshold_hit(iseq)) {
+
+            unsigned long rb_ec_get_num_frames(rb_execution_context_t *ec);
+            unsigned long num_frames = rb_ec_get_num_frames(ec);
+
+            printf("num_frames=%ld\n", num_frames);
+
+
             rb_yjit_compile_iseq(iseq, ec);
         }
     }
