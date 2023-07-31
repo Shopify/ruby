@@ -1347,6 +1347,8 @@ proc_encoding_option(ruby_cmdline_options_t *opt, const char *s, const char *opt
     UNREACHABLE;
 }
 
+static const char *test_bug_report_template;
+
 static long
 proc_long_options(ruby_cmdline_options_t *opt, const char *s, long argc, char **argv, int envopt)
 {
@@ -1452,6 +1454,9 @@ proc_long_options(ruby_cmdline_options_t *opt, const char *s, long argc, char **
         long n = strtol(s, &e, 10);
         if (errno == ERANGE || n < -1 || *e) rb_raise(rb_eRuntimeError, "wrong limit for backtrace length");
         opt->backtrace_length_limit = (int)n;
+    }
+    else if (is_option_with_arg("test-bugreport", true, false)) {
+        test_bug_report_template = s;
     }
     else {
         rb_raise(rb_eRuntimeError,
@@ -2886,6 +2891,10 @@ ruby_process_options(int argc, char **argv)
     ruby_init_setproctitle(argc, argv);
 #endif
 
+    if (test_bug_report_template) {
+        void ruby_test_bug_report(const char *template);
+        ruby_test_bug_report(test_bug_report_template);
+    }
     return (void*)(struct RData*)iseq;
 }
 
