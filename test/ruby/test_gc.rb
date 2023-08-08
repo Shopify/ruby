@@ -721,4 +721,24 @@ class TestGc < Test::Unit::TestCase
   ensure
     GC.enable if !original_gc_disabled
   end
+
+  def test_free_all_empty_pages
+    assert_separately([], __FILE__, __LINE__, <<~RUBY)
+      TIMES = 10_000
+      ary = Array.new(TIMES)
+      TIMES.times do |i|
+        ary[i] = Object.new
+      end
+      ary = nil
+
+      total_pages_before = GC.stat(:heap_eden_pages) + GC.stat(:heap_allocatable_pages)
+
+      GC.free_all_empty_pages
+
+      # Number of pages freed should cause equal increase in number of allocatable pages.
+      assert_equal(total_pages_before, GC.stat(:heap_eden_pages) + GC.stat(:heap_allocatable_pages))
+      assert_equal(0, GC.stat(:heap_tomb_pages))
+      assert_operator(GC.stat(:total_freed_pages), :>, 0)
+    RUBY
+  end
 end

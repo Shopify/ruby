@@ -753,6 +753,7 @@ typedef struct rb_objspace {
         unsigned int during_incremental_marking : 1;
 #endif
         unsigned int measure_gc : 1;
+        unsigned int free_all_empty_pages : 1;
     } flags;
 
     rb_event_flag_t hook_events;
@@ -5829,6 +5830,13 @@ gc_sweep_start(rb_objspace_t *objspace)
 static void
 gc_sweep_finish_size_pool(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
 {
+    if (objspace->flags.free_all_empty_pages) {
+        /* Set the number of pages that's about to be freed to allocatable pages. */
+        size_pool_allocatable_pages_set(objspace, size_pool, size_pool->allocatable_pages + SIZE_POOL_TOMB_HEAP(size_pool)->total_pages);
+        /* Don't grow the heap. */
+        return;
+    }
+
     rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
     size_t total_slots = heap->total_slots + SIZE_POOL_TOMB_HEAP(size_pool)->total_slots;
     size_t total_pages = heap->total_pages + SIZE_POOL_TOMB_HEAP(size_pool)->total_pages;
@@ -5967,9 +5975,17 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 
         heap->sweeping_page = ccan_list_next(&heap->pages, sweep_page, page_node);
 
-        if (sweep_page->final_slots + free_slots == sweep_page->total_slots &&
-            heap_pages_freeable_pages > 0 &&
-            unlink_limit > 0) {
+        if (objspace->flags.free_all_empty_pages &&
+                free_slots == sweep_page->total_slots) {
+            /* Don't move pages with objects that need finalizing to the tomb
+             * heap because we cannot free those pages. */
+            heap_unlink_page(objspace, heap, sweep_page);
+            heap_add_page(objspace, size_pool, SIZE_POOL_TOMB_HEAP(size_pool), sweep_page);
+        }
+        else if (!objspace->flags.free_all_empty_pages &&
+                (sweep_page->final_slots + free_slots == sweep_page->total_slots &&
+                    heap_pages_freeable_pages > 0 &&
+                    unlink_limit > 0)) {
             heap_pages_freeable_pages--;
             unlink_limit--;
             /* there are no living objects -> move this page to tomb heap */
@@ -9809,6 +9825,18 @@ gc_start_internal(rb_execution_context_t *ec, VALUE self, VALUE full_mark, VALUE
 
     garbage_collect(objspace, reason);
     gc_finalize_deferred(objspace);
+
+    return Qnil;
+}
+
+static VALUE
+free_all_empty_pages(VALUE self)
+{
+    rb_objspace_t *objspace = &rb_objspace;
+
+    objspace->flags.free_all_empty_pages = 1;
+    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qtrue);
+    objspace->flags.free_all_empty_pages = 0;
 
     return Qnil;
 }
@@ -14523,6 +14551,7 @@ Init_GC(void)
     rb_define_singleton_method(rb_mGC, "malloc_allocated_size", gc_malloc_allocated_size, 0);
     rb_define_singleton_method(rb_mGC, "malloc_allocations", gc_malloc_allocations, 0);
 #endif
+    rb_define_singleton_method(rb_mGC, "free_all_empty_pages", free_all_empty_pages, 0);
 
     rb_define_singleton_method(rb_mGC, "using_rvargc?", gc_using_rvargc_p, 0);
 
