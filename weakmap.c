@@ -450,6 +450,9 @@ wmap_delete(VALUE self, VALUE key)
     if (st_delete(w->table, &orig_key_data, &orig_val_data)) {
         VALUE orig_val = *(VALUE *)orig_val_data;
 
+        rb_gc_remove_weak(self, (VALUE *)orig_key_data);
+        rb_gc_remove_weak(self, (VALUE *)orig_val_data);
+
         wmap_free_entry((VALUE *)orig_key_data, (VALUE *)orig_val_data);
 
         if (wmap_live_p(orig_val)) {
@@ -775,6 +778,8 @@ wkmap_delete(VALUE self, VALUE key)
     st_data_t orig_val_data;
     if (st_delete(w->table, &orig_key_data, &orig_val_data)) {
         VALUE orig_val = (VALUE)orig_val_data;
+
+        rb_gc_remove_weak(self, (VALUE *)orig_key_data);
 
         ruby_sized_xfree((VALUE *)orig_key_data, sizeof(VALUE));
 
