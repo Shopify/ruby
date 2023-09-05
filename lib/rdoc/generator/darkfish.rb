@@ -602,7 +602,7 @@ class RDoc::Generator::Darkfish
   # Prepares for generation of output from the current directory
 
   def setup
-    return if instance_variable_defined? :@outputdir
+    return if @outputdir
 
     @outputdir = Pathname.new(@options.op_dir).expand_path @base_dir
 

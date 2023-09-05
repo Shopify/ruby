@@ -84,8 +84,10 @@ class TestRDocOptions < RDoc::TestCase
       'visibility'           => :protected,
       'webcvs'               => nil,
       'skip_tests'           => true,
+      'formatter'            => nil,
     }
 
+    assert_equal [], expected.keys.sort - coder.keys.sort
     assert_equal expected, coder
   end
 

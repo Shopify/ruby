@@ -779,11 +779,14 @@ class TestMarshal < Test::Unit::TestCase
   end
 
   class Bug15968
-    attr_accessor :bar, :baz
-
     def initialize
       self.bar = Bar.new(self)
     end
+
+    def bar; @bar; end
+    def bar= x; @bar = x; end
+    def baz; @baz; end
+    def baz= x; @baz = x; end
 
     class Bar
       attr_accessor :foo

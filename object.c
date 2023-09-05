@@ -296,7 +296,12 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
         st_table * table = rb_st_init_numtable_with_size(rb_st_table_size(ROBJECT_IV_HASH(obj)));
 
         rb_ivar_foreach(obj, rb_obj_evacuate_ivs_to_hash_table, (st_data_t)table);
-        rb_shape_set_too_complex(dest);
+        if (rb_shape_obj_too_complex(dest)) {
+            st_free_table(ROBJECT_IV_HASH(dest));
+        }
+        else {
+            rb_shape_set_too_complex(dest);
+        }
 
         ROBJECT(dest)->as.heap.ivptr = (VALUE *)table;
 
@@ -323,6 +328,11 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
     rb_shape_t * initial_shape = rb_shape_get_shape(dest);
 
     if (initial_shape->size_pool_index != src_shape->size_pool_index) {
+        // We should check the type of obj and dest.
+        // We want to see if it's possible to get objects not of type T_OBJECT ineher
+        while(initial_shape->type != SHAPE_T_OBJECT) {
+            initial_shape = rb_shape_get_parent(initial_shape);
+        }
         RUBY_ASSERT(initial_shape->type == SHAPE_T_OBJECT);
 
         shape_to_set_on_dest = rb_shape_rebuild_shape(initial_shape, src_shape);
