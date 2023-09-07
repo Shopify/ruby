@@ -62,7 +62,7 @@ pub static mut OPTIONS: Options = Options {
     greedy_versioning: false,
     no_type_prop: false,
     max_versions: 4,
-    num_temp_regs: 5,
+    num_temp_regs: 0,
     gen_stats: false,
     gen_trace_exits: false,
     print_stats: true,
