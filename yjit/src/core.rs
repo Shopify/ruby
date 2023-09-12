@@ -1691,7 +1691,7 @@ c_callable! {
         ec: EcPtr,
     ) -> *const u8 {
         with_vm_lock(src_loc!(), || {
-            branch_stub_hit_body(branch_ptr, target_idx, ec)
+            with_compile_time(|| { branch_stub_hit_body(branch_ptr, target_idx, ec) })
         })
     }
 }
