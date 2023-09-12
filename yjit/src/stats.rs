@@ -327,6 +327,8 @@ make_counters! {
     defer_count,
     freed_iseq_count,
 
+    branch_stub_hit,
+    branch_stub_hit_old,
     exit_from_branch_stub,
 
     invalidation_count,
