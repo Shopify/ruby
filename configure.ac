@@ -3830,7 +3830,6 @@ AS_CASE(["${YJIT_SUPPORT}"],
     [stats], [
 	rb_rust_target_subdir=stats
 	CARGO_BUILD_ARGS='--profile stats --features stats'
-	AC_DEFINE(YJIT_STATS, 1)
     ])
 
     AS_IF([test -n "${CARGO_BUILD_ARGS}"], [
