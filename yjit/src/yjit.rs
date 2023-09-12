@@ -4,6 +4,7 @@ use crate::cruby::*;
 use crate::invariants::*;
 use crate::options::*;
 use crate::stats::YjitExitLocations;
+use crate::stats::with_compile_time;
 
 use std::os::raw;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -96,7 +97,7 @@ fn rb_bug_panic_hook() {
 /// NOTE: this should be wrapped in RB_VM_LOCK_ENTER(), rb_vm_barrier() on the C side
 #[no_mangle]
 pub extern "C" fn rb_yjit_iseq_gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> *const u8 {
-    let maybe_code_ptr = gen_entry_point(iseq, ec);
+    let maybe_code_ptr = with_compile_time(|| { gen_entry_point(iseq, ec) });
 
     match maybe_code_ptr {
         Some(ptr) => ptr.raw_ptr(),
