@@ -285,6 +285,9 @@ module RubyVM::YJIT
       if stats[:compiled_blockid_count] != 0
         out.puts "versions_per_block:    " + ("%10.3f" % stats[:compiled_block_count].fdiv(stats[:compiled_blockid_count]))
       end
+      out.puts "branch_stub_hit:       " + ("%10d" % stats[:branch_stub_hit])
+      out.puts "branch_stub_hit_old:   " + ("%10d" % stats[:branch_stub_hit_old])
+
       out.puts "compiled_branch_count: " + ("%10d" % stats[:compiled_branch_count])
       out.puts "compile_time_ms:       " + ("%10d" % stats[:compile_time_ns].div(1000 * 1000))
       out.puts "block_next_count:      " + ("%10d" % stats[:block_next_count])

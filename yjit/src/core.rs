@@ -535,6 +535,10 @@ pub struct IseqPayload {
     // Blocks that are invalidated but are not yet deallocated.
     // The code GC will free them later.
     pub dead_blocks: Vec<BlockRef>,
+
+    // How many blocks were compiled when we last hit a branch stub
+    // for this ISEQ
+    pub block_count_last_stub: u64,
 }
 
 impl IseqPayload {
@@ -1908,6 +1912,7 @@ c_callable! {
 /// Called by the generated code when a branch stub is executed
 /// Triggers compilation of branches and code patching
 fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -> *const u8 {
+    incr_counter!(branch_stub_hit);
     if get_option!(dump_insns) {
         println!("branch_stub_hit");
     }
@@ -1924,6 +1929,17 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
 
     let mut branch = branch_rc.borrow_mut();
     let branch_size_on_entry = branch.code_size();
+
+    // Compute how many blocks were compiled since the last branch stub was hit
+    let compiled_block_count = unsafe { crate::stats::COUNTERS.compiled_block_count };
+    let payload = get_iseq_payload(branch.block.borrow().blockid.iseq).unwrap();
+    let last_count = payload.block_count_last_stub;
+    let num_blocks_since = if payload.block_count_last_stub != 0 { compiled_block_count - last_count } else { 0 };
+    payload.block_count_last_stub = compiled_block_count;
+
+    if num_blocks_since > 20000 {
+        incr_counter!(branch_stub_hit_old);
+    }
 
     let target_idx: usize = target_idx.as_usize();
     let target = branch.targets[target_idx].as_ref().unwrap();

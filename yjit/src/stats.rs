@@ -143,13 +143,15 @@ macro_rules! make_counters {
 
 /// The list of counters that are available without --yjit-stats.
 /// They are incremented only by `incr_counter!` and don't use `gen_counter_incr`.
-pub const DEFAULT_COUNTERS: [&str; 6] = [
+pub const DEFAULT_COUNTERS: [&str; 8] = [
     "code_gc_count",
     "compiled_iseq_entry",
     "compiled_iseq_count",
     "compiled_blockid_count",
     "compiled_block_count",
     "compiled_branch_count",
+    "branch_stub_hit",
+    "branch_stub_hit_old",
 ];
 
 /// Macro to increase a counter by name and count
@@ -327,6 +329,8 @@ make_counters! {
     defer_count,
     freed_iseq_count,
 
+    branch_stub_hit,
+    branch_stub_hit_old,
     exit_from_branch_stub,
 
     invalidation_count,
