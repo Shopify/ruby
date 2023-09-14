@@ -429,7 +429,7 @@ jit_compile(rb_execution_context_t *ec)
     if (body->jit_entry == NULL) {
         body->jit_entry_calls++;
         if (yjit_enabled) {
-            if (body->jit_entry_calls == rb_yjit_call_threshold())  {
+            if (rb_yjit_threshold_hit(iseq, body->jit_entry_calls)) {
                 rb_yjit_compile_iseq(iseq, ec, false);
             }
         }

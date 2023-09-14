@@ -5,6 +5,7 @@ use crate::invariants::*;
 use crate::options::*;
 use crate::stats::YjitExitLocations;
 use crate::stats::with_compile_time;
+use crate::stats::incr_counter;
 
 use std::os::raw;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,6 +50,42 @@ pub fn yjit_enabled_p() -> bool {
 #[no_mangle]
 pub extern "C" fn rb_yjit_call_threshold() -> raw::c_uint {
     get_option!(call_threshold) as raw::c_uint
+}
+
+// Counter to serve as a proxy for execution time, total number of calls
+static mut TOTAL_ENTRY_HITS: u64 = 0;
+
+/// Test whether we are ready to compile an ISEQ or not
+#[no_mangle]
+pub extern "C" fn rb_yjit_threshold_hit(iseq: IseqPtr, total_calls: u64) -> bool {
+    let call_threshold = get_option!(call_threshold) as u64;
+
+    unsafe { TOTAL_ENTRY_HITS += 1; }
+
+    if total_calls >= call_threshold {
+
+        if total_calls == call_threshold {
+            let payload = get_or_create_iseq_payload(iseq);
+            let call_count = unsafe { TOTAL_ENTRY_HITS };
+            payload.call_count_at_threshold = call_count;
+        }
+
+        // Try to estimate the total time taken (total number of calls) to reach 20 calls to this ISEQ
+        // This give us a ratio of how hot/cold this ISEQ is
+        if total_calls == call_threshold + 20 {
+            let payload = get_or_create_iseq_payload(iseq);
+            let call_count = unsafe { TOTAL_ENTRY_HITS };
+            let num_calls = call_count - payload.call_count_at_threshold;
+
+            if num_calls > 50_000 {
+                incr_counter!(compiled_entry_cold);
+            }
+
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// This function is called from C code
