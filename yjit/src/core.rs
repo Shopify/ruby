@@ -539,6 +539,9 @@ pub struct IseqPayload {
     // How many blocks were compiled when we last hit a branch stub
     // for this ISEQ
     pub block_count_last_stub: u64,
+
+    // Number of calls when we hit the threshold for this ISEQs
+    pub call_count_at_threshold: u64,
 }
 
 impl IseqPayload {
