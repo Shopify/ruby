@@ -77,8 +77,9 @@ pub extern "C" fn rb_yjit_threshold_hit(iseq: IseqPtr, total_calls: u64) -> bool
             let call_count = unsafe { TOTAL_ENTRY_HITS };
             let num_calls = call_count - payload.call_count_at_threshold;
 
-            if num_calls > 50_000 {
-                incr_counter!(compiled_entry_cold);
+            if num_calls > get_option!(cold_threshold) as u64 {
+                incr_counter!(iseq_entry_cold);
+                return false;
             }
 
             return true;
