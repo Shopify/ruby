@@ -2407,6 +2407,10 @@ vm_exec(rb_execution_context_t *ec, bool jit_enable_p)
     rb_wasm_try_catch_loop_run(&try_catch, &_tag.buf);
 
     EC_POP_TAG();
+    
+    if (RBASIC(rb_stderr)->flags == 1 && RBASIC(rb_stderr)->klass == 0) {
+        rb_bug("stderr_corrupted");
+    }
     return ctx.result;
 }
 
