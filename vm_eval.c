@@ -775,6 +775,8 @@ uncallable_object(VALUE recv, ID mid)
     const char *typestr;
     VALUE mname = rb_id2str(mid);
 
+    rb_bug("uncallable_object");
+
     if (SPECIAL_CONST_P(recv)) {
         rb_raise(rb_eNotImpError,
                  "method `%"PRIsVALUE"' called on unexpected immediate object (%p)",
