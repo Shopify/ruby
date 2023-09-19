@@ -263,6 +263,9 @@ opt_getconstant_path
     const ID *segments = ic->segments;
     struct iseq_inline_constant_cache_entry *ice = ic->entry;
     if (ice && vm_ic_hit_p(ice, GET_EP())) {
+        VM_ASSERT(!RB_TYPE_P(ice->value, T_NONE));
+        VM_ASSERT(!RB_TYPE_P(ice->value, T_MOVED));
+
         val = ice->value;
 
         VM_ASSERT(val == vm_get_ev_const_chain(ec, segments));
