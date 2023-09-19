@@ -3285,6 +3285,9 @@ const_set(VALUE klass, ID id, VALUE val)
 {
     rb_const_entry_t *ce;
 
+    RUBY_ASSERT(!RB_TYPE_P(val, T_NONE));
+    RUBY_ASSERT(!RB_TYPE_P(val, T_MOVED));
+
     if (NIL_P(klass)) {
         rb_raise(rb_eTypeError, "no class/module to define constant %"PRIsVALUE"",
                  QUOTE_ID(id));
