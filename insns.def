@@ -276,6 +276,11 @@ opt_getconstant_path
 
             ruby_vm_constant_cache_misses++;
             val = vm_get_ev_const_chain(ec, segments);
+
+            if (RB_TYPE_P(val, T_NONE)) {
+                rb_bug("vm_get_ev_const_chain returned T_NONE");
+            }
+
             vm_ic_track_const_chain(GET_CFP(), ic, segments);
             // Because leaf=false, we need to undo the PC increment to get the address to this instruction
             // INSN_ATTR(width) == 2
