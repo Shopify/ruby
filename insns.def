@@ -263,11 +263,29 @@ opt_getconstant_path
     const ID *segments = ic->segments;
     struct iseq_inline_constant_cache_entry *ice = ic->entry;
     if (ice && vm_ic_hit_p(ice, GET_EP())) {
-        VM_ASSERT(!RB_TYPE_P(ice->value, T_NONE));
-        VM_ASSERT(!RB_TYPE_P(ice->value, T_MOVED));
+        if (RB_TYPE_P(ice->value, T_NONE)) {
+            int idx = 0;
+            if (segments[idx] == idNULL) {
+                idx++;
+            }
+            while (segments[idx]) {
+                ID id = segments[idx++];
+                fprintf(stderr, "opt_getconstant_path: [%d] %s\n", idx, rb_id2name(id));
+            }
+            fprintf(stderr, "[BUG] ice->value is a T_NONE falling back\n");
 
-        val = ice->value;
+            ruby_vm_constant_cache_misses++;
+            val = vm_get_ev_const_chain(ec, segments);
+            vm_ic_track_const_chain(GET_CFP(), ic, segments);
+            // Because leaf=false, we need to undo the PC increment to get the address to this instruction
+            // INSN_ATTR(width) == 2
+            vm_ic_update(GET_ISEQ(), ic, val, GET_EP(), GET_PC() - 2);
+        } else {
+            VM_ASSERT(!RB_TYPE_P(ice->value, T_NONE));
+            VM_ASSERT(!RB_TYPE_P(ice->value, T_MOVED));
 
+            val = ice->value;
+        }
         VM_ASSERT(val == vm_get_ev_const_chain(ec, segments));
     } else {
         ruby_vm_constant_cache_misses++;
