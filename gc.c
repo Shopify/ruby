@@ -9842,12 +9842,19 @@ gc_start_internal(rb_execution_context_t *ec, VALUE self, VALUE full_mark, VALUE
 }
 
 static VALUE
-free_all_empty_pages(VALUE self)
+free_all_empty_pages(int argc, VALUE *argv, VALUE self)
 {
     rb_objspace_t *objspace = &rb_objspace;
 
+    VALUE compact = Qfalse;
+
+    rb_check_arity(argc, 0, 1);
+    if (argc > 0) {
+        compact = argv[0];
+    }
+
     objspace->flags.free_all_empty_pages = 1;
-    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, Qfalse);
+    gc_start_internal(NULL, self, Qtrue, Qtrue, Qtrue, compact);
     objspace->flags.free_all_empty_pages = 0;
 
     return Qnil;
@@ -14691,7 +14698,7 @@ Init_GC(void)
     rb_define_singleton_method(rb_mGC, "malloc_allocated_size", gc_malloc_allocated_size, 0);
     rb_define_singleton_method(rb_mGC, "malloc_allocations", gc_malloc_allocations, 0);
 #endif
-    rb_define_singleton_method(rb_mGC, "free_all_empty_pages", free_all_empty_pages, 0);
+    rb_define_singleton_method(rb_mGC, "free_all_empty_pages", free_all_empty_pages, -1);
 
     rb_define_singleton_method(rb_mGC, "using_rvargc?", gc_using_rvargc_p, 0);
 
