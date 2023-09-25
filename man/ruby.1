@@ -25,6 +25,7 @@
 .Op Fl - Ns Bro Cm enable Ns | Ns Cm disable Brc Ns - Ns Ar FEATURE
 .Op Fl -dump Ns = Ns Ar target
 .Op Fl -verbose
+.Op Fl -crash-report Ns = Ns Ar template
 .Op Fl -
 .Op Ar program_file
 .Op Ar argument ...
@@ -469,6 +470,12 @@ variable to true.
 If this switch is given, and no script arguments (script file or
 .Fl e
 options) are present, Ruby quits immediately.
+.Pp
+.It Fl -crash-report Ns = Ns Ar template
+Sets the template of path name to save bug report.
+See
+.Ev RUBY_CRASH_REPORT
+environment variable for details.
 .El
 .Pp
 .Sh ENVIRONMENT
@@ -645,6 +652,48 @@ Machine stack size used at fiber creation.
 default: 262144 or 524288
 .Pp
 .El
+.Sh BUG REPORT ENVIRONMENT
+.Pp
+.Bl -tag -compact -width "RUBY_CRASH_REPORT"
+.It Ev RUBY_CRASH_REPORT
+The template of path name to save bug report.
+default: none
+.El
+.Ss Naming bug report files
+The template can contain % specifiers which are substituted
+by the following values when a bug report file is created:
+.Pp
+.Bl -hang -compact -width "%NNN"
+.It %%
+A single % character.
+.It %e
+Basename of executable.
+.It %E
+Pathname of executable,
+with slashes (\fB/\fP) replaced by exclamation marks (\fB!\fP).
+.It %p
+PID of dumped process.
+.It %t
+Time of dump, expressed as seconds since the
+Epoch, 1970-01-01 00:00:00 +0000 (UTC).
+.It %NNN
+A character code in octal.
+.El
+.Pp
+A single % at the end of the template is dropped from the
+core filename, as is the combination of a % followed by any
+character other than those listed above.
+All other characters in the template become a literal
+part of the core filename.
+The template may include \(aq/\(aq characters, which are interpreted
+as delimiters for directory names.
+.Ss Piping bug reports to a program
+If the first character of this file is a pipe symbol (\fB|\fP),
+then the remainder of the line is interpreted as the command-line for
+a program (or script) that is to be executed.
+.Pp
+The pipe template is split on spaces into an argument list before the
+template parameters are expanded.
 .Sh SEE ALSO
 .Bl -hang -compact -width "https://www.ruby-toolbox.com/"
 .It Lk https://www.ruby-lang.org/

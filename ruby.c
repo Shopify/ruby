@@ -337,6 +337,7 @@ usage(const char *name, int help, int highlight, int columns)
         M("--backtrace-limit=num",                  "", "limit the maximum length of backtrace"),
         M("--verbose",                              "", "turn on verbose mode and disable script from stdin"),
         M("--version",                              "", "print the version number, then exit"),
+        M("--crash-report=TEMPLATE",                "", "template of crash report files"),
         M("-y",                          ", --yydebug", "print log of parser. Backward compatibility is not guaranteed"),
         M("--help",			            "", "show this message, -h for short message"),
     };
@@ -898,6 +899,7 @@ moreswitches(const char *s, ruby_cmdline_options_t *opt, int envopt)
     ruby_features_t feat = opt->features;
     ruby_features_t warn = opt->warn;
     long backtrace_length_limit = opt->backtrace_length_limit;
+    const char *crash_report = opt->crash_report;
 
     while (ISSPACE(*s)) s++;
     if (!*s) return;
@@ -950,6 +952,9 @@ moreswitches(const char *s, ruby_cmdline_options_t *opt, int envopt)
     FEATURE_SET_RESTORE(opt->warn, warn);
     if (BACKTRACE_LENGTH_LIMIT_VALID_P(backtrace_length_limit)) {
         opt->backtrace_length_limit = backtrace_length_limit;
+    }
+    if (crash_report) {
+        opt->crash_report = crash_report;
     }
 
     ruby_xfree(ptr);
@@ -1460,6 +1465,9 @@ proc_long_options(ruby_cmdline_options_t *opt, const char *s, long argc, char **
         else {
             opt->backtrace_length_limit = n;
         }
+    }
+    else if (is_option_with_arg("crash-report", true, true)) {
+        opt->crash_report = s;
     }
     else {
         rb_raise(rb_eRuntimeError,
@@ -2910,6 +2918,10 @@ ruby_process_options(int argc, char **argv)
 
     iseq = process_options(argc, argv, cmdline_options_init(&opt));
 
+    if (opt.crash_report && *opt.crash_report) {
+        void ruby_set_crash_report(const char *template);
+        ruby_set_crash_report(opt.crash_report);
+    }
     return (void*)(struct RData*)iseq;
 }
 
