@@ -55,7 +55,7 @@
 #endif
 
 #if RUBY_PATCHLEVEL == -1
-#define RUBY_PATCHLEVEL_STR "dev"
+#define RUBY_PATCHLEVEL_STR "preview2"
 #elif defined RUBY_ABI_VERSION
 #error RUBY_ABI_VERSION is defined in non-development branch
 #else
