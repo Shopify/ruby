@@ -2199,7 +2199,9 @@ pub fn gen_entry_point(iseq: IseqPtr, ec: EcPtr, jit_exception: bool) -> Option<
         // Compilation failed
         None => {
             // Trigger code GC. This entry point will be recompiled later.
-            cb.code_gc(ocb);
+            if !get_option!(disable_code_gc) {
+                cb.code_gc(ocb);
+            }
             return None;
         }
 
@@ -2313,7 +2315,9 @@ fn entry_stub_hit_body(entry_ptr: *const c_void, ec: EcPtr) -> Option<*const u8>
         get_or_create_iseq_payload(iseq).entries.push(pending_entry.into_entry());
     } else { // No space
         // Trigger code GC. This entry point will be recompiled later.
-        cb.code_gc(ocb);
+        if !get_option!(disable_code_gc) {
+            cb.code_gc(ocb);
+        }
     }
 
     cb.mark_all_executable();
@@ -2489,6 +2493,9 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
         (target.get_blockid(), target.get_ctx())
     };
 
+    let cb = CodegenGlobals::get_inline_cb();
+    let ocb = CodegenGlobals::get_outlined_cb();
+
     let (cfp, original_interp_sp) = unsafe {
         let cfp = get_ec_cfp(ec);
         let original_interp_sp = get_cfp_sp(cfp);
@@ -2510,6 +2517,10 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
         // So we do it here instead.
         rb_set_cfp_sp(cfp, reconned_sp);
 
+        if get_option!(disable_code_gc) && (cb.has_dropped_bytes() || ocb.unwrap().has_dropped_bytes()) {
+            return CodegenGlobals::get_stub_exit_code().raw_ptr();
+        }
+
         // Bail if we're about to run out of native stack space.
         // We've just reconstructed interpreter state.
         if rb_ec_stack_check(ec as _) != 0 {
@@ -2518,9 +2529,6 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
 
         (cfp, original_interp_sp)
     };
-
-    let cb = CodegenGlobals::get_inline_cb();
-    let ocb = CodegenGlobals::get_outlined_cb();
 
     // Try to find an existing compiled version of this block
     let mut block = find_block_version(target_blockid, &target_ctx);
@@ -2587,7 +2595,9 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
             // because incomplete code could be used when cb.dropped_bytes is flipped
             // by code GC. So this place, after all compilation, is the safest place
             // to hook code GC on branch_stub_hit.
-            cb.code_gc(ocb);
+            if !get_option!(disable_code_gc) {
+                cb.code_gc(ocb);
+            }
 
             // Failed to service the stub by generating a new block so now we
             // need to exit to the interpreter at the stubbed location. We are

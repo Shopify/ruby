@@ -47,6 +47,9 @@ pub struct Options {
     // compile anything)
     pub pause: bool,
 
+    // Stop generating new code when exec_mem_size is reached. Don't run code GC
+    pub disable_code_gc: bool,
+
     /// Dump compiled and executed instructions for debugging
     pub dump_insns: bool,
 
@@ -74,6 +77,7 @@ pub static mut OPTIONS: Options = Options {
     print_stats: true,
     trace_exits_sample_rate: 0,
     pause: false,
+    disable_code_gc: false,
     dump_insns: false,
     dump_disasm: None,
     verify_ctx: false,
@@ -81,11 +85,12 @@ pub static mut OPTIONS: Options = Options {
 };
 
 /// YJIT option descriptions for `ruby --help`.
-static YJIT_OPTIONS: [(&str, &str); 8] = [
+static YJIT_OPTIONS: [(&str, &str); 9] = [
     ("--yjit-stats",                    "Enable collecting YJIT statistics"),
     ("--yjit-trace-exits",              "Record Ruby source location when exiting from generated code"),
     ("--yjit-trace-exits-sample-rate",  "Trace exit locations only every Nth occurrence"),
     ("--yjit-exec-mem-size=num",        "Size of executable memory block in MiB (default: 128)"),
+    ("--yjit-disable-code-gc",          "Don't run code GC after exhausting exec-mem-size"),
     ("--yjit-call-threshold=num",       "Number of calls to trigger JIT (default: 30)"),
     ("--yjit-cold-threshold=num",       "Global call after which ISEQs not compiled (default: 200K)"),
     ("--yjit-max-versions=num",         "Maximum number of versions per basic block (default: 4)"),
@@ -105,7 +110,12 @@ macro_rules! get_option {
     // Unsafe is ok here because options are initialized
     // once before any Ruby code executes
     ($option_name:ident) => {
-        unsafe { OPTIONS.$option_name }
+        {
+            // make this a statement since attributes on expressions are experimental
+            #[allow(unused_unsafe)]
+            let ret = unsafe { OPTIONS.$option_name };
+            ret
+        }
     };
 }
 pub(crate) use get_option;
@@ -178,6 +188,10 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
         ("pause", "") => unsafe {
             OPTIONS.pause = true;
         },
+
+        ("disable-code-gc", "") => unsafe {
+            OPTIONS.disable_code_gc = true;
+        }
 
         ("temp-regs", _) => match opt_val.parse() {
             Ok(n) => {
