@@ -24,6 +24,7 @@
 #define SINGLE_CHILD_MASK (~((uintptr_t)SINGLE_CHILD_TAG))
 #define SINGLE_CHILD_P(x) (((uintptr_t)x) & SINGLE_CHILD_TAG)
 #define SINGLE_CHILD(x) (rb_shape_t *)((uintptr_t)x & SINGLE_CHILD_MASK)
+#define ANCESTOR_CACHE_THRESHOLD 10
 
 static ID id_frozen;
 static ID id_t_object;
@@ -349,6 +350,34 @@ rb_shape_alloc(ID edge_name, rb_shape_t * parent, enum shape_type type)
     return shape;
 }
 
+static redblack_node_t *
+redblack_cache_ancestors(rb_shape_t * shape)
+{
+    if (shape->ancestor_index) {
+        return shape->ancestor_index;
+    }
+    else {
+        if (shape->parent_id == INVALID_SHAPE_ID) {
+            // We're at the root
+            return shape->ancestor_index;
+        }
+        else {
+            redblack_node_t * parent_index;
+
+            parent_index = redblack_cache_ancestors(rb_shape_get_parent(shape));
+
+            if (shape->type == SHAPE_IVAR) {
+                shape->ancestor_index = redblack_insert(parent_index, shape->edge_name, shape);
+            }
+            else {
+                shape->ancestor_index = parent_index;
+            }
+
+            return shape->ancestor_index;
+        }
+    }
+}
+
 static rb_shape_t *
 rb_shape_alloc_new_child(ID id, rb_shape_t * shape, enum shape_type shape_type)
 {
@@ -357,7 +386,9 @@ rb_shape_alloc_new_child(ID id, rb_shape_t * shape, enum shape_type shape_type)
     switch (shape_type) {
       case SHAPE_IVAR:
         new_shape->next_iv_index = shape->next_iv_index + 1;
-        new_shape->ancestor_index = redblack_insert(shape->ancestor_index, id, new_shape);
+        if (new_shape->next_iv_index > ANCESTOR_CACHE_THRESHOLD) {
+            redblack_cache_ancestors(new_shape);
+        }
         break;
       case SHAPE_CAPACITY_CHANGE:
       case SHAPE_FROZEN:
@@ -681,7 +712,6 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
         return rb_shape_get_iv_index_iterative(shape, id, value);
     }
 }
-
 
 void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
