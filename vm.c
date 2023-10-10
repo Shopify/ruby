@@ -3021,7 +3021,8 @@ vm_memsize(const void *ptr)
         vm_memsize_builtin_function_table(vm->builtin_function_table) +
         rb_id_table_memsize(vm->negative_cme_table) +
         rb_st_memsize(vm->overloaded_cme_table) +
-        vm_memsize_constant_cache()
+        vm_memsize_constant_cache() +
+        redblack_buffer_size * sizeof(redblack_node_t)
     );
 
     // TODO

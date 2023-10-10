@@ -30,13 +30,6 @@ static ID id_frozen;
 static ID id_t_object;
 static ID size_pool_edge_names[SIZE_POOL_COUNT];
 
-typedef struct redblack_node {
-    ID key;
-    rb_shape_t * value;
-    struct redblack_node * left;
-    struct redblack_node * right;
-} redblack_node_t;
-
 redblack_node_t * redblack_nodes = 0;
 unsigned int redblack_buffer_size = 0;
 unsigned int redblack_buffer_max_size = 1000;

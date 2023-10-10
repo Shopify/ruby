@@ -55,6 +55,13 @@ struct rb_shape {
 
 typedef struct rb_shape rb_shape_t;
 
+typedef struct redblack_node {
+    ID key;
+    rb_shape_t * value;
+    struct redblack_node * left;
+    struct redblack_node * right;
+} redblack_node_t;
+
 enum shape_type {
     SHAPE_ROOT,
     SHAPE_IVAR,
