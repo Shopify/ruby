@@ -1,0 +1,46 @@
+prelude: |
+  class Record
+    def initialize
+      @first = 0
+      68.times do |i|
+        instance_variable_set("@ivar_#{i}", i)
+      end
+    end
+
+    def first
+      @first
+    end
+
+    def lazy_set
+      @uninitialized ||= 123
+    end
+
+    def lazy_set2
+      @uninitialized2 ||= 123
+    end
+  end
+
+  Record.new # Need one alloc to right size
+
+  BASE = Record.new
+  LAZY1 = Record.new
+  LAZY1.lazy_set
+  LAZY2 = Record.new
+  LAZY2.lazy_set2
+
+benchmark:
+  vm_ivar_stable_shape: |
+    BASE.first
+    BASE.first
+    BASE.first
+    BASE.first
+    BASE.first
+    BASE.first
+  vm_ivar_memoize_unstable_shape: |
+    BASE.first
+    LAZY1.first
+    LAZY2.first
+    BASE.first
+    LAZY1.first
+    LAZY2.first
+loop_count: 5_000_000

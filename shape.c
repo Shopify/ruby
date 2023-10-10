@@ -427,6 +427,28 @@ rb_shape_transition_shape_capa(rb_shape_t* shape, uint32_t new_capacity)
     return new_shape;
 }
 
+static inline bool
+shape_get_iv_index(rb_shape_t * shape, attr_index_t *value)
+{
+    enum shape_type shape_type;
+    shape_type = (enum shape_type)shape->type;
+
+    switch (shape_type) {
+      case SHAPE_IVAR:
+        RUBY_ASSERT(shape->next_iv_index > 0);
+        *value = shape->next_iv_index - 1;
+        return true;
+      case SHAPE_CAPACITY_CHANGE:
+      case SHAPE_ROOT:
+      case SHAPE_INITIAL_CAPACITY:
+      case SHAPE_T_OBJECT:
+        return false;
+      case SHAPE_OBJ_TOO_COMPLEX:
+      case SHAPE_FROZEN:
+        rb_bug("Ivar should not exist on transition");
+    }
+}
+
 bool
 rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
 {
@@ -436,27 +458,41 @@ rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t *value)
 
     while (shape->parent_id != INVALID_SHAPE_ID) {
         if (shape->edge_name == id) {
-            enum shape_type shape_type;
-            shape_type = (enum shape_type)shape->type;
-
-            switch (shape_type) {
-              case SHAPE_IVAR:
-                RUBY_ASSERT(shape->next_iv_index > 0);
-                *value = shape->next_iv_index - 1;
-                return true;
-              case SHAPE_CAPACITY_CHANGE:
-              case SHAPE_ROOT:
-              case SHAPE_INITIAL_CAPACITY:
-              case SHAPE_T_OBJECT:
-                return false;
-              case SHAPE_OBJ_TOO_COMPLEX:
-              case SHAPE_FROZEN:
-                rb_bug("Ivar should not exist on transition");
-            }
+            return shape_get_iv_index(shape, value);
         }
         shape = rb_shape_get_parent(shape);
     }
     return false;
+}
+
+long
+rb_shape_get_iv_index_stale(shape_id_t new_shape_id, ID id, attr_index_t *value, shape_id_t old_shape_id)
+{
+    // It doesn't make sense to ask for the index of an IV that's stored
+    // on an object that is "too complex" as it uses a hash for storing IVs
+    RUBY_ASSERT(new_shape_id != OBJ_TOO_COMPLEX_SHAPE_ID);
+    RUBY_ASSERT(old_shape_id != OBJ_TOO_COMPLEX_SHAPE_ID);
+
+    rb_shape_t *shape = rb_shape_get_shape_by_id(new_shape_id);
+
+    // if (old_shape_id == INVALID_SHAPE_ID) {
+    //     return rb_shape_get_iv_index(shape, id, value) ? -1 : 0;
+    // }
+
+    long depth = 1;
+    while (shape->parent_id != INVALID_SHAPE_ID) {
+        if (shape->parent_id == old_shape_id) {
+            shape_get_iv_index(shape, value);
+            return depth;
+        }
+        else if (shape->edge_name == id) {
+            return shape_get_iv_index(shape, value) ? -1 : 0;
+        }
+        depth++;
+        shape = rb_shape_get_parent(shape);
+    }
+
+    return 0;
 }
 
 void

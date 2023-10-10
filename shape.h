@@ -40,6 +40,8 @@ typedef uint16_t shape_id_t;
 # define SPECIAL_CONST_SHAPE_ID (SIZE_POOL_COUNT * 2)
 # define OBJ_TOO_COMPLEX_SHAPE_ID (SPECIAL_CONST_SHAPE_ID + 1)
 
+# define SHAPE_CLOSE_DESCENDANT_MAX_DEPTH 4
+
 struct rb_shape {
     struct rb_id_table * edges; // id_table from ID (ivar) to next shape
     ID edge_name; // ID (ivar) for transition from parent to rb_shape
@@ -145,6 +147,7 @@ rb_shape_t* rb_shape_get_shape_by_id(shape_id_t shape_id);
 shape_id_t rb_shape_get_shape_id(VALUE obj);
 rb_shape_t * rb_shape_get_next_iv_shape(rb_shape_t * shape, ID id);
 bool rb_shape_get_iv_index(rb_shape_t * shape, ID id, attr_index_t * value);
+long rb_shape_get_iv_index_stale(shape_id_t new_shape_id, ID id, attr_index_t *value, shape_id_t old_shape_id);
 bool rb_shape_obj_too_complex(VALUE obj);
 
 void rb_shape_set_shape(VALUE obj, rb_shape_t* shape);

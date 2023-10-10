@@ -1286,14 +1286,14 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         }
 #endif
 
-        rb_shape_t *shape = rb_shape_get_shape_by_id(shape_id);
-
         if (shape_id == OBJ_TOO_COMPLEX_SHAPE_ID) {
             if (!st_lookup(ROBJECT_IV_HASH(obj), id, &val)) {
                 val = default_value;
             }
         }
-        else {
+        else if (UNLIKELY(index == ATTR_INDEX_NOT_SET)) {
+            rb_shape_t *shape = rb_shape_get_shape_by_id(shape_id);
+
             if (rb_shape_get_iv_index(shape, id, &index)) {
                 // This fills in the cache with the shared cache object.
                 // "ent" is the shared cache object
@@ -1312,6 +1312,42 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 }
 
                 val = default_value;
+            }
+        }
+        else {
+            long ancestor_depth = rb_shape_get_iv_index_stale(shape_id, id, &index, cached_id);
+            switch (ancestor_depth) {
+              case 0: // Not found
+                if (is_attr) {
+                    vm_cc_attr_index_initialize(cc, shape_id);
+                }
+                else {
+                    vm_ic_attr_index_initialize(ic, shape_id);
+                }
+
+                val = default_value;
+                break;
+              case -1: // Found but wasn't an ancestor
+                // This fills in the cache with the shared cache object.
+                // "ent" is the shared cache object
+                fill_ivar_cache(iseq, ic, cc, is_attr, index, shape_id);
+
+                // We fetched the ivar list above
+                val = ivar_list[index];
+                RUBY_ASSERT(!UNDEF_P(val));
+                break;
+              default: // cached_id is an ancestor of shape_id so index is unchanged
+                if (ancestor_depth < SHAPE_CLOSE_DESCENDANT_MAX_DEPTH) {
+                    // if shape_id is a close decendent of cached_id, we assume this
+                    // object might be using the "memoization" pattern, so it will flip-flop
+                    // a lot and we might as well keep the close ancestor in cache.
+                    // TODO: is there a better heuristic? e.g. number of edges?
+                    fill_ivar_cache(iseq, ic, cc, is_attr, index, shape_id);
+                }
+
+                val = ivar_list[index];
+                RUBY_ASSERT(!UNDEF_P(val));
+                break;
             }
         }
 
