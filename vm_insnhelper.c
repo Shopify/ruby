@@ -1293,6 +1293,10 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 val = default_value;
             }
         }
+        else if (index != ATTR_INDEX_NOT_SET && shape->parent_id == cached_id) {
+            val = ivar_list[index];
+            RUBY_ASSERT(!UNDEF_P(val));
+        }
         else {
             if (rb_shape_get_iv_index(shape, id, &index)) {
                 // This fills in the cache with the shared cache object.
