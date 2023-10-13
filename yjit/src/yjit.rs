@@ -59,34 +59,7 @@ static mut TOTAL_ENTRY_HITS: u64 = 0;
 #[no_mangle]
 pub extern "C" fn rb_yjit_threshold_hit(iseq: IseqPtr, total_calls: u64) -> bool {
     let call_threshold = get_option!(call_threshold) as u64;
-
-    unsafe { TOTAL_ENTRY_HITS += 1; }
-
-    if total_calls >= call_threshold {
-
-        if total_calls == call_threshold {
-            let payload = get_or_create_iseq_payload(iseq);
-            let call_count = unsafe { TOTAL_ENTRY_HITS };
-            payload.call_count_at_threshold = call_count;
-        }
-
-        // Try to estimate the total time taken (total number of calls) to reach 20 calls to this ISEQ
-        // This give us a ratio of how hot/cold this ISEQ is
-        if total_calls == call_threshold + 20 {
-            let payload = get_or_create_iseq_payload(iseq);
-            let call_count = unsafe { TOTAL_ENTRY_HITS };
-            let num_calls = call_count - payload.call_count_at_threshold;
-
-            if num_calls > get_option!(cold_threshold) as u64 {
-                incr_counter!(iseq_entry_cold);
-                return false;
-            }
-
-            return true;
-        }
-    }
-
-    return false;
+    return total_calls == call_threshold;
 }
 
 /// This function is called from C code
