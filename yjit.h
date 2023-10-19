@@ -25,7 +25,7 @@
 #endif
 
 // Expose these as declarations since we are building YJIT.
-bool rb_yjit_enabled_p(void);
+extern bool rb_yjit_enabled_p;
 bool rb_yjit_compile_new_iseqs(void);
 bool rb_yjit_threshold_hit(const rb_iseq_t *const iseq, unsigned long total_calls);
 void rb_yjit_invalidate_all_method_lookup_assumptions(void);
@@ -47,7 +47,7 @@ void rb_yjit_tracing_invalidate_all(void);
 // !USE_YJIT
 // In these builds, YJIT could never be turned on. Provide dummy implementations.
 
-static inline bool rb_yjit_enabled_p(void) { return false; }
+#define rb_yjit_enabled_p false
 static inline bool rb_yjit_compile_new_iseqs(void) { return false; }
 static inline bool rb_yjit_threshold_hit(const rb_iseq_t *const iseq, unsigned long total_calls) { return false; }
 static inline void rb_yjit_invalidate_all_method_lookup_assumptions(void) {}

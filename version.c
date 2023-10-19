@@ -140,16 +140,16 @@ Init_version(void)
 #define YJIT_OPTS_ON 0
 #endif
 
-void
-Init_ruby_description(ruby_cmdline_options_t *opt)
+static void
+define_ruby_description(bool rjit_enabled, bool yjit_enabled)
 {
     VALUE description;
 
-    if (RJIT_OPTS_ON) {
+    if (rjit_enabled) {
         rb_dynamic_description = ruby_description_with_rjit;
         description = MKSTR(description_with_rjit);
     }
-    else if (YJIT_OPTS_ON) {
+    else if (yjit_enabled) {
         rb_dynamic_description = ruby_description_with_yjit;
         description = MKSTR(description_with_yjit);
     }
@@ -161,6 +161,19 @@ Init_ruby_description(ruby_cmdline_options_t *opt)
      * The full ruby version string, like <tt>ruby -v</tt> prints
      */
     rb_define_global_const("RUBY_DESCRIPTION", /* MKSTR(description) */ description);
+}
+
+void
+Init_ruby_description(ruby_cmdline_options_t *opt)
+{
+    define_ruby_description(RJIT_OPTS_ON, YJIT_OPTS_ON);
+}
+
+void
+ruby_set_yjit_description(void)
+{
+    rb_const_remove(rb_cObject, rb_intern("RUBY_DESCRIPTION"));
+    define_ruby_description(false, true);
 }
 
 void

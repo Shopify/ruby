@@ -38,9 +38,9 @@ pub struct Options {
     // how often to sample exit trace data
     pub trace_exits_sample_rate: usize,
 
-    // Whether to start YJIT in paused state (initialize YJIT but don't
-    // compile anything)
-    pub pause: bool,
+    // Whether to enable YJIT at boot. This option prevents other
+    // YJIT tuning options from enabling YJIT at boot.
+    pub disable: bool,
 
     /// Dump compiled and executed instructions for debugging
     pub dump_insns: bool,
@@ -67,7 +67,7 @@ pub static mut OPTIONS: Options = Options {
     gen_trace_exits: false,
     print_stats: true,
     trace_exits_sample_rate: 0,
-    pause: false,
+    disable: false,
     dump_insns: false,
     dump_disasm: None,
     verify_ctx: false,
@@ -150,8 +150,9 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
             }
         },
 
-        ("pause", "") => unsafe {
-            OPTIONS.pause = true;
+        ("pause", "") | // for migration
+        ("disable", "") => unsafe {
+            OPTIONS.disable = true;
         },
 
         ("temp-regs", _) => match opt_val.parse() {
