@@ -517,6 +517,7 @@ get_next_shape_internal(rb_shape_t * shape, ID id, enum shape_type shape_type, b
         RB_VM_LOCK_LEAVE();
     }
     else {
+        rb_bug("MAX_SHAPE_ID reached");
         res = rb_shape_get_shape_by_id(OBJ_TOO_COMPLEX_SHAPE_ID);
     }
     return res;
