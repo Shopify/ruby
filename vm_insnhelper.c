@@ -1488,6 +1488,20 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t dest_shape_id, attr_index_t i
 
                     ROBJECT_SET_SHAPE_ID(obj, dest_shape_id);
 
+                    if (rb_shape_get_next_iv_shape(rb_shape_get_shape_by_id(source_shape_id), id) != dest_shape) {
+                        fprintf(stderr, "---- DEBUG ----\n");
+                        rb_p(obj);
+                        fprintf(stderr, "vm_setivar: %s\n", rb_id2name(id));
+                        fprintf(stderr, "source_shape_id: %u\n", source_shape_id);
+                        fprintf(stderr, "source_shape->type: %u\n", rb_shape_get_shape_by_id(source_shape_id)->type);
+                        fprintf(stderr, "dest_shape_id: %u\n", rb_shape_id(dest_shape));
+                        fprintf(stderr, "dest_shape->type: %u\n", dest_shape->type);
+                        fprintf(stderr, "dest_shape->parent_id: %u\n", dest_shape->parent_id);
+                        fprintf(stderr, "dest_shape->parent->type: %u\n", rb_shape_get_shape_by_id(dest_shape->parent_id)->type);
+                        fprintf(stderr, "dest_shape->parent->parent_id: %u\n", rb_shape_get_shape_by_id(dest_shape->parent_id)->parent_id);
+                        fprintf(stderr, "dest_shape->parent->type: %u\n", rb_shape_get_shape_by_id(rb_shape_get_shape_by_id(dest_shape->parent_id)->parent_id)->type);
+                    }
+
                     RUBY_ASSERT(rb_shape_get_next_iv_shape(rb_shape_get_shape_by_id(source_shape_id), id) == dest_shape);
                     RUBY_ASSERT(index < dest_shape->capacity);
                 }
