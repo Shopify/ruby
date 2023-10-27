@@ -1463,6 +1463,14 @@ vm_setivar_default(VALUE obj, ID id, VALUE val, shape_id_t dest_shape_id, attr_i
     return val;
 }
 
+static void debug_shape(const char * context, shape_id_t shape_id)
+{
+    fprintf(stderr, "%s id: %u\n", context, shape_id);
+    fprintf(stderr, "%s type: %u\n", context, rb_shape_get_shape_by_id(shape_id)->type);
+    fprintf(stderr, "%s parent_id: %u\n", context, rb_shape_get_shape_by_id(shape_id)->parent_id);
+    fprintf(stderr, "-------------\n");
+}
+
 static inline VALUE
 vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t dest_shape_id, attr_index_t index)
 {
@@ -1492,14 +1500,9 @@ vm_setivar(VALUE obj, ID id, VALUE val, shape_id_t dest_shape_id, attr_index_t i
                         fprintf(stderr, "---- DEBUG ----\n");
                         rb_p(obj);
                         fprintf(stderr, "vm_setivar: %s\n", rb_id2name(id));
-                        fprintf(stderr, "source_shape_id: %u\n", source_shape_id);
-                        fprintf(stderr, "source_shape->type: %u\n", rb_shape_get_shape_by_id(source_shape_id)->type);
-                        fprintf(stderr, "dest_shape_id: %u\n", rb_shape_id(dest_shape));
-                        fprintf(stderr, "dest_shape->type: %u\n", dest_shape->type);
-                        fprintf(stderr, "dest_shape->parent_id: %u\n", dest_shape->parent_id);
-                        fprintf(stderr, "dest_shape->parent->type: %u\n", rb_shape_get_shape_by_id(dest_shape->parent_id)->type);
-                        fprintf(stderr, "dest_shape->parent->parent_id: %u\n", rb_shape_get_shape_by_id(dest_shape->parent_id)->parent_id);
-                        fprintf(stderr, "dest_shape->parent->type: %u\n", rb_shape_get_shape_by_id(rb_shape_get_shape_by_id(dest_shape->parent_id)->parent_id)->type);
+                        debug_shape("source", source_shape_id);
+                        debug_shape("dest", rb_shape_id(dest_shape));
+                        debug_shape("rb_shape_get_next_iv_shape", rb_shape_id(rb_shape_get_next_iv_shape(rb_shape_get_shape_by_id(source_shape_id), id)));
                     }
 
                     RUBY_ASSERT(rb_shape_get_next_iv_shape(rb_shape_get_shape_by_id(source_shape_id), id) == dest_shape);
