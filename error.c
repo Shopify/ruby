@@ -1232,6 +1232,7 @@ unexpected_type(VALUE x, int xt, int t)
     VALUE mesg, exc = rb_eFatal;
 
     if (tname) {
+        rb_bug("unexpected_type");
         mesg = rb_sprintf("wrong argument type %"PRIsVALUE" (expected %s)",
                           displaying_class_of(x), tname);
         exc = rb_eTypeError;
@@ -1326,6 +1327,7 @@ rb_check_typeddata(VALUE obj, const rb_data_type_t *data_type)
     }
 
     const char *expected = data_type->wrap_struct_name;
+    rb_bug("rb_check_typeddata");
     rb_raise(rb_eTypeError, "wrong argument type %"PRIsVALUE" (expected %s)",
              actual, expected);
     UNREACHABLE_RETURN(NULL);
