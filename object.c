@@ -1222,7 +1222,11 @@ rb_class_search_ancestor(VALUE cl, VALUE c)
  *
  * Returns a new BasicObject.
  */
-#define rb_obj_initialize rb_obj_dummy0
+VALUE
+rb_obj_initialize(VALUE _self)
+{
+    return Qnil;
+}
 
 /*
  * Not documented
