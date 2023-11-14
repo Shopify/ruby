@@ -20,16 +20,16 @@
 #endif
 
 #if SIZEOF_SHAPE_T == 4
-#if RUBY_DEBUG
-#define SHAPE_BUFFER_SIZE 0x8000
-#else
 #define SHAPE_BUFFER_SIZE 0x80000
+#if RUBY_DEBUG
+#define REDBLACK_CACHE_SIZE 0x100000
+#else
+#define REDBLACK_CACHE_SIZE 0x1000000
 #endif
 #else
 #define SHAPE_BUFFER_SIZE 0x8000
+#define REDBLACK_CACHE_SIZE 0x100000
 #endif
-
-#define REDBLACK_CACHE_SIZE (SHAPE_BUFFER_SIZE * 32)
 
 #define SINGLE_CHILD_TAG 0x1
 #define TAG_SINGLE_CHILD(x) (struct rb_id_table *)((uintptr_t)x | SINGLE_CHILD_TAG)
