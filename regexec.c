@@ -1465,20 +1465,20 @@ stack_double(OnigStackType** arg_stk_base, OnigStackType** arg_stk_end,
       msa->match_cache_buf[stk->u.match_cache_point.index] |= stk->u.match_cache_point.mask;\
       MATCH_CACHE_DEBUG_MEMOIZE(stk);\
     } else if (stk->type == STK_ATOMIC_MATCH_CACHE_POINT) {\
-      memoize_extended_match_cache_point(msa->match_cache_buf, stk->u.match_cache_point.index, stk->u.match_cache_point.mask);\
+      memoize_extended_match_cache_point(msa->match_cache_buf_size, msa->match_cache_buf, stk->u.match_cache_point.index, stk->u.match_cache_point.mask);\
       MATCH_CACHE_DEBUG_MEMOIZE(stkp);\
     }\
   } while(0)
 # define MEMOIZE_LOOKAROUND_MATCH_CACHE_POINT(stkp) do {\
     if (stkp->type == STK_MATCH_CACHE_POINT) {\
       stkp->type = STK_VOID;\
-      memoize_extended_match_cache_point(msa->match_cache_buf, stkp->u.match_cache_point.index, stkp->u.match_cache_point.mask);\
+      memoize_extended_match_cache_point(msa->match_cache_buf_size, msa->match_cache_buf, stkp->u.match_cache_point.index, stkp->u.match_cache_point.mask);\
       MATCH_CACHE_DEBUG_MEMOIZE(stkp);\
     }\
   } while(0)
 # define MEMOIZE_ATOMIC_MATCH_CACHE_POINT do {\
     if (stk->type == STK_MATCH_CACHE_POINT) {\
-      memoize_extended_match_cache_point(msa->match_cache_buf, stk->u.match_cache_point.index, stk->u.match_cache_point.mask);\
+      memoize_extended_match_cache_point(msa->match_cache_buf_size, msa->match_cache_buf, stk->u.match_cache_point.index, stk->u.match_cache_point.mask);\
       MATCH_CACHE_DEBUG_MEMOIZE(stkp);\
     }\
   } while(0)
@@ -2196,17 +2196,23 @@ find_cache_point(regex_t* reg, const OnigCacheOpcode* cache_opcodes, long num_ca
     cache_point;
 }
 
-static int check_extended_match_cache_point(uint8_t *match_cache_buf, long match_cache_point_index, uint8_t match_cache_point_mask) {
+static int check_extended_match_cache_point(size_t match_cache_buf_size, uint8_t *match_cache_buf, long match_cache_point_index, uint8_t match_cache_point_mask) {
   if (match_cache_point_mask & 0x80) {
+    if (match_cache_point_index == (match_cache_buf_size - 2)) {
+        rb_bug("Regexp cache write overflow");
+    }
     return (match_cache_buf[match_cache_point_index + 1] & 0x01) > 0;
   } else {
     return (match_cache_buf[match_cache_point_index] & (match_cache_point_mask << 1)) > 0;
   }
 }
 
-static void memoize_extended_match_cache_point(uint8_t *match_cache_buf, long match_cache_point_index, uint8_t match_cache_point_mask) {
+static void memoize_extended_match_cache_point(size_t match_cache_buf_size, uint8_t *match_cache_buf, long match_cache_point_index, uint8_t match_cache_point_mask) {
   match_cache_buf[match_cache_point_index] |= match_cache_point_mask;
   if (match_cache_point_mask & 0x80) {
+    if (match_cache_point_index == (match_cache_buf_size - 2)) {
+        rb_bug("Regexp cache write overflow");
+    }
     match_cache_buf[match_cache_point_index + 1] |= 0x01;
   } else {
     match_cache_buf[match_cache_point_index] |= match_cache_point_mask << 1;
@@ -2544,12 +2550,12 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 	MATCH_CACHE_DEBUG_HIT;\
 	if (cache_opcode->lookaround_nesting == 0) goto fail;\
 	else if (cache_opcode->lookaround_nesting < 0) {\
-	  if (check_extended_match_cache_point(msa->match_cache_buf, match_cache_point_index, match_cache_point_mask)) {\
+	  if (check_extended_match_cache_point(msa->match_cache_buf_size, msa->match_cache_buf, match_cache_point_index, match_cache_point_mask)) {\
             STACK_STOP_BT_FAIL;\
             goto fail;\
           } else goto fail;\
         } else {\
-	  if (check_extended_match_cache_point(msa->match_cache_buf, match_cache_point_index, match_cache_point_mask)) {\
+	  if (check_extended_match_cache_point(msa->match_cache_buf_size, msa->match_cache_buf, match_cache_point_index, match_cache_point_mask)) {\
 	    p = cache_opcode->match_addr;\
             MOP_OUT;\
             JUMP;\
@@ -4093,6 +4099,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 	    return ONIGERR_MEMORY;
 	  }
 	  size_t match_cache_buf_length = (num_match_cache_points >> 3) + (num_match_cache_points & 7 ? 1 : 0) + 1;
+      msa->match_cache_buf_size = match_cache_buf_length;
 	  uint8_t* match_cache_buf = (uint8_t*)xmalloc(match_cache_buf_length * sizeof(uint8_t));
 	  if (match_cache_buf == NULL) {
 	    return ONIGERR_MEMORY;

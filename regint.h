@@ -923,6 +923,7 @@ typedef struct {
   OnigCacheOpcode* cache_opcodes;
   long             num_cache_points;
   uint8_t*         match_cache_buf;
+  size_t           match_cache_buf_size;
 #endif
 } OnigMatchArg;
 
