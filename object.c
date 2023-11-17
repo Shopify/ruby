@@ -283,6 +283,20 @@ rb_obj_singleton_class(VALUE obj)
     return rb_singleton_class(obj);
 }
 
+struct rb_evacuate_arg {
+    st_table *table;
+    VALUE host;
+};
+
+static int
+evict_ivars_to_hash_i(ID key, VALUE val, st_data_t arg)
+{
+    struct rb_evacuate_arg *evac_arg = (struct rb_evacuate_arg *)arg;
+    st_insert(evac_arg->table, (st_data_t)key, (st_data_t)val);
+    RB_OBJ_WRITTEN(evac_arg->host, Qundef, val);
+    return ST_CONTINUE;
+}
+
 /*! \private */
 void
 rb_obj_copy_ivar(VALUE dest, VALUE obj)
@@ -294,11 +308,11 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
 
     if (rb_shape_obj_too_complex(obj)) {
         st_table * table = rb_st_init_numtable_with_size(rb_st_table_size(ROBJECT_IV_HASH(obj)));
-
-        rb_ivar_foreach(obj, rb_obj_evacuate_ivs_to_hash_table, (st_data_t)table);
         rb_shape_set_too_complex(dest);
-
         ROBJECT(dest)->as.heap.ivptr = (VALUE *)table;
+
+        struct rb_evacuate_arg evac_arg = { .table = table, .host = dest };
+        rb_ivar_foreach(obj, evict_ivars_to_hash_i, (st_data_t)&evac_arg);
 
         return;
     }
@@ -328,10 +342,11 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
         shape_to_set_on_dest = rb_shape_rebuild_shape(initial_shape, src_shape);
         if (UNLIKELY(rb_shape_id(shape_to_set_on_dest) == OBJ_TOO_COMPLEX_SHAPE_ID)) {
             st_table * table = rb_st_init_numtable_with_size(src_num_ivs);
-
-            rb_ivar_foreach(obj, rb_obj_evacuate_ivs_to_hash_table, (st_data_t)table);
             rb_shape_set_too_complex(dest);
             ROBJECT(dest)->as.heap.ivptr = (VALUE *)table;
+
+            struct rb_evacuate_arg evac_arg = { .table = table, .host = dest };
+            rb_ivar_foreach(obj, evict_ivars_to_hash_i, (st_data_t)&evac_arg);
 
             return;
         }
