@@ -38,8 +38,12 @@ module Prism
       Encoding::ISO_8859_15 =>  0x00...0x100,
       Encoding::ISO_8859_16 =>  0x00...0x100,
       Encoding::KOI8_R =>       0x00...0x100,
+      Encoding::MACGREEK =>     0x00...0x100,
       Encoding::MACICELAND =>   0x00...0x100,
+      Encoding::MACROMAN =>     0x00...0x100,
       Encoding::MACROMANIA =>   0x00...0x100,
+      Encoding::MACTHAI =>      0x00...0x100,
+      Encoding::MACTURKISH =>   0x00...0x100,
       Encoding::Windows_1250 => 0x00...0x100,
       Encoding::Windows_1251 => 0x00...0x100,
       Encoding::Windows_1252 => 0x00...0x100,
@@ -49,6 +53,7 @@ module Prism
       Encoding::Windows_1256 => 0x00...0x100,
       Encoding::Windows_1257 => 0x00...0x100,
       Encoding::Windows_1258 => 0x00...0x100,
+      Encoding::Windows_874 =>  0x00...0x100,
       Encoding::Big5 =>         0x00...0x10000,
       Encoding::CP51932 =>      0x00...0x10000,
       Encoding::GBK =>          0x00...0x10000,
@@ -69,6 +74,8 @@ module Prism
 
     encodings.each do |encoding, range|
       encoding.names.each do |name|
+        next if name == "locale"
+
         define_method(:"test_encoding_#{name}") do
           assert_encoding(encoding, name, range)
         end

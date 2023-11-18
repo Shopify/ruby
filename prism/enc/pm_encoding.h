@@ -190,8 +190,13 @@ extern pm_encoding_t pm_encoding_iso_8859_14;
 extern pm_encoding_t pm_encoding_iso_8859_15;
 extern pm_encoding_t pm_encoding_iso_8859_16;
 extern pm_encoding_t pm_encoding_koi8_r;
+extern pm_encoding_t pm_encoding_mac_greek;
 extern pm_encoding_t pm_encoding_mac_iceland;
+extern pm_encoding_t pm_encoding_mac_roman;
 extern pm_encoding_t pm_encoding_mac_romania;
+extern pm_encoding_t pm_encoding_mac_thai;
+extern pm_encoding_t pm_encoding_mac_turkish;
+extern pm_encoding_t pm_encoding_mac_ukraine;
 extern pm_encoding_t pm_encoding_shift_jis;
 extern pm_encoding_t pm_encoding_utf_8;
 extern pm_encoding_t pm_encoding_utf8_mac;
@@ -205,5 +210,6 @@ extern pm_encoding_t pm_encoding_windows_1256;
 extern pm_encoding_t pm_encoding_windows_1257;
 extern pm_encoding_t pm_encoding_windows_1258;
 extern pm_encoding_t pm_encoding_windows_31j;
+extern pm_encoding_t pm_encoding_windows_874;
 
 #endif

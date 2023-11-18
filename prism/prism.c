@@ -6075,6 +6075,7 @@ parser_lex_magic_comment_encoding_value(pm_parser_t *parser, const uint8_t *star
                 ENCODING1("CP860", pm_encoding_ibm860);
                 ENCODING1("CP861", pm_encoding_ibm861);
                 ENCODING1("CP862", pm_encoding_ibm862);
+                ENCODING1("CP874", pm_encoding_windows_874);
                 ENCODING1("CP878", pm_encoding_koi8_r);
                 ENCODING2("CP932", "csWindows31J", pm_encoding_windows_31j);
                 ENCODING1("CP936", pm_encoding_gbk);
@@ -6135,8 +6136,13 @@ parser_lex_magic_comment_encoding_value(pm_parser_t *parser, const uint8_t *star
                 ENCODING1("locale", pm_encoding_utf_8);
                 break;
             case 'M': case 'm':
+                ENCODING1("macGreek", pm_encoding_mac_greek);
                 ENCODING1("macIceland", pm_encoding_mac_iceland);
+                ENCODING1("macRoman", pm_encoding_mac_roman);
                 ENCODING1("macRomania", pm_encoding_mac_romania);
+                ENCODING1("macThai", pm_encoding_mac_thai);
+                ENCODING1("macTurkish", pm_encoding_mac_turkish);
+                ENCODING1("macUkraine", pm_encoding_mac_ukraine);
                 break;
             case 'P': case 'p':
                 ENCODING1("PCK", pm_encoding_windows_31j);
@@ -6151,6 +6157,7 @@ parser_lex_magic_comment_encoding_value(pm_parser_t *parser, const uint8_t *star
                 break;
             case 'W': case 'w':
                 ENCODING1("Windows-31J", pm_encoding_windows_31j);
+                ENCODING1("Windows-874", pm_encoding_windows_874);
                 ENCODING1("Windows-1250", pm_encoding_windows_1250);
                 ENCODING1("Windows-1251", pm_encoding_windows_1251);
                 ENCODING1("Windows-1252", pm_encoding_windows_1252);
@@ -10438,6 +10445,8 @@ parse_write_name(pm_parser_t *parser, pm_constant_id_t *name_field) {
     name[length] = '=';
 
     // Now switch the name to the new string.
+    // This silences clang analyzer warning about leak of memory pointed by `name`.
+    // NOLINTNEXTLINE(clang-analyzer-*)
     *name_field = pm_constant_pool_insert_owned(&parser->constant_pool, name, length + 1);
 }
 
@@ -11919,6 +11928,13 @@ parse_arguments_list(pm_parser_t *parser, pm_arguments_t *arguments, bool accept
         // operator. In this case we assume the subsequent token is part of an
         // argument to this method call.
         parse_arguments(parser, arguments, true, PM_TOKEN_EOF);
+
+        // If we have done with the arguments and still not consumed the comma,
+        // then we have a trailing comma where we need to check whether it is
+        // allowed or not.
+        if (parser->previous.type == PM_TOKEN_COMMA && !match1(parser, PM_TOKEN_SEMICOLON)) {
+            pm_parser_err_previous(parser, PM_ERR_EXPECT_ARGUMENT);
+        }
 
         pm_accepts_block_stack_pop(parser);
     }
@@ -15693,6 +15709,9 @@ parse_regular_expression_named_captures(pm_parser_t *parser, const pm_string_t *
                 if (memory == NULL) abort();
 
                 memcpy(memory, source, length);
+
+                // This silences clang analyzer warning about leak of memory pointed by `memory`.
+                // NOLINTNEXTLINE(clang-analyzer-*)
                 local = pm_parser_local_add_owned(parser, (const uint8_t *) memory, length);
 
                 if (token_is_numbered_parameter(source, source + length)) {
