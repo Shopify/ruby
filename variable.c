@@ -1646,6 +1646,7 @@ rb_obj_copy_ivs_to_hash_table_i(ID key, VALUE val, st_data_t arg)
     RUBY_ASSERT(!st_lookup((st_table *)arg, (st_data_t)key, NULL));
 
     st_add_direct((st_table *)arg, (st_data_t)key, (st_data_t)val);
+    RUBY_ASSERT(rb_gc_is_ptr_to_obj((void *)val));
     return ST_CONTINUE;
 }
 
