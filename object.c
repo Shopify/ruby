@@ -283,6 +283,13 @@ rb_obj_singleton_class(VALUE obj)
     return rb_singleton_class(obj);
 }
 
+static int
+fire_wb_i(st_data_t ivar_name_, st_data_t ivar_value, st_data_t host_object)
+{
+    RB_OBJ_WRITTEN(host_object, Qundef, ivar_value);
+    return ST_CONTINUE;
+}
+
 /*! \private */
 void
 rb_obj_copy_ivar(VALUE dest, VALUE obj)
@@ -297,6 +304,7 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
         st_table * table = rb_st_init_numtable_with_size(rb_st_table_size(ROBJECT_IV_HASH(obj)));
         st_replace(table, ROBJECT_IV_HASH(obj));
         rb_obj_convert_to_too_complex(dest, table);
+        st_foreach(table, fire_wb_i, (st_data_t)dest);
 
         return;
     }
@@ -328,6 +336,7 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
             st_table * table = rb_st_init_numtable_with_size(src_num_ivs);
             rb_obj_copy_ivs_to_hash_table(obj, table);
             rb_obj_convert_to_too_complex(dest, table);
+            st_foreach(table, fire_wb_i, (st_data_t)dest);
 
             return;
         }
