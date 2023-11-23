@@ -1490,6 +1490,10 @@ too_complex:
         result.existing = st_insert(table, (st_data_t)id, (st_data_t)val);
         result.index = 0;
         RB_OBJ_WRITTEN(obj, Qundef, val);
+        RUBY_ASSERT(SPECIAL_CONST_P(val) || rb_gc_is_ptr_to_obj((void *)val));
+        RUBY_ASSERT(SPECIAL_CONST_P(val) || !rb_objspace_garbage_object_p(val));
+        RUBY_ASSERT(!RB_TYPE_P(val, T_NONE));
+        RUBY_ASSERT(!RB_TYPE_P(val, T_MOVED));
     }
     return result;
 }
@@ -1647,6 +1651,10 @@ rb_obj_copy_ivs_to_hash_table_i(ID key, VALUE val, st_data_t arg)
 
     st_add_direct((st_table *)arg, (st_data_t)key, (st_data_t)val);
     RUBY_ASSERT(SPECIAL_CONST_P(val) || rb_gc_is_ptr_to_obj((void *)val));
+    RUBY_ASSERT(SPECIAL_CONST_P(val) || !rb_objspace_garbage_object_p(val));
+    RUBY_ASSERT(!RB_TYPE_P(val, T_NONE));
+    RUBY_ASSERT(!RB_TYPE_P(val, T_MOVED));
+
     return ST_CONTINUE;
 }
 
