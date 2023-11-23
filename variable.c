@@ -1425,6 +1425,8 @@ rb_evict_ivars_to_hash(VALUE obj)
     rb_obj_copy_ivs_to_hash_table(obj, table);
     rb_obj_convert_to_too_complex(obj, table);
 
+    rb_gc_verify_internal_consistency();
+
     RUBY_ASSERT(rb_shape_obj_too_complex(obj));
 }
 
