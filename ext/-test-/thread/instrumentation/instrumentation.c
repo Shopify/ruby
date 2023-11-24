@@ -12,6 +12,23 @@ static rb_atomic_t exited_count = 0;
 #  define RB_THREAD_LOCAL_SPECIFIER
 #endif
 
+# { Thread => ["started", "exited"]}
+
+struct th_event {
+    VALUE thread;
+    const char *event_name;
+}
+
+th_event events[500] = {}
+static rb_atomic_t index = 0
+
+push_event(VALUE thread, const char *event_name) {
+    events[RUBY_ATOMIC_INC(index)] = {
+        thread = thread,
+        event_name = event_name,
+    };
+}
+
 static RB_THREAD_LOCAL_SPECIFIER unsigned int local_ready_count = 0;
 static RB_THREAD_LOCAL_SPECIFIER unsigned int local_resumed_count = 0;
 static RB_THREAD_LOCAL_SPECIFIER unsigned int local_suspended_count = 0;

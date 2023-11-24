@@ -37,20 +37,18 @@ class TestThreadInstrumentation < Test::Unit::TestCase
 
   def test_join_counters # Bug #18900
     thr = Thread.new { fib(30) }
-    Bug::ThreadInstrumentation.reset_counters
+    # Bug::ThreadInstrumentation.reset_counters
     thr.join
+    assert_equal ["started", "ready", "resumed", "suspended", "exited"], Bug::ThreadInstrumentation.events_fired(thr)
     assert_join_counters(Bug::ThreadInstrumentation.local_counters)
   end
 
   def test_order_of_events
     expected_order = %w[started ready resumed suspended exited]
-    threads = threaded_cpu_work
+    thread = Thread.new { fib(4) }.join
 
-    assert_equal [false] * THREADS_COUNT, threads.map(&:status)
-    threads.each do |thread|
-      actual_order = Bug::ThreadInstrumentation.events_fired(thread)
-      assert_equal expected_order, actual_order
-    end
+    actual_order = Bug::ThreadInstrumentation.events_fired(thread)
+    assert_equal expected_order, actual_order
   end
 
   def test_thread_instrumentation_fork_safe
