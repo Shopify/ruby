@@ -720,15 +720,15 @@ finish_iseq_build(rb_iseq_t *iseq)
 }
 
 static rb_compile_option_t COMPILE_OPTION_DEFAULT = {
-    OPT_INLINE_CONST_CACHE, /* int inline_const_cache; */
-    OPT_PEEPHOLE_OPTIMIZATION, /* int peephole_optimization; */
-    OPT_TAILCALL_OPTIMIZATION, /* int tailcall_optimization */
-    OPT_SPECIALISED_INSTRUCTION, /* int specialized_instruction; */
-    OPT_OPERANDS_UNIFICATION, /* int operands_unification; */
-    OPT_INSTRUCTIONS_UNIFICATION, /* int instructions_unification; */
-    OPT_FROZEN_STRING_LITERAL,
-    OPT_DEBUG_FROZEN_STRING_LITERAL,
-    TRUE,			/* coverage_enabled */
+    .inline_const_cache = OPT_INLINE_CONST_CACHE,
+    .peephole_optimization = OPT_PEEPHOLE_OPTIMIZATION,
+    .tailcall_optimization = OPT_TAILCALL_OPTIMIZATION,
+    .specialized_instruction = OPT_SPECIALISED_INSTRUCTION,
+    .operands_unification = OPT_OPERANDS_UNIFICATION,
+    .instructions_unification = OPT_INSTRUCTIONS_UNIFICATION,
+    .frozen_string_literal = OPT_FROZEN_STRING_LITERAL,
+    .debug_frozen_string_literal = OPT_DEBUG_FROZEN_STRING_LITERAL,
+    .coverage_enabled = TRUE,
 };
 
 static const rb_compile_option_t COMPILE_OPTION_FALSE = {0};
