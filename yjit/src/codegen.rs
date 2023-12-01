@@ -2336,6 +2336,27 @@ fn gen_putstring(
     Some(KeepCompiling)
 }
 
+fn gen_putchilledstring(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    _ocb: &mut OutlinedCb,
+) -> Option<CodegenStatus> {
+    let put_val = jit.get_arg(0);
+
+    // Save the PC and SP because the callee will allocate
+    jit_prepare_call_with_gc(jit, asm);
+
+    let str_opnd = asm.ccall(
+        rb_ec_str_resurrect as *const u8,
+        vec![EC, put_val.into(), 1.into()]
+    );
+
+    let stack_top = asm.stack_push(Type::TString);
+    asm.mov(stack_top, str_opnd);
+
+    Some(KeepCompiling)
+}
+
 fn gen_checkmatch(
     jit: &mut JITState,
     asm: &mut Assembler,
@@ -9766,6 +9787,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_pushtoarray => Some(gen_pushtoarray),
         YARVINSN_newrange => Some(gen_newrange),
         YARVINSN_putstring => Some(gen_putstring),
+        YARVINSN_putchilledstring => Some(gen_putchilledstring),
         YARVINSN_expandarray => Some(gen_expandarray),
         YARVINSN_defined => Some(gen_defined),
         YARVINSN_definedivar => Some(gen_definedivar),
