@@ -87,6 +87,8 @@ VALUE rb_cSymbol;
  * 2:     STR_SHARED (equal to ELTS_SHARED)
  *            The string is shared. The buffer this string points to is owned by
  *            another string (the shared root).
+ * 3:     STR_CHILLED (will be frozen in a future version)
+ *            The string appears frozen but can be mutated with a warning.
  * 5:     STR_SHARED_ROOT
  *            Other strings may point to the contents of this string. When this
  *            flag is set, STR_SHARED must not be set.
@@ -114,6 +116,7 @@ VALUE rb_cSymbol;
  */
 
 #define RUBY_MAX_CHAR_LEN 16
+#define STR_CHILLED FL_USER3
 #define STR_SHARED_ROOT FL_USER5
 #define STR_BORROWED FL_USER6
 #define STR_TMPLOCK FL_USER7
@@ -1825,7 +1828,9 @@ VALUE
 rb_ec_str_resurrect(struct rb_execution_context_struct *ec, VALUE str)
 {
     RUBY_DTRACE_CREATE_HOOK(STRING, RSTRING_LEN(str));
-    return ec_str_duplicate(ec, rb_cString, str);
+    VALUE new_str = ec_str_duplicate(ec, rb_cString, str);
+    FL_SET_RAW(new_str, STR_CHILLED);
+    return new_str;
 }
 
 /*
@@ -2437,10 +2442,20 @@ rb_check_lockedtmp(VALUE str)
 }
 
 static inline void
+str_check_chilled(VALUE str)
+{
+    if (FL_TEST_RAW(str, STR_CHILLED)) {
+        FL_UNSET_RAW(str, STR_CHILLED);
+        rb_warning("literal string will be frozen in the future");
+    }
+}
+
+static inline void
 str_modifiable(VALUE str)
 {
     rb_check_lockedtmp(str);
     rb_check_frozen(str);
+    str_check_chilled(str);
 }
 
 static inline int
