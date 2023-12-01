@@ -4707,7 +4707,7 @@ compile_args(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, NODE **k
     return len;
 }
 
-static inline int
+static inline bool
 static_literal_node_p(const NODE *node, const rb_iseq_t *iseq, bool hash_key)
 {
     switch (nd_type(node)) {
