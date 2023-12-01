@@ -776,6 +776,7 @@ module RubyVM::RJIT
 
       asm.mov(C_ARGS[0], EC)
       asm.mov(C_ARGS[1], to_value(put_val))
+      asm.mov(C_ARGS[2], 0)
       asm.call(C.rb_ec_str_resurrect)
 
       stack_top = ctx.stack_push(Type::TString)

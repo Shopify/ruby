@@ -375,7 +375,7 @@ putstring
 ()
 (VALUE val)
 {
-    val = rb_ec_str_resurrect(ec, str);
+    val = rb_ec_str_resurrect(ec, str, false);
 }
 
 /* put concatenate strings */

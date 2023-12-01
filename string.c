@@ -1825,11 +1825,13 @@ rb_str_resurrect(VALUE str)
 }
 
 VALUE
-rb_ec_str_resurrect(struct rb_execution_context_struct *ec, VALUE str)
+rb_ec_str_resurrect(struct rb_execution_context_struct *ec, VALUE str, bool chilled)
 {
     RUBY_DTRACE_CREATE_HOOK(STRING, RSTRING_LEN(str));
     VALUE new_str = ec_str_duplicate(ec, rb_cString, str);
-    FL_SET_RAW(new_str, STR_CHILLED);
+    if (chilled) {
+        FL_SET_RAW(new_str, STR_CHILLED);
+    }
     return new_str;
 }
 

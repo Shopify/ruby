@@ -2327,7 +2327,7 @@ fn gen_putstring(
 
     let str_opnd = asm.ccall(
         rb_ec_str_resurrect as *const u8,
-        vec![EC, put_val.into()]
+        vec![EC, put_val.into(), 0.into()]
     );
 
     let stack_top = asm.stack_push(Type::TString);
