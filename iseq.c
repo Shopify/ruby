@@ -731,7 +731,9 @@ static rb_compile_option_t COMPILE_OPTION_DEFAULT = {
     .coverage_enabled = TRUE,
 };
 
-static const rb_compile_option_t COMPILE_OPTION_FALSE = {0};
+static const rb_compile_option_t COMPILE_OPTION_FALSE = {
+    .frozen_string_literal = -1, // unspecified
+};
 
 static void
 set_compile_option_from_hash(rb_compile_option_t *option, VALUE opt)
