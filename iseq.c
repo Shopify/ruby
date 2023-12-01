@@ -764,9 +764,11 @@ set_compile_option_from_ast(rb_compile_option_t *option, const rb_ast_body_t *as
 {
 #define SET_COMPILE_OPTION(o, a, mem) \
     ((a)->mem < 0 ? 0 : ((o)->mem = (a)->mem > 0))
-    SET_COMPILE_OPTION(option, ast, frozen_string_literal);
     SET_COMPILE_OPTION(option, ast, coverage_enabled);
 #undef SET_COMPILE_OPTION
+    if (ast->frozen_string_literal >= 0) {
+        option->frozen_string_literal = ast->frozen_string_literal;
+    }
     return option;
 }
 
@@ -808,13 +810,14 @@ make_compile_option_value(rb_compile_option_t *option)
         SET_COMPILE_OPTION(option, opt, specialized_instruction);
         SET_COMPILE_OPTION(option, opt, operands_unification);
         SET_COMPILE_OPTION(option, opt, instructions_unification);
-        SET_COMPILE_OPTION(option, opt, frozen_string_literal);
         SET_COMPILE_OPTION(option, opt, debug_frozen_string_literal);
         SET_COMPILE_OPTION(option, opt, coverage_enabled);
         SET_COMPILE_OPTION_NUM(option, opt, debug_level);
     }
 #undef SET_COMPILE_OPTION
 #undef SET_COMPILE_OPTION_NUM
+    VALUE frozen_string_literal = option->frozen_string_literal == -1 ? Qnil : RBOOL(option->frozen_string_literal);
+    rb_hash_aset(opt, ID2SYM(rb_intern("frozen_string_literal")), frozen_string_literal);
     return opt;
 }
 
