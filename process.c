@@ -594,17 +594,17 @@ struct rb_process_status {
 static const rb_data_type_t rb_process_status_type = {
     .wrap_struct_name = "Process::Status",
     .function = {
-        .dmark = NULL,
         .dfree = RUBY_DEFAULT_FREE,
-        .dsize = NULL,
     },
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+    .data = NULL,
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
 static VALUE
 rb_process_status_allocate(VALUE klass)
 {
-    struct rb_process_status *data;
+    struct rb_process_status *data = NULL;
+
     return TypedData_Make_Struct(klass, struct rb_process_status, &rb_process_status_type, data);
 }
 
@@ -646,7 +646,8 @@ VALUE
 rb_process_status_new(rb_pid_t pid, int status, int error)
 {
     VALUE last_status = rb_process_status_allocate(rb_cProcessStatus);
-    struct rb_process_status *data = RTYPEDDATA_GET_DATA(last_status);
+
+    struct rb_process_status *data = RTYPEDDATA_DATA(last_status);
     data->pid = pid;
     data->status = status;
     data->error = error;
@@ -659,8 +660,7 @@ static VALUE
 process_status_dump(VALUE status)
 {
     VALUE dump = rb_class_new_instance(0, 0, rb_cObject);
-    struct rb_process_status *data;
-    TypedData_Get_Struct(status, struct rb_process_status, &rb_process_status_type, data);
+    struct rb_process_status *data = RTYPEDDATA_DATA(status);
     if (data->pid) {
         rb_ivar_set(dump, id_status, INT2NUM(data->status));
         rb_ivar_set(dump, id_pid, PIDT2NUM(data->pid));
@@ -698,18 +698,16 @@ rb_last_status_clear(void)
 }
 
 static rb_pid_t
-pst_pid(VALUE status)
+pst_pid(VALUE pst)
 {
-    struct rb_process_status *data;
-    TypedData_Get_Struct(status, struct rb_process_status, &rb_process_status_type, data);
+    struct rb_process_status *data = RTYPEDDATA_DATA(pst);
     return data->pid;
 }
 
 static int
-pst_status(VALUE status)
+pst_status(VALUE pst)
 {
-    struct rb_process_status *data;
-    TypedData_Get_Struct(status, struct rb_process_status, &rb_process_status_type, data);
+    struct rb_process_status *data = RTYPEDDATA_DATA(pst);
     return data->status;
 }
 
