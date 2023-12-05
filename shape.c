@@ -5,6 +5,7 @@
 #include "id_table.h"
 #include "internal/class.h"
 #include "internal/gc.h"
+#include "internal/object.h"
 #include "internal/symbol.h"
 #include "internal/variable.h"
 #include "internal/error.h"
@@ -631,6 +632,14 @@ rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape, VALUE
 
         memmove(&ivptr[removed_shape->next_iv_index - 1], &ivptr[removed_shape->next_iv_index],
                 ((new_shape->next_iv_index + 1) - removed_shape->next_iv_index) * sizeof(VALUE));
+
+        if (BUILTIN_TYPE(obj) == T_OBJECT &&
+                !RB_FL_TEST_RAW(obj, ROBJECT_EMBED) &&
+                rb_obj_embedded_size(new_shape->next_iv_index) <= rb_gc_obj_slot_size(obj)) {
+            RB_FL_SET_RAW(obj, ROBJECT_EMBED);
+            memcpy(ROBJECT_IVPTR(obj), ivptr, new_shape->next_iv_index * sizeof(VALUE));
+            xfree(ivptr);
+        }
 
         rb_shape_set_shape(obj, new_shape);
     }
