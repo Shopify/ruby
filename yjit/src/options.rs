@@ -160,6 +160,7 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
         ("dump-insns", "") => unsafe { OPTIONS.dump_insns = true },
         ("verify-ctx", "") => unsafe { OPTIONS.verify_ctx = true },
         ("global-constant-state", "") => unsafe { OPTIONS.global_constant_state = true },
+        ("disable", "") => {}, // pass through
 
         // Option name not recognized
         _ => {
