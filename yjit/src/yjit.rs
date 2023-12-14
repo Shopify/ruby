@@ -15,11 +15,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// See [rb_yjit_enabled_p]
 static YJIT_ENABLED: AtomicBool = AtomicBool::new(false);
 
+/// When false, we don't compile new iseqs, but might still service existing branch stubs.
+static COMPILE_NEW_ISEQS: AtomicBool = AtomicBool::new(false);
+
 /// Parse one command-line option.
 /// This is called from ruby.c
 #[no_mangle]
 pub extern "C" fn rb_yjit_parse_option(str_ptr: *const raw::c_char) -> bool {
     return parse_option(str_ptr).is_some();
+}
+
+#[no_mangle]
+pub extern "C" fn rb_yjit_compile_new_iseqs() -> raw::c_int {
+    // Note that we might want to call this function from signal handlers so
+    // might need to ensure signal-safety(7).
+    COMPILE_NEW_ISEQS.load(Ordering::Acquire).into()
 }
 
 /// Is YJIT on? The interpreter uses this function to decide whether to increment
@@ -60,6 +70,8 @@ pub extern "C" fn rb_yjit_init_rust() {
 
         // YJIT enabled and initialized successfully
         YJIT_ENABLED.store(true, Ordering::Release);
+
+        COMPILE_NEW_ISEQS.store(!get_option!(disable), Ordering::Release);
     });
 
     if let Err(_) = result {
@@ -114,6 +126,15 @@ pub extern "C" fn rb_yjit_code_gc(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
 
     let cb = CodegenGlobals::get_inline_cb();
     cb.code_gc();
+    Qnil
+}
+
+#[no_mangle]
+pub extern "C" fn rb_yjit_enable(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
+    if yjit_enabled_p() {
+        COMPILE_NEW_ISEQS.store(true, Ordering::Release);
+    }
+
     Qnil
 }
 
