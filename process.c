@@ -38,6 +38,10 @@
 # include <process.h>
 #endif
 
+#ifdef HAVE_POSIX_SPAWN
+#include <spawn.h>
+#endif
+
 #ifndef EXIT_SUCCESS
 # define EXIT_SUCCESS 0
 #endif
@@ -4614,6 +4618,27 @@ rb_execarg_commandline(const struct rb_execarg *eargp, VALUE *prog)
 }
 #endif
 
+#if HAVE_POSIX_SPAWN
+static rb_pid_t
+rb_posix_spawn(struct rb_execarg *eargp)
+{
+    pid_t pid;
+    char *abspath = NULL;
+
+    if (!NIL_P(eargp->invoke.cmd.command_abspath)) {
+        abspath = RSTRING_PTR(eargp->invoke.cmd.command_abspath);
+    }
+    else {
+        errno = ENOENT;
+        return -1;
+    }
+
+    pid = posix_spawn(&pid, abspath, NULL, NULL, NULL, NULL);
+
+    return (rb_pid_t)pid;
+}
+#endif
+
 static rb_pid_t
 rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 {
@@ -4626,6 +4651,19 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 # endif
 #endif
 
+#if HAVE_POSIX_SPAWN
+    if (!eargp->use_shell &&
+            !eargp->pgroup_given &&
+            !eargp->umask_given &&
+            !eargp->unsetenv_others_given &&
+            !eargp->close_others_given &&
+            !eargp->chdir_given &&
+            !eargp->uid_given &&
+            !eargp->gid_given &&
+            !eargp->exception_given) {
+        return rb_posix_spawn(eargp);
+    }
+#endif
 #if defined HAVE_WORKING_FORK && !USE_SPAWNV
     pid = fork_check_err(eargp->status, rb_exec_atfork, eargp, eargp->redirect_fds, errmsg, errmsg_buflen, eargp);
 #else
