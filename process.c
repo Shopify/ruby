@@ -4624,8 +4624,9 @@ rb_posix_spawn(struct rb_execarg *eargp)
 {
     pid_t pid;
     char *abspath = NULL;
+    char **argv = NULL;
 
-    if (!NIL_P(eargp->invoke.cmd.command_abspath)) {
+    if (RTEST(eargp->invoke.cmd.command_abspath)) {
         abspath = RSTRING_PTR(eargp->invoke.cmd.command_abspath);
     }
     else {
@@ -4633,12 +4634,15 @@ rb_posix_spawn(struct rb_execarg *eargp)
         return -1;
     }
 
-    char **argv = ARGVSTR2ARGV(eargp->invoke.cmd.argv_str);
+    argv = ARGVSTR2ARGV(eargp->invoke.cmd.argv_str);
 
     VALUE envp_str = eargp->envp_str;
     char **envp = RTEST(envp_str) ? RB_IMEMO_TMPBUF_PTR(envp_str) : NULL;
 
-    pid = posix_spawn(&pid, abspath, NULL, NULL, argv, envp);
+    int err = posix_spawn(&pid, abspath, NULL, NULL, argv, envp);
+    if (err) {
+        rb_sys_fail(abspath);
+    }
 
     return (rb_pid_t)pid;
 }
