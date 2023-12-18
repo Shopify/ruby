@@ -4633,7 +4633,8 @@ rb_posix_spawn(struct rb_execarg *eargp)
         return -1;
     }
 
-    pid = posix_spawn(&pid, abspath, NULL, NULL, NULL, NULL);
+    char **argv = ARGVSTR2ARGV(eargp->invoke.cmd.argv_str);
+    pid = posix_spawn(&pid, abspath, NULL, NULL, argv, NULL);
 
     return (rb_pid_t)pid;
 }
