@@ -4675,6 +4675,8 @@ rb_posix_spawn(struct rb_execarg *eargp)
     }
 
     err = posix_spawn(&pid, abspath, NULL, &attr, argv, envp);
+    posix_spawnattr_destroy(&attr);
+
     if (err) {
         rb_sys_fail(abspath);
     }
