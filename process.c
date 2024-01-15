@@ -4659,7 +4659,22 @@ rb_posix_spawn(struct rb_execarg *eargp)
     VALUE envp_str = eargp->envp_str;
     char **envp = RTEST(envp_str) ? RB_IMEMO_TMPBUF_PTR(envp_str) : NULL;
 
-    int err = posix_spawn(&pid, abspath, NULL, NULL, argv, envp);
+    int err;
+
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+
+    if (eargp->pgroup_given) {
+        if ((err = posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETPGROUP))) {
+            rb_syserr_fail(err, "posix_spawnattr_setflags");
+        }
+
+        if ((err = posix_spawnattr_setpgroup(&attr, eargp->pgroup_pgid))) {
+            rb_syserr_fail(err, "posix_spawnattr_setpgroup");
+        }
+    }
+
+    err = posix_spawn(&pid, abspath, NULL, &attr, argv, envp);
     if (err) {
         rb_sys_fail(abspath);
     }
@@ -4682,7 +4697,7 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 
 #if HAVE_POSIX_SPAWN
     if (//!eargp->use_shell &&
-            !eargp->pgroup_given &&
+            // !eargp->pgroup_given &&
             !eargp->umask_given &&
             !eargp->unsetenv_others_given &&
             !eargp->close_others_given &&
