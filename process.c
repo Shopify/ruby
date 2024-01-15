@@ -372,6 +372,8 @@ static rb_pid_t cached_pid;
 #define execv(path, argv) (rb_async_bug_errno("unreachable: async-signal-unsafe execv() is called", 0))
 #define execl(path, arg0, arg1, arg2, term) do { extern char **environ; execle((path), (arg0), (arg1), (arg2), (term), (environ)); } while (0)
 #define ALWAYS_NEED_ENVP 1
+#elif defined(HAVE_POSIX_SPAWN)
+#define ALWAYS_NEED_ENVP 1
 #else
 #define ALWAYS_NEED_ENVP 0
 #endif
