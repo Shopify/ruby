@@ -4626,15 +4626,35 @@ rb_posix_spawn(struct rb_execarg *eargp)
     char *abspath = NULL;
     char **argv = NULL;
 
-    if (RTEST(eargp->invoke.cmd.command_abspath)) {
-        abspath = RSTRING_PTR(eargp->invoke.cmd.command_abspath);
-    }
-    else {
-        errno = ENOENT;
-        return -1;
-    }
+    if (eargp->use_shell) {
+        char *s = RSTRING_PTR(eargp->invoke.sh.shell_script);
+        while (*s == ' ' || *s == '\t' || *s == '\n') {
+            s++;
+        }
 
-    argv = ARGVSTR2ARGV(eargp->invoke.cmd.argv_str);
+        if (!*s) {
+            errno = ENOENT;
+            return -1;
+        }
+
+        // TODO: do we need dln_find_exe_r for __CYGWIN32__? Does __CYGWIN32__ even have posix_spawn?
+        abspath = (char *)"/bin/sh";
+        argv = ALLOCA_N(char *, 4);
+        argv[0] = (char *)"sh";
+        argv[1] = (char *)"-c";
+        argv[2] = s;
+        argv[3] = NULL;
+    }
+    else { // no-shell
+        if (RTEST(eargp->invoke.cmd.command_abspath)) {
+            abspath = RSTRING_PTR(eargp->invoke.cmd.command_abspath);
+        }
+        else {
+            errno = ENOENT;
+            return -1;
+        }
+        argv = ARGVSTR2ARGV(eargp->invoke.cmd.argv_str);
+    }
 
     VALUE envp_str = eargp->envp_str;
     char **envp = RTEST(envp_str) ? RB_IMEMO_TMPBUF_PTR(envp_str) : NULL;
@@ -4661,7 +4681,7 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 #endif
 
 #if HAVE_POSIX_SPAWN
-    if (!eargp->use_shell &&
+    if (//!eargp->use_shell &&
             !eargp->pgroup_given &&
             !eargp->umask_given &&
             !eargp->unsetenv_others_given &&
