@@ -4698,6 +4698,7 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 #if HAVE_POSIX_SPAWN
     if (//!eargp->use_shell &&
             // !eargp->pgroup_given &&
+            eargp->close_others_maxhint == -1 &&
             !eargp->umask_given &&
             !eargp->unsetenv_others_given &&
             !eargp->close_others_given &&
