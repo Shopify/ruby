@@ -4759,7 +4759,16 @@ rb_posix_spawn(struct rb_execarg *eargp)
         // posix_spawn only returns fork/vfork/clone failures.
         // If it failed but errno == 0, then it must be an "exec" failure.
         if (errno == 0) {
-            eaccess(abspath, X_OK);
+            if (!eaccess(abspath, X_OK)) {
+                // abspath is executable
+                struct stat file_stat;
+                if (stat(abspath, &file_stat)) {
+                    rb_sys_fail(abspath);
+                }
+                if (S_ISDIR(file_stat.st_mode)) {
+                    errno = EISDIR;
+                }
+            }
         }
         rb_sys_fail(abspath);
     }
