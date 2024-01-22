@@ -3558,6 +3558,18 @@ rb_execarg_run_options(const struct rb_execarg *eargp, struct rb_execarg *sargp,
 {
     VALUE obj;
 
+    if (eargp->fd_dup2 != Qfalse) {
+        fprintf(stderr, "eargp->fd_dup2 set\n");
+    }
+
+    if (eargp->fd_dup2_child != Qfalse) {
+        fprintf(stderr, "eargp->fd_dup2_child set\n");
+    }
+
+    if (eargp->fd_close != Qfalse) {
+        fprintf(stderr, "eargp->fd_close set\n");
+    }
+
     if (sargp) {
         /* assume that sargp is always NULL on fork-able environments */
         MEMZERO(sargp, struct rb_execarg, 1);
@@ -4676,8 +4688,26 @@ rb_posix_spawn(struct rb_execarg *eargp)
         }
     }
 
-    err = posix_spawn(&pid, abspath, NULL, &attr, argv, envp);
+    posix_spawn_file_actions_t file_actions;
+    posix_spawn_file_actions_init(&file_actions);
+
+    if (RTEST(eargp->fd_dup2)) {
+        for (long index = 0; index < RARRAY_LEN(eargp->fd_dup2); index++) {
+            VALUE pair = RARRAY_AREF(eargp->fd_dup2, index);
+            VALUE fd = RARRAY_AREF(pair, 0);
+            VALUE params = RARRAY_AREF(pair, 1);
+
+            int new_fd = NUM2INT(params); // TODO: params may not be a FD, may need more massaging.
+            fprintf(stderr, "posix_spawn_file_actions_adddup2(fops, %d, %d)\n", new_fd, NUM2INT(fd));
+            if ((err = posix_spawn_file_actions_adddup2(&file_actions, new_fd, NUM2INT(fd)))) {
+                rb_syserr_fail(err, "posix_spawn_file_actions_adddup2");
+            }
+        }
+    }
+
+    err = posix_spawn(&pid, abspath, &file_actions, &attr, argv, envp);
     posix_spawnattr_destroy(&attr);
+    posix_spawn_file_actions_destroy(&file_actions);
 
     if (err) {
         rb_sys_fail(abspath);
@@ -4700,9 +4730,10 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 #endif
 
 #if HAVE_POSIX_SPAWN
+    // fprintf(stderr, "eargp->close_others_maxhint = %d\n", eargp->close_others_maxhint);
     if (//!eargp->use_shell &&
             // !eargp->pgroup_given &&
-            eargp->close_others_maxhint == -1 &&
+            // eargp->close_others_maxhint == -1 &&
             !eargp->umask_given &&
             !eargp->unsetenv_others_given &&
             !eargp->close_others_given &&
