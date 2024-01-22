@@ -4725,6 +4725,20 @@ rb_posix_spawn(struct rb_execarg *eargp)
         }
     }
 
+    if (RTEST(eargp->fd_dup2_child)) {
+        for (long index = 0; index < RARRAY_LEN(eargp->fd_dup2_child); index++) {
+            VALUE pair = RARRAY_AREF(eargp->fd_dup2_child, index);
+            VALUE fd = RARRAY_AREF(pair, 0);
+            VALUE params = RARRAY_AREF(pair, 1);
+
+            int new_fd = NUM2INT(params); // TODO: params may not be a FD, may need more massaging.
+            fprintf(stderr, "posix_spawn_file_actions_adddup2(fops, %d, %d)\n", new_fd, NUM2INT(fd));
+            if ((err = posix_spawn_file_actions_adddup2(&file_actions, new_fd, NUM2INT(fd)))) {
+                rb_syserr_fail(err, "posix_spawn_file_actions_adddup2");
+            }
+        }
+    }
+
     if (RTEST(eargp->fd_close)) {
         for (long index = 0; index < RARRAY_LEN(eargp->fd_close); index++) {
             VALUE pair = RARRAY_AREF(eargp->fd_close, index);
