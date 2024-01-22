@@ -4678,7 +4678,7 @@ rb_posix_spawn(struct rb_execarg *eargp)
     posix_spawnattr_t attr;
     posix_spawnattr_init(&attr);
 
-    if (eargp->pgroup_given) {
+    if (eargp->pgroup_given && eargp->pgroup_pgid != -1) {
         if ((err = posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETPGROUP))) {
             rb_syserr_fail(err, "posix_spawnattr_setflags");
         }
