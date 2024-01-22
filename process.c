@@ -4691,6 +4691,26 @@ rb_posix_spawn(struct rb_execarg *eargp)
     posix_spawn_file_actions_t file_actions;
     posix_spawn_file_actions_init(&file_actions);
 
+    // TODO: do we need it? Currently the `open` seem to be done in the parent.
+    // if (RTEST(eargp->fd_open)) {
+    //     for (long index = 0; index < RARRAY_LEN(eargp->fd_open); index++) {
+    //         VALUE pair = RARRAY_AREF(eargp->fd_open, index);
+    //         VALUE fd = RARRAY_AREF(pair, 0);
+    //         VALUE params = RARRAY_AREF(pair, 1);
+    //
+    //         VALUE path = RARRAY_AREF(param, 0);
+    //         VALUE flags = RARRAY_AREF(param, 1);
+    //         // param = rb_ary_new3(4, path, flags, perm, Qnil);
+    //
+    //
+    //         int new_fd = NUM2INT(params); // TODO: params may not be a FD, may need more massaging.
+    //         fprintf(stderr, "posix_spawn_file_actions_addopen(fops, %d, %d)\n", new_fd, NUM2INT(fd));
+    //         if ((err = posix_spawn_file_actions_addopen(&file_actions, fd, RSTRING_PTR(path), NUM2INT(flags)))) {
+    //             rb_syserr_fail(err, "posix_spawn_file_actions_addopen");
+    //         }
+    //     }
+    // }
+
     if (RTEST(eargp->fd_dup2)) {
         for (long index = 0; index < RARRAY_LEN(eargp->fd_dup2); index++) {
             VALUE pair = RARRAY_AREF(eargp->fd_dup2, index);
@@ -4701,6 +4721,18 @@ rb_posix_spawn(struct rb_execarg *eargp)
             fprintf(stderr, "posix_spawn_file_actions_adddup2(fops, %d, %d)\n", new_fd, NUM2INT(fd));
             if ((err = posix_spawn_file_actions_adddup2(&file_actions, new_fd, NUM2INT(fd)))) {
                 rb_syserr_fail(err, "posix_spawn_file_actions_adddup2");
+            }
+        }
+    }
+
+    if (RTEST(eargp->fd_close)) {
+        for (long index = 0; index < RARRAY_LEN(eargp->fd_close); index++) {
+            VALUE pair = RARRAY_AREF(eargp->fd_close, index);
+            VALUE fd = RARRAY_AREF(pair, 0);
+
+            fprintf(stderr, "posix_spawn_file_actions_addclose(fops, %d)\n", NUM2INT(fd));
+            if ((err = posix_spawn_file_actions_addclose(&file_actions, NUM2INT(fd)))) {
+                rb_syserr_fail(err, "posix_spawn_file_actions_addclose");
             }
         }
     }
