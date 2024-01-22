@@ -4756,6 +4756,11 @@ rb_posix_spawn(struct rb_execarg *eargp)
     posix_spawn_file_actions_destroy(&file_actions);
 
     if (err) {
+        // posix_spawn only returns fork/vfork/clone failures.
+        // If it failed but errno == 0, then it must be an "exec" failure.
+        if (errno == 0) {
+            eaccess(abspath, X_OK);
+        }
         rb_sys_fail(abspath);
     }
 
