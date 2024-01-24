@@ -43,12 +43,12 @@ class Object
 % arg['versions'].each {|n, v|
   <%=n%> = <%if n=='RUBY_DESCRIPTION' %>case
     when RubyVM.const_defined?(:RJIT) && RubyVM::RJIT.enabled?
-      <%=arg['RUBY_DESCRIPTION_WITH_RJIT'].inspect%>
+      <%=arg['RUBY_DESCRIPTION_WITH_RJIT'].inspect%>.freeze
     when RubyVM.const_defined?(:YJIT) && RubyVM::YJIT.enabled?
-      <%=arg['RUBY_DESCRIPTION_WITH_YJIT'].inspect%>
+      <%=arg['RUBY_DESCRIPTION_WITH_YJIT'].inspect%>.freeze
     else
-      <%=v.inspect%>
-    end<%else%><%=v.inspect%><%end%>
+      <%=v.inspect%>.freeze
+    end<%else%><%=v.inspect%>.freeze<%end%>
 % }
 end
 builddir = File.dirname(File.expand_path(__FILE__))
