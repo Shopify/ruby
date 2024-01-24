@@ -9692,21 +9692,7 @@ parser_set_token_info(struct parser_params *p, const char *name, const char *val
 static void
 parser_set_frozen_string_literal(struct parser_params *p, const char *name, const char *val)
 {
-    if (getenv("MUTABLE_STRINGS")) {
-        return;
-    }
-
-    int b;
-
-    if (p->token_seen) {
-        rb_warning1("`%s' is ignored after any tokens", WARN_S(name));
-        return;
-    }
-
-    b = parser_get_bool(p, name, val);
-    if (b < 0) return;
-
-    p->frozen_string_literal = b;
+    return;
 }
 
 static void
