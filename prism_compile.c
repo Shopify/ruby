@@ -3744,13 +3744,78 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
         // parent call nodes, used in the cases of NextNodes, ReturnNodes
         // and BreakNodes
         pm_arguments_node_t *arguments_node = (pm_arguments_node_t *) node;
-        pm_node_list_t node_list = arguments_node->arguments;
-        for (size_t index = 0; index < node_list.size; index++) {
-            PM_COMPILE(node_list.nodes[index]);
+        pm_node_list_t *node_list = &arguments_node->arguments;
+
+        // We count the number of elements post the splat node that are not keyword elements to
+        // eventually pass as an argument to newarray
+        int post_splat_counter = 0;
+        bool array_created = false;
+
+        for (size_t index = 0; index < node_list->size; index++) {
+            pm_node_t *argument =node_list->nodes[index];
+
+            switch (PM_NODE_TYPE(argument)) {
+                // A keyword hash node contains all keyword arguments as AssocNodes and AssocSplatNodes
+                case PM_KEYWORD_HASH_NODE: {
+                    pm_keyword_hash_node_t *keyword_arg = (pm_keyword_hash_node_t *)argument;
+
+                    if (post_splat_counter > 0) {
+                        if (array_created) {
+                            ADD_INSN1(ret, &dummy_line_node, pushtoarray, INT2FIX(post_splat_counter));
+                        } else {
+                            ADD_INSN1(ret, &dummy_line_node, newarray, INT2FIX(post_splat_counter));
+                            array_created = true;
+                        }
+                    }
+
+                    pm_arg_compile_keyword_hash_node(keyword_arg, iseq, ret, src, false, scope_node, dummy_line_node);
+
+                    post_splat_counter = 0;
+
+                    break;
+                }
+                case PM_SPLAT_NODE: {
+                    pm_splat_node_t *splat_node = (pm_splat_node_t *)argument;
+
+                    if (post_splat_counter > 0) {
+                        if (array_created) {
+                            ADD_INSN1(ret, &dummy_line_node, pushtoarray, INT2FIX(post_splat_counter));
+                        } else {
+                            ADD_INSN1(ret, &dummy_line_node, newarray, INT2FIX(post_splat_counter));
+                            array_created = true;
+                        }
+                    }
+
+                    if (splat_node->expression) {
+                        PM_COMPILE_NOT_POPPED(splat_node->expression);
+
+                        if (array_created) {
+                            ADD_INSN(ret, &dummy_line_node, concattoarray);
+                        } else {
+                            ADD_INSN1(ret, &dummy_line_node, splatarray, Qtrue);
+                            array_created = true;
+                        }
+                    }
+
+                    post_splat_counter = 0;
+
+                    break;
+                }
+                default: {
+                    post_splat_counter++;
+                    PM_COMPILE_NOT_POPPED(argument);
+                }
+            }
         }
-        if (node_list.size > 1) {
-            ADD_INSN1(ret, &dummy_line_node, newarray, INT2FIX(node_list.size));
+
+        if (node_list->size > 1 && post_splat_counter > 0) {
+            if (array_created) {
+                ADD_INSN1(ret, &dummy_line_node, pushtoarray, INT2FIX(post_splat_counter));
+            } else {
+                ADD_INSN1(ret, &dummy_line_node, newarray, INT2FIX(post_splat_counter));
+            }
         }
+
         return;
       }
       case PM_ARRAY_NODE: {
