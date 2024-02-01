@@ -2307,6 +2307,14 @@ pm_scope_node_init(const pm_node_t *node, pm_scope_node_t *scope, pm_scope_node_
             scope->parameters = cast->parameters;
             scope->body = cast->body;
             scope->locals = cast->locals;
+
+            if (cast->parameters != NULL) {
+                scope->base.location.start = cast->parameters->location.start;
+            }
+            else {
+                scope->base.location.start = cast->operator_loc.end;
+            }
+
             break;
         }
         case PM_MODULE_NODE: {
@@ -5485,9 +5493,14 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
         return;
       }
       case PM_LAMBDA_NODE: {
+        const pm_lambda_node_t *cast = (const pm_lambda_node_t *) node;
+
         pm_scope_node_t next_scope_node;
         pm_scope_node_init(node, &next_scope_node, scope_node, parser);
-        const rb_iseq_t *block = NEW_CHILD_ISEQ(&next_scope_node, make_name_for_block(iseq), ISEQ_TYPE_BLOCK, lineno);
+
+        int opening_lineno = (int) pm_newline_list_line_column(&parser->newline_list, cast->opening_loc.start).line;
+
+        const rb_iseq_t *block = NEW_CHILD_ISEQ(&next_scope_node, make_name_for_block(iseq), ISEQ_TYPE_BLOCK, opening_lineno);
         pm_scope_node_destroy(&next_scope_node);
 
         VALUE argc = INT2FIX(0);
