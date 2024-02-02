@@ -1,0 +1,41 @@
+###########################################################
+## Do NOT use this node dump for any purpose other than  ##
+## debug and research.  Compatibility is not guaranteed. ##
+###########################################################
+
+# @ NODE_SCOPE (id: 10, line: 1, location: (1,0)-(1,22))
+# +- nd_tbl: (empty)
+# +- nd_args:
+# |   (null node)
+# +- nd_body:
+#     @ NODE_ITER (id: 9, line: 1, location: (1,0)-(1,22))*
+#     +- nd_iter:
+#     |   @ NODE_CALL (id: 1, line: 1, location: (1,0)-(1,7))
+#     |   +- nd_mid: :times
+#     |   +- nd_recv:
+#     |   |   @ NODE_INTEGER (id: 0, line: 1, location: (1,0)-(1,1))
+#     |   |   +- val: 5
+#     |   +- nd_args:
+#     |       (null node)
+#     +- nd_body:
+#         @ NODE_SCOPE (id: 8, line: 1, location: (1,7)-(1,22))
+#         +- nd_tbl: (empty)
+#         +- nd_args:
+#         |   (null node)
+#         +- nd_body:
+#             @ NODE_ATTRASGN (id: 5, line: 1, location: (1,9)-(1,21))*
+#             +- nd_recv:
+#             |   @ NODE_VCALL (id: 2, line: 1, location: (1,9)-(1,10))
+#             |   +- nd_mid: :h
+#             +- nd_mid: :[]=
+#             +- nd_args:
+#                 @ NODE_LIST (id: 4, line: 1, location: (1,11)-(1,21))
+#                 +- as.nd_alen: 2
+#                 +- nd_head:
+#                 |   @ NODE_STR (id: 3, line: 1, location: (1,11)-(1,16))
+#                 |   +- nd_lit: "abc"
+#                 +- nd_head:
+#                 |   @ NODE_INTEGER (id: 6, line: 1, location: (1,20)-(1,21))
+#                 |   +- val: 2
+#                 +- nd_next:
+#                     (null node)

@@ -1984,6 +1984,16 @@ class TestHashOnly < Test::Unit::TestCase
     end
   end
 
+  def test_hash_aset_fstring_key_deduped
+    # warmup ObjectSpace.count_objects
+    ObjectSpace.count_objects
+
+    h = {"abc" => 1}
+    before = ObjectSpace.count_objects[:T_STRING]
+    5.times{ h["abc"] = 2}
+    assert_equal before, ObjectSpace.count_objects[:T_STRING]
+  end
+
   def test_hash_aset_fstring_identity
     h = {}.compare_by_identity
     h['abc'] = 1
