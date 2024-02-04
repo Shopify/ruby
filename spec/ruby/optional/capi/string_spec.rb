@@ -1227,4 +1227,12 @@ end
       -> { @s.rb_str_unlocktmp("test") }.should raise_error(RuntimeError, 'temporal unlocking already unlocked string')
     end
   end
+
+  describe "rb_enc_interned_str_cstr" do
+    it "uses ASCII-8BIT encoding when enc is a null pointer" do
+      str = "hello"
+      result = @s.rb_enc_interned_str_cstr(str, nil)
+      result.encoding.should.equal?(Encoding::ASCII_8BIT)
+    end
+  end
 end
