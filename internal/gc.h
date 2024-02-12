@@ -161,12 +161,6 @@ struct rb_objspace; /* in vm_core.h */
     RB_OBJ_WRITE(old, _slot, young); \
 } while (0)
 
-// We use SIZE_POOL_COUNT number of shape IDs for transitions out of different size pools
-// The next available shape ID will be the SPECIAL_CONST_SHAPE_ID
-#ifndef SIZE_POOL_COUNT
-# define SIZE_POOL_COUNT 5
-#endif
-
 /* Used in places that could malloc during, which can cause the GC to run. We
  * need to temporarily disable the GC to allow the malloc to happen.
  * Allocating memory during GC is a bad idea, so use this only when absolutely
@@ -177,16 +171,6 @@ struct rb_objspace; /* in vm_core.h */
 
 #define DURING_GC_COULD_MALLOC_REGION_END() \
     if (_already_disabled == Qfalse) rb_gc_enable()
-
-typedef struct ractor_newobj_size_pool_cache {
-    struct RVALUE *freelist;
-    struct heap_page *using_page;
-} rb_ractor_newobj_size_pool_cache_t;
-
-typedef struct ractor_newobj_cache {
-    size_t incremental_mark_step_allocated_slots;
-    rb_ractor_newobj_size_pool_cache_t size_pool_caches[SIZE_POOL_COUNT];
-} rb_ractor_newobj_cache_t;
 
 /* gc.c */
 extern VALUE *ruby_initial_gc_stress_ptr;
@@ -210,7 +194,10 @@ RUBY_ATTR_MALLOC void *rb_xcalloc_mul_add_mul(size_t, size_t, size_t, size_t);
 static inline void *ruby_sized_xrealloc_inlined(void *ptr, size_t new_size, size_t old_size) RUBY_ATTR_RETURNS_NONNULL RUBY_ATTR_ALLOC_SIZE((2));
 static inline void *ruby_sized_xrealloc2_inlined(void *ptr, size_t new_count, size_t elemsiz, size_t old_count) RUBY_ATTR_RETURNS_NONNULL RUBY_ATTR_ALLOC_SIZE((2, 3));
 static inline void ruby_sized_xfree_inlined(void *ptr, size_t size);
-void rb_gc_ractor_newobj_cache_clear(rb_ractor_newobj_cache_t *newobj_cache);
+
+void *rb_gc_ractor_cache_alloc(void);
+void rb_gc_ractor_cache_free(void *cache);
+
 bool rb_gc_size_allocatable_p(size_t size);
 size_t *rb_gc_size_pool_sizes(void);
 size_t rb_gc_size_pool_id_for_size(size_t size);

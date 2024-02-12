@@ -248,6 +248,7 @@ ractor_free(void *ptr)
     ractor_queue_free(&r->sync.takers_queue);
     ractor_local_storage_free(r);
     rb_hook_list_free(&r->pub.hooks);
+    rb_gc_ractor_cache_free(r->newobj_cache);
     ruby_xfree(r);
 }
 
@@ -1990,9 +1991,6 @@ vm_remove_ractor(rb_vm_t *vm, rb_ractor_t *cr)
         }
         vm->ractor.cnt--;
 
-        /* Clear the cached freelist to prevent a memory leak. */
-        rb_gc_ractor_newobj_cache_clear(&cr->newobj_cache);
-
         ractor_status_set(cr, ractor_terminated);
     }
     RB_VM_UNLOCK();
@@ -2004,6 +2002,7 @@ ractor_alloc(VALUE klass)
     rb_ractor_t *r;
     VALUE rv = TypedData_Make_Struct(klass, rb_ractor_t, &ractor_data_type, r);
     FL_SET_RAW(rv, RUBY_FL_SHAREABLE);
+    r->newobj_cache = rb_gc_ractor_cache_alloc();
     r->pub.self = rv;
     VM_ASSERT(ractor_status_p(r, ractor_created));
     return rv;
