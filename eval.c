@@ -12,6 +12,7 @@
 **********************************************************************/
 
 #include "ruby/internal/config.h"
+#include "rubygc.h"
 
 #ifdef HAVE_SYS_PRCTL_H
 #include <sys/prctl.h>
@@ -96,6 +97,7 @@ ruby_setup(void)
 void
 ruby_init(void)
 {
+    GC_Init();
     int state = ruby_setup();
     if (state) {
         if (RTEST(ruby_debug)) {
