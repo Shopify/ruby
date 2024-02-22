@@ -2444,7 +2444,7 @@ extout = #{$extout && $extout.quote}
 extout_prefix = #{$extout_prefix}
 target_prefix = #{target_prefix}
 LOCAL_LIBS = #{$LOCAL_LIBS}
-LIBS = #{$LIBRUBYARG} #{$libs} #{$LIBS}
+LIBS = #{$LIBRUBYARG} #{$LIBRUBYGCARG} #{$libs} #{$LIBS}
 ORIG_SRCS = #{orig_srcs.collect(&File.method(:basename)).join(' ')}
 SRCS = $(ORIG_SRCS) #{(srcs - orig_srcs).collect(&File.method(:basename)).join(' ')}
 OBJS = #{$objs.join(" ")}
@@ -2703,6 +2703,11 @@ site-install-rb: install-rb
     $LIBRUBYARG = ""
     $LIBRUBYARG_STATIC = config['LIBRUBYARG_STATIC']
     $LIBRUBYARG_SHARED = config['LIBRUBYARG_SHARED']
+
+    $LIBRUBYGCARG = ""
+    $LIBRUBYGCARG_STATIC = config['LIBRUBYGCARG_STATIC']
+    $LIBRUBYGCARG_SHARED = config['LIBRUBYGCARG_SHARED']
+
     $DEFLIBPATH = [$extmk ? "$(topdir)" : "$(#{config["libdirname"] || "libdir"})"]
     $DEFLIBPATH.unshift(".")
     $LIBPATH = []
