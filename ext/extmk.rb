@@ -121,7 +121,6 @@ def extract_makefile(makefile, keep = true)
   end
   if s = m[/^LIBS[ \t]*=[ \t]*(.*)/, 1]
     s.sub!(/^#{Regexp.quote($LIBRUBYARG)} */, "")
-    s.sub!(/^#{Regexp.quote($LIBRUBYGCARG)} */, "")
     s.sub!(/ *#{Regexp.quote($LIBS)}$/, "")
     $libs = s
   end
@@ -526,7 +525,6 @@ cond = proc {|ext, *|
   excl.sort!.collect! {|d| d+"/"}
   nil while incl.reject! {|d| excl << d+"/" if excl.any? {|x| d.start_with?(x)}}
   exts |= incl
-  # do we need this for the GC? probably not...
   if $LIBRUBYARG_SHARED.empty? and CONFIG["EXTSTATIC"] == "static"
     exts.delete_if {|d| File.fnmatch?("-*", d)}
   end
