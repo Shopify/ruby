@@ -265,10 +265,11 @@ prism/token_type.c: $(PRISM_SRCDIR)/config.yml $(PRISM_SRCDIR)/templates/templat
 EXPORTOBJS    = $(DLNOBJ) \
 		localeinit.$(OBJEXT) \
 		loadpath.$(OBJEXT) \
-		$(COMMONOBJS)
+		$(COMMONOBJS) \
+		$(GC_OBJS)
 
 OBJS          = $(EXPORTOBJS) builtin.$(OBJEXT)
-ALLOBJS       = $(NORMALMAINOBJ) $(MINIOBJS) $(COMMONOBJS) $(INITOBJS)
+ALLOBJS       = $(NORMALMAINOBJ) $(MINIOBJS) $(COMMONOBJS) $(GC_OBJS) $(INITOBJS)
 
 GOLFOBJS      = goruby.$(OBJEXT)
 
