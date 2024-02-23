@@ -509,6 +509,8 @@ EOM
   def try_do(src, command, **opts, &b)
     unless have_devel?
       raise <<MSG
+      PWD: #{Dir.pwd}
+      ENTRIES: #{Dir.entries("/Users/eileencodes/src/github.com/open_source/ruby").join(", ")}
 The compiler failed to generate an executable file.
 You have to install development tools first.
 MSG
@@ -523,6 +525,8 @@ MSG
 
   def link_config(ldflags, opt="", libpath=$DEFLIBPATH|$LIBPATH)
     librubyarg = $extmk ? $LIBRUBYARG_STATIC : "$(LIBRUBYARG)"
+    librubygcarg = $extmk ? $LIBRUBYGCARG_STATIC : "$(LIBRUBYGCARG)"
+
     conf = RbConfig::CONFIG.merge('hdrdir' => $hdrdir.quote,
                                   'src' => "#{conftest_source}",
                                   'arch_hdrdir' => $arch_hdrdir.quote,
@@ -533,7 +537,7 @@ MSG
                                   'ARCH_FLAG' => "#$ARCH_FLAG",
                                   'LDFLAGS' => "#$LDFLAGS #{ldflags}",
                                   'LOCAL_LIBS' => "#$LOCAL_LIBS #$libs",
-                                  'LIBS' => "#{librubyarg} #{opt} #$LIBS")
+                                  'LIBS' => "#{librubyarg} #{librubygcarg} #{opt} #$LIBS")
     conf['LIBPATH'] = libpathflag(libpath.map {|s| RbConfig::expand(s.dup, conf)})
     conf
   end
@@ -2124,6 +2128,8 @@ LIBRUBY = #{CONFIG['LIBRUBY']}
 LIBRUBY_A = #{CONFIG['LIBRUBY_A']}
 LIBRUBYARG_SHARED = #$LIBRUBYARG_SHARED
 LIBRUBYARG_STATIC = #$LIBRUBYARG_STATIC
+LIBRUBYGCARG_SHARED = #{$LIBRUBYGCARG_SHARED}
+LIBRUBYGCARG_STATIC = #{$LIBRUBYGCARG_STATIC}
 empty =
 OUTFLAG = #{OUTFLAG}$(empty)
 COUTFLAG = #{COUTFLAG}$(empty)
@@ -2703,6 +2709,8 @@ site-install-rb: install-rb
     $LIBRUBYARG = ""
     $LIBRUBYARG_STATIC = config['LIBRUBYARG_STATIC']
     $LIBRUBYARG_SHARED = config['LIBRUBYARG_SHARED']
+    $LIBRUBYGCARG_STATIC = config['LIBRUBYGCARG_STATIC']
+    $LIBRUBYGCARG_SHARED = config['LIBRUBYGCARG_SHARED']
     $DEFLIBPATH = [$extmk ? "$(topdir)" : "$(#{config["libdirname"] || "libdir"})"]
     $DEFLIBPATH.unshift(".")
     $LIBPATH = []

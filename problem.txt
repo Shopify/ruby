@@ -1,0 +1,13 @@
+compile flags in extconf are wrong
+they need to link against librubygc
+* How are hte flags determined
+* Should we be statically linking test programs
+  * What do the compile flags look like when Ruby is compiled as a shared library?
+
+
+friday
+
+* we're statically linking the GC in the extensions, but we want to dynamically link instead.
+* modify mkmf changes, just want to link against dylib. mkmf assumes if ruby is static everything is static, need to split the flags.
+* do we need to specify a full path to librubygc?
+* we should get this working on linux and see what the requirements are there.

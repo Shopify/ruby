@@ -1,5 +1,0 @@
-compile flags in extconf are wrong
-they need to link against librubygc
-* How are hte flags determined
-* Should we be statically linking test programs
-  * What do the compile flags look like when Ruby is compiled as a shared library?
