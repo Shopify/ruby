@@ -3545,6 +3545,10 @@ AS_CASE("$enable_shared_gc", [yes], [
   libdir_basename="${libdir_basename}"${multiarch+'/${arch}'}
 
   AS_CASE(["$target_os"],
+    [linux*], [
+        RUBY_APPEND_OPTIONS(LIBRUBYGC_DLDFLAGS, ['-Wl,-soname,$(LIBRUBYGC_SONAME)' "$LDFLAGS_OPTDIR"])
+	LIBRUBYGC_ALIASES='$(LIBRUBYGC_SONAME) lib$(RUBYGC_SO_NAME).$(SOEXT)'
+      ],
     [darwin*], [
         LIBRUBYGC_SO='lib$(RUBYGC_SO_NAME).$(SOEXT)'
         LIBRUBYGC_SONAME='$(LIBRUBYGC_SO)'

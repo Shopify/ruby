@@ -359,6 +359,9 @@ $(LIBRUBYGC_SO):
 		$(ECHO) linking shared-library $@
 		$(ECHO) $(SOLIBS)
 		$(Q) $(LDSHARED) $(LIBRUBYGC_DLDFLAGS) $(GC_OBJS) $(SOLIBS) $(EXTSOLIBS) $(OUTFLAG)$@
+		@-$(MINIRUBY) -e 'so, *aliases = ARGV; aliases.uniq!; aliases.delete(File.basename(so)); \
+				  aliases.each { |link| File.delete link rescue nil; File.symlink so, link }' \
+				$(LIBRUBYGC_SO) $(LIBRUBYGC_ALIASES) || true
 
 PKG_CONFIG = @PKG_CONFIG@
 ruby_pc = @ruby_pc@
