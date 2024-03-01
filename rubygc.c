@@ -4,5 +4,7 @@
 
 RUBY_FUNC_EXPORTED void
 GC_Init(void) {
-    fprintf(stderr, "Loading our GC file\n");
+    if (getenv("CUSTOM_GC")) {
+        fprintf(stderr, "Loading our GC file\n");
+    }
 }
