@@ -1,9 +1,6 @@
 # frozen_string_literal: false
 require 'mkmf'
 
-have_library("libruby")
-have_library("librubygc")
-
 have_func("rb_io_path")
 have_func("rb_io_descriptor")
 have_func("rb_io_get_write_io")

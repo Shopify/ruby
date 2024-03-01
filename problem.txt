@@ -1,3 +1,25 @@
+March 1, 2024
+
+* All permutations work, but we think we're statically linking the gc in the
+extensions when using `--enable-shared`. We don't want to link extensions
+to the gc, since it's already linked via libruby.
+
+* Shared gc is working
+* Shared gc and ruby is working
+* Shared ruby is kind of working, it's a hack, and also see above about exts.
+* Static both is working.
+
+Other things that still need to be fixed:
+
+* Should we be setting the install_name for librubygc?
+  * Is an install name set on Linux?
+  * If so, when?
+  * Aaron: when we compile Ruby on Linux, `ldd` doesn't show a full path
+  to libruby. We should check what `ldd` says on Ruby _after_ we install it
+  (maybe the full path is being set when we install Ruby)
+* I noticed lots of builds are failing, even for architectures that don't try
+to build a gc. So we need to look at those before we can get a real CI build running.
+
 Feb 29, 2024
 
 * Building with enable shared only is broken

@@ -509,8 +509,6 @@ EOM
   def try_do(src, command, **opts, &b)
     unless have_devel?
       raise <<MSG
-      PWD: #{Dir.pwd}
-      ENTRIES: #{Dir.entries("/Users/eileencodes/src/github.com/open_source/ruby").join(", ")}
 The compiler failed to generate an executable file.
 You have to install development tools first.
 MSG

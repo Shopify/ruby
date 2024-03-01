@@ -3537,7 +3537,7 @@ AS_CASE("$enable_shared_gc", [yes], [
   LIBRUBY_RELATIVE=no
   ENABLE_SHARED_GC=yes
   LIBRUBYGC_CFLAGS=-fPIC
-  LIBRUBY_LINK='-l$(LIBRUBYGCARG_SHARED)'
+  LIBRUBY_LINK='$(LIBRUBYGCARG_SHARED)'
 
   # libdir can be overridden in config.site file (on OpenSUSE at least).
   libdir_basename=lib
@@ -3556,11 +3556,13 @@ AS_CASE("$enable_shared_gc", [yes], [
         LIBRUBYGC_SO='lib$(RUBYGC_SO_NAME).$(SOEXT)'
         LIBRUBYGC_SONAME='$(LIBRUBYGC_SO)'
         LIBRUBYGC_ALIASES='lib$(RUBY_INSTALL_NAME)gc.$(SOEXT)'
+        LIBRUBYGC_DLDFLAGS="$LIBRUBYGC_DLDFLAGS "'-compatibility_version $(RUBY_API_VERSION)'
+        LIBRUBYGC_DLDFLAGS="$LIBRUBYGC_DLDFLAGS "'-current_version $(RUBY_PROGRAM_VERSION)'
       ],
       [AC_MSG_ERROR(["--enable-shared-gc was passed but ${target_os} doesn't support this option.])]
   )
   ], [
-        LIBRUBY_LINK='-l$(LIBRUBYGCARG_STATIC)'
+        LIBRUBY_LINK='$(LIBRUBYGCARG_STATIC)'
     ])
 AC_SUBST(LIBRUBYGC_CFLAGS)
 AC_SUBST(LIBRUBY_LINK)
