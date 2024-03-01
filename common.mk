@@ -6961,6 +6961,7 @@ eval.$(OBJEXT): {$(VPATH)}ractor_core.h
 eval.$(OBJEXT): {$(VPATH)}rjit.h
 eval.$(OBJEXT): {$(VPATH)}ruby_assert.h
 eval.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+eval.$(OBJEXT): {$(VPATH)}rubygc.h
 eval.$(OBJEXT): {$(VPATH)}rubyparser.h
 eval.$(OBJEXT): {$(VPATH)}shape.h
 eval.$(OBJEXT): {$(VPATH)}st.h
@@ -16405,6 +16406,18 @@ ruby_parser.$(OBJEXT): {$(VPATH)}ruby_assert.h
 ruby_parser.$(OBJEXT): {$(VPATH)}ruby_parser.c
 ruby_parser.$(OBJEXT): {$(VPATH)}rubyparser.h
 ruby_parser.$(OBJEXT): {$(VPATH)}st.h
+rubygc.$(OBJEXT): {$(VPATH)}config.h
+rubygc.$(OBJEXT): {$(VPATH)}internal/compiler_is.h
+rubygc.$(OBJEXT): {$(VPATH)}internal/compiler_is/apple.h
+rubygc.$(OBJEXT): {$(VPATH)}internal/compiler_is/clang.h
+rubygc.$(OBJEXT): {$(VPATH)}internal/compiler_is/gcc.h
+rubygc.$(OBJEXT): {$(VPATH)}internal/compiler_is/intel.h
+rubygc.$(OBJEXT): {$(VPATH)}internal/compiler_is/msvc.h
+rubygc.$(OBJEXT): {$(VPATH)}internal/compiler_is/sunpro.h
+rubygc.$(OBJEXT): {$(VPATH)}internal/compiler_since.h
+rubygc.$(OBJEXT): {$(VPATH)}internal/config.h
+rubygc.$(OBJEXT): {$(VPATH)}rubygc.c
+rubygc.$(OBJEXT): {$(VPATH)}rubygc.h
 ruby_parser.$(OBJEXT): {$(VPATH)}subst.h
 scheduler.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 scheduler.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
