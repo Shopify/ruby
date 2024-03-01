@@ -1,3 +1,22 @@
+March 1, 2024 afternoon update
+
+* Extensions appear to be working correctly now.
+  * Matt can you double check everything works on linux?
+    * --enable-shared
+      * for this one check that `nm .ext/arm64-darwin22/strscan.bundle | grep "GC_In"` has a `T` for the symbol
+      * also check `nm libruby.3.4.dylib | grep "GC_Ini"` is a `T` also
+    * --enable-shared --enable-shared-gc
+    * --enable-shared-gc
+* I've pushed a bunch of commits that got the Windows and clang/gcc builds farther along, I also fixed the dependencies build
+
+Things that need to be fixed:
+
+
+* Should we be setting the install_name for librubygc?
+* CI build for this branch
+* Adding CI builds for the new enabled-shared-gc. Also we're not testing enable-shared at all
+except in ubuntu
+
 March 1, 2024
 
 * All permutations work, but we think we're statically linking the gc in the
