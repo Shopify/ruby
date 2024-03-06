@@ -2963,6 +2963,9 @@ rb_vm_mark(void *ptr)
 
         rb_gc_mark_movable(vm->mark_object_ary);
 
+        long count = 0;
+        long immediate_count = 0;
+
         len = RARRAY_LEN(vm->mark_object_ary);
         obj_ary = RARRAY_CONST_PTR(vm->mark_object_ary);
         for (i=0; i < len; i++) {
@@ -2973,10 +2976,21 @@ rb_vm_mark(void *ptr)
             jlen = RARRAY_LEN(*obj_ary);
             ptr = RARRAY_CONST_PTR(*obj_ary);
             for (j=0; j < jlen; j++) {
+                count++;
+                if (RB_SPECIAL_CONST_P(*ptr)) {
+                    immediate_count++;
+                }
                 rb_gc_mark(*ptr++);
             }
             obj_ary++;
         }
+        
+        fprintf(stderr, "rb_vm_mark: count=%ld, immediate_count=%ld, defined_module_hash_size=%ld, defined_module_hash_memsize=%ld\n",
+            count,
+            immediate_count,
+            vm->defined_module_hash->num_entries,
+            st_memsize(vm->defined_module_hash)
+        );
 
         rb_gc_mark_movable(vm->load_path);
         rb_gc_mark_movable(vm->load_path_snapshot);
