@@ -193,6 +193,12 @@ RUBY_SO_NAME = $(RT)-$(RUBY_BASE_NAME)$(MAJOR)$(MINOR)0
 RUBY_SO_NAME = $(ARCH)-$(RUBY_SO_NAME)
 !endif
 !endif
+!ifndef RUBYGC_SO_NAME
+RUBYGC_SO_NAME = $(RT)-$(RUBY_BASE_NAME)gc$(MAJOR)$(MINOR)0
+!if "$(ARCH)" != "i386"
+RUBYGC_SO_NAME = $(ARCH)-$(RUBYGC_SO_NAME)
+!endif
+!endif
 !ifndef RUBY_PLATFORM
 RUBY_PLATFORM = $(arch)
 !endif
