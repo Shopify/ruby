@@ -1,3 +1,13 @@
+March 6, 2024
+
+* Fixed linker for linux and macos
+
+Current failing builds:
+
+* MinGW - `undefined method gsub'`. LIBRUBYGC isn't defined.
+* VisualStudio - `expected '(' to follow 'RUBY_FUNC_EXPORTED'`
+
+
 March 1, 2024 afternoon update
 
 * Extensions appear to be working correctly now.
