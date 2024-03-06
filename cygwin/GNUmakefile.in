@@ -32,6 +32,9 @@ ifneq ($(ENABLE_SHARED),yes)
   LIBRUBY_SO =
 endif
 
+LIBRUBYGC =
+LIBRUBYGC_A =
+
 ifeq ($(RUBY_INSTALL_NAME),ruby)
   RUBYW_INSTALL_NAME = $(RUBY_INSTALL_NAME)w
 else
