@@ -1226,6 +1226,10 @@ $(LIBRUBY):	$(RUBYDEF)
 		$(ECHO) linking import-library $(@:\=/)
 		$(Q) $(AR) $(ARFLAGS)$@ -def:$(RUBYDEF)
 
+$(LIBRUBYGC):	$(RUBYGCDEF)
+		$(ECHO) linking import-library $(@:\=/)
+		$(Q) $(AR) $(ARFLAGS)$@ -def:$(RUBYGCDEF)
+
 $(LIBRUBY_SO):	$(LIBRUBY_A) $(LIBRUBYGC_LIB) $(DLDOBJS) $(RUBYDEF) $(RUBY_SO_NAME).res
 		@echo $(DLDOBJS)
 !if "$(EXTSTATIC)" == ""
