@@ -2816,7 +2816,7 @@ MESSAGE
   $ruby = arg_config("--ruby", File.join(RbConfig::CONFIG["bindir"], CONFIG["ruby_install_name"]))
 
   RbConfig.expand(CONFIG["RUBY_SO_NAME"])
-  RbConfig.expand(CONFIG["RUBYGC_SO_NAME"])
+  RbConfig.expand(CONFIG["RUBYGC_SO_NAME"] || "")
 
   # :startdoc:
 
