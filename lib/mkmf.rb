@@ -2727,7 +2727,9 @@ site-install-rb: install-rb
       $LIBRUBYARG = config['LIBRUBYARG']
     end
 
-    if $enable_shared_gc or RbConfig.expand(config["LIBRUBYGC"]&.dup) != RbConfig.expand(config["LIBRUBYGC_A"]&.dup)
+    librubygc = config["LIBRUBYGC"] || ""
+    librubygc_a = config["LIBRUBYGC_A"] || ""
+    if $enable_shared_gc or RbConfig.expand(librubygc.dup) != RbConfig.expand(librubygc_a.dup)
       $LIBRUBYGCARG = config['LIBRUBYGCARG']
     end
 
