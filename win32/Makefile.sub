@@ -1215,12 +1215,12 @@ $(LIBRUBY_A):	$(OBJS) $(LIBRUBY_A_OBJS) $(INITOBJS)
 		$(ECHO) linking static-library $(@:\=/)
 		$(Q) $(AR) $(ARFLAGS)$@ $(OBJS) $(LIBRUBY_A_OBJS) $(INITOBJS)
 
-$(LIBRUBYGC_A): $(LIBRUBYGC_A_OBJS)
+$(LIBRUBYGC_A): $(GC_OBJS)
 !if "$(EXTSTATIC)" != ""
 		@-$(PRE_LIBRUBY_UPDATE)
 !endif
 		$(ECHO) linking static-library $(@:\=/)
-		$(Q) $(AR) $(ARFLAGS)$@ $(LIBRUBYGC_A_OBJS)
+		$(Q) $(AR) $(ARFLAGS)$@ $(GC_OBJS)
 
 $(LIBRUBY):	$(RUBYDEF)
 		$(ECHO) linking import-library $(@:\=/)
@@ -1230,7 +1230,7 @@ $(LIBRUBYGC):	$(RUBYGCDEF)
 		$(ECHO) linking import-library $(@:\=/)
 		$(Q) $(AR) $(ARFLAGS)$@ -def:$(RUBYGCDEF)
 
-$(LIBRUBY_SO):	$(LIBRUBY_A) $(LIBRUBYGC_LIB) $(DLDOBJS) $(RUBYDEF) $(RUBY_SO_NAME).res
+$(LIBRUBY_SO):	$(LIBRUBY_A) $(LIBRUBYGC_A) $(LIBRUBYGC_LIB) $(DLDOBJS) $(RUBYDEF) $(RUBY_SO_NAME).res
 		@echo $(DLDOBJS)
 !if "$(EXTSTATIC)" == ""
 		@-$(PRE_LIBRUBY_UPDATE)
