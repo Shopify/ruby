@@ -1236,7 +1236,7 @@ $(LIBRUBY_SO):	$(LIBRUBY_A) $(LIBRUBYGC_LIB) $(DLDOBJS) $(RUBYDEF) $(RUBY_SO_NAM
 		@-$(PRE_LIBRUBY_UPDATE)
 !endif
 		$(ECHO) linking shared-library $(@:\=/)
-		$(Q) $(LDSHARED) $(DLDOBJS) $(LIBRUBY_A) \
+		$(Q) $(LDSHARED) $(DLDOBJS) $(LIBRUBY_A) $(LIBRUBYGC_A)\
 			$(RUBY_SO_NAME).res $(SOLIBS) $(LIBRUBY_LINK) $(EXTSOLIBS) $(LIBS) -Fe$@ -link $(LDFLAGS) \
 			$(LIBRUBY_DLDFLAGS)
 		@$(RM) dummy.lib dummy.exp
