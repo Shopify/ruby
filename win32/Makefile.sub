@@ -1215,7 +1215,7 @@ $(LIBRUBY_A):	$(OBJS) $(LIBRUBY_A_OBJS) $(INITOBJS)
 		$(ECHO) linking static-library $(@:\=/)
 		$(Q) $(AR) $(ARFLAGS)$@ $(OBJS) $(LIBRUBY_A_OBJS) $(INITOBJS)
 
-$(LIBRUBYGC_A): $(LIBRUBY_A_OBJS)
+$(LIBRUBYGC_A): $(LIBRUBYGC_A_OBJS)
 !if "$(EXTSTATIC)" != ""
 		@-$(PRE_LIBRUBY_UPDATE)
 !endif
