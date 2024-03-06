@@ -36,6 +36,10 @@ jobs:
             os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
           - test_task: test-bundled-gems
             os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
+          - test_task: check
+            configure: '--enable-shared --enable-shared-gc'
+          - test_task: check
+            configure: '--disable-shared --enable-shared-gc'
       fail-fast: false
 
     env:
