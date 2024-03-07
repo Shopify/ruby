@@ -38,8 +38,10 @@ jobs:
             os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
           - test_task: check
             configure: '--enable-shared --enable-shared-gc'
+            os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
           - test_task: check
             configure: '--disable-shared --enable-shared-gc'
+            os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
       fail-fast: false
 
     env:
