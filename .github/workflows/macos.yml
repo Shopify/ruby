@@ -26,6 +26,7 @@ jobs:
       matrix:
         test_task: ['check']
         test_opts: ['']
+        configure: []
         os:
           - macos-12
           - macos-13
