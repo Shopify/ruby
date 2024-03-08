@@ -112,6 +112,7 @@
 #include "encindex.h"
 #include "id.h"
 #include "internal.h"
+#include "internal/class.h"
 #include "internal/encoding.h"
 #include "internal/error.h"
 #include "internal/inits.h"
@@ -533,10 +534,12 @@ static rb_io_t *flush_before_seek(rb_io_t *fptr);
 
 extern ID ruby_static_id_signo;
 
-NORETURN(static void raise_on_write(rb_io_t *fptr, int e, VALUE errinfo));
+NORETURN(static void rb_sys_fail_on_write(rb_io_t *fptr));
 static void
-raise_on_write(rb_io_t *fptr, int e, VALUE errinfo)
+rb_sys_fail_on_write(rb_io_t *fptr)
 {
+    int e = errno;
+    VALUE errinfo = rb_syserr_new_path(e, (fptr)->pathv);
 #if defined EPIPE
     if (fptr_signal_on_epipe(fptr) && (e == EPIPE)) {
         const VALUE sig =
@@ -549,12 +552,6 @@ raise_on_write(rb_io_t *fptr, int e, VALUE errinfo)
 #endif
     rb_exc_raise(errinfo);
 }
-
-#define rb_sys_fail_on_write(fptr) \
-    do { \
-        int e = errno; \
-        raise_on_write(fptr, e, rb_syserr_new_path(e, (fptr)->pathv)); \
-    } while (0)
 
 #define NEED_NEWLINE_DECORATOR_ON_READ(fptr) ((fptr)->mode & FMODE_TEXTMODE)
 #define NEED_NEWLINE_DECORATOR_ON_WRITE(fptr) ((fptr)->mode & FMODE_TEXTMODE)
@@ -2280,7 +2277,7 @@ rb_io_writev(VALUE io, int argc, const VALUE *argv)
     if (argc > 1 && rb_obj_method_arity(io, id_write) == 1) {
         if (io != rb_ractor_stderr() && RTEST(ruby_verbose)) {
             VALUE klass = CLASS_OF(io);
-            char sep = FL_TEST(klass, FL_SINGLETON) ? (klass = io, '.') : '#';
+            char sep = RCLASS_SINGLETON_P(klass) ? (klass = io, '.') : '#';
             rb_category_warning(
                 RB_WARN_CATEGORY_DEPRECATED, "%+"PRIsVALUE"%c""write is outdated interface"
                 " which accepts just one argument",
@@ -15632,7 +15629,7 @@ Init_IO(void)
     rb_define_hooked_variable("$,", &rb_output_fs, 0, deprecated_str_setter);
 
     rb_default_rs = rb_fstring_lit("\n"); /* avoid modifying RS_default */
-    rb_gc_register_mark_object(rb_default_rs);
+    rb_vm_register_global_object(rb_default_rs);
     rb_rs = rb_default_rs;
     rb_output_rs = Qnil;
     rb_define_hooked_variable("$/", &rb_rs, 0, deprecated_str_setter);

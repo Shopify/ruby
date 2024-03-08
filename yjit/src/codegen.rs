@@ -995,7 +995,7 @@ fn jump_to_next_insn(
     asm: &mut Assembler,
     ocb: &mut OutlinedCb,
 ) -> Option<()> {
-    // Reset the depth since in current usages we only ever jump to to
+    // Reset the depth since in current usages we only ever jump to
     // chain_depth > 0 from the same instruction.
     let mut reset_depth = asm.ctx;
     reset_depth.reset_chain_depth_and_defer();
@@ -2179,16 +2179,11 @@ fn gen_setlocal_generic(
     let ep_opnd = gen_get_ep(asm, level);
 
     // Fallback because of write barrier
-    if asm.ctx.get_chain_depth() > 0
-    {
-        // Save the PC and SP because it runs GC
-        jit_prepare_call_with_gc(jit, asm);
-
-        // Pop the value to write from the stack
-        let value_opnd = asm.stack_opnd(0);
-
+    if asm.ctx.get_chain_depth() > 0 {
+        // This function should not yield to the GC.
         // void rb_vm_env_write(const VALUE *ep, int index, VALUE v)
         let index = -(ep_offset as i64);
+        let value_opnd = asm.stack_opnd(0);
         asm.ccall(
             rb_vm_env_write as *const u8,
             vec![
@@ -2197,7 +2192,7 @@ fn gen_setlocal_generic(
                 value_opnd,
             ]
         );
-        asm.stack_pop(1); // Keep it on stack during ccall for GC
+        asm.stack_pop(1);
 
         return Some(KeepCompiling);
     }
@@ -5483,36 +5478,71 @@ fn jit_rb_str_byteslice(
 fn jit_rb_str_getbyte(
     jit: &mut JITState,
     asm: &mut Assembler,
-    _ocb: &mut OutlinedCb,
+    ocb: &mut OutlinedCb,
     _ci: *const rb_callinfo,
-    cme: *const rb_callable_method_entry_t,
+    _cme: *const rb_callable_method_entry_t,
     _block: Option<BlockHandler>,
     _argc: i32,
     _known_recv_class: Option<VALUE>,
 ) -> bool {
-    extern "C" {
-        fn rb_str_getbyte(str: VALUE, index: VALUE) -> VALUE;
-    }
-
-    // rb_str_getbyte should be leaf if the index is a fixnum
-    if asm.ctx.get_opnd_type(StackOpnd(0)) != Type::Fixnum {
-        // Raises when non-integers are passed in, which requires the method frame
-        // to be pushed for the backtrace
-        if !jit_prepare_lazy_frame_call(jit, asm, cme, StackOpnd(1)) {
-            return false;
-        }
-    }
     asm_comment!(asm, "String#getbyte");
 
-    let index = asm.stack_opnd(0);
+    // Don't pop since we may bail
+    let idx = asm.stack_opnd(0);
     let recv = asm.stack_opnd(1);
 
-    let ret_opnd = asm.ccall(rb_str_getbyte as *const u8, vec![recv, index]);
-    asm.stack_pop(2); // Keep them on stack during ccall for GC
+    let comptime_idx = jit.peek_at_stack(&asm.ctx, 0);
+    if comptime_idx.fixnum_p(){
+        jit_guard_known_klass(
+            jit,
+            asm,
+            ocb,
+            comptime_idx.class_of(),
+            idx,
+            idx.into(),
+            comptime_idx,
+            SEND_MAX_DEPTH,
+            Counter::getbyte_idx_not_fixnum,
+        );
+    } else {
+        return false;
+    }
 
-    // Can either return a FIXNUM or nil
-    let out_opnd = asm.stack_push(Type::UnknownImm);
-    asm.mov(out_opnd, ret_opnd);
+    // Untag the index
+    let idx = asm.rshift(idx, Opnd::UImm(1));
+
+    // If index is negative, exit
+    asm.cmp(idx, Opnd::UImm(0));
+    asm.jl(Target::side_exit(Counter::getbyte_idx_negative));
+
+    asm_comment!(asm, "get string length");
+    let recv = asm.load(recv);
+    let str_len_opnd = Opnd::mem(
+        std::os::raw::c_long::BITS as u8,
+        asm.load(recv),
+        RUBY_OFFSET_RSTRING_LEN as i32,
+    );
+
+    // Exit if the indes is out of bounds
+    asm.cmp(idx, str_len_opnd);
+    asm.jge(Target::side_exit(Counter::getbyte_idx_out_of_bounds));
+
+    let str_ptr = get_string_ptr(asm, recv);
+    // FIXME: could use SIB indexing here with proper support in backend
+    let str_ptr = asm.add(str_ptr, idx);
+    let byte = asm.load(Opnd::mem(8, str_ptr, 0));
+
+    // Zero-extend the byte to 64 bits
+    let byte = byte.with_num_bits(64).unwrap();
+    let byte = asm.and(byte, 0xFF.into());
+
+    // Tag the byte
+    let byte = asm.lshift(byte, Opnd::UImm(1));
+    let byte = asm.or(byte, Opnd::UImm(1));
+
+    asm.stack_pop(2); // Keep them on stack during ccall for GC
+    let out_opnd = asm.stack_push(Type::Fixnum);
+    asm.mov(out_opnd, byte);
 
     true
 }
@@ -6527,6 +6557,24 @@ fn get_array_ptr(asm: &mut Assembler, array_reg: Opnd) -> Opnd {
     asm.csel_nz(ary_opnd, heap_ptr_opnd)
 }
 
+// Generate RSTRING_PTR
+fn get_string_ptr(asm: &mut Assembler, string_reg: Opnd) -> Opnd {
+    asm_comment!(asm, "get string pointer for embedded or heap");
+
+    let flags_opnd = Opnd::mem(VALUE_BITS, string_reg, RUBY_OFFSET_RBASIC_FLAGS);
+    asm.test(flags_opnd, (RSTRING_NOEMBED as u64).into());
+    let heap_ptr_opnd = asm.load(Opnd::mem(
+        usize::BITS as u8,
+        string_reg,
+        RUBY_OFFSET_RSTRING_AS_HEAP_PTR,
+    ));
+
+    // Load the address of the embedded array
+    // (struct RString *)(obj)->as.ary
+    let ary_opnd = asm.lea(Opnd::mem(VALUE_BITS, string_reg, RUBY_OFFSET_RSTRING_AS_ARY));
+    asm.csel_nz(heap_ptr_opnd, ary_opnd)
+}
+
 /// Pushes arguments from an array to the stack. Differs from push splat because
 /// the array can have items left over. Array is assumed to be T_ARRAY without guards.
 fn copy_splat_args_for_rest_callee(array: Opnd, num_args: u32, asm: &mut Assembler) {
@@ -7515,7 +7563,7 @@ fn gen_iseq_kw_call(
         unsafe { get_cikw_keyword_len(ci_kwarg) }
     };
     let caller_keyword_len: usize = caller_keyword_len_i32.try_into().unwrap();
-    let anon_kwrest = unsafe { rb_get_iseq_flags_anon_kwrest(iseq) };
+    let anon_kwrest = unsafe { rb_get_iseq_flags_anon_kwrest(iseq) && !get_iseq_flags_has_kw(iseq) };
 
     // This struct represents the metadata about the callee-specified
     // keyword parameters.

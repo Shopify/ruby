@@ -252,7 +252,7 @@ pub const RUBY_FL_USER17: ruby_fl_type = 536870912;
 pub const RUBY_FL_USER18: ruby_fl_type = 1073741824;
 pub const RUBY_FL_USER19: ruby_fl_type = -2147483648;
 pub const RUBY_ELTS_SHARED: ruby_fl_type = 16384;
-pub const RUBY_FL_SINGLETON: ruby_fl_type = 4096;
+pub const RUBY_FL_SINGLETON: ruby_fl_type = 8192;
 pub type ruby_fl_type = i32;
 pub const RSTRING_NOEMBED: ruby_rstring_flags = 8192;
 pub const RSTRING_FSTR: ruby_rstring_flags = 536870912;
@@ -411,10 +411,11 @@ pub const VM_METHOD_TYPE_OPTIMIZED: rb_method_type_t = 9;
 pub const VM_METHOD_TYPE_MISSING: rb_method_type_t = 10;
 pub const VM_METHOD_TYPE_REFINED: rb_method_type_t = 11;
 pub type rb_method_type_t = u32;
+pub type rb_cfunc_t = ::std::option::Option<unsafe extern "C" fn() -> VALUE>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct rb_method_cfunc_struct {
-    pub func: ::std::option::Option<unsafe extern "C" fn() -> VALUE>,
+    pub func: rb_cfunc_t,
     pub invoker: ::std::option::Option<
         unsafe extern "C" fn(
             recv: VALUE,

@@ -226,7 +226,7 @@ lex_mode_push(pm_parser_t *parser, pm_lex_mode_t lex_mode) {
     parser->lex_modes.index++;
 
     if (parser->lex_modes.index > PM_LEX_STACK_SIZE - 1) {
-        parser->lex_modes.current = (pm_lex_mode_t *) malloc(sizeof(pm_lex_mode_t));
+        parser->lex_modes.current = (pm_lex_mode_t *) xmalloc(sizeof(pm_lex_mode_t));
         if (parser->lex_modes.current == NULL) return false;
 
         *parser->lex_modes.current = lex_mode;
@@ -387,7 +387,7 @@ lex_mode_pop(pm_parser_t *parser) {
     } else {
         parser->lex_modes.index--;
         pm_lex_mode_t *prev = parser->lex_modes.current->prev;
-        free(parser->lex_modes.current);
+        xfree(parser->lex_modes.current);
         parser->lex_modes.current = prev;
     }
 }
@@ -592,6 +592,26 @@ static inline void
 pm_parser_warn_node(pm_parser_t *parser, const pm_node_t *node, pm_diagnostic_id_t diag_id) {
     pm_parser_warn(parser, node->location.start, node->location.end, diag_id);
 }
+
+/**
+ * Append a warning to the list of warnings on the parser using a format string.
+ */
+#define PM_PARSER_WARN_FORMAT(parser, start, end, diag_id, ...) \
+    pm_diagnostic_list_append_format(&parser->warning_list, start, end, diag_id, __VA_ARGS__)
+
+/**
+ * Append a warning to the list of warnings on the parser using the location of
+ * the given token and a format string.
+ */
+#define PM_PARSER_WARN_TOKEN_FORMAT(parser, token, diag_id, ...) \
+    PM_PARSER_WARN_FORMAT(parser, (token).start, (token).end, diag_id, __VA_ARGS__)
+
+/**
+ * Append a warning to the list of warnings on the parser using the location of
+ * the given token and a format string, and add on the content of the token.
+ */
+#define PM_PARSER_WARN_TOKEN_FORMAT_CONTENT(parser, token, diag_id) \
+    PM_PARSER_WARN_TOKEN_FORMAT(parser, token, diag_id, (int) ((token).end - (token).start), (const char *) (token).start)
 
 /******************************************************************************/
 /* Node-related functions                                                     */
@@ -1063,7 +1083,7 @@ parse_decimal_number(pm_parser_t *parser, const uint8_t *start, const uint8_t *e
     assert(diff > 0 && ((unsigned long) diff < SIZE_MAX));
     size_t length = (size_t) diff;
 
-    char *digits = calloc(length + 1, sizeof(char));
+    char *digits = xcalloc(length + 1, sizeof(char));
     memcpy(digits, start, length);
     digits[length] = '\0';
 
@@ -1076,7 +1096,7 @@ parse_decimal_number(pm_parser_t *parser, const uint8_t *start, const uint8_t *e
         value = UINT32_MAX;
     }
 
-    free(digits);
+    xfree(digits);
 
     if (value > UINT32_MAX) {
         pm_parser_err(parser, start, end, PM_ERR_INVALID_NUMBER_DECIMAL);
@@ -1138,7 +1158,7 @@ pm_statements_node_body_length(pm_statements_node_t *node);
  */
 static inline void *
 pm_alloc_node(PRISM_ATTRIBUTE_UNUSED pm_parser_t *parser, size_t size) {
-    void *memory = calloc(1, size);
+    void *memory = xcalloc(1, size);
     if (memory == NULL) {
         fprintf(stderr, "Failed to allocate %d bytes\n", (int) size);
         abort();
@@ -2120,7 +2140,7 @@ pm_call_write_read_name_init(pm_parser_t *parser, pm_constant_id_t *read_name, p
     if (write_constant->length > 0) {
         size_t length = write_constant->length - 1;
 
-        void *memory = malloc(length);
+        void *memory = xmalloc(length);
         memcpy(memory, write_constant->start, length);
 
         *read_name = pm_constant_pool_insert_owned(&parser->constant_pool, (uint8_t *) memory, length);
@@ -2162,7 +2182,7 @@ pm_call_and_write_node_create(pm_parser_t *parser, pm_call_node_t *target, const
     // Here we're going to free the target, since it is no longer necessary.
     // However, we don't want to call `pm_node_destroy` because we want to keep
     // around all of its children since we just reused them.
-    free(target);
+    xfree(target);
 
     return node;
 }
@@ -2197,7 +2217,7 @@ pm_index_and_write_node_create(pm_parser_t *parser, pm_call_node_t *target, cons
     // Here we're going to free the target, since it is no longer necessary.
     // However, we don't want to call `pm_node_destroy` because we want to keep
     // around all of its children since we just reused them.
-    free(target);
+    xfree(target);
 
     return node;
 }
@@ -2234,7 +2254,7 @@ pm_call_operator_write_node_create(pm_parser_t *parser, pm_call_node_t *target, 
     // Here we're going to free the target, since it is no longer necessary.
     // However, we don't want to call `pm_node_destroy` because we want to keep
     // around all of its children since we just reused them.
-    free(target);
+    xfree(target);
 
     return node;
 }
@@ -2269,7 +2289,7 @@ pm_index_operator_write_node_create(pm_parser_t *parser, pm_call_node_t *target,
     // Here we're going to free the target, since it is no longer necessary.
     // However, we don't want to call `pm_node_destroy` because we want to keep
     // around all of its children since we just reused them.
-    free(target);
+    xfree(target);
 
     return node;
 }
@@ -2306,7 +2326,7 @@ pm_call_or_write_node_create(pm_parser_t *parser, pm_call_node_t *target, const 
     // Here we're going to free the target, since it is no longer necessary.
     // However, we don't want to call `pm_node_destroy` because we want to keep
     // around all of its children since we just reused them.
-    free(target);
+    xfree(target);
 
     return node;
 }
@@ -2341,7 +2361,7 @@ pm_index_or_write_node_create(pm_parser_t *parser, pm_call_node_t *target, const
     // Here we're going to free the target, since it is no longer necessary.
     // However, we don't want to call `pm_node_destroy` because we want to keep
     // around all of its children since we just reused them.
-    free(target);
+    xfree(target);
 
     return node;
 }
@@ -2369,7 +2389,7 @@ pm_call_target_node_create(pm_parser_t *parser, pm_call_node_t *target) {
     // Here we're going to free the target, since it is no longer necessary.
     // However, we don't want to call `pm_node_destroy` because we want to keep
     // around all of its children since we just reused them.
-    free(target);
+    xfree(target);
 
     return node;
 }
@@ -2399,7 +2419,7 @@ pm_index_target_node_create(pm_parser_t *parser, pm_call_node_t *target) {
     // Here we're going to free the target, since it is no longer necessary.
     // However, we don't want to call `pm_node_destroy` because we want to keep
     // around all of its children since we just reused them.
-    free(target);
+    xfree(target);
 
     return node;
 }
@@ -3206,7 +3226,7 @@ pm_double_parse(pm_parser_t *parser, const pm_token_t *token) {
 
     // First, get a buffer of the content.
     size_t length = (size_t) diff;
-    char *buffer = malloc(sizeof(char) * (length + 1));
+    char *buffer = xmalloc(sizeof(char) * (length + 1));
     memcpy((void *) buffer, token->start, length);
 
     // Next, handle underscores by removing them from the buffer.
@@ -3232,7 +3252,7 @@ pm_double_parse(pm_parser_t *parser, const pm_token_t *token) {
     // is in a valid format. However it's good to be safe.
     if ((eptr != buffer + length) || (errno != 0 && errno != ERANGE)) {
         PM_PARSER_ERR_TOKEN_FORMAT_CONTENT(parser, (*token), PM_ERR_FLOAT_PARSE);
-        free((void *) buffer);
+        xfree((void *) buffer);
         return 0.0;
     }
 
@@ -3255,7 +3275,7 @@ pm_double_parse(pm_parser_t *parser, const pm_token_t *token) {
     }
 
     // Finally we can free the buffer and return the value.
-    free((void *) buffer);
+    xfree((void *) buffer);
     return value;
 }
 
@@ -4967,7 +4987,7 @@ pm_multi_write_node_create(pm_parser_t *parser, pm_multi_target_node_t *target, 
 
     // Explicitly do not call pm_node_destroy here because we want to keep
     // around all of the information within the MultiWriteNode node.
-    free(target);
+    xfree(target);
 
     return node;
 }
@@ -6080,7 +6100,7 @@ pm_string_node_to_symbol_node(pm_parser_t *parser, pm_string_node_t *node, const
     // We are explicitly _not_ using pm_node_destroy here because we don't want
     // to trash the unescaped string. We could instead copy the string if we
     // know that it is owned, but we're taking the fast path for now.
-    free(node);
+    xfree(node);
 
     return new_node;
 }
@@ -6112,7 +6132,7 @@ pm_symbol_node_to_string_node(pm_parser_t *parser, pm_symbol_node_t *node) {
     // We are explicitly _not_ using pm_node_destroy here because we don't want
     // to trash the unescaped string. We could instead copy the string if we
     // know that it is owned, but we're taking the fast path for now.
-    free(node);
+    xfree(node);
 
     return new_node;
 }
@@ -6322,6 +6342,7 @@ pm_when_node_create(pm_parser_t *parser, const pm_token_t *keyword) {
         },
         .keyword_loc = PM_LOCATION_TOKEN_VALUE(keyword),
         .statements = NULL,
+        .then_keyword_loc = PM_OPTIONAL_LOCATION_NOT_PROVIDED_VALUE,
         .conditions = { 0 }
     };
 
@@ -6335,6 +6356,15 @@ static void
 pm_when_node_conditions_append(pm_when_node_t *node, pm_node_t *condition) {
     node->base.location.end = condition->location.end;
     pm_node_list_append(&node->conditions, condition);
+}
+
+/**
+ * Set the location of the then keyword of a when node.
+ */
+static inline void
+pm_when_node_then_keyword_loc_set(pm_when_node_t *node, const pm_token_t *then_keyword) {
+    node->base.location.end = then_keyword->end;
+    node->then_keyword_loc = PM_LOCATION_TOKEN_VALUE(then_keyword);
 }
 
 /**
@@ -6502,7 +6532,7 @@ pm_yield_node_create(pm_parser_t *parser, const pm_token_t *keyword, const pm_lo
  */
 static bool
 pm_parser_scope_push(pm_parser_t *parser, bool closed) {
-    pm_scope_t *scope = (pm_scope_t *) malloc(sizeof(pm_scope_t));
+    pm_scope_t *scope = (pm_scope_t *) xmalloc(sizeof(pm_scope_t));
     if (scope == NULL) return false;
 
     *scope = (pm_scope_t) {
@@ -6741,7 +6771,7 @@ static void
 pm_parser_scope_pop(pm_parser_t *parser) {
     pm_scope_t *scope = parser->current_scope;
     parser->current_scope = scope->previous;
-    free(scope);
+    xfree(scope);
 }
 
 /******************************************************************************/
@@ -7074,7 +7104,7 @@ parser_lex_magic_comment(pm_parser_t *parser, bool semantic_token_seen) {
             pm_string_shared_init(&key, key_start, key_end);
         } else {
             size_t width = (size_t) (key_end - key_start);
-            uint8_t *buffer = malloc(width);
+            uint8_t *buffer = xmalloc(width);
             if (buffer == NULL) break;
 
             memcpy(buffer, key_start, width);
@@ -7116,7 +7146,7 @@ parser_lex_magic_comment(pm_parser_t *parser, bool semantic_token_seen) {
 
         // Allocate a new magic comment node to append to the parser's list.
         pm_magic_comment_t *magic_comment;
-        if ((magic_comment = (pm_magic_comment_t *) calloc(sizeof(pm_magic_comment_t), 1)) != NULL) {
+        if ((magic_comment = (pm_magic_comment_t *) xcalloc(sizeof(pm_magic_comment_t), 1)) != NULL) {
             magic_comment->key_start = key_start;
             magic_comment->value_start = value_start;
             magic_comment->key_length = (uint32_t) key_length;
@@ -7210,7 +7240,7 @@ context_recoverable(const pm_parser_t *parser, pm_token_t *token) {
 
 static bool
 context_push(pm_parser_t *parser, pm_context_t context) {
-    pm_context_node_t *context_node = (pm_context_node_t *) malloc(sizeof(pm_context_node_t));
+    pm_context_node_t *context_node = (pm_context_node_t *) xmalloc(sizeof(pm_context_node_t));
     if (context_node == NULL) return false;
 
     *context_node = (pm_context_node_t) { .context = context, .prev = NULL };
@@ -7228,7 +7258,7 @@ context_push(pm_parser_t *parser, pm_context_t context) {
 static void
 context_pop(pm_parser_t *parser) {
     pm_context_node_t *prev = parser->current_context->prev;
-    free(parser->current_context);
+    xfree(parser->current_context);
     parser->current_context = prev;
 }
 
@@ -8555,7 +8585,7 @@ parser_lex_callback(pm_parser_t *parser) {
  */
 static inline pm_comment_t *
 parser_comment(pm_parser_t *parser, pm_comment_type_t type) {
-    pm_comment_t *comment = (pm_comment_t *) calloc(sizeof(pm_comment_t), 1);
+    pm_comment_t *comment = (pm_comment_t *) xcalloc(sizeof(pm_comment_t), 1);
     if (comment == NULL) return NULL;
 
     *comment = (pm_comment_t) {
@@ -8665,6 +8695,20 @@ parser_flush_heredoc_end(pm_parser_t *parser) {
     assert(parser->heredoc_end <= parser->end);
     parser->next_start = parser->heredoc_end;
     parser->heredoc_end = NULL;
+}
+
+/**
+ * Returns true if the parser has lexed the last token on the current line.
+*/
+static bool
+parser_end_of_line_p(const pm_parser_t *parser) {
+    const uint8_t *cursor = parser->current.end;
+
+    while (cursor < parser->end && *cursor != '\n' && *cursor != '#') {
+        if (!pm_char_is_inline_whitespace(*cursor++)) return false;
+    }
+
+    return true;
 }
 
 /**
@@ -8787,6 +8831,8 @@ pm_token_buffer_escape(pm_parser_t *parser, pm_token_buffer_t *token_buffer) {
 
     const uint8_t *end = parser->current.end - 1;
     pm_buffer_append_bytes(&token_buffer->buffer, start, (size_t) (end - start));
+
+    token_buffer->cursor = end;
 }
 
 /**
@@ -9406,7 +9452,8 @@ parser_lex(pm_parser_t *parser) {
                                         .next_start = parser->current.end,
                                         .quote = quote,
                                         .indent = indent,
-                                        .common_whitespace = (size_t) -1
+                                        .common_whitespace = (size_t) -1,
+                                        .line_continuation = false
                                     }
                                 });
 
@@ -9683,6 +9730,10 @@ parser_lex(pm_parser_t *parser) {
                                     lex_state_set(parser, PM_LEX_STATE_ENDARG);
                                 }
                                 LEX(PM_TOKEN_UDOT_DOT_DOT);
+                            }
+
+                            if (parser->enclosure_nesting == 0 && parser_end_of_line_p(parser)) {
+                                pm_parser_warn_token(parser, &parser->current, PM_WARN_DOT_DOT_DOT_EOL);
                             }
 
                             lex_state_set(parser, PM_LEX_STATE_BEG);
@@ -10671,6 +10722,9 @@ parser_lex(pm_parser_t *parser) {
             // current lex mode.
             pm_lex_mode_t *lex_mode = parser->lex_modes.current;
 
+            bool line_continuation = lex_mode->as.heredoc.line_continuation;
+            lex_mode->as.heredoc.line_continuation = false;
+
             // We'll check if we're at the end of the file. If we are, then we
             // will add an error (because we weren't able to find the
             // terminator) but still continue parsing so that content after the
@@ -10688,7 +10742,7 @@ parser_lex(pm_parser_t *parser) {
 
             // If we are immediately following a newline and we have hit the
             // terminator, then we need to return the ending of the heredoc.
-            if (current_token_starts_line(parser)) {
+            if (!line_continuation && current_token_starts_line(parser)) {
                 const uint8_t *start = parser->current.start;
                 if (start + ident_length <= parser->end) {
                     const uint8_t *newline = next_newline(start, parser->end - start);
@@ -10760,7 +10814,7 @@ parser_lex(pm_parser_t *parser) {
 
             const uint8_t *breakpoint = pm_strpbrk(parser, parser->current.end, breakpoints, parser->end - parser->current.end, true);
             pm_token_buffer_t token_buffer = { { 0 }, 0 };
-            bool was_escaped_newline = false;
+            bool was_line_continuation = false;
 
             while (breakpoint != NULL) {
                 switch (*breakpoint) {
@@ -10783,7 +10837,7 @@ parser_lex(pm_parser_t *parser) {
                         // some leading whitespace.
                         const uint8_t *start = breakpoint + 1;
 
-                        if (!was_escaped_newline && (start + ident_length <= parser->end)) {
+                        if (!was_line_continuation && (start + ident_length <= parser->end)) {
                             // We want to match the terminator starting from the end of the line in case
                             // there is whitespace in the ident such as <<-'   DOC' or <<~'   DOC'.
                             const uint8_t *newline = next_newline(start, parser->end - start);
@@ -10825,7 +10879,6 @@ parser_lex(pm_parser_t *parser) {
                         // heredoc here as string content. Then, the next time a
                         // token is lexed, it will match again and return the
                         // end of the heredoc.
-
                         if (lex_mode->as.heredoc.indent == PM_HEREDOC_INDENT_TILDE) {
                             if ((lex_mode->as.heredoc.common_whitespace > whitespace) && peek_at(parser, start) != '\n') {
                                 lex_mode->as.heredoc.common_whitespace = whitespace;
@@ -10833,7 +10886,7 @@ parser_lex(pm_parser_t *parser) {
 
                             parser->current.end = breakpoint + 1;
 
-                            if (!was_escaped_newline) {
+                            if (!was_line_continuation) {
                                 pm_token_buffer_flush(parser, &token_buffer);
                                 LEX(PM_TOKEN_STRING_CONTENT);
                             }
@@ -10895,7 +10948,26 @@ parser_lex(pm_parser_t *parser) {
                                     }
                                 /* fallthrough */
                                 case '\n':
-                                    was_escaped_newline = true;
+                                    // If we are in a tilde here, we should
+                                    // break out of the loop and return the
+                                    // string content.
+                                    if (lex_mode->as.heredoc.indent == PM_HEREDOC_INDENT_TILDE) {
+                                        const uint8_t *end = parser->current.end;
+                                        pm_newline_list_append(&parser->newline_list, end);
+
+                                        // Here we want the buffer to only
+                                        // include up to the backslash.
+                                        parser->current.end = breakpoint;
+                                        pm_token_buffer_flush(parser, &token_buffer);
+
+                                        // Now we can advance the end of the
+                                        // token past the newline.
+                                        parser->current.end = end + 1;
+                                        lex_mode->as.heredoc.line_continuation = true;
+                                        LEX(PM_TOKEN_STRING_CONTENT);
+                                    }
+
+                                    was_line_continuation = true;
                                     token_buffer.cursor = parser->current.end + 1;
                                     breakpoint = parser->current.end;
                                     continue;
@@ -10932,7 +11004,7 @@ parser_lex(pm_parser_t *parser) {
                         assert(false && "unreachable");
                 }
 
-                was_escaped_newline = false;
+                was_line_continuation = false;
             }
 
             if (parser->current.end > parser->current.start) {
@@ -11397,7 +11469,7 @@ parse_write_name(pm_parser_t *parser, pm_constant_id_t *name_field) {
     // append an =.
     pm_constant_t *constant = pm_constant_pool_id_to_constant(&parser->constant_pool, *name_field);
     size_t length = constant->length;
-    uint8_t *name = calloc(length + 1, sizeof(uint8_t));
+    uint8_t *name = xcalloc(length + 1, sizeof(uint8_t));
     if (name == NULL) return;
 
     memcpy(name, constant->start, length);
@@ -13112,13 +13184,19 @@ parse_conditional(pm_parser_t *parser, pm_context_t context) {
     // Parse any number of elsif clauses. This will form a linked list of if
     // nodes pointing to each other from the top.
     if (context == PM_CONTEXT_IF) {
-        while (accept1(parser, PM_TOKEN_KEYWORD_ELSIF)) {
-            pm_token_t elsif_keyword = parser->previous;
+        while (match1(parser, PM_TOKEN_KEYWORD_ELSIF)) {
+            if (parser_end_of_line_p(parser)) {
+                PM_PARSER_WARN_TOKEN_FORMAT_CONTENT(parser, parser->current, PM_WARN_KEYWORD_EOL);
+            }
+
+            pm_token_t elsif_keyword = parser->current;
+            parser_lex(parser);
+
             pm_node_t *predicate = parse_predicate(parser, PM_BINDING_POWER_MODIFIER, PM_CONTEXT_ELSIF, &then_keyword);
             pm_accepts_block_stack_push(parser, true);
+
             pm_statements_node_t *statements = parse_statements(parser, PM_CONTEXT_ELSIF);
             pm_accepts_block_stack_pop(parser);
-
             accept2(parser, PM_TOKEN_NEWLINE, PM_TOKEN_SEMICOLON);
 
             pm_node_t *elsif = (pm_node_t *) pm_if_node_create(parser, &elsif_keyword, predicate, &then_keyword, statements, NULL, &end_keyword);
@@ -14141,7 +14219,7 @@ parse_pattern_hash(pm_parser_t *parser, pm_node_t *first_node) {
     }
 
     pm_hash_pattern_node_t *node = pm_hash_pattern_node_node_list_create(parser, &assocs, rest);
-    free(assocs.nodes);
+    xfree(assocs.nodes);
 
     return node;
 }
@@ -14576,7 +14654,7 @@ parse_pattern(pm_parser_t *parser, bool top_pattern, pm_diagnostic_id_t diag_id)
             node = (pm_node_t *) pm_array_pattern_node_node_list_create(parser, &nodes);
         }
 
-        free(nodes.nodes);
+        xfree(nodes.nodes);
     } else if (leading_rest) {
         // Otherwise, if we parsed a single splat pattern, then we know we have an
         // array pattern, so we can go ahead and create that node.
@@ -15564,9 +15642,12 @@ parse_expression_prefix(pm_parser_t *parser, pm_binding_power_t binding_power, b
                     } while (accept1(parser, PM_TOKEN_COMMA));
 
                     if (accept2(parser, PM_TOKEN_NEWLINE, PM_TOKEN_SEMICOLON)) {
-                        accept1(parser, PM_TOKEN_KEYWORD_THEN);
+                        if (accept1(parser, PM_TOKEN_KEYWORD_THEN)) {
+                            pm_when_node_then_keyword_loc_set(when_node, &parser->previous);
+                        }
                     } else {
                         expect1(parser, PM_TOKEN_KEYWORD_THEN, PM_ERR_EXPECT_WHEN_DELIMITER);
+                        pm_when_node_then_keyword_loc_set(when_node, &parser->previous);
                     }
 
                     if (!match3(parser, PM_TOKEN_KEYWORD_WHEN, PM_TOKEN_KEYWORD_ELSE, PM_TOKEN_KEYWORD_END)) {
@@ -16292,6 +16373,10 @@ parse_expression_prefix(pm_parser_t *parser, pm_binding_power_t binding_power, b
             return (pm_node_t *) pm_for_node_create(parser, index, collection, statements, &for_keyword, &in_keyword, &do_keyword, &parser->previous);
         }
         case PM_TOKEN_KEYWORD_IF:
+            if (parser_end_of_line_p(parser)) {
+                PM_PARSER_WARN_TOKEN_FORMAT_CONTENT(parser, parser->current, PM_WARN_KEYWORD_EOL);
+            }
+
             parser_lex(parser);
             return parse_conditional(parser, PM_CONTEXT_IF);
         case PM_TOKEN_KEYWORD_UNDEF: {
@@ -16565,7 +16650,7 @@ parse_expression_prefix(pm_parser_t *parser, pm_binding_power_t binding_power, b
                             pm_interpolated_symbol_node_append(interpolated, first_string);
                             pm_interpolated_symbol_node_append(interpolated, second_string);
 
-                            free(current);
+                            xfree(current);
                             current = (pm_node_t *) interpolated;
                         } else {
                             assert(false && "unreachable");
@@ -17259,7 +17344,7 @@ parse_assignment_values(pm_parser_t *parser, pm_binding_power_t previous_binding
         bool accepts_command_call_inner = false;
 
         // RHS can accept command call iff the value is a call with arguments
-        // but without paranthesis.
+        // but without parenthesis.
         if (PM_NODE_TYPE_P(value, PM_CALL_NODE)) {
             pm_call_node_t *call_node = (pm_call_node_t *) value;
             if ((call_node->arguments != NULL) && (call_node->opening_loc.start == NULL)) {
@@ -17355,7 +17440,7 @@ parse_regular_expression_named_captures(pm_parser_t *parser, const pm_string_t *
                 // in which case we need to copy it out into a new string.
                 location = call->receiver->location;
 
-                void *memory = malloc(length);
+                void *memory = xmalloc(length);
                 if (memory == NULL) abort();
 
                 memcpy(memory, source, length);
@@ -17843,7 +17928,7 @@ parse_expression_infix(pm_parser_t *parser, pm_node_t *node, pm_binding_power_t 
                 }
 
                 if (!interpolated && total_length > 0) {
-                    void *memory = malloc(total_length);
+                    void *memory = xmalloc(total_length);
                     if (!memory) abort();
 
                     uint8_t *cursor = memory;
@@ -18519,7 +18604,7 @@ pm_parser_init(pm_parser_t *parser, const uint8_t *source, size_t size, const pm
                 const uint8_t *source = pm_string_source(local);
                 size_t length = pm_string_length(local);
 
-                void *allocated = malloc(length);
+                void *allocated = xmalloc(length);
                 if (allocated == NULL) continue;
 
                 memcpy(allocated, source, length);
@@ -18566,7 +18651,7 @@ pm_comment_list_free(pm_list_t *list) {
         next = node->next;
 
         pm_comment_t *comment = (pm_comment_t *) node;
-        free(comment);
+        xfree(comment);
     }
 }
 
@@ -18581,7 +18666,7 @@ pm_magic_comment_list_free(pm_list_t *list) {
         next = node->next;
 
         pm_magic_comment_t *magic_comment = (pm_magic_comment_t *) node;
-        free(magic_comment);
+        xfree(magic_comment);
     }
 }
 
@@ -18618,6 +18703,99 @@ pm_parser_free(pm_parser_t *parser) {
 PRISM_EXPORTED_FUNCTION pm_node_t *
 pm_parse(pm_parser_t *parser) {
     return parse_program(parser);
+}
+
+/**
+ * Read into the stream until the gets callback returns false. If the last read
+ * line from the stream matches an __END__ marker, then halt and return false,
+ * otherwise return true.
+ */
+static bool
+pm_parse_stream_read(pm_buffer_t *buffer, void *stream, pm_parse_stream_fgets_t *fgets) {
+#define LINE_SIZE 4096
+    char line[LINE_SIZE];
+
+    while (fgets(line, LINE_SIZE, stream) != NULL) {
+        size_t length = strlen(line);
+
+        if (length == LINE_SIZE && line[length - 1] != '\n') {
+            // If we read a line that is the maximum size and it doesn't end
+            // with a newline, then we'll just append it to the buffer and
+            // continue reading.
+            pm_buffer_append_string(buffer, line, length);
+            continue;
+        }
+
+        // Append the line to the buffer.
+        pm_buffer_append_string(buffer, line, length);
+
+        // Check if the line matches the __END__ marker. If it does, then stop
+        // reading and return false. In most circumstances, this means we should
+        // stop reading from the stream so that the DATA constant can pick it
+        // up.
+        switch (length) {
+            case 7:
+                if (strncmp(line, "__END__", 7) == 0) return false;
+                break;
+            case 8:
+                if (strncmp(line, "__END__\n", 8) == 0) return false;
+                break;
+            case 9:
+                if (strncmp(line, "__END__\r\n", 9) == 0) return false;
+                break;
+        }
+    }
+
+    return true;
+#undef LINE_SIZE
+}
+
+/**
+ * Determine if there was an unterminated heredoc at the end of the input, which
+ * would mean the stream isn't finished and we should keep reading.
+ *
+ * For the other lex modes we can check if the lex mode has been closed, but for
+ * heredocs when we hit EOF we close the lex mode and then go back to parse the
+ * rest of the line after the heredoc declaration so that we get more of the
+ * syntax tree.
+ */
+static bool
+pm_parse_stream_unterminated_heredoc_p(pm_parser_t *parser) {
+    pm_diagnostic_t *diagnostic = (pm_diagnostic_t *) parser->error_list.head;
+
+    for (; diagnostic != NULL; diagnostic = (pm_diagnostic_t *) diagnostic->node.next) {
+        if (diagnostic->diag_id == PM_ERR_HEREDOC_TERM) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Parse a stream of Ruby source and return the tree.
+ *
+ * Prism is designed around having the entire source in memory at once, but you
+ * can stream stdin in to Ruby so we need to support a streaming API.
+ */
+PRISM_EXPORTED_FUNCTION pm_node_t *
+pm_parse_stream(pm_parser_t *parser, pm_buffer_t *buffer, void *stream, pm_parse_stream_fgets_t *fgets, const pm_options_t *options) {
+    pm_buffer_init(buffer);
+
+    bool eof = pm_parse_stream_read(buffer, stream, fgets);
+    pm_parser_init(parser, (const uint8_t *) pm_buffer_value(buffer), pm_buffer_length(buffer), options);
+    pm_node_t *node = pm_parse(parser);
+
+    while (!eof && parser->error_list.size > 0 && (parser->lex_modes.index > 0 || pm_parse_stream_unterminated_heredoc_p(parser))) {
+        pm_node_destroy(parser, node);
+        eof = pm_parse_stream_read(buffer, stream, fgets);
+
+        pm_parser_free(parser);
+        pm_parser_init(parser, (const uint8_t *) pm_buffer_value(buffer), pm_buffer_length(buffer), options);
+        node = pm_parse(parser);
+    }
+
+    return node;
 }
 
 static inline void
@@ -18658,6 +18836,28 @@ pm_serialize_parse(pm_buffer_t *buffer, const uint8_t *source, size_t size, cons
     pm_buffer_append_byte(buffer, '\0');
 
     pm_node_destroy(&parser, node);
+    pm_parser_free(&parser);
+    pm_options_free(&options);
+}
+
+/**
+ * Parse and serialize the AST represented by the source that is read out of the
+ * given stream into to the given buffer.
+ */
+PRISM_EXPORTED_FUNCTION void
+pm_serialize_parse_stream(pm_buffer_t *buffer, void *stream, pm_parse_stream_fgets_t *fgets, const char *data) {
+    pm_parser_t parser;
+    pm_options_t options = { 0 };
+    pm_options_read(&options, data);
+
+    pm_buffer_t parser_buffer;
+    pm_node_t *node = pm_parse_stream(&parser, &parser_buffer, stream, fgets, &options);
+    pm_serialize_header(buffer);
+    pm_serialize_content(&parser, node, buffer);
+    pm_buffer_append_byte(buffer, '\0');
+
+    pm_node_destroy(&parser, node);
+    pm_buffer_free(&parser_buffer);
     pm_parser_free(&parser);
     pm_options_free(&options);
 }
@@ -18732,7 +18932,7 @@ typedef struct {
 
 static inline pm_error_t *
 pm_parser_errors_format_sort(const pm_parser_t *parser, const pm_list_t *error_list, const pm_newline_list_t *newline_list) {
-    pm_error_t *errors = calloc(error_list->size, sizeof(pm_error_t));
+    pm_error_t *errors = xcalloc(error_list->size, sizeof(pm_error_t));
     if (errors == NULL) return NULL;
 
     int32_t start_line = parser->start_line;
@@ -18989,7 +19189,7 @@ pm_parser_errors_format(const pm_parser_t *parser, pm_buffer_t *buffer, bool col
     }
 
     // Finally, we'll free the array of errors that we allocated.
-    free(errors);
+    xfree(errors);
 }
 
 #undef PM_COLOR_GRAY

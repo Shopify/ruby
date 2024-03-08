@@ -423,7 +423,6 @@ generator = BindingGenerator.new(
       RUBY_FIXNUM_FLAG
       RUBY_FLONUM_FLAG
       RUBY_FLONUM_MASK
-      RUBY_FL_SINGLETON
       RUBY_IMMEDIATE_MASK
       RUBY_SPECIAL_SHIFT
       RUBY_SYMBOL_FLAG
@@ -602,6 +601,7 @@ generator = BindingGenerator.new(
     rb_callcache
     rb_callinfo
     rb_captured_block
+    rb_cfunc_t
     rb_control_frame_t
     rb_cref_t
     rb_execution_context_struct

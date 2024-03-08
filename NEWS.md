@@ -27,7 +27,7 @@ The following default gems are updated.
 * erb 4.0.4
 * fiddle 1.1.3
 * io-console 0.7.2
-* irb 1.11.2
+* irb 1.12.0
 * net-http 0.4.1
 * prism 0.24.0
 * reline 0.4.3
@@ -55,7 +55,7 @@ The following bundled gems are promoted from default gems.
 * abbrev 0.1.2
 * resolv-replace 0.1.1
 * rinda 0.2.0
-* drb 2.2.0
+* drb 2.2.1
 * nkf 0.2.0
 * syslog 0.1.2
 * csv 3.2.8

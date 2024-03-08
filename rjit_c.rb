@@ -326,6 +326,10 @@ module RubyVM::RJIT # :nodoc: all
     def RCLASS_ORIGIN(klass)
       Primitive.cexpr! 'RCLASS_ORIGIN(klass)'
     end
+
+    def RCLASS_SINGLETON_P(klass)
+      Primitive.cexpr! 'RCLASS_SINGLETON_P(klass)'
+    end
   end
 
   #
@@ -392,7 +396,6 @@ module RubyVM::RJIT # :nodoc: all
   C::RUBY_FLONUM_FLAG = Primitive.cexpr! %q{ SIZET2NUM(RUBY_FLONUM_FLAG) }
   C::RUBY_FLONUM_MASK = Primitive.cexpr! %q{ SIZET2NUM(RUBY_FLONUM_MASK) }
   C::RUBY_FL_FREEZE = Primitive.cexpr! %q{ SIZET2NUM(RUBY_FL_FREEZE) }
-  C::RUBY_FL_SINGLETON = Primitive.cexpr! %q{ SIZET2NUM(RUBY_FL_SINGLETON) }
   C::RUBY_IMMEDIATE_MASK = Primitive.cexpr! %q{ SIZET2NUM(RUBY_IMMEDIATE_MASK) }
   C::RUBY_SPECIAL_SHIFT = Primitive.cexpr! %q{ SIZET2NUM(RUBY_SPECIAL_SHIFT) }
   C::RUBY_SYMBOL_FLAG = Primitive.cexpr! %q{ SIZET2NUM(RUBY_SYMBOL_FLAG) }
@@ -1004,6 +1007,10 @@ module RubyVM::RJIT # :nodoc: all
     )
   end
 
+  def C.rb_cfunc_t
+    @rb_cfunc_t ||= self.VALUE
+  end
+
   def C.rb_control_frame_t
     @rb_control_frame_t ||= CType::Struct.new(
       "rb_control_frame_struct", Primitive.cexpr!("SIZEOF(struct rb_control_frame_struct)"),
@@ -1210,7 +1217,7 @@ module RubyVM::RJIT # :nodoc: all
   def C.rb_method_cfunc_t
     @rb_method_cfunc_t ||= CType::Struct.new(
       "rb_method_cfunc_struct", Primitive.cexpr!("SIZEOF(struct rb_method_cfunc_struct)"),
-      func: [CType::Immediate.parse("void *"), Primitive.cexpr!("OFFSETOF((*((struct rb_method_cfunc_struct *)NULL)), func)")],
+      func: [self.rb_cfunc_t, Primitive.cexpr!("OFFSETOF((*((struct rb_method_cfunc_struct *)NULL)), func)")],
       invoker: [CType::Immediate.parse("void *"), Primitive.cexpr!("OFFSETOF((*((struct rb_method_cfunc_struct *)NULL)), invoker)")],
       argc: [CType::Immediate.parse("int"), Primitive.cexpr!("OFFSETOF((*((struct rb_method_cfunc_struct *)NULL)), argc)")],
     )

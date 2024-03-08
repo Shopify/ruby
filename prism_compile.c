@@ -125,16 +125,31 @@ static VALUE
 parse_integer(const pm_integer_node_t *node)
 {
     const pm_integer_t *integer = &node->value;
+    VALUE result;
 
-    VALUE result = UINT2NUM(integer->head.value);
-    size_t shift = 0;
+    if (integer->values == NULL) {
+        result = UINT2NUM(integer->value);
+    } else {
+        VALUE string = rb_str_new(NULL, integer->length * 8);
+        unsigned char *bytes = (unsigned char *) RSTRING_PTR(string);
 
-    for (pm_integer_word_t *node = integer->head.next; node != NULL; node = node->next) {
-        VALUE receiver = rb_funcall(UINT2NUM(node->value), rb_intern("<<"), 1, ULONG2NUM(++shift * 32));
-        result = rb_funcall(receiver, rb_intern("|"), 1, result);
+        size_t offset = integer->length * 8;
+        for (size_t value_index = 0; value_index < integer->length; value_index++) {
+            uint32_t value = integer->values[value_index];
+
+            for (int index = 0; index < 8; index++) {
+                int byte = (value >> (4 * index)) & 0xf;
+                bytes[--offset] = byte < 10 ? byte + '0' : byte - 10 + 'a';
+            }
+        }
+
+        result = rb_funcall(string, rb_intern("to_i"), 1, UINT2NUM(16));
     }
 
-    if (integer->negative) result = rb_funcall(result, rb_intern("-@"), 0);
+    if (integer->negative) {
+        result = rb_funcall(result, rb_intern("-@"), 0);
+    }
+
     return result;
 }
 
@@ -2292,7 +2307,7 @@ pm_compile_pattern(rb_iseq_t *iseq, pm_scope_node_t *scope_node, const pm_node_t
         break;
       }
       case PM_LOCAL_VARIABLE_TARGET_NODE: {
-        // Local variables can be targetted by placing identifiers in the place
+        // Local variables can be targeted by placing identifiers in the place
         // of a pattern. For example, foo in bar. This results in the value
         // being matched being written to that local variable.
         pm_local_variable_target_node_t *cast = (pm_local_variable_target_node_t *) node;

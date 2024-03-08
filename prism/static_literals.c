@@ -53,12 +53,11 @@ node_hash(const pm_parser_t *parser, const pm_node_t *node) {
         case PM_INTEGER_NODE: {
             // Integers hash their value.
             const pm_integer_t *integer = &((const pm_integer_node_t *) node)->value;
-            const uint32_t *value = &integer->head.value;
-
-            uint32_t hash = murmur_hash((const uint8_t *) value, sizeof(uint32_t));
-            for (const pm_integer_word_t *word = integer->head.next; word != NULL; word = word->next) {
-                value = &word->value;
-                hash ^= murmur_hash((const uint8_t *) value, sizeof(uint32_t));
+            uint32_t hash;
+            if (integer->values) {
+                hash = murmur_hash((const uint8_t *) integer->values, sizeof(uint32_t) * integer->length);
+            } else {
+                hash = murmur_hash((const uint8_t *) &integer->value, sizeof(uint32_t));
             }
 
             if (integer->negative) {
@@ -135,7 +134,7 @@ pm_node_hash_insert(pm_node_hash_t *hash, const pm_parser_t *parser, pm_node_t *
     if (hash->size * 2 >= hash->capacity) {
         // First, allocate space for the new node list.
         uint32_t new_capacity = hash->capacity == 0 ? 4 : hash->capacity * 2;
-        pm_node_t **new_nodes = calloc(new_capacity, sizeof(pm_node_t *));
+        pm_node_t **new_nodes = xcalloc(new_capacity, sizeof(pm_node_t *));
         if (new_nodes == NULL) return NULL;
 
         // It turns out to be more efficient to mask the hash value than to use
@@ -155,7 +154,7 @@ pm_node_hash_insert(pm_node_hash_t *hash, const pm_parser_t *parser, pm_node_t *
         }
 
         // Finally, free the old node list and update the hash.
-        free(hash->nodes);
+        xfree(hash->nodes);
         hash->nodes = new_nodes;
         hash->capacity = new_capacity;
     }
@@ -188,7 +187,7 @@ pm_node_hash_insert(pm_node_hash_t *hash, const pm_parser_t *parser, pm_node_t *
  */
 static void
 pm_node_hash_free(pm_node_hash_t *hash) {
-    if (hash->capacity > 0) free(hash->nodes);
+    if (hash->capacity > 0) xfree(hash->nodes);
 }
 
 /**
@@ -204,9 +203,9 @@ pm_int64_value(const pm_parser_t *parser, const pm_node_t *node) {
     switch (PM_NODE_TYPE(node)) {
         case PM_INTEGER_NODE: {
             const pm_integer_t *integer = &((const pm_integer_node_t *) node)->value;
-            if (integer->length > 0) return integer->negative ? INT64_MIN : INT64_MAX;
+            if (integer->values) return integer->negative ? INT64_MIN : INT64_MAX;
 
-            int64_t value = (int64_t) integer->head.value;
+            int64_t value = (int64_t) integer->value;
             return integer->negative ? -value : value;
         }
         case PM_SOURCE_LINE_NODE:
