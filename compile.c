@@ -4714,6 +4714,12 @@ frozen_string_literal_p(const rb_iseq_t *iseq)
 }
 
 static inline bool
+mutable_string_literal_p(const rb_iseq_t *iseq)
+{
+    return ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal == 0;
+}
+
+static inline bool
 static_literal_node_p(const NODE *node, const rb_iseq_t *iseq, bool hash_key)
 {
     switch (nd_type(node)) {

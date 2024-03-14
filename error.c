@@ -3856,10 +3856,24 @@ inspect_frozen_obj(VALUE obj, VALUE mesg, int recur)
     return mesg;
 }
 
+static void
+str_check_chilled(VALUE str)
+{
+    if (FL_TEST_RAW(str, FL_USER3)) { // STR_CHILLED
+        FL_UNSET_RAW(str, FL_USER3| FL_FREEZE); // STR_CHILLED
+        rb_warning("literal string will be frozen in the future");
+    }
+}
+
 void
 rb_error_frozen_object(VALUE frozen_obj)
 {
     rb_yjit_lazy_push_frame(GET_EC()->cfp->pc);
+    /* rb_bug("test"); */
+    if (RB_TYPE_P(frozen_obj, T_STRING) && RB_FL_TEST_RAW(frozen_obj, FL_USER3)) {
+        str_check_chilled(frozen_obj);
+        return;
+    }
     VALUE debug_info;
     const ID created_info = id_debug_created_info;
     VALUE mesg = rb_sprintf("can't modify frozen %"PRIsVALUE": ",

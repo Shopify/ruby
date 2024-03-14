@@ -820,11 +820,19 @@ pm_interpolated_node_compile(pm_node_list_t *parts, rb_iseq_t *iseq, NODE dummy_
                     current_string = rb_enc_str_new(NULL, 0, scope_node->encoding);
                 }
 
-                if (ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal) {
-                    ADD_INSN1(ret, &dummy_line_node, putobject, rb_str_freeze(current_string));
-                }
-                else {
+                switch (ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal) {
+                  case -1: // unspecified
+                    ADD_INSN1(ret, &dummy_line_node, putchilledstring, rb_str_freeze(current_string));
+                    break;
+                  case 0: // disabled
                     ADD_INSN1(ret, &dummy_line_node, putstring, rb_str_freeze(current_string));
+                    break;
+                  case 1: // enabled
+                    ADD_INSN1(ret, &dummy_line_node, putobject, rb_str_freeze(current_string));
+                    break;
+                  default:
+                      rb_bug("invalid frozen_string_literal");
+                      break;
                 }
 
                 current_string = Qnil;
@@ -842,11 +850,19 @@ pm_interpolated_node_compile(pm_node_list_t *parts, rb_iseq_t *iseq, NODE dummy_
         if (RTEST(current_string)) {
             current_string = rb_fstring(current_string);
 
-            if (ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal) {
-                ADD_INSN1(ret, &dummy_line_node, putobject, current_string);
-            }
-            else {
+            switch (ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal) {
+              case -1: // unspecified
+                ADD_INSN1(ret, &dummy_line_node, putchilledstring, current_string);
+                break;
+              case 0: // disabled
                 ADD_INSN1(ret, &dummy_line_node, putstring, current_string);
+                break;
+              case 1: // enabled
+                ADD_INSN1(ret, &dummy_line_node, putobject, current_string);
+                break;
+              default:
+                  rb_bug("invalid frozen_string_literal");
+                  break;
             }
 
             current_string = Qnil;
@@ -4019,7 +4035,7 @@ pm_opt_aref_with_p(const rb_iseq_t *iseq, const pm_call_node_t *node)
         ((const pm_arguments_node_t *) node->arguments)->arguments.size == 1 &&
         PM_NODE_TYPE_P(((const pm_arguments_node_t *) node->arguments)->arguments.nodes[0], PM_STRING_NODE) &&
         node->block == NULL &&
-        !ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal &&
+        !frozen_string_literal_p(iseq) &&
         ISEQ_COMPILE_DATA(iseq)->option->specialized_instruction
     );
 }
@@ -4038,7 +4054,7 @@ pm_opt_aset_with_p(const rb_iseq_t *iseq, const pm_call_node_t *node)
         ((const pm_arguments_node_t *) node->arguments)->arguments.size == 2 &&
         PM_NODE_TYPE_P(((const pm_arguments_node_t *) node->arguments)->arguments.nodes[0], PM_STRING_NODE) &&
         node->block == NULL &&
-        !ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal &&
+        !frozen_string_literal_p(iseq) &&
         ISEQ_COMPILE_DATA(iseq)->option->specialized_instruction
     );
 }
@@ -7964,11 +7980,22 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
             const pm_string_node_t *cast = (const pm_string_node_t *) node;
             VALUE value = rb_fstring(parse_string_encoded(scope_node, node, &cast->unescaped));
 
-            if (PM_NODE_FLAG_P(node, PM_STRING_FLAGS_FROZEN) || ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal) {
+            if (PM_NODE_FLAG_P(node, PM_STRING_FLAGS_FROZEN)) {
                 PUSH_INSN1(ret, location, putobject, value);
             }
-            else {
+            else if (PM_NODE_FLAG_P(node, PM_STRING_FLAGS_MUTABLE)) {
                 PUSH_INSN1(ret, location, putstring, value);
+            }
+            // TODO: properly init with pm_options_frozen_string_literal_set
+            // so we don't need these two extra branches
+            else if (frozen_string_literal_p(iseq)) {
+                PUSH_INSN1(ret, location, putobject, value);
+            }
+            else if (mutable_string_literal_p(iseq)) {
+                PUSH_INSN1(ret, location, putstring, value);
+            }
+            else {
+                PUSH_INSN1(ret, location, putchilledstring, value);
             }
         }
         return;

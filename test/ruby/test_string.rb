@@ -3610,6 +3610,24 @@ CODE
     assert_bytesplice_raise(ArgumentError, S("hello"), 0..-1, "bye", 0, 3)
   end
 
+  def test_chilled_string
+    chilled_string = eval('"test"')
+
+    # Chilled strings pretend to be frozen
+    assert_predicate chilled_string, :frozen?
+
+    assert_not_predicate chilled_string.dup, :frozen?
+    assert_predicate chilled_string.clone, :frozen?
+
+    # @+ treat the original string as frozen
+    assert_not_predicate +chilled_string, :frozen?
+    assert_not_same chilled_string, +chilled_string
+
+    # @- the the original string as mutable
+    assert_predicate -chilled_string, :frozen?
+    assert_not_same chilled_string, -chilled_string
+  end
+
   private
 
   def assert_bytesplice_result(expected, s, *args)

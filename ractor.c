@@ -2986,7 +2986,7 @@ static int
 frozen_shareable_p(VALUE obj, bool *made_shareable)
 {
     if (!RB_TYPE_P(obj, T_DATA)) {
-        return true;
+        return !(RB_TYPE_P(obj, T_STRING) && FL_TEST_RAW(obj, FL_USER3));
     }
     else if (RTYPEDDATA_P(obj)) {
         const rb_data_type_t *type = RTYPEDDATA_TYPE(obj);
@@ -3014,7 +3014,7 @@ make_shareable_check_shareable(VALUE obj)
     if (rb_ractor_shareable_p(obj)) {
         return traverse_skip;
     }
-    else if (!frozen_shareable_p(obj, &made_shareable)) {
+    else if (!frozen_shareable_p(obj, &made_shareable) && !RB_TYPE_P(obj, T_STRING)) {
         if (made_shareable) {
             return traverse_skip;
         }

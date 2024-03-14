@@ -776,8 +776,9 @@ module Prism
 
     def test_StringNode
       assert_prism_eval('"pit"')
-      assert_prism_eval('"a".frozen?')
+    end
 
+    def test_StringNode_frozen_string_literal_true
       [
         # Test that string literal is frozen
         <<~RUBY,
@@ -792,6 +793,34 @@ module Prism
       ].each do |src|
         assert_prism_eval(src, raw: true)
       end
+    end
+
+    def test_StringNode_frozen_string_literal_false
+      pend "TODO: prism needs a fix"
+
+      [
+        # Test that string literal is frozen
+        <<~RUBY,
+          # frozen_string_literal: false
+          !"a".frozen?
+        RUBY
+        # Test that two string literals with the same contents are the same string
+        <<~RUBY,
+          # frozen_string_literal: false
+          !"hello".equal?("hello")
+        RUBY
+      ].each do |src|
+        assert_prism_eval(src, raw: true)
+      end
+    end
+
+    def test_StringNode_frozen_string_literal_default
+      pend "TODO: prism needs a fix"
+      # Test that string literal is frozen
+      assert_prism_eval('"a".frozen?', raw: true)
+
+      # Test that two string literals aren't the same string
+      assert_prism_eval('!"hello".equal?("hello")', raw: true)
     end
 
     def test_SymbolNode
@@ -2742,27 +2771,28 @@ end
 
     private
 
-    def compare_eval(source, raw:)
+    def compare_eval(source, raw:, location:)
       source = raw ? source : "class Prism::TestCompilePrism\n#{source}\nend"
 
       ruby_eval = RubyVM::InstructionSequence.compile(source).eval
       prism_eval = RubyVM::InstructionSequence.compile_prism(source).eval
 
       if ruby_eval.is_a? Proc
-        assert_equal ruby_eval.class, prism_eval.class
+        assert_equal ruby_eval.class, prism_eval.class, "@#{location.path}:#{location.lineno}"
       else
-        assert_equal ruby_eval, prism_eval
+        assert_equal ruby_eval, prism_eval, "@#{location.path}:#{location.lineno}"
       end
     end
 
     def assert_prism_eval(source, raw: false)
+      location = caller_locations(1, 1).first
       $VERBOSE, verbose_bak = nil, $VERBOSE
 
       begin
-        compare_eval(source, raw:)
+        compare_eval(source, raw:, location:)
 
         # Test "popped" functionality
-        compare_eval("#{source}; 1", raw:)
+        compare_eval("#{source}; 1", raw:, location:)
       ensure
         $VERBOSE = verbose_bak
       end

@@ -14,7 +14,7 @@ describe 'String#+@' do
   end
 
   it 'returns self if the String is not frozen' do
-    input  = 'foo'
+    input  = 'foo'.dup
     output = +input
 
     output.equal?(input).should == true

@@ -17,6 +17,7 @@
 
 #define STR_NOEMBED      FL_USER1
 #define STR_SHARED       FL_USER2 /* = ELTS_SHARED */
+#define STR_CHILLED      FL_USER3
 
 #ifdef rb_fstring_cstr
 # undef rb_fstring_cstr

@@ -116,7 +116,6 @@ VALUE rb_cSymbol;
  */
 
 #define RUBY_MAX_CHAR_LEN 16
-#define STR_CHILLED FL_USER3
 #define STR_SHARED_ROOT FL_USER5
 #define STR_BORROWED FL_USER6
 #define STR_TMPLOCK FL_USER7
@@ -383,8 +382,9 @@ fstr_update_callback(st_data_t *key, st_data_t *value, st_data_t data, int exist
             OBJ_FREEZE_RAW(str);
         }
         else {
-            if (!OBJ_FROZEN(str))
+            if (!OBJ_FROZEN(str) || FL_TEST_RAW(str, STR_CHILLED)) {
                 str = str_new_frozen(rb_cString, str);
+            }
             if (STR_SHARED_P(str)) { /* str should not be shared */
                 /* shared substring  */
                 str_make_independent(str);
@@ -425,7 +425,7 @@ rb_fstring(VALUE str)
         }
     }
 
-    if (!FL_TEST_RAW(str, FL_FREEZE | STR_NOFREE))
+    if (!FL_TEST_RAW(str, FL_FREEZE | STR_NOFREE | STR_CHILLED))
         rb_str_resize(str, RSTRING_LEN(str));
 
     fstr = register_fstring(str, FALSE);
@@ -1830,7 +1830,7 @@ rb_ec_str_resurrect(struct rb_execution_context_struct *ec, VALUE str, bool chil
     RUBY_DTRACE_CREATE_HOOK(STRING, RSTRING_LEN(str));
     VALUE new_str = ec_str_duplicate(ec, rb_cString, str);
     if (chilled) {
-        FL_SET_RAW(new_str, STR_CHILLED);
+        FL_SET_RAW(new_str, STR_CHILLED | FL_FREEZE);
     }
     return new_str;
 }
@@ -2444,20 +2444,10 @@ rb_check_lockedtmp(VALUE str)
 }
 
 static inline void
-str_check_chilled(VALUE str)
-{
-    if (FL_TEST_RAW(str, STR_CHILLED)) {
-        FL_UNSET_RAW(str, STR_CHILLED);
-        rb_warning("literal string will be frozen in the future");
-    }
-}
-
-static inline void
 str_modifiable(VALUE str)
 {
     rb_check_lockedtmp(str);
     rb_check_frozen(str);
-    str_check_chilled(str);
 }
 
 static inline int
@@ -3036,11 +3026,13 @@ str_substr(VALUE str, long beg, long len, int empty)
 VALUE
 rb_str_freeze(VALUE str)
 {
+    if (FL_TEST_RAW(str, STR_CHILLED)) {
+        FL_UNSET_RAW(str, STR_CHILLED);
+    }
     if (OBJ_FROZEN(str)) return str;
     rb_str_resize(str, RSTRING_LEN(str));
     return rb_obj_freeze(str);
 }
-
 
 /*
  * call-seq:
@@ -3053,7 +3045,7 @@ rb_str_freeze(VALUE str)
 static VALUE
 str_uplus(VALUE str)
 {
-    if (OBJ_FROZEN(str)) {
+    if (OBJ_FROZEN(str) || FL_TEST_RAW(str, STR_CHILLED)) {
         return rb_str_dup(str);
     }
     else {
