@@ -3558,11 +3558,20 @@ AS_CASE("$enable_shared_gc", [yes], [
     [linux*], [
         RUBY_APPEND_OPTIONS(LIBRUBYGC_DLDFLAGS, ['-Wl,-soname,$(LIBRUBYGC_SONAME)' "$LDFLAGS_OPTDIR"])
 	LIBRUBYGC_ALIASES='$(LIBRUBYGC_SONAME) lib$(RUBYGC_SO_NAME).$(SOEXT)'
+	AS_IF([test "$load_relative" = yes], [
+	    libprefix="'\$\${ORIGIN}/../${multiarch+../../}${libdir_basename}'"
+	    LIBRUBY_RELATIVE=yes
+	])
       ],
     [darwin*], [
         LIBRUBYGC_SO='lib$(RUBYGC_SO_NAME).$(SOEXT)'
         LIBRUBYGC_SONAME='$(LIBRUBYGC_SO)'
         LIBRUBYGC_ALIASES='lib$(RUBY_INSTALL_NAME)gc.$(SOEXT)'
+	AS_IF([test "$load_relative" = yes], [
+	    libprefix="@executable_path/../${multiarch+../../}${libdir_basename}"
+            LIBRUBYGC_DLDFLAGS="$LIBRUBYGC_DLDFLAGS -install_name ${libprefix}"'/$(LIBRUBYGC_SONAME)'
+	    LIBRUBY_RELATIVE=yes
+	])
         LIBRUBYGC_DLDFLAGS="$LIBRUBYGC_DLDFLAGS "'-compatibility_version $(RUBY_API_VERSION)'
         LIBRUBYGC_DLDFLAGS="$LIBRUBYGC_DLDFLAGS "'-current_version $(RUBY_PROGRAM_VERSION)'
       ],
@@ -4310,6 +4319,7 @@ AC_SUBST(LIBRUBYGCARG_STATIC)
 AC_SUBST(LIBRUBYGCARG_SHARED)
 AC_SUBST(LIBRUBYGC_A_OBJS)
 AC_SUBST(LIBRUBYGC_DLDFLAGS)
+AC_SUBST(LIBRUBYGC_RPATHFLAGS)
 
 AC_SUBST(SOLIBS)
 AC_SUBST(DLDLIBS)

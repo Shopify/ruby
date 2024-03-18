@@ -45,6 +45,12 @@ jobs:
           - test_task: check
             configure: '--disable-shared --enable-shared-gc'
             os: ubuntu-22.04
+          - test_task: check
+            configure: '--enable-shared --enable-shared-gc --enable-load-relative'
+            os: ubuntu-22.04
+          - test_task: check
+            configure: '--disable-shared --enable-shared-gc --enable-load-relative'
+            os: ubuntu-22.04
           - test_task: test-bundler-parallel
             os: ubuntu-22.04
           - test_task: test-bundled-gems
