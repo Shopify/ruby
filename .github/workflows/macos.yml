@@ -40,16 +40,28 @@ jobs:
           - test_task: test-bundled-gems
             os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
           - test_task: check
+            configure: '--enable-shared'
+            os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
+          - test_task: check
+            configure: '--enable-shared --enable-load-relative'
+            os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
+          - test_task: check
+            configure: '--enable-shared-gc'
+            os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
+          - test_task: check
+            configure: '--enable-shared-gc --enable-load-relative-gc'
+            os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
+          - test_task: check
             configure: '--enable-shared --enable-shared-gc'
             os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
           - test_task: check
-            configure: '--disable-shared --enable-shared-gc'
+            configure: '--enable-shared --enable-load-relative --enable-shared-gc'
             os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
           - test_task: check
-            configure: '--enable-shared --enable-shared-gc --enable-shared-relative'
+            configure: '--enable-shared --enable-shared-gc --enable-load-relative-gc'
             os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
           - test_task: check
-            configure: '--disable-shared --enable-shared-gc --enable-shared-relative'
+            configure: '--enable-shared --enable-shared-gc --enable-load-relative --enable-load-relative-gc'
             os: ${{ github.repository == 'ruby/ruby' && 'macos-arm-oss' || 'macos-14' }}
       fail-fast: false
 
