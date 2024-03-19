@@ -5,8 +5,12 @@
 # - repository-url: URL from where clone for test
 # - revision: revision in repository-url to test
 #   if `revision` is not given, "v"+`version` or `version` will be used.
-minitest        5.22.2  https://github.com/minitest/minitest 00affdbf08f42b9b12df043e9fe28e56ad33b622
-power_assert    2.0.3   https://github.com/ruby/power_assert
+
+# Waiting for https://github.com/minitest/minitest/pull/991
+minitest        5.22.3  https://github.com/Shopify/minitest b5f5202575894796e00109a8f8a5041b778991ee
+
+# Waiting for https://github.com/ruby/power_assert/pull/48
+power_assert    2.0.3   https://github.com/ruby/power_assert 78dd2ab3ccd93796d83c0b35b978c39bfabb938c
 rake            13.1.0  https://github.com/ruby/rake
 test-unit       3.6.2   https://github.com/test-unit/test-unit
 rexml           3.2.6   https://github.com/ruby/rexml
@@ -17,14 +21,14 @@ net-pop         0.1.2   https://github.com/ruby/net-pop
 net-smtp        0.4.0.1 https://github.com/ruby/net-smtp
 matrix          0.4.2   https://github.com/ruby/matrix
 prime           0.1.2   https://github.com/ruby/prime
-rbs             3.4.4   https://github.com/ruby/rbs 56ae86bb5f4864f5057778bd45b280248b012329
-typeprof        0.21.11 https://github.com/ruby/typeprof
+rbs             3.4.4   https://github.com/ruby/rbs ba7872795d5de04adb8ff500c0e6afdc81a041dd
+typeprof        0.21.11 https://github.com/ruby/typeprof b19a6416da3a05d57fadd6ffdadb382b6d236ca5
 debug           1.9.1   https://github.com/ruby/debug 2d602636d99114d55a32fedd652c9c704446a749
 racc            1.7.3   https://github.com/ruby/racc
 mutex_m         0.2.0   https://github.com/ruby/mutex_m
 getoptlong      0.2.1   https://github.com/ruby/getoptlong
 base64          0.2.0   https://github.com/ruby/base64
-bigdecimal      3.1.6   https://github.com/ruby/bigdecimal 741fb93b566959663269ecd988e278a974528a1d
+bigdecimal      3.1.7   https://github.com/ruby/bigdecimal
 observer        0.1.2   https://github.com/ruby/observer
 abbrev          0.1.2   https://github.com/ruby/abbrev
 resolv-replace  0.1.1   https://github.com/ruby/resolv-replace

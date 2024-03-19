@@ -185,7 +185,7 @@ assert_equal '[0, :sum, 0, :sum]', %q{
   end
 
   def cstring(iter)
-    string = ""
+    string = "".dup
     string.sum(iter.times { def string.sum(_) = :sum })
   end
 
@@ -1250,7 +1250,7 @@ assert_equal "good", %q{
 # Test polymorphic getinstancevariable. T_OBJECT -> T_STRING
 assert_equal 'ok', %q{
   @hello = @h1 = @h2 = @h3 = @h4 = 'ok'
-  str = ""
+  str = +""
   str.instance_variable_set(:@hello, 'ok')
 
   public def get
@@ -1395,7 +1395,7 @@ assert_equal '[42, :default]', %q{
 }
 
 # Test default value block for Hash with opt_aref_with
-assert_equal "false", %q{
+assert_equal "false", <<~RUBY, frozen_string_literal: false
   def index_with_string(h)
     h["foo"]
   end
@@ -1404,7 +1404,7 @@ assert_equal "false", %q{
 
   index_with_string(h)
   index_with_string(h)
-}
+RUBY
 
 # A regression test for making sure cfp->sp is proper when
 # hitting stubs. See :stub-sp-flush:
@@ -1904,7 +1904,7 @@ assert_equal 'foo', %q{
 }
 
 # Test that String unary plus returns the same object ID for an unfrozen string.
-assert_equal 'true', %q{
+assert_equal 'true', <<~RUBY, frozen_string_literal: false
   def jittable_method
     str = "bar"
 
@@ -1914,7 +1914,7 @@ assert_equal 'true', %q{
     uplus_str.object_id == old_obj_id
   end
   jittable_method
-}
+RUBY
 
 # Test that String unary plus returns a different unfrozen string when given a frozen string
 assert_equal 'false', %q{
@@ -2048,7 +2048,7 @@ assert_equal '[97, :nil, 97, :nil, :raised]', %q{
 
 # Basic test for String#setbyte
 assert_equal 'AoZ', %q{
-  s = "foo"
+  s = +"foo"
   s.setbyte(0, 65)
   s.setbyte(-1, 90)
   s
@@ -2091,7 +2091,7 @@ assert_equal 'String#setbyte', %q{
     0
   end
 
-  def ccall = "a".setbyte(self, 98)
+  def ccall = "a".dup.setbyte(self, 98)
   ccall
 
   @caller.first.split("'").last
@@ -4167,7 +4167,7 @@ assert_equal '2', %q{
 assert_equal 'Hello World', %q{
   def bar
     args = ["Hello "]
-    greeting = "World"
+    greeting = +"World"
     greeting.insert(0, *args)
     greeting
   end
@@ -4677,4 +4677,51 @@ assert_equal '[0, {1=>1}]', %q{
   end
 
   test(KwInit, [Hash.ruby2_keywords_hash({1 => 1})])
+}
+
+# Chilled string setivar trigger warning
+assert_equal 'literal string will be frozen in the future', %q{
+  Warning[:deprecated] = true
+  $VERBOSE = true
+  $warning = "no-warning"
+  module ::Warning
+    def self.warn(message)
+      $warning = message.split("warning: ").last.strip
+    end
+  end
+
+  class String
+    def setivar!
+      @ivar = 42
+    end
+  end
+
+  def setivar!(str)
+    str.setivar!
+  end
+
+  10.times { setivar!("mutable".dup) }
+  10.times do
+    setivar!("frozen".freeze)
+  rescue FrozenError
+  end
+
+  setivar!("chilled") # Emit warning
+  $warning
+}
+
+# arity=-2 cfuncs
+assert_equal '["", "1/2", [0, [:ok, 1]]]', %q{
+  def test_cases(file, chain)
+    new_chain = chain.allocate # to call initialize directly
+    new_chain.send(:initialize, [0], ok: 1)
+
+    [
+      file.join,
+      file.join("1", "2"),
+      new_chain.to_a,
+    ]
+  end
+
+  test_cases(File, Enumerator::Chain)
 }

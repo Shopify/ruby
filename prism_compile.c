@@ -448,7 +448,7 @@ pm_static_literal_value(const pm_node_t *node, const pm_scope_node_t *scope_node
       case PM_SOURCE_LINE_NODE:
         return INT2FIX(pm_node_line_number(scope_node->parser, node));
       case PM_STRING_NODE:
-        return parse_string_encoded(scope_node, node, &((pm_string_node_t *)node)->unescaped);
+        return rb_fstring(parse_string_encoded(scope_node, node, &((pm_string_node_t *)node)->unescaped));
       case PM_SYMBOL_NODE:
         return ID2SYM(parse_string_symbol(scope_node, (const pm_symbol_node_t *) node));
       case PM_TRUE_NODE:
@@ -787,6 +787,44 @@ pm_interpolated_node_compile(pm_node_list_t *parts, rb_iseq_t *iseq, NODE dummy_
     if (parts_size > 0) {
         VALUE current_string = Qnil;
 
+        bool literal = true;
+        for (size_t index = 0; index < parts_size; index++) {
+            const pm_node_t *part = parts->nodes[index];
+
+            if (!PM_NODE_TYPE_P(part, PM_STRING_NODE)) {
+                literal = false;
+                break;
+            }
+        }
+
+        if (literal) {
+            for (size_t index = 0; index < parts_size; index++) {
+                const pm_node_t *part = parts->nodes[index];
+                const pm_string_node_t *string_node = (const pm_string_node_t *)part;
+                VALUE string_value = parse_string_encoded(scope_node, (pm_node_t *)string_node, &string_node->unescaped);
+
+                if (RTEST(current_string)) {
+                    current_string = rb_str_concat(current_string, string_value);
+                }
+                else {
+                    current_string = string_value;
+                }
+            }
+
+            const pm_node_t *part = parts->nodes[0];
+            current_string = rb_fstring(current_string);
+            if (PM_NODE_FLAG_P(part, PM_STRING_FLAGS_FROZEN)) {
+                ADD_INSN1(ret, &dummy_line_node, putobject, current_string);
+            }
+            else if (PM_NODE_FLAG_P(part, PM_STRING_FLAGS_MUTABLE)) {
+                ADD_INSN1(ret, &dummy_line_node, putstring, current_string);
+            }
+            else {
+                ADD_INSN1(ret, &dummy_line_node, putchilledstring, current_string);
+            }
+            return 1;
+        }
+
         for (size_t index = 0; index < parts_size; index++) {
             const pm_node_t *part = parts->nodes[index];
 
@@ -820,12 +858,7 @@ pm_interpolated_node_compile(pm_node_list_t *parts, rb_iseq_t *iseq, NODE dummy_
                     current_string = rb_enc_str_new(NULL, 0, scope_node->encoding);
                 }
 
-                if (ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal) {
-                    ADD_INSN1(ret, &dummy_line_node, putobject, rb_str_freeze(current_string));
-                }
-                else {
-                    ADD_INSN1(ret, &dummy_line_node, putstring, rb_str_freeze(current_string));
-                }
+                ADD_INSN1(ret, &dummy_line_node, putobject, rb_fstring(current_string));
 
                 current_string = Qnil;
                 number_of_items_pushed++;
@@ -841,14 +874,7 @@ pm_interpolated_node_compile(pm_node_list_t *parts, rb_iseq_t *iseq, NODE dummy_
 
         if (RTEST(current_string)) {
             current_string = rb_fstring(current_string);
-
-            if (ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal) {
-                ADD_INSN1(ret, &dummy_line_node, putobject, current_string);
-            }
-            else {
-                ADD_INSN1(ret, &dummy_line_node, putstring, current_string);
-            }
-
+            ADD_INSN1(ret, &dummy_line_node, putobject, current_string);
             current_string = Qnil;
             number_of_items_pushed++;
         }
@@ -1117,55 +1143,97 @@ pm_setup_args_core(const pm_arguments_node_t *arguments_node, const pm_node_t *b
         int post_splat_counter = 0;
 
         for (size_t index = 0; index < arguments_node_list.size; index++) {
-            pm_node_t *argument = arguments_node_list.nodes[index];
+            const pm_node_t *argument = arguments_node_list.nodes[index];
 
             switch (PM_NODE_TYPE(argument)) {
               // A keyword hash node contains all keyword arguments as AssocNodes and AssocSplatNodes
               case PM_KEYWORD_HASH_NODE: {
-                pm_keyword_hash_node_t *keyword_arg = (pm_keyword_hash_node_t *)argument;
+                const pm_keyword_hash_node_t *keyword_arg = (const pm_keyword_hash_node_t *) argument;
+                const pm_node_list_t *elements = &keyword_arg->elements;
 
                 if (has_keyword_splat || has_splat) {
                     *flags |= VM_CALL_KW_SPLAT;
                     has_keyword_splat = true;
-                    pm_compile_hash_elements(&keyword_arg->elements, nd_line(&dummy_line_node), iseq, ret, scope_node);
+                    pm_compile_hash_elements(elements, nd_line(&dummy_line_node), iseq, ret, scope_node);
                 }
                 else {
-                    size_t len = keyword_arg->elements.size;
-
-                    // We need to first figure out if all elements of the KeywordHashNode are AssocNodes
-                    // with symbol keys.
+                    // We need to first figure out if all elements of the
+                    // KeywordHashNode are AssocNodes with symbol keys.
                     if (PM_NODE_FLAG_P(keyword_arg, PM_KEYWORD_HASH_NODE_FLAGS_SYMBOL_KEYS)) {
-                        // If they are all symbol keys then we can pass them as keyword arguments.
-                        *kw_arg = rb_xmalloc_mul_add(len, sizeof(VALUE), sizeof(struct rb_callinfo_kwarg));
+                        // If they are all symbol keys then we can pass them as
+                        // keyword arguments. The first thing we need to do is
+                        // deduplicate. We'll do this using the combination of a
+                        // Ruby hash and a Ruby array.
+                        VALUE stored_indices = rb_hash_new();
+                        VALUE keyword_indices = rb_ary_new_capa(elements->size);
+
+                        size_t size = 0;
+                        for (size_t element_index = 0; element_index < elements->size; element_index++) {
+                            const pm_assoc_node_t *assoc = (const pm_assoc_node_t *) elements->nodes[element_index];
+
+                            // Retrieve the stored index from the hash for this
+                            // keyword.
+                            VALUE keyword = pm_static_literal_value(assoc->key, scope_node);
+                            VALUE stored_index = rb_hash_aref(stored_indices, keyword);
+
+                            // If this keyword was already seen in the hash,
+                            // then mark the array at that index as false and
+                            // decrement the keyword size.
+                            if (!NIL_P(stored_index)) {
+                                rb_ary_store(keyword_indices, NUM2LONG(stored_index), Qfalse);
+                                size--;
+                            }
+
+                            // Store (and possibly overwrite) the index for this
+                            // keyword in the hash, mark the array at that index
+                            // as true, and increment the keyword size.
+                            rb_hash_aset(stored_indices, keyword, ULONG2NUM(element_index));
+                            rb_ary_store(keyword_indices, (long) element_index, Qtrue);
+                            size++;
+                        }
+
+                        *kw_arg = rb_xmalloc_mul_add(size, sizeof(VALUE), sizeof(struct rb_callinfo_kwarg));
                         *flags |= VM_CALL_KWARG;
+
                         VALUE *keywords = (*kw_arg)->keywords;
                         (*kw_arg)->references = 0;
-                        (*kw_arg)->keyword_len = (int)len;
+                        (*kw_arg)->keyword_len = (int) size;
 
-                        for (size_t i = 0; i < len; i++) {
-                            pm_assoc_node_t *assoc = (pm_assoc_node_t *)keyword_arg->elements.nodes[i];
-                            pm_node_t *key = assoc->key;
-                            keywords[i] = pm_static_literal_value(key, scope_node);
-                            PM_COMPILE_NOT_POPPED(assoc->value);
+                        size_t keyword_index = 0;
+                        for (size_t element_index = 0; element_index < elements->size; element_index++) {
+                            const pm_assoc_node_t *assoc = (const pm_assoc_node_t *) elements->nodes[element_index];
+                            bool popped = true;
+
+                            if (rb_ary_entry(keyword_indices, (long) element_index) == Qtrue) {
+                                keywords[keyword_index++] = pm_static_literal_value(assoc->key, scope_node);
+                                popped = false;
+                            }
+
+                            PM_COMPILE(assoc->value);
                         }
+
+                        RUBY_ASSERT(keyword_index == size);
                     } else {
-                        // If they aren't all symbol keys then we need to construct a new hash
-                        // and pass that as an argument.
+                        // If they aren't all symbol keys then we need to
+                        // construct a new hash and pass that as an argument.
                         orig_argc++;
                         *flags |= VM_CALL_KW_SPLAT;
-                        if (len > 1) {
-                            // A new hash will be created for the keyword arguments in this case,
-                            // so mark the method as passing mutable keyword splat.
+
+                        size_t size = elements->size;
+                        if (size > 1) {
+                            // A new hash will be created for the keyword
+                            // arguments in this case, so mark the method as
+                            // passing mutable keyword splat.
                             *flags |= VM_CALL_KW_SPLAT_MUT;
                         }
 
-                        for (size_t i = 0; i < len; i++) {
-                            pm_assoc_node_t *assoc = (pm_assoc_node_t *)keyword_arg->elements.nodes[i];
+                        for (size_t element_index = 0; element_index < size; element_index++) {
+                            pm_assoc_node_t *assoc = (pm_assoc_node_t *) elements->nodes[element_index];
                             PM_COMPILE_NOT_POPPED(assoc->key);
                             PM_COMPILE_NOT_POPPED(assoc->value);
                         }
 
-                        ADD_INSN1(ret, &dummy_line_node, newhash, INT2FIX(len * 2));
+                        ADD_INSN1(ret, &dummy_line_node, newhash, INT2FIX(size * 2));
                     }
                 }
                 break;
@@ -2358,6 +2426,12 @@ pm_compile_pattern(rb_iseq_t *iseq, pm_scope_node_t *scope_node, const pm_node_t
         CHECK(pm_compile_pattern(iseq, scope_node, cast->right, ret, matched_label, unmatched_label, in_single_pattern, true, true, base_index));
         break;
       }
+      case PM_PARENTHESES_NODE:
+        // Parentheses are allowed to wrap expressions in pattern matching and
+        // they do nothing since they can only wrap individual expressions and
+        // not groups. In this case we'll recurse back into this same function
+        // with the body of the parentheses.
+        return pm_compile_pattern(iseq, scope_node, ((pm_parentheses_node_t *) node)->body, ret, matched_label, unmatched_label, in_single_pattern, in_alternation_pattern, use_deconstructed_cache, base_index);
       case PM_PINNED_EXPRESSION_NODE:
         // Pinned expressions are a way to match against the value of an
         // expression that should be evaluated at runtime. This looks like:
@@ -3971,7 +4045,7 @@ pm_opt_aref_with_p(const rb_iseq_t *iseq, const pm_call_node_t *node)
         ((const pm_arguments_node_t *) node->arguments)->arguments.size == 1 &&
         PM_NODE_TYPE_P(((const pm_arguments_node_t *) node->arguments)->arguments.nodes[0], PM_STRING_NODE) &&
         node->block == NULL &&
-        !ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal &&
+        !PM_NODE_FLAG_P(((const pm_arguments_node_t *) node->arguments)->arguments.nodes[0], PM_STRING_FLAGS_FROZEN) &&
         ISEQ_COMPILE_DATA(iseq)->option->specialized_instruction
     );
 }
@@ -3990,7 +4064,7 @@ pm_opt_aset_with_p(const rb_iseq_t *iseq, const pm_call_node_t *node)
         ((const pm_arguments_node_t *) node->arguments)->arguments.size == 2 &&
         PM_NODE_TYPE_P(((const pm_arguments_node_t *) node->arguments)->arguments.nodes[0], PM_STRING_NODE) &&
         node->block == NULL &&
-        !ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal &&
+        !PM_NODE_FLAG_P(((const pm_arguments_node_t *) node->arguments)->arguments.nodes[0], PM_STRING_FLAGS_FROZEN) &&
         ISEQ_COMPILE_DATA(iseq)->option->specialized_instruction
     );
 }
@@ -4119,8 +4193,17 @@ pm_compile_case_node_dispatch(VALUE dispatch, const pm_node_t *node, LABEL *labe
     VALUE key = Qundef;
 
     switch (PM_NODE_TYPE(node)) {
+      case PM_FLOAT_NODE: {
+        key = pm_static_literal_value(node, scope_node);
+        double intptr;
+
+        if (modf(RFLOAT_VALUE(key), &intptr) == 0.0) {
+            key = (FIXABLE(intptr) ? LONG2FIX((long) intptr) : rb_dbl2big(intptr));
+        }
+
+        break;
+      }
       case PM_FALSE_NODE:
-      case PM_FLOAT_NODE:
       case PM_INTEGER_NODE:
       case PM_NIL_NODE:
       case PM_SOURCE_FILE_NODE:
@@ -6482,18 +6565,35 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
 
         return;
       }
-      case PM_NIL_NODE:
-        PM_PUTNIL_UNLESS_POPPED;
+      case PM_NIL_NODE: {
+        // nil
+        // ^^^
+        if (!popped) {
+            PUSH_INSN(ret, location, putnil);
+        }
+
         return;
+      }
       case PM_NO_KEYWORDS_PARAMETER_NODE: {
+        // def foo(**nil); end
+        //         ^^^^^
         ISEQ_BODY(iseq)->param.flags.accepts_no_kwarg = TRUE;
         return;
       }
       case PM_NUMBERED_REFERENCE_READ_NODE: {
+        // $1
+        // ^^
         if (!popped) {
-            uint32_t reference_number = ((pm_numbered_reference_read_node_t *)node)->number;
-            ADD_INSN2(ret, &dummy_line_node, getspecial, INT2FIX(1), INT2FIX(reference_number << 1));
+            uint32_t reference_number = ((const pm_numbered_reference_read_node_t *) node)->number;
+
+            if (reference_number > 0) {
+                PUSH_INSN2(ret, location, getspecial, INT2FIX(1), INT2FIX(reference_number << 1));
+            }
+            else {
+                PUSH_INSN(ret, location, putnil);
+            }
         }
+
         return;
       }
       case PM_OR_NODE: {
@@ -6943,11 +7043,14 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
                 break;
               }
               case PM_NUMBERED_PARAMETERS_NODE: {
-                body->param.lead_num = ((pm_numbered_parameters_node_t *) scope_node->parameters)->maximum;
+                uint32_t maximum = ((pm_numbered_parameters_node_t *) scope_node->parameters)->maximum;
+                body->param.lead_num = maximum;
+                body->param.flags.ambiguous_param0 = maximum == 1;
                 break;
               }
               case PM_IT_PARAMETERS_NODE:
                 body->param.lead_num = 1;
+                body->param.flags.ambiguous_param0 = true;
                 break;
               default:
                 rb_bug("Unexpected node type for parameters: %s", pm_node_type_to_str(PM_NODE_TYPE(node)));
@@ -7802,6 +7905,11 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
             PUSH_INSN(ret, location, putself);
         }
         return;
+      case PM_SHAREABLE_CONSTANT_NODE:
+        // A value that is being written to a constant that is being marked as
+        // shared depending on the current lexical context.
+        PM_COMPILE(((const pm_shareable_constant_node_t *) node)->write);
+        return;
       case PM_SINGLETON_CLASS_NODE: {
         // class << self; end
         // ^^^^^^^^^^^^^^^^^^
@@ -7837,8 +7945,18 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
         // __FILE__
         // ^^^^^^^^
         if (!popped) {
-            VALUE value = pm_static_literal_value(node, scope_node);
-            PUSH_INSN1(ret, location, putstring, value);
+            const pm_source_file_node_t *cast = (const pm_source_file_node_t *) node;
+            VALUE string = rb_fstring(parse_string(scope_node, &cast->filepath));
+
+            if (PM_NODE_FLAG_P(cast, PM_STRING_FLAGS_FROZEN)) {
+                PUSH_INSN1(ret, location, putobject, string);
+            }
+            else if (PM_NODE_FLAG_P(cast, PM_STRING_FLAGS_MUTABLE)) {
+                PUSH_INSN1(ret, location, putstring, string);
+            }
+            else {
+                PUSH_INSN1(ret, location, putchilledstring, string);
+            }
         }
         return;
       }
@@ -7890,8 +8008,11 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
             if (PM_NODE_FLAG_P(node, PM_STRING_FLAGS_FROZEN)) {
                 PUSH_INSN1(ret, location, putobject, value);
             }
-            else {
+            else if (PM_NODE_FLAG_P(node, PM_STRING_FLAGS_MUTABLE)) {
                 PUSH_INSN1(ret, location, putstring, value);
+            }
+            else {
+                PUSH_INSN1(ret, location, putchilledstring, value);
             }
         }
         return;
@@ -8100,7 +8221,7 @@ pm_parse_result_free(pm_parse_result_t *result)
  * as well.
  */
 static bool
-pm_parse_input_error_utf8_p(const pm_parser_t *parser, const pm_location_t *location)
+pm_parse_process_error_utf8_p(const pm_parser_t *parser, const pm_location_t *location)
 {
     const size_t start_line = pm_newline_list_line_column(&parser->newline_list, location->start, 1).line;
     const size_t end_line = pm_newline_list_line_column(&parser->newline_list, location->end, 1).line;
@@ -8122,7 +8243,7 @@ pm_parse_input_error_utf8_p(const pm_parser_t *parser, const pm_location_t *loca
  * information as possible about the errors that were encountered.
  */
 static VALUE
-pm_parse_input_error(const pm_parse_result_t *result)
+pm_parse_process_error(const pm_parse_result_t *result)
 {
     const pm_diagnostic_t *head = (const pm_diagnostic_t *) result->parser.error_list.head;
     bool valid_utf8 = true;
@@ -8140,7 +8261,7 @@ pm_parse_input_error(const pm_parse_result_t *result)
         // contain invalid byte sequences. So if any source examples include
         // invalid UTF-8 byte sequences, we will skip showing source examples
         // entirely.
-        if (valid_utf8 && !pm_parse_input_error_utf8_p(&result->parser, &error->location)) {
+        if (valid_utf8 && !pm_parse_process_error_utf8_p(&result->parser, &error->location)) {
             valid_utf8 = false;
         }
     }
@@ -8172,19 +8293,18 @@ pm_parse_input_error(const pm_parse_result_t *result)
  * result object is zeroed out.
  */
 static VALUE
-pm_parse_input(pm_parse_result_t *result, VALUE filepath)
+pm_parse_process(pm_parse_result_t *result, pm_node_t *node)
 {
-    // Set up the parser and parse the input.
-    pm_options_filepath_set(&result->options, RSTRING_PTR(filepath));
-    RB_GC_GUARD(filepath);
-
     pm_parser_t *parser = &result->parser;
-    pm_parser_init(parser, pm_string_source(&result->input), pm_string_length(&result->input), &result->options);
-    const pm_node_t *node = pm_parse(parser);
+
+    // First, set up the scope node so that the AST node is attached and can be
+    // freed regardless of whether or we return an error.
+    pm_scope_node_t *scope_node = &result->node;
+    pm_scope_node_init(node, scope_node, NULL);
 
     // If there are errors, raise an appropriate error and free the result.
-    if (result->parser.error_list.size > 0) {
-        VALUE error = pm_parse_input_error(result);
+    if (parser->error_list.size > 0) {
+        VALUE error = pm_parse_process_error(result);
 
         // TODO: We need to set the backtrace.
         // rb_funcallv(error, rb_intern("set_backtrace"), 1, &path);
@@ -8208,9 +8328,6 @@ pm_parse_input(pm_parse_result_t *result, VALUE filepath)
 
     // Now set up the constant pool and intern all of the various constants into
     // their corresponding IDs.
-    pm_scope_node_t *scope_node = &result->node;
-    pm_scope_node_init(node, scope_node, NULL);
-
     scope_node->encoding = rb_enc_find(parser->encoding->name);
     if (!scope_node->encoding) rb_bug("Encoding not found %s!", parser->encoding->name);
 
@@ -8269,6 +8386,24 @@ pm_parse_file_script_lines(const pm_scope_node_t *scope_node, const pm_parser_t 
     return lines;
 }
 
+void
+pm_options_frozen_string_literal_init(pm_parse_result_t *result, int frozen_string_literal)
+{
+    switch (frozen_string_literal) {
+      case ISEQ_FROZEN_STRING_LITERAL_UNSET:
+        break;
+      case ISEQ_FROZEN_STRING_LITERAL_DISABLED:
+        pm_options_frozen_string_literal_set(&result->options, false);
+        break;
+      case ISEQ_FROZEN_STRING_LITERAL_ENABLED:
+        pm_options_frozen_string_literal_set(&result->options, true);
+        break;
+      default:
+        rb_bug("pm_options_frozen_string_literal_init: invalid frozen_string_literal=%d", frozen_string_literal);
+        break;
+    }
+}
+
 /**
  * Attempt to load the file into memory. Return a Ruby error if the file cannot
  * be read.
@@ -8300,7 +8435,13 @@ pm_load_file(pm_parse_result_t *result, VALUE filepath)
 VALUE
 pm_parse_file(pm_parse_result_t *result, VALUE filepath)
 {
-    VALUE error = pm_parse_input(result, filepath);
+    pm_options_filepath_set(&result->options, RSTRING_PTR(filepath));
+    RB_GC_GUARD(filepath);
+
+    pm_parser_init(&result->parser, pm_string_source(&result->input), pm_string_length(&result->input), &result->options);
+    pm_node_t *node = pm_parse(&result->parser);
+
+    VALUE error = pm_parse_process(result, node);
 
     // If we're parsing a filepath, then we need to potentially support the
     // SCRIPT_LINES__ constant, which can be a hash that has an array of lines
@@ -8335,9 +8476,9 @@ pm_load_parse_file(pm_parse_result_t *result, VALUE filepath)
 
 /**
  * Parse the given source that corresponds to the given filepath and store the
- * resulting scope node in the given parse result struct. This function could
- * potentially raise a Ruby error. It is assumed that the parse result object is
- * zeroed out.
+ * resulting scope node in the given parse result struct. It is assumed that the
+ * parse result object is zeroed out. If the string fails to parse, then a Ruby
+ * error is returned.
  */
 VALUE
 pm_parse_string(pm_parse_result_t *result, VALUE source, VALUE filepath)
@@ -8347,7 +8488,54 @@ pm_parse_string(pm_parse_result_t *result, VALUE source, VALUE filepath)
     rb_encoding *encoding = rb_enc_get(source);
     pm_options_encoding_set(&result->options, rb_enc_name(encoding));
 
-    return pm_parse_input(result, filepath);
+    pm_options_filepath_set(&result->options, RSTRING_PTR(filepath));
+    RB_GC_GUARD(filepath);
+
+    pm_parser_init(&result->parser, pm_string_source(&result->input), pm_string_length(&result->input), &result->options);
+    pm_node_t *node = pm_parse(&result->parser);
+
+    return pm_parse_process(result, node);
+}
+
+/**
+ * An implementation of fgets that is suitable for use with Ruby IO objects.
+ */
+static char *
+pm_parse_stdin_fgets(char *string, int size, void *stream)
+{
+    RUBY_ASSERT(size > 0);
+
+    VALUE line = rb_funcall((VALUE) stream, rb_intern("gets"), 1, INT2FIX(size - 1));
+    if (NIL_P(line)) {
+        return NULL;
+    }
+
+    const char *cstr = StringValueCStr(line);
+    size_t length = strlen(cstr);
+
+    memcpy(string, cstr, length);
+    string[length] = '\0';
+
+    return string;
+}
+
+/**
+ * Parse the source off STDIN and store the resulting scope node in the given
+ * parse result struct. It is assumed that the parse result object is zeroed
+ * out. If the stream fails to parse, then a Ruby error is returned.
+ */
+VALUE
+pm_parse_stdin(pm_parse_result_t *result)
+{
+    pm_buffer_t buffer;
+    pm_node_t *node = pm_parse_stream(&result->parser, &buffer, (void *) rb_stdin, pm_parse_stdin_fgets, &result->options);
+
+    // Copy the allocated buffer contents into the input string so that it gets
+    // freed. At this point we've handed over ownership, so we don't need to
+    // free the buffer itself.
+    pm_string_owned_init(&result->input, (uint8_t *) pm_buffer_value(&buffer), pm_buffer_length(&buffer));
+
+    return pm_parse_process(result, node);
 }
 
 #undef NEW_ISEQ

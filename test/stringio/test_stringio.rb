@@ -22,10 +22,11 @@ class TestStringIO < Test::Unit::TestCase
     assert_kind_of StringIO, StringIO.new
     assert_kind_of StringIO, StringIO.new('str')
     assert_kind_of StringIO, StringIO.new('str', 'r+')
+    assert_kind_of StringIO, StringIO.new(nil)
     assert_raise(ArgumentError) { StringIO.new('', 'x') }
     assert_raise(ArgumentError) { StringIO.new('', 'rx') }
     assert_raise(ArgumentError) { StringIO.new('', 'rbt') }
-    assert_raise(TypeError) { StringIO.new(nil) }
+    assert_raise(TypeError) { StringIO.new(Object) }
 
     o = Object.new
     def o.to_str
@@ -38,6 +39,13 @@ class TestStringIO < Test::Unit::TestCase
       'str'
     end
     assert_kind_of StringIO, StringIO.new(o)
+  end
+
+  def test_null
+    io = StringIO.new(nil)
+    assert_nil io.gets
+    io.puts "abc"
+    assert_nil io.string
   end
 
   def test_truncate
@@ -237,7 +245,7 @@ class TestStringIO < Test::Unit::TestCase
 
   def test_write_integer_overflow
     f = StringIO.new
-    f.pos = RbConfig::LIMITS["LONG_MAX"]
+    f.pos = StringIO::MAX_LENGTH
     assert_raise(ArgumentError) {
       f.write("pos + len overflows")
     }
@@ -899,8 +907,9 @@ class TestStringIO < Test::Unit::TestCase
   end
 
   def test_overflow
-    return if RbConfig::SIZEOF["void*"] > RbConfig::SIZEOF["long"]
-    limit = RbConfig::LIMITS["INTPTR_MAX"] - 0x10
+    intptr_max = RbConfig::LIMITS["INTPTR_MAX"]
+    return if intptr_max > StringIO::MAX_LENGTH
+    limit = intptr_max - 0x10
     assert_separately(%w[-rstringio], "#{<<-"begin;"}\n#{<<-"end;"}")
     begin;
       limit = #{limit}

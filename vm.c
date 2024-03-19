@@ -1981,7 +1981,7 @@ rb_vm_localjump_error(const char *mesg, VALUE value, int reason)
 }
 
 VALUE
-rb_vm_make_jump_tag_but_local_jump(int state, VALUE val)
+rb_vm_make_jump_tag_but_local_jump(enum ruby_tag_type state, VALUE val)
 {
     const char *mesg;
 
@@ -2013,7 +2013,7 @@ rb_vm_make_jump_tag_but_local_jump(int state, VALUE val)
 }
 
 void
-rb_vm_jump_tag_but_local_jump(int state)
+rb_vm_jump_tag_but_local_jump(enum ruby_tag_type state)
 {
     VALUE exc = rb_vm_make_jump_tag_but_local_jump(state, Qundef);
     if (!NIL_P(exc)) rb_exc_raise(exc);
@@ -2960,10 +2960,14 @@ rb_vm_mark(void *ptr)
             rb_gc_mark(rb_ractor_self(r));
         }
 
+        for (struct global_object_list *list = vm->global_object_list; list; list = list->next) {
+            rb_gc_mark_maybe(*list->varptr);
+        }
+
         rb_gc_mark_movable(vm->mark_object_ary);
         rb_gc_mark_movable(vm->load_path);
         rb_gc_mark_movable(vm->load_path_snapshot);
-        RUBY_MARK_MOVABLE_UNLESS_NULL(vm->load_path_check_cache);
+        rb_gc_mark_movable(vm->load_path_check_cache);
         rb_gc_mark_movable(vm->expanded_load_path);
         rb_gc_mark_movable(vm->loaded_features);
         rb_gc_mark_movable(vm->loaded_features_snapshot);
@@ -2971,8 +2975,8 @@ rb_vm_mark(void *ptr)
         rb_gc_mark_movable(vm->loaded_features_realpath_map);
         rb_gc_mark_movable(vm->top_self);
         rb_gc_mark_movable(vm->orig_progname);
-        RUBY_MARK_MOVABLE_UNLESS_NULL(vm->coverages);
-        RUBY_MARK_MOVABLE_UNLESS_NULL(vm->me2counter);
+        rb_gc_mark_movable(vm->coverages);
+        rb_gc_mark_movable(vm->me2counter);
 
         if (vm->loading_table) {
             rb_mark_tbl(vm->loading_table);
@@ -3101,6 +3105,13 @@ ruby_vm_destruct(rb_vm_t *vm)
             vm->frozen_strings = 0;
         }
         RB_ALTSTACK_FREE(vm->main_altstack);
+
+        struct global_object_list *next;
+        for (struct global_object_list *list = vm->global_object_list; list; list = next) {
+            next = list->next;
+            xfree(list);
+        }
+
         if (objspace) {
             if (rb_free_at_exit) {
                 rb_objspace_free_objects(objspace);
@@ -3394,16 +3405,16 @@ rb_execution_context_mark(const rb_execution_context_t *ec)
                              sizeof(ec->machine.regs) / (sizeof(VALUE)));
     }
 
-    RUBY_MARK_UNLESS_NULL(ec->errinfo);
-    RUBY_MARK_UNLESS_NULL(ec->root_svar);
+    rb_gc_mark(ec->errinfo);
+    rb_gc_mark(ec->root_svar);
     if (ec->local_storage) {
         rb_id_table_foreach_values(ec->local_storage, mark_local_storage_i, NULL);
     }
-    RUBY_MARK_UNLESS_NULL(ec->local_storage_recursive_hash);
-    RUBY_MARK_UNLESS_NULL(ec->local_storage_recursive_hash_for_trace);
-    RUBY_MARK_UNLESS_NULL(ec->private_const_reference);
+    rb_gc_mark(ec->local_storage_recursive_hash);
+    rb_gc_mark(ec->local_storage_recursive_hash_for_trace);
+    rb_gc_mark(ec->private_const_reference);
 
-    RUBY_MARK_MOVABLE_UNLESS_NULL(ec->storage);
+    rb_gc_mark_movable(ec->storage);
 }
 
 void rb_fiber_mark_self(rb_fiber_t *fib);
@@ -3434,8 +3445,8 @@ thread_mark(void *ptr)
     switch (th->invoke_type) {
       case thread_invoke_type_proc:
       case thread_invoke_type_ractor_proc:
-        RUBY_MARK_UNLESS_NULL(th->invoke_arg.proc.proc);
-        RUBY_MARK_UNLESS_NULL(th->invoke_arg.proc.args);
+        rb_gc_mark(th->invoke_arg.proc.proc);
+        rb_gc_mark(th->invoke_arg.proc.args);
         break;
       case thread_invoke_type_func:
         rb_gc_mark_maybe((VALUE)th->invoke_arg.func.arg);
@@ -3445,21 +3456,21 @@ thread_mark(void *ptr)
     }
 
     rb_gc_mark(rb_ractor_self(th->ractor));
-    RUBY_MARK_UNLESS_NULL(th->thgroup);
-    RUBY_MARK_UNLESS_NULL(th->value);
-    RUBY_MARK_UNLESS_NULL(th->pending_interrupt_queue);
-    RUBY_MARK_UNLESS_NULL(th->pending_interrupt_mask_stack);
-    RUBY_MARK_UNLESS_NULL(th->top_self);
-    RUBY_MARK_UNLESS_NULL(th->top_wrapper);
+    rb_gc_mark(th->thgroup);
+    rb_gc_mark(th->value);
+    rb_gc_mark(th->pending_interrupt_queue);
+    rb_gc_mark(th->pending_interrupt_mask_stack);
+    rb_gc_mark(th->top_self);
+    rb_gc_mark(th->top_wrapper);
     if (th->root_fiber) rb_fiber_mark_self(th->root_fiber);
 
     RUBY_ASSERT(th->ec == rb_fiberptr_get_ec(th->ec->fiber_ptr));
-    RUBY_MARK_UNLESS_NULL(th->stat_insn_usage);
-    RUBY_MARK_UNLESS_NULL(th->last_status);
-    RUBY_MARK_UNLESS_NULL(th->locking_mutex);
-    RUBY_MARK_UNLESS_NULL(th->name);
+    rb_gc_mark(th->stat_insn_usage);
+    rb_gc_mark(th->last_status);
+    rb_gc_mark(th->locking_mutex);
+    rb_gc_mark(th->name);
 
-    RUBY_MARK_UNLESS_NULL(th->scheduler);
+    rb_gc_mark(th->scheduler);
 
     RUBY_MARK_LEAVE("thread");
 }
@@ -3548,6 +3559,10 @@ void
 rb_ec_initialize_vm_stack(rb_execution_context_t *ec, VALUE *stack, size_t size)
 {
     rb_ec_set_vm_stack(ec, stack, size);
+
+#if VM_CHECK_MODE > 0
+    MEMZERO(stack, VALUE, size); // malloc memory could have the VM canary in it
+#endif
 
     ec->cfp = (void *)(ec->vm_stack + ec->vm_stack_size);
 
@@ -4442,6 +4457,12 @@ rb_ruby_debug_ptr(void)
 }
 
 bool rb_free_at_exit = false;
+
+bool
+ruby_free_at_exit_p(void)
+{
+    return rb_free_at_exit;
+}
 
 /* iseq.c */
 VALUE rb_insn_operand_intern(const rb_iseq_t *iseq,

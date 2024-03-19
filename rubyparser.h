@@ -34,6 +34,18 @@
 #endif
 #endif
 
+#if defined(__GNUC__)
+# if defined(__MINGW_PRINTF_FORMAT)
+#   define RUBYPARSER_ATTRIBUTE_FORMAT(string_index, argument_index) __attribute__((format(__MINGW_PRINTF_FORMAT, string_index, argument_index)))
+# else
+#   define RUBYPARSER_ATTRIBUTE_FORMAT(string_index, argument_index) __attribute__((format(printf, string_index, argument_index)))
+# endif
+#elif defined(__clang__)
+# define RUBYPARSER_ATTRIBUTE_FORMAT(string_index, argument_index) __attribute__((__format__(__printf__, string_index, argument_index)))
+#else
+# define RUBYPARSER_ATTRIBUTE_FORMAT(string_index, argument_index)
+#endif
+
 /*
  * Parser String
  */
@@ -188,6 +200,22 @@ typedef struct rb_code_location_struct {
     rb_code_position_t beg_pos;
     rb_code_position_t end_pos;
 } rb_code_location_t;
+
+typedef struct rb_parser_ast_token {
+    int id;
+    const char *type_name;
+    rb_parser_string_t *str;
+    rb_code_location_t loc;
+} rb_parser_ast_token_t;
+
+/*
+ * Array-like object for parser
+ */
+typedef struct rb_parser_ary {
+    rb_parser_ast_token_t **data;
+    long len;  // current size
+    long capa; // capacity
+} rb_parser_ary_t;
 
 /* Header part of AST Node */
 typedef struct RNode {
@@ -1340,6 +1368,10 @@ typedef struct rb_parser_config_struct {
     void (*encoding_set)(VALUE obj, int encindex);
     int (*encoding_is_ascii8bit)(VALUE obj);
     rb_encoding *(*usascii_encoding)(void);
+    int enc_coderange_broken;
+    int (*enc_mbminlen)(rb_encoding *enc);
+    bool (*enc_isascii)(OnigCodePoint c, rb_encoding *enc);
+    OnigCodePoint (*enc_mbc_to_codepoint)(const char *p, const char *e, rb_encoding *enc);
 
     /* Ractor */
     VALUE (*ractor_make_shareable)(VALUE obj);
@@ -1383,10 +1415,10 @@ typedef struct rb_parser_config_struct {
     int (*memcicmp)(const void *x, const void *y, long len);
 
     /* Error */
-    void (*compile_warn)(const char *file, int line, const char *fmt, ...);
-    void (*compile_warning)(const char *file, int line, const char *fmt, ...);
-    void (*bug)(const char *fmt, ...);
-    void (*fatal)(const char *fmt, ...);
+    void (*compile_warn)(const char *file, int line, const char *fmt, ...) RUBYPARSER_ATTRIBUTE_FORMAT(3, 4);
+    void (*compile_warning)(const char *file, int line, const char *fmt, ...) RUBYPARSER_ATTRIBUTE_FORMAT(3, 4);
+    void (*bug)(const char *fmt, ...) RUBYPARSER_ATTRIBUTE_FORMAT(1, 2);
+    void (*fatal)(const char *fmt, ...) RUBYPARSER_ATTRIBUTE_FORMAT(1, 2);
     VALUE (*verbose)(void);
     int *(*errno_ptr)(void);
 

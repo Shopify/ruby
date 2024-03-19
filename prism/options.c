@@ -25,11 +25,19 @@ pm_options_line_set(pm_options_t *options, int32_t line) {
 }
 
 /**
+ * Set the offset option on the given options struct.
+ */
+PRISM_EXPORTED_FUNCTION void
+pm_options_offset_set(pm_options_t *options, uint32_t offset) {
+    options->offset = offset;
+}
+
+/**
  * Set the frozen string literal option on the given options struct.
  */
 PRISM_EXPORTED_FUNCTION void
 pm_options_frozen_string_literal_set(pm_options_t *options, bool frozen_string_literal) {
-    options->frozen_string_literal = frozen_string_literal;
+    options->frozen_string_literal = frozen_string_literal ? PM_OPTIONS_FROZEN_STRING_LITERAL_ENABLED : PM_OPTIONS_FROZEN_STRING_LITERAL_DISABLED;
 }
 
 /**
@@ -193,6 +201,9 @@ pm_options_read(pm_options_t *options, const char *data) {
     options->line = pm_options_read_s32(data);
     data += 4;
 
+    options->offset = pm_options_read_u32(data);
+    data += 4;
+
     uint32_t encoding_length = pm_options_read_u32(data);
     data += 4;
 
@@ -201,7 +212,7 @@ pm_options_read(pm_options_t *options, const char *data) {
         data += encoding_length;
     }
 
-    options->frozen_string_literal = (*data++) ? true : false;
+    options->frozen_string_literal = (int8_t) *data++;
     options->command_line = (uint8_t) *data++;
     options->version = (pm_options_version_t) *data++;
 

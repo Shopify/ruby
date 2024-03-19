@@ -2327,7 +2327,28 @@ fn gen_putstring(
 
     let str_opnd = asm.ccall(
         rb_ec_str_resurrect as *const u8,
-        vec![EC, put_val.into()]
+        vec![EC, put_val.into(), 0.into()]
+    );
+
+    let stack_top = asm.stack_push(Type::TString);
+    asm.mov(stack_top, str_opnd);
+
+    Some(KeepCompiling)
+}
+
+fn gen_putchilledstring(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    _ocb: &mut OutlinedCb,
+) -> Option<CodegenStatus> {
+    let put_val = jit.get_arg(0);
+
+    // Save the PC and SP because the callee will allocate
+    jit_prepare_call_with_gc(jit, asm);
+
+    let str_opnd = asm.ccall(
+        rb_ec_str_resurrect as *const u8,
+        vec![EC, put_val.into(), 1.into()]
     );
 
     let stack_top = asm.stack_push(Type::TString);
@@ -6174,9 +6195,9 @@ fn gen_send_cfunc(
     let variable_splat = flags & VM_CALL_ARGS_SPLAT != 0 && cfunc_argc == -1;
     let block_arg = flags & VM_CALL_ARGS_BLOCKARG != 0;
 
-    // If the function expects a Ruby array of arguments
-    if cfunc_argc < 0 && cfunc_argc != -1 {
-        gen_counter_incr(asm, Counter::send_cfunc_ruby_array_varg);
+    // If it's a splat and the method expects a Ruby array of arguments
+    if cfunc_argc == -2 && flags & VM_CALL_ARGS_SPLAT != 0 {
+        gen_counter_incr(asm, Counter::send_cfunc_splat_neg2);
         return None;
     }
 
@@ -6247,7 +6268,14 @@ fn gen_send_cfunc(
 
     // Guard for variable length splat call before any modifications to the stack
     if variable_splat {
-        let splat_array = asm.stack_opnd(i32::from(kw_splat) + i32::from(block_arg));
+        let splat_array_idx = i32::from(kw_splat) + i32::from(block_arg);
+        let comptime_splat_array = jit.peek_at_stack(&asm.ctx, splat_array_idx as isize);
+        if unsafe { rb_yjit_ruby2_keywords_splat_p(comptime_splat_array) } != 0 {
+            gen_counter_incr(asm, Counter::send_cfunc_splat_varg_ruby2_keywords);
+            return None;
+        }
+
+        let splat_array = asm.stack_opnd(splat_array_idx);
         guard_object_is_array(asm, splat_array, splat_array.into(), Counter::guard_send_splat_not_array);
 
         asm_comment!(asm, "guard variable length splat call servicable");
@@ -6454,7 +6482,19 @@ fn gen_send_cfunc(
             asm.stack_opnd(argc),
         ]
     }
-    else {
+    // Variadic method taking a Ruby array
+    else if cfunc_argc == -2 {
+        // Slurp up all the arguments into an array
+        let stack_args = asm.lea(asm.ctx.sp_opnd(-argc * SIZEOF_VALUE_I32));
+        let args_array = asm.ccall(
+            rb_ec_ary_new_from_values as _,
+            vec![EC, passed_argc.into(), stack_args]
+        );
+
+        // Example signature:
+        // VALUE neg2_method(VALUE self, VALUE argv)
+        vec![asm.stack_opnd(argc), args_array]
+    } else {
         panic!("unexpected cfunc_args: {}", cfunc_argc)
     };
 
@@ -6627,7 +6667,7 @@ fn push_splat_args(required_args: u32, asm: &mut Assembler) {
     guard_object_is_not_ruby2_keyword_hash(
         asm,
         last_array_value,
-        Counter::guard_send_splatarray_last_ruby_2_keywords,
+        Counter::guard_send_splatarray_last_ruby2_keywords,
     );
 
     asm_comment!(asm, "Push arguments from array");
@@ -7051,7 +7091,7 @@ fn gen_send_iseq(
         asm_comment!(asm, "guard no ruby2_keywords hash in splat");
         let bad_splat = asm.ccall(rb_yjit_ruby2_keywords_splat_p as _, vec![asm.stack_opnd(splat_pos)]);
         asm.cmp(bad_splat, 0.into());
-        asm.jnz(Target::side_exit(Counter::guard_send_splatarray_last_ruby_2_keywords));
+        asm.jnz(Target::side_exit(Counter::guard_send_splatarray_last_ruby2_keywords));
     }
 
     match block_arg_type {
@@ -9759,6 +9799,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_pushtoarray => Some(gen_pushtoarray),
         YARVINSN_newrange => Some(gen_newrange),
         YARVINSN_putstring => Some(gen_putstring),
+        YARVINSN_putchilledstring => Some(gen_putchilledstring),
         YARVINSN_expandarray => Some(gen_expandarray),
         YARVINSN_defined => Some(gen_defined),
         YARVINSN_definedivar => Some(gen_definedivar),

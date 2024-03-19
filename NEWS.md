@@ -7,6 +7,12 @@ Note that each entry is kept to a minimum, see links for details.
 
 ## Language changes
 
+* String literals in files without a `frozen_string_literal` comment now behave
+  as if they were frozen. If they are mutated a deprecation warning is emited.
+  These warnings can be enabled with `-W:deprecated` or by setting `Warning[:deprecated] = true`.
+  To disable this change you can run Ruby with the `--disable-frozen-string-literal` command line
+  argument. [Feature #20205]
+
 * `it` is added to reference a block parameter. [[Feature #18980]]
 
 * Keyword splatting `nil` when calling methods is now supported.
@@ -14,9 +20,18 @@ Note that each entry is kept to a minimum, see links for details.
   and not calling any conversion methods.
   [[Bug #20064]]
 
+* Block passing is no longer allowed in index.  [[Bug #19918]]
+
+* Keyword arguments are no longer allowed in index.  [[Bug #20218]]
+
 ## Core classes updates
 
 Note: We're only listing outstanding class updates.
+
+* Exception
+
+  * Exception#set_backtrace now accepts arrays of `Thread::Backtrace::Location`.
+    `Kernel#raise`, `Thread#raise` and `Fiber#raise` also accept this new format. [Feature #13557]
 
 ## Stdlib updates
 
@@ -31,12 +46,13 @@ The following default gems are updated.
 * net-http 0.4.1
 * prism 0.24.0
 * reline 0.4.3
+* resolv 0.4.0
 * stringio 3.1.1
 * strscan 3.1.1
 
 The following bundled gems are updated.
 
-* minitest 5.22.2
+* minitest 5.22.3
 * test-unit 3.6.2
 * net-ftp 0.3.4
 * net-imap 0.4.10
@@ -50,7 +66,7 @@ The following bundled gems are promoted from default gems.
 * mutex_m 0.2.0
 * getoptlong 0.2.1
 * base64 0.2.0
-* bigdecimal 3.1.6
+* bigdecimal 3.1.7
 * observer 0.1.2
 * abbrev 0.1.2
 * resolv-replace 0.1.1
@@ -84,6 +100,8 @@ See GitHub releases like [GitHub Releases of Logger](https://github.com/ruby/log
 
 ## C API updates
 
+* `rb_newobj` and `rb_newobj_of` (and corresponding macros `RB_NEWOBJ`, `RB_NEWOBJ_OF`, `NEWOBJ`, `NEWOBJ_OF`) have been removed [[Feature #20265]].
+
 ## Implementation improvements
 
 * `Array#each` is rewritten in Ruby for better performance [[Feature #20182]].
@@ -93,5 +111,8 @@ See GitHub releases like [GitHub Releases of Logger](https://github.com/ruby/log
 [Feature #16495]: https://bugs.ruby-lang.org/issues/16495
 [Feature #18980]: https://bugs.ruby-lang.org/issues/18980
 [Feature #19117]: https://bugs.ruby-lang.org/issues/19117
+[Bug #19918]:     https://bugs.ruby-lang.org/issues/19918
 [Bug #20064]:     https://bugs.ruby-lang.org/issues/20064
 [Feature #20182]: https://bugs.ruby-lang.org/issues/20182
+[Bug #20218]:     https://bugs.ruby-lang.org/issues/20218
+[Feature #20265]: https://bugs.ruby-lang.org/issues/20265

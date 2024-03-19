@@ -10,6 +10,7 @@
 #define PRISM_DEFINES_H
 
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -22,7 +23,6 @@
  * some platforms they aren't included unless this is already defined.
  */
 #define __STDC_FORMAT_MACROS
-
 #include <inttypes.h>
 
 /**
@@ -49,7 +49,11 @@
  * compiler-agnostic way.
  */
 #if defined(__GNUC__)
-#   define PRISM_ATTRIBUTE_FORMAT(string_index, argument_index) __attribute__((format(printf, string_index, argument_index)))
+#   if defined(__MINGW_PRINTF_FORMAT)
+#       define PRISM_ATTRIBUTE_FORMAT(string_index, argument_index) __attribute__((format(__MINGW_PRINTF_FORMAT, string_index, argument_index)))
+#   else
+#       define PRISM_ATTRIBUTE_FORMAT(string_index, argument_index) __attribute__((format(printf, string_index, argument_index)))
+#   endif
 #elif defined(__clang__)
 #   define PRISM_ATTRIBUTE_FORMAT(string_index, argument_index) __attribute__((__format__(__printf__, string_index, argument_index)))
 #else

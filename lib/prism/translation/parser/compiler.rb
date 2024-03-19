@@ -953,14 +953,35 @@ module Prism
         def visit_interpolated_string_node(node)
           if node.heredoc?
             children, closing = visit_heredoc(node)
-            builder.string_compose(token(node.opening_loc), children, closing)
-          else
-            builder.string_compose(
-              token(node.opening_loc),
-              visit_all(node.parts),
-              token(node.closing_loc)
-            )
+
+            return builder.string_compose(token(node.opening_loc), children, closing)
           end
+
+          parts = if node.parts.one? { |part| part.type == :string_node }
+            node.parts.flat_map do |node|
+              if node.type == :string_node && node.unescaped.lines.count >= 2
+                start_offset = node.content_loc.start_offset
+
+                node.unescaped.lines.map do |line|
+                  end_offset = start_offset + line.length
+                  offsets = srange_offsets(start_offset, end_offset)
+                  start_offset = end_offset
+
+                  builder.string_internal([line, offsets])
+                end
+              else
+                visit(node)
+              end
+            end
+          else
+            visit_all(node.parts)
+          end
+
+          builder.string_compose(
+            token(node.opening_loc),
+            parts,
+            token(node.closing_loc)
+          )
         end
 
         # :"foo #{bar}"
@@ -1423,6 +1444,11 @@ module Prism
           builder.self(token(node.location))
         end
 
+        # A shareable constant.
+        def visit_shareable_constant_node(node)
+          visit(node.write)
+        end
+
         # class << self; end
         # ^^^^^^^^^^^^^^^^^^
         def visit_singleton_class_node(node)
@@ -1487,9 +1513,23 @@ module Prism
           elsif node.opening == "?"
             builder.character([node.unescaped, srange(node.location)])
           else
+            parts = if node.content.lines.count <= 1 || node.unescaped.lines.count <= 1
+              [builder.string_internal([node.unescaped, srange(node.content_loc)])]
+            else
+              start_offset = node.content_loc.start_offset
+
+              [node.content.lines, node.unescaped.lines].transpose.map do |content_line, unescaped_line|
+                end_offset = start_offset + content_line.length
+                offsets = srange_offsets(start_offset, end_offset)
+                start_offset = end_offset
+
+                builder.string_internal([unescaped_line, offsets])
+              end
+            end
+
             builder.string_compose(
               token(node.opening_loc),
-              [builder.string_internal([node.unescaped, srange(node.content_loc)])],
+              parts,
               token(node.closing_loc)
             )
           end
@@ -1664,9 +1704,23 @@ module Prism
             children, closing = visit_heredoc(node.to_interpolated)
             builder.xstring_compose(token(node.opening_loc), children, closing)
           else
+            parts = if node.unescaped.lines.one?
+              [builder.string_internal([node.unescaped, srange(node.content_loc)])]
+            else
+              start_offset = node.content_loc.start_offset
+
+              node.unescaped.lines.map do |line|
+                end_offset = start_offset + line.length
+                offsets = srange_offsets(start_offset, end_offset)
+                start_offset = end_offset
+
+                builder.string_internal([line, offsets])
+              end
+            end
+
             builder.xstring_compose(
               token(node.opening_loc),
-              [builder.string_internal([node.unescaped, srange(node.content_loc)])],
+              parts,
               token(node.closing_loc)
             )
           end

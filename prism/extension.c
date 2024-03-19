@@ -23,13 +23,14 @@ VALUE rb_cPrismParseResult;
 
 VALUE rb_cPrismDebugEncoding;
 
-ID rb_option_id_filepath;
-ID rb_option_id_encoding;
-ID rb_option_id_line;
-ID rb_option_id_frozen_string_literal;
-ID rb_option_id_version;
-ID rb_option_id_scopes;
 ID rb_option_id_command_line;
+ID rb_option_id_encoding;
+ID rb_option_id_filepath;
+ID rb_option_id_frozen_string_literal;
+ID rb_option_id_line;
+ID rb_option_id_offset;
+ID rb_option_id_scopes;
+ID rb_option_id_version;
 
 /******************************************************************************/
 /* IO of Ruby code                                                            */
@@ -138,8 +139,10 @@ build_options_i(VALUE key, VALUE value, VALUE argument) {
         if (!NIL_P(value)) pm_options_encoding_set(options, rb_enc_name(rb_to_encoding(value)));
     } else if (key_id == rb_option_id_line) {
         if (!NIL_P(value)) pm_options_line_set(options, NUM2INT(value));
+    } else if (key_id == rb_option_id_offset) {
+        if (!NIL_P(value)) pm_options_offset_set(options, NUM2UINT(value));
     } else if (key_id == rb_option_id_frozen_string_literal) {
-        if (!NIL_P(value)) pm_options_frozen_string_literal_set(options, value == Qtrue);
+        if (!NIL_P(value)) pm_options_frozen_string_literal_set(options, RTEST(value));
     } else if (key_id == rb_option_id_version) {
         if (!NIL_P(value)) {
             const char *version = check_string(value);
@@ -1187,6 +1190,40 @@ format_errors(VALUE self, VALUE source, VALUE colorize) {
 }
 
 /**
+ * call-seq:
+ *   Debug::static_inspect(source) -> String
+ *
+ * Inspect the node as it would be inspected by the warnings used in static
+ * literal sets.
+ */
+static VALUE
+static_inspect(int argc, VALUE *argv, VALUE self) {
+    pm_string_t input;
+    pm_options_t options = { 0 };
+    string_options(argc, argv, &input, &options);
+
+    pm_parser_t parser;
+    pm_parser_init(&parser, pm_string_source(&input), pm_string_length(&input), &options);
+
+    pm_node_t *program = pm_parse(&parser);
+    pm_node_t *node = ((pm_program_node_t *) program)->statements->body.nodes[0];
+
+    pm_buffer_t buffer = { 0 };
+    pm_static_literal_inspect(&buffer, &parser, node);
+
+    rb_encoding *encoding = rb_enc_find(parser.encoding->name);
+    VALUE result = rb_enc_str_new(pm_buffer_value(&buffer), pm_buffer_length(&buffer), encoding);
+
+    pm_buffer_free(&buffer);
+    pm_node_destroy(&parser, program);
+    pm_parser_free(&parser);
+    pm_string_free(&input);
+    pm_options_free(&options);
+
+    return result;
+}
+
+/**
  * call-seq: Debug::Encoding.all -> Array[Debug::Encoding]
  *
  * Return an array of all of the encodings that prism knows about.
@@ -1297,13 +1334,14 @@ Init_prism(void) {
 
     // Intern all of the options that we support so that we don't have to do it
     // every time we parse.
-    rb_option_id_filepath = rb_intern_const("filepath");
-    rb_option_id_encoding = rb_intern_const("encoding");
-    rb_option_id_line = rb_intern_const("line");
-    rb_option_id_frozen_string_literal = rb_intern_const("frozen_string_literal");
-    rb_option_id_version = rb_intern_const("version");
-    rb_option_id_scopes = rb_intern_const("scopes");
     rb_option_id_command_line = rb_intern_const("command_line");
+    rb_option_id_encoding = rb_intern_const("encoding");
+    rb_option_id_filepath = rb_intern_const("filepath");
+    rb_option_id_frozen_string_literal = rb_intern_const("frozen_string_literal");
+    rb_option_id_line = rb_intern_const("line");
+    rb_option_id_offset = rb_intern_const("offset");
+    rb_option_id_scopes = rb_intern_const("scopes");
+    rb_option_id_version = rb_intern_const("version");
 
     /**
      * The version of the prism library.
@@ -1334,6 +1372,7 @@ Init_prism(void) {
     rb_define_singleton_method(rb_cPrismDebug, "profile_file", profile_file, 1);
     rb_define_singleton_method(rb_cPrismDebug, "inspect_node", inspect_node, 1);
     rb_define_singleton_method(rb_cPrismDebug, "format_errors", format_errors, 2);
+    rb_define_singleton_method(rb_cPrismDebug, "static_inspect", static_inspect, -1);
 
     // Next, define the functions that are exposed through the private
     // Debug::Encoding class.
