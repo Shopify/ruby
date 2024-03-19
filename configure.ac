@@ -336,6 +336,10 @@ AC_ARG_ENABLE(load-relative,
        AS_HELP_STRING([--enable-load-relative], [resolve load paths at run time]),
        [load_relative=$enableval])
 
+AC_ARG_ENABLE(load-relative-gc,
+       AS_HELP_STRING([--enable-load-relative-gc], [resolve load paths at run time for shared gc]),
+       [load_relative_gc=$enableval])
+
 # checks for UNIX variants that set C preprocessor variables
 AC_USE_SYSTEM_EXTENSIONS
 
@@ -3522,14 +3526,15 @@ ENABLE_SHARED=no
 LIBRUBY_SO='lib$(RUBY_SO_NAME).$(SOEXT).$(RUBY_PROGRAM_VERSION)'
 LIBRUBY_SONAME='lib$(RUBY_SO_NAME).$(SOEXT).$(RUBY_API_VERSION)'
 LIBRUBY_ALIASES='lib$(RUBY_SO_NAME).$(SOEXT)'
+LIBRUBY_RELATIVE=${load_relative-no}
 
 ENABLE_SHARED_GC=no
 LIBRUBYGC_SO='lib$(RUBYGC_SO_NAME).$(SOEXT).$(RUBY_PROGRAM_VERSION)'
 LIBRUBYGC_SONAME='lib$(RUBYGC_SO_NAME).$(SOEXT).$(RUBY_API_VERSION)'
 LIBRUBYGC_ALIASES='lib$(RUBYGC_SO_NAME).$(SOEXT)'
+LIBRUBYGC_RELATIVE=${load_relative_gc-no}
 
 libprefix=${multiarch+'$(archlibdir)'}${multiarch-'$(libdir)'}
-LIBRUBY_RELATIVE=${load_relative-no}
 
 AC_ARG_ENABLE(shared_gc,
        AS_HELP_STRING([--enable-shared-gc], [build a shared GC library for Ruby]),
@@ -3540,7 +3545,7 @@ AS_CASE("$enable_shared_gc", [yes], [
   LIBRUBYGC='$(LIBRUBYGC_SO)'
   LIBRUBYGCARG_SHARED='-L. -l$(RUBYGC_SO_NAME)'
   LIBRUBYGCARG='$(LIBRUBYGCARG_SHARED)'
-  LIBRUBY_RELATIVE=no
+  LIBRUBYGC_RELATIVE=no
   ENABLE_SHARED_GC=yes
   LIBRUBYGC_CFLAGS=-fPIC
   LIBRUBY_LINK='$(LIBRUBYGCARG_SHARED)'
@@ -3558,19 +3563,20 @@ AS_CASE("$enable_shared_gc", [yes], [
     [linux*], [
         RUBY_APPEND_OPTIONS(LIBRUBYGC_DLDFLAGS, ['-Wl,-soname,$(LIBRUBYGC_SONAME)' "$LDFLAGS_OPTDIR"])
 	LIBRUBYGC_ALIASES='$(LIBRUBYGC_SONAME) lib$(RUBYGC_SO_NAME).$(SOEXT)'
-	AS_IF([test "$load_relative" = yes], [
+	AS_IF([test "$load_relative_gc" = yes], [
 	    libprefix="'\$\${ORIGIN}/../${multiarch+../../}${libdir_basename}'"
-	    LIBRUBY_RELATIVE=yes
+	    LIBRUBYGC_RPATHFLAGS="-Wl,-rpath,${libprefix}"
+	    LIBRUBYGC_RELATIVE=yes
 	])
       ],
     [darwin*], [
         LIBRUBYGC_SO='lib$(RUBYGC_SO_NAME).$(SOEXT)'
         LIBRUBYGC_SONAME='$(LIBRUBYGC_SO)'
         LIBRUBYGC_ALIASES='lib$(RUBY_INSTALL_NAME)gc.$(SOEXT)'
-	AS_IF([test "$load_relative" = yes], [
+	AS_IF([test "$load_relative_gc" = yes], [
 	    libprefix="@executable_path/../${multiarch+../../}${libdir_basename}"
             LIBRUBYGC_DLDFLAGS="$LIBRUBYGC_DLDFLAGS -install_name ${libprefix}"'/$(LIBRUBYGC_SONAME)'
-	    LIBRUBY_RELATIVE=yes
+	    LIBRUBYGC_RELATIVE=yes
 	])
         LIBRUBYGC_DLDFLAGS="$LIBRUBYGC_DLDFLAGS "'-compatibility_version $(RUBY_API_VERSION)'
         LIBRUBYGC_DLDFLAGS="$LIBRUBYGC_DLDFLAGS "'-current_version $(RUBY_PROGRAM_VERSION)'
@@ -3581,9 +3587,6 @@ AS_CASE("$enable_shared_gc", [yes], [
         LIBRUBY_LINK='$(LIBRUBYGCARG_STATIC)'
         LIBRUBYGC_LIB='$(LIBRUBYGC_A)'
     ])
-AC_SUBST(LIBRUBYGC_CFLAGS)
-AC_SUBST(LIBRUBY_LINK)
-AC_SUBST(LIBRUBYGC_LIB)
 
 AC_ARG_ENABLE(shared,
        AS_HELP_STRING([--enable-shared], [build a shared library for Ruby]),
@@ -3749,7 +3752,6 @@ AS_IF([test "$enable_rpath" = yes], [
     LIBRUBYARG_SHARED="$LIBRUBY_RPATHFLAGS $LIBRUBYARG_SHARED"
     LIBRUBYARG_STATIC="$LIBRUBY_RPATHFLAGS $LIBRUBYARG_STATIC"
 ])
-AC_SUBST(LIBRUBY_RELATIVE)
 
 LDFLAGS="-L. $LDFLAGS"
 AC_SUBST(ARCHFILE)
@@ -4307,6 +4309,8 @@ AC_SUBST(LIBRUBY)
 AC_SUBST(LIBRUBYARG)
 AC_SUBST(LIBRUBYARG_STATIC)
 AC_SUBST(LIBRUBYARG_SHARED)
+AC_SUBST(LIBRUBY_RELATIVE)
+AC_SUBST(LIBRUBY_LINK)
 
 AC_SUBST(RUBYGC_SO_NAME)
 AC_SUBST(LIBRUBYGC_A)
@@ -4319,6 +4323,10 @@ AC_SUBST(LIBRUBYGCARG_STATIC)
 AC_SUBST(LIBRUBYGCARG_SHARED)
 AC_SUBST(LIBRUBYGC_A_OBJS)
 AC_SUBST(LIBRUBYGC_DLDFLAGS)
+AC_SUBST(LIBRUBYGC_RPATHFLAGS)
+AC_SUBST(LIBRUBYGC_RELATIVE)
+AC_SUBST(LIBRUBYGC_CFLAGS)
+AC_SUBST(LIBRUBYGC_LIB)
 AC_SUBST(LIBRUBYGC_RPATHFLAGS)
 
 AC_SUBST(SOLIBS)
