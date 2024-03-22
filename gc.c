@@ -47,6 +47,8 @@
 # endif
 #endif
 
+# define GC_ASSERT
+
 #ifdef HAVE_MALLOC_USABLE_SIZE
 # ifdef RUBY_ALTERNATIVE_MALLOC_HEADER
 /* Alternative malloc header is included in ruby/missing.h */
