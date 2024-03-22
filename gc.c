@@ -253,6 +253,7 @@ const char *rb_gc_impl_full_obj_info(void *objspace_ptr, VALUE obj, char *buffer
 void rb_gc_impl_verify_internal_consistency(void *objspace_ptr);
 VALUE rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE flags, VALUE v1, VALUE v2, VALUE v3, bool wb_protected, size_t alloc_size);
 size_t rb_gc_impl_obj_slot_size(VALUE obj);
+void rb_gc_impl_obj_free_object_id(void *objspace_ptr, VALUE obj);
 
 void rb_vm_update_references(void *ptr);
 
@@ -766,10 +767,6 @@ obj_free(void *objspace, VALUE obj)
     if (FL_TEST(obj, FL_EXIVAR)) {
         rb_free_generic_ivar((VALUE)obj);
         FL_UNSET(obj, FL_EXIVAR);
-    }
-
-    if (FL_TEST(obj, FL_SEEN_OBJ_ID) && !FL_TEST(obj, FL_FINALIZE)) {
-        obj_free_object_id(objspace, obj);
     }
 
     if (RVALUE_WB_UNPROTECTED(obj)) CLEAR_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);

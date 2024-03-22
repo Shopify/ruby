@@ -3766,7 +3766,11 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     if (RVALUE_REMEMBERED(vp)) rb_bug("page_sweep: %p - remembered.", (void *)p);
                 }
 #endif
+                bool has_object_id = FL_TEST(vp, FL_SEEN_OBJ_ID);
                 if (obj_free(objspace, vp)) {
+                    if (has_object_id) {
+                        obj_free_object_id(objspace, vp);
+                    }
                     // always add free slots back to the swept pages freelist,
                     // so that if we're comapacting, we can re-use the slots
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
