@@ -203,7 +203,6 @@ typedef int each_obj_callback(void *, void *, size_t, void *);
 
 /* Headers from gc_impl.c */
 void rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), void *data);
-void rb_objspace_each_objects(void *objspace_ptr, each_obj_callback *callback, void *data);
 VALUE rb_gc_impl_undefine_finalizer(void *objspace_ptr, VALUE obj);
 VALUE rb_gc_impl_define_finalizer(void *objspace_ptr, VALUE obj, VALUE block);
 void rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr);
