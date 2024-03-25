@@ -1052,7 +1052,7 @@ os_obj_of(VALUE of)
 
     oes.num = 0;
     oes.of = of;
-    rb_objspace_each_objects(rb_gc_get_objspace(), os_obj_of_i, &oes);
+    rb_objspace_each_objects(os_obj_of_i, &oes);
     return SIZET2NUM(oes.num);
 }
 
@@ -2611,9 +2611,9 @@ enum {
  *       use some constant value in the iteration.
  */
 void
-rb_objspace_each_objects(void *objspace_ptr, each_obj_callback *callback, void *data)
+rb_objspace_each_objects(each_obj_callback *callback, void *data)
 {
-    rb_gc_impl_each_objects(objspace_ptr, callback, data);
+    rb_gc_impl_each_objects(rb_gc_get_objspace(), callback, data);
 }
 
 static void
