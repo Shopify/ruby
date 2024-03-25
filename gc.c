@@ -891,7 +891,7 @@ obj_free(void *objspace, VALUE obj)
         }
         break;
       case T_FILE:
-        if (RANY(obj)->as.file.fptr) {
+        if (RFILE(obj)->fptr) {
             make_io_zombie(objspace, obj);
             RB_DEBUG_COUNTER_INC(obj_file_ptr);
             return FALSE;
@@ -942,11 +942,11 @@ obj_free(void *objspace, VALUE obj)
 
       case T_STRUCT:
         if ((RBASIC(obj)->flags & RSTRUCT_EMBED_LEN_MASK) ||
-            RANY(obj)->as.rstruct.as.heap.ptr == NULL) {
+            RSTRUCT(obj)->as.heap.ptr == NULL) {
             RB_DEBUG_COUNTER_INC(obj_struct_embed);
         }
         else {
-            xfree((void *)RANY(obj)->as.rstruct.as.heap.ptr);
+            xfree((void *)RSTRUCT(obj)->as.heap.ptr);
             RB_DEBUG_COUNTER_INC(obj_struct_ptr);
         }
         break;
@@ -2926,7 +2926,7 @@ update_superclasses(void *objspace, VALUE obj)
 void
 rb_gc_update_object_references(void *objspace, VALUE obj)
 {
-    RVALUE *any = RANY(obj);
+    RVALUE *any = (RVALUE *)obj;
 
     gc_report(4, objspace, "update-refs: %p ->\n", (void *)obj);
 
