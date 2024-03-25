@@ -3766,6 +3766,18 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     if (RVALUE_REMEMBERED(vp)) rb_bug("page_sweep: %p - remembered.", (void *)p);
                 }
 #endif
+
+                if (RVALUE_WB_UNPROTECTED(objspace, obj)) CLEAR_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
+
+#if RGENGC_CHECK_MODE
+#define CHECK(x) if (x(obj) != FALSE) rb_bug("obj_free: " #x "(%s) != FALSE", obj_info(obj))
+                CHECK(RVALUE_WB_UNPROTECTED);
+                CHECK(RVALUE_MARKED);
+                CHECK(RVALUE_MARKING);
+                CHECK(RVALUE_UNCOLLECTIBLE);
+#undef CHECK
+#endif
+
                 bool has_object_id = FL_TEST(vp, FL_SEEN_OBJ_ID);
                 if (obj_free(objspace, vp)) {
                     if (has_object_id) {
