@@ -1258,8 +1258,7 @@ rb_objspace_garbage_object_p(VALUE obj)
 bool
 rb_gc_is_ptr_to_obj(const void *ptr)
 {
-    rb_objspace_t *objspace = &rb_objspace;
-    return is_pointer_to_heap(objspace, ptr);
+    return rb_gc_impl_is_pointer_to_heap(rb_gc_get_objspace(), ptr);
 }
 
 /* :nodoc: */
@@ -2322,7 +2321,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         if (BUILTIN_TYPE(obj) == T_ZOMBIE) rb_bug("rb_gc_mark(): %p is T_ZOMBIE", (void *)obj);
         rb_bug("rb_gc_mark(): unknown data type 0x%x(%p) %s",
                BUILTIN_TYPE(obj), (void *)obj,
-               is_pointer_to_heap(objspace, (void *)obj) ? "corrupted object" : "non object");
+               rb_gc_impl_is_pointer_to_heap(rb_gc_get_objspace(), (void *)obj) ? "corrupted object" : "non object");
     }
 }
 
