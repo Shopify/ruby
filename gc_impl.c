@@ -2830,11 +2830,6 @@ objspace_each_pages(rb_objspace_t *objspace, each_page_callback *callback, void 
     objspace_each_exec(protected, &each_obj_data);
 }
 
-struct os_each_struct {
-    size_t num;
-    VALUE of;
-};
-
 VALUE
 rb_gc_impl_define_finalizer(void *objspace_ptr, VALUE obj, VALUE block)
 {

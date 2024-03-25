@@ -1020,6 +1020,11 @@ rb_objspace_internal_object_p(VALUE obj)
     return internal_object_p(obj);
 }
 
+struct os_each_struct {
+    size_t num;
+    VALUE of;
+};
+
 static int
 os_obj_of_i(void *vstart, void *vend, size_t stride, void *data)
 {
