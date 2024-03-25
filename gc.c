@@ -1249,12 +1249,6 @@ is_markable_object(VALUE obj)
 }
 
 int
-rb_objspace_markable_object_p(VALUE obj)
-{
-    return is_markable_object(obj) && is_live_object(rb_gc_get_objspace(), obj);
-}
-
-int
 rb_objspace_garbage_object_p(VALUE obj)
 {
     rb_objspace_t *objspace = &rb_objspace;

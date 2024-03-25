@@ -3233,23 +3233,17 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
 static inline bool
 is_garbage_object(rb_objspace_t *objspace, VALUE ptr)
 {
-    return is_lazy_sweeping(objspace) && GET_HEAP_PAGE(ptr)->flags.before_sweep &&
-        !MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(ptr), ptr);
-}
-
-static inline int
-is_live_object(rb_objspace_t *objspace, VALUE ptr)
-{
     switch (BUILTIN_TYPE(ptr)) {
       case T_NONE:
       case T_MOVED:
       case T_ZOMBIE:
-        return false;
+        return true;
       default:
         break;
     }
 
-    return !is_garbage_object(objspace, ptr);
+    return is_lazy_sweeping(objspace) && GET_HEAP_PAGE(ptr)->flags.before_sweep &&
+        !MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(ptr), ptr);
 }
 
 VALUE
@@ -3283,7 +3277,7 @@ rb_gc_impl_object_id_to_ref(void *objspace_ptr, VALUE object_id)
 
     VALUE orig;
     if (st_lookup(objspace->id_to_obj_tbl, object_id, &orig) &&
-            is_live_object(objspace, orig)) {
+            !is_garbage_object(objspace, orig)) {
         if (!rb_multi_ractor_p() || rb_ractor_shareable_p(orig)) {
             return orig;
         }
@@ -5165,7 +5159,7 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride,
     for (obj = (VALUE)page_start; obj != (VALUE)page_end; obj += stride) {
         void *poisoned = asan_unpoison_object_temporary(obj);
 
-        if (is_live_object(objspace, obj)) {
+        if (!is_garbage_object(objspace, obj)) {
             /* count objects */
             data->live_object_count++;
             data->parent = obj;
