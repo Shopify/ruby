@@ -256,6 +256,7 @@ VALUE rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE
 size_t rb_gc_impl_obj_slot_size(VALUE obj);
 void rb_gc_impl_obj_free_object_id(void *objspace_ptr, VALUE obj);
 bool rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE obj);
+void rb_gc_impl_set_params(void *objspace_ptr);
 
 void rb_vm_update_references(void *ptr);
 
