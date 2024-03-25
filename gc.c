@@ -2676,11 +2676,11 @@ hash_replace_ref(st_data_t *key, st_data_t *value, st_data_t argp, int existing)
 {
     void *objspace = (void *)argp;
 
-    if (gc_object_moved_p(objspace, (VALUE)*key)) {
+    if (rb_gc_impl_object_moved_p(objspace, (VALUE)*key)) {
         *key = rb_gc_impl_location(objspace, (VALUE)*key);
     }
 
-    if (gc_object_moved_p(objspace, (VALUE)*value)) {
+    if (rb_gc_impl_object_moved_p(objspace, (VALUE)*value)) {
         *value = rb_gc_impl_location(objspace, (VALUE)*value);
     }
 
@@ -2694,11 +2694,11 @@ hash_foreach_replace(st_data_t key, st_data_t value, st_data_t argp, int error)
 
     objspace = (void *)argp;
 
-    if (gc_object_moved_p(objspace, (VALUE)key)) {
+    if (rb_gc_impl_object_moved_p(objspace, (VALUE)key)) {
         return ST_REPLACE;
     }
 
-    if (gc_object_moved_p(objspace, (VALUE)value)) {
+    if (rb_gc_impl_object_moved_p(objspace, (VALUE)value)) {
         return ST_REPLACE;
     }
     return ST_CONTINUE;
@@ -2709,7 +2709,7 @@ hash_replace_ref_value(st_data_t *key, st_data_t *value, st_data_t argp, int exi
 {
     void *objspace = (void *)argp;
 
-    if (gc_object_moved_p(objspace, (VALUE)*value)) {
+    if (rb_gc_impl_object_moved_p(objspace, (VALUE)*value)) {
         *value = rb_gc_impl_location(objspace, (VALUE)*value);
     }
 
@@ -2723,7 +2723,7 @@ hash_foreach_replace_value(st_data_t key, st_data_t value, st_data_t argp, int e
 
     objspace = (void *)argp;
 
-    if (gc_object_moved_p(objspace, (VALUE)value)) {
+    if (rb_gc_impl_object_moved_p(objspace, (VALUE)value)) {
         return ST_REPLACE;
     }
     return ST_CONTINUE;
@@ -2787,7 +2787,7 @@ check_id_table_move(VALUE value, void *data)
 {
     void *objspace = (void *)data;
 
-    if (gc_object_moved_p(objspace, (VALUE)value)) {
+    if (rb_gc_impl_object_moved_p(objspace, (VALUE)value)) {
         return ID_TABLE_REPLACE;
     }
 
@@ -2799,7 +2799,7 @@ update_id_table(VALUE *value, void *data, int existing)
 {
     void *objspace = (void *)data;
 
-    if (gc_object_moved_p(objspace, (VALUE)*value)) {
+    if (rb_gc_impl_object_moved_p(objspace, (VALUE)*value)) {
         *value = rb_gc_impl_location(objspace, (VALUE)*value);
     }
 
@@ -2820,15 +2820,15 @@ update_cc_tbl_i(VALUE ccs_ptr, void *objspace)
     struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_ptr;
     VM_ASSERT(vm_ccs_p(ccs));
 
-    if (gc_object_moved_p(objspace, (VALUE)ccs->cme)) {
+    if (rb_gc_impl_object_moved_p(objspace, (VALUE)ccs->cme)) {
         ccs->cme = (const rb_callable_method_entry_t *)rb_gc_impl_location(objspace, (VALUE)ccs->cme);
     }
 
     for (int i=0; i<ccs->len; i++) {
-        if (gc_object_moved_p(objspace, (VALUE)ccs->entries[i].ci)) {
+        if (rb_gc_impl_object_moved_p(objspace, (VALUE)ccs->entries[i].ci)) {
             ccs->entries[i].ci = (struct rb_callinfo *)rb_gc_impl_location(objspace, (VALUE)ccs->entries[i].ci);
         }
-        if (gc_object_moved_p(objspace, (VALUE)ccs->entries[i].cc)) {
+        if (rb_gc_impl_object_moved_p(objspace, (VALUE)ccs->entries[i].cc)) {
             ccs->entries[i].cc = (struct rb_callcache *)rb_gc_impl_location(objspace, (VALUE)ccs->entries[i].cc);
         }
     }
@@ -2876,11 +2876,11 @@ update_const_table(VALUE value, void *objspace)
 {
     rb_const_entry_t *ce = (rb_const_entry_t *)value;
 
-    if (gc_object_moved_p(objspace, ce->value)) {
+    if (rb_gc_impl_object_moved_p(objspace, ce->value)) {
         ce->value = rb_gc_impl_location(objspace, ce->value);
     }
 
-    if (gc_object_moved_p(objspace, ce->file)) {
+    if (rb_gc_impl_object_moved_p(objspace, ce->file)) {
         ce->file = rb_gc_impl_location(objspace, ce->file);
     }
 
