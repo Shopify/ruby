@@ -85,6 +85,9 @@ lcov*.info
 /config.status
 /config.status.lineno
 /configure
+/confdefs.h
+/conftest.c
+/conftest.err
 /coverage/simplecov
 /coverage/simplecov-html
 /coverage/doclie
