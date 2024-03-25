@@ -225,6 +225,7 @@ void *rb_gc_impl_ractor_cache_alloc(void *objspace_ptr);
 bool rb_gc_impl_is_pointer_to_heap(void *objspace_ptr, const void *ptr);
 void rb_gc_impl_prepare_heap(void *objspace_ptr);
 void rb_gc_impl_each_objects(void *objspace_ptr, each_obj_callback *callback, void *data);
+void rb_gc_impl_each_object(void *objspace_ptr, each_obj_callback *callback, void *data);
 bool rb_gc_impl_object_moved_p(void *objspace_ptr, VALUE obj);
 VALUE rb_gc_impl_location(void *objspace_ptr, VALUE value);
 VALUE rb_gc_impl_compact_stats(void *objspace_ptr);
