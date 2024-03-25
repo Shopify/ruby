@@ -1285,7 +1285,7 @@ rb_find_object_id(void *objspace, VALUE obj, VALUE (*get_heap_object_id)(void *,
         return LONG2NUM((SIGNED_VALUE)obj);
     }
 
-    return get_heap_object_id(obj);
+    return get_heap_object_id(objspace, obj);
 }
 
 static VALUE
