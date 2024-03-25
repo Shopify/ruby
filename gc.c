@@ -2244,7 +2244,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         rb_shape_t *shape = rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj));
 
         if (rb_shape_obj_too_complex(obj)) {
-            mark_tbl_no_pin(objspace, ROBJECT_IV_HASH(obj));
+            gc_mark_tbl_no_pin(objspace, ROBJECT_IV_HASH(obj));
         }
         else {
             const VALUE * const ptr = ROBJECT_IVPTR(obj);
@@ -2395,7 +2395,7 @@ rb_gc_mark_roots(void *objspace)
 
     // MARK_CHECKPOINT("object_id");
     rb_gc_mark(objspace->next_object_id);
-    mark_tbl_no_pin(objspace, objspace->obj_to_id_tbl); /* Only mark ids */
+    gc_mark_tbl_no_pin(objspace, objspace->obj_to_id_tbl); /* Only mark ids */
 
     if (stress_to_class) rb_gc_mark(stress_to_class);
 
