@@ -256,6 +256,9 @@ VALUE rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE
 size_t rb_gc_impl_obj_slot_size(VALUE obj);
 bool rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE obj);
 void rb_gc_impl_set_params(void *objspace_ptr);
+void rb_gc_impl_copy_attributes(VALUE dest, VALUE obj);
+void rb_gc_impl_ractor_cache_free(void *objspace_ptr, void *cache);
+int rb_gc_impl_heap_count(void *objspace_ptr);
 
 void rb_vm_update_references(void *ptr);
 
@@ -1738,7 +1741,7 @@ each_location(void *objspace, register const VALUE *x, register long n, void (*c
 }
 
 static void
-gc_mark_locations(void *objspace, const VALUE *start, const VALUE *end, void (*cb)(VALUE))
+gc_mark_locations(void *objspace, const VALUE *start, const VALUE *end, void (*cb)(void *, VALUE))
 {
     long n;
 
@@ -2336,73 +2339,6 @@ pin_value(st_data_t key, st_data_t value, st_data_t data)
     return ST_CONTINUE;
 }
 
-void
-rb_gc_mark_roots(void *objspace)
-{
-    rb_execution_context_t *ec = GET_EC();
-    rb_vm_t *vm = rb_ec_vm_ptr(ec);
-
-#if PRINT_ROOT_TICKS
-    tick_t start_tick = tick();
-    int tick_count = 0;
-    const char *prev_category = 0;
-
-    if (mark_ticks_categories[0] == 0) {
-        atexit(show_mark_ticks);
-    }
-#endif
-
-    // objspace->rgengc.parent_object = Qfalse;
-
-#if PRINT_ROOT_TICKS
-#define MARK_CHECKPOINT_PRINT_TICK(category) do { \
-    if (prev_category) { \
-        tick_t t = tick(); \
-        mark_ticks[tick_count] = t - start_tick; \
-        mark_ticks_categories[tick_count] = prev_category; \
-        tick_count++; \
-    } \
-    prev_category = category; \
-    start_tick = tick(); \
-} while (0)
-#else /* PRINT_ROOT_TICKS */
-#define MARK_CHECKPOINT_PRINT_TICK(category)
-#endif
-
-#define MARK_CHECKPOINT(category) do { \
-    if (categoryp) *categoryp = category; \
-    MARK_CHECKPOINT_PRINT_TICK(category); \
-} while (0)
-
-    // MARK_CHECKPOINT("vm");
-    SET_STACK_END;
-    rb_vm_mark(vm);
-    if (vm->self) rb_gc_impl_mark(objspace, vm->self);
-
-    // MARK_CHECKPOINT("finalizers");
-    if (finalizer_table != NULL) {
-        st_foreach(finalizer_table, pin_value, (st_data_t)objspace);
-    }
-
-    // MARK_CHECKPOINT("machine_context");
-    mark_current_machine_context(objspace, ec);
-
-    // MARK_CHECKPOINT("end_proc");
-    rb_mark_end_proc();
-
-    // MARK_CHECKPOINT("global_tbl");
-    rb_gc_mark_global_tbl();
-
-    // MARK_CHECKPOINT("object_id");
-    rb_gc_mark(objspace->next_object_id);
-    gc_mark_tbl_no_pin(objspace, objspace->obj_to_id_tbl); /* Only mark ids */
-
-    if (stress_to_class) rb_gc_mark(stress_to_class);
-
-    // MARK_CHECKPOINT("finish");
-#undef MARK_CHECKPOINT
-}
-
 size_t
 rb_gc_obj_optimal_size(VALUE obj)
 {
@@ -2453,10 +2389,7 @@ rb_gc_writebarrier_remember(VALUE obj)
 void
 rb_gc_copy_attributes(VALUE dest, VALUE obj)
 {
-    if (RVALUE_WB_UNPROTECTED(obj)) {
-        rb_gc_writebarrier_unprotect(dest);
-    }
-    rb_gc_copy_finalizer(dest, obj);
+    rb_gc_impl_copy_attributes(dest, obj);
 }
 
 // TODO: rearchitect this function to work for a generic GC
@@ -2922,191 +2855,6 @@ update_superclasses(void *objspace, VALUE obj)
     }
 }
 
-void
-rb_gc_update_object_references(void *objspace, VALUE obj)
-{
-    RVALUE *any = (RVALUE *)obj;
-
-    gc_report(4, objspace, "update-refs: %p ->\n", (void *)obj);
-
-    if (FL_TEST(obj, FL_EXIVAR)) {
-        rb_ref_update_generic_ivar(obj);
-    }
-
-    switch (BUILTIN_TYPE(obj)) {
-      case T_CLASS:
-        if (FL_TEST(obj, FL_SINGLETON)) {
-            UPDATE_IF_MOVED(objspace, RCLASS_ATTACHED_OBJECT(obj));
-        }
-        // Continue to the shared T_CLASS/T_MODULE
-      case T_MODULE:
-        if (RCLASS_SUPER((VALUE)obj)) {
-            UPDATE_IF_MOVED(objspace, RCLASS(obj)->super);
-        }
-        update_m_tbl(objspace, RCLASS_M_TBL(obj));
-        update_cc_tbl(objspace, obj);
-        update_cvc_tbl(objspace, obj);
-        update_superclasses(objspace, obj);
-
-        if (rb_shape_obj_too_complex(obj)) {
-            gc_ref_update_table_values_only(objspace, RCLASS_IV_HASH(obj));
-        }
-        else {
-            for (attr_index_t i = 0; i < RCLASS_IV_COUNT(obj); i++) {
-                UPDATE_IF_MOVED(objspace, RCLASS_IVPTR(obj)[i]);
-            }
-        }
-
-        update_class_ext(objspace, RCLASS_EXT(obj));
-        update_const_tbl(objspace, RCLASS_CONST_TBL(obj));
-
-        UPDATE_IF_MOVED(objspace, RCLASS_EXT(obj)->classpath);
-        break;
-
-      case T_ICLASS:
-        if (RICLASS_OWNS_M_TBL_P(obj)) {
-            update_m_tbl(objspace, RCLASS_M_TBL(obj));
-        }
-        if (RCLASS_SUPER((VALUE)obj)) {
-            UPDATE_IF_MOVED(objspace, RCLASS(obj)->super);
-        }
-        update_class_ext(objspace, RCLASS_EXT(obj));
-        update_m_tbl(objspace, RCLASS_CALLABLE_M_TBL(obj));
-        update_cc_tbl(objspace, obj);
-        break;
-
-      case T_IMEMO:
-        rb_imemo_mark_and_move(obj, true);
-        return;
-
-      case T_NIL:
-      case T_FIXNUM:
-      case T_NODE:
-      case T_MOVED:
-      case T_NONE:
-        /* These can't move */
-        return;
-
-      case T_ARRAY:
-        gc_ref_update_array(objspace, obj);
-        break;
-
-      case T_HASH:
-        gc_ref_update_hash(objspace, obj);
-        UPDATE_IF_MOVED(objspace, any->as.hash.ifnone);
-        break;
-
-      case T_STRING:
-        {
-            if (STR_SHARED_P(obj)) {
-                UPDATE_IF_MOVED(objspace, any->as.string.as.heap.aux.shared);
-            }
-
-            /* If, after move the string is not embedded, and can fit in the
-             * slot it's been placed in, then re-embed it. */
-            if (rb_gc_obj_slot_size(obj) >= rb_str_size_as_embedded(obj)) {
-                if (!STR_EMBED_P(obj) && rb_str_reembeddable_p(obj)) {
-                    rb_str_make_embedded(obj);
-                }
-            }
-
-            break;
-        }
-      case T_DATA:
-        /* Call the compaction callback, if it exists */
-        {
-            void *const ptr = RTYPEDDATA_P(obj) ? RTYPEDDATA_GET_DATA(obj) : DATA_PTR(obj);
-            if (ptr) {
-                if (RTYPEDDATA_P(obj) && gc_declarative_marking_p(any->as.typeddata.type)) {
-                    size_t *offset_list = (size_t *)RTYPEDDATA(obj)->type->function.dmark;
-
-                    for (size_t offset = *offset_list; offset != RUBY_REF_END; offset = *offset_list++) {
-                        VALUE *ref = (VALUE *)((char *)ptr + offset);
-                        if (SPECIAL_CONST_P(*ref)) continue;
-                        *ref = rb_gc_impl_location(objspace, *ref);
-                    }
-                }
-                else if (RTYPEDDATA_P(obj)) {
-                    RUBY_DATA_FUNC compact_func = any->as.typeddata.type->function.dcompact;
-                    if (compact_func) (*compact_func)(ptr);
-                }
-            }
-        }
-        break;
-
-      case T_OBJECT:
-        gc_ref_update_object(objspace, obj);
-        break;
-
-      case T_FILE:
-        if (any->as.file.fptr) {
-            UPDATE_IF_MOVED(objspace, any->as.file.fptr->self);
-            UPDATE_IF_MOVED(objspace, any->as.file.fptr->pathv);
-            UPDATE_IF_MOVED(objspace, any->as.file.fptr->tied_io_for_writing);
-            UPDATE_IF_MOVED(objspace, any->as.file.fptr->writeconv_asciicompat);
-            UPDATE_IF_MOVED(objspace, any->as.file.fptr->writeconv_pre_ecopts);
-            UPDATE_IF_MOVED(objspace, any->as.file.fptr->encs.ecopts);
-            UPDATE_IF_MOVED(objspace, any->as.file.fptr->write_lock);
-        }
-        break;
-      case T_REGEXP:
-        UPDATE_IF_MOVED(objspace, any->as.regexp.src);
-        break;
-
-      case T_SYMBOL:
-        if (DYNAMIC_SYM_P((VALUE)any)) {
-            UPDATE_IF_MOVED(objspace, RSYMBOL(any)->fstr);
-        }
-        break;
-
-      case T_FLOAT:
-      case T_BIGNUM:
-        break;
-
-      case T_MATCH:
-        UPDATE_IF_MOVED(objspace, any->as.match.regexp);
-
-        if (any->as.match.str) {
-            UPDATE_IF_MOVED(objspace, any->as.match.str);
-        }
-        break;
-
-      case T_RATIONAL:
-        UPDATE_IF_MOVED(objspace, any->as.rational.num);
-        UPDATE_IF_MOVED(objspace, any->as.rational.den);
-        break;
-
-      case T_COMPLEX:
-        UPDATE_IF_MOVED(objspace, any->as.complex.real);
-        UPDATE_IF_MOVED(objspace, any->as.complex.imag);
-
-        break;
-
-      case T_STRUCT:
-        {
-            long i, len = RSTRUCT_LEN(obj);
-            VALUE *ptr = (VALUE *)RSTRUCT_CONST_PTR(obj);
-
-            for (i = 0; i < len; i++) {
-                UPDATE_IF_MOVED(objspace, ptr[i]);
-            }
-        }
-        break;
-      default:
-#if GC_DEBUG
-        rb_gcdebug_print_obj_condition((VALUE)obj);
-        rb_obj_info_dump(obj);
-        rb_bug("unreachable");
-#endif
-        break;
-
-    }
-
-    UPDATE_IF_MOVED(objspace, RBASIC(obj)->klass);
-
-    gc_report(4, objspace, "update-refs: %p <-\n", (void *)obj);
-}
-
 extern rb_symbols_t ruby_global_symbols;
 #define global_symbols ruby_global_symbols
 
@@ -3307,7 +3055,9 @@ gc_stat_heap(rb_execution_context_t *ec, VALUE self, VALUE heap_name, VALUE arg)
             rb_raise(rb_eTypeError, "non-hash given");
         }
 
-        for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        int count = rb_gc_impl_heap_count(rb_gc_get_objspace());
+
+        for (int i = 0; i < count; i++) {
             VALUE hash = rb_hash_aref(arg, INT2FIX(i));
             if (NIL_P(hash)) {
                 hash = rb_hash_new();
