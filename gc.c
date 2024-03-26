@@ -254,7 +254,6 @@ const char *rb_gc_impl_full_obj_info(void *objspace_ptr, VALUE obj, char *buffer
 void rb_gc_impl_verify_internal_consistency(void *objspace_ptr);
 VALUE rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE flags, VALUE v1, VALUE v2, VALUE v3, bool wb_protected, size_t alloc_size);
 size_t rb_gc_impl_obj_slot_size(VALUE obj);
-void rb_gc_impl_obj_free_object_id(void *objspace_ptr, VALUE obj);
 bool rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE obj);
 void rb_gc_impl_set_params(void *objspace_ptr);
 
