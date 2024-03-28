@@ -3100,10 +3100,9 @@ gc_stress_get(rb_execution_context_t *ec, VALUE self)
 }
 
 static void
-gc_stress_set(rb_objspace_t *objspace, VALUE flag)
+gc_stress_set(void *objspace, VALUE flag)
 {
-    objspace->flags.gc_stressful = RTEST(flag);
-    objspace->gc_stress_mode = flag;
+    return rb_gc_impl_stress_set(rb_gc_get_objspace(), flag);
 }
 
 static VALUE
