@@ -2953,7 +2953,7 @@ gc_verify_compaction_references(rb_execution_context_t *ec, VALUE self, VALUE do
     return rb_gc_impl_compact_stats(rb_gc_get_objspace());
 }
 #else
-#  define gc_verify_compaction_references rb_f_notimplement
+#  define gc_verify_compaction_references (rb_builtin_arity3_function_type)rb_f_notimplement
 #endif
 
 VALUE
