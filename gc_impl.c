@@ -1485,11 +1485,40 @@ calloc1(size_t n)
     return calloc(1, n);
 }
 
+VALUE
+rb_gc_impl_get_profile_total_time(void *objspace_ptr)
+{
+    rb_objspace_t *objspace = (rb_objspace_t *)objspace_ptr;
+
+    marking_time = objspace->profile.marking_time_ns;
+    sweeping_time = objspace->profile.sweeping_time_ns;
+
+    return ULL2NUM(marking_time + sweeping_time);
+}
+
+VALUE
+rb_gc_impl_set_measure_total_time(void *objspace_ptr, VALUE flag)
+{
+    rb_objspace_t *objspace = (rb_objspace_t *)objspace_ptr;
+
+    objspace->flags.measure_gc = RTEST(flag) ? TRUE : FALSE;
+
+    return flag;
+}
+
+VALUE
+rb_gc_impl_get_measure_total_time(void *objspace_ptr)
+{
+    rb_objspace_t *objspace = (rb_objspace_t *)objspace_ptr;
+
+    return RBOOL(objspace->flags.measure_gc);
+}
+
 rb_objspace_t *
 rb_objspace_alloc(void)
 {
     rb_objspace_t *objspace = calloc1(sizeof(rb_objspace_t));
-    objspace->flags.measure_gc = 1;
+    rb_gc_impl_set_measure_total_time((void *)objspace, Qtrue);
     malloc_limit = gc_params.malloc_limit_min;
     objspace->finalize_deferred_pjob = rb_postponed_job_preregister(0, gc_finalize_deferred, objspace);
     if (objspace->finalize_deferred_pjob == POSTPONED_JOB_HANDLE_INVALID) {

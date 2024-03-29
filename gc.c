@@ -260,6 +260,9 @@ void rb_gc_impl_copy_attributes(VALUE dest, VALUE obj);
 void rb_gc_impl_ractor_cache_free(void *objspace_ptr, void *cache);
 int rb_gc_impl_heap_count(void *objspace_ptr);
 void rb_gc_impl_objspace_reachable_objects_from_root(void *objspace_ptr, void (func)(const char *, VALUE, void *), void *);
+VALUE rb_gc_impl_set_measure_total_time(void *objspace_ptr, VALUE flag);
+VALUE rb_gc_impl_get_measure_total_time(void *objspace_ptr);
+VALUE rb_gc_impl_get_profile_total_time(void *objspace_ptr);
 
 void rb_vm_update_references(void *ptr);
 
@@ -3441,6 +3444,12 @@ ruby_malloc_size_overflow(size_t count, size_t elsize)
              count, elsize);
 }
 
+static inline size_t
+xmalloc2_size(const size_t count, const size_t elsize)
+{
+    return size_mul_or_raise(count, elsize, rb_eArgError);
+}
+
 void *
 ruby_xmalloc2_body(size_t n, size_t size)
 {
@@ -3470,12 +3479,6 @@ void *
 ruby_xrealloc_body(void *ptr, size_t new_size)
 {
     return ruby_sized_xrealloc(ptr, new_size, 0);
-}
-
-static inline size_t
-xmalloc2_size(const size_t count, const size_t elsize)
-{
-    return size_mul_or_raise(count, elsize, rb_eArgError);
 }
 
 #ifdef ruby_sized_xrealloc2
