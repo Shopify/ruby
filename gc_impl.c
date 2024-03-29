@@ -990,7 +990,6 @@ static size_t obj_memsize_of(VALUE obj, int use_all_types);
 static void rb_gc_impl_verify_internal_consistency(void *objspace_ptr);
 
 static void gc_stress_set(rb_objspace_t *objspace, VALUE flag);
-static VALUE gc_disable_no_rest(rb_objspace_t *);
 
 static double getrusage_time(void);
 static inline void gc_prof_setup_new_record(rb_objspace_t *objspace, unsigned int reason);

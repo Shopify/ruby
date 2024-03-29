@@ -3133,18 +3133,18 @@ gc_enable(rb_execution_context_t *ec, VALUE _)
     return rb_gc_enable();
 }
 
-VALUE
-rb_gc_disable_no_rest(void)
-{
-    return gc_disable_no_rest(rb_gc_get_objspace());
-}
-
 static VALUE
 gc_disable_no_rest(void *objspace)
 {
     bool disabled = !rb_gc_impl_gc_enabled_p(objspace);
     rb_gc_impl_gc_disable(objspace, false);
     return RBOOL(disabled);
+}
+
+VALUE
+rb_gc_disable_no_rest(void)
+{
+    return gc_disable_no_rest(rb_gc_get_objspace());
 }
 
 VALUE
