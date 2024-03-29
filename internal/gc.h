@@ -180,7 +180,7 @@ void ruby_mimfree(void *ptr);
 void rb_gc_prepare_heap(void);
 void rb_objspace_set_event_hook(const rb_event_flag_t event);
 VALUE rb_objspace_gc_enable(void *objspace);
-VALUE rb_objspace_gc_disable(struct rb_objspace *);
+VALUE rb_objspace_gc_disable(void *objspace);
 void ruby_gc_set_params(void);
 void rb_gc_copy_attributes(VALUE dest, VALUE obj);
 size_t rb_size_mul_or_raise(size_t, size_t, VALUE); /* used in compile.c */
