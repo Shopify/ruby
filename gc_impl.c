@@ -18,6 +18,7 @@ void rb_gc_update_vm_references(void *objspace);
 void rb_gc_reachable_objects_from_callback(VALUE obj);
 void rb_gc_event_hook(VALUE obj, rb_event_flag_t event);
 void *rb_gc_get_objspace(void);
+size_t rb_size_mul_or_raise(size_t x, size_t y, VALUE exc);
 
 #ifndef GC_HEAP_INIT_SLOTS
 #define GC_HEAP_INIT_SLOTS 10000
@@ -8895,7 +8896,7 @@ rb_gc_impl_calloc(void *objspace_ptr, size_t size)
 static inline size_t
 xmalloc2_size(const size_t count, const size_t elsize)
 {
-    return size_mul_or_raise(count, elsize, rb_eArgError);
+    return rb_size_mul_or_raise(count, elsize, rb_eArgError);
 }
 
 void *

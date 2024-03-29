@@ -3472,6 +3472,12 @@ ruby_xrealloc_body(void *ptr, size_t new_size)
     return ruby_sized_xrealloc(ptr, new_size, 0);
 }
 
+static inline size_t
+xmalloc2_size(const size_t count, const size_t elsize)
+{
+    return size_mul_or_raise(count, elsize, rb_eArgError);
+}
+
 #ifdef ruby_sized_xrealloc2
 #undef ruby_sized_xrealloc2
 #endif
