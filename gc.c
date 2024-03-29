@@ -259,6 +259,7 @@ void rb_gc_impl_set_params(void *objspace_ptr);
 void rb_gc_impl_copy_attributes(VALUE dest, VALUE obj);
 void rb_gc_impl_ractor_cache_free(void *objspace_ptr, void *cache);
 int rb_gc_impl_heap_count(void *objspace_ptr);
+void rb_gc_impl_objspace_reachable_objects_from_root(void *objspace_ptr, void (func)(const char *, VALUE, void *), void *);
 
 void rb_vm_update_references(void *ptr);
 
@@ -3264,27 +3265,7 @@ root_objects_from(VALUE obj, void *ptr)
 void
 rb_objspace_reachable_objects_from_root(void (func)(const char *category, VALUE, void *), void *passing_data)
 {
-    objspace_reachable_objects_from_root(rb_gc_get_objspace(), func, passing_data);
-}
-
-static void
-objspace_reachable_objects_from_root(void *objspace, void (func)(const char *category, VALUE, void *), void *passing_data)
-{
-    if (rb_gc_impl_during_gc_p(objspace)) rb_bug("objspace_reachable_objects_from_root() is not supported while during GC");
-
-    rb_ractor_t *cr = GET_RACTOR();
-    struct root_objects_data data = {
-        .func = func,
-        .data = passing_data,
-    };
-    struct gc_mark_func_data_struct mfd = {
-        .mark_func = root_objects_from,
-        .data = &data,
-    }, *prev_mfd = cr->mfd;
-
-    cr->mfd = &mfd;
-    gc_mark_roots(objspace, &data.category);
-    cr->mfd = prev_mfd;
+    rb_gc_impl_objspace_reachable_objects_from_root(rb_gc_get_objspace(), func, passing_data);
 }
 
 /*
