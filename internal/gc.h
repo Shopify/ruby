@@ -237,7 +237,6 @@ const char *rb_objspace_data_type_name(VALUE obj);
 VALUE rb_wb_protected_newobj_of(struct rb_execution_context_struct *, VALUE, VALUE, size_t);
 VALUE rb_wb_unprotected_newobj_of(VALUE, VALUE, size_t);
 size_t rb_obj_memsize_of(VALUE);
-void rb_gc_verify_internal_consistency(void);
 size_t rb_obj_gc_flags(VALUE, ID[], size_t);
 void rb_gc_mark_values(long n, const VALUE *values);
 void rb_gc_mark_vm_stack_values(long n, const VALUE *values);

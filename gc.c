@@ -225,10 +225,9 @@ void *rb_gc_impl_ractor_cache_alloc(void *objspace_ptr);
 bool rb_gc_impl_is_pointer_to_heap(void *objspace_ptr, const void *ptr);
 void rb_gc_impl_prepare_heap(void *objspace_ptr);
 void rb_gc_impl_each_objects(void *objspace_ptr, each_obj_callback *callback, void *data);
-void rb_gc_impl_each_object(void *objspace_ptr, each_obj_callback *callback, void *data);
+void rb_gc_impl_each_object(void *objspace_ptr, void (*func)(VALUE obj, void *data), void *data);
 bool rb_gc_impl_object_moved_p(void *objspace_ptr, VALUE obj);
 VALUE rb_gc_impl_location(void *objspace_ptr, VALUE value);
-VALUE rb_gc_impl_compact_stats(void *objspace_ptr);
 void rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool immediate_sweep, bool compact);
 bool rb_gc_impl_during_gc_p(void *objspace_ptr);
 size_t rb_gc_impl_gc_count(void *objspace_ptr);
@@ -240,8 +239,6 @@ void rb_gc_impl_stress_set(void *objspace_ptr, VALUE flag);
 bool rb_gc_impl_gc_enabled_p(void *objspace_ptr);
 void rb_gc_impl_gc_enable(void *objspace_ptr);
 void rb_gc_impl_gc_disable(void *objspace_ptr, bool finish_current_gc);
-bool rb_gc_impl_auto_compact_enabled_p(void *objspace_ptr);
-void rb_gc_impl_auto_compact_enable(void *objspace_ptr, VALUE val);
 void rb_gc_impl_auto_compact_disable(void *objspace_ptr);
 bool rb_gc_impl_during_gc_p(void *objspace_ptr);
 void *rb_gc_impl_malloc(void *objspace_ptr, size_t size);
@@ -251,7 +248,6 @@ void rb_gc_impl_free(void *objspace_ptr, void *ptr, size_t old_size);
 void rb_gc_impl_adjust_memory_usage(void *objspace_ptr, ssize_t diff);
 const char *rb_gc_impl_obj_info(void *objspace_ptr, VALUE obj);
 const char *rb_gc_impl_full_obj_info(void *objspace_ptr, VALUE obj, char *buffer, size_t buffer_size);
-void rb_gc_impl_verify_internal_consistency(void *objspace_ptr);
 VALUE rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE flags, VALUE v1, VALUE v2, VALUE v3, bool wb_protected, size_t alloc_size);
 size_t rb_gc_impl_obj_slot_size(VALUE obj);
 bool rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE obj);
@@ -274,10 +270,6 @@ rb_objspace_free(void *objspace)
 
 typedef struct RVALUE {
     union {
-        struct {
-            VALUE flags;		/* always 0 for freed obj */
-            struct RVALUE *next;
-        } free;
         struct RBasic  basic;
         struct RObject object;
         struct RClass  klass;
@@ -336,6 +328,22 @@ typedef struct RVALUE {
 # define RVALUE_OVERHEAD 0
 #endif
 
+#ifndef GC_CAN_COMPILE_COMPACTION
+#if defined(__wasi__) /* WebAssembly doesn't support signals */
+# define GC_CAN_COMPILE_COMPACTION 0
+#else
+# define GC_CAN_COMPILE_COMPACTION 1
+#endif
+#endif
+
+#if defined(__MINGW32__) || defined(_WIN32)
+# define GC_COMPACTION_SUPPORTED 1
+#else
+/* If not MinGW, Windows, or does not have mmap, we cannot use mprotect for
+ * the read barrier, so we must disable compaction. */
+# define GC_COMPACTION_SUPPORTED (GC_CAN_COMPILE_COMPACTION && HEAP_PAGE_ALLOC_USE_MMAP)
+#endif
+
 STATIC_ASSERT(sizeof_rvalue, sizeof(RVALUE) == (SIZEOF_VALUE * 5) + RVALUE_OVERHEAD);
 STATIC_ASSERT(alignof_rvalue, RUBY_ALIGNOF(RVALUE) == SIZEOF_VALUE);
 
@@ -362,6 +370,12 @@ STATIC_ASSERT(alignof_rvalue, RUBY_ALIGNOF(RVALUE) == SIZEOF_VALUE);
 } while (0)
 
 #define UPDATE_IF_MOVED(_objspace, _thing) TYPED_UPDATE_IF_MOVED(_objspace, VALUE, _thing)
+
+#if RUBY_MARK_FREE_DEBUG
+int ruby_gc_debug_indent = 0;
+#endif
+
+VALUE rb_mGC;
 
 static size_t malloc_offset = 0;
 #if defined(HAVE_MALLOC_USABLE_SIZE)
@@ -2198,7 +2212,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
             rb_gc_impl_mark(objspace, root);
         }
         else {
-            long i, len = RARRAY_LEN(obj);
+            long len = RARRAY_LEN(obj);
             const VALUE *ptr = RARRAY_CONST_PTR(obj);
             for (long i = 0; i < len; i++) {
                 rb_gc_impl_mark(objspace, ptr[i]);
@@ -2875,87 +2889,6 @@ rb_gc_update_vm_references(void *objspace)
     gc_update_table_refs(objspace, global_symbols.str_sym);
 }
 
-// TODO: move GC_CAN_COMPILE_COMPACTION into gc_impl.c
-#if GC_CAN_COMPILE_COMPACTION
-/*
- *  call-seq:
- *     GC.latest_compact_info -> hash
- *
- * Returns information about object moved in the most recent \GC compaction.
- *
- * The returned +hash+ contains the following keys:
- *
- * [considered]
- *   Hash containing the type of the object as the key and the number of
- *   objects of that type that were considered for movement.
- * [moved]
- *   Hash containing the type of the object as the key and the number of
- *   objects of that type that were actually moved.
- * [moved_up]
- *   Hash containing the type of the object as the key and the number of
- *   objects of that type that were increased in size.
- * [moved_down]
- *   Hash containing the type of the object as the key and the number of
- *   objects of that type that were decreased in size.
- *
- * Some objects can't be moved (due to pinning) so these numbers can be used to
- * calculate compaction efficiency.
- */
-static VALUE
-gc_compact_stats(VALUE self)
-{
-    return rb_gc_impl_compact_stats(rb_gc_get_objspace());
-}
-#else
-#  define gc_compact_stats rb_f_notimplement
-#endif
-
-#if GC_CAN_COMPILE_COMPACTION
-/*
- *  call-seq:
- *     GC.compact -> hash
- *
- * This function compacts objects together in Ruby's heap. It eliminates
- * unused space (or fragmentation) in the heap by moving objects in to that
- * unused space.
- *
- * The returned +hash+ contains statistics about the objects that were moved;
- * see GC.latest_compact_info.
- *
- * This method is only expected to work on CRuby.
- *
- * To test whether \GC compaction is supported, use the idiom:
- *
- *   GC.respond_to?(:compact)
- */
-static VALUE
-gc_compact(VALUE self)
-{
-    /* Run GC with compaction enabled */
-    rb_gc_impl_start(rb_gc_get_objspace(), true, true, true, true);
-
-    return gc_compact_stats(self);
-}
-#else
-#  define gc_compact rb_f_notimplement
-#endif
-
-#if GC_CAN_COMPILE_COMPACTION
-static VALUE
-gc_verify_compaction_references(rb_execution_context_t *ec, VALUE self, VALUE double_heap, VALUE expand_heap, VALUE toward_empty)
-{
-    if (RTEST(double_heap)) {
-        rb_warn("double_heap is deprecated, please use expand_heap instead");
-    }
-
-    rb_gc_impl_verify_compaction_references(rb_gc_get_objspace(), RTEST(double_heap) || RTEST(expand_heap), RTEST(toward_empty));
-
-    return rb_gc_impl_compact_stats(rb_gc_get_objspace());
-}
-#else
-#  define gc_verify_compaction_references (rb_builtin_arity3_function_type)rb_f_notimplement
-#endif
-
 VALUE
 rb_gc_start(void)
 {
@@ -3171,50 +3104,7 @@ gc_disable(rb_execution_context_t *ec, VALUE _)
     return rb_gc_disable();
 }
 
-#if GC_CAN_COMPILE_COMPACTION
-/*
- *  call-seq:
- *     GC.auto_compact = flag
- *
- *  Updates automatic compaction mode.
- *
- *  When enabled, the compactor will execute on every major collection.
- *
- *  Enabling compaction will degrade performance on major collections.
- */
-static VALUE
-gc_set_auto_compact(VALUE _, VALUE v)
-{
-    GC_ASSERT(GC_COMPACTION_SUPPORTED);
 
-    if (RTEST(v)) {
-        rb_gc_impl_auto_compact_enable(rb_gc_get_objspace(), v);
-    }
-    else {
-        rb_gc_impl_auto_compact_disable(rb_gc_get_objspace());
-    }
-
-    return v;
-}
-#else
-#  define gc_set_auto_compact rb_f_notimplement
-#endif
-
-#if GC_CAN_COMPILE_COMPACTION
-/*
- *  call-seq:
- *     GC.auto_compact    -> true or false
- *
- *  Returns whether or not automatic compaction has been enabled.
- */
-static VALUE
-gc_get_auto_compact(VALUE _)
-{
-    return RBOOL(rb_gc_impl_auto_compact_enabled_p(rb_gc_get_objspace()));
-}
-#else
-#  define gc_get_auto_compact rb_f_notimplement
-#endif
 
 // TODO: think about moving ruby_gc_set_params into Init_heap or Init_gc
 void
@@ -3648,37 +3538,14 @@ void
 rb_obj_info_dump(VALUE obj)
 {
     char buff[0x100];
-    fprintf(stderr, "rb_obj_info_dump: %s\n", rb_gc_impl_full_obj_info(rb_gc_get_objspace(), buff, 0x100, obj));
+    fprintf(stderr, "rb_obj_info_dump: %s\n", rb_gc_impl_full_obj_info(rb_gc_get_objspace(), obj, buff, 0x100));
 }
 
 void
 rb_obj_info_dump_loc(VALUE obj, const char *file, int line, const char *func)
 {
     char buff[0x100];
-    fprintf(stderr, "<OBJ_INFO:%s@%s:%d> %s\n", func, file, line, rb_gc_impl_full_obj_info(rb_gc_get_objspace(), buff, 0x100, obj));
-}
-
-/*
- *  call-seq:
- *     GC.verify_internal_consistency                  -> nil
- *
- *  Verify internal consistency.
- *
- *  This method is implementation specific.
- *  Now this method checks generational consistency
- *  if RGenGC is supported.
- */
-static VALUE
-gc_verify_internal_consistency_m(VALUE dummy)
-{
-    rb_gc_impl_verify_internal_consistency(rb_gc_get_objspace());
-    return Qnil;
-}
-
-void
-rb_gc_verify_internal_consistency(void)
-{
-    rb_gc_impl_verify_internal_consistency(rb_gc_get_objspace());
+    fprintf(stderr, "<OBJ_INFO:%s@%s:%d> %s\n", func, file, line, rb_gc_impl_full_obj_info(rb_gc_get_objspace(), obj, buff, 0x100));
 }
 
 /*
@@ -3755,50 +3622,6 @@ Init_GC(void)
     rb_define_method(rb_mKernel, "object_id", rb_obj_id, 0);
 
     rb_define_module_function(rb_mObjSpace, "count_objects", count_objects, -1);
-
-    /* internal methods */
-    rb_define_singleton_method(rb_mGC, "verify_internal_consistency", gc_verify_internal_consistency_m, 0);
-#if MALLOC_ALLOCATED_SIZE
-    rb_define_singleton_method(rb_mGC, "malloc_allocated_size", gc_malloc_allocated_size, 0);
-    rb_define_singleton_method(rb_mGC, "malloc_allocations", gc_malloc_allocations, 0);
-#endif
-
-    if (GC_COMPACTION_SUPPORTED) {
-        rb_define_singleton_method(rb_mGC, "compact", gc_compact, 0);
-        rb_define_singleton_method(rb_mGC, "auto_compact", gc_get_auto_compact, 0);
-        rb_define_singleton_method(rb_mGC, "auto_compact=", gc_set_auto_compact, 1);
-        rb_define_singleton_method(rb_mGC, "latest_compact_info", gc_compact_stats, 0);
-    }
-    else {
-        rb_define_singleton_method(rb_mGC, "compact", rb_f_notimplement, 0);
-        rb_define_singleton_method(rb_mGC, "auto_compact", rb_f_notimplement, 0);
-        rb_define_singleton_method(rb_mGC, "auto_compact=", rb_f_notimplement, 1);
-        rb_define_singleton_method(rb_mGC, "latest_compact_info", rb_f_notimplement, 0);
-        /* When !GC_COMPACTION_SUPPORTED, this method is not defined in gc.rb */
-        rb_define_singleton_method(rb_mGC, "verify_compaction_references", rb_f_notimplement, -1);
-    }
-
-    {
-        VALUE opts;
-        /* \GC build options */
-        rb_define_const(rb_mGC, "OPTS", opts = rb_ary_new());
-#define OPT(o) if (o) rb_ary_push(opts, rb_fstring_lit(#o))
-        OPT(GC_DEBUG);
-        OPT(USE_RGENGC);
-        OPT(RGENGC_DEBUG);
-        OPT(RGENGC_CHECK_MODE);
-        OPT(RGENGC_PROFILE);
-        OPT(RGENGC_ESTIMATE_OLDMALLOC);
-        OPT(GC_PROFILE_MORE_DETAIL);
-        OPT(GC_ENABLE_LAZY_SWEEP);
-        OPT(CALC_EXACT_MALLOC_SIZE);
-        OPT(MALLOC_ALLOCATED_SIZE);
-        OPT(MALLOC_ALLOCATED_SIZE_CHECK);
-        OPT(GC_PROFILE_DETAIL_MEMORY);
-        OPT(GC_COMPACTION_SUPPORTED);
-#undef OPT
-        OBJ_FREEZE(opts);
-    }
 }
 
 #ifdef ruby_xmalloc
