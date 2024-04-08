@@ -10588,7 +10588,7 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
       case NODE_STR:{
         debugp_param("nd_lit", get_string_value(node));
         if (!popped) {
-            VALUE lit = get_string_value(node);
+            VALUE lit = rb_str_precompute_hash(get_string_value(node));
             switch (ISEQ_COMPILE_DATA(iseq)->option->frozen_string_literal) {
               case ISEQ_FROZEN_STRING_LITERAL_UNSET:
                 ADD_INSN1(ret, node, putchilledstring, lit);

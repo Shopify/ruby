@@ -89,6 +89,8 @@ VALUE rb_cSymbol;
  *            another string (the shared root).
  * 3:     STR_CHILLED (will be frozen in a future version)
  *            The string appears frozen but can be mutated with a warning.
+ * 4:     STR_PRECOMPUTED_HASH
+ *            TODO: doc
  * 5:     STR_SHARED_ROOT
  *            Other strings may point to the contents of this string. When this
  *            flag is set, STR_SHARED must not be set.
@@ -116,6 +118,7 @@ VALUE rb_cSymbol;
  */
 
 #define RUBY_MAX_CHAR_LEN 16
+#define STR_PRECOMPUTED_HASH FL_USER4
 #define STR_SHARED_ROOT FL_USER5
 #define STR_BORROWED FL_USER6
 #define STR_TMPLOCK FL_USER7
@@ -399,6 +402,20 @@ fstr_update_callback(st_data_t *key, st_data_t *value, st_data_t data, int exist
         *key = *value = arg->fstr = str;
         return ST_CONTINUE;
     }
+}
+
+VALUE
+rb_str_precompute_hash(VALUE str)
+{
+    if (!FL_TEST_RAW(str, STR_PRECOMPUTED_HASH) && STR_EMBED_P(str)) {
+        size_t used_bytes = (RSTRING_LEN(str) + TERM_LEN(str));
+        size_t free_bytes = str_embed_capa(str) - used_bytes;
+        if (free_bytes >= sizeof(st_index_t)) {
+            *(st_index_t *)(RSTRING_PTR(str) + used_bytes) = rb_str_hash(str);
+            FL_SET(str, STR_PRECOMPUTED_HASH);
+        }
+    }
+    return str;
 }
 
 VALUE
@@ -3655,6 +3672,10 @@ rb_str_prepend_multi(int argc, VALUE *argv, VALUE str)
 st_index_t
 rb_str_hash(VALUE str)
 {
+    if (FL_TEST_RAW(str, STR_PRECOMPUTED_HASH)) {
+        return *(st_index_t *)(RSTRING_END(str) + TERM_LEN(str));
+    }
+
     st_index_t h = rb_memhash((const void *)RSTRING_PTR(str), RSTRING_LEN(str));
     int e = RSTRING_LEN(str) ? ENCODING_GET(str) : 0;
     if (e && !is_ascii_string(str)) {
