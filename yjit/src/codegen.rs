@@ -6996,12 +6996,6 @@ fn gen_send_iseq(
     // Stack index of the splat array
     let splat_pos = i32::from(block_arg) + i32::from(kw_splat) + kw_arg_num;
 
-    // Dynamic stack layout. No good way to support without inlining.
-    if flags & VM_CALL_FORWARDING != 0 {
-        gen_counter_incr(asm, Counter::send_iseq_forwarding);
-        return None;
-    }
-
     exit_if_stack_too_large(iseq)?;
     exit_if_tail_call(asm, ci)?;
     exit_if_has_post(asm, iseq)?;
@@ -8371,6 +8365,14 @@ fn gen_send_general(
     if !jit.at_current_insn() {
         defer_compilation(jit, asm, ocb);
         return Some(EndBlock);
+    }
+
+    let ci_flags = unsafe { vm_ci_flag(ci) };
+
+    // Dynamic stack layout. No good way to support without inlining.
+    if ci_flags & VM_CALL_FORWARDING != 0 {
+        gen_counter_incr(asm, Counter::send_iseq_forwarding);
+        return None;
     }
 
     let recv_idx = argc + if flags & VM_CALL_ARGS_BLOCKARG != 0 { 1 } else { 0 };
