@@ -3041,50 +3041,6 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
     const struct rb_callcache *cc = calling->cc;
     bool cacheable_ci = vm_ci_cacheable(ci);
 
-    // Called iseq is using ... param
-    // def foo(...) # <- iseq for foo will have "forwardable"
-    //
-    // We want to set the `...` local to the caller's CI
-    //   foo(1, 2) # <- the ci for this should end up as `...`
-    //
-    // So hopefully the stack looks like:
-    //
-    //   => 1
-    //   => 2
-    //   => *
-    //   => **
-    //   => &
-    //   => ... # <- points at `foo`s CI
-    //   => cref_or_me
-    //   => specval
-    //   => type
-    //
-    if (ISEQ_BODY(iseq)->param.flags.forwardable) {
-        if ((vm_ci_flag(ci) & VM_CALL_FORWARDING)) {
-            struct rb_forwarding_call_data * forward_cd = (struct rb_forwarding_call_data *)calling->cd;
-            if (vm_ci_argc(ci) != vm_ci_argc(forward_cd->caller_ci)) {
-                ci = vm_ci_new_runtime(
-                        vm_ci_mid(ci),
-                        vm_ci_flag(ci),
-                        vm_ci_argc(ci),
-                        vm_ci_kwarg(ci));
-            } else {
-                ci = forward_cd->caller_ci;
-            }
-        }
-        // C functions calling iseqs will stack allocate a CI,
-        // so we need to convert it to heap allocated
-        if (!vm_ci_markable(ci)) {
-            ci = vm_ci_new_runtime(
-                    vm_ci_mid(ci),
-                    vm_ci_flag(ci),
-                    vm_ci_argc(ci),
-                    vm_ci_kwarg(ci));
-        }
-        argv[param_size - 1] = (VALUE)ci;
-        return 0;
-    }
-
     if (UNLIKELY(!ISEQ_BODY(iseq)->param.flags.use_block &&
                  calling->block_handler != VM_BLOCK_HANDLER_NONE &&
                  !(vm_ci_flag(calling->cd->ci) & VM_CALL_SUPER))) {
@@ -3186,6 +3142,50 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
                 return 0;
             }
         }
+    }
+
+    // Called iseq is using ... param
+    // def foo(...) # <- iseq for foo will have "forwardable"
+    //
+    // We want to set the `...` local to the caller's CI
+    //   foo(1, 2) # <- the ci for this should end up as `...`
+    //
+    // So hopefully the stack looks like:
+    //
+    //   => 1
+    //   => 2
+    //   => *
+    //   => **
+    //   => &
+    //   => ... # <- points at `foo`s CI
+    //   => cref_or_me
+    //   => specval
+    //   => type
+    //
+    if (ISEQ_BODY(iseq)->param.flags.forwardable) {
+        if ((vm_ci_flag(ci) & VM_CALL_FORWARDING)) {
+            struct rb_forwarding_call_data * forward_cd = (struct rb_forwarding_call_data *)calling->cd;
+            if (vm_ci_argc(ci) != vm_ci_argc(forward_cd->caller_ci)) {
+                ci = vm_ci_new_runtime(
+                        vm_ci_mid(ci),
+                        vm_ci_flag(ci),
+                        vm_ci_argc(ci),
+                        vm_ci_kwarg(ci));
+            } else {
+                ci = forward_cd->caller_ci;
+            }
+        }
+        // C functions calling iseqs will stack allocate a CI,
+        // so we need to convert it to heap allocated
+        if (!vm_ci_markable(ci)) {
+            ci = vm_ci_new_runtime(
+                    vm_ci_mid(ci),
+                    vm_ci_flag(ci),
+                    vm_ci_argc(ci),
+                    vm_ci_kwarg(ci));
+        }
+        argv[param_size - 1] = (VALUE)ci;
+        return 0;
     }
 
     return setup_parameters_complex(ec, iseq, calling, ci, argv, arg_setup_method);

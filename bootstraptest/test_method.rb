@@ -1308,3 +1308,8 @@ end
 
 B.new.foo(4)
 }
+
+assert_equal 'ok', %q{
+  class A; attr_reader :iv; def initialize(...) = @iv = "ok"; end
+  A.new("foo", bar: []).iv
+}
