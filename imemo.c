@@ -315,8 +315,9 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
             }
         }
         else {
-            if (vm_cc_super_p(cc) || vm_cc_refinement_p(cc)) {
+            if (vm_cc_orphan_p(cc) || vm_cc_refinement_p(cc)) {
                 rb_gc_mark_movable((VALUE)cc->cme_);
+                rb_gc_mark_movable((VALUE)cc->klass);
             }
         }
 
@@ -471,7 +472,7 @@ vm_ccs_free(struct rb_class_cc_entries *ccs, int alive, VALUE klass)
                 }
             }
 
-            VM_ASSERT(!vm_cc_super_p(cc) && !vm_cc_refinement_p(cc));
+            VM_ASSERT(!vm_cc_orphan_p(cc) && !vm_cc_refinement_p(cc));
             vm_cc_invalidate(cc);
         }
         ruby_xfree(ccs->entries);

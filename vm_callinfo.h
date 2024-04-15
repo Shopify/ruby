@@ -26,6 +26,7 @@ enum vm_call_flag_bits {
     VM_CALL_OPT_SEND_bit,       // internal flag
     VM_CALL_KW_SPLAT_MUT_bit,   // kw splat hash can be modified (to avoid allocating a new one)
     VM_CALL_ARGS_SPLAT_MUT_bit, // args splat can be modified (to avoid allocating a new one)
+    VM_CALL_FORWARDING_bit,     // m(...)
     VM_CALL__END
 };
 
@@ -42,6 +43,7 @@ enum vm_call_flag_bits {
 #define VM_CALL_OPT_SEND        (0x01 << VM_CALL_OPT_SEND_bit)
 #define VM_CALL_KW_SPLAT_MUT    (0x01 << VM_CALL_KW_SPLAT_MUT_bit)
 #define VM_CALL_ARGS_SPLAT_MUT  (0x01 << VM_CALL_ARGS_SPLAT_MUT_bit)
+#define VM_CALL_FORWARDING      (0x01 << VM_CALL_FORWARDING_bit)
 
 struct rb_callinfo_kwarg {
     int keyword_len;
@@ -255,6 +257,12 @@ vm_ci_markable(const struct rb_callinfo *ci)
     }
 }
 
+static inline bool
+vm_ci_cacheable(const struct rb_callinfo *ci)
+{
+    return vm_ci_markable(ci) && !(vm_ci_flag(ci) & VM_CALL_FORWARDING);
+}
+
 #define VM_CI_ON_STACK(mid_, flags_, argc_, kwarg_) \
     (struct rb_callinfo) {                          \
         .flags = T_IMEMO |                          \
@@ -301,12 +309,12 @@ struct rb_callcache {
 /* VM_CALLCACHE_IVAR used for IVAR/ATTRSET/STRUCT_AREF/STRUCT_ASET methods */
 #define VM_CALLCACHE_IVAR       IMEMO_FL_USER0
 #define VM_CALLCACHE_BF         IMEMO_FL_USER1
-#define VM_CALLCACHE_SUPER      IMEMO_FL_USER2
+#define VM_CALLCACHE_ORPHAN     IMEMO_FL_USER2
 #define VM_CALLCACHE_REFINEMENT IMEMO_FL_USER3
 
 enum vm_cc_type {
     cc_type_normal, // chained from ccs
-    cc_type_super,
+    cc_type_orphan,
     cc_type_refinement,
 };
 
@@ -333,11 +341,13 @@ vm_cc_new(VALUE klass,
     *((struct rb_callable_method_entry_struct **)&cc->cme_) = (struct rb_callable_method_entry_struct *)cme;
     *((vm_call_handler *)&cc->call_) = call;
 
+    VM_ASSERT(RB_TYPE_P(klass, T_CLASS) || RB_TYPE_P(klass, T_ICLASS));
+
     switch (type) {
       case cc_type_normal:
         break;
-      case cc_type_super:
-        *(VALUE *)&cc->flags |= VM_CALLCACHE_SUPER;
+      case cc_type_orphan:
+        *(VALUE *)&cc->flags |= VM_CALLCACHE_ORPHAN;
         break;
       case cc_type_refinement:
         *(VALUE *)&cc->flags |= VM_CALLCACHE_REFINEMENT;
@@ -350,9 +360,9 @@ vm_cc_new(VALUE klass,
 }
 
 static inline bool
-vm_cc_super_p(const struct rb_callcache *cc)
+vm_cc_orphan_p(const struct rb_callcache *cc)
 {
-    return (cc->flags & VM_CALLCACHE_SUPER) != 0;
+    return (cc->flags & VM_CALLCACHE_ORPHAN) != 0;
 }
 
 static inline bool

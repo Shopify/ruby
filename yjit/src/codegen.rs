@@ -6960,6 +6960,8 @@ fn gen_send_iseq(
     let kw_splat = flags & VM_CALL_KW_SPLAT != 0;
     let splat_call = flags & VM_CALL_ARGS_SPLAT != 0;
 
+    let forwarding_call = unsafe { rb_get_iseq_flags_forwardable(iseq) };
+
     // For computing offsets to callee locals
     let num_params = unsafe { get_iseq_body_param_size(iseq) as i32 };
     let num_locals = unsafe { get_iseq_body_local_table_size(iseq) as i32 };
@@ -6992,6 +6994,12 @@ fn gen_send_iseq(
     // Stack index of the splat array
     let splat_pos = i32::from(block_arg) + i32::from(kw_splat) + kw_arg_num;
 
+    // Dynamic stack layout. No good way to support without inlining.
+    if flags & VM_CALL_FORWARDING != 0 {
+        gen_counter_incr(asm, Counter::send_iseq_forwarding);
+        return None;
+    }
+
     exit_if_stack_too_large(iseq)?;
     exit_if_tail_call(asm, ci)?;
     exit_if_has_post(asm, iseq)?;
@@ -7002,7 +7010,9 @@ fn gen_send_iseq(
     exit_if_supplying_kw_and_has_no_kw(asm, supplying_kws, doing_kw_call)?;
     exit_if_supplying_kws_and_accept_no_kwargs(asm, supplying_kws, iseq)?;
     exit_if_doing_kw_and_splat(asm, doing_kw_call, flags)?;
-    exit_if_wrong_number_arguments(asm, arg_setup_block, opts_filled, flags, opt_num, iseq_has_rest)?;
+    if !forwarding_call {
+        exit_if_wrong_number_arguments(asm, arg_setup_block, opts_filled, flags, opt_num, iseq_has_rest)?;
+    }
     exit_if_doing_kw_and_opts_missing(asm, doing_kw_call, opts_missing)?;
     exit_if_has_rest_and_optional_and_block(asm, iseq_has_rest, opt_num, iseq, block_arg)?;
     let block_arg_type = exit_if_unsupported_block_arg_type(jit, asm, block_arg)?;
@@ -7513,6 +7523,7 @@ fn gen_send_iseq(
         }
     }
 
+    if !forwarding_call {
     // Nil-initialize missing optional parameters
     nil_fill(
         "nil-initialize missing optionals",
@@ -7540,6 +7551,13 @@ fn gen_send_iseq(
         },
         asm
     );
+    }
+
+    if forwarding_call {
+        dbg!(get_iseq_name(iseq));
+        assert_eq!(1, num_params);
+        asm.mov(asm.stack_opnd(-1), VALUE(ci as usize).into());
+    }
 
     // Points to the receiver operand on the stack unless a captured environment is used
     let recv = match captured_opnd {
@@ -7558,7 +7576,13 @@ fn gen_send_iseq(
     jit_save_pc(jit, asm);
 
     // Adjust the callee's stack pointer
-    let callee_sp = asm.lea(asm.ctx.sp_opnd(-argc + num_locals + VM_ENV_DATA_SIZE as i32));
+    let callee_sp = if forwarding_call {
+        let offs = num_locals + VM_ENV_DATA_SIZE as i32;
+        asm.lea(asm.ctx.sp_opnd(offs))
+    } else {
+        let offs = -argc + num_locals + VM_ENV_DATA_SIZE as i32;
+        asm.lea(asm.ctx.sp_opnd(offs))
+    };
 
     let specval = if let Some(prev_ep) = prev_ep {
         // We've already side-exited if the callee expects a block, so we
@@ -9109,6 +9133,10 @@ fn gen_invokesuper_specialized(
     }
     if ci_flags & VM_CALL_KW_SPLAT != 0 {
         gen_counter_incr(asm, Counter::invokesuper_kw_splat);
+        return None;
+    }
+    if ci_flags & VM_CALL_FORWARDING != 0 {
+        gen_counter_incr(asm, Counter::invokesuper_forwarding);
         return None;
     }
 
