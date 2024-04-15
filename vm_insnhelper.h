@@ -58,6 +58,11 @@ RUBY_EXTERN rb_serial_t ruby_vm_global_cvar_state;
     VM_REG_CFP = ec->cfp; \
 } while (0)
 
+struct rb_forwarding_call_data {
+    struct rb_call_data cd;
+    CALL_INFO caller_ci;
+};
+
 #if VM_COLLECT_USAGE_DETAILS
 enum vm_regan_regtype {
     VM_REGAN_PC = 0,

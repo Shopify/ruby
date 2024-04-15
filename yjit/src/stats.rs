@@ -376,6 +376,7 @@ make_counters! {
     send_iseq_block_arg_type,
     send_iseq_clobbering_block_arg,
     send_iseq_complex_discard_extras,
+    send_iseq_forwarding,
     send_iseq_leaf_builtin_block_arg_block_param,
     send_iseq_kw_splat_non_nil,
     send_iseq_kwargs_mismatch,
@@ -412,6 +413,7 @@ make_counters! {
     send_optimized_block_arg,
 
     invokesuper_defined_class_mismatch,
+    invokesuper_forwarding,
     invokesuper_kw_splat,
     invokesuper_kwarg,
     invokesuper_megamorphic,
