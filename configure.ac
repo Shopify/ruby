@@ -38,6 +38,7 @@ m4_include([tool/m4/ruby_replace_type.m4])dnl
 m4_include([tool/m4/ruby_require_funcs.m4])dnl
 m4_include([tool/m4/ruby_rm_recursive.m4])dnl
 m4_include([tool/m4/ruby_setjmp_type.m4])dnl
+m4_include([tool/m4/ruby_shared_gc.m4])dnl
 m4_include([tool/m4/ruby_stack_grow_direction.m4])dnl
 m4_include([tool/m4/ruby_thread.m4])dnl
 m4_include([tool/m4/ruby_try_cflags.m4])dnl
@@ -278,7 +279,7 @@ AC_CHECK_TOOLS([STRIP],   [gstrip strip], [:])
 
 # nm errors with Rust's LLVM bitcode when Rust uses a newer LLVM version than nm.
 # In case we're working with llvm-nm, tell it to not worry about the bitcode.
-AS_IF([${NM} --help | grep -q 'llvm-bc'], [NM="$NM --no-llvm-bc"])
+AS_IF([${NM} --help 2>&1 | grep -q 'llvm-bc'], [NM="$NM --no-llvm-bc"])
 
 AS_IF([test ! $rb_test_CFLAGS], [AS_UNSET(CFLAGS)]); AS_UNSET(rb_test_CFLAGS)
 AS_IF([test ! $rb_test_CXXFLAGS], [AS_UNSET(CXXFLAGS)]); AS_UNSET(rb_save_CXXFLAGS)
@@ -3753,6 +3754,7 @@ AS_IF([test x"$gcov" = xyes], [
 RUBY_SETJMP_TYPE
 
 MMTK_RUBY
+RUBY_SHARED_GC
 }
 
 [begin]_group "installation section" && {
@@ -4660,6 +4662,7 @@ config_summary "target OS"           "$target_os"
 config_summary "compiler"            "$CC"
 config_summary "with thread"         "$THREAD_MODEL"
 config_summary "with coroutine"      "$coroutine_type"
+config_summary "with shared GC"      "$with_shared_gc"
 config_summary "enable shared libs"  "$ENABLE_SHARED"
 config_summary "dynamic library ext" "$DLEXT"
 config_summary "CFLAGS"              "$cflags"

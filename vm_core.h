@@ -110,6 +110,13 @@ extern int ruby_assert_critical_section_entered;
 #include "internal/mmtk_support.h"
 #endif
 
+#if USE_SHARED_GC
+typedef struct gc_function_map {
+    void *(*init)(void);
+} rb_gc_function_map_t;
+#define rb_gc_functions (GET_VM()->gc_functions_map)
+#endif
+
 /*
  * implementation selector of get_insn_info algorithm
  *   0: linear search
@@ -422,6 +429,7 @@ struct rb_iseq_constant_body {
             unsigned int ruby2_keywords: 1;
             unsigned int anon_rest: 1;
             unsigned int anon_kwrest: 1;
+            unsigned int use_block: 1;
         } flags;
 
         unsigned int size;
@@ -755,6 +763,9 @@ typedef struct rb_vm_struct {
     int coverage_mode;
 
     struct rb_objspace *objspace;
+#if USE_SHARED_GC
+    rb_gc_function_map_t *gc_functions_map;
+#endif
 
     rb_at_exit_list *at_exit;
 
@@ -1211,7 +1222,8 @@ rb_iseq_t *rb_iseq_new_top     (const rb_ast_body_t *ast, VALUE name, VALUE path
 rb_iseq_t *rb_iseq_new_main    (const rb_ast_body_t *ast,             VALUE path, VALUE realpath,                     const rb_iseq_t *parent, int opt);
 rb_iseq_t *rb_iseq_new_eval    (const rb_ast_body_t *ast, VALUE name, VALUE path, VALUE realpath, int first_lineno, const rb_iseq_t *parent, int isolated_depth);
 rb_iseq_t *rb_iseq_new_with_opt(const rb_ast_body_t *ast, VALUE name, VALUE path, VALUE realpath, int first_lineno, const rb_iseq_t *parent, int isolated_depth,
-                                enum rb_iseq_type, const rb_compile_option_t*);
+                                enum rb_iseq_type, const rb_compile_option_t*,
+                                VALUE script_lines);
 
 struct iseq_link_anchor;
 struct rb_iseq_new_with_callback_callback_func {

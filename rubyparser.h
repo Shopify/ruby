@@ -219,8 +219,16 @@ typedef struct rb_parser_ast_token {
 /*
  * Array-like object for parser
  */
+typedef void* rb_parser_ary_data;
+
+enum rb_parser_ary_data_type {
+    PARSER_ARY_DATA_AST_TOKEN,
+    PARSER_ARY_DATA_SCRIPT_LINE
+};
+
 typedef struct rb_parser_ary {
-    rb_parser_ast_token_t **data;
+    enum rb_parser_ary_data_type data_type;
+    rb_parser_ary_data *data;
     long len;  // current size
     long capa; // capacity
 } rb_parser_ary_t;
@@ -1201,10 +1209,10 @@ typedef struct node_buffer_struct node_buffer_t;
 /* T_IMEMO/ast */
 typedef struct rb_ast_body_struct {
     const NODE *root;
-    VALUE script_lines;
+    rb_parser_ary_t *script_lines;
     // script_lines is either:
     // - a Fixnum that represents the line count of the original source, or
-    // - an Array that contains the lines of the original source
+    // - an rb_parser_ary_t* that contains the lines of the original source
     signed int frozen_string_literal:2; /* -1: not specified, 0: false, 1: true */
     signed int coverage_enabled:2; /* -1: not specified, 0: false, 1: true */
 } rb_ast_body_t;
@@ -1256,7 +1264,6 @@ typedef struct rb_parser_config_struct {
     VALUE (*ary_push)(VALUE ary, VALUE elem);
     VALUE (*ary_new_from_args)(long n, ...);
     VALUE (*ary_unshift)(VALUE ary, VALUE item);
-    void (*ary_modify)(VALUE ary);
     long (*array_len)(VALUE a);
     VALUE (*array_aref)(VALUE, long);
 
@@ -1284,8 +1291,6 @@ typedef struct rb_parser_config_struct {
     VALUE (*str_cat_cstr)(VALUE str, const char *ptr);
     VALUE (*str_subseq)(VALUE str, long beg, long len);
     VALUE (*str_new_frozen)(VALUE orig);
-    VALUE (*str_buf_new)(long capa);
-    VALUE (*str_buf_cat)(VALUE, const char*, long);
     void (*str_modify)(VALUE str);
     void (*str_set_len)(VALUE str, long len);
     VALUE (*str_cat)(VALUE str, const char *ptr, long len);
@@ -1295,8 +1300,6 @@ typedef struct rb_parser_config_struct {
     VALUE (*str_to_interned_str)(VALUE);
     int (*is_ascii_string)(VALUE str);
     VALUE (*enc_str_new)(const char *ptr, long len, rb_encoding *enc);
-    VALUE (*enc_str_buf_cat)(VALUE str, const char *ptr, long len, rb_encoding *enc);
-    VALUE (*str_buf_append)(VALUE str, VALUE str2);
     RBIMPL_ATTR_FORMAT(RBIMPL_PRINTF_FORMAT, 2, 0)
     VALUE (*str_vcatf)(VALUE str, const char *fmt, va_list ap);
     char *(*string_value_cstr)(volatile VALUE *ptr);
@@ -1314,7 +1317,6 @@ typedef struct rb_parser_config_struct {
     /* IO */
     int (*stderr_tty_p)(void);
     void (*write_error_str)(VALUE mesg);
-    VALUE (*default_rs)(void);
     VALUE (*io_write)(VALUE io, VALUE str);
     VALUE (*io_flush)(VALUE io);
     VALUE (*io_puts)(int argc, const VALUE *argv, VALUE out);
@@ -1341,7 +1343,6 @@ typedef struct rb_parser_config_struct {
     int (*enc_mbcput)(unsigned int c, void *buf, rb_encoding *enc);
     int (*enc_find_index)(const char *name);
     rb_encoding *(*enc_from_index)(int idx);
-    VALUE (*enc_associate_index)(VALUE obj, int encindex);
     int (*enc_isspace)(OnigCodePoint c, rb_encoding *enc);
     rb_encoding *(*enc_compatible)(VALUE str1, VALUE str2);
     VALUE (*enc_from_encoding)(rb_encoding *enc);
@@ -1374,10 +1375,8 @@ typedef struct rb_parser_config_struct {
     /* GC */
     void (*sized_xfree)(void *x, size_t size);
     void *(*sized_realloc_n)(void *ptr, size_t new_count, size_t element_size, size_t old_count);
-    VALUE (*obj_write)(VALUE, VALUE *, VALUE);
     void (*gc_guard)(VALUE);
     void (*gc_mark)(VALUE);
-    void (*gc_mark_and_move)(VALUE *ptr);
 
     /* Re */
     VALUE (*reg_compile)(VALUE str, int options, const char *sourcefile, int sourceline);

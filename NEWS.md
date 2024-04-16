@@ -32,6 +32,10 @@ Note: We're only listing outstanding class updates.
   * Exception#set_backtrace now accepts arrays of `Thread::Backtrace::Location`.
     `Kernel#raise`, `Thread#raise` and `Fiber#raise` also accept this new format. [[Feature #13557]]
 
+* Range
+
+  * Range#size now raises TypeError if the range is not iterable. [[Misc #18984]]
+
 ## Stdlib updates
 
 The following default gems are updated.
@@ -44,9 +48,10 @@ The following default gems are updated.
 * irb 1.12.0
 * json 2.7.2
 * net-http 0.4.1
+* optparse 0.5.0
 * prism 0.25.0
 * rdoc 6.6.3.1
-* reline 0.5.1
+* reline 0.5.2
 * resolv 0.4.0
 * stringio 3.1.1
 * strscan 3.1.1
@@ -111,10 +116,18 @@ See GitHub releases like [GitHub Releases of Logger](https://github.com/ruby/log
 
 ## JIT
 
+## Miscellaneous changes
+
+* Passing a block to a method which doesn't use the passed block will show
+  a warning on verbose mode (`-w`).
+  [[Feature #15554]]
+
 [Feature #13557]: https://bugs.ruby-lang.org/issues/13557
+[Feature #15554]: https://bugs.ruby-lang.org/issues/15554
 [Feature #16495]: https://bugs.ruby-lang.org/issues/16495
 [Feature #18290]: https://bugs.ruby-lang.org/issues/18290
 [Feature #18980]: https://bugs.ruby-lang.org/issues/18980
+[Misc #18984]:    https://bugs.ruby-lang.org/issues/18984
 [Feature #19117]: https://bugs.ruby-lang.org/issues/19117
 [Bug #19918]:     https://bugs.ruby-lang.org/issues/19918
 [Bug #20064]:     https://bugs.ruby-lang.org/issues/20064
