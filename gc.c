@@ -1950,11 +1950,83 @@ rb_gc_initial_stress_set(VALUE flag)
     initial_stress = flag;
 }
 
+void
+rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, const char *src, size_t copy_size)
+{
+    char *new_ptr;
+
+    if (should_copy) {
+        new_ptr = ALLOC_N(char, capa);
+
+        if (src) {
+            memcpy(new_ptr, src, copy_size);
+        }
+
+        if (rb_str_freeable_buffer(dest)) {
+            xfree(src);
+        }
+    } else {
+        new_ptr = src;
+    }
+
+    RSTRING(dest)->as.heap.ptr = new_ptr;
+}
+
+//
+// Attach a heap string `str` with a newly allocated imemo:mmtk_strbuf of a given capacity `capa`.
+// The first `copy_size` bytes of the new buffer is copied from `src`, and `copy_size` must not
+// exceed `capa`.
+//
+// `src` may point to an element of another heap object, in which case `src_obj` must point to the
+// object into which `src` is pointed, and `src_obj` will be pinned during the execution of this
+// function.  If `src` does not point into another heap object, `src_obj` may be 0.
+static inline void
+rb_mmtk_str_new_strbuf_copy(VALUE str, size_t capa, VALUE src_obj, const char *src, size_t copy_size)
+{
+    RUBY_ASSERT(rb_mmtk_enabled_p());
+
+    // When using MMTk, as.heap.ptr points to the ary field of a rb_mmtk_strbuf_t
+    // which is allocated in the heap as an imemo:mmtk_strbuf.
+    rb_mmtk_strbuf_t *strbuf = rb_mmtk_new_strbuf(capa); // This may trigger GC, causing objects to be moved.
+    char *chars = rb_mmtk_strbuf_to_chars(strbuf);
+
+    // Note that `str` may be an existing string and `src` may point into `str` or its existing
+    // buffer.  Do not modify `str` until the new strbuf is fully written.
+    if (src != NULL) {
+        RUBY_ASSERT(capa >= copy_size);
+        memcpy(chars, src, copy_size);
+    }
+
+    RSTRING(str)->as.heap.ptr = chars;
+    rb_mmtk_str_set_strbuf(str, (VALUE)strbuf);
+
+    // Keep `src_obj` alive and pinned until the function exits.
+    RB_GC_GUARD(src_obj);
+}
+
+// Attach a heap string with a newly allocated empty imemo:mmtk_strbuf.
+static inline void
+rb_mmtk_str_new_strbuf(VALUE str, size_t capa)
+{
+    rb_mmtk_str_new_strbuf_copy(str, capa, 0, NULL, 0);
+}
+
 static void * Alloc_GC_impl(void);
+void rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen);
+
+void
+rb_mmtk_str_new_strbuf_impl(VALUE str, long len, int termlen)
+{
+    fprintf(stderr, "allocating string chunk\n");
+    // Ask the GC for a chunk of memory (asking the GC for memory)
+    rb_mmtk_str_new_strbuf(str, sizeof(char) * len + sizeof(char) * termlen);
+}
 
 #if USE_SHARED_GC
 # include "dln.h"
 # define Alloc_GC rb_gc_functions->init
+# define rb_gc_str_new_strbuf rb_gc_functions->rb_gc_str_new_strbuf_impl
+# define rb_gc_str_new_strbuf_copy rb_gc_functions->rb_gc_str_new_strbuf_copy_impl
 
 void
 ruby_external_gc_init()
@@ -1965,6 +2037,20 @@ ruby_external_gc_init()
     char *gc_so_path = getenv("RUBY_GC_LIBRARY_PATH");
     if (!gc_so_path) {
         map->init = Alloc_GC_impl;
+#if USE_MMTK
+        if (!rb_mmtk_enabled_p()) {
+            // Register all of the mmtk callbacks
+            map->rb_gc_str_new_strbuf_impl = rb_mmtk_str_new_strbuf_impl;
+            map->rb_gc_str_new_strbuf_copy_impl = rb_mmtk_str_new_strbuf_copy_impl;
+        }
+        else {
+#endif
+            // Register all of the Ruby GC callbacks
+            map->rb_gc_str_new_strbuf_impl = rb_gc_str_new_strbuf_impl;
+            map->rb_gc_str_new_strbuf_copy_impl = rb_gc_str_new_strbuf_copy_impl;
+#if USE_MMTK
+        }
+#endif
         return;
     }
 
@@ -1988,6 +2074,8 @@ ruby_external_gc_init()
 }
 #else
 # define Alloc_GC Alloc_GC_impl
+# define rb_gc_str_new_strbuf rb_gc_str_new_strbuf_impl
+# define rb_gc_str_new_strbuf_copy rb_gc_str_new_strbuf_copy_impl
 #endif
 
 rb_objspace_t *
@@ -3892,6 +3980,14 @@ Alloc_GC_impl(void)
     objspace->profile.invoke_time = getrusage_time();
     finalizer_table = st_init_numtable();
     return objspace;
+}
+
+void
+rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen)
+{
+    RSTRING(str)->as.heap.ptr =
+        rb_xmalloc_mul_add_mul(sizeof(char), len, sizeof(char), termlen);
+
 }
 
 typedef int each_obj_callback(void *, void *, size_t, void *);

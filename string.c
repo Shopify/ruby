@@ -249,43 +249,6 @@ rb_mmtk_str_set_strbuf(VALUE str, VALUE strbuf)
     RB_OBJ_WRITE(str, RSTRING_EXT(str), strbuf);
 }
 
-// Attach a heap string `str` with a newly allocated imemo:mmtk_strbuf of a given capacity `capa`.
-// The first `copy_size` bytes of the new buffer is copied from `src`, and `copy_size` must not
-// exceed `capa`.
-//
-// `src` may point to an element of another heap object, in which case `src_obj` must point to the
-// object into which `src` is pointed, and `src_obj` will be pinned during the execution of this
-// function.  If `src` does not point into another heap object, `src_obj` may be 0.
-static inline void
-rb_mmtk_str_new_strbuf_copy(VALUE str, size_t capa, VALUE src_obj, const char *src, size_t copy_size)
-{
-    RUBY_ASSERT(rb_mmtk_enabled_p());
-
-    // When using MMTk, as.heap.ptr points to the ary field of a rb_mmtk_strbuf_t
-    // which is allocated in the heap as an imemo:mmtk_strbuf.
-    rb_mmtk_strbuf_t *strbuf = rb_mmtk_new_strbuf(capa); // This may trigger GC, causing objects to be moved.
-    char *chars = rb_mmtk_strbuf_to_chars(strbuf);
-
-    // Note that `str` may be an existing string and `src` may point into `str` or its existing
-    // buffer.  Do not modify `str` until the new strbuf is fully written.
-    if (src != NULL) {
-        RUBY_ASSERT(capa >= copy_size);
-        memcpy(chars, src, copy_size);
-    }
-
-    RSTRING(str)->as.heap.ptr = chars;
-    rb_mmtk_str_set_strbuf(str, (VALUE)strbuf);
-
-    // Keep `src_obj` alive and pinned until the function exits.
-    RB_GC_GUARD(src_obj);
-}
-
-// Attach a heap string with a newly allocated empty imemo:mmtk_strbuf.
-static inline void
-rb_mmtk_str_new_strbuf(VALUE str, size_t capa)
-{
-    rb_mmtk_str_new_strbuf_copy(str, capa, 0, NULL, 0);
-}
 
 static inline void
 rb_mmtk_resize_capa_term(VALUE str, size_t capacity, size_t termlen)
@@ -1084,16 +1047,7 @@ str_new0(VALUE klass, const char *ptr, long len, int termlen)
         /* :FIXME: @shyouhei guesses `len + termlen` is guaranteed to never
          * integer overflow.  If we can STATIC_ASSERT that, the following
          * mul_add_mul can be reverted to a simple ALLOC_N. */
-#if USE_MMTK
-        if (!rb_mmtk_enabled_p()) {
-#endif
-        RSTRING(str)->as.heap.ptr =
-            rb_xmalloc_mul_add_mul(sizeof(char), len, sizeof(char), termlen);
-#if USE_MMTK
-        } else {
-            rb_mmtk_str_new_strbuf(str, sizeof(char) * len + sizeof(char) * termlen);
-        }
-#endif
+        rb_gc_str_new_strbuf(str, len, termlen);
     }
     if (ptr) {
         memcpy(RSTRING_PTR(str), ptr, len);
@@ -1853,10 +1807,19 @@ rb_str_free(VALUE str)
     }
 }
 
+bool
+rb_str_freeable_buffer(VALUE str)
+{
+    // STR_NOEMBED: "Is the string buffer allocated via malloc"
+    // STR_NOFREE: "We're not allowed to free this"
+    // STR_SHARED: "Two strings sharing the same buffer"
+    FL_TEST_RAW(str, STR_NOEMBED|STR_NOFREE|STR_SHARED) == STR_NOEMBED;
+}
+
 size_t
 rb_str_memsize(VALUE str)
 {
-    if (FL_TEST(str, STR_NOEMBED|STR_SHARED|STR_NOFREE) == STR_NOEMBED) {
+    if (rb_str_no_embed(str)) {
         return STR_HEAP_SIZE(str);
     }
     else {
@@ -1909,9 +1872,13 @@ str_shared_replace(VALUE str, VALUE str2)
 #if USE_MMTK
             if (!rb_mmtk_enabled_p()) {
 #endif
-            char *new_ptr = ALLOC_N(char, len + termlen);
-            memcpy(new_ptr, RSTRING(str2)->as.embed.ary, len + termlen);
-            RSTRING(str2)->as.heap.ptr = new_ptr;
+            rb_gc_str_new_strbuf_copy(
+                    str2,
+                    len + termlen,
+                    str2,
+                    RSTRING(str2)->as.embed.ary,
+                    len + termlen);
+
 #if USE_MMTK
             } else {
                 rb_mmtk_str_new_strbuf_copy(
@@ -2215,10 +2182,13 @@ rb_str_init(int argc, VALUE *argv, VALUE str)
 #if USE_MMTK
                 if (!rb_mmtk_enabled_p()) {
 #endif
-                char *new_ptr = ALLOC_N(char, size);
                 if (STR_EMBED_P(str)) RUBY_ASSERT((long)osize <= str_embed_capa(str));
-                memcpy(new_ptr, old_ptr, osize < size ? osize : size);
-                RSTRING(str)->as.heap.ptr = new_ptr;
+                rb_gc_str_new_strbuf_copy(
+                        str,
+                        size,
+                        1,
+                        old_ptr,
+                        osize < size ? osize : size);
 #if USE_MMTK
                 } else {
                     rb_mmtk_str_new_strbuf_copy(
@@ -2843,14 +2813,12 @@ str_make_independent_expand(VALUE str, long len, long expand, const int termlen)
 #if USE_MMTK
     if (!rb_mmtk_enabled_p()) {
 #endif
-    ptr = ALLOC_N(char, (size_t)capa + termlen);
-    if (oldptr) {
-        memcpy(ptr, oldptr, len);
-    }
-    if (FL_TEST_RAW(str, STR_NOEMBED|STR_NOFREE|STR_SHARED) == STR_NOEMBED) {
-        xfree(oldptr);
-    }
-    RSTRING(str)->as.heap.ptr = ptr;
+        rb_gc_str_new_strbuf_copy(
+                str,
+                (size_t)capa + termlen,
+                1,
+                oldptr,
+                len);
 #if USE_MMTK
     } else {
         rb_mmtk_str_new_strbuf_copy(
@@ -2859,10 +2827,11 @@ str_make_independent_expand(VALUE str, long len, long expand, const int termlen)
             rb_mmtk_string_content_holder(str),
             oldptr,
             len);
-        ptr = RSTRING(str)->as.heap.ptr;
         // No need to free oldptr because oldptr points to a imemo:mmtk_strbur in the heap
     }
 #endif
+    ptr = RSTRING(str)->as.heap.ptr;
+
     STR_SET_NOEMBED(str);
     FL_UNSET(str, STR_SHARED|STR_NOFREE);
     TERM_FILL(ptr + len, termlen);
@@ -8513,7 +8482,12 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
 #if USE_MMTK
         if (!rb_mmtk_enabled_p()) {
 #endif
-        RSTRING(str)->as.heap.ptr = (char *)buf;
+        rb_gc_str_new_strbuf_copy(
+                str,
+                max + termlen,
+                0,
+                (char *)buf,
+                max + termlen);
 #if USE_MMTK
         } else {
             // Do we need to copy?
@@ -8613,7 +8587,12 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
 #if USE_MMTK
         if (!rb_mmtk_enabled_p()) {
 #endif
-        RSTRING(str)->as.heap.ptr = (char *)buf;
+        rb_gc_str_new_strbuf_copy(
+                str,
+                max + termlen,
+                0,
+                (char *)buf,
+                max + termlen);
 #if USE_MMTK
         } else {
             // Do we need to copy?

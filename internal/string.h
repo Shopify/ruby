@@ -47,6 +47,7 @@ int rb_enc_str_coderange_scan(VALUE str, rb_encoding *enc);
 int rb_ascii8bit_appendable_encoding_index(rb_encoding *enc, unsigned int code);
 VALUE rb_str_include(VALUE str, VALUE arg);
 VALUE rb_str_byte_substr(VALUE str, VALUE beg, VALUE len);
+bool rb_str_freeable_buffer(VALUE str);
 
 #if USE_MMTK
 bool rb_mmtk_str_no_free(VALUE str);
