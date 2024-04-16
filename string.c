@@ -1819,7 +1819,7 @@ rb_str_freeable_buffer(VALUE str)
 size_t
 rb_str_memsize(VALUE str)
 {
-    if (rb_str_no_embed(str)) {
+    if (rb_str_freeable_buffer(str)) {
         return STR_HEAP_SIZE(str);
     }
     else {

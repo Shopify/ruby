@@ -1980,6 +1980,7 @@ rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, cons
 // `src` may point to an element of another heap object, in which case `src_obj` must point to the
 // object into which `src` is pointed, and `src_obj` will be pinned during the execution of this
 // function.  If `src` does not point into another heap object, `src_obj` may be 0.
+#if USE_MMTK
 static inline void
 rb_mmtk_str_new_strbuf_copy(VALUE str, size_t capa, VALUE src_obj, const char *src, size_t copy_size)
 {
@@ -2011,7 +2012,6 @@ rb_mmtk_str_new_strbuf(VALUE str, size_t capa)
     rb_mmtk_str_new_strbuf_copy(str, capa, 0, NULL, 0);
 }
 
-static void * Alloc_GC_impl(void);
 void rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen);
 
 void
@@ -2021,13 +2021,9 @@ rb_mmtk_str_new_strbuf_impl(VALUE str, long len, int termlen)
     // Ask the GC for a chunk of memory (asking the GC for memory)
     rb_mmtk_str_new_strbuf(str, sizeof(char) * len + sizeof(char) * termlen);
 }
+#endif
 
 #if USE_SHARED_GC
-# include "dln.h"
-# define Alloc_GC rb_gc_functions->init
-# define rb_gc_str_new_strbuf rb_gc_functions->rb_gc_str_new_strbuf_impl
-# define rb_gc_str_new_strbuf_copy rb_gc_functions->rb_gc_str_new_strbuf_copy_impl
-
 void
 ruby_external_gc_init()
 {
@@ -2072,20 +2068,7 @@ ruby_external_gc_init()
 
     map->init = gc_init_func;
 }
-#else
-# define Alloc_GC Alloc_GC_impl
-# define rb_gc_str_new_strbuf rb_gc_str_new_strbuf_impl
-# define rb_gc_str_new_strbuf_copy rb_gc_str_new_strbuf_copy_impl
 #endif
-
-rb_objspace_t *
-rb_objspace_alloc(void)
-{
-#if USE_SHARED_GC
-    ruby_external_gc_init();
-#endif
-    return (rb_objspace_t *)Alloc_GC();
-}
 
 static void free_stack_chunks(mark_stack_t *);
 static void mark_stack_free_cache(mark_stack_t *);
@@ -3981,6 +3964,16 @@ Alloc_GC_impl(void)
     finalizer_table = st_init_numtable();
     return objspace;
 }
+
+rb_objspace_t *
+rb_objspace_alloc(void)
+{
+#if USE_SHARED_GC
+    ruby_external_gc_init();
+#endif
+    return (rb_objspace_t *)Alloc_GC();
+}
+
 
 void
 rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen)

@@ -229,6 +229,7 @@ void rb_gc_ref_update_table_values_only(st_table *tbl);
 
 void rb_gc_initial_stress_set(VALUE flag);
 
+
 #define rb_gc_mark_and_move_ptr(ptr) do { \
     VALUE _obj = (VALUE)*(ptr); \
     rb_gc_mark_and_move(&_obj); \
@@ -247,6 +248,18 @@ VALUE rb_mmtk_newobj_raw(VALUE klass, VALUE flags, int wb_protected, size_t payl
 #endif
 
 RUBY_SYMBOL_EXPORT_BEGIN
+#if USE_SHARED_GC
+# include "dln.h"
+# define Alloc_GC rb_gc_functions->init
+# define rb_gc_str_new_strbuf rb_gc_functions->rb_gc_str_new_strbuf_impl
+# define rb_gc_str_new_strbuf_copy rb_gc_functions->rb_gc_str_new_strbuf_copy_impl
+#else
+# define Alloc_GC Alloc_GC_impl
+# define rb_gc_str_new_strbuf rb_gc_str_new_strbuf_impl
+# define rb_gc_str_new_strbuf_copy rb_gc_str_new_strbuf_copy_impl
+#endif
+void rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen);
+void rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, const char *src, size_t copy_size);
 /* exports for objspace module */
 void rb_objspace_reachable_objects_from(VALUE obj, void (func)(VALUE, void *), void *data);
 void rb_objspace_reachable_objects_from_root(void (func)(const char *category, VALUE, void *), void *data);
