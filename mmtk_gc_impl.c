@@ -1,3 +1,6 @@
+#include "ruby/internal/config.h"
+
+#if USE_MMTK
 #include "internal/mmtk_gc_impl.h"
 
 // Attach a heap string `str` with a newly allocated imemo:mmtk_strbuf of a given capacity `capa`.
@@ -71,3 +74,4 @@ rb_mmtk_string_size_impl(size_t size)
         return size;
     }
 }
+#endif

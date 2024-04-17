@@ -40,7 +40,6 @@
 #if USE_MMTK
 #include "internal/mmtk_gc_impl.h"
 #endif
-#include "internal/gc_impl.h"
 
 /* MALLOC_HEADERS_BEGIN */
 #ifndef HAVE_MALLOC_USABLE_SIZE

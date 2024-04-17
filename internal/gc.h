@@ -15,6 +15,7 @@
 #include "internal/compilers.h" /* for __has_attribute */
 #include "ruby/ruby.h"          /* for rb_event_flag_t */
 #include "vm_core.h"            /* for GET_EC() */
+#include "internal/gc_impl.h"
 
 #ifndef USE_SHARED_GC
 # define USE_SHARED_GC 0
