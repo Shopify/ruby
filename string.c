@@ -959,35 +959,12 @@ must_not_null(const char *ptr)
     }
 }
 
-#if USE_MMTK
-// How large is the string allocated with str_alloc_heap
-static inline size_t
-rb_mmtk_str_heap_size(void)
-{
-    // The main RString plus the stringext.
-    return sizeof(struct RString) + sizeof(rb_mmtk_stringext_t);
-}
-#endif
-
 static inline VALUE
 str_alloc_embed(VALUE klass, size_t capa)
 {
-    size_t size = rb_str_embed_size(capa);
+    size_t size = rb_gc_string_size(rb_str_embed_size(capa));
     RUBY_ASSERT(size > 0);
     RUBY_ASSERT(rb_gc_size_allocatable_p(size));
-
-#if USE_MMTK
-    if (rb_mmtk_enabled_p()) {
-        if (size < rb_mmtk_str_heap_size()) {
-            // When using MMTk, we always allocate enough space to hold a heap string.
-            // The lowest size class for vanilla Ruby gc is 40 bytes,
-            // which is enough to hold a whole `struct RString` for heap strings.
-            // But we have one extra field in the trailing rb_mmtk_stringext_t.
-            // So we manually ensure the allocated memory region is large enough.
-            size = rb_mmtk_str_heap_size();
-        }
-    }
-#endif
 
     assert(rb_gc_size_allocatable_p(size));
     NEWOBJ_OF(str, struct RString, klass,
@@ -1000,14 +977,7 @@ str_alloc_embed(VALUE klass, size_t capa)
 static inline VALUE
 str_alloc_heap(VALUE klass)
 {
-    size_t size = sizeof(struct RString);
-
-#if USE_MMTK
-    if (rb_mmtk_enabled_p()) {
-        // When using MMTk, we include a trailing rb_mmtk_stringext_t.
-        size = rb_mmtk_str_heap_size();
-    }
-#endif
+    size_t size = rb_gc_string_size(sizeof(struct RString));
 
     NEWOBJ_OF(str, struct RString, klass,
             T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), size, 0);

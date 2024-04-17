@@ -1972,6 +1972,12 @@ rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, cons
     RSTRING(dest)->as.heap.ptr = new_ptr;
 }
 
+size_t
+rb_gc_string_size_impl(size_t capa)
+{
+    return capa;
+}
+
 //
 // Attach a heap string `str` with a newly allocated imemo:mmtk_strbuf of a given capacity `capa`.
 // The first `copy_size` bytes of the new buffer is copied from `src`, and `copy_size` must not
@@ -2021,6 +2027,30 @@ rb_mmtk_str_new_strbuf_impl(VALUE str, long len, int termlen)
     // Ask the GC for a chunk of memory (asking the GC for memory)
     rb_mmtk_str_new_strbuf(str, sizeof(char) * len + sizeof(char) * termlen);
 }
+
+// How large is the string allocated with str_alloc_heap
+static inline size_t
+rb_mmtk_str_heap_size(void)
+{
+    // The main RString plus the stringext.
+    return sizeof(struct RString) + sizeof(rb_mmtk_stringext_t);
+}
+
+size_t
+rb_mmtk_string_size_impl(size_t size)
+{
+    if (size < rb_mmtk_str_heap_size()) {
+        // When using MMTk, we always allocate enough space to hold a heap string.
+        // The lowest size class for vanilla Ruby gc is 40 bytes,
+        // which is enough to hold a whole `struct RString` for heap strings.
+        // But we have one extra field in the trailing rb_mmtk_stringext_t.
+        // So we manually ensure the allocated memory region is large enough.
+        return rb_mmtk_str_heap_size();
+    }
+    else {
+        return size;
+    }
+}
 #endif
 
 #if USE_SHARED_GC
@@ -2040,12 +2070,14 @@ ruby_external_gc_init()
             // Register all of the mmtk callbacks
             map->rb_gc_str_new_strbuf_impl = rb_mmtk_str_new_strbuf_impl;
             map->rb_gc_str_new_strbuf_copy_impl = rb_mmtk_str_new_strbuf_copy_impl;
+            map->rb_gc_string_size_impl = rb_mmtk_string_size_impl;
         }
         else {
 #endif
             // Register all of the Ruby GC callbacks
             map->rb_gc_str_new_strbuf_impl = rb_gc_str_new_strbuf_impl;
             map->rb_gc_str_new_strbuf_copy_impl = rb_gc_str_new_strbuf_copy_impl;
+            map->rb_gc_string_size_impl = rb_gc_string_size_impl;
 #if USE_MMTK
         }
 #endif
