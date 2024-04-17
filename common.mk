@@ -132,6 +132,7 @@ COMMONOBJS    = array.$(OBJEXT) \
 		eval.$(OBJEXT) \
 		file.$(OBJEXT) \
 		gc.$(OBJEXT) \
+		gc_impl.$(OBJEXT) \
 		mmtk_gc_impl.$(OBJEXT) \
 		hash.$(OBJEXT) \
 		inits.$(OBJEXT) \

@@ -40,6 +40,7 @@
 #if USE_MMTK
 #include "internal/mmtk_gc_impl.h"
 #endif
+#include "internal/gc_impl.h"
 
 /* MALLOC_HEADERS_BEGIN */
 #ifndef HAVE_MALLOC_USABLE_SIZE
@@ -1946,34 +1947,6 @@ void
 rb_gc_initial_stress_set(VALUE flag)
 {
     initial_stress = flag;
-}
-
-void
-rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, const char *src, size_t copy_size)
-{
-    char *new_ptr;
-
-    if (should_copy) {
-        new_ptr = ALLOC_N(char, capa);
-
-        if (src) {
-            memcpy(new_ptr, src, copy_size);
-        }
-
-        if (rb_str_freeable_buffer(dest)) {
-            xfree(src);
-        }
-    } else {
-        new_ptr = src;
-    }
-
-    RSTRING(dest)->as.heap.ptr = new_ptr;
-}
-
-size_t
-rb_gc_string_size_impl(size_t capa)
-{
-    return capa;
 }
 
 #if USE_SHARED_GC
@@ -3929,14 +3902,6 @@ rb_objspace_alloc(void)
     ruby_external_gc_init();
 #endif
     return (rb_objspace_t *)Alloc_GC();
-}
-
-void
-rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen)
-{
-    RSTRING(str)->as.heap.ptr =
-        rb_xmalloc_mul_add_mul(sizeof(char), len, sizeof(char), termlen);
-
 }
 
 typedef int each_obj_callback(void *, void *, size_t, void *);
