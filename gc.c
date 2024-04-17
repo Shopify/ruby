@@ -2024,6 +2024,8 @@ rb_mmtk_str_new_strbuf_impl(VALUE str, long len, int termlen)
 #endif
 
 #if USE_SHARED_GC
+static void * Alloc_GC_impl(void);
+
 void
 ruby_external_gc_init()
 {
@@ -3973,7 +3975,6 @@ rb_objspace_alloc(void)
 #endif
     return (rb_objspace_t *)Alloc_GC();
 }
-
 
 void
 rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen)

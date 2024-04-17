@@ -113,6 +113,8 @@ extern int ruby_assert_critical_section_entered;
 #if USE_SHARED_GC
 typedef struct gc_function_map {
     void *(*init)(void);
+    void (*rb_gc_str_new_strbuf_impl)(VALUE str, long len, int termlen);
+    void (*rb_gc_str_new_strbuf_copy_impl)(VALUE dest, size_t capa, void * should_copy, const char *src, size_t copy_size);
 } rb_gc_function_map_t;
 #define rb_gc_functions (GET_VM()->gc_functions_map)
 #endif
