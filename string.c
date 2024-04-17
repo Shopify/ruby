@@ -258,7 +258,7 @@ rb_mmtk_resize_capa_term(VALUE str, size_t capacity, size_t termlen)
     if (STR_EMBED_P(str)) {
         if ((size_t)str_embed_capa(str) < capacity + termlen) {
             const long tlen = RSTRING_LEN(str);
-            rb_mmtk_str_new_strbuf_copy(
+            rb_gc_str_new_strbuf_copy(
                 str,
                 (size_t)(capacity) + (termlen),
                 str,
@@ -271,7 +271,7 @@ rb_mmtk_resize_capa_term(VALUE str, size_t capacity, size_t termlen)
     }
     else {
         assert(!FL_TEST((str), STR_SHARED));
-        rb_mmtk_str_new_strbuf_copy(
+        rb_gc_str_new_strbuf_copy(
             str,
             (size_t)(capacity) + (termlen),
             RSTRING_EXT(str)->strbuf,
@@ -293,7 +293,7 @@ rb_mmtk_str_sized_realloc_n(VALUE str, size_t new_size)
     size_t old_size = STR_HEAP_SIZE(str);
     size_t copy_size = old_size < new_size ? old_size : new_size;
 
-    rb_mmtk_str_new_strbuf_copy(
+    rb_gc_str_new_strbuf_copy(
         str,
         new_size,
         RSTRING_EXT(str)->strbuf,
@@ -1747,7 +1747,7 @@ rb_str_buf_new(long capa)
     RSTRING(str)->as.heap.ptr = ALLOC_N(char, (size_t)capa + 1);
 #if USE_MMTK
     } else {
-        rb_mmtk_str_new_strbuf(str, sizeof(char) * ((size_t)capa + 1));
+        rb_gc_str_new_strbuf(str, sizeof(char) * ((size_t)capa + 1), 0);
     }
 #endif
     RSTRING(str)->as.heap.ptr[0] = '\0';
@@ -1869,9 +1869,6 @@ str_shared_replace(VALUE str, VALUE str2)
             long len = RSTRING_LEN(str2);
             RUBY_ASSERT(len + termlen <= str_embed_capa(str2));
 
-#if USE_MMTK
-            if (!rb_mmtk_enabled_p()) {
-#endif
             rb_gc_str_new_strbuf_copy(
                     str2,
                     len + termlen,
@@ -1879,16 +1876,6 @@ str_shared_replace(VALUE str, VALUE str2)
                     RSTRING(str2)->as.embed.ary,
                     len + termlen);
 
-#if USE_MMTK
-            } else {
-                rb_mmtk_str_new_strbuf_copy(
-                    str2,
-                    len + termlen,
-                    str2,
-                    RSTRING(str2)->as.embed.ary,
-                    len + termlen);
-            }
-#endif
             STR_SET_LEN(str2, len);
             RSTRING(str2)->as.heap.aux.capa = len;
             STR_SET_NOEMBED(str2);
@@ -2179,26 +2166,16 @@ rb_str_init(int argc, VALUE *argv, VALUE str)
                 const size_t size = (size_t)capa + termlen;
                 const char *const old_ptr = RSTRING_PTR(str);
                 const size_t osize = RSTRING_LEN(str) + TERM_LEN(str);
-#if USE_MMTK
-                if (!rb_mmtk_enabled_p()) {
-#endif
+
                 if (STR_EMBED_P(str)) RUBY_ASSERT((long)osize <= str_embed_capa(str));
+
                 rb_gc_str_new_strbuf_copy(
                         str,
                         size,
                         1,
                         old_ptr,
                         osize < size ? osize : size);
-#if USE_MMTK
-                } else {
-                    rb_mmtk_str_new_strbuf_copy(
-                        str,
-                        size,
-                        RSTRING_EXT(str)->strbuf,
-                        old_ptr,
-                        osize < size ? osize : size);
-                }
-#endif
+
                 FL_UNSET_RAW(str, STR_SHARED|STR_NOFREE);
             }
             else if (STR_HEAP_SIZE(str) != (size_t)capa + termlen) {
@@ -2697,7 +2674,7 @@ rb_str_times(VALUE str, VALUE times)
             RSTRING(str2)->as.heap.ptr = ZALLOC_N(char, (size_t)len + 1);
 #if USE_MMTK
             } else {
-                rb_mmtk_str_new_strbuf(str2, (size_t)len + 1);
+                rb_gc_str_new_strbuf(str2, (size_t)len + 1, 0);
             }
 #endif
         }
@@ -2810,26 +2787,18 @@ str_make_independent_expand(VALUE str, long len, long expand, const int termlen)
     }
 
     oldptr = RSTRING_PTR(str);
-#if USE_MMTK
-    if (!rb_mmtk_enabled_p()) {
-#endif
-        rb_gc_str_new_strbuf_copy(
-                str,
-                (size_t)capa + termlen,
-                1,
-                oldptr,
-                len);
-#if USE_MMTK
-    } else {
-        rb_mmtk_str_new_strbuf_copy(
+
+    rb_gc_str_new_strbuf_copy(
             str,
             (size_t)capa + termlen,
+#if USE_MMTK
             rb_mmtk_string_content_holder(str),
+#else
+            1,
+#endif
             oldptr,
             len);
-        // No need to free oldptr because oldptr points to a imemo:mmtk_strbur in the heap
-    }
-#endif
+
     ptr = RSTRING(str)->as.heap.ptr;
 
     STR_SET_NOEMBED(str);
@@ -8479,28 +8448,15 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
             ruby_sized_xfree(STR_HEAP_PTR(str), STR_HEAP_SIZE(str));
         }
         TERM_FILL((char *)t, termlen);
-#if USE_MMTK
-        if (!rb_mmtk_enabled_p()) {
-#endif
+            // Do we need to copy?
+            // It should be possible to let the code above to use heap objects from the start,
+            // but it's a bit too complicated to make the change.
         rb_gc_str_new_strbuf_copy(
                 str,
                 max + termlen,
                 0,
                 (char *)buf,
                 max + termlen);
-#if USE_MMTK
-        } else {
-            // Do we need to copy?
-            // It should be possible to let the code above to use heap objects from the start,
-            // but it's a bit too complicated to make the change.
-            rb_mmtk_str_new_strbuf_copy(
-                str,
-                max + termlen,
-                0,
-                (char *)buf,
-                max + termlen);
-        }
-#endif
         STR_SET_LEN(str, t - buf);
         STR_SET_NOEMBED(str);
         RSTRING(str)->as.heap.aux.capa = max;
@@ -8584,28 +8540,14 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
             ruby_sized_xfree(STR_HEAP_PTR(str), STR_HEAP_SIZE(str));
         }
         TERM_FILL((char *)t, termlen);
-#if USE_MMTK
-        if (!rb_mmtk_enabled_p()) {
-#endif
+
         rb_gc_str_new_strbuf_copy(
                 str,
                 max + termlen,
                 0,
                 (char *)buf,
                 max + termlen);
-#if USE_MMTK
-        } else {
-            // Do we need to copy?
-            // It should be possible to let the code above to use heap objects from the start,
-            // but it's a bit too complicated to make the change.
-            rb_mmtk_str_new_strbuf_copy(
-                str,
-                max + termlen,
-                0,
-                (char *)buf,
-                max + termlen);
-        }
-#endif
+
         STR_SET_LEN(str, t - buf);
         STR_SET_NOEMBED(str);
         RSTRING(str)->as.heap.aux.capa = max;

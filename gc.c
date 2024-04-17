@@ -1981,8 +1981,8 @@ rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, cons
 // object into which `src` is pointed, and `src_obj` will be pinned during the execution of this
 // function.  If `src` does not point into another heap object, `src_obj` may be 0.
 #if USE_MMTK
-static inline void
-rb_mmtk_str_new_strbuf_copy(VALUE str, size_t capa, VALUE src_obj, const char *src, size_t copy_size)
+void
+rb_mmtk_str_new_strbuf_copy_impl(VALUE str, size_t capa, VALUE src_obj, const char *src, size_t copy_size)
 {
     RUBY_ASSERT(rb_mmtk_enabled_p());
 
@@ -2009,7 +2009,7 @@ rb_mmtk_str_new_strbuf_copy(VALUE str, size_t capa, VALUE src_obj, const char *s
 static inline void
 rb_mmtk_str_new_strbuf(VALUE str, size_t capa)
 {
-    rb_mmtk_str_new_strbuf_copy(str, capa, 0, NULL, 0);
+    rb_mmtk_str_new_strbuf_copy_impl(str, capa, 0, NULL, 0);
 }
 
 void rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen);
@@ -2036,7 +2036,7 @@ ruby_external_gc_init()
     if (!gc_so_path) {
         map->init = Alloc_GC_impl;
 #if USE_MMTK
-        if (!rb_mmtk_enabled_p()) {
+        if (rb_mmtk_enabled_p()) {
             // Register all of the mmtk callbacks
             map->rb_gc_str_new_strbuf_impl = rb_mmtk_str_new_strbuf_impl;
             map->rb_gc_str_new_strbuf_copy_impl = rb_mmtk_str_new_strbuf_copy_impl;
