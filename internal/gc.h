@@ -255,11 +255,13 @@ RUBY_SYMBOL_EXPORT_BEGIN
 # define rb_gc_str_new_strbuf rb_gc_functions->rb_gc_str_new_strbuf_impl
 # define rb_gc_str_new_strbuf_copy rb_gc_functions->rb_gc_str_new_strbuf_copy_impl
 # define rb_gc_string_size rb_gc_functions->rb_gc_string_size_impl
+# define rb_gc_str_sized_realloc_n rb_gc_functions->rb_gc_str_sized_realloc_n_impl
 #else
 # define Alloc_GC Alloc_GC_impl
 # define rb_gc_str_new_strbuf rb_gc_str_new_strbuf_impl
 # define rb_gc_str_new_strbuf_copy rb_gc_str_new_strbuf_copy_impl
 # define rb_gc_string_size rb_gc_string_size_impl
+# define rb_gc_str_sized_realloc_n rb_gc_str_sized_realloc_n_impl
 #endif
 void rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen);
 void rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, const char *src, size_t copy_size);

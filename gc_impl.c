@@ -31,7 +31,12 @@ rb_gc_string_size_impl(size_t capa)
 void
 rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen)
 {
-    RSTRING(str)->as.heap.ptr =
-        rb_xmalloc_mul_add_mul(sizeof(char), len, sizeof(char), termlen);
+    RSTRING(str)->as.heap.ptr = rb_xmalloc_mul_add_mul(sizeof(char), len, sizeof(char), termlen);
 
+}
+
+void
+rb_gc_str_sized_realloc_n_impl(VALUE str, size_t new_size, size_t old_size)
+{
+    SIZED_REALLOC_N(RSTRING(str)->as.heap.ptr, char, new_size, old_size);
 }

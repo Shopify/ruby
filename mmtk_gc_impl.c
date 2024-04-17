@@ -74,4 +74,26 @@ rb_mmtk_string_size_impl(size_t size)
         return size;
     }
 }
+
+// Handle what the ubiquitous SIZED_REALLOC does to `as.heap.ptr`.
+void
+rb_mmtk_str_sized_realloc_n_impl(VALUE str, size_t new_size, size_t old_size)
+{
+    RUBY_ASSERT(rb_mmtk_enabled_p());
+
+    RUBY_ASSERT(!STR_EMBED_P(str));
+    // lives in string.c and is static inline int. not sure
+    // what to do with this. commenting out for now.
+    //RUBY_ASSERT(!str_dependent_p(str));
+
+    size_t copy_size = old_size < new_size ? old_size : new_size;
+
+    rb_mmtk_str_new_strbuf_copy_impl(
+        str,
+        new_size,
+        RSTRING_EXT(str)->strbuf,
+        RSTRING(str)->as.heap.ptr,
+        copy_size);
+    RSTRING(str)->as.heap.aux.capa = new_size;
+}
 #endif

@@ -281,27 +281,6 @@ rb_mmtk_resize_capa_term(VALUE str, size_t capacity, size_t termlen)
     }
 }
 
-// Handle what the ubiquitous SIZED_REALLOC does to `as.heap.ptr`.
-static inline void
-rb_mmtk_str_sized_realloc_n(VALUE str, size_t new_size)
-{
-    RUBY_ASSERT(rb_mmtk_enabled_p());
-
-    RUBY_ASSERT(!STR_EMBED_P(str));
-    RUBY_ASSERT(!str_dependent_p(str));
-
-    size_t old_size = STR_HEAP_SIZE(str);
-    size_t copy_size = old_size < new_size ? old_size : new_size;
-
-    rb_gc_str_new_strbuf_copy(
-        str,
-        new_size,
-        RSTRING_EXT(str)->strbuf,
-        RSTRING(str)->as.heap.ptr,
-        copy_size);
-    RSTRING(str)->as.heap.aux.capa = new_size;
-}
-
 bool rb_mmtk_str_no_free(VALUE str)
 {
     // With MMTk, GC needs to know this in order to check if `RSTRING(str)->as.heap.ptr` points to
@@ -2149,16 +2128,7 @@ rb_str_init(int argc, VALUE *argv, VALUE str)
                 FL_UNSET_RAW(str, STR_SHARED|STR_NOFREE);
             }
             else if (STR_HEAP_SIZE(str) != (size_t)capa + termlen) {
-#if USE_MMTK
-                if (!rb_mmtk_enabled_p()) {
-#endif
-                SIZED_REALLOC_N(RSTRING(str)->as.heap.ptr, char,
-                        (size_t)capa + termlen, STR_HEAP_SIZE(str));
-#if USE_MMTK
-                } else {
-                    rb_mmtk_str_sized_realloc_n(str, (size_t)capa + termlen);
-                }
-#endif
+                rb_gc_str_sized_realloc_n(str, (size_t)capa + termlen, STR_HEAP_SIZE(str));
             }
             STR_SET_LEN(str, len);
             TERM_FILL(&RSTRING(str)->as.heap.ptr[len], termlen);
@@ -3492,16 +3462,7 @@ rb_str_resize(VALUE str, long len)
         }
         else if ((capa = RSTRING(str)->as.heap.aux.capa) < len ||
                  (capa - len) > (len < 1024 ? len : 1024)) {
-#if USE_MMTK
-            if (!rb_mmtk_enabled_p()) {
-#endif
-            SIZED_REALLOC_N(RSTRING(str)->as.heap.ptr, char,
-                            (size_t)len + termlen, STR_HEAP_SIZE(str));
-#if USE_MMTK
-            } else {
-                rb_mmtk_str_sized_realloc_n(str, (size_t)len + termlen);
-            }
-#endif
+            rb_gc_str_sized_realloc_n(str, (size_t)len + termlen, STR_HEAP_SIZE(str));
             RSTRING(str)->as.heap.aux.capa = len;
         }
         else if (len == slen) return str;
