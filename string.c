@@ -1762,7 +1762,7 @@ rb_str_freeable_buffer(VALUE str)
     // STR_NOEMBED: "Is the string buffer allocated via malloc"
     // STR_NOFREE: "We're not allowed to free this"
     // STR_SHARED: "Two strings sharing the same buffer"
-    FL_TEST_RAW(str, STR_NOEMBED|STR_NOFREE|STR_SHARED) == STR_NOEMBED;
+    return FL_TEST_RAW(str, STR_NOEMBED|STR_NOFREE|STR_SHARED) == STR_NOEMBED;
 }
 
 size_t

@@ -263,8 +263,6 @@ RUBY_SYMBOL_EXPORT_BEGIN
 # define rb_gc_string_size rb_gc_string_size_impl
 # define rb_gc_str_sized_realloc_n rb_gc_str_sized_realloc_n_impl
 #endif
-void rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen);
-void rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, const char *src, size_t copy_size);
 /* exports for objspace module */
 void rb_objspace_reachable_objects_from(VALUE obj, void (func)(VALUE, void *), void *data);
 void rb_objspace_reachable_objects_from_root(void (func)(const char *category, VALUE, void *), void *data);

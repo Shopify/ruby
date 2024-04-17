@@ -1,7 +1,7 @@
 #include "internal/gc_impl.h"
 
 void
-rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, const char *src, size_t copy_size)
+rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, VALUE should_copy, const char *src, size_t copy_size)
 {
     char *new_ptr;
 
@@ -13,10 +13,10 @@ rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, void * should_copy, cons
         }
 
         if (rb_str_freeable_buffer(dest)) {
-            xfree(src);
+            xfree((void *)src);
         }
     } else {
-        new_ptr = src;
+        new_ptr = (char *)src;
     }
 
     RSTRING(dest)->as.heap.ptr = new_ptr;
