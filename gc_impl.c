@@ -1,5 +1,6 @@
 #include "internal/gc_impl.h"
 
+// ================== string.c ==================
 void
 rb_gc_str_new_strbuf_copy_impl(VALUE dest, size_t capa, VALUE should_copy, const char *src, size_t copy_size)
 {
@@ -32,7 +33,6 @@ void
 rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen)
 {
     RSTRING(str)->as.heap.ptr = rb_xmalloc_mul_add_mul(sizeof(char), len, sizeof(char), termlen);
-
 }
 
 void
@@ -61,4 +61,12 @@ rb_gc_ec_str_alloc_heap_impl(struct rb_execution_context_struct *ec, VALUE klass
             T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString), ec);
 
     return (VALUE)str;
+}
+
+// ================== array.c ==================
+
+VALUE *
+rb_gc_ary_heap_alloc_impl(size_t capa)
+{
+    return ALLOC_N(VALUE, capa);
 }

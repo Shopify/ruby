@@ -3,6 +3,7 @@
 #if USE_MMTK
 #include "internal/mmtk_gc_impl.h"
 
+// ================== string.c ==================
 // Attach a heap string `str` with a newly allocated imemo:mmtk_strbuf of a given capacity `capa`.
 // The first `copy_size` bytes of the new buffer is copied from `src`, and `copy_size` must not
 // exceed `capa`.
@@ -40,8 +41,6 @@ rb_mmtk_str_new_strbuf(VALUE str, size_t capa)
 {
     rb_mmtk_str_new_strbuf_copy_impl(str, capa, 0, NULL, 0);
 }
-
-void rb_gc_str_new_strbuf_impl(VALUE str, long len, int termlen);
 
 void
 rb_mmtk_str_new_strbuf_impl(VALUE str, long len, int termlen)
@@ -110,4 +109,16 @@ rb_mmtk_ec_str_alloc_heap_impl(struct rb_execution_context_struct *ec, VALUE kla
     // The optimization about ec is unnecessary for MMTk.  We avoid code duplication.
     return str_alloc_heap(klass);
 }
+
+// ================== array.c ==================
+
+VALUE *
+rb_mmtk_ary_heap_alloc_impl(size_t capa)
+{
+    // rb_mmtk_ary_new_objbuf should be a drop-in replacement.
+    // But rb_mmtk_ary_new_objbuf_copy should be used when copying/reallocating/resizing.
+    rb_bug("ary_heap_alloc should not be called when using MMTk.");
+    return NULL;
+}
+
 #endif

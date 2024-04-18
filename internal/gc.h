@@ -258,6 +258,7 @@ RUBY_SYMBOL_EXPORT_BEGIN
 # define rb_gc_str_sized_realloc_n rb_gc_functions->rb_gc_str_sized_realloc_n_impl
 # define rb_gc_ec_str_alloc_embed rb_gc_functions->rb_gc_ec_str_alloc_embed_impl
 # define rb_gc_ec_str_alloc_heap rb_gc_functions->rb_gc_ec_str_alloc_heap_impl
+# define rb_gc_ary_heap_alloc rb_gc_functions->rb_gc_ary_heap_alloc_impl
 #else
 # define Alloc_GC Alloc_GC_impl
 # define rb_gc_str_new_strbuf rb_gc_str_new_strbuf_impl
@@ -266,6 +267,7 @@ RUBY_SYMBOL_EXPORT_BEGIN
 # define rb_gc_str_sized_realloc_n rb_gc_str_sized_realloc_n_impl
 # define rb_gc_ec_str_alloc_embed rb_gc_ec_str_alloc_embed_impl
 # define rb_gc_ec_str_alloc_heap rb_gc_ec_str_alloc_heap_impl
+# define rb_gc_ary_heap_alloc rb_gc_ary_heap_alloc_impl
 #endif
 /* exports for objspace module */
 void rb_objspace_reachable_objects_from(VALUE obj, void (func)(VALUE, void *), void *data);
