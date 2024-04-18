@@ -1967,6 +1967,7 @@ ruby_external_gc_init()
             map->rb_gc_str_new_strbuf_copy_impl = rb_mmtk_str_new_strbuf_copy_impl;
             map->rb_gc_string_size_impl = rb_mmtk_string_size_impl;
             map->rb_gc_str_sized_realloc_n_impl = rb_mmtk_str_sized_realloc_n_impl;
+            map->rb_gc_ec_str_alloc_embed_impl = rb_mmtk_ec_str_alloc_embed_impl;
         }
         else {
 #endif
@@ -1975,6 +1976,7 @@ ruby_external_gc_init()
             map->rb_gc_str_new_strbuf_copy_impl = rb_gc_str_new_strbuf_copy_impl;
             map->rb_gc_string_size_impl = rb_gc_string_size_impl;
             map->rb_gc_str_sized_realloc_n_impl = rb_gc_str_sized_realloc_n_impl;
+            map->rb_gc_ec_str_alloc_embed_impl = rb_gc_ec_str_alloc_embed_impl;
 #if USE_MMTK
         }
 #endif

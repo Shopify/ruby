@@ -48,6 +48,9 @@ int rb_ascii8bit_appendable_encoding_index(rb_encoding *enc, unsigned int code);
 VALUE rb_str_include(VALUE str, VALUE arg);
 VALUE rb_str_byte_substr(VALUE str, VALUE beg, VALUE len);
 bool rb_str_freeable_buffer(VALUE str);
+VALUE str_alloc_embed(VALUE klass, size_t capa);
+size_t rb_str_memsize(VALUE str);
+size_t rb_str_embed_size(long capa);
 
 #if USE_MMTK
 bool rb_mmtk_str_no_free(VALUE str);

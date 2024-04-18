@@ -96,4 +96,11 @@ rb_mmtk_str_sized_realloc_n_impl(VALUE str, size_t new_size, size_t old_size)
         copy_size);
     RSTRING(str)->as.heap.aux.capa = new_size;
 }
+
+VALUE
+rb_mmtk_ec_str_alloc_embed_impl(struct rb_execution_context_struct *ec, VALUE klass, size_t capa)
+{
+    // The optimization about ec is unnecessary for MMTk.  We avoid code duplication.
+    return str_alloc_embed(klass, capa);
+}
 #endif

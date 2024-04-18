@@ -301,7 +301,7 @@ rb_str_reembeddable_p(VALUE str)
     return !FL_TEST(str, STR_NOFREE|STR_SHARED_ROOT|STR_SHARED);
 }
 
-static inline size_t
+size_t
 rb_str_embed_size(long capa)
 {
     return offsetof(struct RString, as.embed.ary) + capa;
@@ -938,7 +938,7 @@ must_not_null(const char *ptr)
     }
 }
 
-static inline VALUE
+VALUE
 str_alloc_embed(VALUE klass, size_t capa)
 {
     size_t size = rb_gc_string_size(rb_str_embed_size(capa));
@@ -1907,24 +1907,6 @@ str_replace(VALUE str, VALUE str2)
     return str;
 }
 
-static inline VALUE
-ec_str_alloc_embed(struct rb_execution_context_struct *ec, VALUE klass, size_t capa)
-{
-#if USE_MMTK
-    if (rb_mmtk_enabled_p()) {
-        // The optimization about ec is unnecessary for MMTk.  We avoid code duplication.
-        return str_alloc_embed(klass, capa);
-    }
-#endif
-    size_t size = rb_str_embed_size(capa);
-    RUBY_ASSERT(size > 0);
-    RUBY_ASSERT(rb_gc_size_allocatable_p(size));
-
-    NEWOBJ_OF(str, struct RString, klass,
-            T_STRING | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), size, ec);
-
-    return (VALUE)str;
-}
 
 static inline VALUE
 ec_str_alloc_heap(struct rb_execution_context_struct *ec, VALUE klass)
@@ -1997,7 +1979,7 @@ ec_str_duplicate(struct rb_execution_context_struct *ec, VALUE klass, VALUE str)
 {
     VALUE dup;
     if (STR_EMBED_P(str)) {
-        dup = ec_str_alloc_embed(ec, klass, RSTRING_LEN(str) + TERM_LEN(str));
+        dup = rb_gc_ec_str_alloc_embed(ec, klass, RSTRING_LEN(str) + TERM_LEN(str));
     }
     else {
         dup = ec_str_alloc_heap(ec, klass);

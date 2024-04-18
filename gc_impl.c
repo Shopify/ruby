@@ -40,3 +40,16 @@ rb_gc_str_sized_realloc_n_impl(VALUE str, size_t new_size, size_t old_size)
 {
     SIZED_REALLOC_N(RSTRING(str)->as.heap.ptr, char, new_size, old_size);
 }
+
+VALUE
+rb_gc_ec_str_alloc_embed_impl(struct rb_execution_context_struct *ec, VALUE klass, size_t capa)
+{
+    size_t size = rb_str_embed_size(capa);
+    RUBY_ASSERT(size > 0);
+    RUBY_ASSERT(rb_gc_size_allocatable_p(size));
+
+    NEWOBJ_OF(str, struct RString, klass,
+            T_STRING | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), size, ec);
+
+    return (VALUE)str;
+}
