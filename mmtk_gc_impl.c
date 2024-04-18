@@ -103,4 +103,11 @@ rb_mmtk_ec_str_alloc_embed_impl(struct rb_execution_context_struct *ec, VALUE kl
     // The optimization about ec is unnecessary for MMTk.  We avoid code duplication.
     return str_alloc_embed(klass, capa);
 }
+
+VALUE
+rb_mmtk_ec_str_alloc_heap_impl(struct rb_execution_context_struct *ec, VALUE klass)
+{
+    // The optimization about ec is unnecessary for MMTk.  We avoid code duplication.
+    return str_alloc_heap(klass);
+}
 #endif

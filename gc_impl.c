@@ -53,3 +53,12 @@ rb_gc_ec_str_alloc_embed_impl(struct rb_execution_context_struct *ec, VALUE klas
 
     return (VALUE)str;
 }
+
+VALUE
+rb_gc_ec_str_alloc_heap_impl(struct rb_execution_context_struct *ec, VALUE klass)
+{
+    NEWOBJ_OF(str, struct RString, klass,
+            T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString), ec);
+
+    return (VALUE)str;
+}

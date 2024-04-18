@@ -118,6 +118,7 @@ typedef struct gc_function_map {
     size_t (*rb_gc_string_size_impl)(size_t capa);
     void (*rb_gc_str_sized_realloc_n_impl)(VALUE str, size_t new_size, size_t old_size);
     VALUE (*rb_gc_ec_str_alloc_embed_impl)(struct rb_execution_context_struct *ec, VALUE klass, size_t capa);
+    VALUE (*rb_gc_ec_str_alloc_heap_impl)(struct rb_execution_context_struct *ec, VALUE klass);
 } rb_gc_function_map_t;
 #define rb_gc_functions (GET_VM()->gc_functions_map)
 #endif

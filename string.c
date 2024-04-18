@@ -953,7 +953,7 @@ str_alloc_embed(VALUE klass, size_t capa)
 
 }
 
-static inline VALUE
+VALUE
 str_alloc_heap(VALUE klass)
 {
     size_t size = rb_gc_string_size(sizeof(struct RString));
@@ -1907,22 +1907,6 @@ str_replace(VALUE str, VALUE str2)
     return str;
 }
 
-
-static inline VALUE
-ec_str_alloc_heap(struct rb_execution_context_struct *ec, VALUE klass)
-{
-#if USE_MMTK
-    if (rb_mmtk_enabled_p()) {
-        // The optimization about ec is unnecessary for MMTk.  We avoid code duplication.
-        return str_alloc_heap(klass);
-    }
-#endif
-    NEWOBJ_OF(str, struct RString, klass,
-            T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString), ec);
-
-    return (VALUE)str;
-}
-
 static inline VALUE
 str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
 {
@@ -1982,7 +1966,7 @@ ec_str_duplicate(struct rb_execution_context_struct *ec, VALUE klass, VALUE str)
         dup = rb_gc_ec_str_alloc_embed(ec, klass, RSTRING_LEN(str) + TERM_LEN(str));
     }
     else {
-        dup = ec_str_alloc_heap(ec, klass);
+        dup = rb_gc_ec_str_alloc_heap(ec, klass);
     }
 
     return str_duplicate_setup(klass, str, dup);
