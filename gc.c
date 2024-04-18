@@ -11282,7 +11282,6 @@ VALUE
 rb_objspace_gc_enable(rb_objspace_t *objspace)
 {
     int old = dont_gc_val();
-    dont_major_off();
     dont_gc_off();
     return RBOOL(old);
 }
@@ -11329,6 +11328,27 @@ rb_gc_disable_major(void)
 {
     rb_objspace_t *objspace = &rb_objspace;
     return rb_objspace_gc_disable_major(objspace);
+}
+
+VALUE
+rb_objspace_gc_enable_major(rb_objspace_t *objspace)
+{
+    int old = dont_major_val();
+    dont_major_off();
+    return RBOOL(old);
+}
+
+VALUE
+rb_gc_enable_major(void)
+{
+    rb_objspace_t *objspace = &rb_objspace;
+    return rb_objspace_gc_enable_major(objspace);
+}
+
+static VALUE
+gc_enable_major(rb_execution_context_t *ec, VALUE _)
+{
+    return rb_gc_enable_major();
 }
 
 VALUE
