@@ -2158,7 +2158,7 @@ vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
 
     cme = rb_check_overloaded_cme(cme, ci);
 
-    const struct rb_callcache *cc = vm_cc_new(klass, cme, vm_call_general, vm_ci_cacheable(ci) ? cc_type_normal : cc_type_orphan);
+    const struct rb_callcache *cc = vm_cc_new(klass, cme, vm_call_general, cc_type_normal);
     vm_ccs_push(klass, ccs, ci, cc);
 
     VM_ASSERT(vm_cc_cme(cc) != NULL);
