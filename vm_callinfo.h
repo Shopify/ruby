@@ -309,12 +309,12 @@ struct rb_callcache {
 /* VM_CALLCACHE_IVAR used for IVAR/ATTRSET/STRUCT_AREF/STRUCT_ASET methods */
 #define VM_CALLCACHE_IVAR       IMEMO_FL_USER0
 #define VM_CALLCACHE_BF         IMEMO_FL_USER1
-#define VM_CALLCACHE_ORPHAN     IMEMO_FL_USER2
+#define VM_CALLCACHE_SUPER      IMEMO_FL_USER2
 #define VM_CALLCACHE_REFINEMENT IMEMO_FL_USER3
 
 enum vm_cc_type {
     cc_type_normal, // chained from ccs
-    cc_type_orphan,
+    cc_type_super,
     cc_type_refinement,
 };
 
@@ -346,8 +346,8 @@ vm_cc_new(VALUE klass,
     switch (type) {
       case cc_type_normal:
         break;
-      case cc_type_orphan:
-        *(VALUE *)&cc->flags |= VM_CALLCACHE_ORPHAN;
+      case cc_type_super:
+        *(VALUE *)&cc->flags |= VM_CALLCACHE_SUPER;
         break;
       case cc_type_refinement:
         *(VALUE *)&cc->flags |= VM_CALLCACHE_REFINEMENT;
@@ -360,9 +360,9 @@ vm_cc_new(VALUE klass,
 }
 
 static inline bool
-vm_cc_orphan_p(const struct rb_callcache *cc)
+vm_cc_super_p(const struct rb_callcache *cc)
 {
-    return (cc->flags & VM_CALLCACHE_ORPHAN) != 0;
+    return (cc->flags & VM_CALLCACHE_SUPER) != 0;
 }
 
 static inline bool
