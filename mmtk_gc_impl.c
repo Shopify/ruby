@@ -50,7 +50,7 @@ rb_mmtk_str_new_strbuf_impl(VALUE str, long len, int termlen)
     rb_mmtk_str_new_strbuf(str, sizeof(char) * len + sizeof(char) * termlen);
 }
 
-// How large is the string allocated with str_alloc_heap
+// How large is the string allocated with rb_str_alloc_heap
 static inline size_t
 rb_mmtk_str_heap_size(void)
 {
@@ -100,14 +100,14 @@ VALUE
 rb_mmtk_ec_str_alloc_embed_impl(struct rb_execution_context_struct *ec, VALUE klass, size_t capa)
 {
     // The optimization about ec is unnecessary for MMTk.  We avoid code duplication.
-    return str_alloc_embed(klass, capa);
+    return rb_str_alloc_embed(klass, capa);
 }
 
 VALUE
 rb_mmtk_ec_str_alloc_heap_impl(struct rb_execution_context_struct *ec, VALUE klass)
 {
     // The optimization about ec is unnecessary for MMTk.  We avoid code duplication.
-    return str_alloc_heap(klass);
+    return rb_str_alloc_heap(klass);
 }
 
 // ================== array.c ==================
