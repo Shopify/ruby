@@ -70,3 +70,12 @@ rb_gc_ary_heap_alloc_impl(size_t capa)
 {
     return ALLOC_N(VALUE, capa);
 }
+
+// ================== re.c ==================
+
+void
+rb_gc_char_offset_realloc_impl(rb_matchext_t *rm, size_t num_regs)
+{
+    REALLOC_N(rm->char_offset, struct rmatch_offset, num_regs);
+}
+

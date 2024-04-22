@@ -105,6 +105,7 @@ extern int ruby_assert_critical_section_entered;
 #include "vm_opts.h"
 
 #include "ruby/thread_native.h"
+#include "ruby/internal/core/rmatch.h"
 
 #if USE_MMTK
 #include "internal/mmtk_support.h"
@@ -120,6 +121,7 @@ typedef struct gc_function_map {
     VALUE (*rb_gc_ec_str_alloc_embed_impl)(struct rb_execution_context_struct *ec, VALUE klass, size_t capa);
     VALUE (*rb_gc_ec_str_alloc_heap_impl)(struct rb_execution_context_struct *ec, VALUE klass);
     VALUE *(*rb_gc_ary_heap_alloc_impl)(size_t capa);
+    void (*rb_gc_char_offset_realloc_impl)(rb_matchext_t *rm, size_t num_regs);
 } rb_gc_function_map_t;
 #define rb_gc_functions (GET_VM()->gc_functions_map)
 #endif

@@ -15,5 +15,6 @@ VALUE rb_mmtk_ec_str_alloc_embed_impl(struct rb_execution_context_struct *ec, VA
 VALUE rb_mmtk_ec_str_alloc_heap_impl(struct rb_execution_context_struct *ec, VALUE klass);
 // ================== array.c ==================
 VALUE * rb_mmtk_ary_heap_alloc_impl(size_t capa);
-
+// ================== re.c ==================
+void rb_mmtk_char_offset_realloc_impl(rb_matchext_t *rm, size_t num_regs);
 #endif

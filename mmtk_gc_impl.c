@@ -121,4 +121,18 @@ rb_mmtk_ary_heap_alloc_impl(size_t capa)
     return NULL;
 }
 
+// ================== re.c ==================
+
+void
+rb_mmtk_char_offset_realloc_impl(rb_matchext_t *rm, size_t num_regs)
+{
+    struct rmatch_offset **field = &rm->char_offset;
+    struct rmatch_offset *old_field_value = *field;
+    rb_mmtk_strbuf_t *old_strbuf = old_field_value == NULL
+                                   ? NULL
+                                   : rb_mmtk_chars_to_strbuf((char*)old_field_value);
+    rb_mmtk_strbuf_t *new_strbuf = rb_mmtk_strbuf_realloc(old_strbuf, num_regs * sizeof(struct rmatch_offset));
+    // TODO: Use write barrier.
+    *field = (struct rmatch_offset*)rb_mmtk_strbuf_to_chars(new_strbuf);
+}
 #endif
