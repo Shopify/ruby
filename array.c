@@ -787,14 +787,7 @@ ary_alloc_embed(VALUE klass, long capa)
 static VALUE
 ary_alloc_heap(VALUE klass)
 {
-    size_t size = sizeof(struct RString);
-
-#if USE_MMTK
-    if (rb_mmtk_enabled_p()) {
-        // When using MMTk, we include a trailing rb_mmtk_arrayext_t.
-        size = rb_mmtk_ary_heap_size();
-    }
-#endif
+    size_t size = rb_gc_ary_alloc_heap_size();
 
     NEWOBJ_OF(ary, struct RArray, klass,
                      T_ARRAY | (RGENGC_WB_PROTECTED_ARRAY ? FL_WB_PROTECTED : 0),

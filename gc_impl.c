@@ -77,6 +77,12 @@ rb_gc_ary_heap_free_ptr_impl(VALUE ary, const VALUE *ptr, long size)
     ruby_sized_xfree((void *)ptr, size);
 }
 
+size_t
+rb_gc_ary_alloc_heap_size_impl(void)
+{
+    return sizeof(struct RString);
+}
+
 // ================== re.c ==================
 
 void

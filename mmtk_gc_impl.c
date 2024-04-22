@@ -131,6 +131,12 @@ rb_mmtk_ary_heap_free_ptr_impl(VALUE ary, const VALUE *ptr, long size)
     return;
 }
 
+size_t
+rb_mmtk_ary_alloc_heap_size_impl(void)
+{
+    return sizeof(struct RArray) + sizeof(rb_mmtk_arrayext_t);
+}
+
 // ================== re.c ==================
 
 void
