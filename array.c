@@ -414,21 +414,6 @@ ary_memcpy(VALUE ary, long beg, long argc, const VALUE *argv)
     ary_memcpy0(ary, beg, argc, argv, ary);
 }
 
-static void
-ary_heap_free(VALUE ary)
-{
-#if USE_MMTK
-    if (rb_mmtk_enabled_p()) {
-        // When using MMTk, the underlying buffer is an imemo:mmtk_objbuf which will be GC-ed.
-        // We clear its objbuf field just to be safe.
-        rb_mmtk_ary_set_objbuf(ary, 0);
-        return;
-    }
-#endif
-
-    rb_gc_ary_heap_free_ptr(ary, ARY_HEAP_PTR(ary), ARY_HEAP_SIZE(ary));
-}
-
 static size_t
 ary_heap_realloc(VALUE ary, size_t new_capa)
 {
@@ -566,7 +551,7 @@ static void
 rb_ary_reset(VALUE ary)
 {
     if (ARY_OWNS_HEAP_P(ary)) {
-        ary_heap_free(ary);
+        rb_gc_ary_heap_free_ptr(ary, ARY_HEAP_PTR(ary), ARY_HEAP_SIZE(ary));
     }
     else if (ARY_SHARED_P(ary)) {
         rb_ary_unshare(ary);
@@ -1034,7 +1019,7 @@ rb_ary_free(VALUE ary)
         }
 
         RB_DEBUG_COUNTER_INC(obj_ary_ptr);
-        ary_heap_free(ary);
+        rb_gc_ary_heap_free_ptr(ary, ARY_HEAP_PTR(ary), ARY_HEAP_SIZE(ary));
     }
     else {
         RB_DEBUG_COUNTER_INC(obj_ary_embed);
@@ -3632,7 +3617,7 @@ rb_ary_sort_bang(VALUE ary)
                     rb_ary_unshare(ary);
                 }
                 else {
-                    ary_heap_free(ary);
+                    rb_gc_ary_heap_free_ptr(ary, ARY_HEAP_PTR(ary), ARY_HEAP_SIZE(ary));
                 }
                 ARY_SET_PTR(ary, ARY_HEAP_PTR(tmp));
 #if USE_MMTK
