@@ -71,6 +71,12 @@ rb_gc_ary_heap_alloc_impl(size_t capa)
     return ALLOC_N(VALUE, capa);
 }
 
+void
+rb_gc_ary_heap_free_ptr_impl(VALUE ary, const VALUE *ptr, long size)
+{
+    ruby_sized_xfree((void *)ptr, size);
+}
+
 // ================== re.c ==================
 
 void

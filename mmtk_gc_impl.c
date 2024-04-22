@@ -121,6 +121,16 @@ rb_mmtk_ary_heap_alloc_impl(size_t capa)
     return NULL;
 }
 
+void
+rb_mmtk_ary_heap_free_ptr_impl(VALUE ary, const VALUE *ptr, long size)
+{
+    // When using MMTk, the underlying buffer is an imemo:mmtk_objbuf which will be GC-ed.
+    // We clear its objbuf field just to be safe.
+    RUBY_ASSERT(rb_mmtk_enabled_p());
+    RB_OBJ_WRITE(ary, &RARRAY_EXT(ary)->objbuf, 0);
+    return;
+}
+
 // ================== re.c ==================
 
 void

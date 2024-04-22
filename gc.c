@@ -1971,6 +1971,7 @@ ruby_external_gc_init()
             map->rb_gc_ec_str_alloc_heap_impl = rb_mmtk_ec_str_alloc_heap_impl;
             map->rb_gc_ary_heap_alloc_impl = rb_mmtk_ary_heap_alloc_impl;
             map->rb_gc_char_offset_realloc_impl = rb_mmtk_char_offset_realloc_impl;
+            map->rb_gc_ary_heap_free_ptr_impl = rb_mmtk_ary_heap_free_ptr_impl;
         }
         else {
 #endif
@@ -1983,6 +1984,7 @@ ruby_external_gc_init()
             map->rb_gc_ec_str_alloc_heap_impl = rb_gc_ec_str_alloc_heap_impl;
             map->rb_gc_ary_heap_alloc_impl = rb_gc_ary_heap_alloc_impl;
             map->rb_gc_char_offset_realloc_impl = rb_gc_char_offset_realloc_impl;
+            map->rb_gc_ary_heap_free_ptr_impl = rb_gc_ary_heap_free_ptr_impl;
 #if USE_MMTK
         }
 #endif

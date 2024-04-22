@@ -17,6 +17,7 @@ VALUE rb_gc_ec_str_alloc_embed_impl(struct rb_execution_context_struct *ec, VALU
 VALUE rb_gc_ec_str_alloc_heap_impl(struct rb_execution_context_struct *ec, VALUE klass);
 // ================== array.c ==================
 VALUE * rb_gc_ary_heap_alloc_impl(size_t capa);
+void rb_gc_ary_heap_free_ptr_impl(VALUE ary, const VALUE *ptr, long size);
 // ================== re.c ==================
 void rb_gc_char_offset_realloc_impl(rb_matchext_t *rm, size_t num_regs);
 #endif
