@@ -124,6 +124,7 @@ typedef struct gc_function_map {
     void (*rb_gc_char_offset_realloc_impl)(rb_matchext_t *rm, size_t num_regs);
     void (*rb_gc_ary_heap_free_ptr_impl)(VALUE ary, const VALUE *ptr, long size);
     size_t (*rb_gc_ary_alloc_heap_size_impl)(void);
+    size_t (*rb_gc_ary_alloc_embed_size_impl)(long capa);
 } rb_gc_function_map_t;
 #define rb_gc_functions (GET_VM()->gc_functions_map)
 #endif

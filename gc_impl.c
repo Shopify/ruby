@@ -83,6 +83,12 @@ rb_gc_ary_alloc_heap_size_impl(void)
     return sizeof(struct RString);
 }
 
+size_t
+rb_gc_ary_alloc_embed_size_impl(long capa)
+{
+    return offsetof(struct RArray, as.ary) + (sizeof(VALUE) * capa);
+}
+
 // ================== re.c ==================
 
 void

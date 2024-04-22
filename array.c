@@ -745,33 +745,10 @@ rb_ary_shared_with_p(VALUE ary1, VALUE ary2)
     return Qfalse;
 }
 
-#if USE_MMTK
-// How large is the array allocated with ary_alloc_heap
-static inline size_t
-rb_mmtk_ary_heap_size(void)
-{
-    // The main RArray plus the arrayext.
-    return sizeof(struct RArray) + sizeof(rb_mmtk_arrayext_t);
-}
-#endif
-
 static VALUE
 ary_alloc_embed(VALUE klass, long capa)
 {
-    size_t size = ary_embed_size(capa);
-
-#if USE_MMTK
-    if (rb_mmtk_enabled_p()) {
-        if (size < rb_mmtk_ary_heap_size()) {
-            // When using MMTk, we always allocate enough space to hold a heap array.
-            // The lowest size class for vanilla Ruby gc is 40 bytes,
-            // which is enough to hold a whole `struct RArray` for heap arrays.
-            // But we have one extra field in the trailing rb_mmtk_arrayext_t.
-            // So we manually ensure the allocated memory region is large enough.
-            size = rb_mmtk_ary_heap_size();
-        }
-    }
-#endif
+    size_t size = rb_gc_ary_alloc_embed_size(capa);
 
     RUBY_ASSERT(rb_gc_size_allocatable_p(size));
     NEWOBJ_OF(ary, struct RArray, klass,

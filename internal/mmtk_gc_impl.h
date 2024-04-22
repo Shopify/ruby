@@ -17,6 +17,7 @@ VALUE rb_mmtk_ec_str_alloc_heap_impl(struct rb_execution_context_struct *ec, VAL
 VALUE * rb_mmtk_ary_heap_alloc_impl(size_t capa);
 void rb_mmtk_ary_heap_free_ptr_impl(VALUE ary, const VALUE *ptr, long size);
 size_t rb_mmtk_ary_alloc_heap_size_impl(void);
+size_t rb_mmtk_ary_alloc_embed_size_impl(long capa);
 // ================== re.c ==================
 void rb_mmtk_char_offset_realloc_impl(rb_matchext_t *rm, size_t num_regs);
 #endif
