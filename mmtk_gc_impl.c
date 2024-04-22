@@ -206,6 +206,12 @@ rb_mmtk_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa)
     rb_mmtk_ary_new_objbuf_copy_impl(ary, new_capa, RARRAY_EXT(ary)->objbuf, RARRAY(ary)->as.heap.ptr, copy_len);
 }
 
+void
+rb_mmtk_ary_new_ptr_impl(VALUE ary, size_t capa)
+{
+    rb_mmtk_ary_new_objbuf_copy_impl(ary, capa, 0, NULL, 0);
+}
+
 // ================== re.c ==================
 
 void

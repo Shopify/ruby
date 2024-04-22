@@ -95,6 +95,16 @@ rb_gc_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa)
     SIZED_REALLOC_N(RARRAY(ary)->as.heap.ptr, VALUE, new_capa, old_capa);
 }
 
+void
+rb_gc_ary_new_ptr_impl(VALUE ary, size_t capa)
+{
+    // TODO: copied from ARY_SET_PTR macro
+    VALUE * capa_ptr = rb_gc_ary_heap_alloc(capa);
+    RUBY_ASSERT(!ARY_EMBED_P(ary));
+    RUBY_ASSERT(!OBJ_FROZEN(ary));
+    RARRAY(ary)->as.heap.ptr = capa_ptr;
+}
+
 // ================== re.c ==================
 
 void

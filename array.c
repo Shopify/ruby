@@ -283,13 +283,6 @@ rb_mmtk_ary_new_objbuf_copy(VALUE ary, size_t capa, VALUE src_obj, const VALUE *
     RB_GC_GUARD(src_obj);
 }
 
-// Attach a heap array with a newly allocated empty imemo:mmtk_objbuf.
-static inline void
-rb_mmtk_ary_new_objbuf(VALUE ary, size_t capa)
-{
-    rb_mmtk_ary_new_objbuf_copy(ary, capa, 0, NULL, 0);
-}
-
 #endif
 
 
@@ -791,15 +784,8 @@ ary_new(VALUE klass, long capa)
         ARY_SET_CAPA(ary, capa);
         RUBY_ASSERT(!ARY_EMBED_P(ary));
 
-#if USE_MMTK
-        if (!rb_mmtk_enabled_p()) {
-#endif
-        ARY_SET_PTR(ary, rb_gc_ary_heap_alloc(capa));
-#if USE_MMTK
-        } else {
-            rb_mmtk_ary_new_objbuf(ary, capa);
-        }
-#endif
+        rb_gc_ary_new_ptr(ary, capa);
+
         ARY_SET_HEAP_LEN(ary, 0);
     }
 
@@ -915,15 +901,8 @@ ec_ary_new(rb_execution_context_t *ec, VALUE klass, long capa)
         ARY_SET_CAPA(ary, capa);
         RUBY_ASSERT(!ARY_EMBED_P(ary));
 
-#if USE_MMTK
-        if (!rb_mmtk_enabled_p()) {
-#endif
-        ARY_SET_PTR(ary, rb_gc_ary_heap_alloc(capa));
-#if USE_MMTK
-        } else {
-            rb_mmtk_ary_new_objbuf(ary, capa);
-        }
-#endif
+        rb_gc_ary_new_ptr(ary, capa);
+
         ARY_SET_HEAP_LEN(ary, 0);
     }
 
