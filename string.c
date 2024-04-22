@@ -3692,19 +3692,29 @@ rb_str_prepend_multi(int argc, VALUE *argv, VALUE str)
     return str;
 }
 
-st_index_t
-rb_str_hash(VALUE str)
+static inline st_index_t
+str_do_hash(VALUE str)
 {
-    if (FL_TEST_RAW(str, STR_PRECOMPUTED_HASH)) {
-        return *(st_index_t *)(RSTRING_END(str) + TERM_LEN(str));
-    }
-
     st_index_t h = rb_memhash((const void *)RSTRING_PTR(str), RSTRING_LEN(str));
     int e = RSTRING_LEN(str) ? ENCODING_GET(str) : 0;
     if (e && !is_ascii_string(str)) {
         h = rb_hash_end(rb_hash_uint32(h, (uint32_t)e));
     }
     return h;
+}
+
+st_index_t
+rb_str_hash(VALUE str)
+{
+    if (FL_TEST_RAW(str, STR_PRECOMPUTED_HASH)) {
+        st_index_t precomputed_h = *(st_index_t *)(RSTRING_END(str) + TERM_LEN(str));
+        if (precomputed_h != str_do_hash(str)) {
+            rb_p(str);
+            rb_bug("precomputed_hash: %ld vs %ld", precomputed_h, str_do_hash(str));
+        }
+        return precomputed_h;
+    }
+    return str_do_hash(str);
 }
 
 int
