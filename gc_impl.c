@@ -89,6 +89,12 @@ rb_gc_ary_alloc_embed_size_impl(long capa)
     return offsetof(struct RArray, as.ary) + (sizeof(VALUE) * capa);
 }
 
+void
+rb_gc_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa)
+{
+    SIZED_REALLOC_N(RARRAY(ary)->as.heap.ptr, VALUE, new_capa, old_capa);
+}
+
 // ================== re.c ==================
 
 void

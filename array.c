@@ -417,17 +417,7 @@ ary_memcpy(VALUE ary, long beg, long argc, const VALUE *argv)
 static size_t
 ary_heap_realloc(VALUE ary, size_t new_capa)
 {
-#if USE_MMTK
-    if (!rb_mmtk_enabled_p()) {
-#endif
-    SIZED_REALLOC_N(RARRAY(ary)->as.heap.ptr, VALUE, new_capa, ARY_HEAP_CAPA(ary));
-#if USE_MMTK
-    } else {
-        size_t old_capa = ARY_HEAP_CAPA(ary);
-        size_t copy_len = new_capa < old_capa ? new_capa : old_capa;
-        rb_mmtk_ary_new_objbuf_copy(ary, new_capa, RARRAY_EXT(ary)->objbuf, ARY_HEAP_PTR(ary), copy_len);
-    }
-#endif
+    rb_gc_sized_heap_realloc(ary, ARY_HEAP_CAPA(ary), new_capa);
 
     ary_verify(ary);
 
