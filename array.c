@@ -601,17 +601,7 @@ rb_ary_cancel_sharing(VALUE ary)
             rb_ary_decrement_share(shared_root);
         }
         else {
-#if USE_MMTK
-            if (!rb_mmtk_enabled_p()) {
-#endif
-            VALUE *ptr = rb_gc_ary_heap_alloc(len);
-            MEMCPY(ptr, ARY_HEAP_PTR(ary), VALUE, len);
-            ARY_SET_PTR(ary, ptr);
-#if USE_MMTK
-            } else {
-                rb_mmtk_ary_new_objbuf_copy(ary, len, RARRAY_EXT(ary)->objbuf, ARY_HEAP_PTR(ary), len);
-            }
-#endif
+            rb_gc_ary_cancel_sharing_ptr(ary, len);
             rb_ary_unshare(ary);
             ARY_SET_CAPA(ary, len);
         }

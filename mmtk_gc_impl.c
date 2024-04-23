@@ -219,6 +219,12 @@ rb_mmtk_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
     FL_UNSET_EMBED(ary);
 }
 
+void
+rb_mmtk_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
+{
+    rb_mmtk_ary_new_objbuf_copy_impl(ary, len, RARRAY_EXT(ary)->objbuf, RARRAY(ary)->as.heap.ptr, len);
+}
+
 // ================== re.c ==================
 
 void

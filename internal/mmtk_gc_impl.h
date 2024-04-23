@@ -21,6 +21,7 @@ size_t rb_mmtk_ary_alloc_embed_size_impl(long capa);
 void rb_mmtk_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa);
 void rb_mmtk_ary_new_ptr_impl(VALUE ary, size_t capa);
 void rb_mmtk_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len);
+void rb_mmtk_ary_cancel_sharing_ptr_impl(VALUE ary, long len);
 // ================== re.c ==================
 void rb_mmtk_char_offset_realloc_impl(rb_matchext_t *rm, size_t num_regs);
 #endif

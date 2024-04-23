@@ -122,6 +122,23 @@ void rb_gc_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
     RARRAY(ary)->as.heap.ptr = capa_ptr;
 }
 
+void
+rb_gc_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
+{
+    // TODO: this is really similar to the above function
+    // but doesn't use an FL_UNSET EMBED
+    // also it uses len only, not capa and len
+    VALUE * capa_ptr = rb_gc_ary_heap_alloc(len);
+
+    // TODO: copied from ARY_EMBED_PTR macro
+    RUBY_ASSERT(ARY_EMBED_P(ary));
+    MEMCPY(capa_ptr, RARRAY(ary)->as.ary, VALUE, len);
+
+    RUBY_ASSERT(!ARY_EMBED_P(ary));
+    RUBY_ASSERT(!OBJ_FROZEN(ary));
+    RARRAY(ary)->as.heap.ptr = capa_ptr;
+}
+
 // ================== re.c ==================
 
 void
