@@ -25,6 +25,37 @@
 // moved to support pluggable gc. can we even do this?
 #define FL_UNSET_EMBED(ary) FL_UNSET((ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK)
 void ary_memcpy(VALUE ary, long beg, long argc, const VALUE *argv);
+#define ARY_SET_PTR(ary, p) do { \
+    RUBY_ASSERT(!ARY_EMBED_P(ary)); \
+    RUBY_ASSERT(!OBJ_FROZEN(ary)); \
+    RARRAY(ary)->as.heap.ptr = (p); \
+} while (0)
+#define ARY_SET_LEN(ary, n) do { \
+    if (ARY_EMBED_P(ary)) { \
+        ARY_SET_EMBED_LEN((ary), (n)); \
+    } \
+    else { \
+        ARY_SET_HEAP_LEN((ary), (n)); \
+    } \
+    RUBY_ASSERT(RARRAY_LEN(ary) == (n)); \
+} while (0)
+#define ARY_SET_CAPA(ary, n) do { \
+    RUBY_ASSERT(!ARY_EMBED_P(ary)); \
+    RUBY_ASSERT(!ARY_SHARED_P(ary)); \
+    RUBY_ASSERT(!OBJ_FROZEN(ary)); \
+    RARRAY(ary)->as.heap.aux.capa = (n); \
+} while (0)
+#define ARY_SET_EMBED_LEN(ary, n) do { \
+    long tmp_n = (n); \
+    RUBY_ASSERT(ARY_EMBED_P(ary)); \
+    RBASIC(ary)->flags &= ~RARRAY_EMBED_LEN_MASK; \
+    RBASIC(ary)->flags |= (tmp_n) << RARRAY_EMBED_LEN_SHIFT; \
+} while (0)
+#define ARY_SET_HEAP_LEN(ary, n) do { \
+    RUBY_ASSERT(!ARY_EMBED_P(ary)); \
+    RARRAY(ary)->as.heap.len = (n); \
+} while (0)
+#define ARY_EMBED_PTR(a) (RUBY_ASSERT(ARY_EMBED_P(a)), RARRAY(a)->as.ary)
 
 /* array.c */
 VALUE rb_ary_hash_values(long len, const VALUE *elements);

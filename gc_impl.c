@@ -157,6 +157,20 @@ rb_gc_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
     RARRAY(ary)->as.heap.ptr = ptr;
 }
 
+void
+rb_gc_ary_replace_ptr_impl(VALUE copy, VALUE orig, long len)
+{
+    VALUE *ptr = rb_gc_ary_heap_alloc(len);
+
+    FL_UNSET_EMBED(copy);
+    ARY_SET_PTR(copy, ptr);
+    ARY_SET_LEN(copy, len);
+    ARY_SET_CAPA(copy, len);
+
+    // No allocation and exception expected that could leave `copy` in a
+    // bad state from the edits above.
+    ary_memcpy(copy, 0, len, RARRAY_CONST_PTR(orig));
+}
 
 // ================== re.c ==================
 

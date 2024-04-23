@@ -82,7 +82,6 @@ should_be_T_ARRAY(VALUE ary)
 #define ARY_HEAP_CAPA(a) (RUBY_ASSERT(!ARY_EMBED_P(a)), RUBY_ASSERT(!ARY_SHARED_ROOT_P(a)), \
                           RARRAY(a)->as.heap.aux.capa)
 
-#define ARY_EMBED_PTR(a) (RUBY_ASSERT(ARY_EMBED_P(a)), RARRAY(a)->as.ary)
 #define ARY_EMBED_LEN(a) \
     (RUBY_ASSERT(ARY_EMBED_P(a)), \
      (long)((RBASIC(a)->flags >> RARRAY_EMBED_LEN_SHIFT) & \
@@ -105,30 +104,6 @@ should_be_T_ARRAY(VALUE ary)
 } while (0)
 #define FL_UNSET_SHARED(ary) FL_UNSET((ary), RARRAY_SHARED_FLAG)
 
-#define ARY_SET_PTR(ary, p) do { \
-    RUBY_ASSERT(!ARY_EMBED_P(ary)); \
-    RUBY_ASSERT(!OBJ_FROZEN(ary)); \
-    RARRAY(ary)->as.heap.ptr = (p); \
-} while (0)
-#define ARY_SET_EMBED_LEN(ary, n) do { \
-    long tmp_n = (n); \
-    RUBY_ASSERT(ARY_EMBED_P(ary)); \
-    RBASIC(ary)->flags &= ~RARRAY_EMBED_LEN_MASK; \
-    RBASIC(ary)->flags |= (tmp_n) << RARRAY_EMBED_LEN_SHIFT; \
-} while (0)
-#define ARY_SET_HEAP_LEN(ary, n) do { \
-    RUBY_ASSERT(!ARY_EMBED_P(ary)); \
-    RARRAY(ary)->as.heap.len = (n); \
-} while (0)
-#define ARY_SET_LEN(ary, n) do { \
-    if (ARY_EMBED_P(ary)) { \
-        ARY_SET_EMBED_LEN((ary), (n)); \
-    } \
-    else { \
-        ARY_SET_HEAP_LEN((ary), (n)); \
-    } \
-    RUBY_ASSERT(RARRAY_LEN(ary) == (n)); \
-} while (0)
 #define ARY_INCREASE_PTR(ary, n) do  { \
     RUBY_ASSERT(!ARY_EMBED_P(ary)); \
     RUBY_ASSERT(!OBJ_FROZEN(ary)); \
@@ -146,12 +121,6 @@ should_be_T_ARRAY(VALUE ary)
 
 #define ARY_CAPA(ary) (ARY_EMBED_P(ary) ? ary_embed_capa(ary) : \
                        ARY_SHARED_ROOT_P(ary) ? RARRAY_LEN(ary) : ARY_HEAP_CAPA(ary))
-#define ARY_SET_CAPA(ary, n) do { \
-    RUBY_ASSERT(!ARY_EMBED_P(ary)); \
-    RUBY_ASSERT(!ARY_SHARED_P(ary)); \
-    RUBY_ASSERT(!OBJ_FROZEN(ary)); \
-    RARRAY(ary)->as.heap.aux.capa = (n); \
-} while (0)
 
 #define ARY_SHARED_ROOT_OCCUPIED(ary) (!OBJ_FROZEN(ary) && ARY_SHARED_ROOT_REFCNT(ary) == 1)
 #define ARY_SET_SHARED_ROOT_REFCNT(ary, value) do { \
@@ -4674,27 +4643,7 @@ rb_ary_replace(VALUE copy, VALUE orig)
      * contents of orig. */
     else if (ARY_EMBED_P(orig)) {
         long len = ARY_EMBED_LEN(orig);
-#if USE_MMTK
-        if (!rb_mmtk_enabled_p()) {
-#endif
-        VALUE *ptr = rb_gc_ary_heap_alloc(len);
-
-        FL_UNSET_EMBED(copy);
-        ARY_SET_PTR(copy, ptr);
-        ARY_SET_LEN(copy, len);
-        ARY_SET_CAPA(copy, len);
-
-        // No allocation and exception expected that could leave `copy` in a
-        // bad state from the edits above.
-        ary_memcpy(copy, 0, len, RARRAY_CONST_PTR(orig));
-#if USE_MMTK
-        } else {
-            rb_mmtk_ary_new_objbuf_copy(copy, len, orig, ARY_EMBED_PTR(orig), len);
-            FL_UNSET_EMBED(copy);
-            ARY_SET_LEN(copy, len);
-            ARY_SET_CAPA(copy, len);
-        }
-#endif
+        rb_gc_ary_replace_ptr(copy, orig, len);
     }
     /* Otherwise, orig is on heap and copy does not have enough space to embed
      * the contents of orig. */

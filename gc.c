@@ -1979,6 +1979,7 @@ ruby_external_gc_init()
             map->rb_gc_ary_resize_capa_new_ptr_impl = rb_mmtk_ary_resize_capa_new_ptr_impl;
             map->rb_gc_ary_cancel_sharing_ptr_impl = rb_mmtk_ary_cancel_sharing_ptr_impl;
             map->rb_gc_ary_make_shared_ptr_impl = rb_mmtk_ary_make_shared_ptr_impl;
+            map->rb_gc_ary_replace_ptr_impl = rb_mmtk_ary_replace_ptr_impl;
         }
         else {
 #endif
@@ -1999,6 +2000,7 @@ ruby_external_gc_init()
             map->rb_gc_ary_resize_capa_new_ptr_impl = rb_gc_ary_resize_capa_new_ptr_impl;
             map->rb_gc_ary_cancel_sharing_ptr_impl = rb_gc_ary_cancel_sharing_ptr_impl;
             map->rb_gc_ary_make_shared_ptr_impl = rb_gc_ary_make_shared_ptr_impl;
+            map->rb_gc_ary_replace_ptr_impl = rb_gc_ary_replace_ptr_impl;
 #if USE_MMTK
         }
 #endif

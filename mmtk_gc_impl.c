@@ -248,6 +248,16 @@ rb_mmtk_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
     RB_OBJ_WRITE(ary, &RARRAY_EXT(ary)->objbuf, &RARRAY_EXT(shared)->objbuf);
 }
 
+void
+rb_mmtk_ary_replace_ptr_impl(VALUE copy, VALUE orig, long len)
+{
+    rb_mmtk_ary_new_objbuf_copy_impl(copy, len, orig, ARY_EMBED_PTR(orig), len);
+    FL_UNSET_EMBED(copy);
+    ARY_SET_LEN(copy, len);
+    ARY_SET_CAPA(copy, len);
+}
+
+
 // ================== re.c ==================
 
 void
