@@ -172,7 +172,7 @@ rb_mmtk_ary_set_objbuf_impl(VALUE ary, VALUE objbuf)
 //
 // Note: capa is the number of elements in the newly created buffer.
 //       copy_len is the number of elements to copy, not the number of bytes.
-static inline void
+static inline VALUE *
 rb_mmtk_ary_new_objbuf_copy_impl(VALUE ary, size_t capa, VALUE src_obj, const VALUE *src, size_t copy_len)
 {
     RUBY_ASSERT(rb_mmtk_enabled_p());
@@ -192,46 +192,53 @@ rb_mmtk_ary_new_objbuf_copy_impl(VALUE ary, size_t capa, VALUE src_obj, const VA
         }
     }
 
-    RARRAY(ary)->as.heap.ptr = elems;
     rb_mmtk_ary_set_objbuf_impl(ary, (VALUE)objbuf);
 
     // Keep `src_obj` alive and pinned until the function exits.
     RB_GC_GUARD(src_obj);
+
+    return elems;
 }
 
 void
 rb_mmtk_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa)
 {
     size_t copy_len = new_capa < old_capa ? new_capa : old_capa;
-    rb_mmtk_ary_new_objbuf_copy_impl(ary, new_capa, RARRAY_EXT(ary)->objbuf, ARY_HEAP_PTR(ary), copy_len);
+    VALUE * ptr = rb_mmtk_ary_new_objbuf_copy_impl(ary, new_capa, RARRAY_EXT(ary)->objbuf, ARY_HEAP_PTR(ary), copy_len);
+    ARY_SET_PTR(ary, ptr);
 }
 
 void
 rb_mmtk_ary_new_ptr_impl(VALUE ary, size_t capa)
 {
-    rb_mmtk_ary_new_objbuf_copy_impl(ary, capa, 0, NULL, 0);
+    VALUE * ptr = rb_mmtk_ary_new_objbuf_copy_impl(ary, capa, 0, NULL, 0);
+    ARY_SET_PTR(ary, ptr);
 }
 
 void
 rb_mmtk_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
 {
-    rb_mmtk_ary_new_objbuf_copy_impl(ary, capa, ary, RARRAY(ary)->as.ary, len);
+    VALUE * ptr = rb_mmtk_ary_new_objbuf_copy_impl(ary, capa, ary, RARRAY(ary)->as.ary, len);
+    ARY_SET_PTR(ary, ptr);
     FL_UNSET_EMBED(ary);
 }
 
 void
 rb_mmtk_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
 {
-    rb_mmtk_ary_new_objbuf_copy_impl(ary, len, RARRAY_EXT(ary)->objbuf, ARY_HEAP_PTR(ary), len);
+    VALUE * ptr = rb_mmtk_ary_new_objbuf_copy_impl(ary, len, RARRAY_EXT(ary)->objbuf, ARY_HEAP_PTR(ary), len);
+    ARY_SET_PTR(ary, ptr);
 }
 
 void
 rb_mmtk_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
 {
-    rb_mmtk_ary_new_objbuf_copy_impl(shared, capa,
+    VALUE * ptr = rb_mmtk_ary_new_objbuf_copy_impl(shared, capa,
             rb_mmtk_array_content_holder(ary),
             RARRAY_CONST_PTR(ary),
             len);
+
+    ARY_SET_PTR(ary, ptr);
 
     FL_UNSET_EMBED(ary);
 
@@ -247,12 +254,12 @@ rb_mmtk_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
 void
 rb_mmtk_ary_replace_ptr_impl(VALUE copy, VALUE orig, long len)
 {
-    rb_mmtk_ary_new_objbuf_copy_impl(copy, len, orig, ARY_EMBED_PTR(orig), len);
+    VALUE * ptr = rb_mmtk_ary_new_objbuf_copy_impl(copy, len, orig, ARY_EMBED_PTR(orig), len);
+    ARY_SET_PTR(copy, ptr);
     FL_UNSET_EMBED(copy);
     ARY_SET_LEN(copy, len);
     ARY_SET_CAPA(copy, len);
 }
-
 
 // ================== re.c ==================
 
