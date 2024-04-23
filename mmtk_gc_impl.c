@@ -212,6 +212,13 @@ rb_mmtk_ary_new_ptr_impl(VALUE ary, size_t capa)
     rb_mmtk_ary_new_objbuf_copy_impl(ary, capa, 0, NULL, 0);
 }
 
+void
+rb_mmtk_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
+{
+    rb_mmtk_ary_new_objbuf_copy_impl(ary, capa, ary, RARRAY(ary)->as.ary, len);
+    FL_UNSET_EMBED(ary);
+}
+
 // ================== re.c ==================
 
 void

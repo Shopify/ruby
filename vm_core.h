@@ -127,6 +127,7 @@ typedef struct gc_function_map {
     size_t (*rb_gc_ary_alloc_embed_size_impl)(long capa);
     void (*rb_gc_sized_heap_realloc_impl)(VALUE ary, size_t old_capa, size_t new_capa);
     void (*rb_gc_ary_new_ptr_impl)(VALUE ary, size_t capa);
+    void (*rb_gc_ary_resize_capa_new_ptr_impl)(VALUE ary, size_t capa, long len);
 } rb_gc_function_map_t;
 #define rb_gc_functions (GET_VM()->gc_functions_map)
 #endif

@@ -22,6 +22,9 @@
 #define RARRAY_SHARED_ROOT_FLAG FL_USER12
 #define RARRAY_PTR_IN_USE_FLAG  FL_USER14
 
+// moved to support pluggable gc. can we even do this?
+#define FL_UNSET_EMBED(ary) FL_UNSET((ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK)
+
 /* array.c */
 VALUE rb_ary_hash_values(long len, const VALUE *elements);
 VALUE rb_ary_last(int, const VALUE *, VALUE);

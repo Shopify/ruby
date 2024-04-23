@@ -105,6 +105,23 @@ rb_gc_ary_new_ptr_impl(VALUE ary, size_t capa)
     RARRAY(ary)->as.heap.ptr = capa_ptr;
 }
 
+void rb_gc_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
+{
+    // TODO: this is really similar to the above function
+    // but needs a memcopy nad FL unset embed...
+    VALUE * capa_ptr = rb_gc_ary_heap_alloc(capa);
+
+    // TODO: copied from ARY_EMBED_PTR macro
+    RUBY_ASSERT(ARY_EMBED_P(ary));
+    MEMCPY(capa_ptr, RARRAY(ary)->as.ary, VALUE, len);
+
+    FL_UNSET_EMBED(ary);
+
+    RUBY_ASSERT(!ARY_EMBED_P(ary));
+    RUBY_ASSERT(!OBJ_FROZEN(ary));
+    RARRAY(ary)->as.heap.ptr = capa_ptr;
+}
+
 // ================== re.c ==================
 
 void

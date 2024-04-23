@@ -445,20 +445,7 @@ ary_resize_capa(VALUE ary, long capacity)
         size_t new_capa = capacity;
         if (ARY_EMBED_P(ary)) {
             long len = ARY_EMBED_LEN(ary);
-#if USE_MMTK
-            if (!rb_mmtk_enabled_p()) {
-#endif
-            VALUE *ptr = rb_gc_ary_heap_alloc(capacity);
-
-            MEMCPY(ptr, ARY_EMBED_PTR(ary), VALUE, len);
-            FL_UNSET_EMBED(ary);
-            ARY_SET_PTR(ary, ptr);
-#if USE_MMTK
-            } else {
-                rb_mmtk_ary_new_objbuf_copy(ary, capacity, ary, ARY_EMBED_PTR(ary), len);
-                FL_UNSET_EMBED(ary);
-            }
-#endif
+            rb_gc_ary_resize_capa_new_ptr(ary, capacity, len);
             ARY_SET_HEAP_LEN(ary, len);
         }
         else {
