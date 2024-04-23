@@ -203,7 +203,7 @@ void
 rb_mmtk_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa)
 {
     size_t copy_len = new_capa < old_capa ? new_capa : old_capa;
-    rb_mmtk_ary_new_objbuf_copy_impl(ary, new_capa, RARRAY_EXT(ary)->objbuf, RARRAY(ary)->as.heap.ptr, copy_len);
+    rb_mmtk_ary_new_objbuf_copy_impl(ary, new_capa, RARRAY_EXT(ary)->objbuf, ARY_HEAP_PTR(ary), copy_len);
 }
 
 void
@@ -222,7 +222,7 @@ rb_mmtk_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
 void
 rb_mmtk_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
 {
-    rb_mmtk_ary_new_objbuf_copy_impl(ary, len, RARRAY_EXT(ary)->objbuf, RARRAY(ary)->as.heap.ptr, len);
+    rb_mmtk_ary_new_objbuf_copy_impl(ary, len, RARRAY_EXT(ary)->objbuf, ARY_HEAP_PTR(ary), len);
 }
 
 void
@@ -235,11 +235,7 @@ rb_mmtk_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
 
     FL_UNSET_EMBED(ary);
 
-    const VALUE * shared_ptr = RARRAY(shared)->as.heap.ptr;
-
-    RUBY_ASSERT(!ARY_EMBED_P(ary));
-    RUBY_ASSERT(!OBJ_FROZEN(ary));
-    RARRAY(ary)->as.heap.ptr = shared_ptr;
+    ARY_SET_PTR(ary, ARY_HEAP_PTR(shared));
 
     //rb_mmtk_ary_copy_objbuf_ref(ary, shared);
     // TODO: ignored the assertions from rb_mmtk_ary_copy_objbuf_ref

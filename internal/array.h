@@ -56,6 +56,7 @@ void ary_memcpy(VALUE ary, long beg, long argc, const VALUE *argv);
     RARRAY(ary)->as.heap.len = (n); \
 } while (0)
 #define ARY_EMBED_PTR(a) (RUBY_ASSERT(ARY_EMBED_P(a)), RARRAY(a)->as.ary)
+#define ARY_HEAP_PTR(a) (RUBY_ASSERT(!ARY_EMBED_P(a)), RARRAY(a)->as.heap.ptr)
 
 /* array.c */
 VALUE rb_ary_hash_values(long len, const VALUE *elements);

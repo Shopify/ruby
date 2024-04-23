@@ -77,7 +77,6 @@ should_be_T_ARRAY(VALUE ary)
     return RB_TYPE_P(ary, T_ARRAY);
 }
 
-#define ARY_HEAP_PTR(a) (RUBY_ASSERT(!ARY_EMBED_P(a)), RARRAY(a)->as.heap.ptr)
 #define ARY_HEAP_LEN(a) (RUBY_ASSERT(!ARY_EMBED_P(a)), RARRAY(a)->as.heap.len)
 #define ARY_HEAP_CAPA(a) (RUBY_ASSERT(!ARY_EMBED_P(a)), RUBY_ASSERT(!ARY_SHARED_ROOT_P(a)), \
                           RARRAY(a)->as.heap.aux.capa)

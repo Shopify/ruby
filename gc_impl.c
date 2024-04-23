@@ -98,11 +98,8 @@ rb_gc_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa)
 void
 rb_gc_ary_new_ptr_impl(VALUE ary, size_t capa)
 {
-    // TODO: copied from ARY_SET_PTR macro
     VALUE * capa_ptr = rb_gc_ary_heap_alloc(capa);
-    RUBY_ASSERT(!ARY_EMBED_P(ary));
-    RUBY_ASSERT(!OBJ_FROZEN(ary));
-    RARRAY(ary)->as.heap.ptr = capa_ptr;
+    ARY_SET_PTR(ary, capa_ptr);
 }
 
 void rb_gc_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
@@ -117,9 +114,7 @@ void rb_gc_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
 
     FL_UNSET_EMBED(ary);
 
-    RUBY_ASSERT(!ARY_EMBED_P(ary));
-    RUBY_ASSERT(!OBJ_FROZEN(ary));
-    RARRAY(ary)->as.heap.ptr = capa_ptr;
+    ARY_SET_PTR(ary, capa_ptr);
 }
 
 void
@@ -129,14 +124,8 @@ rb_gc_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
     // but doesn't use an FL_UNSET EMBED
     // also it uses len only, not capa and len
     VALUE * capa_ptr = rb_gc_ary_heap_alloc(len);
-
-    // TODO: copied from ARY_EMBED_PTR macro
-    RUBY_ASSERT(ARY_EMBED_P(ary));
-    MEMCPY(capa_ptr, RARRAY(ary)->as.ary, VALUE, len);
-
-    RUBY_ASSERT(!ARY_EMBED_P(ary));
-    RUBY_ASSERT(!OBJ_FROZEN(ary));
-    RARRAY(ary)->as.heap.ptr = capa_ptr;
+    MEMCPY(capa_ptr, ARY_HEAP_PTR(ary), VALUE, len);
+    ARY_SET_PTR(ary, capa_ptr);
 }
 
 void
@@ -144,17 +133,13 @@ rb_gc_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
 {
     VALUE *ptr = rb_gc_ary_heap_alloc(capa);
 
-    RUBY_ASSERT(!ARY_EMBED_P(shared));
-    RUBY_ASSERT(!OBJ_FROZEN(shared));
-    RARRAY(shared)->as.heap.ptr = ptr;
+    ARY_SET_PTR(shared, ptr);
 
     ary_memcpy(shared, 0, len, RARRAY_CONST_PTR(ary));
 
     FL_UNSET_EMBED(ary);
 
-    RUBY_ASSERT(!ARY_EMBED_P(ary));
-    RUBY_ASSERT(!OBJ_FROZEN(ary));
-    RARRAY(ary)->as.heap.ptr = ptr;
+    ARY_SET_PTR(ary, ptr);
 }
 
 void
