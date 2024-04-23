@@ -401,7 +401,7 @@ ary_memcpy0(VALUE ary, long beg, long argc, const VALUE *argv, VALUE buff_owner_
     }
 }
 
-static void
+void
 ary_memcpy(VALUE ary, long beg, long argc, const VALUE *argv)
 {
     ary_memcpy0(ary, beg, argc, argv, ary);
@@ -987,25 +987,7 @@ ary_make_shared(VALUE ary)
         FL_SET_SHARED_ROOT(shared);
 
         if (ARY_EMBED_P(ary)) {
-#if USE_MMTK
-            if (!rb_mmtk_enabled_p()) {
-#endif
-            VALUE *ptr = rb_gc_ary_heap_alloc(capa);
-            ARY_SET_PTR(shared, ptr);
-            ary_memcpy(shared, 0, len, RARRAY_CONST_PTR(ary));
-            FL_UNSET_EMBED(ary);
-            ARY_SET_PTR(ary, ptr);
-#if USE_MMTK
-            } else {
-                rb_mmtk_ary_new_objbuf_copy(shared, capa,
-                                            rb_mmtk_array_content_holder(ary),
-                                            RARRAY_CONST_PTR(ary),
-                                            len);
-                FL_UNSET_EMBED(ary);
-                ARY_SET_PTR(ary, ARY_HEAP_PTR(shared));
-                rb_mmtk_ary_copy_objbuf_ref(ary, shared);
-            }
-#endif
+            rb_gc_ary_make_shared_ptr(ary, shared, capa, len);
             ARY_SET_HEAP_LEN(ary, len);
         }
         else {

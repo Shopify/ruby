@@ -139,6 +139,25 @@ rb_gc_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
     RARRAY(ary)->as.heap.ptr = capa_ptr;
 }
 
+void
+rb_gc_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
+{
+    VALUE *ptr = rb_gc_ary_heap_alloc(capa);
+
+    RUBY_ASSERT(!ARY_EMBED_P(shared));
+    RUBY_ASSERT(!OBJ_FROZEN(shared));
+    RARRAY(shared)->as.heap.ptr = ptr;
+
+    ary_memcpy(shared, 0, len, RARRAY_CONST_PTR(ary));
+
+    FL_UNSET_EMBED(ary);
+
+    RUBY_ASSERT(!ARY_EMBED_P(ary));
+    RUBY_ASSERT(!OBJ_FROZEN(ary));
+    RARRAY(ary)->as.heap.ptr = ptr;
+}
+
+
 // ================== re.c ==================
 
 void

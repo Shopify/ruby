@@ -24,6 +24,7 @@
 
 // moved to support pluggable gc. can we even do this?
 #define FL_UNSET_EMBED(ary) FL_UNSET((ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK)
+void ary_memcpy(VALUE ary, long beg, long argc, const VALUE *argv);
 
 /* array.c */
 VALUE rb_ary_hash_values(long len, const VALUE *elements);

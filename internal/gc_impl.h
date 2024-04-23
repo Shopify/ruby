@@ -24,6 +24,7 @@ void rb_gc_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa);
 void rb_gc_ary_new_ptr_impl(VALUE ary, size_t capa);
 void rb_gc_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len);
 void rb_gc_ary_cancel_sharing_ptr_impl(VALUE ary, long len);
+void rb_gc_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len);
 // ================== re.c ==================
 void rb_gc_char_offset_realloc_impl(rb_matchext_t *rm, size_t num_regs);
 #endif

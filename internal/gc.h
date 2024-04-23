@@ -267,6 +267,7 @@ RUBY_SYMBOL_EXPORT_BEGIN
 # define rb_gc_ary_new_ptr rb_gc_functions->rb_gc_ary_new_ptr_impl
 # define rb_gc_ary_resize_capa_new_ptr rb_gc_functions->rb_gc_ary_resize_capa_new_ptr_impl
 # define rb_gc_ary_cancel_sharing_ptr rb_gc_functions->rb_gc_ary_cancel_sharing_ptr_impl
+# define rb_gc_ary_make_shared_ptr rb_gc_functions->rb_gc_ary_make_shared_ptr_impl
 #else
 # define Alloc_GC Alloc_GC_impl
 # define rb_gc_str_new_strbuf rb_gc_str_new_strbuf_impl
@@ -284,6 +285,7 @@ RUBY_SYMBOL_EXPORT_BEGIN
 # define rb_gc_ary_new_ptr rb_gc_ary_new_ptr_impl
 # define rb_gc_ary_resize_capa_new_ptr rb_gc_ary_resize_capa_new_ptr_impl
 # define rb_gc_ary_cancel_sharing_ptr rb_gc_ary_cancel_sharing_ptr_impl
+# define rb_gc_ary_make_shared_ptr rb_gc_ary_make_shared_ptr_impl
 #endif
 /* exports for objspace module */
 void rb_objspace_reachable_objects_from(VALUE obj, void (func)(VALUE, void *), void *data);

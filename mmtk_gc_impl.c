@@ -225,6 +225,29 @@ rb_mmtk_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
     rb_mmtk_ary_new_objbuf_copy_impl(ary, len, RARRAY_EXT(ary)->objbuf, RARRAY(ary)->as.heap.ptr, len);
 }
 
+void
+rb_mmtk_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
+{
+    rb_mmtk_ary_new_objbuf_copy_impl(shared, capa,
+            rb_mmtk_array_content_holder(ary),
+            RARRAY_CONST_PTR(ary),
+            len);
+
+    FL_UNSET_EMBED(ary);
+
+    const VALUE * shared_ptr = RARRAY(shared)->as.heap.ptr;
+
+    RUBY_ASSERT(!ARY_EMBED_P(ary));
+    RUBY_ASSERT(!OBJ_FROZEN(ary));
+    RARRAY(ary)->as.heap.ptr = shared_ptr;
+
+    //rb_mmtk_ary_copy_objbuf_ref(ary, shared);
+    // TODO: ignored the assertions from rb_mmtk_ary_copy_objbuf_ref
+    // and reimplemented the obj write only.
+    //rb_mmtk_ary_set_objbuf(ary, RARRAY_EXT(shared)->objbuf);
+    RB_OBJ_WRITE(ary, &RARRAY_EXT(ary)->objbuf, &RARRAY_EXT(shared)->objbuf);
+}
+
 // ================== re.c ==================
 
 void

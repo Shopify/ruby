@@ -129,6 +129,7 @@ typedef struct gc_function_map {
     void (*rb_gc_ary_new_ptr_impl)(VALUE ary, size_t capa);
     void (*rb_gc_ary_resize_capa_new_ptr_impl)(VALUE ary, size_t capa, long len);
     void (*rb_gc_ary_cancel_sharing_ptr_impl)(VALUE ary, long len);
+    void (*rb_gc_ary_make_shared_ptr_impl)(VALUE ary, VALUE shared, size_t capa, long len);
 } rb_gc_function_map_t;
 #define rb_gc_functions (GET_VM()->gc_functions_map)
 #endif
