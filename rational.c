@@ -1781,7 +1781,7 @@ f_format(VALUE self, VALUE (*func)(VALUE))
     VALUE s;
     get_dat1(self);
 
-    s = (*func)(dat->num);
+    s = rb_obj_dup((*func)(dat->num));
     rb_str_cat2(s, "/");
     rb_str_concat(s, (*func)(dat->den));
 

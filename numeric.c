@@ -3929,7 +3929,10 @@ rb_int_to_s(int argc, VALUE *argv, VALUE x)
         base = NUM2INT(argv[0]);
     else
         base = 10;
-    return rb_int2str(x, base);
+    VALUE str = rb_int2str(x, base);
+
+    rb_obj_freeze(str);
+    return str;
 }
 
 VALUE

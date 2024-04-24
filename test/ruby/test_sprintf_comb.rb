@@ -429,7 +429,7 @@ class TestSprintfComb < Test::Unit::TestCase
         int = q
         exp += discard
       end
-      result = int.to_s
+      result = int.to_s.dup
       if result.length <= precision
         result = '0' * (precision+1 - result.length) + result
       end

@@ -480,7 +480,7 @@ module RubyVM::YJIT
 
     # Format large numbers with comma separators for readability
     def format_number(pad, number) # :nodoc:
-      s = number.to_s
+      s = number.to_s.dup
       i = s.index('.') || s.size
       s.insert(i -= 3, ',') while i > 3
       s.rjust(pad, ' ')

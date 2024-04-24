@@ -1602,7 +1602,7 @@ f_format(VALUE self, VALUE (*func)(VALUE))
 
     impos = f_tpositive_p(dat->imag);
 
-    s = (*func)(dat->real);
+    s = rb_obj_dup((*func)(dat->real));
     rb_str_cat2(s, !impos ? "-" : "+");
 
     rb_str_concat(s, (*func)(f_abs(dat->imag)));
