@@ -89,20 +89,20 @@ rb_gc_ary_alloc_embed_size_impl(long capa)
     return offsetof(struct RArray, as.ary) + (sizeof(VALUE) * capa);
 }
 
-void
+VALUE *
 rb_gc_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa)
 {
-    SIZED_REALLOC_N(RARRAY(ary)->as.heap.ptr, VALUE, new_capa, old_capa);
+    return ruby_xrealloc2((void *)ARY_HEAP_PTR(ary), new_capa, sizeof(VALUE));
 }
 
-void
+VALUE *
 rb_gc_ary_new_ptr_impl(VALUE ary, size_t capa)
 {
-    VALUE * capa_ptr = rb_gc_ary_heap_alloc(capa);
-    ARY_SET_PTR(ary, capa_ptr);
+    return rb_gc_ary_heap_alloc(capa);
 }
 
-void rb_gc_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
+VALUE *
+rb_gc_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
 {
     // TODO: this is really similar to the above function
     // but needs a memcopy nad FL unset embed...
@@ -112,12 +112,10 @@ void rb_gc_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
     RUBY_ASSERT(ARY_EMBED_P(ary));
     MEMCPY(capa_ptr, RARRAY(ary)->as.ary, VALUE, len);
 
-    FL_UNSET_EMBED(ary);
-
-    ARY_SET_PTR(ary, capa_ptr);
+    return capa_ptr;
 }
 
-void
+VALUE *
 rb_gc_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
 {
     // TODO: this is really similar to the above function
@@ -125,7 +123,7 @@ rb_gc_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
     // also it uses len only, not capa and len
     VALUE * capa_ptr = rb_gc_ary_heap_alloc(len);
     MEMCPY(capa_ptr, ARY_HEAP_PTR(ary), VALUE, len);
-    ARY_SET_PTR(ary, capa_ptr);
+    return capa_ptr;
 }
 
 void

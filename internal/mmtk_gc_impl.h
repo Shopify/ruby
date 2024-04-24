@@ -18,10 +18,10 @@ VALUE * rb_mmtk_ary_heap_alloc_impl(size_t capa);
 void rb_mmtk_ary_heap_free_ptr_impl(VALUE ary, const VALUE *ptr, long size);
 size_t rb_mmtk_ary_alloc_heap_size_impl(void);
 size_t rb_mmtk_ary_alloc_embed_size_impl(long capa);
-void rb_mmtk_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa);
-void rb_mmtk_ary_new_ptr_impl(VALUE ary, size_t capa);
-void rb_mmtk_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len);
-void rb_mmtk_ary_cancel_sharing_ptr_impl(VALUE ary, long len);
+VALUE * rb_mmtk_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_capa);
+VALUE * rb_mmtk_ary_new_ptr_impl(VALUE ary, size_t capa);
+VALUE * rb_mmtk_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len);
+VALUE * rb_mmtk_ary_cancel_sharing_ptr_impl(VALUE ary, long len);
 void rb_mmtk_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len);
 void rb_mmtk_ary_replace_ptr_impl(VALUE copy, VALUE orig, long len);
 // ================== re.c ==================

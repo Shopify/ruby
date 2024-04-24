@@ -312,24 +312,26 @@ ary_memfill(VALUE ary, long beg, long size, VALUE val)
 }
 
 static void
+ary_memcpy1(long beg, long argc, const VALUE *ptr, const VALUE *argv, VALUE buff_owner_ary)
+{
+    if (argc > (int)(128/sizeof(VALUE)) /* is magic number (cache line size) */) {
+        rb_gc_writebarrier_remember(buff_owner_ary);
+        MEMCPY((void *)(ptr+beg), argv, VALUE, argc);
+    }
+    else {
+        int i;
+        for (i=0; i<argc; i++) {
+            RB_OBJ_WRITE(buff_owner_ary, &ptr[i+beg], argv[i]);
+        }
+    }
+}
+
+static void
 ary_memcpy0(VALUE ary, long beg, long argc, const VALUE *argv, VALUE buff_owner_ary)
 {
     RUBY_ASSERT(!ARY_SHARED_P(buff_owner_ary));
 
-    if (argc > (int)(128/sizeof(VALUE)) /* is magic number (cache line size) */) {
-        rb_gc_writebarrier_remember(buff_owner_ary);
-        RARRAY_PTR_USE(ary, ptr, {
-            MEMCPY(ptr+beg, argv, VALUE, argc);
-        });
-    }
-    else {
-        int i;
-        RARRAY_PTR_USE(ary, ptr, {
-            for (i=0; i<argc; i++) {
-                RB_OBJ_WRITE(buff_owner_ary, &ptr[i+beg], argv[i]);
-            }
-        });
-    }
+    RARRAY_PTR_USE(ary, ptr, { ary_memcpy1(beg, argc, ptr, argv, buff_owner_ary); });
 }
 
 void
@@ -341,7 +343,8 @@ ary_memcpy(VALUE ary, long beg, long argc, const VALUE *argv)
 static size_t
 ary_heap_realloc(VALUE ary, size_t new_capa)
 {
-    rb_gc_sized_heap_realloc(ary, ARY_HEAP_CAPA(ary), new_capa);
+    VALUE * ptr = rb_gc_sized_heap_realloc(ary, ARY_HEAP_CAPA(ary), new_capa);
+    ARY_SET_PTR(ary, ptr);
 
     ary_verify(ary);
 
@@ -376,7 +379,9 @@ ary_resize_capa(VALUE ary, long capacity)
         size_t new_capa = capacity;
         if (ARY_EMBED_P(ary)) {
             long len = ARY_EMBED_LEN(ary);
-            rb_gc_ary_resize_capa_new_ptr(ary, capacity, len);
+            VALUE * capa_ptr = rb_gc_ary_resize_capa_new_ptr(ary, capacity, len);
+            ARY_SET_PTR(ary, capa_ptr);
+            FL_UNSET_EMBED(ary);
             ARY_SET_HEAP_LEN(ary, len);
         }
         else {
@@ -532,7 +537,8 @@ rb_ary_cancel_sharing(VALUE ary)
             rb_ary_decrement_share(shared_root);
         }
         else {
-            rb_gc_ary_cancel_sharing_ptr(ary, len);
+            VALUE * capa_ptr = rb_gc_ary_cancel_sharing_ptr(ary, len);
+            ARY_SET_PTR(ary, capa_ptr);
             rb_ary_unshare(ary);
             ARY_SET_CAPA(ary, len);
         }
@@ -692,7 +698,8 @@ ary_new(VALUE klass, long capa)
         ARY_SET_CAPA(ary, capa);
         RUBY_ASSERT(!ARY_EMBED_P(ary));
 
-        rb_gc_ary_new_ptr(ary, capa);
+        VALUE * capa_ptr = rb_gc_ary_new_ptr(ary, capa);
+        ARY_SET_PTR(ary, capa_ptr);
 
         ARY_SET_HEAP_LEN(ary, 0);
     }
