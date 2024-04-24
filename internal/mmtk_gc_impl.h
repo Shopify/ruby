@@ -22,7 +22,7 @@ VALUE * rb_mmtk_sized_heap_realloc_impl(VALUE ary, size_t old_capa, size_t new_c
 VALUE * rb_mmtk_ary_new_ptr_impl(VALUE ary, size_t capa);
 VALUE * rb_mmtk_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len);
 VALUE * rb_mmtk_ary_cancel_sharing_ptr_impl(VALUE ary, long len);
-void rb_mmtk_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len);
+VALUE * rb_mmtk_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len);
 void rb_mmtk_ary_replace_ptr_impl(VALUE copy, VALUE orig, long len);
 // ================== re.c ==================
 void rb_mmtk_char_offset_realloc_impl(rb_matchext_t *rm, size_t num_regs);

@@ -162,6 +162,34 @@ rb_mmtk_ary_set_objbuf_impl(VALUE ary, VALUE objbuf)
     RB_OBJ_WRITE(ary, &RARRAY_EXT(ary)->objbuf, objbuf);
 }
 
+static inline VALUE *
+rb_mmtk_ary_new_objbuf_impl(size_t capa)
+{
+    // When using MMTk, as.heap.ptr points to the ary field of a rb_mmtk_objbuf_t
+    // which is allocated in the heap as an imemo:mmtk_objbuf.
+    rb_mmtk_objbuf_t *objbuf = rb_mmtk_new_objbuf(capa); // This may trigger GC, causing objects to be moved.
+    return rb_mmtk_objbuf_to_elems(objbuf);
+}
+
+static void
+rb_mmtk_ary_memcpy_objbuf_impl(VALUE ary, size_t capa, VALUE src_obj, const VALUE *src, VALUE *elems, size_t copy_len, rb_mmtk_objbuf_t *objbuf)
+{
+    // Note that `ary` may be an existing array and `src` may point into `ary` or its existing
+    // buffer.  Do not modify `ary` until the new strbuf is fully written.
+    if (src != NULL) {
+        RUBY_ASSERT(capa >= copy_len);
+        for (size_t i = 0; i < copy_len; i++) {
+            // TODO: use array copy write barrier after enabling StickyImmix.
+            elems[i] = src[i];
+        }
+    }
+
+    rb_mmtk_ary_set_objbuf_impl(ary, (VALUE)objbuf);
+
+    // Keep `src_obj` alive and pinned until the function exits.
+    RB_GC_GUARD(src_obj);
+}
+
 // Attach a heap array `ary` with a newly allocated imemo:mmtk_objbuf of the given capacity `capa`.
 // The first `copy_len` elements of the new objbuf are copied from `src`, and `copy_len` must not
 // exceed `capa`.
@@ -177,25 +205,9 @@ rb_mmtk_ary_new_objbuf_copy_impl(VALUE ary, size_t capa, VALUE src_obj, const VA
 {
     RUBY_ASSERT(rb_mmtk_enabled_p());
 
-    // When using MMTk, as.heap.ptr points to the ary field of a rb_mmtk_objbuf_t
-    // which is allocated in the heap as an imemo:mmtk_objbuf.
     rb_mmtk_objbuf_t *objbuf = rb_mmtk_new_objbuf(capa); // This may trigger GC, causing objects to be moved.
-    VALUE *elems = rb_mmtk_objbuf_to_elems(objbuf);
-
-    // Note that `ary` may be an existing array and `src` may point into `ary` or its existing
-    // buffer.  Do not modify `ary` until the new strbuf is fully written.
-    if (src != NULL) {
-        RUBY_ASSERT(capa >= copy_len);
-        for (size_t i = 0; i < copy_len; i++) {
-            // TODO: use array copy write barrier after enabling StickyImmix.
-            elems[i] = src[i];
-        }
-    }
-
-    rb_mmtk_ary_set_objbuf_impl(ary, (VALUE)objbuf);
-
-    // Keep `src_obj` alive and pinned until the function exits.
-    RB_GC_GUARD(src_obj);
+    VALUE * elems =  rb_mmtk_objbuf_to_elems(objbuf);
+    rb_mmtk_ary_memcpy_objbuf_impl(ary, capa, src_obj, src, elems, copy_len, objbuf);
 
     return elems;
 }
@@ -216,7 +228,8 @@ rb_mmtk_ary_new_ptr_impl(VALUE ary, size_t capa)
 VALUE *
 rb_mmtk_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
 {
-    return rb_mmtk_ary_new_objbuf_copy_impl(ary, capa, ary, RARRAY(ary)->as.ary, len);
+    //return rb_mmtk_ary_new_objbuf_copy_impl(ary, capa, ary, RARRAY(ary)->as.ary, len);
+    return rb_mmtk_ary_new_objbuf_impl(capa);
 }
 
 VALUE *
@@ -225,26 +238,10 @@ rb_mmtk_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
     return rb_mmtk_ary_new_objbuf_copy_impl(ary, len, RARRAY_EXT(ary)->objbuf, ARY_HEAP_PTR(ary), len);
 }
 
-void
+VALUE *
 rb_mmtk_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
 {
-    // Allocation + copying
-    VALUE * ptr = rb_mmtk_ary_new_objbuf_copy_impl(shared, capa,
-            rb_mmtk_array_content_holder(ary),
-            RARRAY_CONST_PTR(ary),
-            len);
-
-    ARY_SET_PTR(ary, ptr);
-
-    FL_UNSET_EMBED(ary);
-
-    ARY_SET_PTR(ary, ARY_HEAP_PTR(shared));
-
-    //rb_mmtk_ary_copy_objbuf_ref(ary, shared);
-    // TODO: ignored the assertions from rb_mmtk_ary_copy_objbuf_ref
-    // and reimplemented the obj write only.
-    //rb_mmtk_ary_set_objbuf(ary, RARRAY_EXT(shared)->objbuf);
-    RB_OBJ_WRITE(ary, &RARRAY_EXT(ary)->objbuf, &RARRAY_EXT(shared)->objbuf);
+    return rb_mmtk_ary_new_objbuf_impl(capa);
 }
 
 void

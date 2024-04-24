@@ -108,10 +108,6 @@ rb_gc_ary_resize_capa_new_ptr_impl(VALUE ary, size_t capa, long len)
     // but needs a memcopy nad FL unset embed...
     VALUE * capa_ptr = rb_gc_ary_heap_alloc(capa);
 
-    // TODO: copied from ARY_EMBED_PTR macro
-    RUBY_ASSERT(ARY_EMBED_P(ary));
-    MEMCPY(capa_ptr, RARRAY(ary)->as.ary, VALUE, len);
-
     return capa_ptr;
 }
 
@@ -126,18 +122,10 @@ rb_gc_ary_cancel_sharing_ptr_impl(VALUE ary, long len)
     return capa_ptr;
 }
 
-void
+VALUE *
 rb_gc_ary_make_shared_ptr_impl(VALUE ary, VALUE shared, size_t capa, long len)
 {
-    VALUE *ptr = rb_gc_ary_heap_alloc(capa);
-
-    ARY_SET_PTR(shared, ptr);
-
-    ary_memcpy(shared, 0, len, RARRAY_CONST_PTR(ary));
-
-    FL_UNSET_EMBED(ary);
-
-    ARY_SET_PTR(ary, ptr);
+    return rb_gc_ary_heap_alloc(capa);
 }
 
 void

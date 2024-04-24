@@ -311,7 +311,7 @@ ary_memfill(VALUE ary, long beg, long size, VALUE val)
     });
 }
 
-static void
+void
 ary_memcpy1(long beg, long argc, const VALUE *ptr, const VALUE *argv, VALUE buff_owner_ary)
 {
     if (argc > (int)(128/sizeof(VALUE)) /* is magic number (cache line size) */) {
@@ -379,9 +379,11 @@ ary_resize_capa(VALUE ary, long capacity)
         size_t new_capa = capacity;
         if (ARY_EMBED_P(ary)) {
             long len = ARY_EMBED_LEN(ary);
-            VALUE * capa_ptr = rb_gc_ary_resize_capa_new_ptr(ary, capacity, len);
-            ARY_SET_PTR(ary, capa_ptr);
+            VALUE * ptr = rb_gc_ary_resize_capa_new_ptr(ary, capacity, len);
+
+            MEMCPY(ptr, ARY_EMBED_PTR(ary), VALUE, len);
             FL_UNSET_EMBED(ary);
+            ARY_SET_PTR(ary, ptr);
             ARY_SET_HEAP_LEN(ary, len);
         }
         else {
@@ -925,7 +927,12 @@ ary_make_shared(VALUE ary)
         FL_SET_SHARED_ROOT(shared);
 
         if (ARY_EMBED_P(ary)) {
-            rb_gc_ary_make_shared_ptr(ary, shared, capa, len);
+            VALUE * capa_ptr = rb_gc_ary_make_shared_ptr(ary, shared, capa, len);
+            ARY_SET_PTR(shared, capa_ptr);
+            ary_memcpy1(0, len, ARY_HEAP_PTR(shared), RARRAY_CONST_PTR(ary), ary);
+            FL_UNSET_EMBED(ary);
+            ARY_SET_PTR(ary, capa_ptr);
+
             ARY_SET_HEAP_LEN(ary, len);
         }
         else {

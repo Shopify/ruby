@@ -25,6 +25,7 @@
 // moved to support pluggable gc. can we even do this?
 #define FL_UNSET_EMBED(ary) FL_UNSET((ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK)
 void ary_memcpy(VALUE ary, long beg, long argc, const VALUE *argv);
+void ary_memcpy1(long beg, long argc, const VALUE *ptr, const VALUE *argv, VALUE buff_owner_ary);
 #define ARY_SET_PTR(ary, p) do { \
     RUBY_ASSERT(!ARY_EMBED_P(ary)); \
     RUBY_ASSERT(!OBJ_FROZEN(ary)); \
