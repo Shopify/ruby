@@ -35,6 +35,7 @@
 #include "internal/object.h"
 #include "internal/rational.h"
 #include "ruby_assert.h"
+#include "builtin.h"
 
 #define ZERO INT2FIX(0)
 #define ONE INT2FIX(1)
@@ -1774,58 +1775,6 @@ nurat_hash(VALUE self)
     return ST2FIX(rb_rational_hash(self));
 }
 
-
-static VALUE
-f_format(VALUE self, VALUE (*func)(VALUE))
-{
-    VALUE s;
-    get_dat1(self);
-
-    s = (*func)(dat->num);
-    rb_str_cat2(s, "/");
-    rb_str_concat(s, (*func)(dat->den));
-
-    return s;
-}
-
-/*
- * call-seq:
- *    rat.to_s  ->  string
- *
- * Returns the value as a string.
- *
- *    Rational(2).to_s      #=> "2/1"
- *    Rational(-8, 6).to_s  #=> "-4/3"
- *    Rational('1/2').to_s  #=> "1/2"
- */
-static VALUE
-nurat_to_s(VALUE self)
-{
-    return f_format(self, f_to_s);
-}
-
-/*
- * call-seq:
- *    rat.inspect  ->  string
- *
- * Returns the value as a string for inspection.
- *
- *    Rational(2).inspect      #=> "(2/1)"
- *    Rational(-8, 6).inspect  #=> "(-4/3)"
- *    Rational('1/2').inspect  #=> "(1/2)"
- */
-static VALUE
-nurat_inspect(VALUE self)
-{
-    VALUE s;
-
-    s = rb_usascii_str_new2("(");
-    rb_str_concat(s, f_format(self, f_inspect));
-    rb_str_cat2(s, ")");
-
-    return s;
-}
-
 /* :nodoc: */
 static VALUE
 nurat_dumper(VALUE self)
@@ -2798,8 +2747,6 @@ Init_Rational(void)
 
     rb_define_method(rb_cRational, "hash", nurat_hash, 0);
 
-    rb_define_method(rb_cRational, "to_s", nurat_to_s, 0);
-    rb_define_method(rb_cRational, "inspect", nurat_inspect, 0);
 
     rb_define_private_method(rb_cRational, "marshal_dump", nurat_marshal_dump, 0);
     /* :nodoc: */
@@ -2831,3 +2778,5 @@ Init_Rational(void)
 
     rb_provide("rational.so");	/* for backward compatibility */
 }
+
+#include "rational.rbinc"

@@ -11,4 +11,8 @@ describe :rational_inspect, shared: true do
       Rational(bignum_value, 1).inspect.should == "(#{bignum_value}/1)"
     end
   end
+
+  it "returns an ASCII string" do
+    Rational(1, -3).inspect.encoding.should == Encoding::US_ASCII
+  end
 end

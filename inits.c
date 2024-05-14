@@ -87,6 +87,7 @@ rb_call_builtin_inits(void)
     BUILTIN(gc);
     BUILTIN(ractor);
     BUILTIN(numeric);
+    BUILTIN(rational);
     BUILTIN(io);
     BUILTIN(dir);
     BUILTIN(ast);

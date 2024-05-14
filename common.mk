@@ -1205,6 +1205,7 @@ BUILTIN_RB_SRCS = \
 		$(srcdir)/dir.rb \
 		$(srcdir)/gc.rb \
 		$(srcdir)/numeric.rb \
+		$(srcdir)/rational.rb \
 		$(srcdir)/io.rb \
 		$(srcdir)/marshal.rb \
 		$(srcdir)/rjit.rb \
@@ -14110,6 +14111,8 @@ rational.$(OBJEXT): {$(VPATH)}backward/2/limits.h
 rational.$(OBJEXT): {$(VPATH)}backward/2/long_long.h
 rational.$(OBJEXT): {$(VPATH)}backward/2/stdalign.h
 rational.$(OBJEXT): {$(VPATH)}backward/2/stdarg.h
+rational.$(OBJEXT): {$(VPATH)}builtin.h
+rational.$(OBJEXT): {$(VPATH)}rational.rbinc
 rational.$(OBJEXT): {$(VPATH)}config.h
 rational.$(OBJEXT): {$(VPATH)}constant.h
 rational.$(OBJEXT): {$(VPATH)}defines.h

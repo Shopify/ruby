@@ -11,4 +11,8 @@ describe :rational_to_s, shared: true do
     Rational(-1, 3).to_s.should == "-1/3"
     Rational(1, -3).to_s.should == "-1/3"
   end
+
+  it "returns an ASCII string" do
+    Rational(1, -3).to_s.encoding.should == Encoding::US_ASCII
+  end
 end
