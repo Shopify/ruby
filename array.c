@@ -370,6 +370,7 @@ ary_heap_free(VALUE ary)
 static size_t
 ary_heap_realloc(VALUE ary, size_t new_capa)
 {
+    RUBY_ASSERT(!OBJ_FROZEN(ary));
     SIZED_REALLOC_N(RARRAY(ary)->as.heap.ptr, VALUE, new_capa, ARY_HEAP_CAPA(ary));
     ary_verify(ary);
 
@@ -441,7 +442,11 @@ ary_shrink_capa(VALUE ary)
     long old_capa = ARY_HEAP_CAPA(ary);
     RUBY_ASSERT(!ARY_SHARED_P(ary));
     RUBY_ASSERT(old_capa >= capacity);
-    if (old_capa > capacity) ary_heap_realloc(ary, capacity);
+
+    if (old_capa > capacity) {
+        ary_heap_realloc(ary, capacity);
+        ARY_SET_CAPA(ary, capacity);
+    }
 
     ary_verify(ary);
 }
@@ -6458,7 +6463,10 @@ rb_ary_flatten_bang(int argc, VALUE *argv, VALUE ary)
     if (result == ary) {
         return Qnil;
     }
-    if (!(mod = ARY_EMBED_P(result))) rb_obj_freeze(result);
+    if (!(mod = ARY_EMBED_P(result))) {
+        ary_shrink_capa(result);
+        rb_obj_freeze(result);
+    }
     rb_ary_replace(ary, result);
     if (mod) ARY_SET_EMBED_LEN(result, 0);
 
