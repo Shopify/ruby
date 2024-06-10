@@ -523,7 +523,6 @@ RBIMPL_SYMBOL_EXPORT_END()
 #define TypedData_Get_Struct(obj,type,data_type,sval) \
     ((sval) = RBIMPL_CAST((type *)rb_check_typeddata((obj), (data_type))))
 
-extern const rb_data_type_t deprecated_rdata_type;
 
 RBIMPL_ATTR_PURE()
 RBIMPL_ATTR_ARTIFICIAL()
@@ -541,7 +540,8 @@ RBIMPL_ATTR_ARTIFICIAL()
 static inline bool
 rbimpl_rtypeddata_p(VALUE obj)
 {
-    return RTYPEDDATA(obj)->type != &deprecated_rdata_type;
+    extern const rb_data_type_t ruby_deprecated_rdata_type;
+    return RTYPEDDATA(obj)->type != &ruby_deprecated_rdata_type;
 }
 
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()

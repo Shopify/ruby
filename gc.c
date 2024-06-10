@@ -3071,7 +3071,7 @@ memsize_deprecated_rdata_object(const void *ptr)
 
 #define DEPRECATED_DATA_FREE RBIMPL_DATA_FUNC(-3)
 
-const rb_data_type_t deprecated_rdata_type = {
+const rb_data_type_t ruby_deprecated_rdata_type = {
     .wrap_struct_name = "RDATA(deprecated)",
     .function = {
         .dmark = mark_deprecated_rdata_object,
@@ -3086,7 +3086,7 @@ rb_data_object_wrap(VALUE klass, void *datap, RUBY_DATA_FUNC dmark, RUBY_DATA_FU
     RUBY_ASSERT_ALWAYS(dfree != (RUBY_DATA_FUNC)1);
     if (klass) rb_data_object_check(klass);
 
-    VALUE obj = rb_data_typed_object_zalloc(klass, sizeof(struct RData), &deprecated_rdata_type);
+    VALUE obj = rb_data_typed_object_zalloc(klass, sizeof(struct RData), &ruby_deprecated_rdata_type);
 
     struct RData *rdata = (struct RData *)obj;
     rdata->dmark = dmark;
@@ -4363,7 +4363,7 @@ rb_objspace_call_finalizer_i(VALUE obj, void *data)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_DATA:
-        if (!rb_free_at_exit && (!DATA_PTR(obj) || !RDATA(obj)->dfree)) break;
+        if (!rb_free_at_exit && (!RTYPEDDATA_GET_DATA(obj) || !RANY(obj)->as.typeddata.type->function.dfree)) break;
         if (rb_obj_is_thread(obj)) break;
         if (rb_obj_is_mutex(obj)) break;
         if (rb_obj_is_fiber(obj)) break;
