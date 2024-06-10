@@ -2340,6 +2340,21 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
                 ret = rb_str_new_cstr(type_str); break;
             }
         }
+        else if (insn == BIN(putspecialobject)) {
+            enum vm_special_object_type object_type = (enum vm_special_object_type)op;
+            switch (object_type) {
+                case VM_SPECIAL_OBJECT_VMCORE:
+                  ret = rb_fstring_lit("VM_SPECIAL_OBJECT_VMCORE");
+                  break;
+                case VM_SPECIAL_OBJECT_CBASE:
+                  ret = rb_fstring_lit("VM_SPECIAL_OBJECT_CBASE");
+                  break;
+                case VM_SPECIAL_OBJECT_CONST_BASE:
+                  ret = rb_fstring_lit("VM_SPECIAL_OBJECT_CONST_BASE");
+                  break;
+            }
+            if (ret) break;
+        }
         ret = rb_sprintf("%"PRIuVALUE, op);
         break;
 
