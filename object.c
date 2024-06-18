@@ -1317,6 +1317,9 @@ VALUE
 rb_obj_freeze(VALUE obj)
 {
     if (!OBJ_FROZEN(obj)) {
+        if (RB_TYPE_P(obj, T_ARRAY)) {
+            rb_bug("have an array");
+        }
         OBJ_FREEZE(obj);
         if (SPECIAL_CONST_P(obj)) {
             rb_bug("special consts should be frozen.");
