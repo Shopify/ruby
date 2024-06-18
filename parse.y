@@ -1532,7 +1532,6 @@ static int  local_id_ref(struct parser_params*, ID, ID **);
 ID internal_id(struct parser_params*);
 static NODE *new_args_forward_call(struct parser_params*, NODE*, const YYLTYPE*, const YYLTYPE*);
 static int check_forwarding_args(struct parser_params*);
-static void add_forwarding_args(struct parser_params *p);
 static void forwarding_arg_check(struct parser_params *p, ID arg, ID all, const char *var);
 
 static const struct vtable *dyna_push(struct parser_params *);
@@ -6429,8 +6428,8 @@ args_tail	: f_kwarg(f_kw) ',' f_kwrest opt_f_block_arg
                     }
                 | args_forward
                     {
-                        add_forwarding_args(p);
-                        $$ = new_args_tail(p, 0, $1, arg_FWD_BLOCK, &@1);
+                        arg_var(p, idFWD_ALL);
+                        $$ = new_args_tail(p, 0, $1, 0, &@1);
                         $$->nd_ainfo.forwarding = 1;
                     /*% ripper: [Qnil, $:1, Qnil] %*/
                     }
@@ -6519,7 +6518,7 @@ args_forward	: tBDOT3
 #ifdef FORWARD_ARGS_WITH_RUBY2_KEYWORDS
                         $$ = 0;
 #else
-                        $$ = idFWD_KWREST;
+                        $$ = idFWD_ALL;
 #endif
                     /*% ripper: args_forward! %*/
                     }
@@ -14456,7 +14455,6 @@ new_args(struct parser_params *p, rb_node_args_aux_t *pre_args, rb_node_opt_arg_
             yyerror1(&RNODE(tail)->nd_loc, "... after rest argument");
             return tail;
         }
-        rest_arg = idFWD_REST;
     }
 
     args->pre_args_num   = pre_args ? pre_args->nd_plen : 0;
@@ -15076,17 +15074,6 @@ check_forwarding_args(struct parser_params *p)
 }
 
 static void
-add_forwarding_args(struct parser_params *p)
-{
-    arg_var(p, idFWD_REST);
-#ifndef FORWARD_ARGS_WITH_RUBY2_KEYWORDS
-    arg_var(p, idFWD_KWREST);
-#endif
-    arg_var(p, idFWD_BLOCK);
-    arg_var(p, idFWD_ALL);
-}
-
-static void
 forwarding_arg_check(struct parser_params *p, ID arg, ID all, const char *var)
 {
     bool conflict = false;
@@ -15120,20 +15107,13 @@ forwarding_arg_check(struct parser_params *p, ID arg, ID all, const char *var)
     }
 }
 
+// Used for the call site: bar(...)
 static NODE *
 new_args_forward_call(struct parser_params *p, NODE *leading, const YYLTYPE *loc, const YYLTYPE *argsloc)
 {
-    NODE *rest = NEW_LVAR(idFWD_REST, loc);
-#ifndef FORWARD_ARGS_WITH_RUBY2_KEYWORDS
-    NODE *kwrest = list_append(p, NEW_LIST(0, loc), NEW_LVAR(idFWD_KWREST, loc));
-#endif
-    rb_node_block_pass_t *block = NEW_BLOCK_PASS(NEW_LVAR(idFWD_BLOCK, loc), loc);
-    NODE *args = leading ? rest_arg_append(p, leading, rest, argsloc) : NEW_SPLAT(rest, loc);
-    block->forwarding = TRUE;
-#ifndef FORWARD_ARGS_WITH_RUBY2_KEYWORDS
-    args = arg_append(p, args, new_hash(p, kwrest, loc), loc);
-#endif
-    return arg_blk_pass(args, block);
+    NODE *rest = NEW_LVAR(idFWD_ALL, loc);
+    NODE *args = leading ? rest_arg_append(p, leading, rest, argsloc) : rest;
+    return args;
 }
 
 static NODE *
