@@ -2545,7 +2545,7 @@ vm_base_ptr(const rb_control_frame_t *cfp)
 
         if (ISEQ_BODY(cfp->iseq)->param.flags.forwardable && VM_ENV_LOCAL_P(cfp->ep)) {
             int lts = ISEQ_BODY(cfp->iseq)->local_table_size;
-            int params = ISEQ_BODY(cfp->iseq)->param.size;
+            int params = ISEQ_BODY(cfp->iseq)->param.size + 1;
 
             CALL_INFO ci = (CALL_INFO)cfp->ep[-(VM_ENV_DATA_SIZE + (lts - params))]; // skip EP stuff, CI should be last local
             bp += vm_ci_argc(ci);
@@ -3244,6 +3244,25 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
 }
 
 static void
+stack_reverse(VALUE *p1, VALUE *p2)
+{
+    while (p1 < p2) {
+        VALUE tmp = *p1;
+        *p1++ = *p2;
+        *p2-- = tmp;
+    }
+}
+
+static void
+stack_rotate(VALUE * stack, unsigned int size, unsigned int amt)
+{
+    // stack_reverse(stack + 0,   stack + amt);
+    stack_reverse(stack + 0,   stack + (amt - 1));
+    stack_reverse(stack + amt, stack + (size - 1));
+    stack_reverse(stack + 0,   stack + (size - 1));
+}
+
+static void
 vm_adjust_stack_forwarding(const struct rb_execution_context_struct *ec, struct rb_control_frame_struct *cfp, int argc, VALUE splat)
 {
     // This case is when the caller is using a ... parameter.
@@ -3284,6 +3303,8 @@ vm_adjust_stack_forwarding(const struct rb_execution_context_struct *ec, struct 
     // Our local storage is below the args we need to copy
     int local_size = ISEQ_BODY(iseq)->local_table_size + argc;
 
+    fprintf(stderr, "lead num %d\n", ISEQ_BODY(iseq)->param.lead_num);
+
     const VALUE * from = lep - (local_size + VM_ENV_DATA_SIZE - 1); // 2 for EP values
     VALUE * to = cfp->sp - 1; // clobber the CI
 
@@ -3296,6 +3317,7 @@ vm_adjust_stack_forwarding(const struct rb_execution_context_struct *ec, struct 
 
     CHECK_VM_STACK_OVERFLOW0(cfp, to, argc);
     MEMCPY(to, from, VALUE, argc);
+    stack_rotate(to, argc, 1);
     cfp->sp = to + argc;
 
     // Stack layout should now be:
@@ -3342,7 +3364,7 @@ vm_call_iseq_fwd_setup(rb_execution_context_t *ec, rb_control_frame_t *cfp, stru
 
     // Setting up local size and param size
     local_size = local_size + vm_ci_argc(calling->cd->ci);
-    param_size = param_size + vm_ci_argc(calling->cd->ci);
+    param_size = param_size + vm_ci_argc(calling->cd->ci) + 1;
 
     const int opt_pc = vm_callee_setup_arg(ec, calling, iseq, cfp->sp - calling->argc, param_size, local_size);
     return vm_call_iseq_setup_2(ec, cfp, calling, opt_pc, param_size, local_size);
@@ -4749,7 +4771,7 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
 
     switch (cme->def->type) {
       case VM_METHOD_TYPE_ISEQ:
-        if (ISEQ_BODY(def_iseq_ptr(cme->def))->param.flags.forwardable) {
+        if (UNLIKELY(ISEQ_BODY(def_iseq_ptr(cme->def))->param.flags.forwardable)) {
             CC_SET_FASTPATH(cc, vm_call_iseq_fwd_setup, TRUE);
             return vm_call_iseq_fwd_setup(ec, cfp, calling);
         }

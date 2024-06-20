@@ -2706,7 +2706,7 @@ rb_iseq_disasm_recursive(const rb_iseq_t *iseq, VALUE indent)
         rb_str_cat(str, indent_str, indent_len);
         rb_str_catf(str,
                     "local table (size: %d, argc: %d "
-                    "[opts: %d, rest: %d, post: %d, block: %d, kw: %d@%d, kwrest: %d])\n",
+                    "[opts: %d, rest: %d, post: %d, block: %d, kw: %d@%d, kwrest: %d, fwd: %d])\n",
                     body->local_table_size,
                     body->param.lead_num,
                     body->param.opt_num,
@@ -2715,7 +2715,9 @@ rb_iseq_disasm_recursive(const rb_iseq_t *iseq, VALUE indent)
                     body->param.flags.has_block ? body->param.block_start : -1,
                     body->param.flags.has_kw ? keyword->num : -1,
                     body->param.flags.has_kw ? keyword->required_num : -1,
-                    body->param.flags.has_kwrest ? keyword->rest_start : -1);
+                    body->param.flags.has_kwrest ? keyword->rest_start : -1,
+                    body->param.flags.forwardable ? 1 : 0
+                    );
 
         for (i = body->local_table_size; i > 0;) {
             int li = body->local_table_size - --i - 1;

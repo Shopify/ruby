@@ -1136,7 +1136,7 @@ vm_caller_setup_fwd_args(const rb_execution_context_t *ec, rb_control_frame_t *r
     RUBY_ASSERT(ISEQ_BODY(ISEQ_BODY(GET_ISEQ())->local_iseq)->param.flags.forwardable);
     CALL_INFO caller_ci = (CALL_INFO)TOPN(0);
 
-    unsigned int site_argc = vm_ci_argc(site_ci);
+    unsigned int site_argc = vm_ci_argc(site_ci) - 1; // remove the ...
     unsigned int site_flag = vm_ci_flag(site_ci);
     ID site_mid = vm_ci_mid(site_ci);
 
