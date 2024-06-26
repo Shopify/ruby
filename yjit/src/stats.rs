@@ -727,6 +727,8 @@ fn rb_yjit_gen_stats_dict() -> VALUE {
         return Qnil;
     }
 
+    crate::codegen::dump_block_counters();
+
     let hash = unsafe { rb_hash_new() };
 
     unsafe {

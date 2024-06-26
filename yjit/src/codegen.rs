@@ -1174,6 +1174,48 @@ fn end_block_with_jump(
     Some(EndBlock)
 }
 
+
+
+
+static mut NEXT_BLOCK_IDX: usize = 0;
+const LARGE_NUMBER: usize = 10_000_000;
+static mut BLOCK_COUNTERS: [u64; LARGE_NUMBER] = [0; LARGE_NUMBER];
+static mut BLOCK_IDS: [BlockId; LARGE_NUMBER] = [BlockId { iseq: 0 as *const rb_iseq_t, idx: 0 }; LARGE_NUMBER];
+
+
+
+pub fn dump_block_counters()
+{
+    use std::fs::File;
+    use std::io::Write;
+
+    unsafe {
+
+        let mut out_file = File::create("block_stats.json").unwrap();
+
+        write!(&mut out_file, "[").unwrap();
+
+        for block_idx in 0..NEXT_BLOCK_IDX {
+            let counter_val = BLOCK_COUNTERS[block_idx];
+
+            if block_idx > 0 {
+                write!(&mut out_file, ",").unwrap();
+            }
+
+            write!(&mut out_file, "{}", counter_val).unwrap();
+        }
+
+        write!(&mut out_file, "]").unwrap();
+    }
+}
+
+
+
+
+
+
+
+
 // Compile a sequence of bytecode instructions for a given basic block version.
 // Part of gen_block_version().
 // Note: this function will mutate its context while generating code,
@@ -1225,6 +1267,37 @@ pub fn gen_single_block(
 
     // Mark the start of an ISEQ for --yjit-perf
     jit_perf_symbol_push!(jit, &mut asm, &get_iseq_name(iseq), PerfMap::ISEQ);
+
+
+
+
+    let counter_addr = unsafe {
+        let block_idx = NEXT_BLOCK_IDX;
+        NEXT_BLOCK_IDX += 1;
+        println!("gen counter increment {}", block_idx);
+
+        BLOCK_IDS[block_idx] = blockid;
+
+        let counter_addr = (&mut BLOCK_COUNTERS[block_idx]) as *mut u64;
+        counter_addr
+    };
+
+    if get_option!(gen_stats) {
+        // Increment the counter for this block
+        let ptr_reg = asm.load(Opnd::const_ptr(counter_addr as *const u8));
+        let counter_opnd = Opnd::mem(64, ptr_reg, 0);
+        asm.incr_counter(counter_opnd, Opnd::UImm(1));
+    }
+
+
+
+
+
+
+
+
+
+
 
     if asm.ctx.is_return_landing() {
         // Continuation of the end of gen_leave().
