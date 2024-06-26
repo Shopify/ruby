@@ -1279,7 +1279,7 @@ pub fn gen_single_block(
 
         let block_idx = NEXT_BLOCK_IDX;
         NEXT_BLOCK_IDX += 1;
-        println!("gen counter increment {}", block_idx);
+        //println!("gen counter increment {}", block_idx);
 
         let loc_str = iseq_get_location(blockid.iseq, blockid.idx);
         assert!(BLOCK_LOCS.as_ref().unwrap().len() == block_idx);
