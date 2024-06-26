@@ -101,6 +101,11 @@ pub fn ruby_str_to_rust(v: VALUE) -> String {
 // Filenames are sometimes internal strings supplied to eval,
 // so be careful with them.
 pub fn iseq_get_location(iseq: IseqPtr, pos: u16) -> String {
+
+    if iseq == core::ptr::null() {
+        return "null".to_string();
+    }
+
     let iseq_label = unsafe { rb_iseq_label(iseq) };
     let iseq_path = unsafe { rb_iseq_path(iseq) };
     let iseq_lineno = unsafe { rb_iseq_line_no(iseq, pos as usize) };

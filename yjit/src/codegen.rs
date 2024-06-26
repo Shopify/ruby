@@ -1180,8 +1180,8 @@ fn end_block_with_jump(
 static mut NEXT_BLOCK_IDX: usize = 0;
 const LARGE_NUMBER: usize = 10_000_000;
 static mut BLOCK_COUNTERS: [u64; LARGE_NUMBER] = [0; LARGE_NUMBER];
-static mut BLOCK_IDS: [BlockId; LARGE_NUMBER] = [BlockId { iseq: 0 as *const rb_iseq_t, idx: 0 }; LARGE_NUMBER];
-
+//static mut BLOCK_IDS: [BlockId; LARGE_NUMBER] = [BlockId { iseq: 0 as *const rb_iseq_t, idx: 0 }; LARGE_NUMBER];
+static mut BLOCK_LOCS: Option<Vec<String>> = None;
 
 
 pub fn dump_block_counters()
@@ -1191,21 +1191,20 @@ pub fn dump_block_counters()
 
     unsafe {
 
-        let mut out_file = File::create("block_stats.json").unwrap();
-
-        write!(&mut out_file, "[").unwrap();
+        let mut out_file = File::create("block_stats.csv").unwrap();
 
         for block_idx in 0..NEXT_BLOCK_IDX {
             let counter_val = BLOCK_COUNTERS[block_idx];
+            let loc_str = BLOCK_LOCS.as_ref().unwrap()[block_idx].clone();
 
+            /*
             if block_idx > 0 {
-                write!(&mut out_file, ",").unwrap();
+                write!(&mut out_file, "\n").unwrap();
             }
+            */
 
-            write!(&mut out_file, "{}", counter_val).unwrap();
+            write!(&mut out_file, "{}, \"{}\"\n", counter_val, loc_str).unwrap();
         }
-
-        write!(&mut out_file, "]").unwrap();
     }
 }
 
@@ -1272,11 +1271,19 @@ pub fn gen_single_block(
 
 
     let counter_addr = unsafe {
+
+        if BLOCK_LOCS.is_none() {
+            BLOCK_LOCS = Some(Vec::default());
+        }
+
+
         let block_idx = NEXT_BLOCK_IDX;
         NEXT_BLOCK_IDX += 1;
         println!("gen counter increment {}", block_idx);
 
-        BLOCK_IDS[block_idx] = blockid;
+        let loc_str = iseq_get_location(blockid.iseq, blockid.idx);
+        assert!(BLOCK_LOCS.as_ref().unwrap().len() == block_idx);
+        BLOCK_LOCS.as_mut().unwrap().push(loc_str);
 
         let counter_addr = (&mut BLOCK_COUNTERS[block_idx]) as *mut u64;
         counter_addr
