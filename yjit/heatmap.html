@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en-US">
+
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,maximum-scale=2">
+    <script>
+        if(location.search == ''){
+            location.search= 'csv=block_stats.csv'
+        }
+    </script>
+
+
+    <style media="all">
+      #colorscale {
+        position: absolute;
+        left: 2px;
+        top: 30px;
+      }
+      #heatmap {
+        margin-left: 25px;
+        width: 95vw;
+      }
+      svg {
+        border: 1px solid black;
+        height: 90vh;
+      }
+    </style>
+
+  </head>
+
+  <body>
+  <div id="label">label</div>
+  <svg id="colorscale" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="25"></svg>
+
+  <svg id="heatmap"  xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100%" height="100%"> </svg>
+
+
+  <script type="text/javascript">
+
+    function template(s, o) {
+      return s.replaceAll(/\{(\w+)\}/g, (_, c1) => o[c1]);
+    }
+
+    function heatMapColorforValue(value){
+      var h = (1.0 - value) * 240
+      return "hsl(" + h + ", 100%, 50%)";
+    }
+
+    function draw(data) {
+      console.log(data.length);
+      var width = 2;
+      var height = 5;
+      var max_value = Math.max.apply(null, data.map(x => x.count));
+      console.log(max_value);
+      var rows = Math.ceil(Math.sqrt(data.length))*2;
+
+      var color = '#337777';
+      var svg = document.querySelector('#heatmap');
+      var txt = '';
+      data.forEach(({count, location}, i) => {
+        var value = count;
+        var rect = document.createElement('rect');
+        var rel_val = 255 - Math.floor((value / max_value) * 255)
+        var props = {
+          x: (i%rows) * width,
+          y: Math.floor(i/rows) * height,
+          width: width,
+          height: height,
+          fill: heatMapColorforValue(rel_val),
+          "data-label": encodeURIComponent(value + ':' + location),
+          onmouseover: "hover(this)"
+        };
+        if(true) {
+          txt += '<rect '
+          Object.keys(props).forEach(k => {
+            txt += k + '="' + props[k] + '" '
+          });
+          txt += '/>'
+        }
+        else {
+          // txt += template('<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{stroke}" onmouseover="hover(this)" data-label="{label}"/>', {
+            // x1: props.x, y1: props.y, x2: props.x, y2: props.y + props.height, stroke: props.fill,
+            // label: props["data-label"],
+          // });
+        }
+      });
+      svg.innerHTML = txt;
+
+      var colors = Array(256);
+      var i = 0;
+      while(i < colors.length) {
+        colors[i] = i;
+        i++
+      }
+      var height = 2.5;
+      document.querySelector('#colorscale').innerHTML = colors.map(i =>
+        template('<rect x="0" y="{y}" height="{height}" width="{width}" fill="{fill}" onmouseover="hover(this)" data-label="{text}"/><text x="{width}" y="{ty}" font-size="2px" title="{text}">{text}</text>',
+          {i,height, width: 10, y: i*height, ty: (i+1)*height, fill: heatMapColorforValue(i/colors.length), text: Math.floor(i/colors.length*max_value)}
+        )
+      ).join('');
+    }
+
+    function hover(el) {
+      document.querySelector('#label').innerHTML = decodeURIComponent(el.getAttribute('data-label')).replaceAll(/</g, '&lt;');
+    }
+
+    function showRandom() {
+      var data = Array(70000);
+      var i = 0;
+      while(i < data.length){
+        data[i++] = Math.random()*data.length
+      }
+      draw(data);
+    }
+
+    // Good old fashioned quality CSV parsing.
+    function parseCSVRow(line) {
+        return line.split(/,\s*/, 2);
+    }
+
+    function csvPath() {
+        return location.search.match(/csv=([^&]+)/)[1]
+    }
+
+    function blockStatsCSV() {
+      var c = fetch(csvPath())
+      .then(res => res.text())
+            .then(text => {
+                var lines = text.split('\n');
+                var headers = parseCSVRow(lines.shift());
+                return lines.map(x => {
+                    var fields = parseCSVRow(x);
+                    var o = {};
+                    headers.forEach((h, i) => { o[h] = fields[i] });
+                    return o;
+                });
+            })
+      .then(function(data) {
+                    console.log(data[0])
+        draw(data);
+      });
+    }
+
+    blockStatsCSV();
+  </script>
+  </body>
+</html>
