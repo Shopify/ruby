@@ -1193,6 +1193,7 @@ pub fn dump_block_counters()
 
         let mut out_file = File::create("block_stats.csv").unwrap();
 
+        write!(&mut out_file, "count,location\n").unwrap();
         for block_idx in 0..NEXT_BLOCK_IDX {
             let counter_val = BLOCK_COUNTERS[block_idx];
             let loc_str = BLOCK_LOCS.as_ref().unwrap()[block_idx].clone();
