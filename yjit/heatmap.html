@@ -105,7 +105,7 @@
           width: width,
           height: height,
           fill: heatMapColorforValue(rel_val),
-          "data-label": encodeURIComponent(formatNum(value) + ':' + location),
+          "data-label": encodeURIComponent('[' + i + '] ' + formatNum(value) + ': ' + location),
           onclick: "copy(this)",
           onmouseover: "hover(this)"
         };
