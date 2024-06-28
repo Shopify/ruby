@@ -54,6 +54,10 @@
       return "hsl(" + h + ", 100%, 50%)";
     }
 
+    function formatNum(n) {
+        return new Intl.NumberFormat('en-US', { maximumSignificantDigits: 3 }).format(n);
+    }
+
     function draw(data) {
       console.log(data.length);
       var width = 2;
@@ -75,7 +79,7 @@
           width: width,
           height: height,
           fill: heatMapColorforValue(rel_val),
-          "data-label": encodeURIComponent(value + ':' + location),
+          "data-label": encodeURIComponent(formatNum(value) + ':' + location),
           onmouseover: "hover(this)"
         };
         if(true) {
@@ -103,7 +107,7 @@
       var height = 2.5;
       document.querySelector('#colorscale').innerHTML = colors.map(i =>
         template('<rect x="0" y="{y}" height="{height}" width="{width}" fill="{fill}" onmouseover="hover(this)" data-label="{text}"/><text x="{width}" y="{ty}" font-size="2px" title="{text}">{text}</text>',
-          {i,height, width: 10, y: i*height, ty: (i+1)*height, fill: heatMapColorforValue(i/colors.length), text: Math.floor(i/colors.length*max_value)}
+          {i,height, width: 10, y: i*height, ty: (i+1)*height, fill: heatMapColorforValue(i/colors.length), text: formatNum(Math.floor(i/colors.length*max_value))}
         )
       ).join('');
     }
