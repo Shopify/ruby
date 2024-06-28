@@ -6,6 +6,9 @@
 
   Access at:
   http://localhost:8000/heatmap.html?csv=lobsters.csv
+
+  Change color scale start:
+  http://localhost:8000/heatmap.html?csv=lobsters.csv?start=(black|white)
   -->
 
   <head>
@@ -47,6 +50,13 @@
       return s.replaceAll(/\{(\w+)\}/g, (_, c1) => o[c1]);
     }
 
+    function colorStart() {
+        var m = location.search.match(/start=([^&]+)/);
+        if (m) {
+            return m[1];
+        }
+    }
+
     // Value should be in [0,1]
     function heatMapColorforValue(value){
       // Use sqrt to emphasize lower values
@@ -54,7 +64,20 @@
 
       // Produce heat map using HSL color space
       var h = (1.0 - value) * 240;
-      return "hsl(" + h + ", 100%, 50%)";
+
+      var s = 100;
+
+      var l = 50;
+      switch(colorStart()) {
+        case 'black':
+          l = value * 50;
+          break;
+        case 'white':
+          l = 100 - value * 50;
+          break;
+      }
+
+      return template("hsl({h}, {s}%, {l}%)", {h, s, l});
     }
 
     function formatNum(n) {
