@@ -47,8 +47,13 @@
       return s.replaceAll(/\{(\w+)\}/g, (_, c1) => o[c1]);
     }
 
+    // Value should be in [0,1]
     function heatMapColorforValue(value){
-      var h = (1.0 - value) * 240
+      // Use sqrt to emphasize lower values
+      value = Math.sqrt(value);
+
+      // Produce heat map using HSL color space
+      var h = (1.0 - value) * 240;
       return "hsl(" + h + ", 100%, 50%)";
     }
 
