@@ -83,6 +83,7 @@
           height: height,
           fill: heatMapColorforValue(rel_val),
           "data-label": encodeURIComponent(formatNum(value) + ':' + location),
+          onclick: "copy(this)",
           onmouseover: "hover(this)"
         };
         if(true) {
@@ -117,6 +118,10 @@
 
     function hover(el) {
       document.querySelector('#label').innerHTML = decodeURIComponent(el.getAttribute('data-label')).replaceAll(/</g, '&lt;');
+    }
+
+    function copy(el) {
+        navigator.clipboard.writeText(decodeURIComponent(el.getAttribute('data-label')));
     }
 
     function showRandom() {
