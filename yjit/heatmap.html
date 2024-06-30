@@ -33,22 +33,42 @@
 
       #colorscale {
         width: 50px;
+        display: flex;
+        flex-direction: column;
       }
-      #colorscale g text {
+      #colorscale .g {
+        align-items: center;
+        display: flex;
         font-size: 2px;
+        height: 2.5px;
+        margin: 0;
+        padding: 0;
+        flex-direction: row;
+        transition: all 0.1s;
       }
-      #colorscale g:hover text {
-        font-size: 6px;
-        translate: 4px 5px;
+      #colorscale .g .color {
+        margin: 0 2px;
+        height: 100%;
+        width: 10px;
       }
-      #colorscale g:hover rect {
-        stroke: white;
+
+      #colorscale .g:hover {
+        padding: 1px 0;
+        height: 8px;
+      }
+      #colorscale .g:hover .color {
         width: 12px;
-        height: 10px;
-        translate: -1px 0;
+        margin-left: 1px;
       }
-      #colorscale g:hover ~ g {
-        translate: 0 7.5px;
+      #colorscale .g:hover span {
+        font-size: 6px;
+      }
+
+      #colorscale .g:has(+ .g:hover),
+      #colorscale .g:hover + .g {
+        padding: 0.5px 0;
+        font-size: 4px;
+        height: 5px;
       }
 
       #heatmap rect:hover {
@@ -63,7 +83,7 @@
         <div id="label" style="display: block; height: 40px">label</div>
       </div>
       <div class="container">
-        <svg id="colorscale" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"></svg>
+        <div id="colorscale"></div>
 
         <svg id="heatmap"  xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100%" height="100%"> </svg>
       </div>
@@ -155,10 +175,9 @@
         colors[i] = i;
         i++
       }
-      var height = 2.5;
       document.querySelector('#colorscale').innerHTML = colors.map(i =>
-          template('<g onmouseover="hover(this)" data-label="{text}"><rect x="2" y="{y}" height="{height}" width="{width}" fill="{fill}"/><text x="{width}" y="{ty}">{text}</text></g>',
-          {i,height, width: 10, y: i*height, ty: (i+1)*height, fill: heatMapColorforValue(i/colors.length), text: formatNum(Math.floor(i/colors.length*max_value))}
+          template('<div class="g" onmouseover="hover(this)" data-label="{text}"><div class="color" style="background-color: {fill}"/></div><span>{text}</span></div>',
+          {fill: heatMapColorforValue(i/colors.length), text: formatNum(Math.floor(i/colors.length*max_value))}
         )
       ).join('');
     }
