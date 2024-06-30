@@ -27,8 +27,32 @@
 
     <style media="all">
       .container {
-       display: flex;
-       height: 95vh;
+        display: flex;
+        height: 95vh;
+      }
+
+      #colorscale {
+        width: 50px;
+      }
+      #colorscale g text {
+        font-size: 2px;
+      }
+      #colorscale g:hover text {
+        font-size: 6px;
+        translate: 4px 5px;
+      }
+      #colorscale g:hover rect {
+        stroke: white;
+        width: 12px;
+        height: 10px;
+        translate: -1px 0;
+      }
+      #colorscale g:hover ~ g {
+        translate: 0 7.5px;
+      }
+
+      #heatmap rect:hover {
+        stroke: white;
       }
     </style>
 
@@ -39,7 +63,7 @@
         <div id="label" style="display: block; height: 40px">label</div>
       </div>
       <div class="container">
-        <svg id="colorscale" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="25"></svg>
+        <svg id="colorscale" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"></svg>
 
         <svg id="heatmap"  xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100%" height="100%"> </svg>
       </div>
@@ -133,7 +157,7 @@
       }
       var height = 2.5;
       document.querySelector('#colorscale').innerHTML = colors.map(i =>
-        template('<rect x="0" y="{y}" height="{height}" width="{width}" fill="{fill}" onmouseover="hover(this)" data-label="{text}"/><text x="{width}" y="{ty}" font-size="2px" title="{text}">{text}</text>',
+          template('<g onmouseover="hover(this)" data-label="{text}"><rect x="2" y="{y}" height="{height}" width="{width}" fill="{fill}"/><text x="{width}" y="{ty}">{text}</text></g>',
           {i,height, width: 10, y: i*height, ty: (i+1)*height, fill: heatMapColorforValue(i/colors.length), text: formatNum(Math.floor(i/colors.length*max_value))}
         )
       ).join('');
