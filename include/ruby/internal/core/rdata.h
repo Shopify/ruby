@@ -30,6 +30,7 @@
 #include "ruby/internal/attr/warning.h"
 #include "ruby/internal/cast.h"
 #include "ruby/internal/core/rbasic.h"
+#include "ruby/internal/core/rtypeddata.h"
 #include "ruby/internal/dllexport.h"
 #include "ruby/internal/fl_type.h"
 #include "ruby/internal/value.h"
@@ -77,6 +78,7 @@
  */
 #define RUBY_DEFAULT_FREE         RBIMPL_DATA_FUNC(-1)
 
+
 /**
  * This is a value you can set  to ::RData::dfree.  Setting this means the data
  * is managed by  someone else, like, statically allocated.  Of  course you are
@@ -93,16 +95,6 @@
  */
 #define RUBY_UNTYPED_DATA_FUNC(f) f RBIMPL_ATTRSET_UNTYPED_DATA_FUNC()
 
-/*
-#define RUBY_DATA_FUNC(func) ((void (*)(void*))(func))
-*/
-
-/**
- * This is  the type of callbacks  registered to ::RData.  The  argument is the
- * `data` field.
- */
-typedef void (*RUBY_DATA_FUNC)(void*);
-
 /**
  * @deprecated
  *
@@ -117,10 +109,25 @@ typedef void (*RUBY_DATA_FUNC)(void*);
  * too many warnings  in the core.  Maybe  we want to retry  later...  Just add
  * deprecated document for now.
  */
+struct RDataHeader {
+    /** Basic part, including flags and class. */
+    struct RBasic basic;
+
+    const rb_data_type_t *const type;
+
+    /** Pointer to the actual C level struct that you want to wrap. */
+    void *data;
+};
+
 struct RData {
 
     /** Basic part, including flags and class. */
     struct RBasic basic;
+
+    const rb_data_type_t *const type;
+
+    /** Pointer to the actual C level struct that you want to wrap. */
+    void *data;
 
     /**
      * This function is called when the object is experiencing GC marks.  If it
@@ -141,9 +148,6 @@ struct RData {
      *           impossible at that moment (that is why GC runs).
      */
     RUBY_DATA_FUNC dfree;
-
-    /** Pointer to the actual C level struct that you want to wrap. */
-    void *data;
 };
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()

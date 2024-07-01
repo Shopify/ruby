@@ -33,7 +33,6 @@
 #include "ruby/internal/attr/pure.h"
 #include "ruby/internal/cast.h"
 #include "ruby/internal/core/rbasic.h"
-#include "ruby/internal/core/rdata.h"
 #include "ruby/internal/dllexport.h"
 #include "ruby/internal/error.h"
 #include "ruby/internal/fl_type.h"
@@ -101,6 +100,16 @@
  */
 #define RTYPEDDATA_DATA(v)           (RTYPEDDATA(v)->data)
 
+/*
+#define RUBY_DATA_FUNC(func) ((void (*)(void*))(func))
+*/
+
+/**
+ * This is  the type of callbacks  registered to ::RData.  The  argument is the
+ * `data` field.
+ */
+typedef void (*RUBY_DATA_FUNC)(void*);
+
 /** @old{rb_check_typeddata} */
 #define Check_TypedStruct(v, t)      \
     rb_check_typeddata(RBIMPL_CAST((VALUE)(v)), (t))
@@ -112,9 +121,8 @@
 #define RUBY_TYPED_FROZEN_SHAREABLE  RUBY_TYPED_FROZEN_SHAREABLE
 #define RUBY_TYPED_WB_PROTECTED      RUBY_TYPED_WB_PROTECTED
 #define RUBY_TYPED_PROMOTED1         RUBY_TYPED_PROMOTED1
+#define TYPED_DATA_FL_EMBEDDED       RUBY_FL_USER0
 /** @endcond */
-
-#define TYPED_DATA_EMBEDDED 2
 
 /**
  * @private
@@ -364,7 +372,7 @@ struct RTypedData {
      *
      * @internal
      */
-    const VALUE typed_flag;
+    // const VALUE typed_flag;
 
     /** Pointer to the actual C level struct that you want to wrap. */
     void *data;
@@ -515,35 +523,6 @@ RBIMPL_SYMBOL_EXPORT_END()
 #define TypedData_Get_Struct(obj,type,data_type,sval) \
     ((sval) = RBIMPL_CAST((type *)rb_check_typeddata((obj), (data_type))))
 
-static inline bool
-RTYPEDDATA_EMBEDDED_P(VALUE obj)
-{
-#if RUBY_DEBUG
-    if (RB_UNLIKELY(!RB_TYPE_P(obj, RUBY_T_DATA))) {
-        Check_Type(obj, RUBY_T_DATA);
-        RBIMPL_UNREACHABLE_RETURN(false);
-    }
-#endif
-
-    return RTYPEDDATA(obj)->typed_flag & TYPED_DATA_EMBEDDED;
-}
-
-static inline void *
-RTYPEDDATA_GET_DATA(VALUE obj)
-{
-#if RUBY_DEBUG
-    if (RB_UNLIKELY(!RB_TYPE_P(obj, RUBY_T_DATA))) {
-        Check_Type(obj, RUBY_T_DATA);
-        RBIMPL_UNREACHABLE_RETURN(false);
-    }
-#endif
-
-    /* We reuse the data pointer in embedded TypedData. We can't use offsetof
-     * since RTypedData a non-POD type in C++. */
-    const size_t embedded_typed_data_size = sizeof(struct RTypedData) - sizeof(void *);
-
-    return RTYPEDDATA_EMBEDDED_P(obj) ? (char *)obj + embedded_typed_data_size : RTYPEDDATA(obj)->data;
-}
 
 RBIMPL_ATTR_PURE()
 RBIMPL_ATTR_ARTIFICIAL()
@@ -561,8 +540,8 @@ RBIMPL_ATTR_ARTIFICIAL()
 static inline bool
 rbimpl_rtypeddata_p(VALUE obj)
 {
-    VALUE typed_flag = RTYPEDDATA(obj)->typed_flag;
-    return typed_flag != 0 && typed_flag <= 3;
+    extern const rb_data_type_t ruby_deprecated_rdata_type;
+    return RTYPEDDATA(obj)->type != &ruby_deprecated_rdata_type;
 }
 
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()
@@ -586,6 +565,37 @@ RTYPEDDATA_P(VALUE obj)
 #endif
 
     return rbimpl_rtypeddata_p(obj);
+}
+
+static inline bool
+rbimpl_rtypeddata_embedded_p(VALUE obj)
+{
+#if RUBY_DEBUG
+    if (RB_UNLIKELY(!RB_TYPE_P(obj, RUBY_T_DATA))) {
+        Check_Type(obj, RUBY_T_DATA);
+        RBIMPL_UNREACHABLE_RETURN(false);
+    }
+#endif
+
+    return RTYPEDDATA_P(obj) && RTYPEDDATA(obj)->type->flags & RUBY_TYPED_EMBEDDABLE && FL_TEST_RAW(obj, TYPED_DATA_FL_EMBEDDED);
+}
+
+
+static inline void *
+RTYPEDDATA_GET_DATA(VALUE obj)
+{
+#if RUBY_DEBUG
+    if (RB_UNLIKELY(!RB_TYPE_P(obj, RUBY_T_DATA))) {
+        Check_Type(obj, RUBY_T_DATA);
+        RBIMPL_UNREACHABLE_RETURN(false);
+    }
+#endif
+
+    /* We reuse the data pointer in embedded TypedData. We can't use offsetof
+     * since RTypedData a non-POD type in C++. */
+    const size_t embedded_typed_data_size = sizeof(struct RTypedData) - sizeof(void *);
+
+    return rbimpl_rtypeddata_embedded_p(obj) ? (char *)obj + embedded_typed_data_size : RTYPEDDATA(obj)->data;
 }
 
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()
