@@ -220,7 +220,7 @@
       var c = fetch(csvPath())
       .then(res => res.text())
             .then(text => {
-                var lines = text.split('\n');
+                var lines = text.trim().split('\n');
                 var headers = parseCSVRow(lines.shift());
                 return lines.map(x => {
                     var fields = parseCSVRow(x);
