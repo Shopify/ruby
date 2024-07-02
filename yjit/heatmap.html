@@ -26,6 +26,18 @@
     </script>
 
     <style media="all">
+      #label {
+        display: flex;
+      }
+      #label .color {
+        margin: 0 2px;
+        height: 20px;
+        width: 10px;
+      }
+      #label .text {
+        height: 40px;
+      }
+
       .container {
         display: flex;
         height: 95vh;
@@ -79,8 +91,9 @@
   </head>
 
   <body>
-      <div>
-        <div id="label" style="display: block; height: 40px">label</div>
+      <div id="label">
+        <div class="color"></div>
+        <div class="text"></div>
       </div>
       <div class="container">
         <div id="colorscale"></div>
@@ -136,19 +149,20 @@
       console.log(max_value);
       var rows = Math.ceil(Math.sqrt(data.length))*2;
 
-      var color = '#337777';
       var svg = document.querySelector('#heatmap');
       var txt = '';
       data.forEach(({count, location}, i) => {
         var value = count;
         var rect = document.createElement('rect');
         var rel_val = value / max_value;
+        var color = heatMapColorforValue(rel_val);
         var props = {
           x: (i%rows) * width,
           y: Math.floor(i/rows) * height,
           width: width,
           height: height,
-          fill: heatMapColorforValue(rel_val),
+          fill: color,
+          "data-color": color,
           "data-label": encodeURIComponent('[' + formatNum(i) + '] ' + formatNum(value) + ': ' + location),
           onclick: "copy(this)",
           onmouseover: "hover(this)"
@@ -176,14 +190,15 @@
         i++
       }
       document.querySelector('#colorscale').innerHTML = colors.map(i =>
-          template('<div class="g" onmouseover="hover(this)" data-label="{text}"><div class="color" style="background-color: {fill}"/></div><span>{text}</span></div>',
+          template('<div class="g" onmouseover="hover(this)" data-color="{fill}" data-label="{text}"><div class="color" style="background-color: {fill}"/></div><span>{text}</span></div>',
           {fill: heatMapColorforValue(i/colors.length), text: formatNum(Math.floor(i/colors.length*max_value))}
         )
       ).join('');
     }
 
     function hover(el) {
-      document.querySelector('#label').innerHTML = decodeURIComponent(el.getAttribute('data-label')).replaceAll(/</g, '&lt;');
+      document.querySelector('#label .color').style.backgroundColor = el.getAttribute('data-color');
+      document.querySelector('#label .text').innerText = decodeURIComponent(el.getAttribute('data-label'));
     }
 
     function copy(el) {
