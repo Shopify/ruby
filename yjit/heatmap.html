@@ -138,7 +138,7 @@
     }
 
     function formatNum(n) {
-        return new Intl.NumberFormat('en-US', { maximumSignificantDigits: 3 }).format(n);
+        return new Intl.NumberFormat('en-US').format(n);
     }
 
     // The browser seems to handle an svg with 65,000 rect's better than a div of 65,000 div's.
