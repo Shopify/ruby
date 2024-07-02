@@ -141,6 +141,7 @@
         return new Intl.NumberFormat('en-US', { maximumSignificantDigits: 3 }).format(n);
     }
 
+    // The browser seems to handle an svg with 65,000 rect's better than a div of 65,000 div's.
     function draw(data) {
       console.log(data.length);
       var width = 2;
@@ -167,19 +168,11 @@
           onclick: "copy(this)",
           onmouseover: "hover(this)"
         };
-        if(true) {
-          txt += '<rect '
-          Object.keys(props).forEach(k => {
-            txt += k + '="' + props[k] + '" '
-          });
-          txt += '/>'
-        }
-        else {
-          // txt += template('<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{stroke}" onmouseover="hover(this)" data-label="{label}"/>', {
-            // x1: props.x, y1: props.y, x2: props.x, y2: props.y + props.height, stroke: props.fill,
-            // label: props["data-label"],
-          // });
-        }
+        txt += '<rect '
+        Object.keys(props).forEach(k => {
+          txt += k + '="' + props[k] + '" '
+        });
+        txt += '/>'
       });
       svg.innerHTML = txt;
 
