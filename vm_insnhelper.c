@@ -5192,42 +5192,10 @@ vm_callee_setup_block_arg_arg0_check(VALUE *argv)
 static int
 vm_callee_setup_block_arg(rb_execution_context_t *ec, struct rb_calling_info *calling, const struct rb_callinfo *ci, const rb_iseq_t *iseq, VALUE *argv, const enum arg_setup_type arg_setup_type)
 {
-    if (rb_simple_iseq_p(iseq)) {
         rb_control_frame_t *cfp = ec->cfp;
         VALUE arg0;
 
-        CALLER_SETUP_ARG(cfp, calling, ci, ISEQ_BODY(iseq)->param.lead_num);
-
-        if (arg_setup_type == arg_setup_block &&
-            calling->argc == 1 &&
-            ISEQ_BODY(iseq)->param.flags.has_lead &&
-            !ISEQ_BODY(iseq)->param.flags.ambiguous_param0 &&
-            !NIL_P(arg0 = vm_callee_setup_block_arg_arg0_check(argv))) {
-            calling->argc = vm_callee_setup_block_arg_arg0_splat(cfp, iseq, argv, arg0);
-        }
-
-        if (calling->argc != ISEQ_BODY(iseq)->param.lead_num) {
-            if (arg_setup_type == arg_setup_block) {
-                if (calling->argc < ISEQ_BODY(iseq)->param.lead_num) {
-                    int i;
-                    CHECK_VM_STACK_OVERFLOW(cfp, ISEQ_BODY(iseq)->param.lead_num);
-                    for (i=calling->argc; i<ISEQ_BODY(iseq)->param.lead_num; i++) argv[i] = Qnil;
-                    calling->argc = ISEQ_BODY(iseq)->param.lead_num; /* fill rest parameters */
-                }
-                else if (calling->argc > ISEQ_BODY(iseq)->param.lead_num) {
-                    calling->argc = ISEQ_BODY(iseq)->param.lead_num; /* simply truncate arguments */
-                }
-            }
-            else {
-                argument_arity_error(ec, iseq, calling->argc, ISEQ_BODY(iseq)->param.lead_num, ISEQ_BODY(iseq)->param.lead_num);
-            }
-        }
-
         return 0;
-    }
-    else {
-        return setup_parameters_complex(ec, iseq, calling, ci, argv, arg_setup_type);
-    }
 }
 
 static int
@@ -5271,6 +5239,13 @@ vm_invoke_iseq_block(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
                   ISEQ_BODY(iseq)->local_table_size - arg_size, ISEQ_BODY(iseq)->stack_max);
 
     return Qundef;
+}
+
+static VALUE
+vm_invoke_iseq_block_cc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
+                     struct rb_calling_info *calling) {
+    VALUE callee = VM_CF_BLOCK_HANDLER(GET_CFP());
+    return vm_invoke_iseq_block(ec, reg_cfp, calling, calling->cd->ci, false, callee);
 }
 
 static VALUE
@@ -5945,6 +5920,55 @@ enum method_explorer_type {
     mexp_search_super,
 };
 
+static const struct rb_callcache vm_invokeblock_hardcoded = {
+    .flags = T_IMEMO | (imemo_callcache << FL_USHIFT) | VM_CALLCACHE_UNMARKABLE,
+    .klass = Qfalse,
+    .cme_  = NULL,
+    .call_ = vm_invokeblock_i,
+    .aux_  = {
+        .v = Qfalse,
+    }
+};
+
+static const struct rb_callcache *
+vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
+                 struct rb_control_frame_struct *reg_cfp,
+                 struct rb_call_data *cd,
+                 VALUE block_handler)
+{
+    const struct rb_callinfo *ci = cd->ci;
+
+    const struct rb_callcache * ret = &vm_invokeblock_hardcoded;
+
+    if (block_handler == VM_BLOCK_HANDLER_NONE) {
+        rb_vm_localjump_error("no block given (yield)", Qnil, 0);
+    }
+    else {
+        if (vm_block_handler_type(block_handler) == block_handler_type_iseq) {
+            // what to do
+            const struct rb_captured_block *captured = VM_BH_TO_ISEQ_BLOCK(block_handler);
+            const rb_iseq_t *iseq = rb_iseq_check(captured->code.iseq);
+
+            // check cache
+            // if (iseq == cc->iseq, we're good
+            if (cd->cc->klass == (VALUE)iseq) {
+                ret = cd->cc;
+            }
+            else {
+                if (!ISEQ_BODY(iseq)->block_ccs) {
+                    ISEQ_BODY(iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
+                }
+                ret = vm_cc_new((VALUE)iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
+                //ret = vm_cc_new((VALUE)iseq, NULL, vm_invokeblock_i, cc_type_block);
+                vm_ccs_push((VALUE)iseq, ISEQ_BODY(iseq)->block_ccs, ci, ret);
+                cd->cc = ret;
+                RUBY_ASSERT(ret->klass == iseq);
+            }
+        }
+    }
+    return ret;
+}
+
 static inline VALUE
 vm_sendish(
     struct rb_execution_context_struct *ec,
@@ -5976,8 +6000,12 @@ vm_sendish(
         val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
         break;
       case mexp_search_invokeblock:
-        val = vm_invokeblock_i(ec, GET_CFP(), &calling);
-        break;
+        {
+            VALUE callee = VM_CF_BLOCK_HANDLER(GET_CFP());
+            calling.cc = cc = vm_invokeblock_fastpath(ec, GET_CFP(), cd, callee);
+            val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
+            break;
+        }
     }
     return val;
 }
