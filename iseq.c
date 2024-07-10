@@ -376,6 +376,10 @@ rb_iseq_mark_and_move(rb_iseq_t *iseq, bool reference_updating)
             }
         }
 
+        if (body->block_ccs) {
+            rb_cc_list_mark(body->block_ccs, (VALUE)iseq);
+        }
+
         if (body->param.flags.has_kw && body->param.keyword != NULL) {
             const struct rb_iseq_param_keyword *const keyword = body->param.keyword;
 

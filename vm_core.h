@@ -533,6 +533,8 @@ struct rb_iseq_constant_body {
 
     struct rb_id_table *outer_variables;
 
+    struct rb_class_cc_entries *block_ccs;
+
     const rb_iseq_t *mandatory_only_iseq;
 
 #if USE_YJIT || USE_ZJIT
