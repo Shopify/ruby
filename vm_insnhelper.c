@@ -5244,8 +5244,24 @@ vm_invoke_iseq_block(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
 static VALUE
 vm_invoke_iseq_block_cc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
                      struct rb_calling_info *calling) {
-    VALUE callee = VM_CF_BLOCK_HANDLER(GET_CFP());
-    return vm_invoke_iseq_block(ec, reg_cfp, calling, calling->cd->ci, false, callee);
+    VALUE block_handler = VM_CF_BLOCK_HANDLER(GET_CFP());
+    const struct rb_captured_block *captured = VM_BH_TO_ISEQ_BLOCK(block_handler);
+    const rb_iseq_t *iseq = rb_iseq_check(captured->code.iseq);
+    const int arg_size = ISEQ_BODY(iseq)->param.size;
+    VALUE * const rsp = GET_SP() - calling->argc;
+    VALUE * const argv = rsp;
+
+    SET_SP(rsp);
+
+    vm_push_frame(ec, iseq,
+                  VM_FRAME_MAGIC_BLOCK,
+                  captured->self,
+                  VM_GUARDED_PREV_EP(captured->ep), 0,
+                  ISEQ_BODY(iseq)->iseq_encoded,
+                  rsp + arg_size,
+                  ISEQ_BODY(iseq)->local_table_size - arg_size, ISEQ_BODY(iseq)->stack_max);
+
+    return Qundef;
 }
 
 static VALUE
