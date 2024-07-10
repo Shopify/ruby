@@ -167,6 +167,17 @@ rb_imemo_memsize(VALUE obj)
  * mark
  * ========================================================================= */
 
+void
+rb_cc_list_mark(struct rb_class_cc_entries *ccs, VALUE data)
+{
+    for (int i=0; i<ccs->len; i++) {
+        VM_ASSERT((VALUE)data == ccs->entries[i].cc->klass);
+        VM_ASSERT(!ccs->cme || vm_cc_check_cme(ccs->entries[i].cc, ccs->cme));
+
+        rb_gc_mark_movable((VALUE)ccs->entries[i].cc);
+    }
+}
+
 static enum rb_id_table_iterator_result
 cc_table_mark_i(VALUE ccs_ptr, void *data)
 {
@@ -186,13 +197,13 @@ cc_table_mark_i(VALUE ccs_ptr, void *data)
     }
     else {
         rb_gc_mark_movable((VALUE)ccs->cme);
-
         for (int i=0; i<ccs->len; i++) {
-            VM_ASSERT(klass == ccs->entries[i].cc->klass);
+            VM_ASSERT((VALUE)data == ccs->entries[i].cc->klass);
             VM_ASSERT(vm_cc_check_cme(ccs->entries[i].cc, ccs->cme));
 
             rb_gc_mark_movable((VALUE)ccs->entries[i].cc);
         }
+        rb_cc_list_mark(ccs, (VALUE)data);
         return ID_TABLE_CONTINUE;
     }
 }

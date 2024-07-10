@@ -147,6 +147,8 @@ static inline void MEMO_V2_SET(struct MEMO *m, VALUE v);
 
 size_t rb_imemo_memsize(VALUE obj);
 void rb_cc_table_mark(VALUE klass);
+struct rb_class_cc_entries;
+void rb_cc_list_mark(struct rb_class_cc_entries *ccs, VALUE data);
 void rb_imemo_mark_and_move(VALUE obj, bool reference_updating);
 void rb_cc_table_free(VALUE klass);
 void rb_imemo_free(VALUE obj);

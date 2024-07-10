@@ -305,11 +305,13 @@ struct rb_callcache {
 #define VM_CALLCACHE_BF         IMEMO_FL_USER1
 #define VM_CALLCACHE_SUPER      IMEMO_FL_USER2
 #define VM_CALLCACHE_REFINEMENT IMEMO_FL_USER3
+#define VM_CALLCACHE_BLOCK      IMEMO_FL_USER4
 
 enum vm_cc_type {
     cc_type_normal, // chained from ccs
     cc_type_super,
     cc_type_refinement,
+    cc_type_block,
 };
 
 extern const struct rb_callcache *rb_vm_empty_cc(void);
@@ -335,7 +337,8 @@ vm_cc_new(VALUE klass,
     *((struct rb_callable_method_entry_struct **)&cc->cme_) = (struct rb_callable_method_entry_struct *)cme;
     *((vm_call_handler *)&cc->call_) = call;
 
-    VM_ASSERT(RB_TYPE_P(klass, T_CLASS) || RB_TYPE_P(klass, T_ICLASS));
+    // TODO: assert IMEMO should be an iseq
+    VM_ASSERT(RB_TYPE_P(klass, T_CLASS) || RB_TYPE_P(klass, T_ICLASS) || RB_TYPE_P(klass, T_IMEMO));
 
     switch (type) {
       case cc_type_normal:
@@ -345,6 +348,9 @@ vm_cc_new(VALUE klass,
         break;
       case cc_type_refinement:
         *(VALUE *)&cc->flags |= VM_CALLCACHE_REFINEMENT;
+        break;
+      case cc_type_block:
+        *(VALUE *)&cc->flags |= VM_CALLCACHE_BLOCK;
         break;
     }
 
