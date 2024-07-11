@@ -6016,7 +6016,7 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
                     ret = vm_cc_new((VALUE)iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
                     vm_ccs_push((VALUE)iseq, ISEQ_BODY(iseq)->block_ccs, ci, ret);
                     cd->cc = ret;
-                    // TODO: write barrier
+                    RB_OBJ_WRITTEN((VALUE)iseq, Qundef, ret);
                     RUBY_ASSERT(ret->klass == (VALUE)iseq);
                 }
             }
