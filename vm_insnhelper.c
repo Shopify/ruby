@@ -5953,12 +5953,7 @@ vm_invokeblock_i(struct rb_execution_context_struct *ec,
     const struct rb_callinfo *ci = calling->cd->ci;
     VALUE block_handler = VM_CF_BLOCK_HANDLER(GET_CFP());
 
-    if (block_handler == VM_BLOCK_HANDLER_NONE) {
-        rb_vm_localjump_error("no block given (yield)", Qnil, 0);
-    }
-    else {
-        return vm_invoke_block(ec, GET_CFP(), calling, ci, false, block_handler);
-    }
+    return vm_invoke_block(ec, GET_CFP(), calling, ci, false, block_handler);
 }
 
 enum method_explorer_type {
@@ -5997,7 +5992,6 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
             const rb_iseq_t *iseq = rb_iseq_check(captured->code.iseq);
 
             // check cache
-            // if (iseq == cc->iseq, we're good
             if (LIKELY(cd->cc->klass == (VALUE)iseq)) {
                 ret = cd->cc;
             }

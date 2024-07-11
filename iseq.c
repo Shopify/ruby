@@ -182,6 +182,15 @@ rb_iseq_free(const rb_iseq_t *iseq)
 #endif
         ruby_xfree((void *)body->is_entries);
         ruby_xfree(body->call_data);
+
+        if (body->block_ccs) {
+            for (int i = 0; i < body->block_ccs->len; i++) {
+                vm_cc_invalidate(body->block_ccs->entries[i].cc);
+            }
+            ruby_xfree(body->block_ccs->entries);
+            ruby_xfree(body->block_ccs);
+        }
+
         ruby_xfree((void *)body->catch_table);
         ruby_xfree((void *)body->param.opt_table);
         if (ISEQ_MBITS_BUFLEN(body->iseq_size) > 1 && body->mark_bits.list) {
@@ -377,7 +386,9 @@ rb_iseq_mark_and_move(rb_iseq_t *iseq, bool reference_updating)
         }
 
         if (body->block_ccs) {
-            rb_cc_list_mark(body->block_ccs, (VALUE)iseq);
+            for (int i = 0; i < body->block_ccs->len; i++) {
+                rb_gc_mark_and_move_ptr(&body->block_ccs->entries[i].cc);
+            }
         }
 
         if (body->param.flags.has_kw && body->param.keyword != NULL) {
