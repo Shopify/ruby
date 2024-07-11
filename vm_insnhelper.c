@@ -6005,7 +6005,8 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
             else {
                 if (rb_simple_iseq_p(iseq) &&
                         (vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE) &&
-                        vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(iseq)->param.lead_num) {
+                        vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(iseq)->param.lead_num &&
+                        ISEQ_BODY(iseq)->param.flags.ambiguous_param0) {
                     if (!ISEQ_BODY(iseq)->block_ccs) {
                         ISEQ_BODY(iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
                     }
