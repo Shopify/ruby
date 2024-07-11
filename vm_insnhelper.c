@@ -5192,10 +5192,42 @@ vm_callee_setup_block_arg_arg0_check(VALUE *argv)
 static int
 vm_callee_setup_block_arg(rb_execution_context_t *ec, struct rb_calling_info *calling, const struct rb_callinfo *ci, const rb_iseq_t *iseq, VALUE *argv, const enum arg_setup_type arg_setup_type)
 {
+    if (rb_simple_iseq_p(iseq)) {
         rb_control_frame_t *cfp = ec->cfp;
         VALUE arg0;
 
+        CALLER_SETUP_ARG(cfp, calling, ci, ISEQ_BODY(iseq)->param.lead_num);
+
+        if (arg_setup_type == arg_setup_block &&
+            calling->argc == 1 &&
+            ISEQ_BODY(iseq)->param.flags.has_lead &&
+            !ISEQ_BODY(iseq)->param.flags.ambiguous_param0 &&
+            !NIL_P(arg0 = vm_callee_setup_block_arg_arg0_check(argv))) {
+            calling->argc = vm_callee_setup_block_arg_arg0_splat(cfp, iseq, argv, arg0);
+        }
+
+        if (calling->argc != ISEQ_BODY(iseq)->param.lead_num) {
+            if (arg_setup_type == arg_setup_block) {
+                if (calling->argc < ISEQ_BODY(iseq)->param.lead_num) {
+                    int i;
+                    CHECK_VM_STACK_OVERFLOW(cfp, ISEQ_BODY(iseq)->param.lead_num);
+                    for (i=calling->argc; i<ISEQ_BODY(iseq)->param.lead_num; i++) argv[i] = Qnil;
+                    calling->argc = ISEQ_BODY(iseq)->param.lead_num; /* fill rest parameters */
+                }
+                else if (calling->argc > ISEQ_BODY(iseq)->param.lead_num) {
+                    calling->argc = ISEQ_BODY(iseq)->param.lead_num; /* simply truncate arguments */
+                }
+            }
+            else {
+                argument_arity_error(ec, iseq, calling->argc, ISEQ_BODY(iseq)->param.lead_num, ISEQ_BODY(iseq)->param.lead_num);
+            }
+        }
+
         return 0;
+    }
+    else {
+        return setup_parameters_complex(ec, iseq, calling, ci, argv, arg_setup_type);
+    }
 }
 
 static int
@@ -5967,18 +5999,22 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
 
             // check cache
             // if (iseq == cc->iseq, we're good
-            if (cd->cc->klass == (VALUE)iseq) {
+            if (LIKELY(cd->cc->klass == (VALUE)iseq)) {
                 ret = cd->cc;
             }
             else {
-                if (!ISEQ_BODY(iseq)->block_ccs) {
-                    ISEQ_BODY(iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
+                if (rb_simple_iseq_p(iseq) &&
+                        (vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE) &&
+                        vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(iseq)->param.lead_num) {
+                    if (!ISEQ_BODY(iseq)->block_ccs) {
+                        ISEQ_BODY(iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
+                    }
+                    ret = vm_cc_new((VALUE)iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
+                    //ret = vm_cc_new((VALUE)iseq, NULL, vm_invokeblock_i, cc_type_block);
+                    vm_ccs_push((VALUE)iseq, ISEQ_BODY(iseq)->block_ccs, ci, ret);
+                    cd->cc = ret;
+                    RUBY_ASSERT(ret->klass == iseq);
                 }
-                ret = vm_cc_new((VALUE)iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
-                //ret = vm_cc_new((VALUE)iseq, NULL, vm_invokeblock_i, cc_type_block);
-                vm_ccs_push((VALUE)iseq, ISEQ_BODY(iseq)->block_ccs, ci, ret);
-                cd->cc = ret;
-                RUBY_ASSERT(ret->klass == iseq);
             }
         }
     }
