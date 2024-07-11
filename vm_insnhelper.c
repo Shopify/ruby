@@ -5281,7 +5281,6 @@ vm_invoke_iseq_block_cc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
     const rb_iseq_t *iseq = rb_iseq_check(captured->code.iseq);
     const int arg_size = ISEQ_BODY(iseq)->param.size;
     VALUE * const rsp = GET_SP() - calling->argc;
-    VALUE * const argv = rsp;
 
     SET_SP(rsp);
 
@@ -6010,11 +6009,21 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
                     if (!ISEQ_BODY(iseq)->block_ccs) {
                         ISEQ_BODY(iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
                     }
+
+                    struct rb_class_cc_entries * ccs = ISEQ_BODY(iseq)->block_ccs;
+                    unsigned int argc = vm_ci_argc(ci);
+                    unsigned int flag = vm_ci_flag(ci);
+
+                    for (int i = 0; i < ccs->len; i++) {
+                        if (ccs->entries[i].argc == argc && ccs->entries[i].flag == flag) {
+                            return ccs->entries[i].cc;
+                        }
+                    }
                     ret = vm_cc_new((VALUE)iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
-                    //ret = vm_cc_new((VALUE)iseq, NULL, vm_invokeblock_i, cc_type_block);
                     vm_ccs_push((VALUE)iseq, ISEQ_BODY(iseq)->block_ccs, ci, ret);
                     cd->cc = ret;
-                    RUBY_ASSERT(ret->klass == iseq);
+                    // TODO: write barrier
+                    RUBY_ASSERT(ret->klass == (VALUE)iseq);
                 }
             }
         }
