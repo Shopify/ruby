@@ -6056,12 +6056,9 @@ vm_sendish(
         val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
         break;
       case mexp_search_invokeblock:
-        {
-            VALUE callee = VM_CF_BLOCK_HANDLER(GET_CFP());
-            calling.cc = cc = vm_invokeblock_fastpath(ec, GET_CFP(), cd, callee);
-            val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
-            break;
-        }
+        calling.cc = cc = vm_invokeblock_fastpath(ec, GET_CFP(), cd, VM_CF_BLOCK_HANDLER(GET_CFP()));
+        val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
+        break;
     }
     return val;
 }
