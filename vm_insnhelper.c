@@ -4950,6 +4950,7 @@ rb_vm_cc_general(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
+    VM_ASSERT(FL_TEST_RAW((VALUE)cc, VM_CALLCACHE_BLOCK) == 0);
 
     *(vm_call_handler *)&cc->call_ = vm_call_general;
 }
@@ -5989,22 +5990,22 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
         if (vm_block_handler_type(block_handler) == block_handler_type_iseq) {
             // what to do
             const struct rb_captured_block *captured = VM_BH_TO_ISEQ_BLOCK(block_handler);
-            const rb_iseq_t *iseq = rb_iseq_check(captured->code.iseq);
+            const rb_iseq_t *callee_iseq = rb_iseq_check(captured->code.iseq);
 
             // check cache
-            if (LIKELY(cd->cc->klass == (VALUE)iseq)) {
+            if (LIKELY(cd->cc->klass == (VALUE)callee_iseq)) {
                 ret = cd->cc;
             }
             else {
-                if (rb_simple_iseq_p(iseq) &&
+                if (rb_simple_iseq_p(callee_iseq) &&
                         (vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE) &&
-                        vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(iseq)->param.lead_num &&
-                        ISEQ_BODY(iseq)->param.flags.ambiguous_param0) {
-                    if (!ISEQ_BODY(iseq)->block_ccs) {
-                        ISEQ_BODY(iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
+                        vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(callee_iseq)->param.lead_num &&
+                        ISEQ_BODY(callee_iseq)->param.flags.ambiguous_param0) {
+                    if (!ISEQ_BODY(callee_iseq)->block_ccs) {
+                        ISEQ_BODY(callee_iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
                     }
 
-                    struct rb_class_cc_entries * ccs = ISEQ_BODY(iseq)->block_ccs;
+                    struct rb_class_cc_entries * ccs = ISEQ_BODY(callee_iseq)->block_ccs;
                     unsigned int argc = vm_ci_argc(ci);
                     unsigned int flag = vm_ci_flag(ci);
 
@@ -6013,11 +6014,11 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
                             return ccs->entries[i].cc;
                         }
                     }
-                    ret = vm_cc_new((VALUE)iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
-                    vm_ccs_push((VALUE)iseq, ISEQ_BODY(iseq)->block_ccs, ci, ret);
+                    ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
                     cd->cc = ret;
-                    RB_OBJ_WRITTEN((VALUE)iseq, Qundef, ret);
-                    RUBY_ASSERT(ret->klass == (VALUE)iseq);
+                    RB_OBJ_WRITTEN(reg_cfp->iseq, Qundef, ret);
+                    vm_ccs_push((VALUE)callee_iseq, ISEQ_BODY(callee_iseq)->block_ccs, ci, ret);
+                    RUBY_ASSERT(ret->klass == (VALUE)callee_iseq);
                 }
             }
         }

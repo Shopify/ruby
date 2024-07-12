@@ -185,7 +185,13 @@ rb_iseq_free(const rb_iseq_t *iseq)
 
         if (body->block_ccs) {
             for (int i = 0; i < body->block_ccs->len; i++) {
-                vm_cc_invalidate(body->block_ccs->entries[i].cc);
+                const struct rb_callcache *cc = body->block_ccs->entries[i].cc;
+
+                if (!rb_objspace_garbage_object_p((VALUE)cc) &&
+                        IMEMO_TYPE_P(cc, imemo_callcache) &&
+                        cc->klass == (VALUE)iseq) {
+                    vm_cc_invalidate(cc);
+                }
             }
             ruby_xfree(body->block_ccs->entries);
             ruby_xfree(body->block_ccs);
@@ -387,7 +393,8 @@ rb_iseq_mark_and_move(rb_iseq_t *iseq, bool reference_updating)
 
         if (body->block_ccs) {
             for (int i = 0; i < body->block_ccs->len; i++) {
-                rb_gc_mark_and_move_ptr(&body->block_ccs->entries[i].cc);
+                VM_ASSERT(IMEMO_TYPE_P((VALUE)body->block_ccs->entries[i].cc, imemo_callcache));
+                rb_gc_mark((VALUE)body->block_ccs->entries[i].cc);
             }
         }
 

@@ -406,6 +406,7 @@ static inline const struct rb_callable_method_entry_struct *
 vm_cc_cme(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
+    VM_ASSERT(FL_TEST_RAW((VALUE)cc, VM_CALLCACHE_BLOCK) == 0);
     VM_ASSERT(cc->call_ == NULL   || // not initialized yet
               !vm_cc_markable(cc) ||
               cc->cme_ != NULL);
@@ -491,6 +492,7 @@ vm_cc_call_set(const struct rb_callcache *cc, vm_call_handler call)
 static inline void
 set_vm_cc_ivar(const struct rb_callcache *cc)
 {
+    VM_ASSERT(FL_TEST_RAW((VALUE)cc, VM_CALLCACHE_BLOCK) == 0);
     *(VALUE *)&cc->flags |= VM_CALLCACHE_IVAR;
 }
 
