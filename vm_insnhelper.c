@@ -5275,6 +5275,28 @@ vm_invoke_iseq_block(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
 }
 
 static VALUE
+vm_invoke_iseq_block_cc_param_1_local_1(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
+                     struct rb_calling_info *calling) {
+    VALUE block_handler = VM_CF_BLOCK_HANDLER(GET_CFP());
+    const struct rb_captured_block *captured = VM_BH_TO_ISEQ_BLOCK(block_handler);
+    const rb_iseq_t *iseq = rb_iseq_check(captured->code.iseq);
+    const int arg_size = 1;
+    VALUE * const rsp = GET_SP() - 1;
+
+    SET_SP(rsp);
+
+    vm_push_frame(ec, iseq,
+                  VM_FRAME_MAGIC_BLOCK,
+                  captured->self,
+                  VM_GUARDED_PREV_EP(captured->ep), 0,
+                  ISEQ_BODY(iseq)->iseq_encoded,
+                  rsp + arg_size,
+                  1 - arg_size, ISEQ_BODY(iseq)->stack_max);
+
+    return Qundef;
+}
+
+static VALUE
 vm_invoke_iseq_block_cc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
                      struct rb_calling_info *calling) {
     VALUE block_handler = VM_CF_BLOCK_HANDLER(GET_CFP());
@@ -5999,8 +6021,9 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
             else {
                 if (rb_simple_iseq_p(callee_iseq) &&
                         (vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE) &&
-                        vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(callee_iseq)->param.lead_num &&
+                        vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(callee_iseq)->param.size &&
                         ISEQ_BODY(callee_iseq)->param.flags.ambiguous_param0) {
+
                     if (!ISEQ_BODY(callee_iseq)->block_ccs) {
                         ISEQ_BODY(callee_iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
                     }
@@ -6014,7 +6037,14 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
                             return ccs->entries[i].cc;
                         }
                     }
-                    ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
+
+                    if (argc == 1 && ISEQ_BODY(callee_iseq)->local_table_size ==  1) {
+                        ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc_param_1_local_1, cc_type_block);
+                    }
+                    else {
+                        ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
+                    }
+
                     cd->cc = ret;
                     RB_OBJ_WRITTEN(reg_cfp->iseq, Qundef, ret);
                     vm_ccs_push((VALUE)callee_iseq, ISEQ_BODY(callee_iseq)->block_ccs, ci, ret);
