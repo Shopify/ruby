@@ -5274,14 +5274,13 @@ vm_invoke_iseq_block(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
     return Qundef;
 }
 
-static VALUE
-vm_invoke_iseq_block_cc_param_1_local_1(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
-                     struct rb_calling_info *calling) {
+static inline VALUE
+vm_invoke_iseq_positional_block(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
+                     struct rb_calling_info *calling, int arg_size, const int param_size, const int local_table_size) {
     VALUE block_handler = VM_CF_BLOCK_HANDLER(GET_CFP());
     const struct rb_captured_block *captured = VM_BH_TO_ISEQ_BLOCK(block_handler);
     const rb_iseq_t *iseq = rb_iseq_check(captured->code.iseq);
-    const int arg_size = 1;
-    VALUE * const rsp = GET_SP() - 1;
+    VALUE * const rsp = GET_SP() - arg_size;
 
     SET_SP(rsp);
 
@@ -5290,32 +5289,32 @@ vm_invoke_iseq_block_cc_param_1_local_1(rb_execution_context_t *ec, rb_control_f
                   captured->self,
                   VM_GUARDED_PREV_EP(captured->ep), 0,
                   ISEQ_BODY(iseq)->iseq_encoded,
-                  rsp + arg_size,
-                  1 - arg_size, ISEQ_BODY(iseq)->stack_max);
+                  rsp + param_size,
+                  local_table_size - param_size, ISEQ_BODY(iseq)->stack_max);
 
     return Qundef;
 }
 
 static VALUE
+vm_invoke_iseq_block_cc_arg1_param1_local1(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
+                     struct rb_calling_info *calling) {
+    return vm_invoke_iseq_positional_block(ec, reg_cfp, calling, 1, 1, 1);
+}
+
+static VALUE
 vm_invoke_iseq_block_cc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
                      struct rb_calling_info *calling) {
+
     VALUE block_handler = VM_CF_BLOCK_HANDLER(GET_CFP());
     const struct rb_captured_block *captured = VM_BH_TO_ISEQ_BLOCK(block_handler);
     const rb_iseq_t *iseq = rb_iseq_check(captured->code.iseq);
-    const int arg_size = ISEQ_BODY(iseq)->param.size;
-    VALUE * const rsp = GET_SP() - calling->argc;
 
-    SET_SP(rsp);
-
-    vm_push_frame(ec, iseq,
-                  VM_FRAME_MAGIC_BLOCK,
-                  captured->self,
-                  VM_GUARDED_PREV_EP(captured->ep), 0,
-                  ISEQ_BODY(iseq)->iseq_encoded,
-                  rsp + arg_size,
-                  ISEQ_BODY(iseq)->local_table_size - arg_size, ISEQ_BODY(iseq)->stack_max);
-
-    return Qundef;
+    return vm_invoke_iseq_positional_block(ec,
+            reg_cfp,
+            calling,
+            calling->argc,
+            ISEQ_BODY(iseq)->param.size,
+            ISEQ_BODY(iseq)->local_table_size);
 }
 
 static VALUE
@@ -6019,36 +6018,70 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
                 ret = cd->cc;
             }
             else {
-                if (rb_simple_iseq_p(callee_iseq) &&
-                        (vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE) &&
-                        vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(callee_iseq)->param.size &&
-                        ISEQ_BODY(callee_iseq)->param.flags.ambiguous_param0) {
+                if (rb_simple_iseq_p(callee_iseq)) {
+                    if (vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE) {
+                        if ((unsigned int)ISEQ_BODY(callee_iseq)->param.size == 0 && vm_ci_argc(ci) > 0) {
+                            fprintf(stderr, "ignored params %d %d\n", vm_ci_argc(ci), ISEQ_BODY(callee_iseq)->local_table_size);
+                        }
 
-                    if (!ISEQ_BODY(callee_iseq)->block_ccs) {
-                        ISEQ_BODY(callee_iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
-                    }
+                        if (vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(callee_iseq)->param.size &&
+                                ISEQ_BODY(callee_iseq)->param.flags.ambiguous_param0) {
 
-                    struct rb_class_cc_entries * ccs = ISEQ_BODY(callee_iseq)->block_ccs;
-                    unsigned int argc = vm_ci_argc(ci);
-                    unsigned int flag = vm_ci_flag(ci);
+                            if (!ISEQ_BODY(callee_iseq)->block_ccs) {
+                                ISEQ_BODY(callee_iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
+                            }
 
-                    for (int i = 0; i < ccs->len; i++) {
-                        if (ccs->entries[i].argc == argc && ccs->entries[i].flag == flag) {
-                            return ccs->entries[i].cc;
+                            struct rb_class_cc_entries * ccs = ISEQ_BODY(callee_iseq)->block_ccs;
+                            unsigned int argc = vm_ci_argc(ci);
+                            unsigned int flag = vm_ci_flag(ci);
+
+                            for (int i = 0; i < ccs->len; i++) {
+                                if (ccs->entries[i].argc == argc && ccs->entries[i].flag == flag) {
+                                    return ccs->entries[i].cc;
+                                }
+                            }
+
+                            if (argc == 1 && ISEQ_BODY(callee_iseq)->local_table_size ==  1) {
+                                ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc_arg1_param1_local1, cc_type_block);
+                            }
+                            else {
+                                ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
+                            }
+
+                            cd->cc = ret;
+                            RB_OBJ_WRITTEN(reg_cfp->iseq, Qundef, ret);
+                            vm_ccs_push((VALUE)callee_iseq, ISEQ_BODY(callee_iseq)->block_ccs, ci, ret);
+                            RUBY_ASSERT(ret->klass == (VALUE)callee_iseq);
+                        }
+                        else {
+                            /*
+                            if (vm_ci_argc(ci) != (unsigned int)ISEQ_BODY(callee_iseq)->param.size) {
+                                fprintf(stderr, "args don't match argc %d param size %d\n",
+                                        vm_ci_argc(ci),
+                                        ISEQ_BODY(callee_iseq)->param.size);
+                            }
+                            */
                         }
                     }
-
-                    if (argc == 1 && ISEQ_BODY(callee_iseq)->local_table_size ==  1) {
-                        ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc_param_1_local_1, cc_type_block);
-                    }
                     else {
-                        ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
+                        /*
+                        if (!(vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE)) {
+                            fprintf(stderr, "callsite not simple\n");
+                        }
+                        if (!ISEQ_BODY(callee_iseq)->param.flags.ambiguous_param0) {
+                            rb_obj_info_dump((VALUE)reg_cfp->iseq);
+                            rb_obj_info_dump((VALUE)callee_iseq);
+                            fprintf(stderr, "not ambiguous param?\n");
+                        }
+                        */
                     }
-
-                    cd->cc = ret;
-                    RB_OBJ_WRITTEN(reg_cfp->iseq, Qundef, ret);
-                    vm_ccs_push((VALUE)callee_iseq, ISEQ_BODY(callee_iseq)->block_ccs, ci, ret);
-                    RUBY_ASSERT(ret->klass == (VALUE)callee_iseq);
+                }
+                else {
+                    /*
+                    if (!rb_simple_iseq_p(callee_iseq)) {
+                        fprintf(stderr, "iseq not simple\n");
+                    }
+                    */
                 }
             }
         }
