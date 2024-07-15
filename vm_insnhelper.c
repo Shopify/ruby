@@ -6020,9 +6020,11 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
             else {
                 if (rb_simple_iseq_p(callee_iseq)) {
                     if (vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE) {
+                        /*
                         if ((unsigned int)ISEQ_BODY(callee_iseq)->param.size == 0 && vm_ci_argc(ci) > 0) {
                             fprintf(stderr, "ignored params %d %d\n", vm_ci_argc(ci), ISEQ_BODY(callee_iseq)->local_table_size);
                         }
+                        */
 
                         if (vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(callee_iseq)->param.size &&
                                 ISEQ_BODY(callee_iseq)->param.flags.ambiguous_param0) {
