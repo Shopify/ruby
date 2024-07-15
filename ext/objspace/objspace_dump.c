@@ -448,15 +448,17 @@ dump_object(VALUE obj, struct dump_config *dc)
             break;
 
           case imemo_callcache:
-            mid = vm_cc_cme((const struct rb_callcache *)obj)->called_id;
-            if (mid != 0) {
-                dump_append(dc, ", \"called_id\":");
-                dump_append_id(dc, mid);
+            if (FL_TEST_RAW((VALUE)obj, VM_CALLCACHE_BLOCK) == 0) {
+                mid = vm_cc_cme((const struct rb_callcache *)obj)->called_id;
+                if (mid != 0) {
+                    dump_append(dc, ", \"called_id\":");
+                    dump_append_id(dc, mid);
 
-                VALUE klass = ((const struct rb_callcache *)obj)->klass;
-                if (klass != 0) {
-                    dump_append(dc, ", \"receiver_class\":");
-                    dump_append_ref(dc, klass);
+                    VALUE klass = ((const struct rb_callcache *)obj)->klass;
+                    if (klass != 0) {
+                        dump_append(dc, ", \"receiver_class\":");
+                        dump_append_ref(dc, klass);
+                    }
                 }
             }
             break;
