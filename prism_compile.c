@@ -755,6 +755,11 @@ pm_static_literal_value(rb_iseq_t *iseq, const pm_node_t *node, const pm_scope_n
       case PM_HASH_NODE: {
         const pm_hash_node_t *cast = (const pm_hash_node_t *) node;
         const pm_node_list_t *elements = &cast->elements;
+        // If there are 0 elements, we have an empty array, so we want to
+        // return nil as the value in order to use the newhash instruction.
+        if (elements->size == 0) {
+            return Qnil;
+        }
 
         VALUE array = rb_ary_hidden_new(elements->size * 2);
         for (size_t index = 0; index < elements->size; index++) {
@@ -7165,8 +7170,13 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
             // statically known.
             if (!popped) {
                 VALUE value = pm_static_literal_value(iseq, node, scope_node);
-                PUSH_INSN1(ret, location, duphash, value);
-                RB_OBJ_WRITTEN(iseq, Qundef, value);
+                if (value == Qnil) {
+                    PUSH_INSN1(ret, location, newhash, INT2FIX(0));
+                }
+                else {
+                    PUSH_INSN1(ret, location, duphash, value);
+                    RB_OBJ_WRITTEN(iseq, Qundef, value);
+                }
             }
         }
         else {
