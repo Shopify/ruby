@@ -6108,6 +6108,17 @@ vm_objtostring(const rb_iseq_t *iseq, VALUE recv, CALL_DATA cd)
 }
 
 static VALUE
+vm_opt_ary_freeze(VALUE ary, int bop, ID id)
+{
+    if (BASIC_OP_UNREDEFINED_P(bop, ARRAY_REDEFINED_OP_FLAG)) {
+        return ary;
+    }
+    else {
+        return Qundef;
+    }
+}
+
+static VALUE
 vm_opt_str_freeze(VALUE str, int bop, ID id)
 {
     if (BASIC_OP_UNREDEFINED_P(bop, STRING_REDEFINED_OP_FLAG)) {
