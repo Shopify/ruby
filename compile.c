@@ -2133,7 +2133,6 @@ iseq_set_arguments(rb_iseq_t *iseq, LINK_ANCHOR *const optargs, const NODE *cons
         if (optimized_forward) {
             body->param.flags.use_block = 1;
             body->param.flags.forwardable = TRUE;
-            arg_size = 1;
         }
 
         iseq_calc_param_size(iseq);
@@ -2169,18 +2168,6 @@ iseq_set_local_table(rb_iseq_t *iseq, const rb_ast_id_table_t *tbl, const NODE *
 {
     unsigned int size = tbl ? tbl->size : 0;
     unsigned int offset = 0;
-
-    if (node_args) {
-        struct rb_args_info *args = &RNODE_ARGS(node_args)->nd_ainfo;
-
-        // If we have a function that only has `...` as the parameter,
-        // then its local table should only be `...`
-        // FIXME: I think this should be fixed in the AST rather than special case here.
-        if (args->forwarding && args->pre_args_num == 0 && !args->opt_args) {
-            size -= 3;
-            offset += 3;
-        }
-    }
 
     if (size > 0) {
         ID *ids = (ID *)ALLOC_N(ID, size);
@@ -4693,13 +4680,23 @@ compile_keyword_arg(rb_iseq_t *iseq, LINK_ANCHOR *const ret,
 }
 
 static int
-compile_args(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, NODE **kwnode_ptr)
+forwarding_node_p(const NODE *const node)
+{
+    return nd_type_p(node, NODE_LVAR) && RNODE_LVAR(node)->nd_vid == idDot3;
+}
+
+static int
+compile_args(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, NODE **kwnode_ptr, unsigned int *flag_ptr)
 {
     int len = 0;
 
     for (; node; len++, node = RNODE_LIST(node)->nd_next) {
         if (CPDEBUG > 0) {
             EXPECT_NODE("compile_args", node, NODE_LIST, -1);
+        }
+
+        if (RNODE_LIST(node)->nd_next == NULL && forwarding_node_p(RNODE_LIST(node)->nd_head)) { /* last node is ... */
+            if (flag_ptr) *flag_ptr |= VM_CALL_FORWARDING;
         }
 
         if (RNODE_LIST(node)->nd_next == NULL && keyword_node_p(RNODE_LIST(node)->nd_head)) { /* last node is kwnode */
@@ -6197,7 +6194,7 @@ setup_args_core(rb_iseq_t *iseq, LINK_ANCHOR *const args, const NODE *argn,
     switch (nd_type(argn)) {
       case NODE_LIST: {
         // f(x, y, z)
-        int len = compile_args(iseq, args, argn, &kwnode);
+        int len = compile_args(iseq, args, argn, &kwnode, flag_ptr);
         RUBY_ASSERT(flag_ptr == NULL || (*flag_ptr & VM_CALL_ARGS_SPLAT) == 0);
 
         if (kwnode) {
@@ -6226,7 +6223,7 @@ setup_args_core(rb_iseq_t *iseq, LINK_ANCHOR *const args, const NODE *argn,
         bool args_pushed = false;
 
         if (nd_type_p(RNODE_ARGSCAT(argn)->nd_body, NODE_LIST)) {
-            int rest_len = compile_args(iseq, args, RNODE_ARGSCAT(argn)->nd_body, &kwnode);
+            int rest_len = compile_args(iseq, args, RNODE_ARGSCAT(argn)->nd_body, &kwnode, flag_ptr);
             if (kwnode) rest_len--;
             ADD_INSN1(args, argn, pushtoarray, INT2FIX(rest_len));
             args_pushed = true;
@@ -6261,7 +6258,7 @@ setup_args_core(rb_iseq_t *iseq, LINK_ANCHOR *const args, const NODE *argn,
         int argc = setup_args_core(iseq, args, RNODE_ARGSPUSH(argn)->nd_head, dup_rest, NULL, NULL);
 
         if (nd_type_p(RNODE_ARGSPUSH(argn)->nd_body, NODE_LIST)) {
-            int rest_len = compile_args(iseq, args, RNODE_ARGSPUSH(argn)->nd_body, &kwnode);
+            int rest_len = compile_args(iseq, args, RNODE_ARGSPUSH(argn)->nd_body, &kwnode, flag_ptr);
             if (kwnode) rest_len--;
             ADD_INSN1(args, argn, newarray, INT2FIX(rest_len));
             ADD_INSN1(args, argn, pushtoarray, INT2FIX(1));

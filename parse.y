@@ -15112,7 +15112,7 @@ static NODE *
 new_args_forward_call(struct parser_params *p, NODE *leading, const YYLTYPE *loc, const YYLTYPE *argsloc)
 {
     NODE *rest = NEW_LVAR(idFWD_ALL, loc);
-    NODE *args = leading ? rest_arg_append(p, leading, rest, argsloc) : rest;
+    NODE *args = leading ? list_append(p, leading, rest) : NEW_LIST(rest, loc);
     return args;
 }
 
