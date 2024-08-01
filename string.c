@@ -137,10 +137,10 @@ VALUE rb_cSymbol;
 } while (0)
 
 static inline bool
-str_enc_fastpath(VALUE str)
+enc_fast_path(int encindex)
 {
     // The overwhelming majority of strings are in one of these 3 encodings.
-    switch (ENCODING_GET_INLINED(str)) {
+    switch (encindex) {
       case ENCINDEX_ASCII_8BIT:
       case ENCINDEX_UTF_8:
       case ENCINDEX_US_ASCII:
@@ -148,6 +148,12 @@ str_enc_fastpath(VALUE str)
       default:
         return false;
     }
+}
+
+static inline bool
+str_enc_fastpath(VALUE str)
+{
+    return enc_fast_path(ENCODING_GET_INLINED(str));
 }
 
 #define TERM_LEN(str) (str_enc_fastpath(str) ? 1 : rb_enc_mbminlen(rb_enc_from_index(ENCODING_GET(str))))
@@ -3628,6 +3634,115 @@ rb_str_concat_multi(int argc, VALUE *argv, VALUE str)
     }
 
     return str;
+}
+
+// TODO: how to compute that shift cleanly?
+#define SHIFT_CR(cr) (cr >> 20)
+#define UNSHIFT_CR(cr) (cr << 20)
+#define CR(name) SHIFT_CR(ENC_CODERANGE_##name)
+
+STATIC_ASSERT(UNKNOWN, CR(UNKNOWN) == 0);
+STATIC_ASSERT(7BIT,    CR(7BIT)    == 1);
+STATIC_ASSERT(VALID,   CR(VALID)   == 2);
+STATIC_ASSERT(BROKEN,  CR(BROKEN)  == 3);
+
+STATIC_ASSERT(BINARY, ENCINDEX_ASCII_8BIT == 0);
+STATIC_ASSERT(UTF_8,  ENCINDEX_UTF_8      == 1);
+STATIC_ASSERT(ASCII,  ENCINDEX_US_ASCII   == 2);
+
+static char coderange_table[3][3][4] = {
+    [ENCINDEX_ASCII_8BIT] = {
+        [CR(UNKNOWN)] = {
+            [CR(UNKNOWN)] = CR(UNKNOWN),
+            [CR(7BIT)]    = CR(UNKNOWN),
+            [CR(VALID)]   = CR(UNKNOWN),
+            [CR(BROKEN)]  = CR(UNKNOWN),
+        },
+        [CR(7BIT)] = {
+            [CR(UNKNOWN)] = CR(UNKNOWN),
+            [CR(7BIT)]    = CR(7BIT),
+            [CR(VALID)]   = CR(VALID),
+            [CR(BROKEN)]  = CR(VALID),
+        },
+        [CR(VALID)] = {
+            [CR(UNKNOWN)] = CR(VALID),
+            [CR(7BIT)]    = CR(VALID),
+            [CR(VALID)]   = CR(VALID),
+            [CR(BROKEN)]  = CR(VALID),
+        },
+    },
+    [ENCINDEX_UTF_8] = {
+        [CR(UNKNOWN)] = {
+            [CR(UNKNOWN)] = CR(UNKNOWN),
+            [CR(7BIT)]    = CR(UNKNOWN),
+            [CR(VALID)]   = CR(UNKNOWN),
+            [CR(BROKEN)]  = CR(UNKNOWN),
+        },
+        [CR(7BIT)] = {
+            [CR(UNKNOWN)] = CR(UNKNOWN),
+            [CR(7BIT)]    = CR(7BIT),
+            [CR(VALID)]   = CR(UNKNOWN),
+            [CR(BROKEN)]  = CR(UNKNOWN),
+        },
+        [CR(VALID)] = {
+            [CR(UNKNOWN)] = CR(UNKNOWN),
+            [CR(7BIT)]    = CR(UNKNOWN),
+            [CR(VALID)]   = CR(UNKNOWN),
+            [CR(BROKEN)]  = CR(UNKNOWN),
+        },
+    },
+    [ENCINDEX_US_ASCII] = {
+        [CR(UNKNOWN)] = {
+            [CR(UNKNOWN)] = CR(UNKNOWN),
+            [CR(7BIT)]    = CR(UNKNOWN),
+            [CR(VALID)]   = CR(UNKNOWN),
+            [CR(BROKEN)]  = CR(UNKNOWN),
+        },
+        [CR(7BIT)] = {
+            [CR(UNKNOWN)] = CR(UNKNOWN),
+            [CR(7BIT)]    = CR(7BIT),
+            [CR(VALID)]   = CR(BROKEN),
+            [CR(BROKEN)]  = CR(BROKEN),
+        },
+        // US_ASCII can't be valid
+    },
+};
+
+static inline void
+str_fast_combine_coderange(VALUE left_str, VALUE right_str)
+{
+    int left_cr = ENC_CODERANGE(left_str);
+
+    if (RB_UNLIKELY(left_cr == ENC_CODERANGE_BROKEN)) {
+        ENC_CODERANGE_CLEAR(left_str);
+        return;
+    }
+
+    int str_enc = ENCODING_GET_INLINED(left_str);
+    if (RB_UNLIKELY(!enc_fast_path(str_enc))) {
+        ENC_CODERANGE_CLEAR(left_str);
+        return;
+    }
+
+    int right_cr = ENC_CODERANGE(right_str);
+
+    // Fast path for expected common cases
+    int left_shifted_cr = SHIFT_CR(left_cr);
+    int new_shifted_cr = coderange_table[str_enc][left_shifted_cr][SHIFT_CR(right_cr)];
+    if (new_shifted_cr != left_shifted_cr) {
+        ENC_CODERANGE_SET(left_str, UNSHIFT_CR(new_shifted_cr));
+    }
+}
+
+static VALUE
+rb_str_append_bytes(VALUE str, VALUE str2)
+{
+    Check_Type(str2, T_STRING);
+
+    str_buf_cat4(str, RSTRING_PTR(str2), RSTRING_LEN(str2), true);
+    str_fast_combine_coderange(str, str2);
+    return str;
+
 }
 
 /*
@@ -12387,6 +12502,7 @@ Init_String(void)
     rb_define_method(rb_cString, "reverse", rb_str_reverse, 0);
     rb_define_method(rb_cString, "reverse!", rb_str_reverse_bang, 0);
     rb_define_method(rb_cString, "concat", rb_str_concat_multi, -1);
+    rb_define_method(rb_cString, "append_bytes", rb_str_append_bytes, 1);
     rb_define_method(rb_cString, "<<", rb_str_concat, 1);
     rb_define_method(rb_cString, "prepend", rb_str_prepend_multi, -1);
     rb_define_method(rb_cString, "crypt", rb_str_crypt, 1);
