@@ -137,10 +137,10 @@ VALUE rb_cSymbol;
 } while (0)
 
 static inline bool
-str_enc_fastpath(VALUE str)
+enc_fast_path(int encindex)
 {
     // The overwhelming majority of strings are in one of these 3 encodings.
-    switch (ENCODING_GET_INLINED(str)) {
+    switch (encindex) {
       case ENCINDEX_ASCII_8BIT:
       case ENCINDEX_UTF_8:
       case ENCINDEX_US_ASCII:
@@ -148,6 +148,12 @@ str_enc_fastpath(VALUE str)
       default:
         return false;
     }
+}
+
+static inline bool
+str_enc_fastpath(VALUE str)
+{
+    return enc_fast_path(ENCODING_GET_INLINED(str));
 }
 
 #define TERM_LEN(str) (str_enc_fastpath(str) ? 1 : rb_enc_mbminlen(rb_enc_from_index(ENCODING_GET(str))))
@@ -3630,6 +3636,62 @@ rb_str_concat_multi(int argc, VALUE *argv, VALUE str)
     return str;
 }
 
+// TODO: how to compute that shift cleanly?
+#define SHIFT_CR(cr) (cr >> 20)
+#define CR(name) SHIFT_CR(ENC_CODERANGE_##name)
+
+STATIC_ASSERT(UNKNOWN, CR(UNKNOWN) == 0);
+STATIC_ASSERT(7BIT,    CR(7BIT)    == 1);
+STATIC_ASSERT(VALID,   CR(VALID)   == 2);
+STATIC_ASSERT(BROKEN,  CR(BROKEN)  == 3);
+
+STATIC_ASSERT(BINARY, ENCINDEX_ASCII_8BIT == 0);
+STATIC_ASSERT(UTF_8,  ENCINDEX_UTF_8      == 1);
+STATIC_ASSERT(ASCII,  ENCINDEX_US_ASCII   == 2);
+
+#define CR_RESUME -1
+#define CR_IF_ENC_MATCH -2
+
+static int coderange_table[3][3][4] = {
+    [ENCINDEX_ASCII_8BIT] = {
+        [CR(7BIT)] = {
+            [CR(UNKNOWN)] = CR_RESUME,
+            [CR(7BIT)]    = ENC_CODERANGE_7BIT,
+            [CR(VALID)]   = ENC_CODERANGE_VALID,
+            [CR(BROKEN)]  = ENC_CODERANGE_VALID,
+        },
+        [CR(VALID)] = {
+            [CR(UNKNOWN)] = ENC_CODERANGE_VALID,
+            [CR(7BIT)]    = ENC_CODERANGE_VALID,
+            [CR(VALID)]   = ENC_CODERANGE_VALID,
+            [CR(BROKEN)]  = ENC_CODERANGE_VALID,
+        },
+    },
+    [ENCINDEX_UTF_8] = {
+        [CR(7BIT)] = {
+            [CR(UNKNOWN)] = CR_RESUME,
+            [CR(7BIT)]    = ENC_CODERANGE_7BIT,
+            [CR(VALID)]   = CR_IF_ENC_MATCH,
+            [CR(BROKEN)]  = CR_RESUME,
+        },
+        [CR(VALID)] = {
+            [CR(UNKNOWN)] = CR_RESUME,
+            [CR(7BIT)]    = CR_IF_ENC_MATCH,
+            [CR(VALID)]   = CR_IF_ENC_MATCH,
+            [CR(BROKEN)]  = CR_RESUME,
+        },
+    },
+    [ENCINDEX_US_ASCII] = {
+        [CR(7BIT)] = {
+            [CR(UNKNOWN)] = CR_RESUME,
+            [CR(7BIT)]    = ENC_CODERANGE_7BIT,
+            [CR(VALID)]   = ENC_CODERANGE_BROKEN,
+            [CR(BROKEN)]  = ENC_CODERANGE_BROKEN,
+        },
+        // US_ASCII can't be valid
+    },
+};
+
 static VALUE
 rb_str_append_bytes(VALUE str, VALUE str2)
 {
@@ -3646,35 +3708,36 @@ rb_str_append_bytes(VALUE str, VALUE str2)
 
     str_buf_cat4(str, RSTRING_PTR(str2), str2_len, true);
 
-    // Fast path for common cases
-    switch (str_cr) {
-      case ENC_CODERANGE_VALID:
-        if (str2_cr == ENC_CODERANGE_VALID) {
-            if (ENCODING_GET_INLINED(str) == ENCODING_GET_INLINED(str2)) {
-                return str;
-            }
-        }
-        else if (str2_cr == ENC_CODERANGE_7BIT && str_enc_fastpath(str)) {
-            return str;
-        }
-        break;
-      case ENC_CODERANGE_7BIT:
-        if (str2_cr == ENC_CODERANGE_7BIT) {
-            return str;
-        }
-        break;
-      case ENC_CODERANGE_UNKNOWN:
-        return str;
-      case ENC_CODERANGE_BROKEN:
+    if (RB_UNLIKELY(str_cr == ENC_CODERANGE_BROKEN)) {
         // rb_str_coderange_scan_restartable isn't capable of repairing a coderange.
         ENC_CODERANGE_CLEAR(str);
         return str;
     }
 
+    int str_enc = ENCODING_GET_INLINED(str);
+
+    // Fast path for expected common cases
+    if (RB_LIKELY(enc_fast_path(str_enc))) {
+        int new_cr = coderange_table[str_enc][SHIFT_CR(str_cr)][SHIFT_CR(str2_cr)];
+        switch (new_cr) {
+          case CR_IF_ENC_MATCH:
+            if (str_enc == ENCODING_GET_INLINED(str2)) {
+                ENC_CODERANGE_SET(str, ENC_CODERANGE_VALID);
+                return str;
+            }
+            break;
+          case CR_RESUME:
+            break;
+          default:
+            ENC_CODERANGE_SET(str, new_cr);
+            return str;
+        }
+    }
+
     // If no fast path was hit, we restart coderange scanning
     const char *const new_end = RSTRING_END(str);
     const char *const prev_end = new_end - str2_len;
-    rb_str_coderange_scan_restartable(prev_end, new_end, rb_enc_from_index(ENCODING_GET(str)), &str_cr);
+    rb_str_coderange_scan_restartable(prev_end, new_end, rb_enc_from_index(str_enc), &str_cr);
     ENC_CODERANGE_SET(str, str_cr);
     return str;
 }
