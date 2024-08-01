@@ -3630,6 +3630,55 @@ rb_str_concat_multi(int argc, VALUE *argv, VALUE str)
     return str;
 }
 
+static VALUE
+rb_str_append_bytes(VALUE str, VALUE str2)
+{
+    Check_Type(str2, T_STRING);
+
+    long str2_len = RSTRING_LEN(str2);
+
+    if (RB_UNLIKELY(str2_len == 0)) {
+        return str;
+    }
+
+    int str_cr = ENC_CODERANGE(str);
+    int str2_cr = ENC_CODERANGE(str2);
+
+    str_buf_cat4(str, RSTRING_PTR(str2), str2_len, true);
+
+    // Fast path for common cases
+    switch (str_cr) {
+      case ENC_CODERANGE_VALID:
+        if (str2_cr == ENC_CODERANGE_VALID) {
+            if (ENCODING_GET_INLINED(str) == ENCODING_GET_INLINED(str2)) {
+                return str;
+            }
+        }
+        else if (str2_cr == ENC_CODERANGE_7BIT && str_enc_fastpath(str)) {
+            return str;
+        }
+        break;
+      case ENC_CODERANGE_7BIT:
+        if (str2_cr == ENC_CODERANGE_7BIT) {
+            return str;
+        }
+        break;
+      case ENC_CODERANGE_UNKNOWN:
+        return str;
+      case ENC_CODERANGE_BROKEN:
+        // rb_str_coderange_scan_restartable isn't capable of repairing a coderange.
+        ENC_CODERANGE_CLEAR(str);
+        return str;
+    }
+
+    // If no fast path was hit, we restart coderange scanning
+    const char *const new_end = RSTRING_END(str);
+    const char *const prev_end = new_end - str2_len;
+    rb_str_coderange_scan_restartable(prev_end, new_end, rb_enc_from_index(ENCODING_GET(str)), &str_cr);
+    ENC_CODERANGE_SET(str, str_cr);
+    return str;
+}
+
 /*
  *  call-seq:
  *    string << object -> string
@@ -12387,6 +12436,7 @@ Init_String(void)
     rb_define_method(rb_cString, "reverse", rb_str_reverse, 0);
     rb_define_method(rb_cString, "reverse!", rb_str_reverse_bang, 0);
     rb_define_method(rb_cString, "concat", rb_str_concat_multi, -1);
+    rb_define_method(rb_cString, "append_bytes", rb_str_append_bytes, 1);
     rb_define_method(rb_cString, "<<", rb_str_concat, 1);
     rb_define_method(rb_cString, "prepend", rb_str_prepend_multi, -1);
     rb_define_method(rb_cString, "crypt", rb_str_crypt, 1);
