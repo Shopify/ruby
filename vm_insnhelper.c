@@ -3251,9 +3251,22 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
 }
 
 static void
+stack_reverse(VALUE *p1, VALUE *p2)
+{
+    while (p1 < p2) {
+        VALUE tmp = *p1;
+        *p1++ = *p2;
+        *p2-- = tmp;
+    }
+}
+
+static void
 stack_rotate(VALUE * stack, unsigned int size, unsigned int amt)
 {
-    rb_bug("fix me");
+    // stack_reverse(stack + 0,   stack + amt);
+    stack_reverse(stack + 0,   stack + (amt - 1));
+    stack_reverse(stack + amt, stack + (size - 1));
+    stack_reverse(stack + 0,   stack + (size - 1));
 }
 
 static void
