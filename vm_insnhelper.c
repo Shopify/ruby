@@ -2547,8 +2547,15 @@ vm_base_ptr(const rb_control_frame_t *cfp)
             int lts = ISEQ_BODY(cfp->iseq)->local_table_size;
             int params = ISEQ_BODY(cfp->iseq)->param.size;
 
-            CALL_INFO ci = (CALL_INFO)cfp->ep[-(VM_ENV_DATA_SIZE + (lts - params))]; // skip EP stuff, CI should be last local
-            bp += vm_ci_argc(ci);
+            // skip EP stuff, CI should be last parameter
+            CALL_INFO ci = (CALL_INFO)cfp->ep[-(VM_ENV_DATA_SIZE + (lts - params))];
+
+            // ci: "bar", 2, 3
+            // locals: _x, ...
+            // params: _x, ...
+            // BP has already been advanced by local_table_size, so includes the lead parameters
+            // We want to advance further by only the non-lead parameters from ci
+            bp += vm_ci_argc(ci) - (params - 1);
         }
 
         if (ISEQ_BODY(cfp->iseq)->type == ISEQ_TYPE_METHOD || VM_FRAME_BMETHOD_P(cfp)) {
@@ -3235,7 +3242,7 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
                     vm_ci_kwarg(ci));
             can_fastpath = false;
         }
-        argv[param_size - 1] = (VALUE)ci;
+        argv[0] = (VALUE)ci;
         CC_SET_FASTPATH(cc, vm_call_iseq_forwardable, can_fastpath);
         return 0;
     }
@@ -3304,7 +3311,6 @@ vm_adjust_stack_forwarding(const struct rb_execution_context_struct *ec, struct 
 
     CHECK_VM_STACK_OVERFLOW0(cfp, to, argc);
     MEMCPY(to, from, VALUE, argc);
-    stack_rotate(to, argc, 1);
     cfp->sp = to + argc;
 
     // Stack layout should now be:
@@ -3347,13 +3353,33 @@ vm_call_iseq_fwd_setup(rb_execution_context_t *ec, rb_control_frame_t *cfp, stru
     int param_size = ISEQ_BODY(iseq)->param.size;
     int local_size = ISEQ_BODY(iseq)->local_table_size;
 
+    int number_to_fill = local_size - param_size;
+
     RUBY_ASSERT(ISEQ_BODY(iseq)->param.flags.forwardable);
 
-    // Setting up local size and param size
-    local_size = local_size + vm_ci_argc(calling->cd->ci);
-    param_size = param_size + vm_ci_argc(calling->cd->ci);
+    fprintf(stderr, "before: local_size %d param size %d\n", local_size, param_size);
 
-    const int opt_pc = vm_callee_setup_arg(ec, calling, iseq, cfp->sp - calling->argc, param_size, local_size);
+    // Setting up local size and param size
+
+    // argv[0] should be 3
+    // Push CI on stack
+    stack_rotate(cfp->sp - vm_ci_argc(calling->cd->ci), vm_ci_argc(calling->cd->ci), 1);
+
+    const int opt_pc = vm_callee_setup_arg(ec, calling, iseq, cfp->sp, param_size, local_size);
+
+    // Stack top should be CI
+    RUBY_ASSERT(cfp->sp[0] == calling->cd->ci);
+
+    //  argv + param_size
+    //  "bar", 2, 3, CI,
+    //                   ^
+    // ci_argc: "bar", 2, 3
+    // param_size: 3, ...
+    param_size = vm_ci_argc(calling->cd->ci) + 1;
+    local_size = param_size + number_to_fill;
+
+    fprintf(stderr, "after: local_size %d param size %d\n", local_size, param_size);
+
     return vm_call_iseq_setup_2(ec, cfp, calling, opt_pc, param_size, local_size);
 }
 

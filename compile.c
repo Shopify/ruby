@@ -2050,6 +2050,7 @@ iseq_set_arguments(rb_iseq_t *iseq, LINK_ANCHOR *const optargs, const NODE *cons
         if (optimized_forward) {
             rest_id = 0;
             block_id = 0;
+            arg_size++;
         }
 
         if (args->opt_args) {
