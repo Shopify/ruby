@@ -2045,7 +2045,7 @@ iseq_set_arguments(rb_iseq_t *iseq, LINK_ANCHOR *const optargs, const NODE *cons
         }
         block_id = args->block_arg;
 
-        bool optimized_forward = (args->forwarding && args->pre_args_num == 0 && !args->opt_args);
+        bool optimized_forward = (args->forwarding && !args->opt_args);
 
         if (optimized_forward) {
             rest_id = 0;
