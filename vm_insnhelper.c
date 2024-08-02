@@ -2545,7 +2545,7 @@ vm_base_ptr(const rb_control_frame_t *cfp)
 
         if (ISEQ_BODY(cfp->iseq)->param.flags.forwardable && VM_ENV_LOCAL_P(cfp->ep)) {
             int lts = ISEQ_BODY(cfp->iseq)->local_table_size;
-            int params = ISEQ_BODY(cfp->iseq)->param.size + 1;
+            int params = ISEQ_BODY(cfp->iseq)->param.size;
 
             CALL_INFO ci = (CALL_INFO)cfp->ep[-(VM_ENV_DATA_SIZE + (lts - params))]; // skip EP stuff, CI should be last local
             bp += vm_ci_argc(ci);
@@ -3351,7 +3351,7 @@ vm_call_iseq_fwd_setup(rb_execution_context_t *ec, rb_control_frame_t *cfp, stru
 
     // Setting up local size and param size
     local_size = local_size + vm_ci_argc(calling->cd->ci);
-    param_size = param_size + vm_ci_argc(calling->cd->ci) + 1;
+    param_size = param_size + vm_ci_argc(calling->cd->ci);
 
     const int opt_pc = vm_callee_setup_arg(ec, calling, iseq, cfp->sp - calling->argc, param_size, local_size);
     return vm_call_iseq_setup_2(ec, cfp, calling, opt_pc, param_size, local_size);
