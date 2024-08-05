@@ -9576,8 +9576,7 @@ compile_super(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, i
         /* forward ... */
         if (local_body->param.flags.forwardable) {
             flag |= VM_CALL_FORWARDING;
-            // int idx = local_body->local_table_size - get_local_var_idx(liseq, idDot3);
-            int idx = get_local_var_idx(liseq, idDot3);
+            int idx = local_body->local_table_size - get_local_var_idx(liseq, idDot3);
             ADD_GETLOCAL(args, node, idx, lvar_level);
         }
 
@@ -9666,9 +9665,13 @@ compile_super(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, i
     ADD_INSN(ret, node, putself);
     ADD_SEQ(ret, args);
 
+    if (flag & VM_CALL_FORWARDING && argc == 0) {
+        argc++;
+    }
+
     const struct rb_callinfo * ci = new_callinfo(iseq, 0, argc, flag, keywords, parent_block != NULL);
 
-    if (vm_ci_flag(ci) & VM_CALL_FORWARDING) {
+    if (flag & VM_CALL_FORWARDING) {
         ADD_INSN2(ret, node, invokesuperforward, ci, parent_block);
     }
     else {
