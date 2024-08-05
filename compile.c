@@ -6268,6 +6268,10 @@ setup_args_core(rb_iseq_t *iseq, LINK_ANCHOR *const args, const NODE *argn,
             if (keyword_node_p(RNODE_ARGSPUSH(argn)->nd_body)) {
                 kwnode = RNODE_ARGSPUSH(argn)->nd_body;
             }
+            else if (forwarding_node_p(RNODE_ARGSPUSH(argn)->nd_body)) { /* last node is ... */
+                *flag_ptr |= VM_CALL_FORWARDING;
+                NO_CHECK(COMPILE(args, "forwarding", RNODE_ARGSPUSH(argn)->nd_body));
+            }
             else {
                 NO_CHECK(COMPILE(args, "args (cat: splat)", RNODE_ARGSPUSH(argn)->nd_body));
                 ADD_INSN1(args, argn, pushtoarray, INT2FIX(1));
@@ -9572,7 +9576,8 @@ compile_super(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, i
         /* forward ... */
         if (local_body->param.flags.forwardable) {
             flag |= VM_CALL_FORWARDING;
-            int idx = local_body->local_table_size - get_local_var_idx(liseq, idDot3);
+            // int idx = local_body->local_table_size - get_local_var_idx(liseq, idDot3);
+            int idx = get_local_var_idx(liseq, idDot3);
             ADD_GETLOCAL(args, node, idx, lvar_level);
         }
 
@@ -11184,8 +11189,6 @@ opobj_inspect(VALUE obj)
     }
     return rb_inspect(obj);
 }
-
-
 
 static VALUE
 insn_data_to_s_detail(INSN *iobj)

@@ -1149,7 +1149,7 @@ vm_caller_setup_fwd_args(const rb_execution_context_t *ec, rb_control_frame_t *r
     if (site_flag & VM_CALL_ARGS_SPLAT) {
         // If we're called with args_splat, the top 1 should be an array
         splat = TOPN(1);
-        site_argc += (RARRAY_LEN(splat) - 1);
+        site_argc += RARRAY_LEN(splat);
     }
 
     // Need to setup the block in case of e.g. `super { :block }`
