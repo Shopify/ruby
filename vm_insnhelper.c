@@ -3263,6 +3263,8 @@ stack_reverse(VALUE *p1, VALUE *p2)
 static void
 stack_rotate(VALUE * stack, unsigned int size, unsigned int amt)
 {
+    if (amt == 0) return;
+
     // stack_reverse(stack + 0,   stack + amt);
     stack_reverse(stack + 0,   stack + (amt - 1));
     stack_reverse(stack + amt, stack + (size - 1));
@@ -3309,8 +3311,6 @@ vm_adjust_stack_forwarding(const struct rb_execution_context_struct *ec, struct 
 
     // Our local storage is below the args we need to copy
     int local_size = ISEQ_BODY(iseq)->local_table_size + argc;
-
-    fprintf(stderr, "lead num %d\n", ISEQ_BODY(iseq)->param.lead_num);
 
     const VALUE * from = lep - (local_size + VM_ENV_DATA_SIZE - 1); // 2 for EP values
     VALUE * to = cfp->sp - 1; // clobber the CI
@@ -3370,28 +3370,16 @@ vm_call_iseq_fwd_setup(rb_execution_context_t *ec, rb_control_frame_t *cfp, stru
 
     RUBY_ASSERT(ISEQ_BODY(iseq)->param.flags.forwardable);
 
-    fprintf(stderr, "before: local_size %d param size %d\n", local_size, param_size);
-
     // Setting up local size and param size
 
     // argv[0] should be 3
     // Push CI on stack
-    stack_rotate(cfp->sp - vm_ci_argc(calling->cd->ci), vm_ci_argc(calling->cd->ci), 1);
+    stack_rotate(cfp->sp - vm_ci_argc(calling->cd->ci), vm_ci_argc(calling->cd->ci), param_size - 1);
 
     const int opt_pc = vm_callee_setup_arg(ec, calling, iseq, cfp->sp, param_size, local_size);
 
-    // Stack top should be CI
-    RUBY_ASSERT(cfp->sp[0] == calling->cd->ci);
-
-    //  argv + param_size
-    //  "bar", 2, 3, CI,
-    //                   ^
-    // ci_argc: "bar", 2, 3
-    // param_size: 3, ...
     param_size = vm_ci_argc(calling->cd->ci) + 1;
     local_size = param_size + number_to_fill;
-
-    fprintf(stderr, "after: local_size %d param size %d\n", local_size, param_size);
 
     return vm_call_iseq_setup_2(ec, cfp, calling, opt_pc, param_size, local_size);
 }

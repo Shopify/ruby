@@ -1140,7 +1140,7 @@ vm_caller_setup_fwd_args(const rb_execution_context_t *ec, rb_control_frame_t *r
     unsigned int site_flag = vm_ci_flag(site_ci);
     ID site_mid = vm_ci_mid(site_ci);
 
-    unsigned int caller_argc = vm_ci_argc(caller_ci);
+    unsigned int caller_argc = vm_ci_argc(caller_ci) - (ISEQ_BODY(ISEQ_BODY(GET_ISEQ())->local_iseq)->param.size - 1);
     unsigned int caller_flag = vm_ci_flag(caller_ci);
     const struct rb_callinfo_kwarg * kw = vm_ci_kwarg(caller_ci);
 
