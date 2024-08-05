@@ -6399,33 +6399,9 @@ setup_args(rb_iseq_t *iseq, LINK_ANCHOR *const args, const NODE *argn,
         DECL_ANCHOR(arg_block);
         INIT_ANCHOR(arg_block);
 
-        if (RNODE_BLOCK_PASS(argn)->forwarding && ISEQ_BODY(ISEQ_BODY(iseq)->local_iseq)->param.flags.forwardable) {
-            int idx = ISEQ_BODY(ISEQ_BODY(iseq)->local_iseq)->local_table_size;// - get_local_var_idx(iseq, idDot3);
+        *flag |= VM_CALL_ARGS_BLOCKARG;
 
-            RUBY_ASSERT(nd_type_p(RNODE_BLOCK_PASS(argn)->nd_head, NODE_ARGSPUSH));
-            const NODE * arg_node =
-                RNODE_ARGSPUSH(RNODE_BLOCK_PASS(argn)->nd_head)->nd_head;
-
-            int argc = 0;
-
-            // Only compile leading args:
-            //   foo(x, y, ...)
-            //       ^^^^
-            if (nd_type_p(arg_node, NODE_ARGSCAT)) {
-                argc += setup_args_core(iseq, args, RNODE_ARGSCAT(arg_node)->nd_head, &dup_rest, flag, keywords);
-            }
-
-            *flag |= VM_CALL_FORWARDING;
-
-            ADD_GETLOCAL(args, argn, idx, get_lvar_level(iseq));
-            setup_args_splat_mut(flag, dup_rest, initial_dup_rest);
-            return INT2FIX(argc);
-        }
-        else {
-            *flag |= VM_CALL_ARGS_BLOCKARG;
-
-            NO_CHECK(COMPILE(arg_block, "block", RNODE_BLOCK_PASS(argn)->nd_body));
-        }
+        NO_CHECK(COMPILE(arg_block, "block", RNODE_BLOCK_PASS(argn)->nd_body));
 
         if (LIST_INSN_SIZE_ONE(arg_block)) {
             LINK_ELEMENT *elem = FIRST_ELEMENT(arg_block);

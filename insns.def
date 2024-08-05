@@ -863,8 +863,8 @@ sendforward
 (CALL_DATA cd, ISEQ blockiseq)
 (...)
 (VALUE val)
-// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
-// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci) + 1;
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci) + 1;
 {
     struct rb_forwarding_call_data adjusted_cd;
     struct rb_callinfo adjusted_ci;
