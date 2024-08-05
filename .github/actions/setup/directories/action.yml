@@ -67,6 +67,7 @@ runs:
     # their bash manually installed.
     - shell: bash
       run: |
+        echo "Hello"
         mkdir -p ${{ inputs.srcdir }}
         mkdir -p ${{ inputs.builddir }}
 
