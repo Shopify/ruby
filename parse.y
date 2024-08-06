@@ -13670,8 +13670,28 @@ aryset(struct parser_params *p, NODE *recv, NODE *idx, const YYLTYPE *loc)
 static void
 block_dup_check(struct parser_params *p, NODE *node1, NODE *node2)
 {
-    if (node2 && node1 && nd_type_p(node1, NODE_BLOCK_PASS)) {
-        compile_error(p, "both block arg and actual block given");
+    // If there is a list of parameters
+    if (node2 && node1 && nd_type_p(node1, NODE_LIST)) {
+        // If the last parameter is triple dot, raise an exception
+        if (RNODE_LIST(node1)->nd_next) {
+            // If the list has multiple items, we need to grab the last item
+            node1 = RNODE_LIST(RNODE_LIST(RNODE_LIST(node1)->nd_next)->as.nd_end)->nd_head;
+            if (nd_type_p(node1, NODE_LVAR) && RNODE_LVAR(node1)->nd_vid == idDot3) {
+                compile_error(p, "both block arg and actual block given");
+            }
+        }
+        else {
+            // If the list has one item, we need to grab the list head
+            node1 = RNODE_LIST(node1)->nd_head;
+            if (nd_type_p(node1, NODE_LVAR) && RNODE_LVAR(node1)->nd_vid == idDot3) {
+                compile_error(p, "both block arg and actual block given");
+            }
+        }
+    }
+    else {
+        if (node2 && node1 && nd_type_p(node1, NODE_BLOCK_PASS)) {
+            compile_error(p, "both block arg and actual block given");
+        }
     }
 }
 
