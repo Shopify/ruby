@@ -2939,6 +2939,27 @@ args_setup_kw_parameters(rb_execution_context_t *const ec, const rb_iseq_t *cons
                          VALUE *const passed_values, const int passed_keyword_len, const VALUE *const passed_keywords,
                          VALUE *const locals);
 
+static void
+stack_reverse(VALUE *p1, VALUE *p2)
+{
+    while (p1 < p2) {
+        VALUE tmp = *p1;
+        *p1++ = *p2;
+        *p2-- = tmp;
+    }
+}
+
+static void
+stack_rotate(VALUE * stack, unsigned int size, unsigned int amt)
+{
+    if (amt == 0) return;
+
+    // stack_reverse(stack + 0,   stack + amt);
+    stack_reverse(stack + 0,   stack + (amt - 1));
+    stack_reverse(stack + amt, stack + (size - 1));
+    stack_reverse(stack + 0,   stack + (size - 1));
+}
+
 static VALUE
 vm_call_iseq_forwardable(rb_execution_context_t *ec, rb_control_frame_t *cfp,
                                 struct rb_calling_info *calling)
@@ -2948,11 +2969,15 @@ vm_call_iseq_forwardable(rb_execution_context_t *ec, rb_control_frame_t *cfp,
     int param_size = ISEQ_BODY(iseq)->param.size;
     int local_size = ISEQ_BODY(iseq)->local_table_size;
 
+    int number_to_fill = local_size - param_size;
+
     // Setting up local size and param size
     VM_ASSERT(ISEQ_BODY(iseq)->param.flags.forwardable);
 
-    local_size = local_size + vm_ci_argc(calling->cd->ci);
-    param_size = param_size + vm_ci_argc(calling->cd->ci);
+    stack_rotate(cfp->sp - vm_ci_argc(calling->cd->ci), vm_ci_argc(calling->cd->ci), param_size - 1);
+
+    param_size = vm_ci_argc(calling->cd->ci) + 1;
+    local_size = param_size + number_to_fill;
 
     cfp->sp[0] = (VALUE)calling->cd->ci;
 
@@ -3248,27 +3273,6 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
     }
 
     return setup_parameters_complex(ec, iseq, calling, ci, argv, arg_setup_method);
-}
-
-static void
-stack_reverse(VALUE *p1, VALUE *p2)
-{
-    while (p1 < p2) {
-        VALUE tmp = *p1;
-        *p1++ = *p2;
-        *p2-- = tmp;
-    }
-}
-
-static void
-stack_rotate(VALUE * stack, unsigned int size, unsigned int amt)
-{
-    if (amt == 0) return;
-
-    // stack_reverse(stack + 0,   stack + amt);
-    stack_reverse(stack + 0,   stack + (amt - 1));
-    stack_reverse(stack + amt, stack + (size - 1));
-    stack_reverse(stack + 0,   stack + (size - 1));
 }
 
 static void
