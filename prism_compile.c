@@ -1704,37 +1704,13 @@ pm_setup_args_core(const pm_arguments_node_t *arguments_node, const pm_node_t *b
                 break;
               }
               case PM_FORWARDING_ARGUMENTS_NODE: {
-                if (ISEQ_BODY(ISEQ_BODY(iseq)->local_iseq)->param.flags.forwardable) {
-                    *flags |= VM_CALL_FORWARDING;
+                orig_argc += 1;
 
-                    pm_local_index_t mult_local = pm_lookup_local_index(iseq, scope_node, PM_CONSTANT_DOT3, 0);
-                    PUSH_GETLOCAL(ret, location, mult_local.index, mult_local.level);
+                *flags |= VM_CALL_FORWARDING;
 
-                    break;
-                }
-
-                orig_argc += 2;
-
-                *flags |= VM_CALL_ARGS_SPLAT | VM_CALL_ARGS_SPLAT_MUT | VM_CALL_ARGS_BLOCKARG | VM_CALL_KW_SPLAT;
-
-                // Forwarding arguments nodes are treated as foo(*, **, &)
-                // So foo(...) equals foo(*, **, &) and as such the local
-                // table for this method is known in advance
-                //
-                // Push the *
-                pm_local_index_t mult_local = pm_lookup_local_index(iseq, scope_node, PM_CONSTANT_MULT, 0);
+                // Push the `...` local
+                pm_local_index_t mult_local = pm_lookup_local_index(iseq, scope_node, PM_CONSTANT_DOT3, 0);
                 PUSH_GETLOCAL(ret, location, mult_local.index, mult_local.level);
-                PUSH_INSN1(ret, location, splatarray, Qtrue);
-
-                // Push the **
-                pm_local_index_t pow_local = pm_lookup_local_index(iseq, scope_node, PM_CONSTANT_POW, 0);
-                PUSH_GETLOCAL(ret, location, pow_local.index, pow_local.level);
-
-                // Push the &
-                pm_local_index_t and_local = pm_lookup_local_index(iseq, scope_node, PM_CONSTANT_AND, 0);
-                PUSH_INSN2(ret, location, getblockparamproxy, INT2FIX(and_local.index + VM_ENV_DATA_SIZE - 1), INT2FIX(and_local.level));
-                PUSH_INSN(ret, location, splatkw);
-
                 break;
               }
               default: {
@@ -8589,17 +8565,10 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
             if (parameters_node->keyword_rest) {
                 // def foo(...); end
                 //         ^^^
-                // When we have a `...` as the keyword_rest, it's a forwarding_parameter_node and
-                // we need to leave space for 4 locals: *, **, &, ...
+                // When we have a `...` as the keyword_rest, it's a forwarding_parameter_node
                 if (PM_NODE_TYPE_P(parameters_node->keyword_rest, PM_FORWARDING_PARAMETER_NODE)) {
-                    // Only optimize specifically methods like this: `foo(...)`
-                    if (requireds_list->size == 0 && optionals_list->size == 0 && keywords_list->size == 0) {
-                        ISEQ_BODY(iseq)->param.flags.forwardable = TRUE;
-                        table_size += 1;
-                    }
-                    else {
-                        table_size += 4;
-                    }
+                    ISEQ_BODY(iseq)->param.flags.forwardable = TRUE;
+                    table_size += 1;
                 }
                 else {
                     const pm_keyword_rest_parameter_node_t *kw_rest = (const pm_keyword_rest_parameter_node_t *) parameters_node->keyword_rest;
@@ -8957,28 +8926,6 @@ pm_compile_node(rb_iseq_t *iseq, const pm_node_t *node, LINK_ANCHOR *const ret, 
                   // def foo(...)
                   //         ^^^
                   case PM_FORWARDING_PARAMETER_NODE: {
-                    if (!ISEQ_BODY(iseq)->param.flags.forwardable) {
-                        // Add the anonymous *
-                        body->param.rest_start = local_index;
-                        body->param.flags.has_rest = true;
-                        body->param.flags.anon_rest = true;
-                        pm_insert_local_special(idMULT, local_index++, index_lookup_table, local_table_for_iseq);
-
-                        // Add the anonymous **
-                        RUBY_ASSERT(!body->param.flags.has_kw);
-                        body->param.flags.has_kw = false;
-                        body->param.flags.has_kwrest = true;
-                        body->param.flags.anon_kwrest = true;
-                        body->param.keyword = keyword = ZALLOC_N(struct rb_iseq_param_keyword, 1);
-                        keyword->rest_start = local_index;
-                        pm_insert_local_special(idPow, local_index++, index_lookup_table, local_table_for_iseq);
-
-                        // Add the anonymous &
-                        body->param.block_start = local_index;
-                        body->param.flags.has_block = true;
-                        pm_insert_local_special(idAnd, local_index++, index_lookup_table, local_table_for_iseq);
-                    }
-
                     // Add the ...
                     pm_insert_local_special(idDot3, local_index++, index_lookup_table, local_table_for_iseq);
                     break;
