@@ -174,11 +174,7 @@ module Prism
             sorted << AnonymousLocal if params.keywords.any?
 
             if params.keyword_rest.is_a?(ForwardingParameterNode)
-              if sorted.length == 0
-                sorted.push(:"...")
-              else
-                sorted.push(:*, :**, :&, :"...")
-              end
+              sorted.push(:"...")
             elsif params.keyword_rest.is_a?(KeywordRestParameterNode)
               sorted << (params.keyword_rest.name || :**)
             end
