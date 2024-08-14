@@ -674,7 +674,7 @@ class TestAst < Test::Unit::TestCase
       node ? [node.children[-4], node.children[-2]&.children, node.children[-1]] : []
     end
 
-    assert_equal([:*, [:**], :&], forwarding.call('...'))
+    assert_equal([nil, [:"..."], nil], forwarding.call('...'))
   end
 
   def test_ranges_numbered_parameter
