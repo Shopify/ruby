@@ -1374,3 +1374,19 @@ assert_equal 'ok', %q{
   foo(:foo, b: :ok)
   foo(*["foo"], b: :ok)
 }
+
+assert_equal 'okay', %q{
+  class A
+    def foo(a, b, c)
+      a + b + c
+    end
+  end
+
+  class B < A
+    def foo(a, b, ...)
+      super
+    end
+  end
+
+  B.new.foo("o", "k", "ay")
+}

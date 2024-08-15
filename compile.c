@@ -9665,7 +9665,7 @@ compile_super(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, i
     ADD_INSN(ret, node, putself);
     ADD_SEQ(ret, args);
 
-    if (flag & VM_CALL_FORWARDING && argc == 0) {
+    if (flag & VM_CALL_FORWARDING && flag & VM_CALL_ZSUPER) {
         argc++;
     }
 
