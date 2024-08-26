@@ -2127,6 +2127,7 @@ prism_script_shebang_callback(pm_options_t *options, const uint8_t *source, size
     pm_options_command_line_set(options, prism_script_command_line(opt));
     if (opt->ext.enc.name != 0) {
         pm_options_encoding_set(options, StringValueCStr(opt->ext.enc.name));
+        opt->ext.enc.index = opt_enc_index(opt->ext.enc.name);
     }
 }
 
