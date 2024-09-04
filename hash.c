@@ -169,6 +169,8 @@ rb_dbl_long_hash(double d)
 #endif
 }
 
+static VALUE rb_hash_hash(VALUE hash);
+
 static inline long
 any_hash(VALUE a, st_index_t (*other_func)(VALUE))
 {
@@ -200,6 +202,10 @@ any_hash(VALUE a, st_index_t (*other_func)(VALUE))
         break;
       case T_FLOAT: /* prevent pathological behavior: [Bug #10761] */
         hnum = rb_dbl_long_hash(rb_float_value(a));
+        break;
+      case T_HASH:
+        hval = rb_hash_hash(a);
+        hnum = FIX2LONG(hval);
         break;
       default:
         hnum = other_func(a);
