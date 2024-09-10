@@ -165,6 +165,9 @@ module EnvUtil
     }
 
     args = [args] if args.kind_of?(String)
+    if ENV["RUN_OPTS"]
+      args = ENV["RUN_OPTS"].split(" ").concat(args)
+    end
     pid = spawn(child_env, *precommand, rubybin, *args, opt)
     in_c.close
     out_c&.close
