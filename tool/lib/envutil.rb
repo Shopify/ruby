@@ -166,7 +166,11 @@ module EnvUtil
 
     args = [args] if args.kind_of?(String)
     if ENV["RUN_OPTS"]
-      args = ENV["RUN_OPTS"].split(" ").concat(args)
+      ENV["RUN_OPTS"].split(" ").each do |opt|
+        if opt == "--yjit" || opt == "--rjit" || opt.match(/parser/)
+          args = [opt].concat(args)
+        end
+      end
     end
     pid = spawn(child_env, *precommand, rubybin, *args, opt)
     in_c.close

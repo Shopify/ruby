@@ -11,15 +11,6 @@ class TestRubyOptions < Test::Unit::TestCase
   def self.rjit_enabled? = defined?(RubyVM::RJIT) && RubyVM::RJIT.enabled?
   def self.yjit_enabled? = defined?(RubyVM::YJIT) && RubyVM::YJIT.enabled?
 
-  NO_JIT_DESCRIPTION =
-    if rjit_enabled?
-      RUBY_DESCRIPTION.sub(/\+RJIT /, '')
-    elsif yjit_enabled?
-      RUBY_DESCRIPTION.sub(/\+YJIT( (dev|dev_nodebug|stats))? /, '')
-    else
-      RUBY_DESCRIPTION
-    end
-
   def write_file(filename, content)
     File.open(filename, "w") {|f|
       f << content
@@ -175,13 +166,7 @@ class TestRubyOptions < Test::Unit::TestCase
   def test_verbose
     assert_in_out_err([{'RUBY_YJIT_ENABLE' => nil}, "-vve", ""]) do |r, e|
       assert_match(VERSION_PATTERN, r[0])
-      if self.class.rjit_enabled? && !JITSupport.rjit_force_enabled?
-        assert_equal(NO_JIT_DESCRIPTION, r[0])
-      elsif self.class.yjit_enabled? && !JITSupport.yjit_force_enabled?
-        assert_equal(NO_JIT_DESCRIPTION, r[0])
-      else
-        assert_equal(RUBY_DESCRIPTION, r[0])
-      end
+      assert_equal(RUBY_DESCRIPTION, r[0])
       assert_equal([], e)
     end
 
@@ -247,7 +232,7 @@ class TestRubyOptions < Test::Unit::TestCase
     assert_in_out_err([env, '--version']) do |r, e|
       assert_match(VERSION_PATTERN, r[0])
       if ENV['RUBY_YJIT_ENABLE'] == '1'
-        assert_equal(NO_JIT_DESCRIPTION, r[0])
+        assert_equal(RUBY_DESCRIPTION, r[0])
       elsif self.class.rjit_enabled? || self.class.yjit_enabled? # checking -D(M|Y)JIT_FORCE_ENABLE
         assert_equal(EnvUtil.invoke_ruby(['-e', 'print RUBY_DESCRIPTION'], '', true).first, r[0])
       else
@@ -259,6 +244,7 @@ class TestRubyOptions < Test::Unit::TestCase
 
   def test_rjit_disabled_version
     return unless JITSupport.rjit_supported?
+    return unless JITSupport.rjit_enabled?
     return if JITSupport.yjit_force_enabled?
 
     env = { 'RUBY_YJIT_ENABLE' => nil } # unset in children
@@ -269,7 +255,7 @@ class TestRubyOptions < Test::Unit::TestCase
     ].each do |args|
       assert_in_out_err([env] + args) do |r, e|
         assert_match(VERSION_PATTERN, r[0])
-        assert_match(NO_JIT_DESCRIPTION, r[0])
+        assert_match(RUBY_DESCRIPTION, r[0])
         assert_equal([], e)
       end
     end
@@ -277,6 +263,7 @@ class TestRubyOptions < Test::Unit::TestCase
 
   def test_rjit_version
     return unless JITSupport.rjit_supported?
+    return unless JITSupport.rjit_enabled?
     return if JITSupport.yjit_force_enabled?
 
     env = { 'RUBY_YJIT_ENABLE' => nil } # unset in children
@@ -826,7 +813,7 @@ class TestRubyOptions < Test::Unit::TestCase
         -e:(?:1:)?\s\[BUG\]\sSegmentation\sfault.*\n
       )x,
       %r(
-        #{ Regexp.quote((TestRubyOptions.rjit_enabled? && !JITSupport.rjit_force_enabled?) ? NO_JIT_DESCRIPTION : RUBY_DESCRIPTION) }\n\n
+        #{ Regexp.quote(RUBY_DESCRIPTION) }\n\n
       )x,
       %r(
         (?:--\s(?:.+\n)*\n)?
