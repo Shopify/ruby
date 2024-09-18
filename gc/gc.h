@@ -106,12 +106,18 @@ hash_replace_ref(st_data_t *key, st_data_t *value, st_data_t argp, int existing)
     return ST_CONTINUE;
 }
 
+struct gc_table_update_callbacks {
+    st_foreach_callback_func *cb;
+    st_foreach_check_callback_func *check_cb;
+    st_update_callback_func *update_cb;
+};
+
 static void
-gc_update_table_refs(st_table *tbl, st_foreach_check_callback_func rep_check, st_update_callback_func replace)
+gc_update_table_refs(st_table *tbl, struct gc_table_update_callbacks *data)
 {
     if (!tbl || tbl->num_entries == 0) return;
 
-    if (st_foreach_with_replace(tbl, rep_check, replace, 0)) {
+    if (st_foreach_with_replace(tbl, data->check_cb, data->update_cb, 0)) {
         rb_raise(rb_eRuntimeError, "hash modified during iteration");
     }
 }
