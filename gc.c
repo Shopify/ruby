@@ -2925,7 +2925,7 @@ gc_ref_update_object(void *objspace, VALUE v)
     VALUE *ptr = ROBJECT_IVPTR(v);
 
     if (rb_shape_obj_too_complex(v)) {
-        gc_ref_update_table_values_only(ROBJECT_IV_HASH(v));
+        gc_update_table_refs(ROBJECT_IV_HASH(v), hash_foreach_replace_value, hash_replace_ref_value);
         return;
     }
 
@@ -2947,7 +2947,7 @@ gc_ref_update_object(void *objspace, VALUE v)
 void
 rb_gc_ref_update_table_values_only(st_table *tbl)
 {
-    gc_ref_update_table_values_only(tbl);
+    gc_update_table_refs(tbl, hash_foreach_replace_value, hash_replace_ref_value);
 }
 
 /* Update MOVED references in a VALUE=>VALUE st_table */
@@ -3185,8 +3185,7 @@ rb_gc_update_object_references(void *objspace, VALUE obj)
         update_superclasses(objspace, obj);
 
         if (rb_shape_obj_too_complex(obj)) {
-            gc_ref_update_table_values_only(RCLASS_IV_HASH(obj));
-        }
+            gc_update_table_refs(RCLASS_IV_HASH(obj), hash_foreach_replace_value, hash_replace_ref_value);        }
         else {
             for (attr_index_t i = 0; i < RCLASS_IV_COUNT(obj); i++) {
                 UPDATE_IF_MOVED(objspace, RCLASS_IVPTR(obj)[i]);

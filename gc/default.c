@@ -7201,7 +7201,7 @@ gc_update_references(rb_objspace_t *objspace)
             }
         }
     }
-    gc_ref_update_table_values_only(objspace->obj_to_id_tbl);
+    gc_update_table_refs(objspace->obj_to_id_tbl, hash_foreach_replace_value, hash_replace_ref_value);
     gc_update_table_refs(objspace->id_to_obj_tbl, hash_foreach_replace, hash_replace_ref);
     gc_update_table_refs(finalizer_table, hash_foreach_replace, hash_replace_ref);
 

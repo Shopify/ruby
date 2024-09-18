@@ -70,16 +70,6 @@ hash_replace_ref_value(st_data_t *key, st_data_t *value, st_data_t argp, int exi
     return ST_CONTINUE;
 }
 
-static void
-gc_ref_update_table_values_only(st_table *tbl)
-{
-    if (!tbl || tbl->num_entries == 0) return;
-
-    if (st_foreach_with_replace(tbl, hash_foreach_replace_value, hash_replace_ref_value, 0)) {
-        rb_raise(rb_eRuntimeError, "hash modified during iteration");
-    }
-}
-
 static int
 gc_mark_tbl_no_pin_i(st_data_t key, st_data_t value, st_data_t data)
 {
