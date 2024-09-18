@@ -2954,7 +2954,7 @@ rb_gc_ref_update_table_values_only(st_table *tbl)
 void
 rb_gc_update_tbl_refs(st_table *ptr)
 {
-    gc_update_table_refs(ptr);
+    gc_update_table_refs(ptr, hash_foreach_replace, hash_replace_ref);
 }
 
 static void
@@ -3151,7 +3151,7 @@ rb_gc_update_vm_references(void *objspace)
     rb_gc_update_global_tbl();
     global_symbols.ids = rb_gc_impl_location(objspace, global_symbols.ids);
     global_symbols.dsymbol_fstr_hash = rb_gc_impl_location(objspace, global_symbols.dsymbol_fstr_hash);
-    gc_update_table_refs(global_symbols.str_sym);
+    gc_update_table_refs(global_symbols.str_sym, hash_foreach_replace, hash_replace_ref);
 
 #if USE_YJIT
     void rb_yjit_root_update_references(void); // in Rust

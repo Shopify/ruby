@@ -117,11 +117,11 @@ hash_replace_ref(st_data_t *key, st_data_t *value, st_data_t argp, int existing)
 }
 
 static void
-gc_update_table_refs(st_table *tbl)
+gc_update_table_refs(st_table *tbl, st_foreach_check_callback_func rep_check, st_update_callback_func replace)
 {
     if (!tbl || tbl->num_entries == 0) return;
 
-    if (st_foreach_with_replace(tbl, hash_foreach_replace, hash_replace_ref, 0)) {
+    if (st_foreach_with_replace(tbl, rep_check, replace, 0)) {
         rb_raise(rb_eRuntimeError, "hash modified during iteration");
     }
 }
