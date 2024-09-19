@@ -113,12 +113,16 @@ struct gc_table_update_callbacks {
 };
 
 static void
-gc_update_table_refs(st_table *tbl, struct gc_table_update_callbacks *data)
+gc_iterate_table_cb(st_table *tbl, struct gc_table_update_callbacks *data, int replace)
 {
     if (!tbl || tbl->num_entries == 0) return;
 
-    if (st_foreach_with_replace(tbl, data->check_cb, data->update_cb, 0)) {
-        rb_raise(rb_eRuntimeError, "hash modified during iteration");
+    if (replace) {
+        if (st_foreach_with_replace(tbl, data->check_cb, data->update_cb, 0)) {
+            rb_raise(rb_eRuntimeError, "hash modified during iteration");
+        }
+    } else {
+        st_foreach(tbl, data->cb, 0);
     }
 }
 

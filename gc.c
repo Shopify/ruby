@@ -2930,7 +2930,7 @@ gc_ref_update_object(void *objspace, VALUE v)
             .check_cb = hash_foreach_replace_value,
             .update_cb = hash_replace_ref_value
         };
-        gc_update_table_refs(ROBJECT_IV_HASH(v), &data);
+        gc_iterate_table_cb(ROBJECT_IV_HASH(v), &data, TRUE);
         return;
     }
 
@@ -2957,7 +2957,7 @@ rb_gc_ref_update_table_values_only(st_table *tbl)
         .check_cb = hash_foreach_replace_value,
         .update_cb = hash_replace_ref_value
     };
-    gc_update_table_refs(tbl, &data);
+    gc_iterate_table_cb(tbl, &data, TRUE);
 }
 
 /* Update MOVED references in a VALUE=>VALUE st_table */
@@ -2969,7 +2969,7 @@ rb_gc_update_tbl_refs(st_table *ptr)
         .check_cb = hash_foreach_replace,
         .update_cb = hash_replace_ref
     };
-    gc_update_table_refs(ptr, &data);
+    gc_iterate_table_cb(ptr, &data, TRUE);
 }
 
 static void
@@ -3171,7 +3171,7 @@ rb_gc_update_vm_references(void *objspace)
         .check_cb = hash_foreach_replace,
         .update_cb = hash_replace_ref
     };
-    gc_update_table_refs(global_symbols.str_sym, &data);
+    gc_iterate_table_cb(global_symbols.str_sym, &data, TRUE);
 
 #if USE_YJIT
     void rb_yjit_root_update_references(void); // in Rust
@@ -3210,7 +3210,7 @@ rb_gc_update_object_references(void *objspace, VALUE obj)
                 .check_cb = hash_foreach_replace_value,
                 .update_cb = hash_replace_ref_value
             };
-            gc_update_table_refs(RCLASS_IV_HASH(obj), &data);
+            gc_iterate_table_cb(RCLASS_IV_HASH(obj), &data, TRUE);
         }
         else {
             for (attr_index_t i = 0; i < RCLASS_IV_COUNT(obj); i++) {
