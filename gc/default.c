@@ -7189,6 +7189,8 @@ gc_update_references(rb_objspace_t *objspace)
     }
     gc_ref_update_table_values_only(objspace->obj_to_id_tbl);
     gc_update_table_refs(objspace->id_to_obj_tbl);
+
+    rb_gc_global_vm_tbl_iter(vm_table_ref_update);
     gc_update_table_refs(finalizer_table);
 
     rb_gc_update_vm_references((void *)objspace);

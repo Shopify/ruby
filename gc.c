@@ -2989,6 +2989,36 @@ check_id_table_move(VALUE value, void *data)
     return ID_TABLE_CONTINUE;
 }
 
+int
+global_vm_table_iter_wrapper(st_data_t key, st_data_t value, st_data_t data) {
+    vm_table_iter_callback_func cb = (vm_table_iter_callback_func)data;
+
+    (*cb)((VALUE *)&key, (VALUE *)&value, true);
+
+    return 0;
+}
+
+void
+rb_gc_global_vm_tbl_iter(vm_table_iter_callback_func cb)
+{
+    rb_vm_t *vm = GET_VM();
+
+    st_table *ci_table = vm->ci_table;
+    if (ci_table->num_entries > 0) {
+        st_foreach(ci_table, global_vm_table_iter_wrapper, (st_data_t)cb);
+    }
+
+    st_table *overloaded_cme_table = vm->overloaded_cme_table;
+    if (overloaded_cme_table->num_entries > 0) {
+        st_foreach(overloaded_cme_table, global_vm_table_iter_wrapper, (st_data_t)cb);
+    }
+
+    st_table *frozen_strings = vm->frozen_strings;
+    if (frozen_strings->num_entries > 0) {
+        st_foreach(frozen_strings, global_vm_table_iter_wrapper, (st_data_t)cb);
+    }
+}
+
 VALUE
 rb_gc_location(VALUE value)
 {
