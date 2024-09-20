@@ -7162,6 +7162,12 @@ gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t *objspace, 
     return 0;
 }
 
+int
+vm_table_ref_update(VALUE *key, VALUE *value, bool compare_by_value)
+{
+    return ST_CONTINUE;
+}
+
 static void
 gc_update_references(rb_objspace_t *objspace)
 {

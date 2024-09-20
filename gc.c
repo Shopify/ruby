@@ -2989,11 +2989,17 @@ check_id_table_move(VALUE value, void *data)
     return ID_TABLE_CONTINUE;
 }
 
+struct global_vm_tbl_iter_data {
+    vm_table_iter_callback_func cb;
+    bool compare_by_value;
+};
+
 int
 global_vm_table_iter_wrapper(st_data_t key, st_data_t value, st_data_t data) {
-    vm_table_iter_callback_func cb = (vm_table_iter_callback_func)data;
+    struct global_vm_tbl_iter_data *d = (struct global_vm_tbl_iter_data *)data;
+    vm_table_iter_callback_func cb = (vm_table_iter_callback_func)d->cb;
 
-    (*cb)((VALUE *)&key, (VALUE *)&value, true);
+    (*cb)((VALUE *)&key, (VALUE *)&value, d->compare_by_value);
 
     return 0;
 }
@@ -3003,19 +3009,25 @@ rb_gc_global_vm_tbl_iter(vm_table_iter_callback_func cb)
 {
     rb_vm_t *vm = GET_VM();
 
+    struct global_vm_tbl_iter_data data = {
+        .cb = cb,
+        .compare_by_value = TRUE
+    };
+
     st_table *ci_table = vm->ci_table;
     if (ci_table->num_entries > 0) {
-        st_foreach(ci_table, global_vm_table_iter_wrapper, (st_data_t)cb);
+        st_foreach(ci_table, global_vm_table_iter_wrapper, (st_data_t)&data);
     }
 
     st_table *overloaded_cme_table = vm->overloaded_cme_table;
     if (overloaded_cme_table->num_entries > 0) {
-        st_foreach(overloaded_cme_table, global_vm_table_iter_wrapper, (st_data_t)cb);
+        st_foreach(overloaded_cme_table, global_vm_table_iter_wrapper, (st_data_t)&data);
     }
 
     st_table *frozen_strings = vm->frozen_strings;
+    data.compare_by_value = FALSE;
     if (frozen_strings->num_entries > 0) {
-        st_foreach(frozen_strings, global_vm_table_iter_wrapper, (st_data_t)cb);
+        st_foreach(frozen_strings, global_vm_table_iter_wrapper, (st_data_t)&data);
     }
 }
 
