@@ -43,9 +43,10 @@ void rb_gc_set_shape(VALUE obj, uint32_t shape_id);
 uint32_t rb_gc_rebuild_shape(VALUE obj, size_t size_pool_id);
 size_t rb_obj_memsize_of(VALUE obj);
 
-typedef int (*vm_table_iter_callback_func)(VALUE *key, VALUE *value, bool compare_by_value);
+typedef int (*vm_table_iter_callback_func)(VALUE key, VALUE value, void *data, bool compare_by_value);
+typedef int (*vm_table_update_callback_func)(VALUE *key, VALUE *value, void *data, bool compare_by_value);
 
-void rb_gc_global_vm_tbl_iter(vm_table_iter_callback_func cb);
+void rb_gc_vm_weak_tbl_iter(vm_table_iter_callback_func iter, vm_table_update_callback_func replace, void *data);
 RUBY_SYMBOL_EXPORT_END
 
 void rb_ractor_finish_marking(void);

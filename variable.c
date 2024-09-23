@@ -63,6 +63,12 @@ static void setup_const_entry(rb_const_entry_t *, VALUE, VALUE, rb_const_flag_t)
 static VALUE rb_const_search(VALUE klass, ID id, int exclude, int recurse, int visibility);
 static st_table *generic_iv_tbl_;
 
+st_table *
+rb_generic_iv_tbl(void)
+{
+    return generic_iv_tbl_;
+}
+
 void
 Init_var_tables(void)
 {

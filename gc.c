@@ -2991,44 +2991,71 @@ check_id_table_move(VALUE value, void *data)
 
 struct global_vm_tbl_iter_data {
     vm_table_iter_callback_func cb;
+    vm_table_update_callback_func ucb;
+    void *data;
     bool compare_by_value;
 };
 
-int
-global_vm_table_iter_wrapper(st_data_t key, st_data_t value, st_data_t data) {
+static int
+vm_table_iter_wrapper(st_data_t key, st_data_t value, st_data_t data, int error) {
     struct global_vm_tbl_iter_data *d = (struct global_vm_tbl_iter_data *)data;
-    vm_table_iter_callback_func cb = (vm_table_iter_callback_func)d->cb;
+    vm_table_iter_callback_func cb = d->cb;
 
-    (*cb)((VALUE *)&key, (VALUE *)&value, d->compare_by_value);
-
-    return 0;
+    return (*cb)((VALUE)key, (VALUE)value, d->data, d->compare_by_value);
 }
 
+static int
+vm_table_update_wrapper(st_data_t *key, st_data_t *value, st_data_t data, int existing) {
+    struct global_vm_tbl_iter_data *d = (struct global_vm_tbl_iter_data *)data;
+    vm_table_update_callback_func cb = d->ucb;
+
+    return (*cb)((VALUE *)key, (VALUE *)value, d->data, d->compare_by_value);
+}
+
+extern rb_symbols_t ruby_global_symbols;
+#define global_symbols ruby_global_symbols
+
 void
-rb_gc_global_vm_tbl_iter(vm_table_iter_callback_func cb)
+rb_gc_vm_weak_tbl_iter(vm_table_iter_callback_func cb, vm_table_update_callback_func update, void *data)
 {
     rb_vm_t *vm = GET_VM();
 
-    struct global_vm_tbl_iter_data data = {
+    struct global_vm_tbl_iter_data iter_data = {
         .cb = cb,
+        .ucb = update,
+        .data = data,
         .compare_by_value = TRUE
     };
 
     st_table *ci_table = vm->ci_table;
     if (ci_table->num_entries > 0) {
-        st_foreach(ci_table, global_vm_table_iter_wrapper, (st_data_t)&data);
+        st_foreach_with_replace(ci_table, vm_table_iter_wrapper, vm_table_update_wrapper, (st_data_t)&iter_data);
     }
 
     st_table *overloaded_cme_table = vm->overloaded_cme_table;
     if (overloaded_cme_table->num_entries > 0) {
-        st_foreach(overloaded_cme_table, global_vm_table_iter_wrapper, (st_data_t)&data);
+        st_foreach_with_replace(overloaded_cme_table, vm_table_iter_wrapper, vm_table_update_wrapper, (st_data_t)&iter_data);
+    }
+
+    // This needs handled differently because it's complex and integrated with object shapes.
+    // Potentially we can hand roll an iterator that calls the iter/update callbacks with the
+    // obj as the key and each ivar table entry as a value. ie. multiple values map to the same
+    // object.
+    //
+    // Maybe another field that returns true if the key has already been seen before. hint on
+    // subsequent runs that the key has already been seen before. so we don't need to check it.
+    st_table *generic_iv_tbl = rb_generic_iv_tbl();
+    if (generic_iv_tbl->num_entries > 0) {
+        st_foreach_with_replace(generic_iv_tbl, vm_table_iter_wrapper, vm_table_update_wrapper, (st_data_t)&iter_data);
     }
 
     st_table *frozen_strings = vm->frozen_strings;
-    data.compare_by_value = FALSE;
+    iter_data.compare_by_value = FALSE;
     if (frozen_strings->num_entries > 0) {
-        st_foreach(frozen_strings, global_vm_table_iter_wrapper, (st_data_t)&data);
+        st_foreach_with_replace(frozen_strings, vm_table_iter_wrapper, vm_table_update_wrapper, (st_data_t)&iter_data);
     }
+
+    gc_update_table_refs(global_symbols.str_sym);
 }
 
 VALUE
@@ -3180,8 +3207,40 @@ update_superclasses(void *objspace, VALUE obj)
     }
 }
 
-extern rb_symbols_t ruby_global_symbols;
-#define global_symbols ruby_global_symbols
+
+
+static int
+weak_tbl_iter(VALUE key, VALUE value, void *data, bool compare_by_value)
+{
+    if (compare_by_value) {
+        GC_ASSERT(RVALUE_PINNED_BITMAP(key));
+    }
+    else {
+        if (gc_object_moved_p(data, key)){
+            return ST_REPLACE;
+        }
+    }
+
+    if (gc_object_moved_p(data, value)){
+        return ST_REPLACE;
+    }
+
+    return ST_CONTINUE;
+}
+
+static int
+weak_tbl_update(VALUE *key, VALUE *value, void *data, bool compare_by_value)
+{
+    if (!compare_by_value && gc_object_moved_p(data, *key)) {
+        *key = rb_gc_location(*key);
+    }
+
+    if (gc_object_moved_p(data, *value)) {
+        *value = rb_gc_location(*value);
+    }
+
+    return ST_CONTINUE;
+}
 
 void
 rb_gc_update_vm_references(void *objspace)
@@ -3190,10 +3249,11 @@ rb_gc_update_vm_references(void *objspace)
     rb_vm_t *vm = rb_ec_vm_ptr(ec);
 
     rb_vm_update_references(vm);
+    rb_gc_vm_weak_tbl_iter(weak_tbl_iter, weak_tbl_update, objspace);
+
     rb_gc_update_global_tbl();
     global_symbols.ids = rb_gc_impl_location(objspace, global_symbols.ids);
     global_symbols.dsymbol_fstr_hash = rb_gc_impl_location(objspace, global_symbols.dsymbol_fstr_hash);
-    gc_update_table_refs(global_symbols.str_sym);
 
 #if USE_YJIT
     void rb_yjit_root_update_references(void); // in Rust
