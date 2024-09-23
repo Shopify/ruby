@@ -7165,6 +7165,14 @@ gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t *objspace, 
 int
 vm_table_ref_update(VALUE *key, VALUE *value, bool compare_by_value)
 {
+    if (rb_gc_location((VALUE)*key) != (VALUE)*key) {
+        *key = rb_gc_location((VALUE)*key);
+    }
+
+    if (rb_gc_location((VALUE)*value) != (VALUE)*value) {
+        *value = rb_gc_location((VALUE)*value);
+    }
+
     return ST_CONTINUE;
 }
 
@@ -7193,8 +7201,8 @@ gc_update_references(rb_objspace_t *objspace)
             }
         }
     }
-    gc_ref_update_table_values_only(objspace->obj_to_id_tbl);
-    gc_update_table_refs(objspace->id_to_obj_tbl);
+    //gc_ref_update_table_values_only(objspace->obj_to_id_tbl);
+    //gc_update_table_refs(objspace->id_to_obj_tbl);
 
     rb_gc_global_vm_tbl_iter(vm_table_ref_update);
     gc_update_table_refs(finalizer_table);
