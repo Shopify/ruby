@@ -11393,6 +11393,57 @@ rb_str_is_ascii_only_p(VALUE str)
     return RBOOL(cr == ENC_CODERANGE_7BIT);
 }
 
+static VALUE
+rb_str_space_only_p(VALUE str)
+{
+    rb_encoding *enc;
+    char *s, *e;
+
+    enc = STR_ENC_GET(str);
+    s = RSTRING_PTR(str);
+    if (!s || RSTRING_LEN(str) == 0) return Qtrue;
+
+    e = RSTRING_END(str);
+    while (s < e) {
+        int n;
+        unsigned int cc = rb_enc_codepoint_len(s, e, &n, enc);
+
+        switch (cc) {
+          case 9:
+          case 0xa:
+        case 0xb:
+        case 0xc:
+        case 0xd:
+        case 0x20:
+        case 0x85:
+        case 0xa0:
+        case 0x1680:
+        case 0x2000:
+        case 0x2001:
+        case 0x2002:
+        case 0x2003:
+        case 0x2004:
+        case 0x2005:
+        case 0x2006:
+        case 0x2007:
+        case 0x2008:
+        case 0x2009:
+        case 0x200a:
+        case 0x2028:
+        case 0x2029:
+        case 0x202f:
+        case 0x205f:
+        case 0x3000:
+          /* found */
+          break;
+      default:
+          return Qfalse;
+    }
+    s += n;
+  }
+  return Qtrue;
+}
+
 VALUE
 rb_str_ellipsize(VALUE str, long len)
 {
@@ -12665,6 +12716,7 @@ Init_String(void)
     rb_define_method(rb_cString, "b", rb_str_b, 0);
     rb_define_method(rb_cString, "valid_encoding?", rb_str_valid_encoding_p, 0);
     rb_define_method(rb_cString, "ascii_only?", rb_str_is_ascii_only_p, 0);
+    rb_define_method(rb_cString, "space_only?", rb_str_space_only_p, 0);
 
     /* define UnicodeNormalize module here so that we don't have to look it up */
     mUnicodeNormalize          = rb_define_module("UnicodeNormalize");

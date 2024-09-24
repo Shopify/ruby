@@ -3728,6 +3728,22 @@ CODE
     Warning[:deprecated] = deprecated
   end
 
+  def test_space_only
+    assert_predicate(" ", :space_only?)
+    assert_predicate("   ", :space_only?)
+    assert_predicate("  \t  ", :space_only?)
+    assert_predicate("  \t\n  ", :space_only?)
+    assert_predicate("  \t\n\r  ", :space_only?)
+    assert_predicate("  \t\n\r\f  ", :space_only?)
+    assert_predicate("  \t\n\r\f\v  ", :space_only?)
+    assert_predicate("  \t\n\r\f\v\u3000  ", :space_only?)
+    assert_predicate("  \t\n\r\f\v\u3000  ", :space_only?)
+
+    refute_predicate("1", :space_only?)
+    refute_predicate("1\t2", :space_only?)
+    refute_predicate("1\u30002", :space_only?)
+  end
+
   private
 
   def assert_bytesplice_result(expected, s, *args)
