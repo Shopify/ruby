@@ -39,6 +39,12 @@ jobs:
             configure: '--with-shared-gc=/home/runner/ruby_gc'
           - test_task: check
             gc_name: 'mmtk'
+            build: 'debug'
+            shared_gc: true
+            configure: '--with-shared-gc=/home/runner/ruby_gc'
+          - test_task: check
+            gc_name: 'mmtk'
+            build: 'release'
             shared_gc: true
             configure: '--with-shared-gc=/home/runner/ruby_gc'
           - test_task: test-bundler-parallel
@@ -106,14 +112,14 @@ jobs:
       - name: Build MMTK Ruby lib
         run: |
           cd ../src/gc/mmtk
-          cargo build
+          cargo build ${{ matrix.build != 'debug' && format('--{0}', matrix.build) || format('') }}
           echo "RUST_LOG=" >> $GITHUB_ENV
         if: ${{ matrix.shared_gc && matrix.gc_name == 'mmtk' }}
 
       - name: Build shared GC
         run: |
           echo "RUBY_GC_LIBRARY=librubygc.${{ matrix.gc_name }}.so" >> $GITHUB_ENV
-          make shared-gc SHARED_GC=${{ matrix.gc_name }}
+          make shared-gc SHARED_GC=${{ matrix.gc_name }} MMTK_BUILD=${{ matrix.build }}
         if: ${{ matrix.shared_gc }}
 
       - run: $SETARCH make
