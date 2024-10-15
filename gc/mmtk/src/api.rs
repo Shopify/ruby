@@ -12,7 +12,6 @@ use mmtk::memory_manager;
 use mmtk::memory_manager::mmtk_init;
 use mmtk::util::constants::MIN_OBJECT_SIZE;
 use mmtk::util::options::GCTriggerSelector;
-use mmtk::util::options::PlanSelector;
 use mmtk::util::Address;
 use mmtk::util::ObjectReference;
 use mmtk::util::VMMutatorThread;
@@ -37,7 +36,7 @@ pub extern "C" fn mmtk_is_reachable(object: ObjectReference) -> bool {
 
 #[no_mangle]
 pub extern "C" fn mmtk_builder_default() -> *mut MMTKBuilder {
-    let mut builder = MMTKBuilder::new_no_env_vars();
+    let mut builder = MMTKBuilder::new();
     builder.options.no_finalizer.set(true);
 
     // Hard code NoGC for now
