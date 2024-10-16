@@ -135,7 +135,7 @@ jobs:
       - name: Verify MMTk bindgen
         run: |
           cd ../src/gc/mmtk
-          cargo install --force cbindgen@0.26.0
+          cargo install --force cbindgen
           cbindgen --config cbindgen.toml --output ../mmtk.h
           if read -n1 -d '' < <(git diff ../mmtk.h); then
             git diff ../mmtk.h
