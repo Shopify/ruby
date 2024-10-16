@@ -12,6 +12,10 @@
 #include "ccan/list/list.h"
 #include "darray.h"
 
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
+
 struct objspace {
     bool measure_gc_time;
     bool gc_stress;
@@ -72,6 +76,62 @@ RB_THREAD_LOCAL_SPECIFIER struct MMTk_GCThreadTLS *rb_mmtk_gc_thread_tls;
 #endif
 
 #include <pthread.h>
+
+static size_t
+rb_mmtk_system_physical_memory(void)
+{
+#ifdef __linux__
+    const long physical_pages = sysconf(_SC_PHYS_PAGES);
+    const long page_size = sysconf(_SC_PAGE_SIZE);
+    if (physical_pages == -1 || page_size == -1)
+    {
+        rb_bug("failed to get system physical memory size");
+    }
+    return (size_t) physical_pages * (size_t) page_size;
+#elif defined(__APPLE__)
+    int mib[2];
+    mib[0] = CTL_HW;
+    mib[1] = HW_MEMSIZE; // total physical memory
+    int64_t physical_memory;
+    size_t length = sizeof(int64_t);
+    if (sysctl(mib, 2, &physical_memory, &length, NULL, 0) == -1)
+    {
+        rb_bug("failed to get system physical memory size");
+    }
+    return (size_t) physical_memory;
+#else
+#error no implementation of rb_mmtk_system_physical_memory on this platform
+#endif
+}
+
+static size_t
+rb_mmtk_parse_heap_limit(const char *argv, bool* had_error)
+{
+    char *endval = NULL;
+    int pow = 0;
+
+    size_t base = strtol(argv, &endval, 10);
+    if (base == 0) {
+        *had_error = true;
+    }
+
+    // if there were non-numbers in the string
+    // try and parse them as IEC units
+    if (*endval) {
+        if (strcmp(endval, "TiB") == 0)  {
+            pow = 40; // tebibytes. 2^40
+        } else if (strcmp(endval, "GiB") == 0)  {
+            pow = 30; // gibibytes. 2^30
+        } else if (strcmp(endval, "MiB") == 0)  {
+            pow = 20; // mebibytes. 2^20
+        } else if (strcmp(endval, "KiB") == 0)  {
+            pow = 10; // kibibytes. 2^10
+        }
+    }
+
+    *had_error = false;
+    return (base << pow);
+}
 
 static void
 rb_mmtk_init_gc_worker_thread(MMTk_VMWorkerThread gc_thread_tls)
@@ -405,10 +465,75 @@ MMTk_RubyUpcalls ruby_upcalls = {
     NULL,
 };
 
+// Use max 80% of the available memory by default for MMTk
+#define RB_MMTK_HEAP_LIMIT_PERC 80
+#define RB_MMTK_DEFAULT_HEAP_MIN (1024 * 1024)
+#define RB_MMTK_DEFAULT_HEAP_MAX (rb_mmtk_system_physical_memory() / 100 * RB_MMTK_HEAP_LIMIT_PERC)
+
+enum mmtk_heap_mode {
+    RB_MMTK_DYNAMIC_HEAP,
+    RB_MMTK_FIXED_HEAP
+};
+
+MMTk_Builder *
+rb_mmtk_builder_init(void)
+{
+    MMTk_Builder *builder = mmtk_builder_default();
+
+    size_t mmtk_max_heap_size = RB_MMTK_DEFAULT_HEAP_MAX;
+    size_t mmtk_min_heap_size = RB_MMTK_DEFAULT_HEAP_MIN;
+    const char *mmtk_max_heap_size_arg;
+    const char *mmtk_min_heap_size_arg;
+    enum mmtk_heap_mode mode = RB_MMTK_DYNAMIC_HEAP;
+
+    // switch to fixed mode if defined, for any other value assume the default, which is dynamic
+    if (getenv("MMTK_HEAP_MODE") && !strncmp(getenv("MMTK_HEAP_MODE"), "fixed", 5)) {
+        mode = RB_MMTK_FIXED_HEAP;
+    }
+
+    if ((mmtk_max_heap_size_arg = getenv("MMTK_HEAP_MAX"))) {
+        bool max_error = true;
+        mmtk_max_heap_size = rb_mmtk_parse_heap_limit(mmtk_max_heap_size_arg, &max_error);
+        if (max_error) {
+            rb_warn("MMTk maximum heap size invalid, using default");
+            mmtk_max_heap_size = RB_MMTK_DEFAULT_HEAP_MAX;
+        }
+    };
+    if ((mmtk_min_heap_size_arg = getenv("MMTK_HEAP_MIN"))) {
+        bool min_error;
+        mmtk_min_heap_size = rb_mmtk_parse_heap_limit(mmtk_min_heap_size_arg, &min_error);
+        if (min_error) {
+            rb_warn("MMTk minimum heap size invalid, using default");
+            mmtk_min_heap_size = RB_MMTK_DEFAULT_HEAP_MIN;
+        }
+    };
+
+    switch (mode)
+    {
+      case RB_MMTK_FIXED_HEAP:
+        mmtk_set_fixed_heap(builder, mmtk_max_heap_size);
+        break;
+      case RB_MMTK_DYNAMIC_HEAP:
+        if (mmtk_min_heap_size >= mmtk_max_heap_size) {
+            rb_bug(
+                "MMTK Heap size invalid: please set max heap (%zu) larger than min heap (%zu)",
+                mmtk_max_heap_size, mmtk_min_heap_size
+            );
+        }
+        mmtk_set_dynamic_heap(builder, mmtk_min_heap_size, mmtk_max_heap_size);
+        break;
+      default:
+        rb_bug("Unreachable: Invalid MMTK Heap Mode");
+        break;
+    }
+
+    return builder;
+}
+
 void *
 rb_gc_impl_objspace_alloc(void)
 {
-    MMTk_Builder *builder = mmtk_builder_default();
+    MMTk_Builder *builder = rb_mmtk_builder_init();
     mmtk_init_binding(builder, NULL, &ruby_upcalls, (MMTk_ObjectReference)Qundef);
 
     return calloc(1, sizeof(struct objspace));

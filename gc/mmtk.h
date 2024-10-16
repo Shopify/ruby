@@ -98,6 +98,10 @@ void mmtk_init_binding(MMTk_Builder *builder,
                        const struct MMTk_RubyUpcalls *upcalls,
                        MMTk_ObjectReference weak_reference_dead_value);
 
+void mmtk_set_fixed_heap(MMTk_Builder *builder, size_t max_heap_size);
+
+void mmtk_set_dynamic_heap(MMTk_Builder *builder, size_t min_heap_size, size_t max_heap_size);
+
 void mmtk_initialize_collection(MMTk_VMThread tls);
 
 MMTk_Mutator *mmtk_bind_mutator(MMTk_VMMutatorThread tls);
@@ -155,4 +159,4 @@ MMTk_Address mmtk_last_heap_address(void);
 
 bool mmtk_is_mmtk_object(MMTk_Address addr);
 
-#endif /* MMTK_H */
+#endif  /* MMTK_H */

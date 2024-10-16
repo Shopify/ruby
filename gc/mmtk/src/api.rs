@@ -39,10 +39,6 @@ pub extern "C" fn mmtk_builder_default() -> *mut MMTKBuilder {
     let mut builder = MMTKBuilder::new();
     builder.options.no_finalizer.set(true);
 
-    // Hard code NoGC for now
-    let plan_selector = "MarkSweep".parse::<PlanSelector>().unwrap();
-    builder.options.plan.set(plan_selector);
-
     // Between 1MiB and 500MiB
     builder.options.gc_trigger.set(GCTriggerSelector::DynamicHeapSize(1 << 20, 500 << 20));
 
@@ -68,6 +64,18 @@ pub extern "C" fn mmtk_init_binding(
     crate::BINDING
         .set(binding)
         .unwrap_or_else(|_| panic!("Binding is already initialized"));
+}
+
+#[no_mangle]
+pub extern "C" fn mmtk_set_fixed_heap(builder: *mut MMTKBuilder, max_heap_size: usize) {
+    let builder = unsafe { &mut *builder };
+    builder.options.gc_trigger.set(GCTriggerSelector::FixedHeapSize(max_heap_size));
+}
+
+#[no_mangle]
+pub extern "C" fn mmtk_set_dynamic_heap(builder: *mut MMTKBuilder, min_heap_size: usize, max_heap_size: usize) {
+    let builder = unsafe { &mut *builder };
+    builder.options.gc_trigger.set(GCTriggerSelector::DynamicHeapSize(min_heap_size, max_heap_size));
 }
 
 #[no_mangle]
