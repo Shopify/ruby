@@ -542,8 +542,25 @@ rb_gc_impl_heap_sizes(void *objspace_ptr)
     return heap_sizes;
 }
 
+int
+rb_mmtk_obj_free_iter_wrapper(VALUE obj, void *data)
+{
+    struct objspace *objspace = data;
+
+    if (RB_BUILTIN_TYPE(obj) != T_NONE) {
+        rb_gc_obj_free_vm_weak_references(obj);
+        rb_gc_obj_free(objspace, obj);
+    }
+
+    return 0;
+}
+
 // Shutdown
-void rb_gc_impl_shutdown_free_objects(void *objspace_ptr) { }
+static void each_object(struct objspace *objspace, int (*func)(VALUE, void *), void *data);
+
+void rb_gc_impl_shutdown_free_objects(void *objspace_ptr) {
+    each_object(objspace_ptr, rb_mmtk_obj_free_iter_wrapper, objspace_ptr);
+}
 
 // GC
 void
