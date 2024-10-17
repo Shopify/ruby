@@ -9,6 +9,7 @@ use crate::binding::RubyBinding;
 use crate::mmtk;
 use crate::Ruby;
 use crate::RubySlot;
+use crate::utils::default_heap_max;
 use mmtk::memory_manager;
 use mmtk::memory_manager::mmtk_init;
 use mmtk::util::constants::MIN_OBJECT_SIZE;
@@ -40,6 +41,30 @@ pub extern "C" fn mmtk_builder_default() -> *mut MMTKBuilder {
     let mut builder = MMTKBuilder::new_no_env_vars();
     builder.options.no_finalizer.set(true);
 
+
+    const DEFAULT_HEAP_MIN: usize = 1 << 20;
+
+    let mut mmtk_heap_min = match std::env::var("MMTK_HEAP_MIN") {
+        Ok(mode) if (mode.parse::<usize>().is_ok()) => mode.parse::<usize>().unwrap(),
+        Ok(_) | Err(_) => DEFAULT_HEAP_MIN
+    };
+
+    let mut mmtk_heap_max = match std::env::var("MMTK_HEAP_MAX") {
+        Ok(mode) if (mode.parse::<usize>().is_ok()) => mode.parse::<usize>().unwrap(),
+        Ok(_) | Err(_) => default_heap_max()
+    };
+
+    if mmtk_heap_min >= mmtk_heap_max {
+        println!("MMTK_HEAP_MIN({}) >= MMTK_HEAP_MAX({}). Using default values.", mmtk_heap_min, mmtk_heap_max);
+        mmtk_heap_min = DEFAULT_HEAP_MIN;
+        mmtk_heap_max = default_heap_max();
+    }
+
+    let mmtk_mode = match std::env::var("MMTK_HEAP_MODE") {
+        Ok(mode) if (mode == "fixed") => GCTriggerSelector::FixedHeapSize(mmtk_heap_max),
+        Ok(_) | Err(_) => GCTriggerSelector::DynamicHeapSize(mmtk_heap_min, mmtk_heap_max)
+    };
+
     // Parse the env var, if it's not found set the plan name to MarkSweep
     let plan_name = std::env::var("MMTK_PLAN")
         .unwrap_or(String::from("MarkSweep"));
@@ -51,7 +76,7 @@ pub extern "C" fn mmtk_builder_default() -> *mut MMTKBuilder {
     builder.options.plan.set(plan_selector);
 
     // Between 1MiB and 500MiB
-    builder.options.gc_trigger.set(GCTriggerSelector::DynamicHeapSize(1 << 20, 500 << 20));
+    builder.options.gc_trigger.set(mmtk_mode);
 
     Box::into_raw(Box::new(builder))
 }
@@ -75,18 +100,6 @@ pub extern "C" fn mmtk_init_binding(
     crate::BINDING
         .set(binding)
         .unwrap_or_else(|_| panic!("Binding is already initialized"));
-}
-
-#[no_mangle]
-pub extern "C" fn mmtk_set_fixed_heap(builder: *mut MMTKBuilder, max_heap_size: usize) {
-    let builder = unsafe { &mut *builder };
-    builder.options.gc_trigger.set(GCTriggerSelector::FixedHeapSize(max_heap_size));
-}
-
-#[no_mangle]
-pub extern "C" fn mmtk_set_dynamic_heap(builder: *mut MMTKBuilder, min_heap_size: usize, max_heap_size: usize) {
-    let builder = unsafe { &mut *builder };
-    builder.options.gc_trigger.set(GCTriggerSelector::DynamicHeapSize(min_heap_size, max_heap_size));
 }
 
 #[no_mangle]

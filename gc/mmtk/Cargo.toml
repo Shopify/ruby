@@ -24,6 +24,7 @@ env_logger = "0.11.3"
 once_cell = "1.17.0"
 atomic_refcell = "0.1.9"
 probe = "0.5"
+sysinfo = "0.32.0"
 
 [dependencies.mmtk]
 features = ["is_mmtk_object", "object_pinning", "sticky_immix_non_moving_nursery"]
