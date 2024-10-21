@@ -32,6 +32,10 @@ jobs:
           - name: mmtk
             mmtk_plan: MarkSweep
             mmtk_build: debug
+          - name: mmtk
+            mmtk_plan: MarkSweep
+            mmtk_build: debug
+            configure: 'cppflags=-DRGENGC_CHECK_MODE=1 -DVM_CHECK_MODE'
         os: [macos-latest, ubuntu-latest]
         include:
           - test_task: check
@@ -111,7 +115,7 @@ jobs:
         env:
           arch: ${{ matrix.arch }}
         run: >-
-          $SETARCH ../src/configure -C --disable-install-doc --with-shared-gc=${{ env.SHARED_GC_DIR }}
+          $SETARCH ../src/configure -C --disable-install-doc --with-shared-gc=${{ env.SHARED_GC_DIR }} ${configure:-cppflags=-DRUBY_DEBUG}
           ${arch:+--target=$arch-$OSTYPE --host=$arch-$OSTYPE}
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
