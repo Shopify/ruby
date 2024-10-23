@@ -1923,9 +1923,9 @@ shared-gc: probes.h
 			echo "libmmtk_ruby.$(LIBEXT) not found. Please run 'cargo build' inside $(MMTK_SRC_PATH)"; \
 			exit 1; \
 		fi; \
-		$(LDSHARED) -I$(srcdir)/include -I$(srcdir) -I$(arch_hdrdir) $(XDLDFLAGS) $(cflags) -DBUILDING_SHARED_GC -fPIC -o $(shared_gc_dir)librubygc.$(SHARED_GC).$(SOEXT) $(srcdir)/gc/$(SHARED_GC).c $(MMTK_LIB_PATH); \
+		$(LDSHARED) -I$(srcdir)/include -I$(srcdir) -I$(arch_hdrdir) $(XDLDFLAGS) $(CFLAGS) $(CPPFLAGS) -DBUILDING_SHARED_GC -fPIC -o $(shared_gc_dir)librubygc.$(SHARED_GC).$(SOEXT) $(srcdir)/gc/$(SHARED_GC).c $(MMTK_LIB_PATH); \
 	else \
-		$(LDSHARED) -I$(srcdir)/include -I$(srcdir) -I$(arch_hdrdir) $(XDLDFLAGS) $(cflags) -DBUILDING_SHARED_GC -fPIC -o $(shared_gc_dir)librubygc.$(SHARED_GC).$(SOEXT) $(srcdir)/gc/$(SHARED_GC).c; \
+		$(LDSHARED) -I$(srcdir)/include -I$(srcdir) -I$(arch_hdrdir) $(XDLDFLAGS) $(CFLAGS) $(CPPFLAGS) -DBUILDING_SHARED_GC -fPIC -o $(shared_gc_dir)librubygc.$(SHARED_GC).$(SOEXT) $(srcdir)/gc/$(SHARED_GC).c; \
 	fi
 
 help: PHONY
