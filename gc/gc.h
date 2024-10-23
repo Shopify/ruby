@@ -102,6 +102,35 @@ RBIMPL_WARNING_IGNORED(-Wunused-function)
 # define GC_ASSERT(expr) RUBY_ASSERT_MESG_WHEN(RGENGC_CHECK_MODE > 0, expr, #expr)
 #endif
 
+
+// From ractor_core.h
+#ifndef RACTOR_CHECK_MODE
+# define RACTOR_CHECK_MODE (VM_CHECK_MODE || RUBY_DEBUG) && (SIZEOF_UINT64_T == SIZEOF_VALUE)
+#endif
+
+#if RACTOR_CHECK_MODE || GC_DEBUG
+struct rvalue_overhead {
+# if RACTOR_CHECK_MODE
+    uint32_t _ractor_belonging_id;
+# endif
+# if GC_DEBUG
+    const char *file;
+    int line;
+# endif
+};
+
+// Make sure that RVALUE_OVERHEAD aligns to sizeof(VALUE)
+# define RVALUE_OVERHEAD (sizeof(struct { \
+    union { \
+        struct rvalue_overhead overhead; \
+        VALUE value; \
+    }; \
+}))
+# define GET_RVALUE_OVERHEAD(obj) ((struct rvalue_overhead *)((uintptr_t)obj + rb_gc_impl_obj_slot_size(obj)))
+#else
+# define RVALUE_OVERHEAD 0
+#endif
+
 static int
 hash_foreach_replace_value(st_data_t key, st_data_t value, st_data_t argp, int error)
 {

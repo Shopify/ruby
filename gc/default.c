@@ -75,11 +75,6 @@
 # define VM_CHECK_MODE RUBY_DEBUG
 #endif
 
-// From ractor_core.h
-#ifndef RACTOR_CHECK_MODE
-# define RACTOR_CHECK_MODE (VM_CHECK_MODE || RUBY_DEBUG) && (SIZEOF_UINT64_T == SIZEOF_VALUE)
-#endif
-
 #ifndef RUBY_DEBUG_LOG
 # define RUBY_DEBUG_LOG(...)
 #endif
@@ -610,30 +605,6 @@ typedef struct rb_objspace {
 #ifndef HEAP_PAGE_ALIGN_LOG
 /* default tiny heap size: 64KiB */
 #define HEAP_PAGE_ALIGN_LOG 16
-#endif
-
-#if RACTOR_CHECK_MODE || GC_DEBUG
-struct rvalue_overhead {
-# if RACTOR_CHECK_MODE
-    uint32_t _ractor_belonging_id;
-# endif
-# if GC_DEBUG
-    const char *file;
-    int line;
-# endif
-};
-
-// Make sure that RVALUE_OVERHEAD aligns to sizeof(VALUE)
-# define RVALUE_OVERHEAD (sizeof(struct { \
-    union { \
-        struct rvalue_overhead overhead; \
-        VALUE value; \
-    }; \
-}))
-size_t rb_gc_impl_obj_slot_size(VALUE obj);
-# define GET_RVALUE_OVERHEAD(obj) ((struct rvalue_overhead *)((uintptr_t)obj + rb_gc_impl_obj_slot_size(obj)))
-#else
-# define RVALUE_OVERHEAD 0
 #endif
 
 #define BASE_SLOT_SIZE (sizeof(struct RBasic) + sizeof(VALUE[RBIMPL_RVALUE_EMBED_LEN_MAX]) + RVALUE_OVERHEAD)
@@ -2182,11 +2153,6 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
     if (t == T_CLASS || t == T_MODULE || t == T_ICLASS) {
         RVALUE_AGE_SET_CANDIDATE(objspace, obj);
     }
-
-#if RACTOR_CHECK_MODE
-    void rb_ractor_setup_belonging(VALUE obj);
-    rb_ractor_setup_belonging(obj);
-#endif
 
 #if RGENGC_CHECK_MODE
     newobj_fill(obj, 0, 0, 0);
