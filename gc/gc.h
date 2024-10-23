@@ -75,6 +75,12 @@ void rb_gc_prepare_heap_process_object(VALUE obj);
 bool ruby_free_at_exit_p(void);
 RUBY_SYMBOL_EXPORT_END
 
+/* GC_DEBUG:
+ *  enable to embed GC debugging information.
+ */
+#ifndef GC_DEBUG
+#define GC_DEBUG 0
+#endif
 
 void rb_ractor_finish_marking(void);
 

@@ -201,13 +201,6 @@ static ruby_gc_params_t gc_params = {
     GC_OLDMALLOC_LIMIT_GROWTH_FACTOR,
 };
 
-/* GC_DEBUG:
- *  enable to embed GC debugging information.
- */
-#ifndef GC_DEBUG
-#define GC_DEBUG 0
-#endif
-
 /* RGENGC_DEBUG:
  * 1: basic information
  * 2: remember set operation
