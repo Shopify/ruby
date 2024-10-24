@@ -81,6 +81,10 @@ static void
 rb_mmtk_init_gc_worker_thread(MMTk_VMWorkerThread gc_thread_tls)
 {
     rb_mmtk_gc_thread_tls = gc_thread_tls;
+#if RUBY_DEBUG
+    struct objspace *objspace = rb_gc_get_objspace();
+    rb_gc_worker_thread_set_vm_context(&objspace->vm_context);
+#endif
 }
 
 static bool
@@ -246,7 +250,6 @@ rb_mmtk_scan_roots_in_mutator_thread(MMTk_VMMutatorThread mutator, MMTk_VMWorker
 {
     if (mutator->gc_mutator_p) {
         struct objspace *objspace = rb_gc_get_objspace();
-
         rb_gc_worker_thread_set_vm_context(&objspace->vm_context);
         rb_gc_mark_roots(objspace, NULL);
         rb_gc_worker_thread_unset_vm_context(&objspace->vm_context);
@@ -256,7 +259,9 @@ rb_mmtk_scan_roots_in_mutator_thread(MMTk_VMMutatorThread mutator, MMTk_VMWorker
 static void
 rb_mmtk_scan_object_ruby_style(MMTk_ObjectReference object)
 {
-    rb_gc_mark_children(rb_gc_get_objspace(), (VALUE)object);
+    struct objspace *objspace = rb_gc_get_objspace();
+    rb_gc_worker_thread_set_vm_context(&objspace->vm_context);
+    rb_gc_mark_children(objspace, (VALUE)object);
 }
 
 static void
@@ -270,6 +275,7 @@ rb_mmtk_call_obj_free(MMTk_ObjectReference object)
 {
     VALUE obj = (VALUE)object;
     struct objspace *objspace = rb_gc_get_objspace();
+    rb_gc_worker_thread_set_vm_context(&objspace->vm_context);
 
     if (RB_UNLIKELY(rb_gc_event_hook_required_p(RUBY_INTERNAL_EVENT_FREEOBJ))) {
         rb_gc_worker_thread_set_vm_context(&objspace->vm_context);
@@ -788,13 +794,13 @@ rb_gc_impl_remove_weak(void *objspace_ptr, VALUE parent_obj, VALUE *ptr)
 bool
 rb_gc_impl_object_moved_p(void *objspace_ptr, VALUE obj)
 {
-    rb_bug("unimplemented");
+    return false;
 }
 
 VALUE
 rb_gc_impl_location(void *objspace_ptr, VALUE value)
 {
-    rb_bug("unimplemented");
+    return value;
 }
 
 // Write barriers
