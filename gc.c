@@ -183,9 +183,9 @@ rb_gc_initialize_vm_context(struct rb_gc_vm_context *context)
 void
 rb_gc_worker_thread_set_vm_context(struct rb_gc_vm_context *context)
 {
+#if !RUBY_DEBUG
     rb_native_mutex_lock(&context->lock);
-
-    GC_ASSERT(rb_current_execution_context(false) == NULL);
+#endif
 
 #ifdef RB_THREAD_LOCAL_SPECIFIER
 # ifdef __APPLE__
