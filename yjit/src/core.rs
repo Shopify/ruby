@@ -2240,6 +2240,45 @@ fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef> {
     return best_version;
 }
 
+///
+pub fn find_replacee(blockid: BlockId) -> Option<(BlockRef, Context)> {
+    let versions: &_ = get_version_list(blockid)?;
+
+    for &blockref in versions {
+        let block = unsafe { blockref.as_ref() };
+        let block_ctx = Context::decode(block.ctx);
+
+        // TODO(alan): we've seen there are can be multiple 0 depth.
+        if block_ctx.chain_depth == 0 {
+            return Some((blockref, block_ctx));
+        }
+    }
+    None
+}
+
+pub fn raw_blk_count(blockid: BlockId) -> Option<()> {
+    let versions = get_version_list(blockid)?;
+
+    for blockref in versions {
+        let block = unsafe { blockref.as_ref() };
+        let ctx = Context::decode(block.ctx);
+        eprint!("{:?}", ctx.chain_depth);
+        if ctx.chain_depth == 0 {
+            eprint!("(code_size={} incoming={} ", block.code_size(), block.incoming.len(), );
+            if ctx.reg_mapping == RegMapping::default() {
+                eprint!("map=0");
+            } else {
+                eprint!("map={:?}", ctx.reg_mapping);
+            }
+            eprint!(")");
+        }
+        eprint!(" ");
+    }
+    eprintln!();
+
+    None
+}
+
 /// Basically find_block_version() but allows RegMapping incompatibility
 /// that can be fixed by register moves and returns Context
 pub fn find_block_ctx_with_same_regs(blockid: BlockId, ctx: &Context) -> Option<Context> {
@@ -3082,8 +3121,15 @@ fn gen_block_series_body(
     let mut batch = Vec::with_capacity(EXPECTED_BATCH_SIZE);
 
     // Generate code for the first block
-    let first_block = gen_single_block(blockid, start_ctx, ec, cb, ocb, true).ok()?;
+    let (replace, first_block) = gen_single_block(blockid, start_ctx, ec, cb, ocb, true).ok()?;
     batch.push(first_block); // Keep track of this block version
+
+
+    if replace {
+        let (replacee, _) = find_replacee(blockid)?;
+        replacement_block(cb, replacee, first_block);
+        dbg!();
+    }
 
     // Add the block version to the VersionMap for this ISEQ
     unsafe { add_block_version(first_block, cb) };
@@ -3139,7 +3185,8 @@ fn gen_block_series_body(
             return None;
         }
 
-        let new_blockref = result.unwrap();
+        let (replace, new_blockref) = result.unwrap();
+        assert_eq!(false, replace, "should only do replacement for one block case");
 
         // Add the block version to the VersionMap for this ISEQ
         unsafe { add_block_version(new_blockref, cb) };
@@ -3694,6 +3741,32 @@ fn delete_empty_defer_block(branch: &Branch, new_block: &Block, target_ctx: Cont
 
         incr_counter!(deleted_defer_block_count);
     }
+}
+
+/// mv old, new
+pub fn replacement_block(cb: &mut CodeBlock, old: BlockRef, new: BlockRef) {
+    // TODO cutnpaste from delete empty block
+    let old_block = unsafe { old.as_ref() };
+    let new_block = unsafe { new.as_ref() };
+    old_block.incoming.for_each(|incoming| {
+        let incoming = unsafe { incoming.as_ref() };
+        for target in 0..incoming.targets.len() {
+            // SAFETY: No cell mutation; copying out a BlockRef.
+            if Some(BlockRef::from(old_block)) == unsafe {
+                        incoming.targets[target]
+                            .ref_unchecked()
+                            .as_ref()
+                            .and_then(|target| target.get_block())
+                    } {
+                incoming.targets[target].set(Some(Box::new(BranchTarget::Block(new_block.into()))));
+            }
+        }
+
+        new_block.push_incoming(incoming.into());
+        incoming.gen_fn.set_shape(BranchShape::Default);
+        regenerate_branch(cb, incoming);
+    });
+    // TODO we probably want to delete the old entry huh?
 }
 
 /// Generate a "stub", a piece of code that calls the compiler back when run.

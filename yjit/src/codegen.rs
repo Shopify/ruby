@@ -31,6 +31,7 @@ pub use crate::virtualmem::CodePtr;
 /// Status returned by code generation functions
 #[derive(PartialEq, Debug)]
 enum CodegenStatus {
+    MegaEndBlock,
     KeepCompiling,
     EndBlock,
 }
@@ -1193,7 +1194,7 @@ pub fn gen_single_block(
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
     first_block: bool,
-) -> Result<BlockRef, ()> {
+) -> Result<(bool, BlockRef), ()> {
     // Limit the number of specialized versions for this block
     let ctx = limit_block_versions(blockid, start_ctx);
 
@@ -1247,6 +1248,11 @@ pub fn gen_single_block(
 
         asm.ctx.clear_return_landing();
     }
+
+
+
+    let mut replace = false;
+
 
     // For each instruction to compile
     // NOTE: could rewrite this loop with a std::iter::Iterator
@@ -1350,6 +1356,12 @@ pub fn gen_single_block(
         if status == Some(EndBlock) {
             break;
         }
+        //
+        if status == Some(MegaEndBlock) {
+            replace = true;
+            jit.starting_ctx.reset_chain_depth_and_defer();
+            break;
+        }
     }
     let end_insn_idx = insn_idx;
 
@@ -1386,7 +1398,7 @@ pub fn gen_single_block(
     }
 
     // Block compiled successfully
-    Ok(jit.into_block(end_insn_idx, block_start_addr, end_addr, gc_offsets))
+    Ok((replace, jit.into_block(end_insn_idx, block_start_addr, end_addr, gc_offsets)))
 }
 
 fn gen_nop(
@@ -9204,6 +9216,27 @@ fn gen_opt_send_without_block(
         return Some(status);
     }
 
+    let mega = if asm.ctx.get_chain_depth() >= SEND_MAX_DEPTH &&
+            jit.insn_idx == jit.starting_insn_idx &&
+            jit.first_block {
+        let blkid =  BlockId {
+            iseq: jit.iseq,
+            idx: jit.insn_idx,
+        };
+        //.dump_src_loc();
+        //eprintln!("mega site at");
+        //dbg!(raw_blk_count(blkid));
+
+        if let Some((_, ctx)) = find_replacee(blkid) {
+            asm.ctx = ctx;
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
     // Otherwise, fallback to dynamic dispatch using the interpreter's implementation of send
     gen_send_dynamic(jit, asm, cd, unsafe { rb_yjit_sendish_sp_pops((*cd).ci) }, |asm| {
         extern "C" {
@@ -9213,7 +9246,7 @@ fn gen_opt_send_without_block(
             rb_vm_opt_send_without_block as *const u8,
             vec![EC, CFP, (cd as usize).into()],
         )
-    })
+    }).map(|orig| if mega { /* TODO: really "Do the replacement" */ MegaEndBlock } else { orig })
 }
 
 fn gen_send(

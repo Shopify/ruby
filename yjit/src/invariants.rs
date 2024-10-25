@@ -90,6 +90,10 @@ impl Invariants {
     pub fn get_instance() -> &'static mut Invariants {
         unsafe { INVARIANTS.as_mut().unwrap() }
     }
+
+    pub fn ractor_capacity(&self) -> usize {
+        self.single_ractor.capacity()
+    }
 }
 
 /// Mark the pending block as assuming that certain basic operators (e.g. Integer#==)

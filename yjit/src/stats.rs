@@ -789,6 +789,9 @@ fn rb_yjit_gen_stats_dict(key: VALUE) -> VALUE {
         set_stat_usize!(hash, "live_iseq_count", rb_yjit_live_iseq_count as usize);
         set_stat_usize!(hash, "iseq_alloc_count", rb_yjit_iseq_alloc_count as usize);
 
+
+        set_stat_usize!(hash, "ractor_assumption_size", crate::invariants::Invariants::get_instance().ractor_capacity());
+
         set_stat!(hash, "object_shape_count", rb_object_shape_count());
     }
 
