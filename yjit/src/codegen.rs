@@ -9217,8 +9217,7 @@ fn gen_opt_send_without_block(
     }
 
     let mega = if asm.ctx.get_chain_depth() >= SEND_MAX_DEPTH &&
-            jit.insn_idx == jit.starting_insn_idx &&
-            jit.first_block {
+            jit.insn_idx == jit.starting_insn_idx {
         let blkid =  BlockId {
             iseq: jit.iseq,
             idx: jit.insn_idx,

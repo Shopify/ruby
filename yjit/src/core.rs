@@ -3217,6 +3217,11 @@ fn gen_block_series_body(
         }
     }
 
+    if replace {
+        // TODO this is a lie
+        return None;
+    }
+
     Some(first_block)
 }
 
@@ -3746,27 +3751,34 @@ fn delete_empty_defer_block(branch: &Branch, new_block: &Block, target_ctx: Cont
 /// mv old, new
 pub fn replacement_block(cb: &mut CodeBlock, old: BlockRef, new: BlockRef) {
     // TODO cutnpaste from delete empty block
-    let old_block = unsafe { old.as_ref() };
-    let new_block = unsafe { new.as_ref() };
-    old_block.incoming.for_each(|incoming| {
-        let incoming = unsafe { incoming.as_ref() };
-        for target in 0..incoming.targets.len() {
-            // SAFETY: No cell mutation; copying out a BlockRef.
-            if Some(BlockRef::from(old_block)) == unsafe {
-                        incoming.targets[target]
-                            .ref_unchecked()
-                            .as_ref()
-                            .and_then(|target| target.get_block())
-                    } {
-                incoming.targets[target].set(Some(Box::new(BranchTarget::Block(new_block.into()))));
+    {
+        let old_block = unsafe { old.as_ref() };
+        let new_block = unsafe { new.as_ref() };
+        old_block.incoming.for_each(|incoming| {
+            let incoming = unsafe { incoming.as_ref() };
+            let mut set = false;
+            for target in 0..incoming.targets.len() {
+                // SAFETY: No cell mutation; copying out a BlockRef.
+                if Some(BlockRef::from(old_block)) == unsafe {
+                            incoming.targets[target]
+                                .ref_unchecked()
+                                .as_ref()
+                                .and_then(|target| target.get_block())
+                        } {
+                    set = true;
+                    incoming.targets[target].set(Some(Box::new(BranchTarget::Block(new_block.into()))));
+                }
             }
-        }
+            assert!(set);
 
-        new_block.push_incoming(incoming.into());
-        incoming.gen_fn.set_shape(BranchShape::Default);
-        regenerate_branch(cb, incoming);
-    });
-    // TODO we probably want to delete the old entry huh?
+            new_block.push_incoming(incoming.into());
+            incoming.gen_fn.set_shape(BranchShape::Default);
+            regenerate_branch(cb, incoming);
+        });
+    }
+    // delete the old block
+    remove_block_version(&old);
+    unsafe { free_block(old, false) };
 }
 
 /// Generate a "stub", a piece of code that calls the compiler back when run.
@@ -4215,8 +4227,10 @@ pub fn invalidate_block_version(blockref: &BlockRef) {
         let branch = unsafe { branchref.as_ref() };
         let target_idx = if branch.get_target_address(0) == Some(block_start) {
             0
-        } else {
+        } else if branch.get_target_address(1) == Some(block_start) {
             1
+        } else {
+            unreachable!("incoming branch does not jump to this block");
         };
 
         // Assert that the incoming branch indeed points to the block being invalidated
