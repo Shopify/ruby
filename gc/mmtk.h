@@ -66,9 +66,6 @@ typedef struct MMTk_RubyUpcalls {
     void (*scan_object_ruby_style)(MMTk_ObjectReference object);
     void (*call_gc_mark_children)(MMTk_ObjectReference object);
     void (*call_obj_free)(MMTk_ObjectReference object);
-    void (*cleanup_generic_iv_tbl)(void);
-    void *(*get_original_givtbl)(MMTk_ObjectReference object);
-    void (*move_givtbl)(MMTk_ObjectReference old_objref, MMTk_ObjectReference new_objref);
     size_t (*vm_live_bytes)(void);
     void (*update_global_tables)(int tbl_idx);
     int (*global_tables_count)(void);

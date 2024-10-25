@@ -1,5 +1,5 @@
 use crate::api::RubyMutator;
-use crate::{upcalls, Ruby};
+use crate::Ruby;
 use libc::c_int;
 use mmtk::scheduler::GCWorker;
 use mmtk::util::{Address, ObjectReference, VMMutatorThread, VMWorkerThread};
@@ -111,37 +111,6 @@ impl RubyObjectAccess {
 
     pub fn object_size(&self) -> usize {
         Self::prefix_size() + self.payload_size() + Self::suffix_size()
-    }
-
-    pub fn get_givtbl(&self) -> *mut libc::c_void {
-        if self.has_moved_givtbl() {
-            let moved_givtbl = crate::binding().moved_givtbl.lock().unwrap();
-            moved_givtbl
-                .get(&self.objref)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Object {} has HAS_MOVED_GIVTBL flag but not an entry in `moved_givtbl`",
-                        self.objref
-                    )
-                })
-                .gen_ivtbl
-        } else {
-            self.get_original_givtbl().unwrap_or_else(|| {
-                panic!(
-                    "Object {} does not have HAS_MOVED_GIVTBL flag or original givtbl",
-                    self.objref
-                )
-            })
-        }
-    }
-
-    pub fn get_original_givtbl(&self) -> Option<*mut libc::c_void> {
-        let addr = (upcalls().get_original_givtbl)(self.objref);
-        if addr.is_null() {
-            None
-        } else {
-            Some(addr)
-        }
     }
 }
 
@@ -351,9 +320,6 @@ pub struct RubyUpcalls {
     pub scan_object_ruby_style: extern "C" fn(object: ObjectReference),
     pub call_gc_mark_children: extern "C" fn(object: ObjectReference),
     pub call_obj_free: extern "C" fn(object: ObjectReference),
-    pub cleanup_generic_iv_tbl: extern "C" fn(),
-    pub get_original_givtbl: extern "C" fn(object: ObjectReference) -> *mut libc::c_void,
-    pub move_givtbl: extern "C" fn(old_objref: ObjectReference, new_objref: ObjectReference),
     pub vm_live_bytes: extern "C" fn() -> usize,
     pub update_global_tables: extern "C" fn(tbl_idx: c_int),
     pub global_tables_count: extern "C" fn() -> c_int,

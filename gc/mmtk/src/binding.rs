@@ -1,10 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::ffi::CString;
 use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
-use libc::c_void;
 use mmtk::util::ObjectReference;
 use mmtk::MMTK;
 
@@ -49,17 +48,12 @@ impl RubyConfiguration {
     }
 }
 
-pub(crate) struct MovedGIVTblEntry {
-    pub gen_ivtbl: *mut c_void,
-}
-
 pub struct RubyBinding {
     pub mmtk: &'static MMTK<Ruby>,
     pub options: RubyBindingOptions,
     pub upcalls: *const abi::RubyUpcalls,
     pub plan_name: Mutex<Option<CString>>,
     pub weak_proc: WeakProcessor,
-    pub(crate) moved_givtbl: Mutex<HashMap<ObjectReference, MovedGIVTblEntry>>,
     pub gc_thread_join_handles: Mutex<Vec<JoinHandle<()>>>,
     pub wb_unprotected_objects: Mutex<HashSet<ObjectReference>>,
 
@@ -86,7 +80,6 @@ impl RubyBinding {
             upcalls,
             plan_name: Mutex::new(None),
             weak_proc: WeakProcessor::new(),
-            moved_givtbl: Default::default(),
             gc_thread_join_handles: Default::default(),
             wb_unprotected_objects: Default::default(),
 
