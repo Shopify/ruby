@@ -394,7 +394,6 @@ rb_mmtk_update_global_tables(int table)
 // Bootup
 MMTk_RubyUpcalls ruby_upcalls = {
     rb_mmtk_init_gc_worker_thread,
-    NULL,
     rb_mmtk_is_mutator,
     rb_mmtk_stop_the_world,
     rb_mmtk_resume_mutators,

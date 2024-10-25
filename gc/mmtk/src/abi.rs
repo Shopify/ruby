@@ -286,17 +286,6 @@ impl GCThreadTLS {
         unsafe { std::mem::transmute(ptr) }
     }
 
-    /// Get a ref to `GCThreadTLS` from C-level thread-local storage, with assertion for null
-    /// pointer.
-    ///
-    /// # Safety
-    ///
-    /// Has undefined behavior if the pointer held in C-level TLS is invalid.
-    pub unsafe fn from_upcall_check() -> &'static mut GCThreadTLS {
-        let ptr = (upcalls().get_gc_thread_tls)();
-        Self::check_cast(ptr)
-    }
-
     pub fn worker<'w>(&mut self) -> &'w mut GCWorker<Ruby> {
         // NOTE: The returned ref points to the worker which does not have the same lifetime as self.
         assert!(self.kind == GC_THREAD_KIND_WORKER);
@@ -346,7 +335,6 @@ pub struct RubyBindingOptions {
 #[derive(Clone)]
 pub struct RubyUpcalls {
     pub init_gc_worker_thread: extern "C" fn(gc_worker_tls: *mut GCThreadTLS),
-    pub get_gc_thread_tls: extern "C" fn() -> *mut GCThreadTLS,
     pub is_mutator: extern "C" fn() -> bool,
     pub stop_the_world: extern "C" fn(),
     pub resume_mutators: extern "C" fn(),
