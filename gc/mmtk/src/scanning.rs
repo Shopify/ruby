@@ -134,7 +134,6 @@ impl Scanning<Ruby> for VMScanning {
         crate::binding()
             .weak_proc
             .process_weak_stuff(worker, tracer_context);
-        crate::binding().ppp_registry.cleanup_ppps();
         false
     }
 

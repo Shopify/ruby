@@ -2,7 +2,6 @@ extern crate libc;
 extern crate mmtk;
 #[macro_use]
 extern crate log;
-#[macro_use]
 extern crate probe;
 
 use std::collections::HashSet;
@@ -23,7 +22,6 @@ pub mod api;
 pub mod binding;
 pub mod collection;
 pub mod object_model;
-pub mod ppp;
 pub mod reference_glue;
 pub mod scanning;
 pub mod utils;

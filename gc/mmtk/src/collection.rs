@@ -16,12 +16,11 @@ impl Collection<Ruby> for VMCollection {
         crate::CONFIGURATION.gc_enabled.load(Ordering::Relaxed)
     }
 
-    fn stop_all_mutators<F>(tls: VMWorkerThread, mut mutator_visitor: F)
+    fn stop_all_mutators<F>(_tls: VMWorkerThread, mut mutator_visitor: F)
     where
         F: FnMut(&'static mut mmtk::Mutator<Ruby>),
     {
         (upcalls().stop_the_world)();
-        crate::binding().ppp_registry.pin_ppp_children(tls);
         (upcalls().get_mutators)(
             Self::notify_mutator_ready::<F>,
             &mut mutator_visitor as *mut F as *mut _,
