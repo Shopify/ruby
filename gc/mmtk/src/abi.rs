@@ -360,9 +360,6 @@ pub struct RubyUpcalls {
     pub update_frozen_strings_table: extern "C" fn(),
     pub update_finalizer_table: extern "C" fn(),
     pub update_obj_id_tables: extern "C" fn(),
-    pub update_global_symbols_table: extern "C" fn(),
-    pub update_overloaded_cme_table: extern "C" fn(),
-    pub update_ci_table: extern "C" fn(),
 }
 
 unsafe impl Sync for RubyUpcalls {}

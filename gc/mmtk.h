@@ -75,9 +75,6 @@ typedef struct MMTk_RubyUpcalls {
     void (*update_frozen_strings_table)(void);
     void (*update_finalizer_table)(void);
     void (*update_obj_id_tables)(void);
-    void (*update_global_symbols_table)(void);
-    void (*update_overloaded_cme_table)(void);
-    void (*update_ci_table)(void);
 } MMTk_RubyUpcalls;
 
 typedef struct MMTk_RawVecOfObjRef {

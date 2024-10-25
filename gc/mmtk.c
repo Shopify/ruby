@@ -415,9 +415,6 @@ MMTk_RubyUpcalls ruby_upcalls = {
     NULL,
     rb_mmtk_update_finalizer_table,
     rb_mmtk_update_obj_id_tables,
-    NULL,
-    NULL,
-    NULL,
 };
 
 // Use max 80% of the available memory by default for MMTk
