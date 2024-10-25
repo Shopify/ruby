@@ -72,7 +72,6 @@ typedef struct MMTk_RubyUpcalls {
     size_t (*vm_live_bytes)(void);
     void (*update_global_tables)(int tbl_idx);
     int (*global_tables_count)(void);
-    void (*update_frozen_strings_table)(void);
     void (*update_finalizer_table)(void);
     void (*update_obj_id_tables)(void);
 } MMTk_RubyUpcalls;

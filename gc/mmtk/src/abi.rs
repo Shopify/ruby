@@ -357,7 +357,6 @@ pub struct RubyUpcalls {
     pub vm_live_bytes: extern "C" fn() -> usize,
     pub update_global_tables: extern "C" fn(tbl_idx: c_int),
     pub global_tables_count: extern "C" fn() -> c_int,
-    pub update_frozen_strings_table: extern "C" fn(),
     pub update_finalizer_table: extern "C" fn(),
     pub update_obj_id_tables: extern "C" fn(),
 }

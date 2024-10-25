@@ -412,7 +412,6 @@ MMTk_RubyUpcalls ruby_upcalls = {
     rb_mmtk_vm_live_bytes,
     rb_mmtk_update_global_tables,
     rb_mmtk_global_tables_count,
-    NULL,
     rb_mmtk_update_finalizer_table,
     rb_mmtk_update_obj_id_tables,
 };
