@@ -296,7 +296,6 @@ static void
 make_final_job(struct objspace *objspace, VALUE obj, VALUE table)
 {
     RUBY_ASSERT(RB_FL_TEST(obj, RUBY_FL_FINALIZE));
-    RUBY_ASSERT(mmtk_is_reachable((MMTk_ObjectReference)table));
     RUBY_ASSERT(RB_BUILTIN_TYPE(table) == T_ARRAY);
 
     RB_FL_UNSET(obj, RUBY_FL_FINALIZE);
