@@ -32,6 +32,7 @@ jobs:
           - name: mmtk
             mmtk_plan: MarkSweep
             mmtk_build: debug
+            timeout: 60
         os: [macos-latest, ubuntu-latest]
         include:
           - test_task: check
@@ -118,7 +119,13 @@ jobs:
       - name: Build MMTK Ruby lib
         run: |
           cd ../src/gc/mmtk
-          cargo build ${{ matrix.gc.mmtk_build != 'debug' && format('--{0}', matrix.gc.mmtk_build) || format('') }}
+          if [[ ${{ matrix.gc.mmtk_build }} == release ]]; then
+            cargo build --release
+          else
+            cargo build
+            # Debug builds run much slower so we should increase the timeout
+            echo 'RUBY_TEST_TIMEOUT_SCALE=10' >> $GITHUB_ENV
+          fi
           echo 'RUST_LOG=' >> $GITHUB_ENV
           echo 'MMTK_PLAN=${{ matrix.gc.mmtk_plan }}' >> $GITHUB_ENV
           echo 'EXCLUDES=../src/test/.excludes-mmtk' >> $GITHUB_ENV
