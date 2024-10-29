@@ -126,7 +126,7 @@ jobs:
             # Debug builds run much slower so we should increase the timeout
             echo 'RUBY_TEST_TIMEOUT_SCALE=10' >> $GITHUB_ENV
             # SYNTAX_SUGGEST_TIMEOUT defaults to 1 second
-            echo 'SYNTAX_SUGGEST_TIMEOUT=10' >> $GITHUB_ENV
+            echo 'SYNTAX_SUGGEST_TIMEOUT=60' >> $GITHUB_ENV
           fi
           echo 'RUST_LOG=' >> $GITHUB_ENV
           echo 'MMTK_PLAN=${{ matrix.gc.mmtk_plan }}' >> $GITHUB_ENV
@@ -186,7 +186,7 @@ jobs:
           $SETARCH make -s ${{ matrix.test_task }}
           ${TESTS:+TESTS="$TESTS"}
           ${{ !contains(matrix.test_task, 'bundle') && 'RUBYOPT=-w' || '' }}
-        timeout-minutes: ${{ matrix.timeout || 40 }}
+        timeout-minutes: ${{ matrix.gc.timeout || 40 }}
         env:
           RUBY_TESTOPTS: '-q --tty=no'
           TEST_BUNDLED_GEMS_ALLOW_FAILURES: 'typeprof'
