@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: false
+# frozen_string_literal: true
 
 require_relative 'test_helper'
 
@@ -19,24 +19,24 @@ class JSONGeneratorTest < Test::Unit::TestCase
     }
     @json2 = '{"a":2,"b":3.141,"c":"c","d":[1,"b",3.14],"e":{"foo":"bar"},' +
       '"g":"\\"\\u0000\\u001f","h":1000.0,"i":0.001}'
-    @json3 = <<'EOT'.chomp
-{
-  "a": 2,
-  "b": 3.141,
-  "c": "c",
-  "d": [
-    1,
-    "b",
-    3.14
-  ],
-  "e": {
-    "foo": "bar"
-  },
-  "g": "\"\u0000\u001f",
-  "h": 1000.0,
-  "i": 0.001
-}
-EOT
+    @json3 = <<~'JSON'.chomp
+      {
+        "a": 2,
+        "b": 3.141,
+        "c": "c",
+        "d": [
+          1,
+          "b",
+          3.14
+        ],
+        "e": {
+          "foo": "bar"
+        },
+        "g": "\"\u0000\u001f",
+        "h": 1000.0,
+        "i": 0.001
+      }
+    JSON
   end
 
   def silence
@@ -90,10 +90,17 @@ EOT
 
   def test_generate_pretty
     json = pretty_generate({})
-    assert_equal(<<'EOT'.chomp, json)
-{
-}
-EOT
+    assert_equal('{}', json)
+
+    json = pretty_generate({1=>{}, 2=>[], 3=>4})
+    assert_equal(<<~'JSON'.chomp, json)
+      {
+        "1": {},
+        "2": [],
+        "3": 4
+      }
+    JSON
+
     json = pretty_generate(@hash)
     # hashes aren't (insertion) ordered on every ruby implementation
     # assert_equal(@json3, json)
@@ -101,11 +108,11 @@ EOT
     parsed_json = parse(json)
     assert_equal(@hash, parsed_json)
     json = pretty_generate({1=>2})
-    assert_equal(<<'EOT'.chomp, json)
-{
-  "1": 2
-}
-EOT
+    assert_equal(<<~'JSON'.chomp, json)
+      {
+        "1": 2
+      }
+    JSON
     parsed_json = parse(json)
     assert_equal({"1"=>2}, parsed_json)
     assert_equal '666', pretty_generate(666)
@@ -114,14 +121,14 @@ EOT
   def test_generate_custom
     state = State.new(:space_before => " ", :space => "   ", :indent => "<i>", :object_nl => "\n", :array_nl => "<a_nl>")
     json = generate({1=>{2=>3,4=>[5,6]}}, state)
-    assert_equal(<<'EOT'.chomp, json)
-{
-<i>"1" :   {
-<i><i>"2" :   3,
-<i><i>"4" :   [<a_nl><i><i><i>5,<a_nl><i><i><i>6<a_nl><i><i>]
-<i>}
-}
-EOT
+    assert_equal(<<~'JSON'.chomp, json)
+      {
+      <i>"1" :   {
+      <i><i>"2" :   3,
+      <i><i>"4" :   [<a_nl><i><i><i>5,<a_nl><i><i><i>6<a_nl><i><i>]
+      <i>}
+      }
+    JSON
   end
 
   def test_fast_generate
@@ -165,6 +172,27 @@ EOT
     assert_raise(JSON::NestingError) {  generate(a, s) }
     assert s.check_circular?
     assert s[:check_circular?]
+  end
+
+  def test_falsy_state
+    object = { foo: [1, 2], bar: { egg: :spam }}
+    expected_json = JSON.generate(
+      object,
+      array_nl:     "",
+      indent:       "",
+      object_nl:    "",
+      space:        "",
+      space_before: "",
+    )
+
+    assert_equal expected_json, JSON.generate(
+      object,
+      array_nl:     nil,
+      indent:       nil,
+      object_nl:    nil,
+      space:        nil,
+      space_before: nil,
+    )
   end
 
   def test_pretty_state
@@ -261,19 +289,19 @@ EOT
   end
 
   def test_gc
-    if respond_to?(:assert_in_out_err) && !(RUBY_PLATFORM =~ /java/)
-      assert_in_out_err(%w[-rjson -Ilib -Iext], <<-EOS, [], [])
-        bignum_too_long_to_embed_as_string = 1234567890123456789012345
-        expect = bignum_too_long_to_embed_as_string.to_s
-        GC.stress = true
+    pid = fork do
+      bignum_too_long_to_embed_as_string = 1234567890123456789012345
+      expect = bignum_too_long_to_embed_as_string.to_s
+      GC.stress = true
 
-        10.times do |i|
-          tmp = bignum_too_long_to_embed_as_string.to_json
-          raise "'\#{expect}' is expected, but '\#{tmp}'" unless tmp == expect
-        end
-      EOS
+      10.times do |i|
+        tmp = bignum_too_long_to_embed_as_string.to_json
+        raise "#{expect}' is expected, but '#{tmp}'" unless tmp == expect
+      end
     end
-  end if GC.respond_to?(:stress=)
+    _, status = Process.waitpid2(pid)
+    assert_predicate status, :success?
+  end if GC.respond_to?(:stress=) && Process.respond_to?(:fork)
 
   def test_configure_using_configure_and_merge
     numbered_state = {
@@ -304,12 +332,12 @@ EOT
     state.configure(:indent => '1')
     assert_equal '1', state.indent
     state = JSON.state.new
-    foo = 'foo'
+    foo = 'foo'.dup
     assert_raise(TypeError) do
       state.configure(foo)
     end
     def foo.to_h
-      { :indent => '2' }
+      { indent: '2' }
     end
     state.configure(foo)
     assert_equal '2', state.indent
@@ -443,6 +471,19 @@ EOT
       "\x82\xAC\xEF".to_json
     end
     assert_includes error.message, "source sequence is illegal/malformed utf-8"
+
+    error = assert_raise(JSON::GeneratorError) do
+      JSON.dump("\x82\xAC\xEF")
+    end
+    assert_includes error.message, "source sequence is illegal/malformed utf-8"
+
+    assert_raise(Encoding::UndefinedConversionError) do
+      "\x82\xAC\xEF".b.to_json
+    end
+
+    assert_raise(Encoding::UndefinedConversionError) do
+      JSON.dump("\x82\xAC\xEF".b)
+    end
   end
 
   if defined?(JSON::Ext::Generator) and RUBY_PLATFORM != "java"
@@ -480,6 +521,6 @@ EOT
   end
 
   def test_nonutf8_encoding
-    assert_equal("\"5\u{b0}\"", "5\xb0".force_encoding("iso-8859-1").to_json)
+    assert_equal("\"5\u{b0}\"", "5\xb0".dup.force_encoding(Encoding::ISO_8859_1).to_json)
   end
 end

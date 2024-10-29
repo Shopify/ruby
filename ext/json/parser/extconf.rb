@@ -1,4 +1,4 @@
-# frozen_string_literal: false
+# frozen_string_literal: true
 require 'mkmf'
 
 have_func("rb_enc_raise", "ruby.h")
@@ -28,5 +28,7 @@ begin
 rescue NoMethodError
   $CFLAGS << ' -DSTR_UMINUS_DEDUPE_FROZEN=0 '
 end
+
+append_cflags("-std=c99")
 
 create_makefile 'json/ext/parser'

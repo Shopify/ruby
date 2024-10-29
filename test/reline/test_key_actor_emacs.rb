@@ -908,10 +908,6 @@ class Reline::KeyActor::EmacsTest < Reline::TestCase
     input_keys('_')
     input_keys("\C-i", false)
     assert_line_around_cursor('foo_bar', '')
-    assert_equal(Reline::LineEditor::CompletionState::MENU_WITH_PERFECT_MATCH, @line_editor.instance_variable_get(:@completion_state))
-    assert_equal(nil, matched)
-    input_keys("\C-i", false)
-    assert_line_around_cursor('foo_bar', '')
     assert_equal(Reline::LineEditor::CompletionState::PERFECT_MATCH, @line_editor.instance_variable_get(:@completion_state))
     assert_equal(nil, matched)
     input_keys("\C-i", false)
@@ -941,6 +937,22 @@ class Reline::KeyActor::EmacsTest < Reline::TestCase
     assert_line_around_cursor('foo', '')
     input_keys("\C-i", false)
     assert_line_around_cursor('foo', '')
+  end
+
+  def test_completion_append_character
+    @line_editor.completion_proc = proc { |word|
+      %w[foo_ foo_foo foo_bar].select { |s| s.start_with? word }
+    }
+    @line_editor.completion_append_character = 'X'
+    input_keys('f')
+    input_keys("\C-i", false)
+    assert_line_around_cursor('foo_', '')
+    input_keys('f')
+    input_keys("\C-i", false)
+    assert_line_around_cursor('foo_fooX', '')
+    input_keys(' foo_bar')
+    input_keys("\C-i", false)
+    assert_line_around_cursor('foo_fooX foo_barX', '')
   end
 
   def test_completion_with_completion_ignore_case

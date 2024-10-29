@@ -626,12 +626,13 @@ rb_reg_onig_match(VALUE re, VALUE str,
                   OnigPosition (*match)(regex_t *reg, VALUE str, struct re_registers *regs, void *args),
                   void *args, struct re_registers *regs)
 {
+    OnigPosition result;
     regex_t *reg = rb_reg_prepare_re(re, str);
 
     bool tmpreg = reg != RREGEXP_PTR(re);
     if (!tmpreg) RREGEXP(re)->usecnt++;
 
-    OnigPosition result = match(reg, str, regs, args);
+    result = match(reg, str, regs, args);
 
     if (!tmpreg) RREGEXP(re)->usecnt--;
     if (tmpreg) {
@@ -694,12 +695,13 @@ strscan_do_scan(VALUE self, VALUE pattern, int succptr, int getstr, int headonly
     }
 
     if (RB_TYPE_P(pattern, T_REGEXP)) {
+        OnigPosition ret;
         p->regex = pattern;
-        OnigPosition ret = rb_reg_onig_match(pattern,
-                                             p->str,
-                                             headonly ? strscan_match : strscan_search,
-                                             (void *)p,
-                                             &(p->regs));
+        ret = rb_reg_onig_match(p->regex,
+                                p->str,
+                                headonly ? strscan_match : strscan_search,
+                                (void *)p,
+                                &(p->regs));
 
         if (ret == ONIG_MISMATCH) {
             return Qnil;
@@ -707,7 +709,7 @@ strscan_do_scan(VALUE self, VALUE pattern, int succptr, int getstr, int headonly
     }
     else {
         StringValue(pattern);
-        rb_enc_check(p->str, pattern);
+        rb_encoding *enc = rb_enc_check(p->str, pattern);
         if (S_RESTLEN(p) < RSTRING_LEN(pattern)) {
             return Qnil;
         }
@@ -717,9 +719,10 @@ strscan_do_scan(VALUE self, VALUE pattern, int succptr, int getstr, int headonly
                 return Qnil;
             }
             set_registers(p, RSTRING_LEN(pattern));
-        } else {
+        }
+        else {
             long pos = rb_memsearch(RSTRING_PTR(pattern), RSTRING_LEN(pattern),
-                                    CURPTR(p), S_RESTLEN(p), rb_enc_get(pattern));
+                                    CURPTR(p), S_RESTLEN(p), enc);
             if (pos == -1) {
                 return Qnil;
             }
@@ -1139,13 +1142,14 @@ static VALUE
 strscan_scan_byte(VALUE self)
 {
     struct strscanner *p;
+    VALUE byte;
 
     GET_SCANNER(self, p);
     CLEAR_MATCH_STATUS(p);
     if (EOS_P(p))
         return Qnil;
 
-    VALUE byte = INT2FIX((unsigned char)*CURPTR(p));
+    byte = INT2FIX((unsigned char)*CURPTR(p));
     p->prev = p->curr;
     p->curr++;
     MATCHED(p);
@@ -2114,8 +2118,8 @@ static VALUE
 strscan_named_captures(VALUE self)
 {
     struct strscanner *p;
-    GET_SCANNER(self, p);
     named_captures_data data;
+    GET_SCANNER(self, p);
     data.self = self;
     data.captures = rb_hash_new();
     if (!RB_NIL_P(p->regex)) {

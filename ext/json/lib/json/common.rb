@@ -1,4 +1,4 @@
-#frozen_string_literal: false
+#frozen_string_literal: true
 require 'json/version'
 
 module JSON
@@ -117,23 +117,17 @@ module JSON
     attr_accessor :state
   end
 
-  DEFAULT_CREATE_ID = 'json_class'.freeze
-  private_constant :DEFAULT_CREATE_ID
-
-  CREATE_ID_TLS_KEY = "JSON.create_id".freeze
-  private_constant :CREATE_ID_TLS_KEY
-
   # Sets create identifier, which is used to decide if the _json_create_
   # hook of a class should be called; initial value is +json_class+:
   #   JSON.create_id # => 'json_class'
   def self.create_id=(new_value)
-    Thread.current[CREATE_ID_TLS_KEY] = new_value.dup.freeze
+    Thread.current[:"JSON.create_id"] = new_value.dup.freeze
   end
 
   # Returns the current create identifier.
   # See also JSON.create_id=.
   def self.create_id
-    Thread.current[CREATE_ID_TLS_KEY] || DEFAULT_CREATE_ID
+    Thread.current[:"JSON.create_id"] || 'json_class'
   end
 
   NaN           = 0.0/0
@@ -201,17 +195,17 @@ module JSON
   # {Parsing \JSON}[#module-JSON-label-Parsing+JSON].
   #
   # Parses nested JSON objects:
-  #   source = <<-EOT
-  #   {
-  #   "name": "Dave",
-  #     "age" :40,
-  #     "hats": [
-  #       "Cattleman's",
-  #       "Panama",
-  #       "Tophat"
-  #     ]
-  #   }
-  #   EOT
+  #   source = <<~JSON
+  #     {
+  #     "name": "Dave",
+  #       "age" :40,
+  #       "hats": [
+  #         "Cattleman's",
+  #         "Panama",
+  #         "Tophat"
+  #       ]
+  #     }
+  #   JSON
   #   ruby = JSON.parse(source)
   #   ruby # => {"name"=>"Dave", "age"=>40, "hats"=>["Cattleman's", "Panama", "Tophat"]}
   #
@@ -221,8 +215,17 @@ module JSON
   #   # Raises JSON::ParserError (783: unexpected token at ''):
   #   JSON.parse('')
   #
-  def parse(source, opts = {})
-    Parser.new(source, **(opts||{})).parse
+  def parse(source, opts = nil)
+    if opts.nil?
+      Parser.new(source).parse
+    else
+      # NB: The ** shouldn't be required, but we have to deal with
+      # different versions of the `json` and `json_pure` gems being
+      # loaded concurrently.
+      # Prior to 2.7.3, `JSON::Ext::Parser` would only take kwargs.
+      # Ref: https://github.com/ruby/json/issues/650
+      Parser.new(source, **opts).parse
+    end
   end
 
   # :call-seq:
@@ -411,7 +414,7 @@ module JSON
   self.load_default_options = {
     :max_nesting      => false,
     :allow_nan        => true,
-    :allow_blank       => true,
+    :allow_blank      => true,
     :create_additions => true,
   }
 
@@ -447,17 +450,17 @@ module JSON
   # <tt>parse(source, opts)</tt>;  see #parse.
   #
   # Source for following examples:
-  #   source = <<-EOT
-  #   {
-  #   "name": "Dave",
-  #     "age" :40,
-  #     "hats": [
-  #       "Cattleman's",
-  #       "Panama",
-  #       "Tophat"
-  #     ]
-  #   }
-  #   EOT
+  #   source = <<~JSON
+  #     {
+  #       "name": "Dave",
+  #       "age" :40,
+  #       "hats": [
+  #         "Cattleman's",
+  #         "Panama",
+  #         "Tophat"
+  #       ]
+  #     }
+  #   JSON
   #
   # Load a \String:
   #   ruby = JSON.load(source)
@@ -543,15 +546,23 @@ module JSON
   #      #<Admin:0x00000000064c41f8
   #      @attributes={"type"=>"Admin", "password"=>"0wn3d"}>}
   #
-  def load(source, proc = nil, options = {})
-    opts = load_default_options.merge options
-    if source.respond_to? :to_str
-      source = source.to_str
-    elsif source.respond_to? :to_io
-      source = source.to_io.read
-    elsif source.respond_to?(:read)
-      source = source.read
+  def load(source, proc = nil, options = nil)
+    opts = if options.nil?
+      load_default_options
+    else
+      load_default_options.merge(options)
     end
+
+    unless source.is_a?(String)
+      if source.respond_to? :to_str
+        source = source.to_str
+      elsif source.respond_to? :to_io
+        source = source.to_io.read
+      elsif source.respond_to?(:read)
+        source = source.read
+      end
+    end
+
     if opts[:allow_blank] && (source.nil? || source.empty?)
       source = 'null'
     end

@@ -1,5 +1,4 @@
-# encoding: utf-8
-# frozen_string_literal: false
+# frozen_string_literal: true
 require_relative 'test_helper'
 require 'stringio'
 require 'tempfile'
@@ -20,14 +19,14 @@ class JSONParserTest < Test::Unit::TestCase
     assert_equal 'test', parser.source
   end
 
-  def test_argument_encoding
-    source = "{}".encode("UTF-16")
+  def test_argument_encoding_unmodified
+    source = "{}".encode(Encoding::UTF_16)
     JSON::Parser.new(source)
     assert_equal Encoding::UTF_16, source.encoding
   end
 
-  def test_argument_encoding_for_binary
-    source = "{}".encode("ASCII-8BIT")
+  def test_argument_encoding_for_binary_unmodified
+    source = "{}".b
     JSON::Parser.new(source)
     assert_equal Encoding::ASCII_8BIT, source.encoding
   end
@@ -36,7 +35,8 @@ class JSONParserTest < Test::Unit::TestCase
     pend if RUBY_ENGINE == 'truffleruby'
 
     bug10705 = '[ruby-core:67386] [Bug #10705]'
-    json = ".\"\xE2\x88\x9A\"".force_encoding(Encoding::UTF_8)
+    json = ".\"\xE2\x88\x9A\""
+    assert_equal(Encoding::UTF_8, json.encoding)
     e = assert_raise(JSON::ParserError) {
       JSON::Ext::Parser.new(json).parse
     }
@@ -133,23 +133,21 @@ class JSONParserTest < Test::Unit::TestCase
     assert_equal(["éé"], JSON.parse("[\"\\u00e9é\"]"))
   end
 
-  if Array.method_defined?(:permutation)
-    def test_parse_more_complex_arrays
-      a = [ nil, false, true, "foßbar", [ "n€st€d", true ], { "nested" => true, "n€ßt€ð2" => {} }]
-      a.permutation.each do |perm|
-        json = pretty_generate(perm)
-        assert_equal perm, parse(json)
-      end
+  def test_parse_more_complex_arrays
+    a = [ nil, false, true, "foßbar", [ "n€st€d", true ], { "nested" => true, "n€ßt€ð2" => {} }]
+    a.permutation.each do |perm|
+      json = pretty_generate(perm)
+      assert_equal perm, parse(json)
     end
+  end
 
-    def test_parse_complex_objects
-      a = [ nil, false, true, "foßbar", [ "n€st€d", true ], { "nested" => true, "n€ßt€ð2" => {} }]
-      a.permutation.each do |perm|
-        s = "a"
-        orig_obj = perm.inject({}) { |h, x| h[s.dup] = x; s = s.succ; h }
-        json = pretty_generate(orig_obj)
-        assert_equal orig_obj, parse(json)
-      end
+  def test_parse_complex_objects
+    a = [ nil, false, true, "foßbar", [ "n€st€d", true ], { "nested" => true, "n€ßt€ð2" => {} }]
+    a.permutation.each do |perm|
+      s = "a"
+      orig_obj = perm.inject({}) { |h, x| h[s.dup] = x; s = s.succ; h }
+      json = pretty_generate(orig_obj)
+      assert_equal orig_obj, parse(json)
     end
   end
 
@@ -249,50 +247,50 @@ class JSONParserTest < Test::Unit::TestCase
   end
 
   def test_parse_comments
-    json = <<EOT
-{
-  "key1":"value1", // eol comment
-  "key2":"value2"  /* multi line
-                    *  comment */,
-  "key3":"value3"  /* multi line
-                    // nested eol comment
-                    *  comment */
-}
-EOT
+    json = <<~JSON
+      {
+        "key1":"value1", // eol comment
+        "key2":"value2"  /* multi line
+                          *  comment */,
+        "key3":"value3"  /* multi line
+                          // nested eol comment
+                          *  comment */
+      }
+    JSON
     assert_equal(
       { "key1" => "value1", "key2" => "value2", "key3" => "value3" },
       parse(json))
-    json = <<EOT
-{
-  "key1":"value1"  /* multi line
-                    // nested eol comment
-                    /* illegal nested multi line comment */
-                    *  comment */
-}
-EOT
+    json = <<~JSON
+      {
+        "key1":"value1"  /* multi line
+                          // nested eol comment
+                          /* illegal nested multi line comment */
+                          *  comment */
+      }
+    JSON
     assert_raise(ParserError) { parse(json) }
-    json = <<EOT
-{
-  "key1":"value1"  /* multi line
-                    // nested eol comment
-                    /* legal nested multi line comment start sequence */
-}
-EOT
+    json = <<~JSON
+      {
+        "key1":"value1"  /* multi line
+                          // nested eol comment
+                          /* legal nested multi line comment start sequence */
+      }
+    JSON
     assert_equal({ "key1" => "value1" }, parse(json))
-    json = <<EOT
-{
-  "key1":"value1"  /* multi line
-                   // nested eol comment
-                   closed multi comment */
-                   and again, throw an Error */
-}
-EOT
+    json = <<~JSON
+      {
+        "key1":"value1"  /* multi line
+                         // nested eol comment
+                         closed multi comment */
+                         and again, throw an Error */
+      }
+    JSON
     assert_raise(ParserError) { parse(json) }
-    json = <<EOT
-{
-  "key1":"value1"  /*/*/
-}
-EOT
+    json = <<~JSON
+      {
+        "key1":"value1"  /*/*/
+      }
+    JSON
     assert_equal({ "key1" => "value1" }, parse(json))
   end
 
@@ -502,8 +500,27 @@ EOT
   def test_parsing_frozen_ascii8bit_string
     assert_equal(
       { 'foo' => 'bar' },
-      JSON('{ "foo": "bar" }'.force_encoding(Encoding::ASCII_8BIT).freeze)
+      JSON('{ "foo": "bar" }'.b.freeze)
     )
+  end
+
+  def test_parse_error_message_length
+    # Error messages aren't consistent across backends, but we can at least
+    # enforce that if they include fragments of the source it should be of
+    # reasonable size.
+    error = assert_raise(JSON::ParserError) do
+      JSON.parse('{"foo": ' + ('A' * 500) + '}')
+    end
+    assert_operator 60, :>, error.message.bytesize
+  end
+
+  def test_parse_error_incomplete_hash
+    error = assert_raise(JSON::ParserError) do
+      JSON.parse('{"input":{"firstName":"Bob","lastName":"Mob","email":"bob@example.com"}')
+    end
+    if RUBY_ENGINE == "ruby" && defined?(JSON::Ext)
+      assert_equal %(unexpected token at '{"input":{"firstName":"Bob","las'), error.message
+    end
   end
 
   private

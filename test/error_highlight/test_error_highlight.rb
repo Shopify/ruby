@@ -5,7 +5,7 @@ require "did_you_mean"
 require "tempfile"
 
 class ErrorHighlightTest < Test::Unit::TestCase
-  ErrorHighlight::DefaultFormatter.snippet_max_width = 80
+  ErrorHighlight::DefaultFormatter.max_snippet_width = 80
 
   class DummyFormatter
     def self.message_for(corrections)
@@ -1338,9 +1338,9 @@ undefined method `time' for #{ ONE_RECV_MESSAGE }
 
   def test_errors_on_extremely_small_terminal_window
     custom_max_width = 30
-    original_max_width = ErrorHighlight::DefaultFormatter.snippet_max_width
+    original_max_width = ErrorHighlight::DefaultFormatter.max_snippet_width
 
-    ErrorHighlight::DefaultFormatter.snippet_max_width = custom_max_width
+    ErrorHighlight::DefaultFormatter.max_snippet_width = custom_max_width
 
     assert_error_message(NoMethodError, <<~END) do
 undefined method `time' for #{ ONE_RECV_MESSAGE }
@@ -1352,14 +1352,24 @@ undefined method `time' for #{ ONE_RECV_MESSAGE }
       100000000000000 + 1.time { 100000000000000 }
     end
   ensure
-    ErrorHighlight::DefaultFormatter.snippet_max_width = original_max_width
+    ErrorHighlight::DefaultFormatter.max_snippet_width = original_max_width
   end
 
   def test_errors_on_terminal_window_smaller_than_min_width
     custom_max_width = 5
-    original_max_width = ErrorHighlight::DefaultFormatter.snippet_max_width
+    original_max_width = ErrorHighlight::DefaultFormatter.max_snippet_width
+    min_snippet_width = ErrorHighlight::DefaultFormatter::MIN_SNIPPET_WIDTH
 
-    ErrorHighlight::DefaultFormatter.snippet_max_width = custom_max_width
+    warning = nil
+    original_warn = Warning.method(:warn)
+    Warning.define_singleton_method(:warn) {|s| warning = s}
+    begin
+      ErrorHighlight::DefaultFormatter.max_snippet_width = custom_max_width
+    ensure
+      Warning.singleton_class.remove_method(:warn)
+      Warning.define_singleton_method(:warn, original_warn)
+    end
+    assert_match "'max_snippet_width' adjusted to minimum value of #{min_snippet_width}", warning
 
     assert_error_message(NoMethodError, <<~END) do
 undefined method `time' for #{ ONE_RECV_MESSAGE }
@@ -1371,14 +1381,14 @@ undefined method `time' for #{ ONE_RECV_MESSAGE }
     100000000000000 + 1.time { 100000000000000 }
     end
   ensure
-    ErrorHighlight::DefaultFormatter.snippet_max_width = original_max_width
+    ErrorHighlight::DefaultFormatter.max_snippet_width = original_max_width
   end
 
   def test_errors_on_terminal_window_when_truncation_is_disabled
     custom_max_width = nil
-    original_max_width = ErrorHighlight::DefaultFormatter.snippet_max_width
+    original_max_width = ErrorHighlight::DefaultFormatter.max_snippet_width
 
-    ErrorHighlight::DefaultFormatter.snippet_max_width = custom_max_width
+    ErrorHighlight::DefaultFormatter.max_snippet_width = custom_max_width
 
     assert_error_message(NoMethodError, <<~END) do
 undefined method `time' for #{ ONE_RECV_MESSAGE }
@@ -1390,7 +1400,7 @@ undefined method `time' for #{ ONE_RECV_MESSAGE }
       10000000000000000000000000000000000000000000000000000000000000000000000 + 1.time { 1000000000000000000000000000000 }
     end
   ensure
-    ErrorHighlight::DefaultFormatter.snippet_max_width = original_max_width
+    ErrorHighlight::DefaultFormatter.max_snippet_width = original_max_width
   end
 
   def test_errors_on_small_terminal_window_when_larger_than_viewport

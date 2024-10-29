@@ -952,12 +952,16 @@ strio_ungetc(VALUE self, VALUE c)
 
 	enc = rb_enc_get(ptr->string);
 	len = rb_enc_codelen(cc, enc);
-	if (len <= 0) rb_enc_uint_chr(cc, enc);
+	if (len <= 0) {
+	    rb_enc_uint_chr(cc, enc); /* to raise an exception */
+	    UNREACHABLE;
+	}
 	rb_enc_mbcput(cc, buf, enc);
 	return strio_unget_bytes(ptr, buf, len);
     }
     else {
-	SafeStringValue(c);
+	StringValue(c);
+	if (RSTRING_LEN(c) == 0) return Qnil;
 	enc = rb_enc_get(ptr->string);
 	enc2 = rb_enc_get(c);
 	if (enc != enc2 && enc != rb_ascii8bit_encoding()) {
@@ -992,7 +996,7 @@ strio_ungetbyte(VALUE self, VALUE c)
     }
     else {
 	long cl;
-	SafeStringValue(c);
+	StringValue(c);
 	cl = RSTRING_LEN(c);
 	if (cl > 0) {
 	    strio_unget_bytes(ptr, RSTRING_PTR(c), cl);

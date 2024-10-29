@@ -1586,7 +1586,7 @@ no-test-bundled-gems-prepare: no-test-bundled-gems-precheck
 yes-test-bundled-gems-prepare: yes-test-bundled-gems-precheck
 	$(ACTIONS_GROUP)
 	$(XRUBY) -C "$(srcdir)" bin/gem install --no-document \
-		--install-dir .bundle --conservative "hoe" "json-schema" "test-unit-rr"
+		--install-dir .bundle --conservative "hoe" "json-schema" "test-unit-rr" "simplecov"
 	$(ACTIONS_ENDGROUP)
 
 PREPARE_BUNDLED_GEMS = test-bundled-gems-prepare
@@ -1923,9 +1923,9 @@ shared-gc: probes.h
 			echo "libmmtk_ruby.$(LIBEXT) not found. Please run 'cargo build' inside $(MMTK_SRC_PATH)"; \
 			exit 1; \
 		fi; \
-		$(LDSHARED) -I$(srcdir)/include -I$(srcdir) -I$(arch_hdrdir) $(XDLDFLAGS) $(cflags) -DBUILDING_SHARED_GC -fPIC -o $(shared_gc_dir)librubygc.$(SHARED_GC).$(SOEXT) $(srcdir)/gc/$(SHARED_GC).c $(MMTK_LIB_PATH); \
+		$(LDSHARED) -I$(srcdir)/include -I$(srcdir) -I$(arch_hdrdir) $(XDLDFLAGS) $(CFLAGS) $(CPPFLAGS) -DBUILDING_SHARED_GC -fPIC -o $(shared_gc_dir)librubygc.$(SHARED_GC).$(SOEXT) $(srcdir)/gc/$(SHARED_GC).c $(MMTK_LIB_PATH); \
 	else \
-		$(LDSHARED) -I$(srcdir)/include -I$(srcdir) -I$(arch_hdrdir) $(XDLDFLAGS) $(cflags) -DBUILDING_SHARED_GC -fPIC -o $(shared_gc_dir)librubygc.$(SHARED_GC).$(SOEXT) $(srcdir)/gc/$(SHARED_GC).c; \
+		$(LDSHARED) -I$(srcdir)/include -I$(srcdir) -I$(arch_hdrdir) $(XDLDFLAGS) $(CFLAGS) $(CPPFLAGS) -DBUILDING_SHARED_GC -fPIC -o $(shared_gc_dir)librubygc.$(SHARED_GC).$(SOEXT) $(srcdir)/gc/$(SHARED_GC).c; \
 	fi
 
 help: PHONY
@@ -13484,6 +13484,7 @@ ractor.$(OBJEXT): $(top_srcdir)/internal/gc.h
 ractor.$(OBJEXT): $(top_srcdir)/internal/hash.h
 ractor.$(OBJEXT): $(top_srcdir)/internal/imemo.h
 ractor.$(OBJEXT): $(top_srcdir)/internal/numeric.h
+ractor.$(OBJEXT): $(top_srcdir)/internal/ractor.h
 ractor.$(OBJEXT): $(top_srcdir)/internal/rational.h
 ractor.$(OBJEXT): $(top_srcdir)/internal/sanitizers.h
 ractor.$(OBJEXT): $(top_srcdir)/internal/serial.h
