@@ -125,6 +125,8 @@ jobs:
             cargo build
             # Debug builds run much slower so we should increase the timeout
             echo 'RUBY_TEST_TIMEOUT_SCALE=10' >> $GITHUB_ENV
+            # SYNTAX_SUGGEST_TIMEOUT defaults to 1 second
+            echo 'SYNTAX_SUGGEST_TIMEOUT=10' >> $GITHUB_ENV
           fi
           echo 'RUST_LOG=' >> $GITHUB_ENV
           echo 'MMTK_PLAN=${{ matrix.gc.mmtk_plan }}' >> $GITHUB_ENV
