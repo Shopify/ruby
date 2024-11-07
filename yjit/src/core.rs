@@ -1565,8 +1565,12 @@ impl PendingBranch {
 
     // Construct the branch and wire it up in the grpah
     fn into_branch(mut self, uninit_block: BlockRef) -> BranchRef {
-        if self.start_addr.get().is_none() {
+        if self.start_addr.get().is_none() || self.end_addr.get().is_none() {
             panic!("targeted bad situation. backtrace:\n{}", self.backtrace);
+        }
+        if self.gen_fn.get_shape() == BranchShape::Default
+            && 0 == (self.end_addr.get().unwrap().as_offset() - self.start_addr.get().unwrap().as_offset()) {
+            panic!("t2. backtrace:\n{}", self.backtrace);
         }
 
         // Make the branch
