@@ -3864,7 +3864,15 @@ pub fn gen_branch(
     ctx1: Option<&Context>,
     gen_fn: BranchGenFn,
 ) -> Option<()> {
-    let branch = new_pending_branch(jit, gen_fn);
+
+    let branch = Rc::new(PendingBranch {
+        uninit_branch: Box::new(MaybeUninit::uninit()),
+        gen_fn,
+        start_addr: Cell::new(None),
+        end_addr: Cell::new(None),
+        targets: [Cell::new(None), Cell::new(None)],
+        backtrace: Backtrace::force_capture(),
+    });
 
     // Get the branch targets or stubs
     let target0_addr = branch.set_target(0, target0, ctx0, jit)?;
@@ -3883,6 +3891,10 @@ pub fn gen_branch(
     asm.mark_branch_start(&branch);
     branch.gen_fn.call(asm, Target::CodePtr(target0_addr), target1_addr.map(|addr| Target::CodePtr(addr)));
     asm.mark_branch_end(&branch);
+
+    // Add to the list of outgoing branches for the block
+    jit.queue_outgoing_branch(branch.clone());
+
 
     Some(())
 }
