@@ -1436,6 +1436,7 @@ pub struct Branch {
     gen_fn: BranchGenFn,
 }
 
+use std::backtrace::Backtrace;
 /// A [Branch] for a [Block] that is under construction.
 /// Fields correspond, but may be `None` during construction.
 pub struct PendingBranch {
@@ -1452,6 +1453,8 @@ pub struct PendingBranch {
 
     /// Branch target blocks and their contexts
     targets: [Cell<Option<Box<BranchTarget>>>; 2],
+
+    backtrace: Backtrace,
 }
 
 impl Branch {
@@ -1562,6 +1565,10 @@ impl PendingBranch {
 
     // Construct the branch and wire it up in the grpah
     fn into_branch(mut self, uninit_block: BlockRef) -> BranchRef {
+        if self.start_addr.get().is_none() {
+            panic!("targeted bad situation. backtrace:\n{}", self.backtrace);
+        }
+
         // Make the branch
         let branch = Branch {
             block: Cell::new(uninit_block),
@@ -3450,6 +3457,7 @@ fn new_pending_branch(jit: &mut JITState, gen_fn: BranchGenFn) -> PendingBranchR
         start_addr: Cell::new(None),
         end_addr: Cell::new(None),
         targets: [Cell::new(None), Cell::new(None)],
+        backtrace: Backtrace::force_capture(),
     });
 
     // Add to the list of outgoing branches for the block
