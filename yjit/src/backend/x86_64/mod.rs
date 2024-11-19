@@ -839,18 +839,27 @@ impl Assembler
                 }
             };
 
+
             // On failure, jump to the next page and retry the current insn
-            if !had_dropped_bytes && cb.has_dropped_bytes() && cb.next_page(src_ptr, jmp_ptr) {
-                // Reset cb states before retrying the current Insn
-                cb.set_label_state(old_label_state);
+            if !had_dropped_bytes && cb.has_dropped_bytes() {
+                let _ = write!(std::io::stderr(), "YJIT: dropped byte at idx={insn_idx}, {:?}\n", self.insns.get(insn_idx));
+
+                if cb.next_page(src_ptr, jmp_ptr) {
+                    // Reset cb states before retrying the current Insn
+                    cb.set_label_state(old_label_state);
+                } else {
+                    let _ = write!(std::io::stderr(), "YJIT: next page failed after dropped byte, write_ptr={:?}\n", cb.get_write_ptr());
+                }
             } else {
                 insn_idx += 1;
                 gc_offsets.append(&mut insn_gc_offsets);
             }
         }
+            use std::io::Write;
 
         // Error if we couldn't write out everything
         if cb.has_dropped_bytes() {
+            let _ = write!(std::io::stderr(), "YJIT: compilation failed {self:?}");
             return None
         } else {
             // No bytes dropped, so the pos markers point to valid code
