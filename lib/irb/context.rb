@@ -13,6 +13,9 @@ module IRB
   # A class that wraps the current state of the irb session, including the
   # configuration of IRB.conf.
   class Context
+    KERNEL_PUBLIC_METHOD = ::Kernel.instance_method(:public_method)
+    KERNEL_METHOD = ::Kernel.instance_method(:method)
+
     ASSIGN_OPERATORS_REGEXP = Regexp.union(%w[= += -= *= /= %= **= &= |= &&= ||= ^= <<= >>=])
     # Creates a new IRB context.
     #
@@ -648,8 +651,8 @@ module IRB
       return if local_variables.include?(command)
 
       # Check visibility
-      public_method = !!Kernel.instance_method(:public_method).bind_call(main, command) rescue false
-      private_method = !public_method && !!Kernel.instance_method(:method).bind_call(main, command) rescue false
+      public_method = !!KERNEL_PUBLIC_METHOD.bind_call(main, command) rescue false
+      private_method = !public_method && !!KERNEL_METHOD.bind_call(main, command) rescue false
       if Command.execute_as_command?(command, public_method: public_method, private_method: private_method)
         [command, arg]
       end
@@ -703,6 +706,11 @@ module IRB
 
     def local_variables # :nodoc:
       workspace.binding.local_variables
+    end
+
+    def safe_method_call_on_main(method_name)
+      main_object = main
+      Object === main_object ? main_object.__send__(method_name) : Object.instance_method(method_name).bind_call(main_object)
     end
   end
 end

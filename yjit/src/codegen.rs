@@ -223,6 +223,17 @@ impl<'a> JITState<'a> {
         }
     }
 
+    /// Wrapper for [self::gen_outlined_exit] with error handling.
+    fn gen_outlined_exit(&mut self, exit_pc: *mut VALUE, ctx: &Context) -> Option<CodePtr> {
+        let result = gen_outlined_exit(exit_pc, self.num_locals(), ctx, self.get_ocb());
+        if result.is_none() {
+            // When we can't have the exits, the code is incomplete and we have to bail.
+            self.block_abandoned = true;
+        }
+
+        result
+    }
+
     /// Return true if the current ISEQ could escape an environment.
     ///
     /// As of vm_push_frame(), EP is always equal to BP. However, after pushing
@@ -879,6 +890,10 @@ fn gen_exit(exit_pc: *mut VALUE, asm: &mut Assembler) {
 /// moment, so there is one unique side exit for each context. Note that
 /// it's incorrect to jump to the side exit after any ctx stack push operations
 /// since they change the logic required for reconstructing interpreter state.
+///
+/// If you're in [the codegen module][self], use [JITState::gen_outlined_exit]
+/// instead of calling this directly.
+#[must_use]
 pub fn gen_outlined_exit(exit_pc: *mut VALUE, num_locals: u32, ctx: &Context, ocb: &mut OutlinedCb) -> Option<CodePtr> {
     let mut cb = ocb.unwrap();
     let mut asm = Assembler::new(num_locals);
@@ -943,7 +958,7 @@ pub fn jit_ensure_block_entry_exit(jit: &mut JITState, asm: &mut Assembler) -> O
         jit.block_entry_exit = Some(entry_exit?);
     } else {
         let block_entry_pc = unsafe { rb_iseq_pc_at_idx(jit.iseq, jit.starting_insn_idx.into()) };
-        jit.block_entry_exit = Some(gen_outlined_exit(block_entry_pc, jit.num_locals(), block_starting_context, jit.get_ocb())?);
+        jit.block_entry_exit = Some(jit.gen_outlined_exit(block_entry_pc, block_starting_context)?);
     }
 
     Some(())
@@ -1201,7 +1216,7 @@ fn end_block_with_jump(
     if jit.record_boundary_patch_point {
         jit.record_boundary_patch_point = false;
         let exit_pc = unsafe { rb_iseq_pc_at_idx(jit.iseq, continuation_insn_idx.into())};
-        let exit_pos = gen_outlined_exit(exit_pc, jit.num_locals(), &reset_depth, jit.get_ocb());
+        let exit_pos = jit.gen_outlined_exit(exit_pc, &reset_depth);
         record_global_inval_patch(asm, exit_pos?);
     }
 
@@ -1310,7 +1325,7 @@ pub fn gen_single_block(
         // If previous instruction requested to record the boundary
         if jit.record_boundary_patch_point {
             // Generate an exit to this instruction and record it
-            let exit_pos = gen_outlined_exit(jit.pc, jit.num_locals(), &asm.ctx, jit.get_ocb()).ok_or(())?;
+            let exit_pos = jit.gen_outlined_exit(jit.pc, &asm.ctx).ok_or(())?;
             record_global_inval_patch(&mut asm, exit_pos);
             jit.record_boundary_patch_point = false;
         }
@@ -3354,9 +3369,7 @@ fn gen_definedivar(
     jit_putobject(asm, result);
 
     // Jump to next instruction. This allows guard chains to share the same successor.
-    jump_to_next_insn(jit, asm);
-
-    return Some(EndBlock);
+    return jump_to_next_insn(jit, asm);
 }
 
 fn gen_checktype(
@@ -3702,8 +3715,7 @@ fn gen_opt_eq(
     };
 
     if specialized {
-        jump_to_next_insn(jit, asm);
-        Some(EndBlock)
+        jump_to_next_insn(jit, asm)
     } else {
         gen_opt_send_without_block(jit, asm)
     }
@@ -3783,8 +3795,7 @@ fn gen_opt_aref(
         }
 
         // Jump to next instruction. This allows guard chains to share the same successor.
-        jump_to_next_insn(jit, asm);
-        return Some(EndBlock);
+        return jump_to_next_insn(jit, asm);
     } else if comptime_recv.class_of() == unsafe { rb_cHash } {
         if !assume_bop_not_redefined(jit, asm, HASH_REDEFINED_OP_FLAG, BOP_AREF) {
             return None;
@@ -3820,8 +3831,7 @@ fn gen_opt_aref(
         asm.mov(stack_ret, val);
 
         // Jump to next instruction. This allows guard chains to share the same successor.
-        jump_to_next_insn(jit, asm);
-        Some(EndBlock)
+        jump_to_next_insn(jit, asm)
     } else {
         // General case. Call the [] method.
         gen_opt_send_without_block(jit, asm)
@@ -3889,8 +3899,7 @@ fn gen_opt_aset(
         let stack_ret = asm.stack_push(Type::Unknown);
         asm.mov(stack_ret, val);
 
-        jump_to_next_insn(jit, asm);
-        return Some(EndBlock);
+        return jump_to_next_insn(jit, asm)
     } else if comptime_recv.class_of() == unsafe { rb_cHash } {
         // Guard receiver is a Hash
         jit_guard_known_klass(
@@ -3918,8 +3927,7 @@ fn gen_opt_aset(
         let stack_ret = asm.stack_push(Type::Unknown);
         asm.mov(stack_ret, ret);
 
-        jump_to_next_insn(jit, asm);
-        Some(EndBlock)
+        jump_to_next_insn(jit, asm)
     } else {
         gen_opt_send_without_block(jit, asm)
     }
@@ -6780,8 +6788,7 @@ fn gen_send_cfunc(
                 gen_counter_incr(jit, asm, Counter::num_send_cfunc_inline);
                 // cfunc codegen generated code. Terminate the block so
                 // there isn't multiple calls in the same block.
-                jump_to_next_insn(jit, asm);
-                return Some(EndBlock);
+                return jump_to_next_insn(jit, asm);
             }
         }
     }
@@ -7073,8 +7080,7 @@ fn gen_send_cfunc(
 
     // Jump (fall through) to the call continuation block
     // We do this to end the current block after the call
-    jump_to_next_insn(jit, asm);
-    Some(EndBlock)
+    jump_to_next_insn(jit, asm)
 }
 
 // Generate RARRAY_LEN. For array_opnd, use Opnd::Reg to reduce memory access,
@@ -7613,8 +7619,7 @@ fn gen_send_iseq(
             // Seems like a safe assumption.
 
             // Let guard chains share the same successor
-            jump_to_next_insn(jit, asm);
-            return Some(EndBlock);
+            return jump_to_next_insn(jit, asm);
         }
     }
 
@@ -7652,8 +7657,7 @@ fn gen_send_iseq(
         }
 
         // Let guard chains share the same successor
-        jump_to_next_insn(jit, asm);
-        return Some(EndBlock);
+        return jump_to_next_insn(jit, asm);
     }
 
     // Stack overflow check
@@ -8729,8 +8733,7 @@ fn gen_struct_aref(
     let ret = asm.stack_push(Type::Unknown);
     asm.mov(ret, val);
 
-    jump_to_next_insn(jit, asm);
-    Some(EndBlock)
+    jump_to_next_insn(jit, asm)
 }
 
 fn gen_struct_aset(
@@ -8776,8 +8779,7 @@ fn gen_struct_aset(
     let ret = asm.stack_push(Type::Unknown);
     asm.mov(ret, val);
 
-    jump_to_next_insn(jit, asm);
-    Some(EndBlock)
+    jump_to_next_insn(jit, asm)
 }
 
 // Generate code that calls a method with dynamic dispatch
@@ -8819,8 +8821,7 @@ fn gen_send_dynamic<F: Fn(&mut Assembler) -> Opnd>(
     jit_perf_symbol_pop!(jit, asm, PerfMap::Codegen);
 
     // End the current block for invalidationg and sharing the same successor
-    jump_to_next_insn(jit, asm);
-    Some(EndBlock)
+    jump_to_next_insn(jit, asm)
 }
 
 fn gen_send_general(
@@ -9523,8 +9524,7 @@ fn gen_invokeblock_specialized(
         asm.clear_local_types();
 
         // Share the successor with other chains
-        jump_to_next_insn(jit, asm);
-        Some(EndBlock)
+        jump_to_next_insn(jit, asm)
     } else if comptime_handler.symbol_p() {
         gen_counter_incr(jit, asm, Counter::invokeblock_symbol);
         None
@@ -10084,8 +10084,7 @@ fn gen_opt_getconstant_path(
         let stack_top = asm.stack_push(Type::Unknown);
         asm.store(stack_top, val);
 
-        jump_to_next_insn(jit, asm);
-        return Some(EndBlock);
+        return jump_to_next_insn(jit, asm);
     }
 
     let cref_sensitive = !unsafe { (*ice).ic_cref }.is_null();
@@ -10133,8 +10132,7 @@ fn gen_opt_getconstant_path(
         jit_putobject(asm, unsafe { (*ice).value });
     }
 
-    jump_to_next_insn(jit, asm);
-    Some(EndBlock)
+    jump_to_next_insn(jit, asm)
 }
 
 // Push the explicit block parameter onto the temporary stack. Part of the
@@ -10259,9 +10257,7 @@ fn gen_getblockparamproxy(
         unreachable!("absurd given initial filtering");
     }
 
-    jump_to_next_insn(jit, asm);
-
-    Some(EndBlock)
+    jump_to_next_insn(jit, asm)
 }
 
 fn gen_getblockparam(

@@ -61,6 +61,15 @@ Note: We're only listing outstanding class updates.
       associated with the AST node. [[Feature #20624]]
     * Add RubyVM::AbstractSyntaxTree::Location class which holds location information. [[Feature #20624]]
 
+* Fiber::Scheduler
+
+    * An optional `Fiber::Scheduler#blocking_operation_wait` hook allows blocking operations to be moved out of the
+      event loop in order to reduce latency and improve multi-core processor utilization. [[Feature #20876]]
+
+* IO::Buffer
+
+    * `IO::Buffer#copy` can release the GVL, allowing other threads to run while copying data. [[Feature #20902]]
+
 ## Stdlib updates
 
 * Tempfile
@@ -146,7 +155,7 @@ The following bundled gems are updated.
 
 The following bundled gems are promoted from default gems.
 
-* mutex_m 0.2.0
+* mutex_m 0.3.0
 * getoptlong 0.2.1
 * base64 0.2.0
 * bigdecimal 3.1.8
@@ -236,3 +245,5 @@ details of the default gems or bundled gems.
 [Feature #20497]: https://bugs.ruby-lang.org/issues/20497
 [Feature #20624]: https://bugs.ruby-lang.org/issues/20624
 [Feature #20775]: https://bugs.ruby-lang.org/issues/20775
+[Feature #20876]: https://bugs.ruby-lang.org/issues/20876
+[Feature #20902]: https://bugs.ruby-lang.org/issues/20902

@@ -8816,6 +8816,7 @@ io_buffer.$(OBJEXT): {$(VPATH)}onigmo.h
 io_buffer.$(OBJEXT): {$(VPATH)}oniguruma.h
 io_buffer.$(OBJEXT): {$(VPATH)}st.h
 io_buffer.$(OBJEXT): {$(VPATH)}subst.h
+io_buffer.$(OBJEXT): {$(VPATH)}thread.h
 io_buffer.$(OBJEXT): {$(VPATH)}thread_native.h
 iseq.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 iseq.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
@@ -16689,6 +16690,7 @@ scheduler.$(OBJEXT): {$(VPATH)}scheduler.c
 scheduler.$(OBJEXT): {$(VPATH)}shape.h
 scheduler.$(OBJEXT): {$(VPATH)}st.h
 scheduler.$(OBJEXT): {$(VPATH)}subst.h
+scheduler.$(OBJEXT): {$(VPATH)}thread.h
 scheduler.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
 scheduler.$(OBJEXT): {$(VPATH)}thread_native.h
 scheduler.$(OBJEXT): {$(VPATH)}vm_core.h
