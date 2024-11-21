@@ -92,6 +92,8 @@ pub struct CodeBlock {
     // Keeps track of what pages we can write to after code gc.
     // `None` means all pages are free.
     freed_pages: Rc<Option<Vec<usize>>>,
+
+    pub error_log: Vec<usize>,
 }
 
 /// Set of CodeBlock label states. Used for recovering the previous state.
@@ -133,6 +135,7 @@ impl CodeBlock {
             outlined,
             dropped_bytes: false,
             freed_pages,
+            error_log: Vec::new(),
         };
         cb.page_end_reserve = cb.jmp_ptr_bytes();
         cb.write_pos = cb.page_start();
@@ -457,11 +460,15 @@ impl CodeBlock {
     /// Write a single byte at the current position.
     pub fn write_byte(&mut self, byte: u8) {
         let write_ptr = self.get_write_ptr();
-        if self.has_capacity(1) && self.mem_block.borrow_mut().write_byte(write_ptr, byte).is_ok() {
-            self.write_pos += 1;
-        } else {
-            self.dropped_bytes = true;
+        if self.has_capacity(1) {
+            let result = self.mem_block.borrow_mut().write_byte(write_ptr, byte);
+            match result {
+                Ok(_) => return,
+                Err(WriteError::OutOfBounds) => self.error_log.push(1),
+                Err(WriteError::FailedPageMapping) => self.error_log.push(2),
+            }
         }
+        self.dropped_bytes = true;
     }
 
     /// Write multiple bytes starting from the current position.

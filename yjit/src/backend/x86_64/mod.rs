@@ -846,7 +846,7 @@ impl Assembler
                     // Reset cb states before retrying the current Insn
                     cb.set_label_state(old_label_state);
                 } else {
-                    panic!("YJIT: next page failed after dropped byte, write_ptr={:?}, {:?}\n", cb.get_write_ptr(), self.insns.get(insn_idx));
+                    panic!("YJIT: next page failed after dropped byte, write_ptr={:?}, {:?} {:?}\n", cb.get_write_ptr(), self.insns.get(insn_idx), &cb.error_log);
                 }
             } else {
                 insn_idx += 1;
