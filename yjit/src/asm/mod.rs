@@ -463,7 +463,10 @@ impl CodeBlock {
         if self.has_capacity(1) {
             let result = self.mem_block.borrow_mut().write_byte(write_ptr, byte);
             match result {
-                Ok(_) => return,
+                Ok(_) => {
+                    self.write_pos += 1;
+                    return;
+                }
                 Err(WriteError::OutOfBounds) => self.error_log.push(1),
                 Err(WriteError::FailedPageMapping) => self.error_log.push(2),
             }
