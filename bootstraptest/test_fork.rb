@@ -88,7 +88,7 @@ assert_equal 'ok', %q{
     until Process.waitpid(pid, Process::WNOHANG)
       if now > deadline
         Process.kill(:KILL, pid)
-        raise "failed"
+        raise "failed: #{now} > #{deadline}"
       end
       sleep 0.001
     end
