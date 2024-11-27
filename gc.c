@@ -2908,6 +2908,19 @@ rb_gc_register_mark_object(VALUE obj)
 void
 rb_gc_register_address(VALUE *addr)
 {
+    // Check if addr is on the stack
+    {
+        rb_execution_context_t *ec = GET_EC();
+        VALUE *stack_start, *stack_end;
+
+        SET_STACK_END;
+        GET_STACK_BOUNDS(stack_start, stack_end, 0);
+
+        if (stack_start != NULL && stack_start <= addr && addr < stack_end) {
+            rb_bug("rb_gc_register_address: %p is on the stack (%p - %p)", addr, stack_start, stack_end);
+        }
+    }
+
     rb_vm_t *vm = GET_VM();
 
     VALUE obj = *addr;
