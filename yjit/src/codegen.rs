@@ -1489,6 +1489,18 @@ fn gen_dupn(
     Some(KeepCompiling)
 }
 
+// Reverse top X stack entries
+fn gen_opt_reverse(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+) -> Option<CodegenStatus> {
+    let count = jit.get_arg(0).as_i32();
+    for n in 0..(count/2) {
+        stack_swap(asm, n, count - 1 - n);
+    }
+    Some(KeepCompiling)
+}
+
 // Swap top 2 stack entries
 fn gen_swap(
     _jit: &mut JITState,
@@ -4306,6 +4318,53 @@ fn gen_opt_newarray_max(
     Some(KeepCompiling)
 }
 
+fn gen_opt_duparray_send(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+) -> Option<CodegenStatus> {
+    let method = jit.get_arg(1).as_u64();
+
+    if method == ID!(include_p) {
+        gen_opt_duparray_send_include_p(jit, asm)
+    } else {
+        None
+    }
+}
+
+fn gen_opt_duparray_send_include_p(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+) -> Option<CodegenStatus> {
+    asm_comment!(asm, "opt_duparray_send include_p");
+
+    let ary = jit.get_arg(0);
+    let argc = jit.get_arg(2).as_usize();
+
+    // Save the PC and SP because we may call #include?
+    jit_prepare_non_leaf_call(jit, asm);
+
+    extern "C" {
+        fn rb_vm_opt_duparray_include_p(ec: EcPtr, ary: VALUE, target: VALUE) -> VALUE;
+    }
+
+    let target = asm.ctx.sp_opnd(-1);
+
+    let val_opnd = asm.ccall(
+        rb_vm_opt_duparray_include_p as *const u8,
+        vec![
+            EC,
+            ary.into(),
+            target,
+        ],
+    );
+
+    asm.stack_pop(argc);
+    let stack_ret = asm.stack_push(Type::Unknown);
+    asm.mov(stack_ret, val_opnd);
+
+    Some(KeepCompiling)
+}
+
 fn gen_opt_newarray_send(
     jit: &mut JITState,
     asm: &mut Assembler,
@@ -4318,6 +4377,8 @@ fn gen_opt_newarray_send(
         gen_opt_newarray_max(jit, asm)
     } else if method == VM_OPT_NEWARRAY_SEND_HASH {
         gen_opt_newarray_hash(jit, asm)
+    } else if method == VM_OPT_NEWARRAY_SEND_INCLUDE_P {
+        gen_opt_newarray_include_p(jit, asm)
     } else if method == VM_OPT_NEWARRAY_SEND_PACK {
         gen_opt_newarray_pack_buffer(jit, asm, 1, None)
     } else if method == VM_OPT_NEWARRAY_SEND_PACK_BUFFER {
@@ -4393,6 +4454,42 @@ fn gen_opt_newarray_hash(
             EC,
             num.into(),
             values_ptr
+        ],
+    );
+
+    asm.stack_pop(num.as_usize());
+    let stack_ret = asm.stack_push(Type::Unknown);
+    asm.mov(stack_ret, val_opnd);
+
+    Some(KeepCompiling)
+}
+
+fn gen_opt_newarray_include_p(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+) -> Option<CodegenStatus> {
+    asm_comment!(asm, "opt_newarray_send include?");
+
+    let num = jit.get_arg(0).as_u32();
+
+    // Save the PC and SP because we may call customized methods.
+    jit_prepare_non_leaf_call(jit, asm);
+
+    extern "C" {
+        fn rb_vm_opt_newarray_include_p(ec: EcPtr, num: u32, elts: *const VALUE, target: VALUE) -> VALUE;
+    }
+
+    let values_opnd = asm.ctx.sp_opnd(-(num as i32));
+    let values_ptr = asm.lea(values_opnd);
+    let target = asm.ctx.sp_opnd(-1);
+
+    let val_opnd = asm.ccall(
+        rb_vm_opt_newarray_include_p as *const u8,
+        vec![
+            EC,
+            (num - 1).into(),
+            values_ptr,
+            target
         ],
     );
 
@@ -6026,7 +6123,7 @@ fn jit_rb_str_to_s(
 }
 
 fn jit_rb_str_dup(
-    _jit: &mut JITState,
+    jit: &mut JITState,
     asm: &mut Assembler,
     _ci: *const rb_callinfo,
     _cme: *const rb_callable_method_entry_t,
@@ -6039,6 +6136,8 @@ fn jit_rb_str_dup(
         return false;
     }
     asm_comment!(asm, "String#dup");
+
+    jit_prepare_call_with_gc(jit, asm);
 
     // Check !FL_ANY_RAW(str, FL_EXIVAR), which is part of BARE_STRING_P.
     let recv_opnd = asm.stack_pop(1);
@@ -10432,6 +10531,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_dup => Some(gen_dup),
         YARVINSN_dupn => Some(gen_dupn),
         YARVINSN_swap => Some(gen_swap),
+        YARVINSN_opt_reverse => Some(gen_opt_reverse),
         YARVINSN_putnil => Some(gen_putnil),
         YARVINSN_putobject => Some(gen_putobject),
         YARVINSN_putobject_INT2FIX_0_ => Some(gen_putobject_int2fix),
@@ -10466,6 +10566,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_opt_hash_freeze => Some(gen_opt_hash_freeze),
         YARVINSN_opt_str_freeze => Some(gen_opt_str_freeze),
         YARVINSN_opt_str_uminus => Some(gen_opt_str_uminus),
+        YARVINSN_opt_duparray_send => Some(gen_opt_duparray_send),
         YARVINSN_opt_newarray_send => Some(gen_opt_newarray_send),
         YARVINSN_splatarray => Some(gen_splatarray),
         YARVINSN_splatkw => Some(gen_splatkw),
@@ -11005,6 +11106,41 @@ mod tests {
         // TODO: this is writing zero bytes on x86. Why?
         asm.compile(&mut cb, None).unwrap();
         assert!(cb.get_write_pos() > 0); // Write some movs
+    }
+
+    #[test]
+    fn test_gen_opt_reverse() {
+        let (_context, mut asm, mut cb, mut ocb) = setup_codegen();
+        let mut jit = dummy_jit_state(&mut cb, &mut ocb);
+
+        // Odd number of elements
+        asm.stack_push(Type::Fixnum);
+        asm.stack_push(Type::Flonum);
+        asm.stack_push(Type::CString);
+
+        let mut value_array: [u64; 2] = [0, 3];
+        let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
+        jit.pc = pc;
+
+        let mut status = gen_opt_reverse(&mut jit, &mut asm);
+
+        assert_eq!(status, Some(KeepCompiling));
+
+        assert_eq!(Type::CString, asm.ctx.get_opnd_type(StackOpnd(2)));
+        assert_eq!(Type::Flonum, asm.ctx.get_opnd_type(StackOpnd(1)));
+        assert_eq!(Type::Fixnum, asm.ctx.get_opnd_type(StackOpnd(0)));
+
+        // Try again with an even number of elements.
+        asm.stack_push(Type::Nil);
+        value_array[1] = 4;
+        status = gen_opt_reverse(&mut jit, &mut asm);
+
+        assert_eq!(status, Some(KeepCompiling));
+
+        assert_eq!(Type::Nil, asm.ctx.get_opnd_type(StackOpnd(3)));
+        assert_eq!(Type::Fixnum, asm.ctx.get_opnd_type(StackOpnd(2)));
+        assert_eq!(Type::Flonum, asm.ctx.get_opnd_type(StackOpnd(1)));
+        assert_eq!(Type::CString, asm.ctx.get_opnd_type(StackOpnd(0)));
     }
 
     #[test]

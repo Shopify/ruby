@@ -1647,7 +1647,8 @@ yes-test-bundled-gems-spec: yes-test-spec-precheck $(PREPARE_BUNDLED_GEMS)
 	$(ACTIONS_GROUP)
 	$(gnumake_recursive)$(Q) \
 	$(RUNRUBY) -r./$(arch)-fake -r$(tooldir)/lib/_tmpdir \
-		$(srcdir)/spec/mspec/bin/mspec run -B $(srcdir)/spec/bundled_gems.mspec $(MSPECOPT) $(SPECOPTS)
+		$(srcdir)/spec/mspec/bin/mspec run --env BUNDLED_GEMS=$(BUNDLED_GEMS) -B $(srcdir)/spec/bundled_gems.mspec \
+		$(MSPECOPT) $(SPECOPTS)
 	$(ACTIONS_ENDGROUP)
 no-test-bundled-gems-spec:
 
@@ -1943,19 +1944,23 @@ rewindable:
 
 HELP_EXTRA_TASKS = ""
 
-shared-gc: probes.h
-	$(Q) if test -z $(shared_gc_dir); then \
-		echo "You must configure with --with-shared-gc to use shared GC"; \
-		exit 1; \
-	elif test -z $(SHARED_GC); then \
-		echo "You must specify SHARED_GC with the GC to build"; \
-		exit 1; \
-	fi
-	$(Q) $(MAKEDIRS) $(shared_gc_dir) .gc/$(arch)/$(SHARED_GC)
-	$(Q) $(RUNRUBY) -C .gc/$(arch)/$(SHARED_GC) $(CURDIR)/$(srcdir)/gc/$(SHARED_GC)/$(EXTCONF)
-	$(Q) $(CHDIR) .gc/$(arch)/$(SHARED_GC) && \
-		$(MAKE) extout=../../../$(EXTOUT) BUILTRUBY=../../../miniruby$(EXEEXT) && \
-		$(CP) librubygc.$(SHARED_GC).$(DLEXT) $(shared_gc_dir)
+shared-gc-precheck:
+shared-gc: probes.h shared-gc-precheck
+	$(Q) $(MAKEDIRS) $(shared_gc_dir)
+	$(Q) $(RUNRUBY) $(srcdir)/ext/extmk.rb \
+		$(SCRIPT_ARGS) \
+		--make='$(MAKE)' --make-flags="V=$(V) MINIRUBY='$(MINIRUBY)'" \
+		--gnumake=$(gnumake) --extflags="$(EXTLDFLAGS)" \
+		--ext-build-dir=gc --command-output=gc/$(SHARED_GC)/exts.mk -- \
+		configure gc/$(SHARED_GC)
+	$(CHDIR) gc/$(SHARED_GC) && $(exec) $(MAKE) TARGET_SO_DIR=./
+	$(CP) gc/$(SHARED_GC)/librubygc.$(SHARED_GC).$(DLEXT) $(shared_gc_dir)
+
+clean-shared-gc:
+	- $(CHDIR) gc/$(SHARED_GC) && $(exec) $(MAKE) TARGET_SO_DIR=./ clean || $(NULLCMD)
+distclean-shared-gc: clean-shared-gc
+	- $(CHDIR) gc/$(SHARED_GC) && $(exec) $(MAKE) TARGET_SO_DIR=./ distclean || $(NULLCMD)
+	$(RMDIRS) gc/$(SHARED_GC)
 
 help: PHONY
 	$(MESSAGE_BEGIN) \

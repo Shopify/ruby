@@ -9,7 +9,13 @@ ENV.delete("GNUMAKEFLAGS")
 github_actions = ENV["GITHUB_ACTIONS"] == "true"
 
 allowed_failures = ENV['TEST_BUNDLED_GEMS_ALLOW_FAILURES'] || ''
-allowed_failures = allowed_failures.split(',').reject(&:empty?)
+if RUBY_PLATFORM =~ /mswin|mingw/
+  allowed_failures = [allowed_failures, "net-imap,net-smtp,rbs,typeprof,debug"].join(',')
+end
+allowed_failures = allowed_failures.split(',').uniq.reject(&:empty?)
+
+# make test-bundled-gems BUNDLED_GEMS=gem1,gem2,gem3
+bundled_gems = ARGV.first || ''
 
 colorize = Colorize.new
 rake = File.realpath("../../.bundle/bin/rake", __FILE__)
@@ -21,7 +27,7 @@ failed = []
 File.foreach("#{gem_dir}/bundled_gems") do |line|
   next if /^\s*(?:#|$)/ =~ line
   gem = line.split.first
-  next unless ARGV.empty? or ARGV.any? {|pat| File.fnmatch?(pat, gem)}
+  next unless bundled_gems.empty? || bundled_gems.split(",").include?(gem)
   next unless File.directory?("#{gem_dir}/src/#{gem}/test")
 
   test_command = "#{ruby} -C #{gem_dir}/src/#{gem} #{rake} test"

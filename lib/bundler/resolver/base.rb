@@ -16,7 +16,7 @@ module Bundler
           hash[name] = Package.new(name, platforms, **options)
         end
 
-        @requirements = dependencies.map do |dep|
+        @requirements = dependencies.filter_map do |dep|
           dep_platforms = dep.gem_platforms(platforms)
 
           # Dependencies scoped to external platforms are ignored
@@ -27,11 +27,7 @@ module Bundler
           @packages[name] = Package.new(name, dep_platforms, **options.merge(dependency: dep))
 
           dep
-        end.compact
-      end
-
-      def specs_compatible_with(result)
-        @base.specs_compatible_with(result)
+        end
       end
 
       def [](name)

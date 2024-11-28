@@ -54,7 +54,7 @@ struct generate_json_data {
 };
 
 static VALUE cState_from_state_s(VALUE self, VALUE opts);
-static VALUE cState_partial_generate(VALUE self, VALUE obj, generator_func);
+static VALUE cState_partial_generate(VALUE self, VALUE obj, generator_func, VALUE io);
 static void generate_json(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj);
 static void generate_json_object(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj);
 static void generate_json_array(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj);
@@ -70,6 +70,31 @@ static void generate_json_bignum(FBuffer *buffer, struct generate_json_data *dat
 static void generate_json_float(FBuffer *buffer, struct generate_json_data *data, JSON_Generator_State *state, VALUE obj);
 
 static int usascii_encindex, utf8_encindex, binary_encindex;
+
+#ifdef RBIMPL_ATTR_NORETURN
+RBIMPL_ATTR_NORETURN()
+#endif
+static void raise_generator_error_str(VALUE invalid_object, VALUE str)
+{
+    VALUE exc = rb_exc_new_str(eGeneratorError, str);
+    rb_ivar_set(exc, rb_intern("@invalid_object"), invalid_object);
+    rb_exc_raise(exc);
+}
+
+#ifdef RBIMPL_ATTR_NORETURN
+RBIMPL_ATTR_NORETURN()
+#endif
+#ifdef RBIMPL_ATTR_FORMAT
+RBIMPL_ATTR_FORMAT(RBIMPL_PRINTF_FORMAT, 2, 3)
+#endif
+static void raise_generator_error(VALUE invalid_object, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    VALUE str = rb_vsprintf(fmt, args);
+    va_end(args);
+    raise_generator_error_str(invalid_object, str);
+}
 
 /* Converts in_string to a JSON string (without the wrapping '"'
  * characters) in FBuffer out_buffer.
@@ -453,7 +478,7 @@ static VALUE mHash_to_json(int argc, VALUE *argv, VALUE self)
 {
     rb_check_arity(argc, 0, 1);
     VALUE Vstate = cState_from_state_s(cState, argc == 1 ? argv[0] : Qnil);
-    return cState_partial_generate(Vstate, self, generate_json_object);
+    return cState_partial_generate(Vstate, self, generate_json_object, Qfalse);
 }
 
 /*
@@ -467,7 +492,7 @@ static VALUE mHash_to_json(int argc, VALUE *argv, VALUE self)
 static VALUE mArray_to_json(int argc, VALUE *argv, VALUE self) {
     rb_check_arity(argc, 0, 1);
     VALUE Vstate = cState_from_state_s(cState, argc == 1 ? argv[0] : Qnil);
-    return cState_partial_generate(Vstate, self, generate_json_array);
+    return cState_partial_generate(Vstate, self, generate_json_array, Qfalse);
 }
 
 #ifdef RUBY_INTEGER_UNIFICATION
@@ -480,7 +505,7 @@ static VALUE mInteger_to_json(int argc, VALUE *argv, VALUE self)
 {
     rb_check_arity(argc, 0, 1);
     VALUE Vstate = cState_from_state_s(cState, argc == 1 ? argv[0] : Qnil);
-    return cState_partial_generate(Vstate, self, generate_json_integer);
+    return cState_partial_generate(Vstate, self, generate_json_integer, Qfalse);
 }
 
 #else
@@ -493,7 +518,7 @@ static VALUE mFixnum_to_json(int argc, VALUE *argv, VALUE self)
 {
     rb_check_arity(argc, 0, 1);
     VALUE Vstate = cState_from_state_s(cState, argc == 1 ? argv[0] : Qnil);
-    return cState_partial_generate(Vstate, self, generate_json_fixnum);
+    return cState_partial_generate(Vstate, self, generate_json_fixnum, Qfalse);
 }
 
 /*
@@ -505,7 +530,7 @@ static VALUE mBignum_to_json(int argc, VALUE *argv, VALUE self)
 {
     rb_check_arity(argc, 0, 1);
     VALUE Vstate = cState_from_state_s(cState, argc == 1 ? argv[0] : Qnil);
-    return cState_partial_generate(Vstate, self, generate_json_bignum);
+    return cState_partial_generate(Vstate, self, generate_json_bignum, Qfalse);
 }
 #endif
 
@@ -518,7 +543,7 @@ static VALUE mFloat_to_json(int argc, VALUE *argv, VALUE self)
 {
     rb_check_arity(argc, 0, 1);
     VALUE Vstate = cState_from_state_s(cState, argc == 1 ? argv[0] : Qnil);
-    return cState_partial_generate(Vstate, self, generate_json_float);
+    return cState_partial_generate(Vstate, self, generate_json_float, Qfalse);
 }
 
 /*
@@ -543,7 +568,7 @@ static VALUE mString_to_json(int argc, VALUE *argv, VALUE self)
 {
     rb_check_arity(argc, 0, 1);
     VALUE Vstate = cState_from_state_s(cState, argc == 1 ? argv[0] : Qnil);
-    return cState_partial_generate(Vstate, self, generate_json_string);
+    return cState_partial_generate(Vstate, self, generate_json_string, Qfalse);
 }
 
 /*
@@ -638,7 +663,7 @@ static VALUE mObject_to_json(int argc, VALUE *argv, VALUE self)
     rb_scan_args(argc, argv, "01", &state);
     Check_Type(string, T_STRING);
     state = cState_from_state_s(cState, state);
-    return cState_partial_generate(state, string, generate_json_string);
+    return cState_partial_generate(state, string, generate_json_string, Qfalse);
 }
 
 static void State_mark(void *ptr)
@@ -867,6 +892,17 @@ static inline int enc_utf8_compatible_p(int enc_idx)
     return 0;
 }
 
+static VALUE encode_json_string_try(VALUE str)
+{
+    return rb_funcall(str, i_encode, 1, Encoding_UTF_8);
+}
+
+static VALUE encode_json_string_rescue(VALUE str, VALUE exception)
+{
+    raise_generator_error_str(str, rb_funcall(exception, rb_intern("message"), 0));
+    return Qundef;
+}
+
 static inline VALUE ensure_valid_encoding(VALUE str)
 {
     int encindex = RB_ENCODING_GET(str);
@@ -886,7 +922,7 @@ static inline VALUE ensure_valid_encoding(VALUE str)
             }
         }
 
-        str = rb_funcall(str, i_encode, 1, Encoding_UTF_8);
+        str = rb_rescue(encode_json_string_try, str, encode_json_string_rescue, str);
     }
     return str;
 }
@@ -909,7 +945,7 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
             }
             break;
         default:
-            rb_raise(rb_path2class("JSON::GeneratorError"), "source sequence is illegal/malformed utf-8");
+            raise_generator_error(obj, "source sequence is illegal/malformed utf-8");
             break;
     }
     fbuffer_append_char(buffer, '"');
@@ -957,10 +993,8 @@ static void generate_json_float(FBuffer *buffer, struct generate_json_data *data
     char allow_nan = state->allow_nan;
     VALUE tmp = rb_funcall(obj, i_to_s, 0);
     if (!allow_nan) {
-        if (isinf(value)) {
-            rb_raise(eGeneratorError, "%"PRIsVALUE" not allowed in JSON", tmp);
-        } else if (isnan(value)) {
-            rb_raise(eGeneratorError, "%"PRIsVALUE" not allowed in JSON", tmp);
+        if (isinf(value) || isnan(value)) {
+            raise_generator_error(obj, "%"PRIsVALUE" not allowed in JSON", tmp);
         }
     }
     fbuffer_append_str(buffer, tmp);
@@ -1008,7 +1042,7 @@ static void generate_json(FBuffer *buffer, struct generate_json_data *data, JSON
             default:
             general:
                 if (state->strict) {
-                    rb_raise(eGeneratorError, "%"PRIsVALUE" not allowed in JSON", CLASS_OF(obj));
+                    raise_generator_error(obj, "%"PRIsVALUE" not allowed in JSON", CLASS_OF(obj));
                 } else if (rb_respond_to(obj, i_to_json)) {
                     tmp = rb_funcall(obj, i_to_json, 1, vstate_get(data));
                     Check_Type(tmp, T_STRING);
@@ -1036,21 +1070,19 @@ static VALUE generate_json_rescue(VALUE d, VALUE exc)
     struct generate_json_data *data = (struct generate_json_data *)d;
     fbuffer_free(data->buffer);
 
-    if (RBASIC_CLASS(exc) == rb_path2class("Encoding::UndefinedConversionError")) {
-        exc = rb_exc_new_str(eGeneratorError, rb_funcall(exc, rb_intern("message"), 0));
-    }
-
     rb_exc_raise(exc);
 
     return Qundef;
 }
 
-static VALUE cState_partial_generate(VALUE self, VALUE obj, generator_func func)
+static VALUE cState_partial_generate(VALUE self, VALUE obj, generator_func func, VALUE io)
 {
     GET_STATE(self);
 
     char stack_buffer[FBUFFER_STACK_SIZE];
-    FBuffer buffer = {0};
+    FBuffer buffer = {
+        .io = RTEST(io) ? io : Qfalse,
+    };
     fbuffer_stack_init(&buffer, state->buffer_initial_length, stack_buffer, FBUFFER_STACK_SIZE);
 
     struct generate_json_data data = {
@@ -1062,19 +1094,12 @@ static VALUE cState_partial_generate(VALUE self, VALUE obj, generator_func func)
     };
     rb_rescue(generate_json_try, (VALUE)&data, generate_json_rescue, (VALUE)&data);
 
-    return fbuffer_to_s(&buffer);
+    return fbuffer_finalize(&buffer);
 }
 
-/*
- * call-seq: generate(obj)
- *
- * Generates a valid JSON document from object +obj+ and returns the
- * result. If no valid JSON document can be created this method raises a
- * GeneratorError exception.
- */
-static VALUE cState_generate(VALUE self, VALUE obj)
+static VALUE cState_generate(VALUE self, VALUE obj, VALUE io)
 {
-    VALUE result = cState_partial_generate(self, obj, generate_json);
+    VALUE result = cState_partial_generate(self, obj, generate_json, io);
     GET_STATE(self);
     (void)state;
     return result;
@@ -1502,14 +1527,16 @@ static VALUE cState_configure(VALUE self, VALUE opts)
     return self;
 }
 
-static VALUE cState_m_generate(VALUE klass, VALUE obj, VALUE opts)
+static VALUE cState_m_generate(VALUE klass, VALUE obj, VALUE opts, VALUE io)
 {
     JSON_Generator_State state = {0};
     state_init(&state);
     configure_state(&state, opts);
 
     char stack_buffer[FBUFFER_STACK_SIZE];
-    FBuffer buffer = {0};
+    FBuffer buffer = {
+        .io = RTEST(io) ? io : Qfalse,
+    };
     fbuffer_stack_init(&buffer, state.buffer_initial_length, stack_buffer, FBUFFER_STACK_SIZE);
 
     struct generate_json_data data = {
@@ -1521,7 +1548,7 @@ static VALUE cState_m_generate(VALUE klass, VALUE obj, VALUE opts)
     };
     rb_rescue(generate_json_try, (VALUE)&data, generate_json_rescue, (VALUE)&data);
 
-    return fbuffer_to_s(&buffer);
+    return fbuffer_finalize(&buffer);
 }
 
 /*
@@ -1540,10 +1567,11 @@ void Init_generator(void)
     VALUE mExt = rb_define_module_under(mJSON, "Ext");
     VALUE mGenerator = rb_define_module_under(mExt, "Generator");
 
+    rb_global_variable(&eGeneratorError);
     eGeneratorError = rb_path2class("JSON::GeneratorError");
+
+    rb_global_variable(&eNestingError);
     eNestingError = rb_path2class("JSON::NestingError");
-    rb_gc_register_mark_object(eGeneratorError);
-    rb_gc_register_mark_object(eNestingError);
 
     cState = rb_define_class_under(mGenerator, "State", rb_cObject);
     rb_define_alloc_func(cState, cState_s_allocate);
@@ -1583,9 +1611,9 @@ void Init_generator(void)
     rb_define_method(cState, "depth=", cState_depth_set, 1);
     rb_define_method(cState, "buffer_initial_length", cState_buffer_initial_length, 0);
     rb_define_method(cState, "buffer_initial_length=", cState_buffer_initial_length_set, 1);
-    rb_define_method(cState, "generate", cState_generate, 1);
+    rb_define_private_method(cState, "_generate", cState_generate, 2);
 
-    rb_define_singleton_method(cState, "generate", cState_m_generate, 2);
+    rb_define_singleton_method(cState, "generate", cState_m_generate, 3);
 
     VALUE mGeneratorMethods = rb_define_module_under(mGenerator, "GeneratorMethods");
 

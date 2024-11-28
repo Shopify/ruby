@@ -5228,6 +5228,7 @@ end
 test
 RUBY
 
+# opt_newarray_send pack/buffer
 assert_equal '[true, true]', <<~'RUBY'
   def pack
     v = 1.23
@@ -5244,6 +5245,7 @@ assert_equal '[true, true]', <<~'RUBY'
   [pack, with_buffer]
 RUBY
 
+# String#[] / String#slice
 assert_equal 'ok', <<~'RUBY'
   def error(klass)
     yield
@@ -5282,4 +5284,58 @@ assert_equal 'ok', <<~'RUBY'
   end
 
   test
+RUBY
+
+# opt_duparray_send :include?
+assert_equal '[true, false]', <<~'RUBY'
+  def test(x)
+    [:a, :b].include?(x)
+  end
+
+  [
+    test(:b),
+    test(:c),
+  ]
+RUBY
+
+# opt_newarray_send :include?
+assert_equal '[true, false]', <<~'RUBY'
+  def test(x)
+    [Object.new, :a, :b].include?(x.to_sym)
+  end
+
+  [
+    test("b"),
+    test("c"),
+  ]
+RUBY
+
+# YARV: swap and opt_reverse
+assert_equal '["x", "Y", "c", "A", "t", "A", "b", "C", "d"]', <<~'RUBY'
+  class Swap
+    def initialize(s)
+      @a, @b, @c, @d = s.split("")
+    end
+
+    def swap
+      a, b = @a, @b
+      b = b.upcase
+      @a, @b = a, b
+    end
+
+    def reverse_odd
+      a, b, c = @a, @b, @c
+      b = b.upcase
+      @a, @b, @c = a, b, c
+    end
+
+    def reverse_even
+      a, b, c, d = @a, @b, @c, @d
+      a = a.upcase
+      c = c.upcase
+      @a, @b, @c, @d = a, b, c, d
+    end
+  end
+
+  Swap.new("xy").swap + Swap.new("cat").reverse_odd + Swap.new("abcd").reverse_even
 RUBY

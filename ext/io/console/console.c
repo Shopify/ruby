@@ -125,7 +125,10 @@ io_get_write_io_fallback(VALUE io)
 #define rb_io_get_write_io io_get_write_io_fallback
 #endif
 
-#define sys_fail(io) rb_sys_fail_str(rb_io_path(io))
+#define sys_fail(io) do { \
+    int err = errno; \
+    rb_syserr_fail_str(err, rb_io_path(io)); \
+} while (0)
 
 #ifndef HAVE_RB_F_SEND
 #ifndef RB_PASS_CALLED_KEYWORDS
@@ -824,14 +827,7 @@ console_winsize(VALUE io)
 {
     rb_console_size_t ws;
     int fd = GetWriteFD(io);
-#if defined TIOCGWINSZ
-    // temporal debugging code
-    int ret = ioctl(fd, TIOCGWINSZ, &ws);
-    if (ret == -1) sys_fail(io);
-    if (ret != 0) rb_bug("ioctl(TIOCGWINSZ) returned %d", ret);
-#else
     if (!getwinsize(fd, &ws)) sys_fail(io);
-#endif
     return rb_assoc_new(INT2NUM(winsize_row(&ws)), INT2NUM(winsize_col(&ws)));
 }
 

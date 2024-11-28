@@ -10,23 +10,23 @@ class URI::TestCommon < Test::Unit::TestCase
   def teardown
   end
 
-  class Foo
-    include URI::RFC2396_REGEXP::PATTERN
+  EnvUtil.suppress_warning do
+    class Foo
+      # Intentionally use `URI::REGEXP`, which is for the compatibility
+      include URI::REGEXP::PATTERN
+    end
   end
 
   def test_fallback_constants
-    orig_verbose = $VERBOSE
-    $VERBOSE = nil
+    EnvUtil.suppress_warning do
+      assert_raise(NameError) { URI::FOO }
 
-    assert_raise(NameError) { URI::FOO }
-
-    assert_equal URI::ABS_URI, URI::RFC2396_PARSER.regexp[:ABS_URI]
-    assert_equal URI::PATTERN, URI::RFC2396_Parser::PATTERN
-    assert_equal URI::REGEXP, URI::RFC2396_REGEXP
-    assert_equal URI::REGEXP::PATTERN, URI::RFC2396_REGEXP::PATTERN
-    assert_equal Foo::IPV4ADDR, URI::RFC2396_REGEXP::PATTERN::IPV4ADDR
-  ensure
-    $VERBOSE = orig_verbose
+      assert_equal URI::ABS_URI, URI::RFC2396_PARSER.regexp[:ABS_URI]
+      assert_equal URI::PATTERN, URI::RFC2396_Parser::PATTERN
+      assert_equal URI::REGEXP, URI::RFC2396_REGEXP
+      assert_equal URI::REGEXP::PATTERN, URI::RFC2396_REGEXP::PATTERN
+      assert_equal Foo::IPV4ADDR, URI::RFC2396_REGEXP::PATTERN::IPV4ADDR
+    end
   end
 
   def test_parser_switch

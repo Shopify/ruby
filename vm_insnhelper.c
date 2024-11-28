@@ -2339,6 +2339,12 @@ check_cfunc(const rb_callable_method_entry_t *me, cfunc_type func)
 }
 
 static inline int
+check_method_basic_definition(const rb_callable_method_entry_t *me)
+{
+    return me && METHOD_ENTRY_BASIC(me);
+}
+
+static inline int
 vm_method_cfunc_is(const rb_iseq_t *iseq, CALL_DATA cd, VALUE recv, cfunc_type func)
 {
     VM_ASSERT(iseq != NULL);
@@ -6072,7 +6078,7 @@ vm_objtostring(const rb_iseq_t *iseq, VALUE recv, CALL_DATA cd)
 
     switch (type) {
       case T_SYMBOL:
-        if (check_cfunc(vm_cc_cme(cc), rb_sym_to_s)) {
+        if (check_method_basic_definition(vm_cc_cme(cc))) {
             // rb_sym_to_s() allocates a mutable string, but since we are only
             // going to use this string for interpolation, it's fine to use the
             // frozen string.
@@ -6151,6 +6157,29 @@ vm_opt_str_freeze(VALUE str, int bop, ID id)
 
 /* this macro is mandatory to use OPTIMIZED_CMP. What a design! */
 #define id_cmp idCmp
+
+static VALUE
+vm_opt_duparray_include_p(rb_execution_context_t *ec, const VALUE ary, VALUE target)
+{
+    if (BASIC_OP_UNREDEFINED_P(BOP_INCLUDE_P, ARRAY_REDEFINED_OP_FLAG)) {
+        return rb_ary_includes(ary, target);
+    }
+    else {
+        VALUE args[1] = {target};
+
+        // duparray
+        RUBY_DTRACE_CREATE_HOOK(ARRAY, RARRAY_LEN(ary));
+        VALUE dupary = rb_ary_resurrect(ary);
+
+        return rb_vm_call_with_refinements(ec, dupary, idIncludeP, 1, args, RB_NO_KEYWORDS);
+    }
+}
+
+VALUE
+rb_vm_opt_duparray_include_p(rb_execution_context_t *ec, const VALUE ary, VALUE target)
+{
+    return vm_opt_duparray_include_p(ec, ary, target);
+}
 
 static VALUE
 vm_opt_newarray_max(rb_execution_context_t *ec, rb_num_t num, const VALUE *ptr)
@@ -6232,6 +6261,26 @@ rb_vm_opt_newarray_hash(rb_execution_context_t *ec, rb_num_t num, const VALUE *p
 
 VALUE rb_setup_fake_ary(struct RArray *fake_ary, const VALUE *list, long len);
 VALUE rb_ec_pack_ary(rb_execution_context_t *ec, VALUE ary, VALUE fmt, VALUE buffer);
+
+static VALUE
+vm_opt_newarray_include_p(rb_execution_context_t *ec, rb_num_t num, const VALUE *ptr, VALUE target)
+{
+    if (BASIC_OP_UNREDEFINED_P(BOP_INCLUDE_P, ARRAY_REDEFINED_OP_FLAG)) {
+        struct RArray fake_ary;
+        VALUE ary = rb_setup_fake_ary(&fake_ary, ptr, num);
+        return rb_ary_includes(ary, target);
+    }
+    else {
+        VALUE args[1] = {target};
+        return rb_vm_call_with_refinements(ec, rb_ary_new4(num, ptr), idIncludeP, 1, args, RB_NO_KEYWORDS);
+    }
+}
+
+VALUE
+rb_vm_opt_newarray_include_p(rb_execution_context_t *ec, rb_num_t num, const VALUE *ptr, VALUE target)
+{
+    return vm_opt_newarray_include_p(ec, num, ptr, target);
+}
 
 static VALUE
 vm_opt_newarray_pack_buffer(rb_execution_context_t *ec, rb_num_t num, const VALUE *ptr, VALUE fmt, VALUE buffer)

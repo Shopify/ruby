@@ -143,7 +143,23 @@ module JSON
   # :startdoc:
 
   # This exception is raised if a generator or unparser error occurs.
-  class GeneratorError < JSONError; end
+  class GeneratorError < JSONError
+    attr_reader :invalid_object
+
+    def initialize(message, invalid_object = nil)
+      super(message)
+      @invalid_object = invalid_object
+    end
+
+    def detailed_message(...)
+      if @invalid_object.nil?
+        super
+      else
+        "#{super}\nInvalid object: #{@invalid_object.inspect}"
+      end
+    end
+  end
+
   # For backwards compatibility
   UnparserError = GeneratorError # :nodoc:
 
@@ -286,7 +302,7 @@ module JSON
     if State === opts
       opts.generate(obj)
     else
-      State.generate(obj, opts)
+      State.generate(obj, opts, nil)
     end
   end
 
@@ -801,17 +817,14 @@ module JSON
     opts = opts.merge(:max_nesting => limit) if limit
     opts = merge_dump_options(opts, **kwargs) if kwargs
 
-    result = begin
-      generate(obj, opts)
+    begin
+      if State === opts
+        opts.generate(obj, anIO)
+      else
+        State.generate(obj, opts, anIO)
+      end
     rescue JSON::NestingError
       raise ArgumentError, "exceed depth limit"
-    end
-
-    if anIO.nil?
-      result
-    else
-      anIO.write result
-      anIO
     end
   end
 

@@ -25,10 +25,11 @@ module Bundler
         @source ||= exemplary_spec.source
       end
 
-      def to_specs(force_ruby_platform)
+      def to_specs(force_ruby_platform, most_specific_locked_platform)
         @specs.map do |s|
           lazy_spec = LazySpecification.from_spec(s)
           lazy_spec.force_ruby_platform = force_ruby_platform
+          lazy_spec.most_specific_locked_platform = most_specific_locked_platform
           lazy_spec
         end
       end
@@ -38,9 +39,9 @@ module Bundler
       end
 
       def dependencies
-        @dependencies ||= @specs.map do |spec|
+        @dependencies ||= @specs.flat_map do |spec|
           __dependencies(spec) + metadata_dependencies(spec)
-        end.flatten.uniq.sort
+        end.uniq.sort
       end
 
       def ==(other)
