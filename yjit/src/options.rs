@@ -23,6 +23,14 @@ pub static mut rb_yjit_call_threshold: u64 = SMALL_CALL_THRESHOLD;
 #[no_mangle]
 pub static mut rb_yjit_cold_threshold: u64 = 200_000;
 
+#[derive(Copy, Clone, Debug)]
+pub struct TerminalColor {
+    pub blue_begin: &'static str,
+    pub blue_end: &'static str,
+    pub bold_begin: &'static str,
+    pub bold_end: &'static str,
+}
+
 // Command-line options
 #[derive(Debug)]
 #[repr(C)]
@@ -88,7 +96,24 @@ pub struct Options {
 
     // Where to store the log. `None` disables the log.
     pub log: Option<LogOutput>,
+
+    /// Terminal escape codes for color, font weight, etc. Only enabled if stdout is a TTY.
+    pub color: TerminalColor,
 }
+
+pub static TTY_TERMINAL_COLOR: TerminalColor = TerminalColor {
+    blue_begin: "\x1b[34m",
+    blue_end: "\x1b[0m",
+    bold_begin: "\x1b[1m",
+    bold_end: "\x1b[22m",
+};
+
+pub static NON_TTY_TERMINAL_COLOR: TerminalColor = TerminalColor {
+    blue_begin: "",
+    blue_end: "",
+    bold_begin: "",
+    bold_end: "",
+};
 
 // Initialize the options to default values
 pub static mut OPTIONS: Options = Options {
@@ -111,6 +136,7 @@ pub static mut OPTIONS: Options = Options {
     code_gc: false,
     perf_map: None,
     log: None,
+    color: NON_TTY_TERMINAL_COLOR,
 };
 
 /// YJIT option descriptions for `ruby --help`.
@@ -300,7 +326,15 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
             }
 
             match opt_val {
-                "" => unsafe { OPTIONS.dump_disasm = Some(DumpDisasm::Stdout) },
+                "" => {
+                    unsafe { OPTIONS.dump_disasm = Some(DumpDisasm::Stdout) };
+                    extern "C" { fn isatty(fd: c_int) -> c_int; }
+                    let stdout = 1;
+                    let is_terminal = unsafe { isatty(stdout) } != 0;
+                    if is_terminal {
+                        unsafe { OPTIONS.color = TTY_TERMINAL_COLOR };
+                    }
+                },
                 directory => {
                     let path = format!("{directory}/yjit_{}.log", std::process::id());
                     match File::options().create(true).append(true).open(&path) {

@@ -3,7 +3,7 @@ use crate::cruby::*;
 use crate::yjit::yjit_enabled_p;
 use crate::asm::CodeBlock;
 use crate::codegen::CodePtr;
-use crate::options::DumpDisasm;
+use crate::options::{DumpDisasm, get_option};
 
 use std::fmt::Write;
 
@@ -158,6 +158,7 @@ pub fn disasm_addr_range(cb: &CodeBlock, start_addr: usize, end_addr: usize) -> 
     #[cfg(test)]
     let start_addr = 0;
     let insns = cs.disasm_all(code_slice, start_addr as u64).unwrap();
+    let color = get_option!(color);
 
     // For each instruction in this block
     for insn in insns.as_ref() {
@@ -165,17 +166,17 @@ pub fn disasm_addr_range(cb: &CodeBlock, start_addr: usize, end_addr: usize) -> 
         if let Some(comment_list) = cb.comments_at(insn.address() as usize) {
             for comment in comment_list {
                 if cb.outlined {
-                    write!(&mut out, "\x1b[34m").unwrap(); // Make outlined code blue
+                    write!(&mut out, "{}", color.blue_begin).unwrap(); // Make outlined code blue
                 }
-                writeln!(&mut out, "  \x1b[1m# {comment}\x1b[22m").unwrap(); // Make comments bold
+                writeln!(&mut out, "  {}# {comment}{}", color.bold_begin, color.bold_end).unwrap(); // Make comments bold
             }
         }
         if cb.outlined {
-            write!(&mut out, "\x1b[34m").unwrap(); // Make outlined code blue
+            write!(&mut out, "{}", color.blue_begin).unwrap(); // Make outlined code blue
         }
         writeln!(&mut out, "  {insn}").unwrap();
         if cb.outlined {
-            write!(&mut out, "\x1b[0m").unwrap(); // Disable blue
+            write!(&mut out, "{}", color.blue_end).unwrap(); // Disable blue
         }
     }
 
@@ -188,6 +189,7 @@ pub fn disasm_addr_range(cb: &CodeBlock, start_addr: usize, end_addr: usize) -> 
     let mut out = String::new();
     let mut line_byte_idx = 0;
     const MAX_BYTES_PER_LINE: usize = 16;
+    let color = get_option!(color);
 
     for addr in start_addr..end_addr {
         if let Some(comment_list) = cb.comments_at(addr) {
@@ -197,7 +199,7 @@ pub fn disasm_addr_range(cb: &CodeBlock, start_addr: usize, end_addr: usize) -> 
                 line_byte_idx = 0;
             }
             for comment in comment_list {
-                writeln!(&mut out, "  \x1b[1m# {comment}\x1b[22m").unwrap(); // Make comments bold
+                writeln!(&mut out, "  {}# {comment}{}", color.bold_begin, color.bold_end).unwrap(); // Make comments bold
             }
         }
         if line_byte_idx == 0 {
