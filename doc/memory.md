@@ -34,7 +34,7 @@ Object type indicates the type of the Object (Class, Array, Hash, Float...).
 
 To keep Objects in memory, Ruby uses 5 fixed-size slot heaps, and one general heap.
 
-If the Object is less than 640 bytes, then the object can be stored in one of the 5 fixed-size slot heaps.
+If the Object is less than 640 bytes, then the object can be stored in one of the 5 fixed-size slot heaps. This is called _embedded_ object allocation.
 The heap selected is the smallest one that can contain the object:
 
 | Slot ID |  Slot size |
@@ -45,7 +45,7 @@ The heap selected is the smallest one that can contain the object:
 | 3 | 320 bytes |
 | 4 | 640 bytes |
 
-If the object is larger than 640 bytes, then the object is kept in the general heap.
+If the object is larger than 640 bytes, then the object is kept in the general heap. This is called _extended_ object allocation.
 
 The benefit of using fixed-size slot heaps is to avoid memory fragmentation. When an object is freed, the slot can be reused by another object without fearing memory overlap.
 The general heap on the other hand will become fragmented over time and need to be compacted at some point to ensure further objects can still be kept in memory.
@@ -62,4 +62,8 @@ For example, the Array type will allow keeping 3 values in there:
 |<- 8 bytes ->|<- 8 bytes ->|<- 8 bytes ->|<- 8 bytes ->|<- 8 bytes ->|
 |<----------------------------- 40 bytes ---------------------------->|
 ```
+
+The astute reader might wonder where the length of that array is actually persisted. The answer is _using flags_!
+For Array, Ruby uses 7 of the ruby_fl_typ flags to store the array's length.
+Why 7 bits? Because with the largest fixed-size slot heap, we can embed up to 640 bytes, which means that we can store up to 78 values in such array (640 - 16 bytes for the header divided by 8-byte per value), and 78 can be represented using 7 bits.
 
