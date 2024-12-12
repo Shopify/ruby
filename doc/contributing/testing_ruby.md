@@ -24,9 +24,9 @@ We can run any of the make scripts [in parallel](building_ruby.md#label-Running+
 
     To run individual bootstrap tests, we can either specify a list of filenames or use the `--sets` flag in the variable `BTESTS`:
 
-    ```
-    make btest BTESTS="bootstraptest/test_fork.rb bootstraptest/tes_gc.rb"
-    make btest BTESTS="--sets=fork,gc"
+    ```sh
+    make btest BTESTS="../bootstraptest/test_string.rb ../bootstraptest/test_class.rb"
+    make btest BTESTS="--sets=string,class"
     ```
 
     If we want to run the bootstrap test suite on Ruby (not Miniruby), we can use:
@@ -44,8 +44,8 @@ We can run any of the make scripts [in parallel](building_ruby.md#label-Running+
     To run a file or directory with GNU make, we can use:
 
     ```sh
-    make ../test/ruby/test_foo.rb
-    make ../test/ruby/test_foo.rb TESTOPTS="-n /test_bar/"
+    make ../test/ruby/test_string.rb
+    make ../test/ruby/test_string.rb TESTOPTS="-n /test_.*_to_s/"
     ```
 
 2. [test/](https://github.com/ruby/ruby/tree/master/test)
@@ -59,20 +59,20 @@ We can run any of the make scripts [in parallel](building_ruby.md#label-Running+
     We can run a specific test directory in this suite using the `TESTS` option, for example:
 
     ```sh
-    make test-all TESTS="../test/rubygems"
+    make test-all TESTS="../test/ruby/"
     ```
 
     We can run a specific test file in this suite by also using the `TESTS` option, for example:
 
     ```sh
-    make test-all TESTS="../test/ruby/test_array.rb"
+    make test-all TESTS="../test/ruby/test_string.rb"
     ```
 
     We can run a specific test in this suite using the `TESTS` option, specifying
     first the file name, and then the test name, prefixed with `--name`. For example:
 
-    ```
-    make test-all TESTS="../test/ruby/test_alias.rb --name=TestAlias#test_alias_with_zsuper_method"
+    ```sh
+    make test-all TESTS="../test/ruby/test_string.rb --name=TestString#test_to_s"
     ```
 
     To run these specs with logs, we can use:
@@ -103,20 +103,20 @@ We can run any of the make scripts [in parallel](building_ruby.md#label-Running+
 
     To run a specific directory, we can use `SPECOPTS` to specify the directory:
 
-    ```
-    make test-spec SPECOPTS=spec/ruby/core/array
+    ```sh
+    make test-spec SPECOPTS="../spec/ruby/core/string/"
     ```
 
     To run a specific file, we can also use `SPECOPTS` to specify the file:
 
     ```sh
-    make test-spec SPECOPTS="../spec/ruby/core/array/any_spec.rb"
+    make test-spec SPECOPTS="../spec/ruby/core/string/to_s_spec.rb"
     ```
 
     To run a specific test, we can use the `--example` flag to match against the test name:
 
-    ```
-    make test-spec SPECOPTS="../spec/ruby/core/array/any_spec.rb --example='is false if the array is empty'"
+    ```sh
+    make test-spec SPECOPTS="../spec/ruby/core/string/to_s_spec.rb --example='returns self when self.class == String'"
     ```
 
     To run these specs with logs, we can use:
@@ -127,8 +127,8 @@ We can run any of the make scripts [in parallel](building_ruby.md#label-Running+
 
     To run a ruby-spec file or directory with GNU make, we can use
 
-    ```
-    make spec/ruby/core/foo/bar_spec.rb
+    ```sh
+    make ../spec/ruby/core/string/to_s_spec.rb
     ```
 
 4. [spec/bundler](https://github.com/ruby/ruby/tree/master/spec/bundler)
