@@ -249,6 +249,12 @@ asan_unlock_freelist(struct heap_page *page)
          unpoisoning; \
          unpoisoning = asan_poison_object_restore(obj, poisoned))
 
+const char *
+rb_gc_impl_active_gc_name(void)
+{
+    return "epsilon";
+}
+
 static inline void *
 calloc1(size_t n)
 {
@@ -664,7 +670,7 @@ page_slot_size_idx_for_size(size_t size)
 static size_t valid_object_sizes[OBJ_SIZE_MULTIPLES + 1] = { 0 };
 
 size_t *
-rb_gc_impl_size_pool_sizes(void)
+rb_gc_impl_heap_sizes(void)
 {
     if (valid_object_sizes[0] == 0) {
         for (unsigned char i = 0; i < OBJ_SIZE_MULTIPLES; i++) {
@@ -1128,7 +1134,7 @@ rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
  * This needs to be removed.
  */
 size_t
-rb_gc_impl_size_pool_id_for_size(void *objspace_ptr, size_t size)
+rb_gc_impl_heap_id_for_size(void *objspace_ptr, size_t size)
 {
     return page_slot_size_idx_for_size(size);
 }
@@ -1138,7 +1144,7 @@ rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE flags
 {
     rb_objspace_t *objspace = objspace_ptr;
 
-    size_t *public_slot_sizes = rb_gc_impl_size_pool_sizes();
+    size_t *public_slot_sizes = rb_gc_impl_heap_sizes();
 
     size_t cache_slot_idx = page_slot_size_idx_for_size(alloc_size);
     VALUE obj = newobj_alloc(objspace, cache_slot_idx, public_slot_sizes[cache_slot_idx]);
@@ -1665,7 +1671,7 @@ size_t rb_gc_impl_obj_flags(void *objspace, VALUE obj, ID* f, size_t max) { retu
 size_t rb_gc_impl_gc_count(void *objspace)                                { return 0; }
 void * rb_gc_impl_ractor_cache_alloc(void *objspace)                      { return NULL; }
 VALUE rb_gc_impl_stress_get(void *objspace)                               { return Qfalse; }
-VALUE rb_gc_impl_get_profile_total_time(void *objspace)                   { return Qnil; }
+VALUE rb_gc_impl_get_total_time(void *objspace)                           { return Qnil; }
 VALUE rb_gc_impl_get_measure_total_time(void *objspace)                   { return Qfalse; }
 VALUE rb_gc_impl_location(void *objspace_ptr, VALUE value)                { return value; }
 VALUE rb_gc_impl_latest_gc_info(void *objspace_ptr, VALUE key)            { return Qnil; }
@@ -1674,6 +1680,7 @@ bool rb_gc_impl_object_moved_p(void *objspace, VALUE obj)                 { retu
 bool rb_gc_impl_during_gc_p(void *objspace)                               { return FALSE; }
 bool rb_gc_impl_gc_enabled_p(void *objspace)                              { return FALSE; }
 bool rb_gc_impl_garbage_object_p(void *objspace, VALUE ptr)               { return false; }
+VALUE rb_gc_impl_config_get(void *objspace_ptr)                           { return Qnil; }
 
 /* ===== UNUSED PUBLIC API FUNCTIONS */
 
@@ -1697,3 +1704,5 @@ void rb_gc_impl_prepare_heap(void *objspace_ptr)                          { /* n
 void rb_gc_impl_start(void *objspace_ptr, bool f, bool m, bool s, bool c) { /* nop */ }
 void rb_gc_impl_objspace_free(void *objspace_ptr)                         { /* nop */ }
 void rb_gc_impl_objspace_mark(void *objspace_ptr)                         { /* nop */ }
+void rb_gc_impl_config_set(void *objspace_ptr, VALUE hash)                { /* nop */ }
+
