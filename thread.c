@@ -72,6 +72,7 @@
 
 #define TH_SCHED(th) (&(th)->ractor->threads.sched)
 
+#include "internal/sanitizers.h"
 #include "eval_intern.h"
 #include "hrtime.h"
 #include "internal.h"
