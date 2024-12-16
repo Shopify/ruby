@@ -662,7 +662,7 @@ enum {
 /* Must define either HEAP_PAGE_ALLOC_USE_MMAP or
  * INIT_HEAP_PAGE_ALLOC_USE_MMAP. */
 
-#ifndef HAVE_MMAP
+#ifdef HAVE_MMAP
 /* We can't use mmap of course, if it is not available. */
 static const bool HEAP_PAGE_ALLOC_USE_MMAP = false;
 
