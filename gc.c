@@ -2957,7 +2957,14 @@ rb_gc_register_mark_object(VALUE obj)
 void
 rb_gc_register_address(VALUE *addr)
 {
+    VALUE *stack_start, *stack_end;
     rb_vm_t *vm = GET_VM();
+    const rb_execution_context_t *ec = GET_EC();
+
+    GET_STACK_BOUNDS(stack_start, stack_end, 0);
+    if (stack_start && stack_start <= addr && addr < stack_end) {
+        rb_bug("rb_gc_register_address: %p<=%p<%p is a stack address", (void *)stack_start, (void *)addr, (void *)stack_end);
+    }
 
     VALUE obj = *addr;
 
