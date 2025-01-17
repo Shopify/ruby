@@ -81,7 +81,7 @@ jobs:
         include:
           - test_task: 'yjit-bindgen'
             hint: 'To fix: use patch in logs'
-            configure: '--with-gcc=/usr/lib/llvm-14/bin/clang --enable-yjit=dev'
+            configure: '--with-gcc=clang-14 --enable-yjit=dev'
             libclang_path: '/usr/lib/llvm-14/lib/libclang.so.1'
 
     env:
