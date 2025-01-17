@@ -158,6 +158,9 @@ jobs:
           is-yjit: true
         continue-on-error: true
 
+      - name: tmate session
+        uses: mxschmitt/action-tmate@v3
+
       - name: make ${{ matrix.test_task }}
         run: >-
           make -s ${{ matrix.test_task }} ${TESTS:+TESTS="$TESTS"}
