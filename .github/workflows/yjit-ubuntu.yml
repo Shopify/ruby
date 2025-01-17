@@ -81,8 +81,8 @@ jobs:
         include:
           - test_task: 'yjit-bindgen'
             hint: 'To fix: use patch in logs'
-            configure: '--with-gcc=clang-15 --enable-yjit=dev'
-            libclang_path: '/usr/lib/llvm-15/lib/libclang.so.1'
+            configure: '--with-gcc=/usr/lib/llvm-14/bin/clang --enable-yjit=dev'
+            libclang_path: '/usr/lib/llvm-14/lib/libclang.so.1'
 
     env:
       GITPULLOPTIONS: --no-tags origin ${{ github.ref }}
