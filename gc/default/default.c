@@ -210,6 +210,15 @@ static ruby_gc_params_t gc_params = {
     GC_OLDMALLOC_LIMIT_GROWTH_FACTOR,
 };
 
+/* THREAD_DEBUG:
+ *  enable thread creation debugging. Records the thread that
+ *  created each object in its header, then issues a warning when a different
+ *  thread writes to that object.
+ */
+#ifndef THREAD_DEBUG
+#define THREAD_DEBUG 1
+#endif
+
 /* GC_DEBUG:
  *  enable to embed GC debugging information.
  */
@@ -609,7 +618,7 @@ typedef struct rb_objspace {
 #define HEAP_PAGE_ALIGN_LOG 16
 #endif
 
-#if RACTOR_CHECK_MODE || GC_DEBUG
+#if RACTOR_CHECK_MODE || GC_DEBUG || THREAD_DEBUG
 struct rvalue_overhead {
 # if RACTOR_CHECK_MODE
     uint32_t _ractor_belonging_id;
@@ -617,6 +626,9 @@ struct rvalue_overhead {
 # if GC_DEBUG
     const char *file;
     int line;
+# endif
+# if THREAD_DEBUG
+    rb_atomic_t created_by_thread_id;
 # endif
 };
 
@@ -2151,6 +2163,9 @@ static inline VALUE
 newobj_fill(VALUE obj, VALUE v1, VALUE v2, VALUE v3)
 {
     VALUE *p = (VALUE *)obj;
+#if THREAD_DEBUG
+    GET_RVALUE_OVERHEAD(obj)->created_by_thread_id = rb_current_thread()->serial;
+#endif
     p[2] = v1;
     p[3] = v2;
     p[4] = v3;
@@ -6075,7 +6090,27 @@ rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
 
     if (RGENGC_CHECK_MODE) {
         if (SPECIAL_CONST_P(a)) rb_bug("rb_gc_writebarrier: a is special const: %"PRIxVALUE, a);
-        if (SPECIAL_CONST_P(b)) rb_bug("rb_gc_writebarrier: b is special const: %"PRIxVALUE, b);
+    }
+
+#if THREAD_DEBUG
+    rb_atomic_t this_thread_id = rb_current_thread()->serial;
+    if (RB_BUILTIN_TYPE(a) != T_IMEMO && (RB_SPECIAL_CONST_P(b) || RB_BUILTIN_TYPE(b) != T_IMEMO)) {
+        if (GET_RVALUE_OVERHEAD(a)->created_by_thread_id != this_thread_id) {
+            VALUE already_disabled = rb_gc_disable();
+            if (CLASS_OF(a)) {
+                int line;
+                const char *file = rb_source_location_cstr(&line);
+                fprintf(stderr, "%s:%d Object (%s) mutated from a thread that didn't create it\n", file, line, rb_class2name(CLASS_OF(a)));
+            }
+            if (!RTEST(already_disabled)) {
+                rb_gc_enable();
+            }
+        }
+    }
+#endif
+
+    if (RB_SPECIAL_CONST_P(b)) {
+        return;
     }
 
     GC_ASSERT(RB_BUILTIN_TYPE(a) != T_NONE);
