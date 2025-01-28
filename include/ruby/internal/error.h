@@ -56,6 +56,9 @@ typedef enum {
     /** Warning is for checking unused block strictly */
     RB_WARN_CATEGORY_STRICT_UNUSED_BLOCK,
 
+    /** Warning is for writes from non-owner threads*/
+    RB_WARN_CATEGORY_NON_OWNER_THREAD_WRITES,
+
     RB_WARN_CATEGORY_DEFAULT_BITS = (
         (1U << RB_WARN_CATEGORY_DEPRECATED) |
         (1U << RB_WARN_CATEGORY_EXPERIMENTAL) |
@@ -66,6 +69,7 @@ typedef enum {
         (1U << RB_WARN_CATEGORY_EXPERIMENTAL) |
         (1U << RB_WARN_CATEGORY_PERFORMANCE) |
         (1U << RB_WARN_CATEGORY_STRICT_UNUSED_BLOCK) |
+        (1U << RB_WARN_CATEGORY_NON_OWNER_THREAD_WRITES) |
         0)
 } rb_warning_category_t;
 

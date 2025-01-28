@@ -6083,6 +6083,8 @@ gc_writebarrier_incremental(VALUE a, VALUE b, rb_objspace_t *objspace)
     }
 }
 
+static bool thread_is_warning = false;
+
 void
 rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
 {
@@ -6095,12 +6097,11 @@ rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
 #if THREAD_DEBUG
     rb_atomic_t this_thread_id = rb_current_thread()->serial;
     if (RB_BUILTIN_TYPE(a) != T_IMEMO && (RB_SPECIAL_CONST_P(b) || RB_BUILTIN_TYPE(b) != T_IMEMO)) {
-        if (GET_RVALUE_OVERHEAD(a)->created_by_thread_id != this_thread_id) {
+        if (UNLIKELY(GET_RVALUE_OVERHEAD(a)->created_by_thread_id != this_thread_id)) {
             VALUE already_disabled = rb_gc_disable();
-            if (CLASS_OF(a)) {
-                int line;
-                const char *file = rb_source_location_cstr(&line);
-                fprintf(stderr, "%s:%d Object (%s) mutated from a thread that didn't create it\n", file, line, rb_class2name(CLASS_OF(a)));
+            if (CLASS_OF(a) && rb_warning_category_enabled_p(RB_WARN_CATEGORY_NON_OWNER_THREAD_WRITES)) {
+                rb_category_warn(RB_WARN_CATEGORY_NON_OWNER_THREAD_WRITES,
+                        "%s mutated from a thread that didn't create it", rb_class2name(CLASS_OF(a)));
             }
             if (!RTEST(already_disabled)) {
                 rb_gc_enable();
