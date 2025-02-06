@@ -6086,6 +6086,45 @@ gc_writebarrier_incremental(VALUE a, VALUE b, rb_objspace_t *objspace)
 static bool thread_is_warning = false;
 
 void
+rb_thread_write_warn(VALUE a, VALUE b)
+{
+    // If the warning isn't enabled, return
+    if (!rb_warning_category_enabled_p(RB_WARN_CATEGORY_NON_OWNER_THREAD_WRITES)) {
+        return;
+    }
+
+    // If the object is an IMEMO, return
+    if (RB_BUILTIN_TYPE(a) == T_IMEMO) {
+        return;
+    }
+
+    // If the RHS is not a special const, and it's an IMEMO, return
+    if (!RB_SPECIAL_CONST_P(b) && RB_BUILTIN_TYPE(b) == T_IMEMO) {
+        return;
+    }
+
+    // If the object doesn't have a class, return
+    if (!CLASS_OF(a)) {
+        return;
+    }
+
+    // If it's class or module isn't set up yet, return
+    if (RCLASS_SUPER(CLASS_OF(a)) == Qundef) {
+        return;
+    }
+
+    rb_atomic_t this_thread_id = rb_current_thread()->serial;
+    if (UNLIKELY(GET_RVALUE_OVERHEAD(a)->created_by_thread_id != this_thread_id)) {
+        VALUE already_disabled = rb_gc_disable();
+        rb_category_warn(RB_WARN_CATEGORY_NON_OWNER_THREAD_WRITES,
+                "%s mutated from a thread that didn't create it", rb_class2name(CLASS_OF(a)));
+        if (!RTEST(already_disabled)) {
+            rb_gc_enable();
+        }
+    }
+}
+
+void
 rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
 {
     rb_objspace_t *objspace = objspace_ptr;
@@ -6095,19 +6134,7 @@ rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
     }
 
 #if THREAD_DEBUG
-    rb_atomic_t this_thread_id = rb_current_thread()->serial;
-    if (RB_BUILTIN_TYPE(a) != T_IMEMO && (RB_SPECIAL_CONST_P(b) || RB_BUILTIN_TYPE(b) != T_IMEMO)) {
-        if (UNLIKELY(GET_RVALUE_OVERHEAD(a)->created_by_thread_id != this_thread_id)) {
-            VALUE already_disabled = rb_gc_disable();
-            if (CLASS_OF(a) && rb_warning_category_enabled_p(RB_WARN_CATEGORY_NON_OWNER_THREAD_WRITES)) {
-                rb_category_warn(RB_WARN_CATEGORY_NON_OWNER_THREAD_WRITES,
-                        "%s mutated from a thread that didn't create it", rb_class2name(CLASS_OF(a)));
-            }
-            if (!RTEST(already_disabled)) {
-                rb_gc_enable();
-            }
-        }
-    }
+    rb_thread_write_warn(a, b);
 #endif
 
     if (RB_SPECIAL_CONST_P(b)) {
