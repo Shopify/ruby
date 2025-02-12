@@ -1,0 +1,21 @@
+# Why
+
+We need to support "mark and move" in iseqs so that it's no longer a "potentially pinning parent".  This is to support MMTk, but also speed up Ruby's default GC
+
+# What
+
+We need to change `rb_iseq_mark_and_pin_insn_storage` to something that understands how to "mark _and_ move".  So we need a `rb_iseq_mark_and_move_insn_storage`
+
+# Problem
+
+When assembling iseqs, we convert the linked list to a buffer.
+GC cannot reach the instruction buffer, so there's no way for the GC to update any references inside the buffer.
+This is why we're currently pinning.
+
+# Solution
+
+1. Add a reference to the "in-flight" (not completely built) instruction buffer to the "compile data" data structure.
+  1a. Reason: ensures we can reach the buffer from the GC
+  1b. Reason: Compile data is temporary, so it's fine to add another field
+2. Reuse `rb_iseq_mark_and_move_each_value` to actually do the reference updating on the "in-flight" iseqs
+3. Ensure the bitmap is updated "in order" when assembling the instructions.
