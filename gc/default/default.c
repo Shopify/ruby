@@ -2159,12 +2159,38 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
     GC_ASSERT(heap->free_pages != NULL);
 }
 
+#if THREAD_DEBUG
+rb_atomic_t
+rb_gc_get_owner_thread_id(VALUE obj)
+{
+    return GET_RVALUE_OVERHEAD(obj)->created_by_thread_id;
+}
+
+void
+rb_gc_set_owner_thread_id(VALUE obj, rb_atomic_t id)
+{
+    GET_RVALUE_OVERHEAD(obj)->created_by_thread_id = id;
+}
+#else
+rb_atomic_t
+rb_gc_get_owner_thread_id(VALUE obj)
+{
+    return 0;
+}
+
+void
+rb_gc_set_owner_thread_id(VALUE obj, rb_atomic_t id)
+{
+    return;
+}
+#endif
+
 static inline VALUE
 newobj_fill(VALUE obj, VALUE v1, VALUE v2, VALUE v3)
 {
     VALUE *p = (VALUE *)obj;
 #if THREAD_DEBUG
-    GET_RVALUE_OVERHEAD(obj)->created_by_thread_id = rb_current_thread()->serial;
+    rb_gc_set_owner_thread_id(obj, rb_current_thread()->serial);
 #endif
     p[2] = v1;
     p[3] = v2;

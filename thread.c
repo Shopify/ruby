@@ -5390,6 +5390,25 @@ rb_thread_backtrace_m(int argc, VALUE *argv, VALUE thval)
     return rb_vm_thread_backtrace(argc, argv, thval);
 }
 
+static VALUE
+rb_thread_set_owner(VALUE mod, VALUE obj)
+{
+    rb_gc_set_owner_thread_id(obj, rb_current_thread()->serial);
+    return obj;
+}
+
+static VALUE
+rb_thread_get_owner_serial(VALUE mod, VALUE obj)
+{
+    return INT2NUM(rb_gc_get_owner_thread_id(obj));
+}
+
+static VALUE
+rb_thread_get_serial(VALUE mod)
+{
+    return INT2NUM(rb_current_thread()->serial);
+}
+
 /* call-seq:
  *  thread.backtrace_locations(*args)	-> array or nil
  *
@@ -5459,6 +5478,9 @@ Init_Thread(void)
     rb_define_singleton_method(rb_cThread, "ignore_deadlock=", rb_thread_s_ignore_deadlock_set, 1);
     rb_define_singleton_method(rb_cThread, "handle_interrupt", rb_thread_s_handle_interrupt, 1);
     rb_define_singleton_method(rb_cThread, "pending_interrupt?", rb_thread_s_pending_interrupt_p, -1);
+    rb_define_singleton_method(rb_cThread, "set_owner", rb_thread_set_owner, 1);
+    rb_define_singleton_method(rb_cThread, "get_owner_serial", rb_thread_get_owner_serial, 1);
+    rb_define_singleton_method(rb_cThread, "get_serial", rb_thread_get_serial, 0);
     rb_define_method(rb_cThread, "pending_interrupt?", rb_thread_pending_interrupt_p, -1);
 
     rb_define_method(rb_cThread, "initialize", thread_initialize, -2);

@@ -221,6 +221,9 @@ void rb_gc_after_fork(rb_pid_t pid);
     if (_obj != (VALUE)*(ptr)) *(ptr) = (void *)_obj; \
 } while (0)
 
+rb_atomic_t rb_gc_get_owner_thread_id(VALUE obj);
+void rb_gc_set_owner_thread_id(VALUE obj, rb_atomic_t id);
+
 RUBY_SYMBOL_EXPORT_BEGIN
 /* exports for objspace module */
 void rb_objspace_reachable_objects_from(VALUE obj, void (func)(VALUE, void *), void *data);

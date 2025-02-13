@@ -1476,6 +1476,24 @@ q.pop
     refute_equal parent_thread_id, child_thread_id
   end
 
+  def test_set_owner
+    obj = []
+    serial = Thread.get_serial
+    assert_equal serial, Thread.get_owner_serial(obj)
+
+    Thread.new {
+      refute_equal serial, Thread.get_serial
+      # Move the object to this thread
+      Thread.set_owner(obj)
+      assert_equal Thread.get_serial, Thread.get_owner_serial(obj)
+    }.join
+
+    # Move the object to this thread
+    refute_equal Thread.get_serial, Thread.get_owner_serial(obj)
+    Thread.set_owner(obj)
+    assert_equal Thread.get_serial, Thread.get_owner_serial(obj)
+  end
+
   def test_thread_interrupt_for_killed_thread
     opts = { timeout: 5, timeout_error: nil }
 
