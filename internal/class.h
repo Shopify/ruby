@@ -154,7 +154,6 @@ RCLASS_IV_COUNT(VALUE obj)
 static inline void
 RCLASS_SET_M_TBL(VALUE klass, struct rb_id_table *table)
 {
-    RUBY_ASSERT(!RB_OBJ_PROMOTED(klass));
     RCLASS_M_TBL(klass) = table;
 }
 

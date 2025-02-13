@@ -709,6 +709,11 @@ struct free_slot {
     struct free_slot *next;
 };
 
+struct object_metadata {
+    unsigned char age : RVALUE_AGE_BIT_COUNT;
+};
+STATIC_ASSERT(SIZEOF_OBJECT_METADATA, sizeof(struct object_metadata) == 1);
+
 struct heap_page {
     unsigned short slot_size;
     unsigned short total_slots;
@@ -729,6 +734,8 @@ struct heap_page {
     struct free_slot *freelist;
     struct ccan_list_node page_node;
 
+    struct object_metadata object_metadata[HEAP_PAGE_OBJ_LIMIT];
+
     bits_t wb_unprotected_bits[HEAP_PAGE_BITMAP_LIMIT];
     /* the following three bitmaps are cleared at the beginning of full GC */
     bits_t mark_bits[HEAP_PAGE_BITMAP_LIMIT];
@@ -739,7 +746,6 @@ struct heap_page {
 
     /* If set, the object is not movable */
     bits_t pinned_bits[HEAP_PAGE_BITMAP_LIMIT];
-    bits_t age_bits[HEAP_PAGE_BITMAP_LIMIT * RVALUE_AGE_BIT_COUNT];
 };
 
 /*
@@ -809,28 +815,30 @@ heap_page_in_global_empty_pages_pool(rb_objspace_t *objspace, struct heap_page *
 #define RVALUE_AGE_BITMAP_INDEX(n)  (NUM_IN_PAGE(n) / (BITS_BITLENGTH / RVALUE_AGE_BIT_COUNT))
 #define RVALUE_AGE_BITMAP_OFFSET(n) ((NUM_IN_PAGE(n) % (BITS_BITLENGTH / RVALUE_AGE_BIT_COUNT)) * RVALUE_AGE_BIT_COUNT)
 
+static inline struct object_metadata *
+RVALUE_PAGE_METADATA(struct heap_page *page, VALUE obj)
+{
+    return &page->object_metadata[NUM_IN_PAGE(obj)];
+}
+
+static inline struct object_metadata *
+RVALUE_METADATA(VALUE obj)
+{
+    return RVALUE_PAGE_METADATA(GET_HEAP_PAGE(obj), obj);
+}
+
 static int
 RVALUE_AGE_GET(VALUE obj)
 {
-    bits_t *age_bits = GET_HEAP_PAGE(obj)->age_bits;
-    return (int)(age_bits[RVALUE_AGE_BITMAP_INDEX(obj)] >> RVALUE_AGE_BITMAP_OFFSET(obj)) & RVALUE_AGE_BIT_MASK;
+    return RVALUE_METADATA(obj)->age;
 }
 
 static void
 RVALUE_AGE_SET(VALUE obj, int age)
 {
     RUBY_ASSERT(age <= RVALUE_OLD_AGE);
-    bits_t *age_bits = GET_HEAP_PAGE(obj)->age_bits;
-    // clear the bits
-    age_bits[RVALUE_AGE_BITMAP_INDEX(obj)] &= ~(RVALUE_AGE_BIT_MASK << (RVALUE_AGE_BITMAP_OFFSET(obj)));
-    // shift the correct value in
-    age_bits[RVALUE_AGE_BITMAP_INDEX(obj)] |= ((bits_t)age << RVALUE_AGE_BITMAP_OFFSET(obj));
-    if (age == RVALUE_OLD_AGE) {
-        RB_FL_SET_RAW(obj, RUBY_FL_PROMOTED);
-    }
-    else {
-        RB_FL_UNSET_RAW(obj, RUBY_FL_PROMOTED);
-    }
+
+    RVALUE_METADATA(obj)->age = age;
 }
 
 #define malloc_limit		objspace->malloc_params.limit
@@ -1344,9 +1352,7 @@ RVALUE_OLD_P(rb_objspace_t *objspace, VALUE obj)
 {
     GC_ASSERT(!RB_SPECIAL_CONST_P(obj));
     check_rvalue_consistency(objspace, obj);
-    // Because this will only ever be called on GC controlled objects,
-    // we can use the faster _RAW function here
-    return RB_OBJ_PROMOTED_RAW(obj);
+    return RVALUE_METADATA(obj)->age == RVALUE_OLD_AGE;
 }
 
 static inline void

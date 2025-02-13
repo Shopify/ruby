@@ -616,8 +616,6 @@ RBIMPL_SYMBOL_EXPORT_END()
     RBIMPL_CAST(rb_obj_written((VALUE)(old), (VALUE)(oldv), (VALUE)(young), __FILE__, __LINE__))
 /** @} */
 
-#define OBJ_PROMOTED_RAW RB_OBJ_PROMOTED_RAW /**< @old{RB_OBJ_PROMOTED_RAW} */
-#define OBJ_PROMOTED     RB_OBJ_PROMOTED     /**< @old{RB_OBJ_PROMOTED} */
 #define OBJ_WB_UNPROTECT RB_OBJ_WB_UNPROTECT /**< @old{RB_OBJ_WB_UNPROTECT} */
 
 /**
@@ -650,11 +648,6 @@ RBIMPL_SYMBOL_EXPORT_END()
  * it directly.
  */
 #define RGENGC_LOGGING_WB_UNPROTECT rb_gc_unprotect_logging
-
-/** @cond INTERNAL_MACRO */
-#define RB_OBJ_PROMOTED_RAW RB_OBJ_PROMOTED_RAW
-#define RB_OBJ_PROMOTED     RB_OBJ_PROMOTED
-/** @endcond */
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
 /**
@@ -691,47 +684,6 @@ void rb_gc_unprotect_logging(void *objptr, const char *filename, int line);
 #endif
 
 RBIMPL_SYMBOL_EXPORT_END()
-
-RBIMPL_ATTR_PURE_UNLESS_DEBUG()
-RBIMPL_ATTR_ARTIFICIAL()
-/**
- * This  is the  implementation  of #RB_OBJ_PROMOTED().   People  don't use  it
- * directly.
- *
- * @param[in]  obj    An object to query.
- * @retval     true   The object is "promoted".
- * @retval     false  The object is young.  Have not experienced GC at all.
- */
-static inline bool
-RB_OBJ_PROMOTED_RAW(VALUE obj)
-{
-    RBIMPL_ASSERT_OR_ASSUME(RB_FL_ABLE(obj));
-    return RB_FL_ANY_RAW(obj,  RUBY_FL_PROMOTED);
-}
-
-RBIMPL_ATTR_PURE_UNLESS_DEBUG()
-RBIMPL_ATTR_ARTIFICIAL()
-/**
- * Tests if the object is "promoted" -- that is, whether the object experienced
- * one or more GC marks.
- *
- * @param[in]  obj    An object to query.
- * @retval     true   The object is "promoted".
- * @retval     false  The object is young.  Have not experienced GC at all.
- * @note       Hello, is anyone actively calling this function?  @shyouhei have
- *             never seen  any actual usages  outside of the  GC implementation
- *             itself.
- */
-static inline bool
-RB_OBJ_PROMOTED(VALUE obj)
-{
-    if (! RB_FL_ABLE(obj)) {
-        return false;
-    }
-    else {
-        return RB_OBJ_PROMOTED_RAW(obj);
-    }
-}
 
 /**
  * This is the  implementation of #RB_OBJ_WB_UNPROTECT().  People  don't use it
