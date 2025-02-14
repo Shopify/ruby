@@ -1635,7 +1635,7 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
     page->freelist = slot;
     asan_lock_freelist(page);
 
-    RVALUE_AGE_RESET(obj);
+    memset(RVALUE_METADATA(obj), 0, sizeof(struct object_metadata));
 
     if (RGENGC_CHECK_MODE &&
         /* obj should belong to page */
@@ -6926,7 +6926,6 @@ gc_move(rb_objspace_t *objspace, VALUE src, VALUE dest, size_t src_slot_size, si
     int marked;
     int wb_unprotected;
     int uncollectible;
-    int age;
 
     gc_report(4, objspace, "Moving object: %p -> %p\n", (void *)src, (void *)dest);
 
@@ -6940,7 +6939,6 @@ gc_move(rb_objspace_t *objspace, VALUE src, VALUE dest, size_t src_slot_size, si
     wb_unprotected = RVALUE_WB_UNPROTECTED(objspace, src);
     uncollectible = RVALUE_UNCOLLECTIBLE(objspace, src);
     bool remembered = RVALUE_REMEMBERED(objspace, src);
-    age = RVALUE_AGE_GET(src);
 
     /* Clear bits for eventual T_MOVED */
     CLEAR_IN_BITMAP(GET_HEAP_MARK_BITS(src), src);
@@ -6980,7 +6978,6 @@ gc_move(rb_objspace_t *objspace, VALUE src, VALUE dest, size_t src_slot_size, si
     }
 
     memset((void *)src, 0, src_slot_size);
-    RVALUE_AGE_RESET(src);
 
     /* Set bits for object in new location */
     if (remembered) {
@@ -7011,7 +7008,9 @@ gc_move(rb_objspace_t *objspace, VALUE src, VALUE dest, size_t src_slot_size, si
         CLEAR_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(dest), dest);
     }
 
-    RVALUE_AGE_SET(dest, age);
+    *RVALUE_METADATA(dest) = *RVALUE_METADATA(src);
+    memset(RVALUE_METADATA(src), 0, sizeof(struct object_metadata));
+
     /* Assign forwarding address */
     RMOVED(src)->flags = T_MOVED;
     RMOVED(src)->dummy = Qundef;

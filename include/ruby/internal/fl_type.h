@@ -198,7 +198,14 @@ ruby_fl_type {
     RUBY_FL_WB_PROTECTED = (1<<5),
 
     /**
-     * This flag is no longer in use
+     * This flag is no longer in use.
+     *
+     * @internal
+     */
+    RUBY_FL_UNUSED5    = (1<<5),
+
+    /**
+     * This flag is no longer in use.
      *
      * @internal
      */
