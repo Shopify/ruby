@@ -636,6 +636,11 @@ dump_object(VALUE obj, struct dump_config *dc)
         dump_append_sizet(dc, memsize);
     }
 
+    if (rb_obj_id_seen_p(obj)) {
+        dump_append(dc, ", \"object_id\":");
+        dump_append_lu(dc, RB_NUM2ULONG(rb_obj_id(obj)));
+    }
+
     struct rb_gc_object_metadata_entry *gc_metadata = rb_gc_object_metadata(obj);
     for (int i = 0; gc_metadata[i].name != 0; i++) {
         if (i == 0) {

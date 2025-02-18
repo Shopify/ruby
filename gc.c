@@ -666,6 +666,7 @@ typedef struct gc_function_map {
     // Object ID
     VALUE (*object_id)(void *objspace_ptr, VALUE obj);
     VALUE (*object_id_to_ref)(void *objspace_ptr, VALUE object_id);
+    bool (*object_id_seen_p)(VALUE obj);
     // Forking
     void (*before_fork)(void *objspace_ptr);
     void (*after_fork)(void *objspace_ptr, rb_pid_t pid);
@@ -680,6 +681,7 @@ typedef struct gc_function_map {
     const char *(*active_gc_name)(void);
     // Miscellaneous
     struct rb_gc_object_metadata_entry *(*object_metadata)(void *objspace_ptr, VALUE obj);
+    void (*set_object_seen)(VALUE obj, bool seen);
     bool (*pointer_to_heap_p)(void *objspace_ptr, const void *ptr);
     bool (*garbage_object_p)(void *objspace_ptr, VALUE obj);
     void (*set_event_hook)(void *objspace_ptr, const rb_event_flag_t event);
@@ -843,6 +845,7 @@ ruby_modular_gc_init(void)
     // Object ID
     load_modular_gc_func(object_id);
     load_modular_gc_func(object_id_to_ref);
+    load_modular_gc_func(object_id_seen_p);
     // Forking
     load_modular_gc_func(before_fork);
     load_modular_gc_func(after_fork);
@@ -857,6 +860,7 @@ ruby_modular_gc_init(void)
     load_modular_gc_func(active_gc_name);
     // Miscellaneous
     load_modular_gc_func(object_metadata);
+    load_modular_gc_func(set_object_seen);
     load_modular_gc_func(pointer_to_heap_p);
     load_modular_gc_func(garbage_object_p);
     load_modular_gc_func(set_event_hook);
@@ -926,6 +930,7 @@ ruby_modular_gc_init(void)
 // Object ID
 # define rb_gc_impl_object_id rb_gc_functions.object_id
 # define rb_gc_impl_object_id_to_ref rb_gc_functions.object_id_to_ref
+# define rb_gc_impl_object_id_seen_p rb_gc_functions.object_id_seen_p
 // Forking
 # define rb_gc_impl_before_fork rb_gc_functions.before_fork
 # define rb_gc_impl_after_fork rb_gc_functions.after_fork
@@ -940,6 +945,7 @@ ruby_modular_gc_init(void)
 # define rb_gc_impl_active_gc_name rb_gc_functions.active_gc_name
 // Miscellaneous
 # define rb_gc_impl_object_metadata rb_gc_functions.object_metadata
+# define rb_gc_impl_set_object_seen rb_gc_functions.set_object_seen
 # define rb_gc_impl_pointer_to_heap_p rb_gc_functions.pointer_to_heap_p
 # define rb_gc_impl_garbage_object_p rb_gc_functions.garbage_object_p
 # define rb_gc_impl_set_event_hook rb_gc_functions.set_event_hook
@@ -1889,6 +1895,12 @@ rb_obj_id(VALUE obj)
      * (RUBY_IMMEDIATE_MASK + 1) which guarantees that it does not collide with
      * any immediates. */
     return rb_find_object_id(rb_gc_get_objspace(), obj, rb_gc_impl_object_id);
+}
+
+bool
+rb_obj_id_seen_p(VALUE obj)
+{
+    return rb_gc_impl_object_id_seen_p(obj);
 }
 
 static enum rb_id_table_iterator_result
@@ -2962,6 +2974,12 @@ struct rb_gc_object_metadata_entry *
 rb_gc_object_metadata(VALUE obj)
 {
     return rb_gc_impl_object_metadata(rb_gc_get_objspace(), obj);
+}
+
+void
+rb_gc_set_object_seen(VALUE obj, bool seen)
+{
+   rb_gc_impl_set_object_seen(obj, seen);
 }
 
 /* GC */
