@@ -151,8 +151,7 @@ rb_class_allocate_instance(VALUE klass)
 VALUE
 rb_obj_setup(VALUE obj, VALUE klass, VALUE type)
 {
-    VALUE ignored_flags = RUBY_FL_SEEN_OBJ_ID;
-    RBASIC(obj)->flags = (type & ~ignored_flags) | (RBASIC(obj)->flags & ignored_flags);
+    RBASIC(obj)->flags = type | RBASIC(obj)->flags;
     RBASIC_SET_CLASS(obj, klass);
     return obj;
 }
