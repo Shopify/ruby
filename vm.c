@@ -4446,6 +4446,10 @@ Init_vm_objects(void)
 {
     rb_vm_t *vm = GET_VM();
 
+    vm->fstr_memory = (char *)mmap(NULL, 0x500000, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    vm->fstr_size = 0x500000;
+    vm->fstr_index = 0;
+
     /* initialize mark object array, hash */
     vm->mark_object_ary = pin_array_list_new(Qnil);
     vm->loading_table = st_init_strtable();

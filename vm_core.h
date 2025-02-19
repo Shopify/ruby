@@ -824,6 +824,9 @@ typedef struct rb_vm_struct {
         size_t fiber_machine_stack_size;
     } default_params;
 
+    char * fstr_memory;
+    size_t fstr_size;
+    size_t fstr_index;
 } rb_vm_t;
 
 /* default values */

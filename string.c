@@ -21,6 +21,10 @@
 # include <unistd.h>
 #endif
 
+#ifndef _WIN32
+#include <sys/mman.h>
+#endif
+
 #include "debug_counter.h"
 #include "encindex.h"
 #include "id.h"
@@ -420,6 +424,39 @@ struct fstr_update_arg {
     bool force_precompute_hash;
 };
 
+/* Make a read-only copy of `str`.
+ *
+ * Returns a new frozen Ruby string with an underlying buffer that has been
+ * allocated out of an `mprotect`d buffer.  If anything writes to the
+ * underlying string, we should segv.
+ */
+VALUE
+rb_vm_alloc_rofstr(VALUE str)
+{
+    long len;
+    char *ptr;
+    RSTRING_GETMEM(str, ptr, len);
+
+    rb_vm_t *vm = GET_VM();
+    if (vm->fstr_index + len <= vm->fstr_size) {
+        char * buf = vm->fstr_memory + vm->fstr_index;
+        mprotect(vm->fstr_memory, vm->fstr_size, PROT_WRITE | PROT_READ);
+        memcpy(buf, ptr, len);
+        TERM_FILL(buf + len, TERM_LEN(str));
+        mprotect(vm->fstr_memory, vm->fstr_size, PROT_READ);
+        vm->fstr_index += (len + TERM_LEN(str));
+
+        VALUE new_str = rb_str_new_static(buf, len);
+        rb_enc_copy(new_str, str);
+        OBJ_FREEZE(new_str);
+
+        return new_str;
+    }
+    else {
+        return Qnil;
+    }
+}
+
 static int
 fstr_update_callback(st_data_t *key, st_data_t *value, st_data_t data, int existing)
 {
@@ -449,7 +486,12 @@ fstr_update_callback(st_data_t *key, st_data_t *value, st_data_t data, int exist
                 long capa = len + sizeof(st_index_t);
                 int term_len = TERM_LEN(str);
 
-                if (arg->force_precompute_hash && STR_EMBEDDABLE_P(capa, term_len)) {
+                VALUE copy = rb_vm_alloc_rofstr(str);
+
+                if (RTEST(copy)) {
+                    new_str = copy;
+                }
+                else if (arg->force_precompute_hash && STR_EMBEDDABLE_P(capa, term_len)) {
                     new_str = str_alloc_embed(rb_cString, capa + term_len);
                     memcpy(RSTRING_PTR(new_str), RSTRING_PTR(str), len);
                     STR_SET_LEN(new_str, RSTRING_LEN(str));
@@ -476,6 +518,15 @@ fstr_update_callback(st_data_t *key, st_data_t *value, st_data_t data, int exist
             OBJ_FREEZE(str);
         }
         else {
+            // Make a read-only copy of `str`.
+            // `str`'s underlying string buffer should be
+            // mprotected so if anything writes to it we will segv
+            VALUE copy = rb_vm_alloc_rofstr(str);
+
+            if (RTEST(copy)) {
+                str = copy;
+            }
+
             if (!OBJ_FROZEN(str) || CHILLED_STRING_P(str)) {
                 str = str_new_frozen(rb_cString, str);
             }
@@ -4889,6 +4940,13 @@ rb_str_byterindex_m(int argc, VALUE *argv, VALUE str)
         if (pos >= 0) return LONG2NUM(pos);
     }
     return Qnil;
+}
+
+static VALUE
+rb_str_muck_with_buffer(VALUE self)
+{
+    RSTRING_PTR(self)[0] = '#';
+    return self;
 }
 
 /*
@@ -12593,6 +12651,7 @@ Init_String(void)
     rb_define_method(rb_cString, "=~", rb_str_match, 1);
     rb_define_method(rb_cString, "match", rb_str_match_m, -1);
     rb_define_method(rb_cString, "match?", rb_str_match_m_p, -1);
+    rb_define_method(rb_cString, "muck_with_buffer", rb_str_muck_with_buffer, 0);
     rb_define_method(rb_cString, "succ", rb_str_succ, 0);
     rb_define_method(rb_cString, "succ!", rb_str_succ_bang, 0);
     rb_define_method(rb_cString, "next", rb_str_succ, 0);
