@@ -14,6 +14,15 @@ class TestStringIO < Test::Unit::TestCase
 
   include TestEOF::Seek
 
+  def test_do_not_mutate_shared_buffers
+    b = "%" * 1024
+
+    s = StringIO.new( b.dup )
+    s.getc
+    s.ungetc '#'
+    assert_equal "%", b[0]
+  end
+
   def test_version
     assert_kind_of(String, StringIO::VERSION)
   end

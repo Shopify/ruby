@@ -782,7 +782,9 @@ rb_fiddle_ptr_s_to_ptr(VALUE self, VALUE val)
 	ptr = rb_fiddle_ptr_new(fp, 0, NULL);
     }
     else if (RTEST(rb_obj_is_kind_of(val, rb_cString))){
-        rb_str_modify(val);
+        if (!RB_OBJ_FROZEN(val)) {
+            rb_str_modify(val);
+        }
 	char *str = StringValuePtr(val);
         wrap = val;
 	ptr = rb_fiddle_ptr_new(str, RSTRING_LEN(val), NULL);

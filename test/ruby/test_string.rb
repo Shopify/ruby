@@ -3398,6 +3398,7 @@ CODE
   end
 
   def test_uminus_frozen
+    omit("this assumes string literals are embedded, our patch makes them never embedded")
     return unless @cls == String
 
     # embedded

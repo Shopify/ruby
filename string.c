@@ -6271,8 +6271,8 @@ rb_str_sub_bang(int argc, VALUE *argv, VALUE str)
                 repl = rb_hash_aref(hash, rb_str_subseq(str, beg0, end0 - beg0));
                 repl = rb_obj_as_string(repl);
             }
-            str_mod_check(str, p, len);
             rb_check_frozen(str);
+            str_mod_check(str, p, len);
         }
         else {
             repl = rb_reg_regsub(repl, str, regs, RB_TYPE_P(pat, T_STRING) ? Qnil : pat);

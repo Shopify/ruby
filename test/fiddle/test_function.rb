@@ -200,6 +200,7 @@ module Fiddle
         define_singleton_method(:strcpy, &f)
       end
       buff = +"000"
+      refute_predicate buff, :frozen?
       str = klass.strcpy(buff, "123")
       assert_equal("123", buff)
       assert_equal("123", str.to_s)
