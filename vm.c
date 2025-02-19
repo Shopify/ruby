@@ -4441,13 +4441,14 @@ rb_vm_register_global_object(VALUE obj)
     RB_VM_LOCK_LEAVE();
 }
 
+#define FSTR_BUFFER_SIZE 0x4000000
 void
 Init_vm_objects(void)
 {
     rb_vm_t *vm = GET_VM();
 
-    vm->fstr_memory = (char *)mmap(NULL, 0x500000, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    vm->fstr_size = 0x500000;
+    vm->fstr_memory = (char *)mmap(NULL, FSTR_BUFFER_SIZE, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    vm->fstr_size = FSTR_BUFFER_SIZE;
     vm->fstr_index = 0;
 
     /* initialize mark object array, hash */
