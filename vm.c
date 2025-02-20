@@ -4441,7 +4441,7 @@ rb_vm_register_global_object(VALUE obj)
     RB_VM_LOCK_LEAVE();
 }
 
-#define FSTR_BUFFER_SIZE 0x4000000
+#define FSTR_BUFFER_SIZE 0x6000000
 void
 Init_vm_objects(void)
 {
