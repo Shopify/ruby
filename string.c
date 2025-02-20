@@ -438,7 +438,7 @@ rb_vm_alloc_rofstr(VALUE str)
     RSTRING_GETMEM(str, ptr, len);
 
     rb_vm_t *vm = GET_VM();
-    if (vm->fstr_index + len <= vm->fstr_size) {
+    if (vm->fstr_index + len + TERM_LEN(str) <= vm->fstr_size) {
         char * buf = vm->fstr_memory + vm->fstr_index;
         mprotect(vm->fstr_memory, vm->fstr_size, PROT_WRITE | PROT_READ);
         memcpy(buf, ptr, len);
