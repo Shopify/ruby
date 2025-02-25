@@ -1960,7 +1960,7 @@ heap_page_allocate(rb_objspace_t *objspace)
         }
     }
 
-    rb_darray_insert(&objspace->heap_pages.sorted, hi, page);
+    rb_darray_insert_without_gc(&objspace->heap_pages.sorted, hi, page);
 
     if (heap_pages_lomem == 0 || heap_pages_lomem > start) heap_pages_lomem = start;
     if (heap_pages_himem < end) heap_pages_himem = end;
@@ -9199,7 +9199,7 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
     for (size_t i = 0; i < rb_darray_size(objspace->heap_pages.sorted); i++) {
         heap_page_free(objspace, rb_darray_get(objspace->heap_pages.sorted, i));
     }
-    rb_darray_free(objspace->heap_pages.sorted);
+    rb_darray_free_without_gc(objspace->heap_pages.sorted);
     heap_pages_lomem = 0;
     heap_pages_himem = 0;
 
