@@ -89,9 +89,10 @@ struct st_table {
     /* Start and bound index of entries in array entries.
        entries_starts and entries_bound are in interval
        [0,allocated_entries].  */
-    st_index_t entries_start, entries_bound;
+    st_index_t entries_bound;
     /* Array of size 2^entry_power.  */
     st_table_entry *entries;
+    st_index_t entries_start;
 };
 
 #define st_is_member(table,key) st_lookup((table),(key),(st_data_t *)0)
