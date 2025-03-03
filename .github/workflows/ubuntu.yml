@@ -136,6 +136,10 @@ jobs:
         if: ${{ matrix.test_task == 'check' && matrix.skipped_tests }}
         continue-on-error: ${{ matrix.continue-on-skipped_tests || false }}
 
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3.19
+
       - uses: ./.github/actions/slack
         with:
           label: ${{ matrix.test_task }} ${{ matrix.configure }}${{ matrix.arch }}
