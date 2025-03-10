@@ -192,7 +192,6 @@ cc_table_mark_i(VALUE ccs_ptr, void *data)
 
             rb_gc_mark_movable((VALUE)ccs->entries[i].cc);
         }
-        rb_cc_list_mark(ccs, (VALUE)data);
         return ID_TABLE_CONTINUE;
     }
 }
