@@ -214,7 +214,7 @@ static ruby_gc_params_t gc_params = {
  *  enable to embed GC debugging information.
  */
 #ifndef GC_DEBUG
-#define GC_DEBUG 1
+#define GC_DEBUG 0
 #endif
 
 /* RGENGC_DEBUG:
@@ -1363,8 +1363,6 @@ static inline void
 RVALUE_OLD_UNCOLLECTIBLE_SET(rb_objspace_t *objspace, VALUE obj)
 {
     RB_DEBUG_COUNTER_INC(obj_promote);
-    GC_ASSERT(!RB_TYPE_P(obj, T_NONE));
-    GC_ASSERT(!RB_TYPE_P(obj, T_MOVED));
     RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(objspace, GET_HEAP_PAGE(obj), obj);
 }
 
@@ -5933,9 +5931,6 @@ rgengc_rememberset_mark_plane(rb_objspace_t *objspace, uintptr_t p, bits_t bitse
             if (bitset & 1) {
                 VALUE obj = (VALUE)p;
                 gc_report(2, objspace, "rgengc_rememberset_mark: mark %s\n", rb_obj_info(obj));
-                if (!RVALUE_UNCOLLECTIBLE(objspace, obj)) {
-                    fprintf(stderr, "addr %p\n", (void *)obj);
-                }
                 GC_ASSERT(RVALUE_UNCOLLECTIBLE(objspace, obj));
                 GC_ASSERT(RVALUE_OLD_P(objspace, obj) || RVALUE_WB_UNPROTECTED(objspace, obj));
 
@@ -6081,17 +6076,6 @@ void
 rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
 {
     rb_objspace_t *objspace = objspace_ptr;
-
-    GC_ASSERT(!RB_TYPE_P(a, T_NONE));
-    GC_ASSERT(!RB_TYPE_P(b, T_NONE));
-    GC_ASSERT(!RB_TYPE_P(a, T_MOVED));
-    GC_ASSERT(!RB_TYPE_P(b, T_MOVED));
-    if (RB_TYPE_P(a, T_HASH)) {
-        fprintf(stderr, "adding hash to RS %p\n", (void *)a);
-    }
-    if (RB_TYPE_P(b, T_HASH)) {
-        fprintf(stderr, "adding hash to RS %p\n", (void *)b);
-    }
 
     if (RGENGC_CHECK_MODE) {
         if (SPECIAL_CONST_P(a)) rb_bug("rb_gc_writebarrier: a is special const: %"PRIxVALUE, a);
@@ -6954,8 +6938,6 @@ gc_move(rb_objspace_t *objspace, VALUE src, VALUE dest, size_t src_slot_size, si
     int uncollectible;
     int age;
 
-    struct rvalue_overhead * info = GET_RVALUE_OVERHEAD(src);
-    fprintf(stderr, "Moving object: %p -> %p %s %s:%d\n", (void *)src, (void *)dest, rb_obj_info(src), info->file, info->line);
     gc_report(4, objspace, "Moving object: %p -> %p\n", (void *)src, (void *)dest);
 
     GC_ASSERT(BUILTIN_TYPE(src) != T_NONE);
@@ -7033,8 +7015,6 @@ gc_move(rb_objspace_t *objspace, VALUE src, VALUE dest, size_t src_slot_size, si
     }
 
     if (uncollectible) {
-        GC_ASSERT(!RB_TYPE_P(dest, T_NONE));
-        GC_ASSERT(!RB_TYPE_P(dest, T_MOVED));
         MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(dest), dest);
     }
     else {

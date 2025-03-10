@@ -6051,11 +6051,9 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
                             }
 
                             cd->cc = ret;
-                            //vm_ccs_push((VALUE)callee_iseq, ISEQ_BODY(callee_iseq)->block_ccs, ci, ret);
                             RB_OBJ_WRITTEN(reg_cfp->iseq, Qundef, ret);
+                            vm_ccs_push((VALUE)callee_iseq, ISEQ_BODY(callee_iseq)->block_ccs, ci, ret);
                             RUBY_ASSERT(ret->klass == (VALUE)callee_iseq);
-                            fprintf(stderr, "ret %p iseq %p\n", (void *)ret, (void *)callee_iseq);
-                            RB_GC_GUARD(ret);
                         }
                         else {
                             /*
