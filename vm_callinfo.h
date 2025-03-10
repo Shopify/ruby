@@ -354,7 +354,7 @@ vm_cc_new(VALUE klass,
         break;
     }
 
-    if (cme->def->type == VM_METHOD_TYPE_ATTRSET || cme->def->type == VM_METHOD_TYPE_IVAR) {
+    if (type != cc_type_block && (cme->def->type == VM_METHOD_TYPE_ATTRSET || cme->def->type == VM_METHOD_TYPE_IVAR)) {
         vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
     }
 
