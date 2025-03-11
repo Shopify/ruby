@@ -1003,7 +1003,9 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
     env_ep = &env_body[local_size - 1 /* specval */];
     env_ep[VM_ENV_DATA_INDEX_ENV] = (VALUE)env;
 
-    env->iseq = (rb_iseq_t *)(VM_FRAME_RUBYFRAME_P(cfp) ? cfp->iseq : NULL);
+    // Avoid the dummy iseq from rb_vm_push_frame_fname()
+    env->iseq = (rb_iseq_t *)((VM_FRAME_RUBYFRAME_P(cfp) &&
+                               VM_FRAME_TYPE(cfp) != VM_FRAME_MAGIC_DUMMY) ? cfp->iseq : NULL);
     env->ep = env_ep;
     env->env = env_body;
     env->env_size = env_size;
