@@ -3881,6 +3881,11 @@ gc_sweep_finish(rb_objspace_t *objspace)
 #endif
 }
 
+// Use -O2 on this function to dodge a miscompilation on -O3 with
+// gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04)
+// that generates `and qword [rsi+rdx*8+0x528], rax`
+// without saving and restoring rdx across calls.
+__attribute__((optimize ("O2")))
 static int
 gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 {
