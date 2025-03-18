@@ -3727,10 +3727,10 @@ pm_compile_call(rb_iseq_t *iseq, const pm_call_node_t *call_node, LINK_ANCHOR *c
         // Jump unless the receiver uses the "basic" implementation of "new"
         VALUE ci;
         if (flags & VM_CALL_FORWARDING) {
-            ci = (VALUE)new_callinfo(iseq, method_id, orig_argc + 1, 0, NULL, 0);
+            ci = (VALUE)new_callinfo(iseq, method_id, orig_argc + 1, flags, kw_arg, 0);
         }
         else {
-            ci = (VALUE)new_callinfo(iseq, method_id, orig_argc, 0, NULL, 0);
+            ci = (VALUE)new_callinfo(iseq, method_id, orig_argc, flags, kw_arg, 0);
         }
 
         PUSH_INSN2(ret, location, opt_new, ci, not_basic_new);
