@@ -1027,7 +1027,13 @@ extern "C" {
     pub fn rb_intern2(name: *const ::std::os::raw::c_char, len: ::std::os::raw::c_long) -> ID;
     pub fn rb_id2name(id: ID) -> *const ::std::os::raw::c_char;
     pub fn rb_class2name(klass: VALUE) -> *const ::std::os::raw::c_char;
+    pub fn rb_class_new_instance_pass_kw(
+        argc: ::std::os::raw::c_int,
+        argv: *const VALUE,
+        klass: VALUE,
+    ) -> VALUE;
     pub fn rb_obj_is_kind_of(obj: VALUE, klass: VALUE) -> VALUE;
+    pub fn rb_obj_alloc(klass: VALUE) -> VALUE;
     pub fn rb_obj_frozen_p(obj: VALUE) -> VALUE;
     pub fn rb_backref_get() -> VALUE;
     pub fn rb_range_new(beg: VALUE, end: VALUE, excl: ::std::os::raw::c_int) -> VALUE;
