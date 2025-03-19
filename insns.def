@@ -910,6 +910,7 @@ opt_new
 (CALL_DATA cd, OFFSET dst)
 ()
 ()
+// attr bool leaf = false;
 {
     VALUE argc = vm_ci_argc(cd->ci);
     VALUE val = TOPN(argc);
