@@ -3621,7 +3621,11 @@ pm_compile_call(rb_iseq_t *iseq, const pm_call_node_t *call_node, LINK_ANCHOR *c
 
     const pm_node_location_t location = PM_LOCATION_START_LOCATION(scope_node->parser, message_loc, call_node->base.node_id);
 
-    if (ISEQ_COMPILE_DATA(iseq)->option->specialized_instruction && method_id == rb_intern("new")) {
+    bool inline_new = ISEQ_COMPILE_DATA(iseq)->option->specialized_instruction &&
+        method_id == rb_intern("new") &&
+        call_node->block == NULL;
+
+    if (inline_new) {
         PUSH_INSN(ret, location, putnil);
         PUSH_INSN(ret, location, swap);
     }
@@ -3720,10 +3724,10 @@ pm_compile_call(rb_iseq_t *iseq, const pm_call_node_t *call_node, LINK_ANCHOR *c
         PUSH_INSN(ret, location, splatkw);
     }
 
-    if (ISEQ_COMPILE_DATA(iseq)->option->specialized_instruction && method_id == rb_intern("new")) {
-        LABEL *not_basic_new = NEW_LABEL(location.line);
-        LABEL *not_basic_new_finish = NEW_LABEL(location.line);
+    LABEL *not_basic_new = NEW_LABEL(location.line);
+    LABEL *not_basic_new_finish = NEW_LABEL(location.line);
 
+    if (inline_new) {
         // Jump unless the receiver uses the "basic" implementation of "new"
         VALUE ci;
         if (flags & VM_CALL_FORWARDING) {
