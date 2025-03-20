@@ -4910,13 +4910,14 @@ fn gen_opt_new(
     // We now know that it's always comptime_recv_klass
     if jit.assume_expected_cfunc(asm, comptime_recv_klass, mid, rb_class_new_instance_pass_kw as _) {
         // Fast path
-        // Get a reference to the stack location where we need to save the
-        // return instance.
-        let result = asm.stack_opnd(recv_idx + 1);
-
         // call rb_class_alloc to actually allocate
         jit_prepare_call_with_gc(jit, asm);
         let obj = asm.ccall(rb_obj_alloc as _, vec![comptime_recv.into()]);
+
+        // Get a reference to the stack location where we need to save the
+        // return instance.
+        let result = asm.stack_opnd(recv_idx + 1);
+        let recv = asm.stack_opnd(recv_idx);
 
         // Replace the receiver for the upcoming initialize call
         asm.ctx.set_opnd_mapping(recv.into(), TempMapping::MapToStack(Type::UnknownHeap));
