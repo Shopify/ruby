@@ -4915,6 +4915,7 @@ fn gen_opt_new(
         let result = asm.stack_opnd(recv_idx + 1);
 
         // call rb_class_alloc to actually allocate
+        jit_prepare_call_with_gc(jit, asm);
         let obj = asm.ccall(rb_obj_alloc as _, vec![comptime_recv.into()]);
 
         // Replace the receiver for the upcoming initialize call
