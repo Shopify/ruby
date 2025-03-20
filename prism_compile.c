@@ -3621,14 +3621,7 @@ pm_compile_call(rb_iseq_t *iseq, const pm_call_node_t *call_node, LINK_ANCHOR *c
 
     const pm_node_location_t location = PM_LOCATION_START_LOCATION(scope_node->parser, message_loc, call_node->base.node_id);
 
-    bool inline_new = ISEQ_COMPILE_DATA(iseq)->option->specialized_instruction &&
-        method_id == rb_intern("new") &&
-        call_node->block == NULL;
-
-    if (inline_new) {
-        PUSH_INSN(ret, location, putnil);
-        PUSH_INSN(ret, location, swap);
-    }
+    LINK_ELEMENT *opt_new_prelude = LAST_ELEMENT(ret);
 
     LABEL *else_label = NEW_LABEL(location.line);
     LABEL *end_label = NEW_LABEL(location.line);
@@ -3727,7 +3720,21 @@ pm_compile_call(rb_iseq_t *iseq, const pm_call_node_t *call_node, LINK_ANCHOR *c
     LABEL *not_basic_new = NEW_LABEL(location.line);
     LABEL *not_basic_new_finish = NEW_LABEL(location.line);
 
+    bool inline_new = ISEQ_COMPILE_DATA(iseq)->option->specialized_instruction &&
+        method_id == rb_intern("new") &&
+        call_node->block == NULL &&
+        !(flags & VM_CALL_ARGS_BLOCKARG);
+
     if (inline_new) {
+        if (LAST_ELEMENT(ret) == opt_new_prelude) {
+            PUSH_INSN(ret, location, putnil);
+            PUSH_INSN(ret, location, swap);
+        }
+        else {
+            ELEM_INSERT_NEXT(opt_new_prelude, &new_insn_body(iseq, location.line, location.node_id, BIN(swap), 0)->link);
+            ELEM_INSERT_NEXT(opt_new_prelude, &new_insn_body(iseq, location.line, location.node_id, BIN(putnil), 0)->link);
+        }
+
         // Jump unless the receiver uses the "basic" implementation of "new"
         VALUE ci;
         if (flags & VM_CALL_FORWARDING) {
