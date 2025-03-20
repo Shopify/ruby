@@ -4895,14 +4895,13 @@ fn gen_opt_new(
     let comptime_recv_klass = comptime_recv.class_of();
 
     let recv = asm.stack_opnd(recv_idx);
-    let recv_opnd: YARVOpnd = recv.into();
 
     perf_call!("opt_new: ", jit_guard_known_klass(
         jit,
         asm,
         comptime_recv_klass,
         recv,
-        recv_opnd,
+        recv.into(),
         comptime_recv,
         SEND_MAX_DEPTH,
         Counter::guard_send_klass_megamorphic,
@@ -4919,9 +4918,11 @@ fn gen_opt_new(
         let obj = asm.ccall(rb_obj_alloc as _, vec![comptime_recv.into()]);
 
         // Replace the receiver for the upcoming initialize call
+        asm.ctx.set_opnd_mapping(recv.into(), TempMapping::MapToStack(Type::UnknownHeap));
         asm.mov(recv, obj);
 
         // Save the allocated object for return
+        asm.ctx.set_opnd_mapping(result.into(), TempMapping::MapToStack(Type::UnknownHeap));
         asm.mov(result, obj);
 
         jump_to_next_insn(jit, asm)
