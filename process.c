@@ -2653,13 +2653,13 @@ rb_execarg_init(int argc, const VALUE *orig_argv, int accept_shell, VALUE execar
     struct rb_execarg *eargp = rb_execarg_get(execarg_obj);
     VALUE prog, ret;
     VALUE env = Qnil, opthash = Qnil;
-    VALUE argv_buf;
-    VALUE *argv = ALLOCV_N(VALUE, argv_buf, argc);
-    MEMCPY(argv, orig_argv, VALUE, argc);
+    VALUE argv_buf = rb_ary_hidden_new(argc);
+    rb_ary_cat(argv_buf, orig_argv, argc);
+    VALUE *argv = (VALUE *)RARRAY_CONST_PTR(argv_buf);
     prog = rb_exec_getargs(&argc, &argv, accept_shell, &env, &opthash);
     rb_exec_fillarg(prog, argc, argv, env, opthash, execarg_obj);
-    ALLOCV_END(argv_buf);
     ret = eargp->use_shell ? eargp->invoke.sh.shell_script : eargp->invoke.cmd.command_name;
+    RB_GC_GUARD(argv_buf);
     RB_GC_GUARD(execarg_obj);
     return ret;
 }

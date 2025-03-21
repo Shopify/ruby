@@ -408,14 +408,6 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
         break;
       }
       case imemo_tmpbuf: {
-        const rb_imemo_tmpbuf_t *m = (const rb_imemo_tmpbuf_t *)obj;
-
-        if (!reference_updating) {
-            do {
-                rb_gc_mark_locations(m->ptr, m->ptr + m->cnt);
-            } while ((m = m->next) != NULL);
-        }
-
         break;
       }
       default:

@@ -3858,7 +3858,9 @@ vm_call_cfunc_other(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, str
         VM_ASSERT(RB_TYPE_P(argv_ary, T_ARRAY));
         VM_ASSERT(RBASIC_CLASS(argv_ary) == 0); // hidden ary
 
-        return vm_call_cfunc_with_frame_(ec, reg_cfp, calling, argc, argv, stack_bottom);
+        VALUE ret = vm_call_cfunc_with_frame_(ec, reg_cfp, calling, argc, argv, stack_bottom);
+        RB_GC_GUARD(argv_ary);
+        return ret;
     }
     else {
         CC_SET_FASTPATH(calling->cc, vm_call_cfunc_with_frame, !rb_splat_or_kwargs_p(ci) && !calling->kw_splat && !(vm_ci_flag(ci) & VM_CALL_FORWARDING));
