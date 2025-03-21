@@ -2308,10 +2308,24 @@ each_location_ptr(const VALUE *start, const VALUE *end, void (*cb)(VALUE, void *
     each_location(start, end - start, cb, data);
 }
 
+void
+eileens_cool_func(VALUE obj, void *data)
+{
+    if (rb_gc_pointer_to_heap_p(obj)) {
+        rb_bug("i am pointer to heap");
+    }
+}
+
 static void
 gc_mark_maybe_each_location(VALUE obj, void *data)
 {
     gc_mark_maybe_internal(obj);
+}
+
+void
+rb_gc_eileen_locations(const VALUE *start, const VALUE *end)
+{
+    each_location_ptr(start, end, eileens_cool_func, NULL);
 }
 
 void

@@ -412,6 +412,10 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
 
         if (!reference_updating) {
             do {
+                // Trying to mark internals of the temp buffer
+                // But are there actually any references in here?
+                void rb_gc_eileen_locations(const VALUE *start, const VALUE *end);
+                rb_gc_eileen_locations(m->ptr, m->ptr + m->cnt);
                 rb_gc_mark_locations(m->ptr, m->ptr + m->cnt);
             } while ((m = m->next) != NULL);
         }
