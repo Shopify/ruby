@@ -408,6 +408,18 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
         break;
       }
       case imemo_tmpbuf: {
+        const rb_imemo_tmpbuf_t *m = (const rb_imemo_tmpbuf_t *)obj;
+
+        if (!reference_updating) {
+            do {
+                // Trying to mark internals of the temp buffer
+                // But are there actually any references in here?
+                void rb_gc_each_locations_ptr_check(const VALUE *start, const VALUE *end);
+                rb_gc_each_locations_ptr_check(m->ptr, m->ptr + m->cnt);
+                rb_gc_mark_locations(m->ptr, m->ptr + m->cnt);
+            } while ((m = m->next) != NULL);
+        }
+
         break;
       }
       default:

@@ -2307,6 +2307,20 @@ each_location_ptr(const VALUE *start, const VALUE *end, void (*cb)(VALUE, void *
     each_location(start, end - start, cb, data);
 }
 
+void
+rb_gc_is_pointer_to_heap(VALUE obj, void *data)
+{
+    if (rb_gc_pointer_to_heap_p(obj)) {
+        rb_bug("i am pointer to heap");
+    }
+}
+
+void
+rb_gc_each_locations_ptr_check(const VALUE *start, const VALUE *end)
+{
+    each_location_ptr(start, end, rb_gc_is_pointer_to_heap, NULL);
+}
+
 static void
 gc_mark_maybe_each_location(VALUE obj, void *data)
 {
