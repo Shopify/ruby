@@ -832,8 +832,8 @@ RVALUE_AGE_GET(VALUE obj)
     return RVALUE_METADATA(obj)->age;
 }
 
-static bool
-RVALUE_SEEN_OBJ_ID(VALUE obj)
+bool
+rb_gc_impl_object_id_seen_p(VALUE obj)
 {
     return RVALUE_METADATA(obj)->seen_obj_id;
 }
@@ -1582,7 +1582,7 @@ rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
     rb_objspace_t *objspace = objspace_ptr;
 
     unsigned int lev = rb_gc_vm_lock();
-    if (RVALUE_SEEN_OBJ_ID(obj)) {
+    if (rb_gc_impl_object_id_seen_p(obj)) {
         st_data_t val;
         if (st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, &val)) {
             id = (VALUE)val;
@@ -2652,7 +2652,7 @@ obj_free_object_id(rb_objspace_t *objspace, VALUE obj)
 {
     st_data_t o = (st_data_t)obj, id;
 
-    GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE || RVALUE_SEEN_OBJ_ID(obj));
+    GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE || rb_gc_impl_object_id_seen_p(obj));
     RVALUE_METADATA(obj)->seen_obj_id = false;
 
     if (st_delete(objspace->obj_to_id_tbl, &o, &id)) {
@@ -2886,7 +2886,7 @@ rb_gc_impl_copy_finalizer(void *objspace_ptr, VALUE dest, VALUE obj)
 static VALUE
 get_object_id_in_finalizer(rb_objspace_t *objspace, VALUE obj)
 {
-    if (RVALUE_SEEN_OBJ_ID(obj)) {
+    if (rb_gc_impl_object_id_seen_p(obj)) {
         return rb_gc_impl_object_id(objspace, obj);
     }
     else {
@@ -2942,7 +2942,7 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
         int lev = rb_gc_vm_lock();
         {
             GC_ASSERT(BUILTIN_TYPE(zombie) == T_ZOMBIE);
-            if (RVALUE_SEEN_OBJ_ID(zombie)) {
+            if (rb_gc_impl_object_id_seen_p(zombie)) {
                 obj_free_object_id(objspace, zombie);
             }
 
@@ -3550,7 +3550,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
                 rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
 
-                bool has_object_id = RVALUE_SEEN_OBJ_ID(vp);
+                bool has_object_id = rb_gc_impl_object_id_seen_p(vp);
                 rb_gc_obj_free_vm_weak_references(vp);
                 if (rb_gc_obj_free(objspace, vp)) {
                     if (has_object_id) {
@@ -6233,7 +6233,7 @@ rb_gc_impl_object_metadata(void *objspace_ptr, VALUE obj)
     if (RVALUE_MARKING(objspace, obj)) SET_ENTRY(marking, Qtrue);
     if (RVALUE_MARKED(objspace, obj)) SET_ENTRY(marked, Qtrue);
     if (RVALUE_PINNED(objspace, obj)) SET_ENTRY(pinned, Qtrue);
-    if (RVALUE_SEEN_OBJ_ID(obj)) SET_ENTRY(object_id, rb_obj_id(obj));
+    if (rb_gc_impl_object_id_seen_p(obj)) SET_ENTRY(object_id, rb_obj_id(obj));
 
     object_metadata_entries[n].name = 0;
     object_metadata_entries[n].val = 0;
@@ -6953,7 +6953,7 @@ gc_move(rb_objspace_t *objspace, VALUE src, VALUE dest, size_t src_slot_size, si
     CLEAR_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(src), src);
     CLEAR_IN_BITMAP(GET_HEAP_PAGE(src)->remembered_bits, src);
 
-    if (RVALUE_SEEN_OBJ_ID(src)) {
+    if (rb_gc_impl_object_id_seen_p(src)) {
         /* If the source object's object_id has been seen, we need to update
          * the object to object id mapping. */
         st_data_t srcid = (st_data_t)src, id;
