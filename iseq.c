@@ -504,6 +504,29 @@ rb_iseq_memsize(const rb_iseq_t *iseq)
     return size;
 }
 
+size_t
+rb_iseq_ic_segments_size(const rb_iseq_t *iseq)
+{
+    size_t size = 0;
+    const struct rb_iseq_constant_body *body = ISEQ_BODY(iseq);
+
+    if (ISEQ_EXECUTABLE_P(iseq) && body) {
+        if (ISEQ_BODY(iseq)->is_entries) {
+            /* IC entries constant segments */
+            for (unsigned int ic_idx = 0; ic_idx < body->ic_size; ic_idx++) {
+                IC ic = &ISEQ_IS_IC_ENTRY(body, ic_idx);
+                const ID *ids = ic->segments;
+                if (!ids) continue;
+                while (*ids++) {
+                    size += sizeof(ID);
+                }
+                size += sizeof(ID); // null terminator
+            }
+        }
+    }
+    return size;
+}
+
 struct rb_iseq_constant_body *
 rb_iseq_constant_body_alloc(void)
 {
