@@ -330,16 +330,43 @@ struct object_metadata {
     unsigned char seen_obj_id : 1;
 };
 
-static inline struct object_metadata *
-RVALUE_METADATA(VALUE obj)
+static st_table *object_metadata_table;
+
+static void
+init_object_metadata_table(void)
 {
-    return (struct object_metadata *)(obj - 2);
+    object_metadata_table = st_init_numtable();
+}
+
+static void
+set_object_seen_obj_id(VALUE obj, bool seen)
+{
+    st_data_t key = (st_data_t)obj;
+    st_data_t value;
+
+    if (st_lookup(object_metadata_table, key, &value)) {
+        struct object_metadata *metadata = (struct object_metadata *)value;
+        metadata->seen_obj_id = seen ? 1 : 0;
+    }
+    else {
+        struct object_metadata *metadata = xmalloc(sizeof(struct object_metadata));
+        metadata->seen_obj_id = seen ? 1 : 0;
+        st_insert(object_metadata_table, key, (st_data_t)metadata);
+    }
 }
 
 bool
 rb_gc_impl_object_id_seen_p(VALUE obj)
 {
-    return RVALUE_METADATA(obj)->seen_obj_id;
+    st_data_t key = (st_data_t)obj;
+    st_data_t value;
+
+    if (st_lookup(object_metadata_table, key, &value)) {
+        struct object_metadata *metadata = (struct object_metadata *)value;
+        return metadata->seen_obj_id != 0;
+    }
+
+    return false;
 }
 
 static int
@@ -364,6 +391,8 @@ rb_mmtk_update_obj_id_tables_obj_to_id_i(st_data_t key, st_data_t val, st_data_t
     return ST_CONTINUE;
 }
 
+static void rb_mmtk_cleanup_metadata(void);
+
 static int
 rb_mmtk_update_obj_id_tables_id_to_obj_i(st_data_t key, st_data_t val, st_data_t data)
 {
@@ -383,6 +412,7 @@ rb_mmtk_update_obj_id_tables(void)
 
     st_foreach(objspace->obj_to_id_tbl, rb_mmtk_update_obj_id_tables_obj_to_id_i, 0);
     st_foreach(objspace->id_to_obj_tbl, rb_mmtk_update_obj_id_tables_id_to_obj_i, 0);
+    rb_mmtk_cleanup_metadata();
 }
 
 static int
@@ -457,6 +487,7 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
     objspace->measure_gc_time = true;
 
     objspace_obj_id_init(objspace);
+    init_object_metadata_table();
 
     objspace->finalizer_table = st_init_numtable();
     objspace->finalizer_postponed_job = rb_postponed_job_preregister(0, gc_run_finalizers, objspace);
@@ -468,9 +499,36 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
     objspace->cond_world_started = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
 }
 
+static int
+cleanup_object_metadata(st_data_t key, st_data_t val, st_data_t arg)
+{
+    VALUE obj = (VALUE)key;
+    if (!mmtk_is_reachable((MMTk_ObjectReference)obj)) {
+        xfree((void *)val);
+        return ST_DELETE;
+    }
+    return ST_CONTINUE;
+}
+
+static int
+free_metadata_entry(st_data_t key, st_data_t val, st_data_t arg)
+{
+    xfree((void *)val);
+    return ST_CONTINUE;
+}
+
+static void
+rb_mmtk_cleanup_metadata(void)
+{
+    st_foreach(object_metadata_table, cleanup_object_metadata, 0);
+}
+
 void
 rb_gc_impl_objspace_free(void *objspace_ptr)
 {
+    st_foreach(object_metadata_table, free_metadata_entry, 0);
+    st_free_table(object_metadata_table);
+
     free(objspace_ptr);
 }
 
@@ -668,18 +726,14 @@ rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE flags
         mmtk_handle_user_collection_request(ractor_cache, false, false);
     }
 
-    size_t header_size = sizeof(struct object_metadata) + 7 + sizeof(VALUE); // Should be 1 + 7 + 8 = 16
+    size_t header_size = sizeof(VALUE);
     size_t allocation_size_with_header = alloc_size + header_size;
     uintptr_t raw_ptr = (uintptr_t)mmtk_alloc(ractor_cache->mutator, allocation_size_with_header, MMTk_MIN_OBJ_ALIGN, 0, MMTK_ALLOCATION_SEMANTICS_DEFAULT);
 
-    struct object_metadata *metadata_ptr = (struct object_metadata *)raw_ptr;
-    *metadata_ptr = (struct object_metadata){0}; // Initialize all bitfields to 0
-
-
-    VALUE *size_ptr = (VALUE *)(raw_ptr + 8);
+    VALUE *size_ptr = (VALUE *)(raw_ptr);
     *size_ptr = alloc_size;
 
-    VALUE *obj_ptr = size_ptr + 1; // Points right after the size field (raw_ptr + 16)
+    VALUE *obj_ptr = size_ptr + 1;
 
     obj_ptr[0] = flags;
     obj_ptr[1] = klass;
@@ -1146,7 +1200,7 @@ rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
 
         st_insert(objspace->obj_to_id_tbl, (st_data_t)obj, (st_data_t)id);
         st_insert(objspace->id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
-        RVALUE_METADATA(obj)->seen_obj_id = true;
+        set_object_seen_obj_id(obj, true);
     }
     rb_gc_vm_unlock(lev);
 
