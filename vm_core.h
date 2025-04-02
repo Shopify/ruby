@@ -584,6 +584,7 @@ static inline const rb_iseq_t *rb_iseq_complete(const rb_iseq_t *iseq) {return 0
 #endif
 const rb_iseq_t *rb_iseq_complete(const rb_iseq_t *iseq);
 
+
 static inline const rb_iseq_t *
 rb_iseq_check(const rb_iseq_t *iseq)
 {
@@ -1206,6 +1207,8 @@ typedef enum {
 
 /* iseq.c */
 RUBY_SYMBOL_EXPORT_BEGIN
+
+size_t rb_iseq_ic_segments_size(const rb_iseq_t *iseq);
 
 /* node -> iseq */
 rb_iseq_t *rb_iseq_new         (const VALUE ast_value, VALUE name, VALUE path, VALUE realpath,                   const rb_iseq_t *parent, enum rb_iseq_type);
