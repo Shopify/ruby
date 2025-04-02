@@ -461,6 +461,14 @@ dump_object(VALUE obj, struct dump_config *dc)
             }
             break;
 
+          case imemo_iseq: {
+                size_t segment_size = rb_iseq_ic_segments_size((const rb_iseq_t *)obj);
+                if (segment_size) {
+                    dump_append(dc, ", \"segments_memsize\":");
+                    dump_append_sizet(dc, segment_size);
+                }
+                break;
+            }
           default:
             break;
         }
