@@ -57,7 +57,6 @@
 
 #define FL_SINGLETON    RBIMPL_CAST((VALUE)RUBY_FL_SINGLETON)            /**< @old{RUBY_FL_SINGLETON} */
 #define FL_WB_PROTECTED RBIMPL_CAST((VALUE)RUBY_FL_WB_PROTECTED)         /**< @old{RUBY_FL_WB_PROTECTED} */
-#define FL_FINALIZE     RBIMPL_CAST((VALUE)RUBY_FL_FINALIZE)             /**< @old{RUBY_FL_FINALIZE} */
 #define FL_TAINT        RBIMPL_CAST((VALUE)RUBY_FL_TAINT)                /**< @old{RUBY_FL_TAINT} */
 #define FL_SHAREABLE    RBIMPL_CAST((VALUE)RUBY_FL_SHAREABLE)            /**< @old{RUBY_FL_SHAREABLE} */
 #define FL_UNTRUSTED    RBIMPL_CAST((VALUE)RUBY_FL_UNTRUSTED)            /**< @old{RUBY_FL_UNTRUSTED} */
@@ -211,18 +210,11 @@ ruby_fl_type {
     RUBY_FL_UNUSED6    = (1<<6),
 
     /**
-     * This flag has  something to do with finalisers.  A  ruby object can have
-     * its finaliser,  which is another  object that evaluates when  the target
-     * object is about  to die.  This flag  is used to denote that  there is an
-     * attached finaliser.
+     * This flag is no longer in use.
      *
      * @internal
-     *
-     * But honestly, @shyouhei  doesn't think this flag should  be visible from
-     * 3rd parties.  It must be an implementation detail that they should never
-     * know.  Might better be hidden.
      */
-    RUBY_FL_FINALIZE     = (1<<7),
+    RUBY_FL_UNUSED7     = (1<<7),
 
     /**
      * @deprecated  This flag once was a thing  back in the old days, but makes

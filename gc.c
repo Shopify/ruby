@@ -658,6 +658,7 @@ typedef struct gc_function_map {
     void (*each_objects)(void *objspace_ptr, int (*callback)(void *, void *, size_t, void *), void *data);
     void (*each_object)(void *objspace_ptr, void (*func)(VALUE obj, void *data), void *data);
     // Finalizers
+    bool (*has_finalizer)(VALUE obj);
     void (*make_zombie)(void *objspace_ptr, VALUE obj, void (*dfree)(void *), void *data);
     VALUE (*define_finalizer)(void *objspace_ptr, VALUE obj, VALUE block);
     void (*undefine_finalizer)(void *objspace_ptr, VALUE obj);
@@ -837,6 +838,7 @@ ruby_modular_gc_init(void)
     load_modular_gc_func(each_objects);
     load_modular_gc_func(each_object);
     // Finalizers
+    load_modular_gc_func(has_finalizer);
     load_modular_gc_func(make_zombie);
     load_modular_gc_func(define_finalizer);
     load_modular_gc_func(undefine_finalizer);
@@ -878,6 +880,7 @@ ruby_modular_gc_init(void)
 # define rb_gc_impl_set_params rb_gc_functions.set_params
 # define rb_gc_impl_init rb_gc_functions.init
 # define rb_gc_impl_heap_sizes rb_gc_functions.heap_sizes
+# define rb_gc_impl_has_finalizer rb_gc_functions.has_finalizer
 // Shutdown
 # define rb_gc_impl_shutdown_free_objects rb_gc_functions.shutdown_free_objects
 # define rb_gc_impl_objspace_free rb_gc_functions.objspace_free
@@ -1464,7 +1467,7 @@ rb_gc_obj_free(void *objspace, VALUE obj)
                BUILTIN_TYPE(obj), (void*)obj, RBASIC(obj)->flags);
     }
 
-    if (FL_TEST(obj, FL_FINALIZE)) {
+    if (rb_gc_impl_has_finalizer(obj)) {
         rb_gc_impl_make_zombie(objspace, obj, 0, 0);
         return FALSE;
     }
