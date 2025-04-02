@@ -712,6 +712,7 @@ struct free_slot {
 struct object_metadata {
     unsigned char age : RVALUE_AGE_BIT_COUNT;
     unsigned char seen_obj_id : 1;
+    unsigned char has_finalizer : 1;
 };
 STATIC_ASSERT(SIZEOF_OBJECT_METADATA, sizeof(struct object_metadata) == 1);
 
@@ -2625,15 +2626,13 @@ rb_gc_impl_pointer_to_heap_p(void *objspace_ptr, const void *ptr)
     return is_pointer_to_heap(objspace_ptr, ptr);
 }
 
-#define ZOMBIE_OBJ_KEPT_FLAGS (FL_FINALIZE)
-
 void
 rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), void *data)
 {
     rb_objspace_t *objspace = objspace_ptr;
 
     struct RZombie *zombie = RZOMBIE(obj);
-    zombie->basic.flags = T_ZOMBIE | (zombie->basic.flags & ZOMBIE_OBJ_KEPT_FLAGS);
+    zombie->basic.flags = T_ZOMBIE;
     zombie->dfree = dfree;
     zombie->data = data;
     VALUE prev, next = heap_pages_deferred_final;
@@ -2823,7 +2822,7 @@ rb_gc_impl_define_finalizer(void *objspace_ptr, VALUE obj, VALUE block)
 
     GC_ASSERT(!OBJ_FROZEN(obj));
 
-    RBASIC(obj)->flags |= FL_FINALIZE;
+    RVALUE_METADATA(obj)->has_finalizer = 1;
 
     if (st_lookup(finalizer_table, obj, &data)) {
         table = (VALUE)data;
@@ -2861,7 +2860,7 @@ rb_gc_impl_undefine_finalizer(void *objspace_ptr, VALUE obj)
 
     st_data_t data = obj;
     st_delete(finalizer_table, &data, 0);
-    FL_UNSET(obj, FL_FINALIZE);
+    RVALUE_METADATA(obj)->has_finalizer = 0;
 }
 
 void
@@ -2871,15 +2870,15 @@ rb_gc_impl_copy_finalizer(void *objspace_ptr, VALUE dest, VALUE obj)
     VALUE table;
     st_data_t data;
 
-    if (!FL_TEST(obj, FL_FINALIZE)) return;
+    if (!RVALUE_METADATA(obj)->has_finalizer) return;
 
     if (RB_LIKELY(st_lookup(finalizer_table, obj, &data))) {
         table = (VALUE)data;
         st_insert(finalizer_table, dest, table);
-        FL_SET(dest, FL_FINALIZE);
+        RVALUE_METADATA(dest)->has_finalizer = 1;
     }
     else {
-        rb_bug("rb_gc_copy_finalizer: FL_FINALIZE set but not found in finalizer_table: %s", rb_obj_info(obj));
+        rb_bug("rb_gc_copy_finalizer: has_finalizer set but not found in finalizer_table: %s", rb_obj_info(obj));
     }
 }
 
@@ -2912,18 +2911,25 @@ run_final(rb_objspace_t *objspace, VALUE zombie)
     }
 
     st_data_t key = (st_data_t)zombie;
-    if (FL_TEST_RAW(zombie, FL_FINALIZE)) {
-        FL_UNSET(zombie, FL_FINALIZE);
+    bool has_finalizer = RVALUE_METADATA(zombie)->has_finalizer;
+
+    if (has_finalizer) {
+        RVALUE_METADATA(zombie)->has_finalizer = 0;
+
         st_data_t table;
         if (st_delete(finalizer_table, &key, &table)) {
             rb_gc_run_obj_finalizer(get_object_id_in_finalizer(objspace, zombie), RARRAY_LEN(table), get_final, (void *)table);
         }
         else {
-            rb_bug("FL_FINALIZE flag is set, but finalizers are not found");
+            rb_bug("Finalizer metadata is set, but finalizers are not found");
         }
     }
     else {
-        GC_ASSERT(!st_lookup(finalizer_table, key, NULL));
+        if (st_lookup(finalizer_table, key, NULL)) {
+            st_data_t ignore;
+            st_delete(finalizer_table, &key, &ignore);
+            rb_bug("Finalizer table entry exists but metadata is not set");
+        }
     }
 }
 
@@ -3063,12 +3069,12 @@ rb_gc_impl_shutdown_call_finalizer_i(st_data_t key, st_data_t val, st_data_t dat
     VALUE obj = (VALUE)key;
     VALUE table = (VALUE)val;
 
-    GC_ASSERT(RB_FL_TEST(obj, FL_FINALIZE));
+    GC_ASSERT(RVALUE_METADATA(obj)->has_finalizer);
     GC_ASSERT(RB_BUILTIN_TYPE(val) == T_ARRAY);
 
     rb_gc_run_obj_finalizer(rb_gc_impl_object_id(objspace, obj), RARRAY_LEN(table), get_final, (void *)table);
 
-    FL_UNSET(obj, FL_FINALIZE);
+    RVALUE_METADATA(obj)->has_finalizer = 0;
 
     return ST_DELETE;
 }
@@ -5051,15 +5057,16 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride,
                 if (BUILTIN_TYPE(obj) == T_ZOMBIE) {
                     data->zombie_object_count++;
 
-                    if ((RBASIC(obj)->flags & ~ZOMBIE_OBJ_KEPT_FLAGS) != T_ZOMBIE) {
+                    if (RBASIC(obj)->flags != T_ZOMBIE) {
                         fprintf(stderr, "verify_internal_consistency_i: T_ZOMBIE has extra flags set: %s\n",
                                 rb_obj_info(obj));
                         data->err_count++;
                     }
 
-                    if (!!FL_TEST(obj, FL_FINALIZE) != !!st_is_member(finalizer_table, obj)) {
-                        fprintf(stderr, "verify_internal_consistency_i: FL_FINALIZE %s but %s finalizer_table: %s\n",
-                                FL_TEST(obj, FL_FINALIZE) ? "set" : "not set", st_is_member(finalizer_table, obj) ? "in" : "not in",
+                    if (!!RVALUE_METADATA(obj)->has_finalizer != !!st_is_member(finalizer_table, obj)) {
+                        fprintf(stderr, "verify_internal_consistency_i: Finalizer metadata %s but %s finalizer_table: %s\n",
+                                RVALUE_METADATA(obj)->has_finalizer ? "set" : "not set",
+                                st_is_member(finalizer_table, obj) ? "in" : "not in",
                                 rb_obj_info(obj));
                         data->err_count++;
                     }
@@ -6196,7 +6203,7 @@ rb_gc_impl_writebarrier_remember(void *objspace_ptr, VALUE obj)
     }
 }
 
-#define RB_GC_OBJECT_METADATA_ENTRY_COUNT 7
+#define RB_GC_OBJECT_METADATA_ENTRY_COUNT 8
 static struct rb_gc_object_metadata_entry object_metadata_entries[RB_GC_OBJECT_METADATA_ENTRY_COUNT + 1];
 
 struct rb_gc_object_metadata_entry *
@@ -6204,7 +6211,7 @@ rb_gc_impl_object_metadata(void *objspace_ptr, VALUE obj)
 {
     rb_objspace_t *objspace = objspace_ptr;
     size_t n = 0;
-    static ID ID_wb_protected, ID_age, ID_old, ID_uncollectible, ID_marking, ID_marked, ID_pinned, ID_object_id;
+    static ID ID_wb_protected, ID_age, ID_old, ID_uncollectible, ID_marking, ID_marked, ID_pinned, ID_object_id, ID_has_finalizer;
 
     if (!ID_marked) {
 #define I(s) ID_##s = rb_intern(#s);
@@ -6216,6 +6223,7 @@ rb_gc_impl_object_metadata(void *objspace_ptr, VALUE obj)
         I(marked);
         I(pinned);
         I(object_id);
+        I(has_finalizer);
 #undef I
     }
 
@@ -6234,12 +6242,19 @@ rb_gc_impl_object_metadata(void *objspace_ptr, VALUE obj)
     if (RVALUE_MARKED(objspace, obj)) SET_ENTRY(marked, Qtrue);
     if (RVALUE_PINNED(objspace, obj)) SET_ENTRY(pinned, Qtrue);
     if (rb_gc_impl_object_id_seen_p(obj)) SET_ENTRY(object_id, rb_obj_id(obj));
+    if (RVALUE_METADATA(obj)->has_finalizer) SET_ENTRY(has_finalizer, Qtrue);
 
     object_metadata_entries[n].name = 0;
     object_metadata_entries[n].val = 0;
 #undef SET_ENTRY
 
     return object_metadata_entries;
+}
+
+bool
+rb_gc_impl_has_finalizer(VALUE obj)
+{
+    return RVALUE_METADATA(obj)->has_finalizer;
 }
 
 void *
@@ -6902,7 +6917,7 @@ gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj)
       case T_RATIONAL:
       case T_NODE:
       case T_CLASS:
-        if (FL_TEST_RAW(obj, FL_FINALIZE)) {
+        if (RVALUE_METADATA(obj)->has_finalizer) {
             /* The finalizer table is a numtable. It looks up objects by address.
              * We can't mark the keys in the finalizer table because that would
              * prevent the objects from being collected.  This check prevents
