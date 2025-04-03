@@ -279,14 +279,16 @@ rb_mmtk_vm_live_bytes(void)
     return 0;
 }
 
+static void set_object_has_finalizer(VALUE obj, bool has_finalizer);
+
 static void
 make_final_job(struct objspace *objspace, VALUE obj, VALUE table)
 {
-    RUBY_ASSERT(RB_FL_TEST(obj, RUBY_FL_FINALIZE));
+    RUBY_ASSERT(rb_gc_impl_has_finalizer(obj));
     RUBY_ASSERT(mmtk_is_reachable((MMTk_ObjectReference)table));
     RUBY_ASSERT(RB_BUILTIN_TYPE(table) == T_ARRAY);
 
-    RB_FL_UNSET(obj, RUBY_FL_FINALIZE);
+    set_object_has_finalizer(obj, false);
 
     struct MMTk_final_job *job = xmalloc(sizeof(struct MMTk_final_job));
     job->next = objspace->finalizer_jobs;
@@ -300,7 +302,7 @@ make_final_job(struct objspace *objspace, VALUE obj, VALUE table)
 static int
 rb_mmtk_update_finalizer_table_i(st_data_t key, st_data_t value, st_data_t data)
 {
-    RUBY_ASSERT(RB_FL_TEST(key, RUBY_FL_FINALIZE));
+    RUBY_ASSERT(rb_gc_impl_has_finalizer((VALUE)key));
     RUBY_ASSERT(mmtk_is_reachable((MMTk_ObjectReference)value));
     RUBY_ASSERT(RB_BUILTIN_TYPE(value) == T_ARRAY);
 
@@ -328,6 +330,7 @@ rb_mmtk_update_finalizer_table(void)
 
 struct object_metadata {
     unsigned char seen_obj_id : 1;
+    unsigned char has_finalizer : 1;
 };
 
 static st_table *object_metadata_table;
@@ -351,6 +354,23 @@ set_object_seen_obj_id(VALUE obj, bool seen)
     else {
         struct object_metadata *metadata = xmalloc(sizeof(struct object_metadata));
         metadata->seen_obj_id = seen ? 1 : 0;
+        st_insert(object_metadata_table, key, (st_data_t)metadata);
+    }
+}
+
+static void
+set_object_has_finalizer(VALUE obj, bool has_finalizer)
+{
+    st_data_t key = (st_data_t)obj;
+    st_data_t value;
+
+    if (st_lookup(object_metadata_table, key, &value)) {
+        struct object_metadata *metadata = (struct object_metadata *)value;
+        metadata->has_finalizer = has_finalizer ? 1 : 0;
+    }
+    else {
+        struct object_metadata *metadata = xmalloc(sizeof(struct object_metadata));
+        metadata->has_finalizer = has_finalizer ? 1 : 0;
         st_insert(object_metadata_table, key, (st_data_t)metadata);
     }
 }
@@ -1049,7 +1069,7 @@ rb_gc_impl_define_finalizer(void *objspace_ptr, VALUE obj, VALUE block)
     VALUE table;
     st_data_t data;
 
-    RBASIC(obj)->flags |= FL_FINALIZE;
+    set_object_has_finalizer(obj, true);
 
     if (st_lookup(objspace->finalizer_table, obj, &data)) {
         table = (VALUE)data;
@@ -1085,7 +1105,21 @@ rb_gc_impl_undefine_finalizer(void *objspace_ptr, VALUE obj)
 
     st_data_t data = obj;
     st_delete(objspace->finalizer_table, &data, 0);
-    FL_UNSET(obj, FL_FINALIZE);
+    set_object_has_finalizer(obj, false);
+}
+
+bool
+rb_gc_impl_has_finalizer(VALUE obj)
+{
+    st_data_t value;
+
+    if (st_lookup(object_metadata_table, (st_data_t)obj, &value)) {
+        struct object_metadata *metadata = (struct object_metadata *)value;
+        return metadata->has_finalizer;
+    }
+    else {
+        return false;
+    }
 }
 
 void
@@ -1095,12 +1129,12 @@ rb_gc_impl_copy_finalizer(void *objspace_ptr, VALUE dest, VALUE obj)
     VALUE table;
     st_data_t data;
 
-    if (!FL_TEST(obj, FL_FINALIZE)) return;
+    if (!rb_gc_impl_has_finalizer(obj)) return;
 
     if (RB_LIKELY(st_lookup(objspace->finalizer_table, obj, &data))) {
         table = (VALUE)data;
         st_insert(objspace->finalizer_table, dest, table);
-        FL_SET(dest, FL_FINALIZE);
+        set_object_has_finalizer(dest, true);
     }
     else {
         rb_bug("rb_gc_copy_finalizer: FL_FINALIZE set but not found in finalizer_table: %s", rb_obj_info(obj));
