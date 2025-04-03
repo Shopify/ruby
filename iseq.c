@@ -505,6 +505,12 @@ rb_iseq_memsize(const rb_iseq_t *iseq)
 }
 
 size_t
+rb_iseq_is_size(const rb_iseq_t *iseq)
+{
+    return (size_t)ISEQ_IS_SIZE(ISEQ_BODY(iseq));
+}
+
+size_t
 rb_iseq_ic_segments_size(const rb_iseq_t *iseq)
 {
     size_t size = 0;
