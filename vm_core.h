@@ -1209,6 +1209,7 @@ typedef enum {
 RUBY_SYMBOL_EXPORT_BEGIN
 
 size_t rb_iseq_ic_segments_size(const rb_iseq_t *iseq);
+size_t rb_iseq_is_size(const rb_iseq_t *iseq);
 
 /* node -> iseq */
 rb_iseq_t *rb_iseq_new         (const VALUE ast_value, VALUE name, VALUE path, VALUE realpath,                   const rb_iseq_t *parent, enum rb_iseq_type);

@@ -467,6 +467,10 @@ dump_object(VALUE obj, struct dump_config *dc)
                     dump_append(dc, ", \"segments_memsize\":");
                     dump_append_sizet(dc, segment_size);
                 }
+
+                dump_append(dc, ", \"is_size\":");
+                dump_append_sizet(dc, rb_iseq_is_size((const rb_iseq_t *)obj));
+
                 break;
             }
           default:
