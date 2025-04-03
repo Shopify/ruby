@@ -286,7 +286,7 @@ rb_mmtk_vm_live_bytes(void)
 }
 
 static void set_object_has_finalizer(VALUE obj, bool has_finalizer);
-
+bool rb_gc_impl_has_finalizer(VALUE obj);
 static void
 make_final_job(struct objspace *objspace, VALUE obj, VALUE table)
 {
@@ -411,6 +411,7 @@ rb_mmtk_update_obj_id_tables_obj_to_id_i(st_data_t key, st_data_t val, st_data_t
     RUBY_ASSERT(rb_gc_impl_object_id_seen_p(key));
 
     if (!mmtk_is_reachable((MMTk_ObjectReference)key)) {
+        set_object_seen_obj_id(key, false);
         return ST_DELETE;
     }
 
@@ -425,6 +426,7 @@ rb_mmtk_update_obj_id_tables_id_to_obj_i(st_data_t key, st_data_t val, st_data_t
     RUBY_ASSERT(rb_gc_impl_object_id_seen_p(val));
 
     if (!mmtk_is_reachable((MMTk_ObjectReference)val)) {
+        set_object_seen_obj_id(val, false);
         return ST_DELETE;
     }
 
