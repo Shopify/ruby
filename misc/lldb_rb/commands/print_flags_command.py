@@ -7,7 +7,7 @@ from lldb_rb.rb_base_command import RbBaseCommand
 class PrintFlagsCommand(RbBaseCommand):
     program = "print_flags"
 
-    help_string = "Print out the individial flags of an RVALUE object in human readable format"
+    help_string = "Print out the individual flags of an RVALUE object in human readable format"
 
     # call is where our command logic will be implemented
     def call(self, debugger, command, exe_ctx, result):

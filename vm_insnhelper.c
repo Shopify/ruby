@@ -29,6 +29,7 @@
 #include "internal/set_table.h"
 #include "internal/struct.h"
 #include "variable.h"
+#include "vm_insnhelper.h" // @kaan: remove, something else is including but clangd can't see it
 
 /* finish iseq array */
 #include "insns.inc"
@@ -5302,6 +5303,23 @@ vm_invoke_iseq_block_cc_arg1_param1_local1(rb_execution_context_t *ec, rb_contro
 }
 
 static VALUE
+vm_invoke_iseq_block_cc_arg1_param1_local2(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
+                     struct rb_calling_info *calling) {
+    return vm_invoke_iseq_positional_block(ec, reg_cfp, calling, 1, 1, 2);
+}
+
+static VALUE
+vm_invoke_iseq_block_cc_arg1_param1_local3(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
+                     struct rb_calling_info *calling) {
+    return vm_invoke_iseq_positional_block(ec, reg_cfp, calling, 1, 1, 3);
+}
+static VALUE
+vm_invoke_iseq_block_cc_arg1_param1_local4(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
+                     struct rb_calling_info *calling) {
+    return vm_invoke_iseq_positional_block(ec, reg_cfp, calling, 1, 1, 4);
+}
+
+static VALUE
 vm_invoke_iseq_block_cc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
                      struct rb_calling_info *calling) {
 
@@ -5995,7 +6013,7 @@ static const struct rb_callcache vm_invokeblock_hardcoded = {
 };
 
 static const struct rb_callcache *
-vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
+vm_invokeblock_fastpath(struct rb_execution_context_struct *ec, // @kaan: unused parameter
                  struct rb_control_frame_struct *reg_cfp,
                  struct rb_call_data *cd,
                  VALUE block_handler)
@@ -6011,15 +6029,20 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
         if (vm_block_handler_type(block_handler) == block_handler_type_iseq) {
             // what to do
             const struct rb_captured_block *captured = VM_BH_TO_ISEQ_BLOCK(block_handler);
+            // printf("captured->code.iseq: %p\n", captured->code.iseq);
             const rb_iseq_t *callee_iseq = rb_iseq_check(captured->code.iseq);
+            // printf("If 6011\n");
 
             // check cache
             if (LIKELY(cd->cc->klass == (VALUE)callee_iseq)) {
                 ret = cd->cc;
             }
             else {
+                // printf("Else 6018\n");
                 if (rb_simple_iseq_p(callee_iseq)) {
+                    // printf("If 6020\n");
                     if (vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE) {
+                        // printf("If 6022\n");
                         /*
                         if ((unsigned int)ISEQ_BODY(callee_iseq)->param.size == 0 && vm_ci_argc(ci) > 0) {
                             fprintf(stderr, "ignored params %d %d\n", vm_ci_argc(ci), ISEQ_BODY(callee_iseq)->local_table_size);
@@ -6028,30 +6051,53 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
 
                         if (vm_ci_argc(ci) == (unsigned int)ISEQ_BODY(callee_iseq)->param.size &&
                                 ISEQ_BODY(callee_iseq)->param.flags.ambiguous_param0) {
-
+                            // printf("If 6033\n");
                             if (!ISEQ_BODY(callee_iseq)->block_ccs) {
                                 ISEQ_BODY(callee_iseq)->block_ccs = ZALLOC(struct rb_class_cc_entries);
+                                // printf("Allocated block_ccs 6035\n");
                             }
 
+                            // printf("callee_iseq->block_ccs: %p\n", callee_iseq);
                             struct rb_class_cc_entries * ccs = ISEQ_BODY(callee_iseq)->block_ccs;
                             unsigned int argc = vm_ci_argc(ci);
                             unsigned int flag = vm_ci_flag(ci);
+                            // Ensure flags are correct and specialized
 
+                            // There exists a Similar loop, we could call that instead of repeat
+                            // Probably until the end (RUBY_ASSERT)
+                            // printf("ccs->len: %d\n", ccs->len);
                             for (int i = 0; i < ccs->len; i++) {
+                                // printf("For 6031\n");
                                 if (ccs->entries[i].argc == argc && ccs->entries[i].flag == flag) {
+                                    // printf("CACHED 6043\n");
                                     return ccs->entries[i].cc;
                                 }
                             }
 
-                            if (argc == 1 && ISEQ_BODY(callee_iseq)->local_table_size ==  1) {
+                            if (argc == 1 && ISEQ_BODY(callee_iseq)->local_table_size ==  1) { // Once per block
+                                // printf("1 arg\n");
                                 ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc_arg1_param1_local1, cc_type_block);
                             }
+                            else if (argc == 1 && ISEQ_BODY(callee_iseq)->local_table_size ==  2) { // Once per block
+                                // printf("1 arg\n");
+                                ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc_arg1_param1_local2, cc_type_block);
+                            }
+                            else if (argc == 1 && ISEQ_BODY(callee_iseq)->local_table_size ==  3) { // Once per block
+                                // printf("1 arg\n");
+                                ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc_arg1_param1_local3, cc_type_block);
+                            } else if (argc == 1 && ISEQ_BODY(callee_iseq)->local_table_size ==  4) { // Once per block
+                                // printf("1 arg\n");
+                                ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc_arg1_param1_local4, cc_type_block);
+                            }
                             else {
+                                // printf("else 6061 \n");
+                                // fprintf(stderr, "argc: %d, local_table_size: %d, flag: %d\n", argc, ISEQ_BODY(callee_iseq)->local_table_size, flag);
                                 ret = vm_cc_new((VALUE)callee_iseq, NULL, vm_invoke_iseq_block_cc, cc_type_block);
                             }
 
                             cd->cc = ret;
                             RB_OBJ_WRITTEN(reg_cfp->iseq, Qundef, ret);
+                            // printf("Pushing to cache 6059\n");
                             vm_ccs_push((VALUE)callee_iseq, ISEQ_BODY(callee_iseq)->block_ccs, ci, ret);
                             RUBY_ASSERT(ret->klass == (VALUE)callee_iseq);
                         }
@@ -6063,6 +6109,7 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
                                         ISEQ_BODY(callee_iseq)->param.size);
                             }
                             */
+                            // printf("Else 6071\n");
                         }
                     }
                     else {
@@ -6076,6 +6123,7 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
                             fprintf(stderr, "not ambiguous param?\n");
                         }
                         */
+                        // printf("Else 6077\n");
                     }
                 }
                 else {
@@ -6084,10 +6132,12 @@ vm_invokeblock_fastpath(struct rb_execution_context_struct *ec,
                         fprintf(stderr, "iseq not simple\n");
                     }
                     */
+                    // printf("Else 6085\n");
                 }
             }
         }
     }
+    // printf("returning ret\n");
     return ret;
 }
 
@@ -6122,6 +6172,8 @@ vm_sendish(
         val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
         break;
       case mexp_search_invokeblock:
+        // val = vm_invokeblock_i(ec, GET_CFP(), &calling);
+
         calling.cc = cc = vm_invokeblock_fastpath(ec, GET_CFP(), cd, VM_CF_BLOCK_HANDLER(GET_CFP()));
         val = vm_cc_call(cc)(ec, GET_CFP(), &calling);
         break;
