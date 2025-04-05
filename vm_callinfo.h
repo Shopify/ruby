@@ -355,7 +355,7 @@ vm_cc_new(VALUE klass,
     }
 
     if (type != cc_type_block && (cme->def->type == VM_METHOD_TYPE_ATTRSET || cme->def->type == VM_METHOD_TYPE_IVAR)) {
-        vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
+        vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID); // @kaan: what's this?, object shape related?
     }
 
     RB_DEBUG_COUNTER_INC(cc_new);
