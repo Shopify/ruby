@@ -511,6 +511,18 @@ rb_iseq_is_size(const rb_iseq_t *iseq)
 }
 
 size_t
+rb_iseq_code_size(const rb_iseq_t *iseq)
+{
+    return (size_t)ISEQ_BODY(iseq)->iseq_size;
+}
+
+size_t
+rb_iseq_ci_size(const rb_iseq_t *iseq)
+{
+    return (size_t)ISEQ_BODY(iseq)->ci_size;
+}
+
+size_t
 rb_iseq_ic_segments_size(const rb_iseq_t *iseq)
 {
     size_t size = 0;

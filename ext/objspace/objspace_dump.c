@@ -471,6 +471,12 @@ dump_object(VALUE obj, struct dump_config *dc)
                 dump_append(dc, ", \"is_size\":");
                 dump_append_sizet(dc, rb_iseq_is_size((const rb_iseq_t *)obj));
 
+                dump_append(dc, ", \"code_size\":");
+                dump_append_sizet(dc, rb_iseq_code_size((const rb_iseq_t *)obj));
+
+                dump_append(dc, ", \"ci_size\":");
+                dump_append_sizet(dc, rb_iseq_ci_size((const rb_iseq_t *)obj));
+
                 break;
             }
           default:
