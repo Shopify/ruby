@@ -1460,6 +1460,12 @@ rb_gc_impl_object_metadata(void *objspace_ptr, VALUE obj)
     return object_metadata_entries;
 }
 
+void
+rb_gc_impl_set_object_seen(VALUE obj, bool seen)
+{
+    set_object_seen_obj_id(obj, seen);
+}
+
 bool
 rb_gc_impl_pointer_to_heap_p(void *objspace_ptr, const void *ptr)
 {

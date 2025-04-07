@@ -681,6 +681,7 @@ typedef struct gc_function_map {
     const char *(*active_gc_name)(void);
     // Miscellaneous
     struct rb_gc_object_metadata_entry *(*object_metadata)(void *objspace_ptr, VALUE obj);
+    void (*set_object_seen)(VALUE obj, bool seen);
     bool (*pointer_to_heap_p)(void *objspace_ptr, const void *ptr);
     bool (*garbage_object_p)(void *objspace_ptr, VALUE obj);
     void (*set_event_hook)(void *objspace_ptr, const rb_event_flag_t event);
@@ -860,6 +861,7 @@ ruby_modular_gc_init(void)
     load_modular_gc_func(active_gc_name);
     // Miscellaneous
     load_modular_gc_func(object_metadata);
+    load_modular_gc_func(set_object_seen);
     load_modular_gc_func(pointer_to_heap_p);
     load_modular_gc_func(garbage_object_p);
     load_modular_gc_func(set_event_hook);
@@ -945,6 +947,7 @@ ruby_modular_gc_init(void)
 # define rb_gc_impl_active_gc_name rb_gc_functions.active_gc_name
 // Miscellaneous
 # define rb_gc_impl_object_metadata rb_gc_functions.object_metadata
+# define rb_gc_impl_set_object_seen rb_gc_functions.set_object_seen
 # define rb_gc_impl_pointer_to_heap_p rb_gc_functions.pointer_to_heap_p
 # define rb_gc_impl_garbage_object_p rb_gc_functions.garbage_object_p
 # define rb_gc_impl_set_event_hook rb_gc_functions.set_event_hook
@@ -2970,6 +2973,12 @@ struct rb_gc_object_metadata_entry *
 rb_gc_object_metadata(VALUE obj)
 {
     return rb_gc_impl_object_metadata(rb_gc_get_objspace(), obj);
+}
+
+void
+rb_gc_set_object_seen(VALUE obj, bool seen)
+{
+   rb_gc_impl_set_object_seen(obj, seen);
 }
 
 /* GC */

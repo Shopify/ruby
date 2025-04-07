@@ -6251,6 +6251,12 @@ rb_gc_impl_object_metadata(void *objspace_ptr, VALUE obj)
     return object_metadata_entries;
 }
 
+void
+rb_gc_impl_set_object_seen(VALUE obj, bool seen)
+{
+    RVALUE_METADATA(obj)->seen_obj_id = seen;
+}
+
 bool
 rb_gc_impl_has_finalizer(VALUE obj)
 {
