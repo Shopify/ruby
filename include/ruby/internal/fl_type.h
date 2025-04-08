@@ -207,14 +207,14 @@ ruby_fl_type {
      *
      * @internal
      */
-    RUBY_FL_UNUSED6    = (1<<6),
+    RUBY_FL_OBJ_HASH_SEEN    = (1<<6),
 
     /**
      * This flag is no longer in use.
      *
      * @internal
      */
-    RUBY_FL_UNUSED7     = (1<<7),
+    RUBY_FL_OBJ_MOVED       = (1<<7),
 
     /**
      * @deprecated  This flag once was a thing  back in the old days, but makes

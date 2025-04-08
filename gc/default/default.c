@@ -1,6 +1,7 @@
 #include "ruby/internal/config.h"
 
 #include <signal.h>
+#include <stdbool.h>
 
 #ifndef _WIN32
 # include <sys/mman.h>
@@ -593,6 +594,7 @@ typedef struct rb_objspace {
 
     st_table *id_to_obj_tbl;
     st_table *obj_to_id_tbl;
+    st_table *moved_obj_hash_tbl;
 
 #if GC_DEBUG_STRESS_TO_CLASS
     VALUE stress_to_class;
@@ -1543,6 +1545,18 @@ object_id_hash(st_data_t n)
     return FIX2LONG(rb_hash((VALUE)n));
 }
 
+static st_index_t
+object_address_hash(st_data_t n)
+{
+    return (st_index_t)(uintptr_t)n;
+}
+
+static int
+object_address_cmp(st_data_t x, st_data_t y)
+{
+    return x != y;
+}
+
 #define OBJ_ID_INCREMENT (RUBY_IMMEDIATE_MASK + 1)
 #define OBJ_ID_INITIAL (OBJ_ID_INCREMENT)
 
@@ -1550,6 +1564,11 @@ static const struct st_hash_type object_id_hash_type = {
     object_id_cmp,
     object_id_hash,
 };
+
+static const struct st_hash_type object_address_hash_type = {
+    object_address_cmp,
+    object_address_hash,
+};  
 
 /* garbage objects will be collected soon. */
 bool
@@ -1574,6 +1593,83 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
     if (dead) return true;
     return is_lazy_sweeping(objspace) && GET_HEAP_PAGE(ptr)->flags.before_sweep &&
         !RVALUE_MARKED(objspace, ptr);
+}
+
+enum object_hash_state {
+    OBJECT_HASH_STATE_UNSEEN = 0,
+    OBJECT_HASH_STATE_SEEN = 1,
+    OBJECT_HASH_STATE_MOVED = 2,
+    OBJECT_HASH_STATE_SEEN_AND_MOVED = 3,
+};
+
+#define RUBY_FL_OBJ_HASH_SHIFT 6
+
+static enum object_hash_state
+object_hash_state(VALUE obj)
+{
+short hash_state = (RBASIC(obj)->flags & (RUBY_FL_OBJ_HASH_SEEN | RUBY_FL_OBJ_MOVED)) >> RUBY_FL_OBJ_HASH_SHIFT;
+
+    int seen = (RBASIC(obj)->flags & RUBY_FL_OBJ_HASH_SEEN) != 0;
+    int moved = (RBASIC(obj)->flags & RUBY_FL_OBJ_MOVED) != 0;
+
+    if (seen && moved) {
+        return OBJECT_HASH_STATE_SEEN_AND_MOVED;
+    }
+    else if (seen) {
+        return OBJECT_HASH_STATE_SEEN;
+    }
+    else if (moved) {
+        return OBJECT_HASH_STATE_MOVED;
+    }
+    else {
+        return OBJECT_HASH_STATE_UNSEEN;
+    }
+}
+
+static void
+set_object_hash_seen(VALUE obj)
+{
+    RBASIC(obj)->flags |= RUBY_FL_OBJ_HASH_SEEN;
+}
+
+static void
+set_object_hash_moved(VALUE obj)
+{
+    RBASIC(obj)->flags |= RUBY_FL_OBJ_MOVED;
+}
+
+static void
+clear_object_hash_seen_and_moved(VALUE obj)
+{
+    RBASIC(obj)->flags &= ~(RUBY_FL_OBJ_HASH_SEEN | RUBY_FL_OBJ_MOVED);
+}
+
+VALUE
+rb_gc_impl_object_hash(void *objspace_ptr, VALUE obj)
+{
+    enum object_hash_state state = object_hash_state(obj);
+    rb_objspace_t *objspace = objspace_ptr;
+
+    switch (state) {
+        case OBJECT_HASH_STATE_UNSEEN:
+            set_object_hash_seen(obj);
+        case OBJECT_HASH_STATE_SEEN:
+            GC_ASSERT(object_hash_state(obj) == OBJECT_HASH_STATE_SEEN);
+        case OBJECT_HASH_STATE_MOVED:
+            GC_ASSERT(object_hash_state(obj) == OBJECT_HASH_STATE_MOVED);
+            return (VALUE)obj;
+        case OBJECT_HASH_STATE_SEEN_AND_MOVED: {
+            st_data_t val;
+            if (st_lookup(objspace->moved_obj_hash_tbl, (st_data_t)obj, &val)) {
+                return (VALUE)val;
+            }
+            else {
+                rb_bug("rb_gc_impl_object_hash: object has been seen and moved but not found in moved_obj_hash_tbl");
+            }
+        }
+        default:
+            rb_bug("rb_gc_impl_object_hash: invalid object hash state");
+    }
 }
 
 VALUE
@@ -7048,6 +7144,37 @@ gc_move(rb_objspace_t *objspace, VALUE src, VALUE dest, size_t src_slot_size, si
     GET_HEAP_PAGE(src)->heap->total_freed_objects++;
     GET_HEAP_PAGE(dest)->heap->total_allocated_objects++;
 
+    // Address based hashing:
+    //     if the object has had it's hash observed before being moved:
+    //       - Mark it as moved
+    //       - Link the new destination to the original hash
+    //     If the object has been moved before:
+    //       - look up the original hash using the old address
+    //       - map the new destination to the original hash
+    //     Otherwise:
+    //       - do nothing
+    DURING_GC_COULD_MALLOC_REGION_START();
+
+    switch (object_hash_state(dest)) {
+        case OBJECT_HASH_STATE_SEEN: {
+            st_insert(objspace->moved_obj_hash_tbl, (st_data_t)dest, (st_data_t)src);
+            set_object_hash_moved(dest);
+            break;
+        }
+        case OBJECT_HASH_STATE_SEEN_AND_MOVED: {
+            st_data_t original_hash;
+            if (st_lookup(objspace->moved_obj_hash_tbl, (st_data_t)src, &original_hash)) {
+                st_delete(objspace->moved_obj_hash_tbl, (st_data_t *)&src, NULL);
+                st_insert(objspace->moved_obj_hash_tbl, (st_data_t)dest, original_hash);
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+    DURING_GC_COULD_MALLOC_REGION_END();
+
     return src;
 }
 
@@ -8804,7 +8931,7 @@ gc_profile_dump_on(VALUE out, VALUE (*append)(VALUE, VALUE))
 #if GC_PROFILE_MORE_DETAIL
         const char *str = "\n\n" \
                                     "More detail.\n" \
-                                    "Prepare Time = Previously GC's rest sweep time\n"
+                                    "Prepare Time = Previously GC's rest sweep time\n" \
                                     "Index Flags          Allocate Inc.  Allocate Limit"
 #if CALC_EXACT_MALLOC_SIZE
                                     "  Allocated Size"
@@ -9458,6 +9585,7 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
     objspace->next_object_id = OBJ_ID_INITIAL;
     objspace->id_to_obj_tbl = st_init_table(&object_id_hash_type);
     objspace->obj_to_id_tbl = st_init_numtable();
+    objspace->moved_obj_hash_tbl = st_init_table(&object_address_hash_type);
 #if RGENGC_ESTIMATE_OLDMALLOC
     objspace->rgengc.oldmalloc_increase_limit = gc_params.oldmalloc_limit_min;
 #endif

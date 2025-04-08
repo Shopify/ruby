@@ -4292,6 +4292,12 @@ rb_f_loop_size(VALUE self, VALUE args, VALUE eobj)
  *
  */
 
+static VALUE
+rb_obj_new_hash(VALUE obj)
+{
+    return LONG2NUM(rb_gc_object_hash(obj));
+}
+
 void
 InitVM_Object(void)
 {
@@ -4312,6 +4318,8 @@ InitVM_Object(void)
     rb_define_method(rb_cBasicObject, "equal?", rb_obj_equal, 1);
     rb_define_method(rb_cBasicObject, "!", rb_obj_not, 0);
     rb_define_method(rb_cBasicObject, "!=", rb_obj_not_equal, 1);
+
+    rb_define_method(rb_cBasicObject, "new_hash", rb_obj_new_hash, 0);
 
     rb_define_private_method(rb_cBasicObject, "singleton_method_added", rb_obj_singleton_method_added, 1);
     rb_define_private_method(rb_cBasicObject, "singleton_method_removed", rb_obj_singleton_method_removed, 1);
