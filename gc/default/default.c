@@ -1568,7 +1568,7 @@ static const struct st_hash_type object_id_hash_type = {
 static const struct st_hash_type object_address_hash_type = {
     object_address_cmp,
     object_address_hash,
-};  
+};
 
 /* garbage objects will be collected soon. */
 bool
