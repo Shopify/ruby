@@ -68,7 +68,7 @@ rb_alloc_tmp_buffer_with_count(volatile VALUE *store, size_t size, size_t cnt)
      * get rid of potential memory leak */
     tmpbuf = rb_imemo_tmpbuf_new();
     *store = (VALUE)tmpbuf;
-    ptr = ruby_xmalloc(size);
+    ptr = ruby_xcalloc(size, sizeof(char));
     tmpbuf->ptr = ptr;
     tmpbuf->cnt = cnt;
 
