@@ -281,6 +281,8 @@ rb_mmtk_vm_live_bytes(void)
 
 static void set_object_has_finalizer(VALUE obj, bool has_finalizer);
 bool rb_gc_impl_has_finalizer(VALUE obj);
+bool rb_gc_impl_object_id_seen_p(VALUE obj);
+
 static void
 make_final_job(struct objspace *objspace, VALUE obj, VALUE table)
 {
@@ -288,12 +290,21 @@ make_final_job(struct objspace *objspace, VALUE obj, VALUE table)
     RUBY_ASSERT(mmtk_is_reachable((MMTk_ObjectReference)table));
     RUBY_ASSERT(RB_BUILTIN_TYPE(table) == T_ARRAY);
 
+    VALUE object_id;
+    st_data_t val;
+    if (rb_gc_impl_object_id_seen_p(obj) && 
+        st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, &val)) {
+        object_id = (VALUE)val;
+    } else {
+        object_id = rb_gc_impl_object_id(objspace, obj);
+    }
+
     set_object_has_finalizer(obj, false);
 
     struct MMTk_final_job *job = xmalloc(sizeof(struct MMTk_final_job));
     job->next = objspace->finalizer_jobs;
     job->kind = MMTK_FINAL_JOB_FINALIZE;
-    job->as.finalize.object_id = rb_obj_id((VALUE)obj);
+    job->as.finalize.object_id = object_id;
     job->as.finalize.finalizer_array = table;
 
     objspace->finalizer_jobs = job;
@@ -371,6 +382,7 @@ set_object_has_finalizer(VALUE obj, bool has_finalizer)
     else {
         struct object_metadata *metadata = xmalloc(sizeof(struct object_metadata));
         metadata->has_finalizer = has_finalizer ? 1 : 0;
+        metadata->seen_obj_id = 0; // Initialize the other fields
         st_insert(object_metadata_table, key, (st_data_t)metadata);
     }
 }
@@ -1070,8 +1082,12 @@ rb_gc_impl_define_finalizer(void *objspace_ptr, VALUE obj, VALUE block)
     struct objspace *objspace = objspace_ptr;
     VALUE table;
     st_data_t data;
+    VALUE result;
 
-    set_object_has_finalizer(obj, true);
+    int err;
+    if ((err = pthread_mutex_lock(&objspace->mutex)) != 0) {
+        rb_bug("ERROR: cannot lock objspace->mutex: %s", strerror(err));
+    }
 
     if (st_lookup(objspace->finalizer_table, obj, &data)) {
         table = (VALUE)data;
@@ -1084,7 +1100,8 @@ rb_gc_impl_define_finalizer(void *objspace_ptr, VALUE obj, VALUE block)
             for (i = 0; i < len; i++) {
                 VALUE recv = RARRAY_AREF(table, i);
                 if (rb_equal(recv, block)) {
-                    return recv;
+                    result = recv;
+                    goto done;
                 }
             }
         }
@@ -1097,17 +1114,34 @@ rb_gc_impl_define_finalizer(void *objspace_ptr, VALUE obj, VALUE block)
         st_add_direct(objspace->finalizer_table, obj, table);
     }
 
-    return block;
+    set_object_has_finalizer(obj, true);
+    result = block;
+
+done:
+    if ((err = pthread_mutex_unlock(&objspace->mutex)) != 0) {
+        rb_bug("ERROR: cannot release objspace->mutex: %s", strerror(err));
+    }
+
+    return result;
 }
 
 void
 rb_gc_impl_undefine_finalizer(void *objspace_ptr, VALUE obj)
 {
     struct objspace *objspace = objspace_ptr;
-
     st_data_t data = obj;
+    
+    int err;
+    if ((err = pthread_mutex_lock(&objspace->mutex)) != 0) {
+        rb_bug("ERROR: cannot lock objspace->mutex: %s", strerror(err));
+    }
+
     st_delete(objspace->finalizer_table, &data, 0);
     set_object_has_finalizer(obj, false);
+    
+    if ((err = pthread_mutex_unlock(&objspace->mutex)) != 0) {
+        rb_bug("ERROR: cannot release objspace->mutex: %s", strerror(err));
+    }
 }
 
 bool
@@ -1130,8 +1164,19 @@ rb_gc_impl_copy_finalizer(void *objspace_ptr, VALUE dest, VALUE obj)
     struct objspace *objspace = objspace_ptr;
     VALUE table;
     st_data_t data;
+    
+    int err;
+    if ((err = pthread_mutex_lock(&objspace->mutex)) != 0) {
+        rb_bug("ERROR: cannot lock objspace->mutex: %s", strerror(err));
+    }
 
-    if (!rb_gc_impl_has_finalizer(obj)) return;
+    bool has_finalizer = rb_gc_impl_has_finalizer(obj);
+    if (!has_finalizer) {
+        if ((err = pthread_mutex_unlock(&objspace->mutex)) != 0) {
+            rb_bug("ERROR: cannot release objspace->mutex: %s", strerror(err));
+        }
+        return;
+    }
 
     if (RB_LIKELY(st_lookup(objspace->finalizer_table, obj, &data))) {
         table = (VALUE)data;
@@ -1139,7 +1184,15 @@ rb_gc_impl_copy_finalizer(void *objspace_ptr, VALUE dest, VALUE obj)
         set_object_has_finalizer(dest, true);
     }
     else {
-        rb_bug("rb_gc_copy_finalizer: FL_FINALIZE set but not found in finalizer_table: %s", rb_obj_info(obj));
+        set_object_has_finalizer(obj, false);
+        if ((err = pthread_mutex_unlock(&objspace->mutex)) != 0) {
+            rb_bug("ERROR: cannot release objspace->mutex: %s", strerror(err));
+        }
+        return;
+    }
+
+    if ((err = pthread_mutex_unlock(&objspace->mutex)) != 0) {
+        rb_bug("ERROR: cannot release objspace->mutex: %s", strerror(err));
     }
 }
 
