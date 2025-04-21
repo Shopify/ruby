@@ -52,8 +52,9 @@ static ID id_t_object;
 
 enum shape_flags {
     SHAPE_FL_FROZEN = 1 << 0,
+    SHAPE_FL_HAS_OBJECT_ID = 1 << 1,
 
-    SHAPE_FL_NON_CANONICAL_MASK = SHAPE_FL_FROZEN,
+    SHAPE_FL_NON_CANONICAL_MASK = SHAPE_FL_FROZEN | SHAPE_FL_HAS_OBJECT_ID,
 };
 
 static redblack_node_t *
@@ -472,6 +473,9 @@ rb_shape_alloc_new_child(ID id, rb_shape_t *shape, enum shape_type shape_type)
     rb_shape_t *new_shape = rb_shape_alloc(id, shape, shape_type);
 
     switch (shape_type) {
+      case SHAPE_OBJ_ID:
+        new_shape->flags |= SHAPE_FL_HAS_OBJECT_ID;
+        // fallthrough
       case SHAPE_IVAR:
         if (UNLIKELY(shape->next_field_index >= shape->capacity)) {
             RUBY_ASSERT(shape->next_field_index == shape->capacity);
@@ -711,6 +715,45 @@ rb_shape_transition_shape_frozen(VALUE obj)
     return next_shape;
 }
 
+bool
+rb_shape_has_object_id(rb_shape_t *shape)
+{
+    return shape->flags & SHAPE_FL_HAS_OBJECT_ID;
+}
+
+attr_index_t
+rb_shape_object_id_index(rb_shape_t *shape)
+{
+    RUBY_ASSERT(shape->flags & SHAPE_FL_HAS_OBJECT_ID);
+    while (shape->type != SHAPE_OBJ_ID) {
+        shape = rb_shape_get_parent(shape);
+    }
+    return shape->next_field_index - 1;
+}
+
+rb_shape_t *
+rb_shape_object_id_shape(VALUE obj)
+{
+    rb_shape_t* shape = rb_shape_get_shape(obj);
+    RUBY_ASSERT(shape);
+
+    if (rb_shape_obj_too_complex(obj)) {
+        return shape;
+    }
+
+    if (shape->flags & SHAPE_FL_HAS_OBJECT_ID) {
+        while (shape->type != SHAPE_OBJ_ID) {
+            shape = rb_shape_get_parent(shape);
+        }
+        return shape;
+    }
+
+    bool dont_care;
+    rb_shape_t* next_shape = get_next_shape_internal(shape, (ID)internal_object_id, SHAPE_OBJ_ID, &dont_care, true);
+    RUBY_ASSERT(next_shape);
+    return next_shape;
+}
+
 /*
  * This function is used for assertions where we don't want to increment
  * max_iv_count
@@ -859,6 +902,7 @@ shape_get_iv_index(rb_shape_t *shape, ID id, attr_index_t *value)
               case SHAPE_T_OBJECT:
                 return false;
               case SHAPE_OBJ_TOO_COMPLEX:
+              case SHAPE_OBJ_ID:
               case SHAPE_FROZEN:
                 rb_bug("Ivar should not exist on transition");
             }
@@ -943,6 +987,7 @@ rb_shape_traverse_from_new_root(rb_shape_t *initial_shape, rb_shape_t *dest_shap
 
     switch ((enum shape_type)dest_shape->type) {
       case SHAPE_IVAR:
+      case SHAPE_OBJ_ID:
       case SHAPE_FROZEN:
         if (!next_shape->edges) {
             return NULL;
@@ -980,7 +1025,7 @@ rb_shape_traverse_from_new_root(rb_shape_t *initial_shape, rb_shape_t *dest_shap
 
 // Rebuild a similar shape with the same ivars but starting from
 // a different SHAPE_T_OBJECT, and don't cary over non-canonical transitions
-// such as SHAPE_FROZEN.
+// such as SHAPE_FROZEN or SHAPE_OBJ_ID.
 rb_shape_t *
 rb_shape_rebuild_shape(rb_shape_t *initial_shape, rb_shape_t *dest_shape)
 {
@@ -1005,6 +1050,7 @@ rb_shape_rebuild_shape(rb_shape_t *initial_shape, rb_shape_t *dest_shape)
       case SHAPE_IVAR:
         midway_shape = rb_shape_get_next_iv_shape(midway_shape, dest_shape->edge_name);
         break;
+      case SHAPE_OBJ_ID:
       case SHAPE_ROOT:
       case SHAPE_FROZEN:
       case SHAPE_T_OBJECT:
@@ -1268,6 +1314,7 @@ Init_default_shapes(void)
 
     id_frozen = rb_make_internal_id();
     id_t_object = rb_make_internal_id();
+    internal_object_id = rb_make_internal_id();
 
 #ifdef HAVE_MMAP
     size_t shape_cache_mmap_size = rb_size_mul_or_raise(REDBLACK_CACHE_SIZE, sizeof(redblack_node_t), rb_eRuntimeError);

@@ -50,6 +50,9 @@ int rb_gen_fields_tbl_get(VALUE obj, ID id, struct gen_fields_tbl **fields_tbl);
 void rb_obj_copy_ivs_to_hash_table(VALUE obj, st_table *table);
 void rb_obj_convert_to_too_complex(VALUE obj, st_table *table);
 void rb_evict_ivars_to_hash(VALUE obj);
+VALUE rb_ivar_at(VALUE obj, rb_shape_t *target_shape);
+void rb_ivar_set_internal(VALUE obj, ID id, VALUE val);
+void rb_ivar_set_at_internal(VALUE obj, rb_shape_t *target_shape, VALUE val);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* variable.c (export) */

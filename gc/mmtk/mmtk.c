@@ -25,7 +25,6 @@ struct objspace {
     size_t total_allocated_objects;
 
     st_table *id_to_obj_tbl;
-    st_table *obj_to_id_tbl;
     unsigned long long next_object_id;
 
     st_table *finalizer_table;
@@ -227,8 +226,6 @@ rb_mmtk_scan_objspace(void)
         st_foreach(objspace->finalizer_table, pin_value, (st_data_t)objspace);
     }
 
-    st_foreach(objspace->obj_to_id_tbl, gc_mark_tbl_no_pin_i, (st_data_t)objspace);
-
     struct MMTk_final_job *job = objspace->finalizer_jobs;
     while (job != NULL) {
         switch (job->kind) {
@@ -337,18 +334,6 @@ rb_mmtk_update_table_i(VALUE val, void *data)
 }
 
 static int
-rb_mmtk_update_obj_id_tables_obj_to_id_i(st_data_t key, st_data_t val, st_data_t data)
-{
-    RUBY_ASSERT(RB_FL_TEST(key, FL_SEEN_OBJ_ID));
-
-    if (!mmtk_is_reachable((MMTk_ObjectReference)key)) {
-        return ST_DELETE;
-    }
-
-    return ST_CONTINUE;
-}
-
-static int
 rb_mmtk_update_obj_id_tables_id_to_obj_i(st_data_t key, st_data_t val, st_data_t data)
 {
     RUBY_ASSERT(RB_FL_TEST(val, FL_SEEN_OBJ_ID));
@@ -365,7 +350,6 @@ rb_mmtk_update_obj_id_tables(void)
 {
     struct objspace *objspace = rb_gc_get_objspace();
 
-    st_foreach(objspace->obj_to_id_tbl, rb_mmtk_update_obj_id_tables_obj_to_id_i, 0);
     if (objspace->id_to_obj_tbl) {
         st_foreach(objspace->id_to_obj_tbl, rb_mmtk_update_obj_id_tables_id_to_obj_i, 0);
     }
@@ -1099,7 +1083,6 @@ static void
 objspace_obj_id_init(struct objspace *objspace)
 {
     objspace->id_to_obj_tbl = NULL;
-    objspace->obj_to_id_tbl = st_init_numtable();
     objspace->next_object_id = OBJ_ID_INITIAL;
 }
 
@@ -1109,39 +1092,64 @@ rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
     VALUE id;
     struct objspace *objspace = objspace_ptr;
 
-    unsigned int lev = rb_gc_vm_lock();
-    if (FL_TEST(obj, FL_SEEN_OBJ_ID)) {
-        st_data_t val;
-        if (st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, &val)) {
-            id = (VALUE)val;
+    rb_shape_t *shape = rb_shape_get_shape(obj);
+    unsigned int lock_lev;
+
+    if (shape->type == SHAPE_OBJ_TOO_COMPLEX) {
+        // we could not lock if the object isn't shareable, but may not be worth the effort
+        lock_lev = rb_gc_vm_lock();
+        id = rb_attr_get(obj, internal_object_id);
+        if (NIL_P(id)) {
+            id = ULL2NUM(objspace->next_object_id);
+            objspace->next_object_id += OBJ_ID_INCREMENT;
+            rb_ivar_set_internal(obj, internal_object_id, id);
+            if (RB_UNLIKELY(objspace->id_to_obj_tbl)) {
+                st_insert(objspace->id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
+            }
+            FL_SET_RAW(obj, FL_SEEN_OBJ_ID);
         }
-        else {
-            rb_bug("rb_gc_impl_object_id: FL_SEEN_OBJ_ID flag set but not found in table");
-        }
+
+        rb_gc_vm_unlock(lock_lev);
+        return id;
+    }
+
+    if (rb_shape_has_object_id(shape)) {
+        rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
+        return rb_ivar_at(obj, object_id_shape);
     }
     else {
-        RUBY_ASSERT(!st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, NULL));
+        // We could avoid locking if the object isn't shareable
+        // but we'll lock anyway to lookup the next shape, and
+        // we'd at least need to generate the object_id using atomics.
+        lock_lev = rb_gc_vm_lock();
 
         id = ULL2NUM(objspace->next_object_id);
         objspace->next_object_id += OBJ_ID_INCREMENT;
 
-        st_insert(objspace->obj_to_id_tbl, (st_data_t)obj, (st_data_t)id);
+        rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
+        if (object_id_shape->type == SHAPE_OBJ_TOO_COMPLEX) {
+            rb_evict_ivars_to_hash(obj);
+            rb_ivar_set_internal(obj, internal_object_id, id);
+        } else {
+            rb_ivar_set_at_internal(obj, object_id_shape, id);
+        }
         if (RB_UNLIKELY(objspace->id_to_obj_tbl)) {
             st_insert(objspace->id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
         }
-        FL_SET(obj, FL_SEEN_OBJ_ID);
-    }
-    rb_gc_vm_unlock(lev);
+        FL_SET_RAW(obj, FL_SEEN_OBJ_ID);
 
-    return id;
+        rb_gc_vm_unlock(lock_lev);
+        return id;
+    }
 }
 
-static int
-build_id_to_obj_i(st_data_t key, st_data_t value, st_data_t data)
+static void
+build_id_to_obj_i(VALUE obj, void *data)
 {
     st_table *id_to_obj_tbl = (st_table *)data;
-    st_insert(id_to_obj_tbl, value, key);
-    return ST_CONTINUE;
+    if (FL_TEST_RAW(obj, FL_SEEN_OBJ_ID)) {
+        st_insert(id_to_obj_tbl, rb_obj_id(obj), obj);
+    }
 }
 
 VALUE
@@ -1149,12 +1157,13 @@ rb_gc_impl_object_id_to_ref(void *objspace_ptr, VALUE object_id)
 {
     struct objspace *objspace = objspace_ptr;
 
-
     unsigned int lev = rb_gc_vm_lock();
 
     if (!objspace->id_to_obj_tbl) {
-        objspace->id_to_obj_tbl = st_init_table_with_size(&object_id_hash_type, st_table_size(objspace->obj_to_id_tbl));
-        st_foreach(objspace->obj_to_id_tbl, build_id_to_obj_i, (st_data_t)objspace->id_to_obj_tbl);
+        rb_gc_vm_barrier(); // stop other ractors
+
+        objspace->id_to_obj_tbl = st_init_table(&object_id_hash_type);
+        rb_gc_impl_each_object(objspace, build_id_to_obj_i, (void *)objspace->id_to_obj_tbl);
     }
 
     VALUE obj;
