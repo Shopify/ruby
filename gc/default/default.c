@@ -1589,8 +1589,14 @@ rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
     }
 
     if (rb_shape_has_object_id(shape)) {
+        // We could avoid locking if the object isn't shareable
+        lock_lev = rb_gc_vm_lock();
+
         rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
-        return rb_ivar_at(obj, object_id_shape);
+        id = rb_ivar_at(obj, object_id_shape);
+
+        rb_gc_vm_unlock(lock_lev);
+        return id;
     }
     else {
         // We could avoid locking if the object isn't shareable
