@@ -2301,23 +2301,31 @@ rb_ivar_count(VALUE obj)
 {
     if (SPECIAL_CONST_P(obj)) return 0;
 
+    st_index_t iv_count = 0;
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-        return ROBJECT_FIELDS_COUNT(obj);
+        iv_count = ROBJECT_FIELDS_COUNT(obj);
+        break;
       case T_CLASS:
       case T_MODULE:
-        return RCLASS_FIELDS_COUNT(obj);
+        iv_count = RCLASS_FIELDS_COUNT(obj);
+        break;
       default:
         if (FL_TEST(obj, FL_EXIVAR)) {
             struct gen_fields_tbl *fields_tbl;
 
             if (rb_gen_fields_tbl_get(obj, 0, &fields_tbl)) {
-                return gen_fields_tbl_count(obj, fields_tbl);
+                iv_count = gen_fields_tbl_count(obj, fields_tbl);
             }
         }
         break;
     }
-    return 0;
+
+    if (FL_TEST_RAW(obj, FL_SEEN_OBJ_ID)) {
+        iv_count--;
+    }
+
+    return iv_count;
 }
 
 static int
