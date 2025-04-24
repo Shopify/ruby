@@ -652,6 +652,7 @@ pub struct rb_shape {
     pub capacity: u32,
     pub type_: u8,
     pub heap_index: u8,
+    pub flags: u8,
     pub parent_id: shape_id_t,
     pub ancestor_index: *mut redblack_node_t,
 }
