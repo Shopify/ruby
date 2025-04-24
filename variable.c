@@ -2084,13 +2084,15 @@ iterate_over_shapes_with_callback(rb_shape_t *shape, rb_ivar_foreach_callback_fu
 {
     switch ((enum shape_type)shape->type) {
       case SHAPE_ROOT:
-      case SHAPE_OBJ_ID:
       case SHAPE_T_OBJECT:
         return false;
+      case SHAPE_OBJ_ID:
+        return iterate_over_shapes_with_callback(rb_shape_get_parent(shape), callback, itr_data);
       case SHAPE_IVAR:
         ASSUME(callback);
         if (iterate_over_shapes_with_callback(rb_shape_get_parent(shape), callback, itr_data))
             return true;
+
         VALUE * iv_list;
         switch (BUILTIN_TYPE(itr_data->obj)) {
           case T_OBJECT:
