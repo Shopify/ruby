@@ -24,9 +24,6 @@ struct objspace {
     size_t total_gc_time;
     size_t total_allocated_objects;
 
-    st_table *id_to_obj_tbl;
-    unsigned long long next_object_id;
-
     st_table *finalizer_table;
     struct MMTk_final_job *finalizer_jobs;
     rb_postponed_job_handle_t finalizer_postponed_job;
@@ -334,28 +331,6 @@ rb_mmtk_update_table_i(VALUE val, void *data)
 }
 
 static int
-rb_mmtk_update_obj_id_tables_id_to_obj_i(st_data_t key, st_data_t val, st_data_t data)
-{
-    RUBY_ASSERT(RB_FL_TEST(val, FL_SEEN_OBJ_ID));
-
-    if (!mmtk_is_reachable((MMTk_ObjectReference)val)) {
-        return ST_DELETE;
-    }
-
-    return ST_CONTINUE;
-}
-
-static void
-rb_mmtk_update_obj_id_tables(void)
-{
-    struct objspace *objspace = rb_gc_get_objspace();
-
-    if (objspace->id_to_obj_tbl) {
-        st_foreach(objspace->id_to_obj_tbl, rb_mmtk_update_obj_id_tables_id_to_obj_i, 0);
-    }
-}
-
-static int
 rb_mmtk_global_tables_count(void)
 {
     return RB_GC_VM_WEAK_TABLE_COUNT;
@@ -387,7 +362,6 @@ MMTk_RubyUpcalls ruby_upcalls = {
     rb_mmtk_update_global_tables,
     rb_mmtk_global_tables_count,
     rb_mmtk_update_finalizer_table,
-    rb_mmtk_update_obj_id_tables,
 };
 
 // Use max 80% of the available memory by default for MMTk
@@ -416,7 +390,6 @@ rb_gc_impl_objspace_alloc(void)
     return calloc(1, sizeof(struct objspace));
 }
 
-static void objspace_obj_id_init(struct objspace *objspace);
 static void gc_run_finalizers(void *data);
 
 void
@@ -425,8 +398,6 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
     struct objspace *objspace = objspace_ptr;
 
     objspace->measure_gc_time = true;
-
-    objspace_obj_id_init(objspace);
 
     objspace->finalizer_table = st_init_numtable();
     objspace->finalizer_postponed_job = rb_postponed_job_preregister(0, gc_run_finalizers, objspace);
@@ -1051,136 +1022,6 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
     mmtk_free_raw_vec_of_obj_ref(registered_candidates);
 
     gc_run_finalizers(objspace);
-}
-
-// Object ID
-static int
-object_id_cmp(st_data_t x, st_data_t y)
-{
-    if (RB_TYPE_P(x, T_BIGNUM)) {
-        return !rb_big_eql(x, y);
-    }
-    else {
-        return x != y;
-    }
-}
-
-static st_index_t
-object_id_hash(st_data_t n)
-{
-    return FIX2LONG(rb_hash((VALUE)n));
-}
-
-#define OBJ_ID_INCREMENT (RUBY_IMMEDIATE_MASK + 1)
-#define OBJ_ID_INITIAL (OBJ_ID_INCREMENT)
-
-static const struct st_hash_type object_id_hash_type = {
-    object_id_cmp,
-    object_id_hash,
-};
-
-static void
-objspace_obj_id_init(struct objspace *objspace)
-{
-    objspace->id_to_obj_tbl = NULL;
-    objspace->next_object_id = OBJ_ID_INITIAL;
-}
-
-VALUE
-rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
-{
-    VALUE id;
-    struct objspace *objspace = objspace_ptr;
-
-    rb_shape_t *shape = rb_shape_get_shape(obj);
-    unsigned int lock_lev;
-
-    if (shape->type == SHAPE_OBJ_TOO_COMPLEX) {
-        // we could not lock if the object isn't shareable, but may not be worth the effort
-        lock_lev = rb_gc_vm_lock();
-        id = rb_attr_get(obj, internal_object_id);
-        if (NIL_P(id)) {
-            id = ULL2NUM(objspace->next_object_id);
-            objspace->next_object_id += OBJ_ID_INCREMENT;
-            rb_ivar_set_internal(obj, internal_object_id, id);
-            if (RB_UNLIKELY(objspace->id_to_obj_tbl)) {
-                st_insert(objspace->id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
-            }
-            FL_SET_RAW(obj, FL_SEEN_OBJ_ID);
-        }
-
-        rb_gc_vm_unlock(lock_lev);
-        return id;
-    }
-
-    if (rb_shape_has_object_id(shape)) {
-        rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
-        return rb_ivar_at(obj, object_id_shape);
-    }
-    else {
-        // We could avoid locking if the object isn't shareable
-        // but we'll lock anyway to lookup the next shape, and
-        // we'd at least need to generate the object_id using atomics.
-        lock_lev = rb_gc_vm_lock();
-
-        id = ULL2NUM(objspace->next_object_id);
-        objspace->next_object_id += OBJ_ID_INCREMENT;
-
-        rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
-        if (object_id_shape->type == SHAPE_OBJ_TOO_COMPLEX) {
-            rb_evict_ivars_to_hash(obj);
-            rb_ivar_set_internal(obj, internal_object_id, id);
-        } else {
-            rb_ivar_set_at_internal(obj, object_id_shape, id);
-        }
-        if (RB_UNLIKELY(objspace->id_to_obj_tbl)) {
-            st_insert(objspace->id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
-        }
-        FL_SET_RAW(obj, FL_SEEN_OBJ_ID);
-
-        rb_gc_vm_unlock(lock_lev);
-        return id;
-    }
-}
-
-static void
-build_id_to_obj_i(VALUE obj, void *data)
-{
-    st_table *id_to_obj_tbl = (st_table *)data;
-    if (FL_TEST_RAW(obj, FL_SEEN_OBJ_ID)) {
-        st_insert(id_to_obj_tbl, rb_obj_id(obj), obj);
-    }
-}
-
-VALUE
-rb_gc_impl_object_id_to_ref(void *objspace_ptr, VALUE object_id)
-{
-    struct objspace *objspace = objspace_ptr;
-
-    unsigned int lev = rb_gc_vm_lock();
-
-    if (!objspace->id_to_obj_tbl) {
-        rb_gc_vm_barrier(); // stop other ractors
-
-        objspace->id_to_obj_tbl = st_init_table(&object_id_hash_type);
-        rb_gc_impl_each_object(objspace, build_id_to_obj_i, (void *)objspace->id_to_obj_tbl);
-    }
-
-    VALUE obj;
-    bool found = st_lookup(objspace->id_to_obj_tbl, object_id, &obj) && !rb_gc_impl_garbage_object_p(objspace, obj);
-
-    rb_gc_vm_unlock(lev);
-
-    if (found) {
-        return obj;
-    }
-
-    if (rb_funcall(object_id, rb_intern(">="), 1, ULL2NUM(objspace->next_object_id))) {
-        rb_raise(rb_eRangeError, "%+"PRIsVALUE" is not an id value", rb_funcall(object_id, rb_intern("to_s"), 1, INT2FIX(10)));
-    }
-    else {
-        rb_raise(rb_eRangeError, "%+"PRIsVALUE" is a recycled object", rb_funcall(object_id, rb_intern("to_s"), 1, INT2FIX(10)));
-    }
 }
 
 // Forking
