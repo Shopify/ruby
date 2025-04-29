@@ -72,6 +72,8 @@ struct rb_execarg {
     VALUE env_modification; /* Qfalse or [[k1,v1], ...] */
     VALUE path_env;
     VALUE chdir_dir;
+    VALUE argv;
+    int argc;
 };
 
 /* process.c */

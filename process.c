@@ -1728,6 +1728,8 @@ mark_exec_arg(void *ptr)
     rb_gc_mark(eargp->env_modification);
     rb_gc_mark(eargp->path_env);
     rb_gc_mark(eargp->chdir_dir);
+    rb_gc_mark(eargp->argv);
+    rb_gc_mark(eargp->argc);
 }
 
 static size_t
@@ -2653,12 +2655,8 @@ rb_execarg_init(int argc, const VALUE *orig_argv, int accept_shell, VALUE execar
     struct rb_execarg *eargp = rb_execarg_get(execarg_obj);
     VALUE prog, ret;
     VALUE env = Qnil, opthash = Qnil;
-    VALUE argv_buf;
-    VALUE *argv = ALLOCV_N(VALUE, argv_buf, argc);
-    MEMCPY(argv, orig_argv, VALUE, argc);
-    prog = rb_exec_getargs(&argc, &argv, accept_shell, &env, &opthash);
-    rb_exec_fillarg(prog, argc, argv, env, opthash, execarg_obj);
-    ALLOCV_END(argv_buf);
+    prog = rb_exec_getargs(&argc, (VALUE **)&orig_argv, accept_shell, &env, &opthash);
+    rb_exec_fillarg(prog, argc, (VALUE *)orig_argv, env, opthash, execarg_obj);
     ret = eargp->use_shell ? eargp->invoke.sh.shell_script : eargp->invoke.cmd.command_name;
     RB_GC_GUARD(execarg_obj);
     return ret;
@@ -2669,7 +2667,13 @@ rb_execarg_new(int argc, const VALUE *argv, int accept_shell, int allow_exc_opt)
 {
     VALUE execarg_obj;
     struct rb_execarg *eargp;
+
+    eargp = malloc(sizeof(struct rb_execarg));
+    eargp->argv = (VALUE)argv;
+    eargp->argc = argc;
+
     execarg_obj = TypedData_Make_Struct(0, struct rb_execarg, &exec_arg_data_type, eargp);
+
     rb_execarg_init(argc, argv, accept_shell, execarg_obj);
     if (!allow_exc_opt && eargp->exception_given) {
         rb_raise(rb_eArgError, "exception option is not allowed");
