@@ -253,6 +253,8 @@ size_t rb_obj_memsize_of(VALUE);
 struct rb_gc_object_metadata_entry *rb_gc_object_metadata(VALUE obj);
 void rb_gc_mark_values(long n, const VALUE *values);
 void rb_gc_mark_vm_stack_values(long n, const VALUE *values);
+void rb_gc_mark_machine_context(const rb_execution_context_t *ec);
+void rb_gc_mark_fiber_stack(void *stack_start, void *stack_end);
 void rb_gc_update_values(long n, VALUE *values);
 void *ruby_sized_xrealloc(void *ptr, size_t new_size, size_t old_size) RUBY_ATTR_RETURNS_NONNULL RUBY_ATTR_ALLOC_SIZE((2));
 void *ruby_sized_xrealloc2(void *ptr, size_t new_count, size_t element_size, size_t old_count) RUBY_ATTR_RETURNS_NONNULL RUBY_ATTR_ALLOC_SIZE((2, 3));

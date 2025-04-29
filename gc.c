@@ -2551,6 +2551,16 @@ rb_gc_mark_machine_context(const rb_execution_context_t *ec)
     each_location((VALUE*)&ec->machine.regs, num_regs, gc_mark_machine_stack_location_maybe, data);
 }
 
+void
+rb_gc_mark_fiber_stack(void *stack_start, void *stack_end)
+{
+    RUBY_DEBUG_LOG("fiber stack_start:%p stack_end:%p", stack_start, stack_end);
+
+    if (stack_start && stack_end && stack_start != stack_end) {
+        each_location_ptr((VALUE*)stack_start, (VALUE*)stack_end, gc_mark_maybe_each_location, NULL);
+    }
+}
+
 static int
 rb_mark_tbl_i(st_data_t key, st_data_t value, st_data_t data)
 {

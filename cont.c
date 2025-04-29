@@ -222,6 +222,9 @@ typedef struct rb_context_struct {
         VALUE *stack;
         VALUE *stack_src;
         size_t stack_size;
+        void *coroutine_stack_start;
+        void *coroutine_stack_end;
+        int has_valid_stack_bounds;
     } machine;
     rb_execution_context_t saved_ec;
     rb_jmpbuf_t jmpbuf;
@@ -870,6 +873,8 @@ fiber_entry(struct coroutine_context * from, struct coroutine_context * to)
 static VALUE *
 fiber_initialize_coroutine(rb_fiber_t *fiber, size_t * vm_stack_size)
 {
+    fiber->cont.machine.has_valid_stack_bounds = 0;
+
     struct fiber_pool * fiber_pool = fiber->stack.pool;
     rb_execution_context_t *sec = &fiber->cont.saved_ec;
     void * vm_stack = NULL;
@@ -902,6 +907,7 @@ fiber_stack_release(rb_fiber_t * fiber)
 
     // Return the stack back to the fiber pool if it wasn't already:
     if (fiber->stack.base) {
+        fiber->cont.machine.has_valid_stack_bounds = 0;
         fiber_pool_stack_release(&fiber->stack);
         fiber->stack.base = NULL;
     }
@@ -1037,9 +1043,15 @@ cont_mark(void *ptr)
             rb_gc_mark_locations(cont->machine.stack,
                                  cont->machine.stack + cont->machine.stack_size);
         }
-        else {
-            /* fiber machine context is marked as part of rb_execution_context_mark, no need to
-             * do anything here. */
+        else if (cont->machine.has_valid_stack_bounds) {
+            /* For fibers, we need to mark the coroutine stack if it exists.
+             * The current fiber's stack is marked by rb_gc_mark_machine_context,
+             * but paused fibers need special handling for their coroutine stacks. */
+
+            /* We use rb_gc_mark_fiber_stack (defined in gc.c) to mark
+             * Ruby VALUEs that might be on the native stack of the
+             * paused coroutine. */
+            rb_gc_mark_fiber_stack(cont->machine.coroutine_stack_start, cont->machine.coroutine_stack_end);
         }
     }
 
@@ -1590,6 +1602,21 @@ static void
 fiber_setcontext(rb_fiber_t *new_fiber, rb_fiber_t *old_fiber)
 {
     rb_thread_t *th = GET_THREAD();
+
+    /* Before we switch, capture the old fiber's coroutine stack bounds.
+     * This enables the GC to properly mark Ruby objects in the coroutine stack
+     * even when the fiber is paused. */
+#if defined(COROUTINE_SANITIZE_ADDRESS)
+    /* ASAN mode has stack_base and stack_size fields */
+    old_fiber->cont.machine.coroutine_stack_start = old_fiber->context.stack_base;
+    old_fiber->cont.machine.coroutine_stack_end = (char*)old_fiber->context.stack_base + old_fiber->context.stack_size;
+    old_fiber->cont.machine.has_valid_stack_bounds = old_fiber->context.stack_base != NULL;
+#else
+    /* In non-ASAN mode, use the stack information we already have */
+    old_fiber->cont.machine.coroutine_stack_start = old_fiber->stack.base;
+    old_fiber->cont.machine.coroutine_stack_end = (char*)old_fiber->stack.base + old_fiber->stack.size;
+    old_fiber->cont.machine.has_valid_stack_bounds = old_fiber->stack.base != NULL;
+#endif
 
     /* save old_fiber's machine stack - to ensure efficient garbage collection */
     if (!FIBER_TERMINATED_P(old_fiber)) {
