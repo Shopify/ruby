@@ -3664,6 +3664,70 @@ vm_weak_table_gen_fields_foreach_too_complex_replace_i(st_data_t *_key, st_data_
 struct st_table *rb_generic_fields_tbl_get(void);
 
 static int
+vm_weak_table_id_to_obj_foreach(st_data_t key, st_data_t value, st_data_t data)
+{
+    struct global_vm_table_foreach_data *iter_data = (struct global_vm_table_foreach_data *)data;
+
+    int ret = iter_data->callback((VALUE)value, iter_data->data);
+
+    switch (ret) {
+      case ST_CONTINUE:
+        return ret;
+
+      case ST_DELETE:
+        GC_ASSERT(FL_TEST_RAW((VALUE)value, FL_SEEN_OBJ_ID));
+        FL_UNSET((VALUE)value, FL_SEEN_OBJ_ID);
+        return ST_DELETE;
+
+      case ST_REPLACE: {
+        VALUE new_value = (VALUE)value;
+        ret = iter_data->update_callback(&new_value, iter_data->data);
+        if (value != new_value) {
+            st_insert(id_to_obj_tbl, key, (st_data_t)new_value);
+        }
+        return ST_CONTINUE;
+      }
+    }
+
+    return ret;
+}
+
+static int
+vm_weak_table_id_to_obj_keys_foreach(st_data_t key, st_data_t value, st_data_t data)
+{
+    struct global_vm_table_foreach_data *iter_data = (struct global_vm_table_foreach_data *)data;
+
+    if (LIKELY(FIXNUM_P((VALUE)key))) {
+        return ST_CONTINUE;
+    }
+
+    int ret = iter_data->callback((VALUE)key, iter_data->data);
+
+    switch (ret) {
+      case ST_CONTINUE:
+        return ret;
+
+      case ST_DELETE:
+        return ST_DELETE;
+
+      case ST_REPLACE: {
+          VALUE new_key = (VALUE)key;
+          ret = iter_data->update_callback(&new_key, iter_data->data);
+          if (key != new_key) ret = ST_DELETE;
+          DURING_GC_COULD_MALLOC_REGION_START();
+          {
+              st_insert(id_to_obj_tbl, (st_data_t)new_key, value);
+          }
+          DURING_GC_COULD_MALLOC_REGION_END();
+          key = (st_data_t)new_key;
+          break;
+      }
+    }
+
+    return ret;
+}
+
+static int
 vm_weak_table_gen_fields_foreach(st_data_t key, st_data_t value, st_data_t data)
 {
     struct global_vm_table_foreach_data *iter_data = (struct global_vm_table_foreach_data *)data;
@@ -3790,6 +3854,26 @@ rb_gc_vm_weak_table_foreach(vm_table_foreach_callback_func callback,
         }
         break;
       }
+      case RB_GC_VM_ID_TO_OBJ_TABLE: {
+        if (id_to_obj_tbl) {
+            st_foreach(
+                id_to_obj_tbl,
+                vm_weak_table_id_to_obj_foreach,
+                (st_data_t)&foreach_data
+            );
+        }
+        break;
+      }
+      case RB_GC_VM_ID_TO_OBJ_TABLE_KEYS: {
+        if (id_to_obj_tbl && !RB_POSFIXABLE(next_object_id)) {
+            st_foreach(
+                id_to_obj_tbl,
+                vm_weak_table_id_to_obj_keys_foreach,
+                (st_data_t)&foreach_data
+            );
+        }
+        break;
+      }
       case RB_GC_VM_GENERIC_FIELDS_TABLE: {
         st_table *generic_fields_tbl = rb_generic_fields_tbl_get();
         if (generic_fields_tbl) {
@@ -3809,8 +3893,8 @@ rb_gc_vm_weak_table_foreach(vm_table_foreach_callback_func callback,
         );
         break;
       }
-      default:
-        rb_bug("rb_gc_vm_weak_table_foreach: unknown table %d", table);
+      case RB_GC_VM_WEAK_TABLE_COUNT:
+        rb_bug("Unreacheable");
     }
 }
 

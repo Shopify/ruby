@@ -1314,6 +1314,7 @@ rb_ivar_at(VALUE obj, rb_shape_t *target_shape)
         RUBY_ASSERT(FL_TEST_RAW(obj, FL_EXIVAR));
         struct gen_fields_tbl *fields_tbl;
         rb_ivar_generic_fields_tbl_lookup(obj, &fields_tbl);
+        RUBY_ASSERT(fields_tbl);
         return fields_tbl->as.shape.fields[attr_index];
     }
 }
