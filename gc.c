@@ -1887,7 +1887,7 @@ object_id(VALUE obj)
 
         rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
         if (object_id_shape->type == SHAPE_OBJ_TOO_COMPLEX) {
-            rb_evict_ivars_to_hash(obj);
+            rb_evict_fields_to_hash(obj);
             rb_ivar_set_internal(obj, internal_object_id, id);
         } else {
             rb_obj_field_set(obj, object_id_shape, id);

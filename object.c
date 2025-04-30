@@ -334,7 +334,7 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
     if (rb_shape_obj_too_complex(obj)) {
         // obj is TOO_COMPLEX so we can copy its iv_hash
         st_table *table = st_copy(ROBJECT_FIELDS_HASH(obj));
-        rb_obj_convert_to_too_complex(dest, table);
+        rb_obj_init_too_complex(dest, table);
 
         return;
     }
@@ -365,7 +365,7 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
         if (UNLIKELY(rb_shape_id(shape_to_set_on_dest) == OBJ_TOO_COMPLEX_SHAPE_ID)) {
             st_table * table = rb_st_init_numtable_with_size(src_num_ivs);
             rb_obj_copy_ivs_to_hash_table(obj, table);
-            rb_obj_convert_to_too_complex(dest, table);
+            rb_obj_init_too_complex(dest, table);
 
             return;
         }
