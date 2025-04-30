@@ -1507,9 +1507,10 @@ rb_attr_delete(VALUE obj, ID id)
 }
 
 static void
-obj_transition_too_complex(VALUE obj, shape_id_t shape_id, st_table *table)
+obj_transition_too_complex(VALUE obj, st_table *table)
 {
     RUBY_ASSERT(!rb_shape_obj_too_complex(obj));
+    shape_id_t shape_id = rb_shape_id(rb_shape_transition_shape_too_complex(obj));
 
     VALUE *old_fields = NULL;
 
@@ -1572,7 +1573,7 @@ rb_obj_init_too_complex(VALUE obj, st_table *table)
     RUBY_ASSERT(rb_shape_canonical_p(rb_shape_get_shape(obj)));
     RUBY_ASSERT(rb_shape_get_shape(obj)->next_field_index == 0);
 
-    obj_transition_too_complex(obj, OBJ_TOO_COMPLEX_SHAPE_ID, table);
+    obj_transition_too_complex(obj, table);
 }
 
 // Copy all object fields, including ivars and internal object_id, etc
@@ -1591,7 +1592,7 @@ rb_evict_fields_to_hash(VALUE obj)
     if (rb_shape_has_object_id(shape)) {
         st_insert(table, internal_object_id, rb_obj_id(obj));
     }
-    obj_transition_too_complex(obj, OBJ_TOO_COMPLEX_SHAPE_ID, table);
+    obj_transition_too_complex(obj, table);
 
     RUBY_ASSERT(rb_shape_obj_too_complex(obj));
 }
@@ -1609,7 +1610,7 @@ rb_evict_ivars_to_hash(VALUE obj)
     if (rb_shape_has_object_id(shape)) {
         st_insert(table, internal_object_id, rb_obj_id(obj));
     }
-    obj_transition_too_complex(obj, OBJ_TOO_COMPLEX_SHAPE_ID, table);
+    obj_transition_too_complex(obj, table);
 
     RUBY_ASSERT(rb_shape_obj_too_complex(obj));
 }

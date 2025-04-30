@@ -33,11 +33,11 @@ typedef uint32_t redblack_id_t;
 # define SHAPE_MAX_VARIATIONS 8
 
 # define INVALID_SHAPE_ID SHAPE_MASK
-# define ROOT_SHAPE_ID 0x0
 
-# define SPECIAL_CONST_SHAPE_ID (ROOT_SHAPE_ID + 1)
-# define OBJ_TOO_COMPLEX_SHAPE_ID (SPECIAL_CONST_SHAPE_ID + 1)
-# define FIRST_T_OBJECT_SHAPE_ID (OBJ_TOO_COMPLEX_SHAPE_ID + 1)
+#define ROOT_SHAPE_ID               0x0
+#define SPECIAL_CONST_SHAPE_ID      0x1
+//      ROOT_TOO_COMPLEX_SHAPE_ID   0x2
+#define FIRST_T_OBJECT_SHAPE_ID     0x3
 
 static ID internal_object_id;
 
@@ -161,11 +161,14 @@ rb_shape_t *rb_shape_get_next_iv_shape(rb_shape_t *shape, ID id);
 bool rb_shape_get_iv_index(rb_shape_t *shape, ID id, attr_index_t *value);
 bool rb_shape_get_iv_index_with_hint(shape_id_t shape_id, ID id, attr_index_t *value, shape_id_t *shape_id_hint);
 RUBY_FUNC_EXPORTED bool rb_shape_obj_too_complex(VALUE obj);
+bool rb_shape_too_complex_p(rb_shape_t *shape);
+bool rb_shape_id_too_complex_p(shape_id_t shape_id);
 
 void rb_shape_set_shape(VALUE obj, rb_shape_t *shape);
 rb_shape_t *rb_shape_get_shape(VALUE obj);
-int rb_shape_frozen_shape_p(rb_shape_t *shape);
+bool rb_shape_frozen_shape_p(rb_shape_t *shape);
 rb_shape_t *rb_shape_transition_shape_frozen(VALUE obj);
+rb_shape_t *rb_shape_transition_shape_too_complex(VALUE obj);
 bool rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape, VALUE *removed);
 rb_shape_t *rb_shape_get_next(rb_shape_t *shape, VALUE obj, ID id);
 rb_shape_t *rb_shape_get_next_no_warnings(rb_shape_t *shape, VALUE obj, ID id);
