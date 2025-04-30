@@ -1815,26 +1815,30 @@ static VALUE
 object_id(VALUE obj)
 {
     VALUE id;
-
     rb_shape_t *shape = rb_shape_get_shape(obj);
     unsigned int lock_lev;
 
-    if (rb_shape_has_object_id(shape)) {
-        // We could avoid locking if the object isn't shareable
-        lock_lev = rb_gc_vm_lock();
+    // We could avoid locking if the object isn't shareable
+    // but we'll lock anyway to lookup the next shape, and
+    // we'd at least need to generate the object_id using atomics.
+    lock_lev = rb_gc_vm_lock();
 
+    if (rb_shape_too_complex_p(shape)) {
+        st_table *table = ROBJECT_IV_HASH(obj);
+        if (st_lookup(table, (st_data_t)internal_object_id, (st_data_t *)&id)) {
+            rb_gc_vm_unlock(lock_lev);
+            return id;
+        }
+
+        id = ULL2NUM(next_object_id);
+        next_object_id += OBJ_ID_INCREMENT;
+        st_insert(table, (st_data_t)internal_object_id, (st_data_t)id);
+    }
+    else if (rb_shape_has_object_id(shape)) {
         rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
         id = rb_field_get(obj, object_id_shape);
-
-        rb_gc_vm_unlock(lock_lev);
-        return id;
     }
     else {
-        // We could avoid locking if the object isn't shareable
-        // but we'll lock anyway to lookup the next shape, and
-        // we'd at least need to generate the object_id using atomics.
-        lock_lev = rb_gc_vm_lock();
-
         id = ULL2NUM(next_object_id);
         next_object_id += OBJ_ID_INCREMENT;
 
@@ -1843,10 +1847,10 @@ object_id(VALUE obj)
         if (RB_UNLIKELY(id_to_obj_tbl)) {
             st_insert(id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
         }
-
-        rb_gc_vm_unlock(lock_lev);
-        return id;
     }
+
+    rb_gc_vm_unlock(lock_lev);
+    return id;
 }
 
 static void
