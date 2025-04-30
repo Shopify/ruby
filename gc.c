@@ -1890,7 +1890,7 @@ object_id(VALUE obj)
             rb_evict_ivars_to_hash(obj);
             rb_ivar_set_internal(obj, internal_object_id, id);
         } else {
-            rb_ivar_set_at_internal(obj, object_id_shape, id);
+            rb_obj_field_set(obj, object_id_shape, id);
         }
         if (RB_UNLIKELY(id_to_obj_tbl)) {
             st_insert(id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);

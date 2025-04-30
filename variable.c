@@ -1794,7 +1794,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 }
 
 static void
-generic_ivar_set_at(VALUE obj, rb_shape_t *target_shape, VALUE val)
+generic_field_set(VALUE obj, rb_shape_t *target_shape, VALUE val)
 {
     struct gen_fields_lookup_ensure_size fields_lookup = {
         .obj = obj,
@@ -1885,8 +1885,8 @@ rb_obj_ivar_set(VALUE obj, ID id, VALUE val)
                             obj_ivar_set_too_complex_table).index;
 }
 
-void
-rb_obj_ivar_set_at(VALUE obj, rb_shape_t *target_shape, VALUE val)
+static void
+obj_field_set(VALUE obj, rb_shape_t *target_shape, VALUE val)
 {
     general_ivar_set_at(obj, target_shape, val, NULL,
                         obj_ivar_set_shape_fields,
@@ -2009,22 +2009,22 @@ rb_ivar_set_internal(VALUE obj, ID id, VALUE val)
     ivar_set(obj, id, val);
 }
 
-static void class_ivar_set_at(VALUE obj, rb_shape_t *target_shape, VALUE val);
+static void class_field_set(VALUE obj, rb_shape_t *target_shape, VALUE val);
 
 void
-rb_ivar_set_at_internal(VALUE obj, rb_shape_t *target_shape, VALUE val)
+rb_obj_field_set(VALUE obj, rb_shape_t *target_shape, VALUE val)
 {
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-        rb_obj_ivar_set_at(obj, target_shape, val);
+        obj_field_set(obj, target_shape, val);
         break;
       case T_CLASS:
       case T_MODULE:
         ASSERT_vm_locking();
-        class_ivar_set_at(obj, target_shape, val);
+        class_field_set(obj, target_shape, val);
         break;
       default:
-        generic_ivar_set_at(obj, target_shape, val);
+        generic_field_set(obj, target_shape, val);
         break;
     }
 }
@@ -4438,7 +4438,7 @@ rb_class_ivar_set(VALUE obj, ID id, VALUE val)
 }
 
 static void
-class_ivar_set_at(VALUE obj, rb_shape_t *target_shape, VALUE val)
+class_field_set(VALUE obj, rb_shape_t *target_shape, VALUE val)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
     general_ivar_set_at(obj, target_shape, val, NULL,
