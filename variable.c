@@ -2403,7 +2403,7 @@ rb_ivar_count(VALUE obj)
         break;
     }
 
-    if (FL_TEST_RAW(obj, FL_SEEN_OBJ_ID)) {
+    if (rb_shape_obj_has_id(obj)) {
         iv_count--;
     }
 

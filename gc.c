@@ -1210,46 +1210,6 @@ rb_data_free(void *objspace, VALUE obj)
     return true;
 }
 
-static void obj_free_object_id(VALUE obj);
-
-void
-rb_gc_obj_free_vm_weak_references(VALUE obj)
-{
-    if (FL_TEST_RAW(obj, FL_SEEN_OBJ_ID)) {
-        obj_free_object_id(obj);
-    }
-
-    if (FL_TEST(obj, FL_EXIVAR)) {
-        rb_free_generic_ivar((VALUE)obj);
-        FL_UNSET(obj, FL_EXIVAR);
-    }
-
-    switch (BUILTIN_TYPE(obj)) {
-      case T_STRING:
-        if (FL_TEST_RAW(obj, RSTRING_FSTR)) {
-            rb_gc_free_fstring(obj);
-        }
-        break;
-      case T_SYMBOL:
-        rb_gc_free_dsymbol(obj);
-        break;
-      case T_IMEMO:
-        switch (imemo_type(obj)) {
-          case imemo_callinfo:
-            rb_vm_ci_free((const struct rb_callinfo *)obj);
-            break;
-          case imemo_ment:
-            rb_free_method_entry_vm_weak_references((const rb_method_entry_t *)obj);
-            break;
-          default:
-            break;
-        }
-        break;
-      default:
-        break;
-    }
-}
-
 bool
 rb_gc_obj_free(void *objspace, VALUE obj)
 {
@@ -1769,6 +1729,14 @@ static unsigned long long next_object_id = OBJ_ID_INITIAL;
 static VALUE id_to_obj_value = 0;
 static st_table *id_to_obj_tbl = NULL;
 
+void
+rb_gc_obj_id_moved(VALUE obj)
+{
+    if (UNLIKELY(id_to_obj_tbl)) {
+        st_insert(id_to_obj_tbl, (st_data_t)rb_obj_id(obj), (st_data_t)obj);
+    }
+}
+
 static int
 object_id_cmp(st_data_t x, st_data_t y)
 {
@@ -1875,7 +1843,6 @@ object_id(VALUE obj)
         if (RB_UNLIKELY(id_to_obj_tbl)) {
             st_insert(id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
         }
-        FL_SET_RAW(obj, FL_SEEN_OBJ_ID);
 
         rb_gc_vm_unlock(lock_lev);
         return id;
@@ -1886,7 +1853,7 @@ static void
 build_id_to_obj_i(VALUE obj, void *data)
 {
     st_table *id_to_obj_tbl = (st_table *)data;
-    if (FL_TEST_RAW(obj, FL_SEEN_OBJ_ID)) {
+    if (rb_shape_obj_has_id(obj)) {
         st_insert(id_to_obj_tbl, rb_obj_id(obj), obj);
     }
 }
@@ -1923,22 +1890,54 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
     }
 }
 
-static void
+static inline void
 obj_free_object_id(VALUE obj)
 {
-    GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE || FL_TEST(obj, FL_SEEN_OBJ_ID));
-
     if (RB_UNLIKELY(id_to_obj_tbl)) {
-        st_data_t id = (st_data_t)rb_obj_id(obj);
-        GC_ASSERT(id);
-        FL_UNSET(obj, FL_SEEN_OBJ_ID);
+        if (rb_shape_obj_has_id(obj)) {
+            st_data_t id = (st_data_t)rb_obj_id(obj);
+            GC_ASSERT(id);
 
-        if (!st_delete(id_to_obj_tbl, &id, NULL)) {
-            rb_bug("Object ID seen, but not in id_to_obj table: %s", rb_obj_info(obj));
+            if (!st_delete(id_to_obj_tbl, &id, NULL)) {
+                rb_bug("Object ID seen, but not in id_to_obj table: %s", rb_obj_info(obj));
+            }
         }
     }
-    else {
-        FL_UNSET(obj, FL_SEEN_OBJ_ID);
+}
+
+void
+rb_gc_obj_free_vm_weak_references(VALUE obj)
+{
+    obj_free_object_id(obj);
+
+    if (FL_TEST(obj, FL_EXIVAR)) {
+        rb_free_generic_ivar((VALUE)obj);
+        FL_UNSET(obj, FL_EXIVAR);
+    }
+
+    switch (BUILTIN_TYPE(obj)) {
+      case T_STRING:
+        if (FL_TEST(obj, RSTRING_FSTR)) {
+            rb_gc_free_fstring(obj);
+        }
+        break;
+      case T_SYMBOL:
+        rb_gc_free_dsymbol(obj);
+        break;
+      case T_IMEMO:
+        switch (imemo_type(obj)) {
+          case imemo_callinfo:
+            rb_vm_ci_free((const struct rb_callinfo *)obj);
+            break;
+          case imemo_ment:
+            rb_free_method_entry_vm_weak_references((const rb_method_entry_t *)obj);
+            break;
+          default:
+            break;
+        }
+        break;
+      default:
+        break;
     }
 }
 
@@ -3655,8 +3654,7 @@ vm_weak_table_id_to_obj_foreach(st_data_t key, st_data_t value, st_data_t data)
         return ret;
 
       case ST_DELETE:
-        GC_ASSERT(FL_TEST_RAW((VALUE)value, FL_SEEN_OBJ_ID));
-        FL_UNSET((VALUE)value, FL_SEEN_OBJ_ID);
+        GC_ASSERT(rb_shape_obj_has_id((VALUE)value));
         return ST_DELETE;
 
       case ST_REPLACE: {

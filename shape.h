@@ -235,6 +235,12 @@ rb_shape_t *rb_shape_traverse_from_new_root(rb_shape_t *initial_shape, rb_shape_
 
 bool rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id);
 
+static inline bool
+rb_shape_obj_has_id(VALUE obj)
+{
+    return rb_shape_has_object_id(rb_shape_get_shape(obj));
+}
+
 VALUE rb_obj_debug_shape(VALUE self, VALUE obj);
 
 // For ext/objspace
