@@ -1824,7 +1824,7 @@ object_id(VALUE obj)
         lock_lev = rb_gc_vm_lock();
 
         rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
-        id = rb_ivar_at(obj, object_id_shape);
+        id = rb_field_get(obj, object_id_shape);
 
         rb_gc_vm_unlock(lock_lev);
         return id;
