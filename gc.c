@@ -1851,24 +1851,6 @@ object_id(VALUE obj)
     rb_shape_t *shape = rb_shape_get_shape(obj);
     unsigned int lock_lev;
 
-    if (shape->type == SHAPE_OBJ_TOO_COMPLEX) {
-        // we could not lock if the object isn't shareable, but may not be worth the effort
-        lock_lev = rb_gc_vm_lock();
-        id = rb_attr_get(obj, internal_object_id);
-        if (NIL_P(id)) {
-            id = ULL2NUM(next_object_id);
-            next_object_id += OBJ_ID_INCREMENT;
-            rb_ivar_set_internal(obj, internal_object_id, id);
-            if (RB_UNLIKELY(id_to_obj_tbl)) {
-                st_insert(id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
-            }
-            FL_SET_RAW(obj, FL_SEEN_OBJ_ID);
-        }
-
-        rb_gc_vm_unlock(lock_lev);
-        return id;
-    }
-
     if (rb_shape_has_object_id(shape)) {
         // We could avoid locking if the object isn't shareable
         lock_lev = rb_gc_vm_lock();
@@ -1889,12 +1871,7 @@ object_id(VALUE obj)
         next_object_id += OBJ_ID_INCREMENT;
 
         rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
-        if (object_id_shape->type == SHAPE_OBJ_TOO_COMPLEX) {
-            rb_evict_fields_to_hash(obj);
-            rb_ivar_set_internal(obj, internal_object_id, id);
-        } else {
-            rb_obj_field_set(obj, object_id_shape, id);
-        }
+        rb_obj_field_set(obj, object_id_shape, id);
         if (RB_UNLIKELY(id_to_obj_tbl)) {
             st_insert(id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
         }
