@@ -29,6 +29,7 @@
 #include "darray.h"
 #include "gc/gc.h"
 #include "gc/gc_impl.h"
+#include "shape.h"
 
 #ifndef BUILDING_MODULAR_GC
 # include "probes.h"
