@@ -26,6 +26,7 @@
 #include "internal/eval.h"
 #include "internal/hash.h"
 #include "internal/object.h"
+#include "internal/gc.h"
 #include "internal/re.h"
 #include "internal/symbol.h"
 #include "internal/thread.h"
@@ -1590,7 +1591,13 @@ rb_evict_fields_to_hash(VALUE obj)
     rb_obj_copy_fields_to_hash_table(obj, table);
     rb_shape_t *shape = rb_shape_get_shape(obj);
     if (rb_shape_has_object_id(shape)) {
-        st_insert(table, internal_object_id, rb_obj_id(obj));
+        rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
+        VALUE id = rb_field_get(obj, object_id_shape);
+        st_insert(table, internal_object_id, id);
+
+        // We need to ensure the object ID is registered in id_to_obj_table
+        // before transitioning to too complex
+        rb_gc_update_id_to_obj_table(obj, id);
     }
     obj_transition_too_complex(obj, table);
 
@@ -1608,7 +1615,13 @@ rb_evict_ivars_to_hash(VALUE obj)
     rb_obj_copy_ivs_to_hash_table(obj, table);
     rb_shape_t *shape = rb_shape_get_shape(obj);
     if (rb_shape_has_object_id(shape)) {
-        st_insert(table, internal_object_id, rb_obj_id(obj));
+        rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
+        VALUE id = rb_field_get(obj, object_id_shape);
+        st_insert(table, internal_object_id, id);
+
+        // We need to ensure the object ID is registered in id_to_obj_table
+        // before transitioning to too complex
+        rb_gc_update_id_to_obj_table(obj, id);
     }
     obj_transition_too_complex(obj, table);
 

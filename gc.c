@@ -1811,6 +1811,16 @@ static const rb_data_type_t id_to_obj_tbl_type = {
     .flags = RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY
 };
 
+bool
+rb_gc_update_id_to_obj_table(VALUE obj, VALUE id)
+{
+    if (id_to_obj_tbl && !st_lookup(id_to_obj_tbl, id, 0)) {
+        st_insert(id_to_obj_tbl, id, obj);
+        return true;
+    }
+    return false;
+}
+
 static VALUE
 object_id(VALUE obj)
 {

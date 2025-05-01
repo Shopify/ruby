@@ -262,6 +262,8 @@ void ruby_sized_xfree(void *x, size_t size);
 const char *rb_gc_active_gc_name(void);
 int rb_gc_modular_gc_loaded_p(void);
 
+bool rb_gc_update_id_to_obj_table(VALUE obj, VALUE id);
+
 RUBY_SYMBOL_EXPORT_END
 
 int rb_ec_stack_check(struct rb_execution_context_struct *ec);
