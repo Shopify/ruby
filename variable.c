@@ -2331,6 +2331,12 @@ rb_copy_generic_ivar(VALUE dest, VALUE obj)
             }
         }
 
+        if (!shape_to_set_on_dest->capacity) {
+            rb_shape_set_shape(dest, shape_to_set_on_dest);
+            FL_UNSET(dest, FL_EXIVAR);
+            return;
+        }
+
         new_fields_tbl = gen_fields_tbl_resize(0, shape_to_set_on_dest->capacity);
 
         VALUE *src_buf = obj_fields_tbl->as.shape.fields;
