@@ -1072,7 +1072,7 @@ rb_shape_rebuild_shape(rb_shape_t *initial_shape, rb_shape_t *dest_shape)
 
     rb_shape_t *midway_shape;
 
-    RUBY_ASSERT(initial_shape->type == SHAPE_T_OBJECT);
+    RUBY_ASSERT(initial_shape->type == SHAPE_T_OBJECT || initial_shape->type == SHAPE_ROOT);
 
     if (dest_shape->type != initial_shape->type) {
         midway_shape = rb_shape_rebuild_shape(initial_shape, rb_shape_get_parent(dest_shape));

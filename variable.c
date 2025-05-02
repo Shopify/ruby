@@ -2279,35 +2279,83 @@ class_fields_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg,
 }
 
 void
-rb_copy_generic_ivar(VALUE clone, VALUE obj)
+rb_copy_generic_ivar(VALUE dest, VALUE obj)
 {
     struct gen_fields_tbl *obj_fields_tbl;
     struct gen_fields_tbl *new_fields_tbl;
 
-    rb_check_frozen(clone);
+    rb_check_frozen(dest);
 
     if (!FL_TEST(obj, FL_EXIVAR)) {
         goto clear;
     }
 
+    unsigned long src_num_ivs = rb_ivar_count(obj);
+    if (!src_num_ivs) {
+        goto clear;
+    }
+
+    rb_shape_t *src_shape = rb_shape_get_shape(obj);
+
     if (rb_gen_fields_tbl_get(obj, 0, &obj_fields_tbl)) {
         if (gen_fields_tbl_count(obj, obj_fields_tbl) == 0)
             goto clear;
 
-        FL_SET(clone, FL_EXIVAR);
+        FL_SET(dest, FL_EXIVAR);
 
-        if (rb_shape_obj_too_complex(obj)) {
-            new_fields_tbl = xmalloc(sizeof(struct gen_fields_tbl));
-#if !SHAPE_IN_BASIC_FLAGS
-            new_fields_tbl->shape_id = SHAPE_OBJ_TOO_COMPLEX;
-#endif
-            new_fields_tbl->as.complex.table = st_copy(obj_fields_tbl->as.complex.table);
+        if (rb_shape_too_complex_p(src_shape)) {
+            // obj is TOO_COMPLEX so we can copy its iv_hash
+            st_table *table = st_copy(ROBJECT_FIELDS_HASH(obj));
+            if (rb_shape_has_object_id(src_shape)) {
+                st_data_t id = (st_data_t)internal_object_id;
+                st_delete(table, &id, NULL);
+            }
+            rb_obj_init_too_complex(dest, table);
+
+            return;
+        }
+
+        rb_shape_t *shape_to_set_on_dest = src_shape;
+        rb_shape_t *initial_shape = rb_shape_get_shape(dest);
+
+        if (initial_shape->heap_index != src_shape->heap_index || !rb_shape_canonical_p(src_shape)) {
+            RUBY_ASSERT(initial_shape->type == SHAPE_ROOT);
+
+            shape_to_set_on_dest = rb_shape_rebuild_shape(initial_shape, src_shape);
+            if (UNLIKELY(rb_shape_too_complex_p(shape_to_set_on_dest))) {
+                st_table *table = rb_st_init_numtable_with_size(src_num_ivs);
+                rb_obj_copy_ivs_to_hash_table(obj, table);
+                rb_obj_init_too_complex(dest, table);
+
+                return;
+            }
+        }
+
+        new_fields_tbl = gen_fields_tbl_resize(0, shape_to_set_on_dest->next_field_index);
+
+        VALUE *src_buf = obj_fields_tbl->as.shape.fields;
+        VALUE *dest_buf = new_fields_tbl->as.shape.fields;
+
+        if (src_shape->next_field_index == shape_to_set_on_dest->next_field_index) {
+            // Happy path, we can just memcpy the ivptr content
+            MEMCPY(dest_buf, src_buf, VALUE, src_num_ivs);
+
+            // Fire write barriers
+            for (uint32_t i = 0; i < src_num_ivs; i++) {
+                RB_OBJ_WRITTEN(dest, Qundef, dest_buf[i]);
+            }
         }
         else {
-            new_fields_tbl = gen_fields_tbl_resize(0, obj_fields_tbl->as.shape.fields_count);
+            rb_shape_t *dest_shape = shape_to_set_on_dest;
+            while (src_shape->parent_id != INVALID_SHAPE_ID) {
+                if (src_shape->type == SHAPE_IVAR) {
+                    while (dest_shape->edge_name != src_shape->edge_name) {
+                        dest_shape = rb_shape_get_shape_by_id(dest_shape->parent_id);
+                    }
 
-            for (uint32_t i=0; i<obj_fields_tbl->as.shape.fields_count; i++) {
-                RB_OBJ_WRITE(clone, &new_fields_tbl->as.shape.fields[i], obj_fields_tbl->as.shape.fields[i]);
+                    RB_OBJ_WRITE(dest, &dest_buf[dest_shape->next_field_index - 1], src_buf[src_shape->next_field_index - 1]);
+                }
+                src_shape = rb_shape_get_shape_by_id(src_shape->parent_id);
             }
         }
 
@@ -2317,25 +2365,18 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
          */
         RB_VM_LOCK_ENTER();
         {
-            generic_fields_tbl_no_ractor_check(clone);
-            st_insert(generic_fields_tbl_no_ractor_check(obj), (st_data_t)clone, (st_data_t)new_fields_tbl);
+            generic_fields_tbl_no_ractor_check(dest);
+            st_insert(generic_fields_tbl_no_ractor_check(obj), (st_data_t)dest, (st_data_t)new_fields_tbl);
         }
         RB_VM_LOCK_LEAVE();
-
-        rb_shape_t * obj_shape = rb_shape_get_shape(obj);
-        if (rb_shape_frozen_shape_p(obj_shape)) {
-            rb_shape_set_shape_id(clone, obj_shape->parent_id);
-        }
-        else {
-            rb_shape_set_shape(clone, obj_shape);
-        }
+        rb_shape_set_shape(dest, shape_to_set_on_dest);
     }
     return;
 
   clear:
-    if (FL_TEST(clone, FL_EXIVAR)) {
-        rb_free_generic_ivar(clone);
-        FL_UNSET(clone, FL_EXIVAR);
+    if (FL_TEST(dest, FL_EXIVAR)) {
+        rb_free_generic_ivar(dest);
+        FL_UNSET(dest, FL_EXIVAR);
     }
 }
 

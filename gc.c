@@ -1835,14 +1835,17 @@ object_id(VALUE obj)
 
     if (rb_shape_too_complex_p(shape)) {
         st_table *table = ROBJECT_FIELDS_HASH(obj);
-        if (st_lookup(table, (st_data_t)internal_object_id, (st_data_t *)&id)) {
+        if (rb_shape_has_object_id(shape)) {
+            st_lookup(table, (st_data_t)internal_object_id, (st_data_t *)&id);
             rb_gc_vm_unlock(lock_lev);
             return id;
         }
 
         id = ULL2NUM(next_object_id);
         next_object_id += OBJ_ID_INCREMENT;
+        rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
         st_insert(table, (st_data_t)internal_object_id, (st_data_t)id);
+        rb_shape_set_shape(obj, object_id_shape);
         if (RB_UNLIKELY(id_to_obj_tbl)) {
             st_insert(id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
         }
