@@ -2305,7 +2305,7 @@ rb_copy_generic_ivar(VALUE dest, VALUE obj)
 
         if (rb_shape_too_complex_p(src_shape)) {
             // obj is TOO_COMPLEX so we can copy its iv_hash
-            st_table *table = st_copy(ROBJECT_FIELDS_HASH(obj));
+            st_table *table = st_copy(obj_fields_tbl->as.complex.table);
             if (rb_shape_has_object_id(src_shape)) {
                 st_data_t id = (st_data_t)internal_object_id;
                 st_delete(table, &id, NULL);
