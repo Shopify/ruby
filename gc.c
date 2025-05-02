@@ -1842,6 +1842,10 @@ object_id(VALUE obj)
 
         id = ULL2NUM(next_object_id);
         next_object_id += OBJ_ID_INCREMENT;
+
+        if (RB_TYPE_P(obj, T_DATA)) {
+            fprintf(stderr, "generated object_id=%llu (%s)\n", NUM2ULL(id), RSTRING_PTR(rb_class_name(CLASS_OF(obj))));
+        }
         st_insert(table, (st_data_t)internal_object_id, (st_data_t)id);
     }
     else if (rb_shape_has_object_id(shape)) {
@@ -1851,6 +1855,10 @@ object_id(VALUE obj)
     else {
         id = ULL2NUM(next_object_id);
         next_object_id += OBJ_ID_INCREMENT;
+
+        if (RB_TYPE_P(obj, T_DATA)) {
+            fprintf(stderr, "generated object_id=%llu (%s)\n", NUM2ULL(id), RSTRING_PTR(rb_class_name(CLASS_OF(obj))));
+        }
 
         rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
         rb_obj_field_set(obj, object_id_shape, id);
@@ -1914,7 +1922,7 @@ obj_free_object_id(VALUE obj)
             GC_ASSERT(id);
 
             if (!st_delete(id_to_obj_tbl, &id, NULL)) {
-                rb_bug("Object ID seen, but not in id_to_obj table: object_id=%"PRIsVALUE" object=%s", (VALUE)id, rb_obj_info(obj));
+                rb_bug("Object ID seen, but not in id_to_obj table: object_id=%llu object=%s", NUM2ULL((VALUE)id), rb_obj_info(obj));
             }
         }
     }
