@@ -1847,6 +1847,9 @@ object_id(VALUE obj)
             fprintf(stderr, "generated object_id=%llu (%s)\n", NUM2ULL(id), RSTRING_PTR(rb_class_name(CLASS_OF(obj))));
         }
         st_insert(table, (st_data_t)internal_object_id, (st_data_t)id);
+        if (RB_UNLIKELY(id_to_obj_tbl)) {
+            st_insert(id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
+        }
     }
     else if (rb_shape_has_object_id(shape)) {
         rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
