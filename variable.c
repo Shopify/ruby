@@ -1719,7 +1719,6 @@ general_field_set_at(VALUE obj, rb_shape_t *target_shape, VALUE val, void *data,
         attr_index_t index = target_shape->next_field_index - 1;
         if (index >= current_shape->capacity) {
             shape_resize_fields_func(obj, current_shape->capacity, target_shape->capacity, data);
-            set_shape_func(obj, target_shape, data);
         }
 
         if (target_shape->next_field_index > current_shape->next_field_index) {
@@ -1749,7 +1748,7 @@ generic_fields_lookup_ensure_size(st_data_t *k, st_data_t *v, st_data_t u, int e
 
     if (!existing || fields_lookup->resize) {
         if (existing) {
-            RUBY_ASSERT(fields_lookup->shape->type == SHAPE_IVAR);
+            RUBY_ASSERT(fields_lookup->shape->type == SHAPE_IVAR || fields_lookup->shape->type == SHAPE_OBJ_ID);
             RUBY_ASSERT(rb_shape_get_shape_by_id(fields_lookup->shape->parent_id)->capacity < fields_lookup->shape->capacity);
         }
         else {
@@ -2332,7 +2331,7 @@ rb_copy_generic_ivar(VALUE dest, VALUE obj)
             }
         }
 
-        new_fields_tbl = gen_fields_tbl_resize(0, shape_to_set_on_dest->next_field_index);
+        new_fields_tbl = gen_fields_tbl_resize(0, shape_to_set_on_dest->capacity);
 
         VALUE *src_buf = obj_fields_tbl->as.shape.fields;
         VALUE *dest_buf = new_fields_tbl->as.shape.fields;
