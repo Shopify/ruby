@@ -1834,7 +1834,7 @@ object_id(VALUE obj)
     lock_lev = rb_gc_vm_lock();
 
     if (rb_shape_too_complex_p(shape)) {
-        st_table *table = ROBJECT_IV_HASH(obj);
+        st_table *table = ROBJECT_FIELDS_HASH(obj);
         if (st_lookup(table, (st_data_t)internal_object_id, (st_data_t *)&id)) {
             rb_gc_vm_unlock(lock_lev);
             return id;
