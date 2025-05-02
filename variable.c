@@ -1719,6 +1719,7 @@ general_field_set_at(VALUE obj, rb_shape_t *target_shape, VALUE val, void *data,
         attr_index_t index = target_shape->next_field_index - 1;
         if (index >= current_shape->capacity) {
             shape_resize_fields_func(obj, current_shape->capacity, target_shape->capacity, data);
+            set_shape_func(obj, target_shape, data);
         }
 
         if (target_shape->next_field_index > current_shape->next_field_index) {
@@ -2318,7 +2319,7 @@ rb_copy_generic_ivar(VALUE dest, VALUE obj)
         rb_shape_t *shape_to_set_on_dest = src_shape;
         rb_shape_t *initial_shape = rb_shape_get_shape(dest);
 
-        if (initial_shape->heap_index != src_shape->heap_index || !rb_shape_canonical_p(src_shape)) {
+        if (!rb_shape_canonical_p(src_shape)) {
             RUBY_ASSERT(initial_shape->type == SHAPE_ROOT);
 
             shape_to_set_on_dest = rb_shape_rebuild_shape(initial_shape, src_shape);
@@ -2338,10 +2339,10 @@ rb_copy_generic_ivar(VALUE dest, VALUE obj)
 
         if (src_shape->next_field_index == shape_to_set_on_dest->next_field_index) {
             // Happy path, we can just memcpy the ivptr content
-            MEMCPY(dest_buf, src_buf, VALUE, src_num_ivs);
+            MEMCPY(dest_buf, src_buf, VALUE, shape_to_set_on_dest->next_field_index);
 
             // Fire write barriers
-            for (uint32_t i = 0; i < src_num_ivs; i++) {
+            for (uint32_t i = 0; i < shape_to_set_on_dest->next_field_index; i++) {
                 RB_OBJ_WRITTEN(dest, Qundef, dest_buf[i]);
             }
         }
