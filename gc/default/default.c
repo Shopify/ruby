@@ -29,7 +29,6 @@
 #include "darray.h"
 #include "gc/gc.h"
 #include "gc/gc_impl.h"
-#include "shape.h"
 
 #ifndef BUILDING_MODULAR_GC
 # include "probes.h"
@@ -6113,7 +6112,7 @@ rb_gc_impl_object_metadata(void *objspace_ptr, VALUE obj)
     if (RVALUE_MARKING(objspace, obj)) SET_ENTRY(marking, Qtrue);
     if (RVALUE_MARKED(objspace, obj)) SET_ENTRY(marked, Qtrue);
     if (RVALUE_PINNED(objspace, obj)) SET_ENTRY(pinned, Qtrue);
-    if (rb_shape_obj_has_id(obj)) SET_ENTRY(object_id, rb_obj_id(obj));
+    if (rb_obj_id_p(obj)) SET_ENTRY(object_id, rb_obj_id(obj));
     if (FL_TEST(obj, FL_SHAREABLE)) SET_ENTRY(shareable, Qtrue);
 
     object_metadata_entries[n].name = 0;

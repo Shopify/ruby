@@ -72,6 +72,7 @@ size_t rb_obj_memsize_of(VALUE obj);
 void rb_gc_prepare_heap_process_object(VALUE obj);
 bool ruby_free_at_exit_p(void);
 bool rb_memerror_reentered(void);
+bool rb_obj_id_p(VALUE);
 
 #if USE_MODULAR_GC
 bool rb_gc_event_hook_required_p(rb_event_flag_t event);

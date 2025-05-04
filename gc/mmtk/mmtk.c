@@ -8,7 +8,6 @@
 #include "gc/gc.h"
 #include "gc/gc_impl.h"
 #include "gc/mmtk/mmtk.h"
-#include "shape.h"
 
 #include "ccan/list/list.h"
 #include "darray.h"
@@ -1215,7 +1214,7 @@ rb_gc_impl_object_metadata(void *objspace_ptr, VALUE obj)
     n++; \
 } while (0)
 
-    if (rb_shape_obj_has_id(obj)) SET_ENTRY(object_id, rb_obj_id(obj));
+    if (rb_obj_id_p(obj)) SET_ENTRY(object_id, rb_obj_id(obj));
 
     object_metadata_entries[n].name = 0;
     object_metadata_entries[n].val = 0;

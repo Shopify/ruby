@@ -2093,6 +2093,12 @@ rb_obj_id(VALUE obj)
     return rb_find_object_id(rb_gc_get_objspace(), obj, object_id);
 }
 
+bool
+rb_obj_id_p(VALUE obj)
+{
+    return rb_shape_obj_has_id(obj);
+}
+
 static enum rb_id_table_iterator_result
 cc_table_memsize_i(VALUE ccs_ptr, void *data_ptr)
 {
