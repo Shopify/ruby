@@ -1873,8 +1873,7 @@ static void
 build_id_to_obj_i(VALUE obj, void *data)
 {
     st_table *id_to_obj_tbl = (st_table *)data;
-
-    if (rb_shape_obj_has_id(obj) && !rb_gc_impl_garbage_object_p(rb_gc_get_objspace(), obj)) {
+    if (rb_shape_obj_has_id(obj)) {
         st_insert(id_to_obj_tbl, rb_obj_id(obj), obj);
     }
 }
