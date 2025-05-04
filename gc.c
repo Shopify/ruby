@@ -1920,7 +1920,7 @@ obj_free_object_id(VALUE obj)
             GC_ASSERT(id);
 
             if (!st_delete(id_to_obj_tbl, &id, NULL)) {
-                rb_bug("Object ID seen, but not in id_to_obj table: object_id=%"PRIsVALUE" object=%s", (VALUE)id, rb_obj_info(obj));
+                rb_bug("Object ID seen, but not in id_to_obj table: object_id=%llu object=%s", NUM2ULL((VALUE)id), rb_obj_info(obj));
             }
         }
     }
