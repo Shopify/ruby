@@ -2256,6 +2256,13 @@ bool
 rb_ractor_main_p_(void)
 {
     VM_ASSERT(rb_multi_ractor_p());
+
+#if RUBY_DEBUG
+    if (ractor_debug_mode) {
+        return false;
+    }
+#endif
+
     rb_execution_context_t *ec = GET_EC();
     return rb_ec_ractor_ptr(ec) == rb_ec_vm_ptr(ec)->ractor.main_ractor;
 }
@@ -4174,6 +4181,32 @@ rb_ractor_autoload_load(VALUE module, ID name)
     else {
         return crr.result;
     }
+}
+
+#if RUBY_DEBUG
+static VALUE
+rb_ractor_debug_multi_ractor_mode(VALUE module)
+{
+    struct rb_ractor_struct *previous_single_main_ractor = ruby_single_main_ractor;
+    bool previous_ractor_debug_mode = ractor_debug_mode;
+
+    ractor_debug_mode = true;
+    // ruby_single_main_ractor = NULL;
+
+    VALUE result = rb_yield(Qundef);
+
+    ruby_single_main_ractor = previous_single_main_ractor;
+    ractor_debug_mode = previous_ractor_debug_mode;
+    return RB_GC_GUARD(result);
+}
+#endif
+
+void
+Init_ractor_debug(void)
+{
+#if RUBY_DEBUG
+    rb_define_singleton_method(rb_cRactor, "debug_multi_ractor_mode", rb_ractor_debug_multi_ractor_mode, 0);
+#endif
 }
 
 #include "ractor.rbinc"

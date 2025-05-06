@@ -77,6 +77,7 @@ rb_call_inits(void)
     CALL(Prism);
     CALL(unicode_version);
     CALL(Set);
+    CALL(ractor_debug);
 
     // enable builtin loading
     CALL(builtin);

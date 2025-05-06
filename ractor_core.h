@@ -242,6 +242,12 @@ RUBY_SYMBOL_EXPORT_END
 static inline bool
 rb_ractor_main_p(void)
 {
+#if RUBY_DEBUG
+    if (ractor_debug_mode) {
+        return false;
+    }
+#endif
+
     if (ruby_single_main_ractor) {
         return true;
     }

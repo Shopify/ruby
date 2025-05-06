@@ -885,7 +885,7 @@ class Ractor
   # return true if the current ractor is main ractor
   def self.main?
     __builtin_cexpr! %q{
-      RBOOL(GET_VM()->ractor.main_ractor == rb_ec_ractor_ptr(ec))
+      RBOOL(rb_ractor_main_p())
     }
   end
 
