@@ -3,6 +3,7 @@
 #include "ruby/ruby.h"
 #include "ruby/thread.h"
 #include "ruby/ractor.h"
+#include "ruby/fiber/scheduler.h"
 #include "ruby/thread_native.h"
 #include "vm_core.h"
 #include "eval_intern.h"
@@ -1235,6 +1236,11 @@ ractor_take(rb_execution_context_t *ec, rb_ractor_t *r)
         .type.e = basket_type_none,
         .sender = 0,
     };
+
+    VALUE scheduler = rb_fiber_scheduler_current();
+    if (!NIL_P(scheduler)) {
+        rb_fiber_scheduler_block(scheduler, r->pub.self, Qnil);
+    }
 
     ractor_register_take(cr, r, &take_basket, true, NULL, false);
 

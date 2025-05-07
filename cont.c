@@ -2656,6 +2656,7 @@ fiber_check_killed(rb_fiber_t *fiber)
 static inline VALUE
 fiber_switch(rb_fiber_t *fiber, int argc, const VALUE *argv, int kw_splat, rb_fiber_t *resuming_fiber, bool yielding)
 {
+    fprintf(stderr, "fiber_switch\n");
     VALUE value;
     rb_context_t *cont = &fiber->cont;
     rb_thread_t *th = GET_THREAD();
