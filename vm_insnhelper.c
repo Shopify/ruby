@@ -398,9 +398,9 @@ vm_push_frame(rb_execution_context_t *ec,
     /* setup vm value stack */
 
     /* initialize local variables */
-    for (int i=0; i < local_size; i++) {
-        *sp++ = Qnil;
-    }
+    // for (int i=0; i < local_size; i++) {
+    //     *sp++ = Qnil;
+    // }
 
     /* setup ep with managing data */
     *sp++ = cref_or_me; /* ep[-2] / Qnil or T_IMEMO(cref) or T_IMEMO(ment) */
