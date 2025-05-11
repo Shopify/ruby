@@ -399,8 +399,10 @@ vm_push_frame(rb_execution_context_t *ec,
 
     /* initialize local variables */
     for (int i=0; i < local_size; i++) {
-        *sp++ = Qnil;
+        // *sp++ = Qnil;
+        // printf("in vm_push_frame, local_size: %d\n", local_size);
     }
+    sp += local_size;
 
     /* setup ep with managing data */
     *sp++ = cref_or_me; /* ep[-2] / Qnil or T_IMEMO(cref) or T_IMEMO(ment) */
