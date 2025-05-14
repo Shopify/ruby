@@ -55,6 +55,12 @@ enum ruby_rvalue_flags {
     RVALUE_EMBED_LEN_MAX = RBIMPL_RVALUE_EMBED_LEN_MAX
 };
 
+#if (SIZEOF_VALUE < SIZEOF_UINT64_T)
+#define RBASIC_SHAPE_ID_FIELD 1
+#else
+#define RBASIC_SHAPE_ID_FIELD 0
+#endif
+
 /**
  * Ruby object's base components. All Ruby objects have them in common.
  */
@@ -84,6 +90,10 @@ RBasic {
      * class.
      */
     const VALUE klass;
+
+#if RBASIC_SHAPE_ID_FIELD
+    VALUE shape_id;
+#endif
 
 #ifdef __cplusplus
   public:

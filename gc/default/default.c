@@ -2107,6 +2107,9 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
 #endif
     RBASIC(obj)->flags = flags;
     *((VALUE *)&RBASIC(obj)->klass) = klass;
+#if RBASIC_SHAPE_ID_FIELD
+    RBASIC(obj)->shape_id = 0;
+#endif
 
     int t = flags & RUBY_T_MASK;
     if (t == T_CLASS || t == T_MODULE || t == T_ICLASS) {

@@ -133,7 +133,7 @@
 unsigned int
 rb_gc_vm_lock(void)
 {
-    unsigned int lev;
+    unsigned int lev = 0;
     RB_VM_LOCK_ENTER_LEV(&lev);
     return lev;
 }
@@ -1957,6 +1957,8 @@ build_id2ref_i(VALUE obj, void *data)
     st_table *id2ref_tbl = (st_table *)data;
 
     switch (BUILTIN_TYPE(obj)) {
+      case T_IMEMO:
+          break;
       case T_CLASS:
       case T_MODULE:
         if (RCLASS(obj)->object_id) {
