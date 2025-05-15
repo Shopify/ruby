@@ -1964,6 +1964,7 @@ build_id2ref_i(VALUE obj, void *data)
         }
         break;
       case T_IMEMO:
+      case T_NONE:
         break;
       default:
         if (rb_shape_obj_has_id(obj)) {

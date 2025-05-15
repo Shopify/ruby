@@ -166,4 +166,13 @@ RBASIC_CLASS(VALUE obj)
     return RBASIC(obj)->klass;
 }
 
+static inline void
+RBASIC_RESET_FLAGS(VALUE obj)
+{
+    RBASIC(obj)->flags = 0;
+#if RBASIC_SHAPE_ID_FIELD
+    RBASIC(obj)->shape_id = 0;
+#endif
+}
+
 #endif /* RBIMPL_RBASIC_H */

@@ -2952,7 +2952,7 @@ rb_gc_impl_shutdown_free_objects(void *objspace_ptr)
                 if (RB_BUILTIN_TYPE(vp) != T_NONE) {
                     rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
-                        RBASIC(vp)->flags = 0;
+                        RBASIC_RESET_FLAGS(vp);
                     }
                 }
             }
@@ -3026,7 +3026,7 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
                 if (rb_gc_shutdown_call_finalizer_p(vp)) {
                     rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
-                        RBASIC(vp)->flags = 0;
+                        RBASIC_RESET_FLAGS(vp);
                     }
                 }
             }
