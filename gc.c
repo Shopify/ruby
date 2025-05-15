@@ -1957,8 +1957,6 @@ build_id2ref_i(VALUE obj, void *data)
     st_table *id2ref_tbl = (st_table *)data;
 
     switch (BUILTIN_TYPE(obj)) {
-      case T_IMEMO:
-          break;
       case T_CLASS:
       case T_MODULE:
         if (RCLASS(obj)->object_id) {

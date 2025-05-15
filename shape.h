@@ -6,7 +6,6 @@
 #if (SIZEOF_UINT64_T <= SIZEOF_VALUE)
 
 #define SIZEOF_SHAPE_T 4
-#define SHAPE_IN_BASIC_FLAGS 1
 typedef uint32_t attr_index_t;
 typedef uint32_t shape_id_t;
 # define SHAPE_ID_NUM_BITS 32
@@ -14,7 +13,6 @@ typedef uint32_t shape_id_t;
 #else
 
 #define SIZEOF_SHAPE_T 2
-#define SHAPE_IN_BASIC_FLAGS 1
 typedef uint16_t attr_index_t;
 typedef uint16_t shape_id_t;
 # define SHAPE_ID_NUM_BITS 16
@@ -91,7 +89,7 @@ rb_current_shape_tree(void)
 #define GET_SHAPE_TREE() rb_current_shape_tree()
 
 static inline shape_id_t
-get_shape_id_from_flags(VALUE obj)
+RBASIC_SHAPE_ID(VALUE obj)
 {
     RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
     RUBY_ASSERT(!RB_TYPE_P(obj, T_IMEMO));
@@ -103,7 +101,7 @@ get_shape_id_from_flags(VALUE obj)
 }
 
 static inline void
-set_shape_id_in_flags(VALUE obj, shape_id_t shape_id)
+RBASIC_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
 {
     RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
     RUBY_ASSERT(!RB_TYPE_P(obj, T_IMEMO));
@@ -115,49 +113,6 @@ set_shape_id_in_flags(VALUE obj, shape_id_t shape_id)
     RBASIC(obj)->flags &= SHAPE_FLAG_MASK;
     RBASIC(obj)->flags |= ((VALUE)(shape_id) << SHAPE_FLAG_SHIFT);
 #endif
-}
-
-
-#if SHAPE_IN_BASIC_FLAGS
-static inline shape_id_t
-RBASIC_SHAPE_ID(VALUE obj)
-{
-    return get_shape_id_from_flags(obj);
-}
-
-static inline void
-RBASIC_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
-{
-    set_shape_id_in_flags(obj, shape_id);
-}
-#endif
-
-static inline shape_id_t
-ROBJECT_SHAPE_ID(VALUE obj)
-{
-    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
-    return get_shape_id_from_flags(obj);
-}
-
-static inline void
-ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
-{
-    RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
-    set_shape_id_in_flags(obj, shape_id);
-}
-
-static inline shape_id_t
-RCLASS_SHAPE_ID(VALUE obj)
-{
-    RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
-    return get_shape_id_from_flags(obj);
-}
-
-static inline void
-RCLASS_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
-{
-    RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
-    set_shape_id_in_flags(obj, shape_id);
 }
 
 #define RSHAPE rb_shape_lookup
@@ -211,7 +166,7 @@ ROBJECT_FIELDS_CAPACITY(VALUE obj)
     // Asking for capacity doesn't make sense when the object is using
     // a hash table for storing instance variables
     RUBY_ASSERT(!rb_shape_obj_too_complex_p(obj));
-    return RSHAPE(ROBJECT_SHAPE_ID(obj))->capacity;
+    return RSHAPE(RBASIC_SHAPE_ID(obj))->capacity;
 }
 
 static inline st_table *
@@ -230,8 +185,6 @@ ROBJECT_SET_FIELDS_HASH(VALUE obj, const st_table *tbl)
     ROBJECT(obj)->as.heap.fields = (VALUE *)tbl;
 }
 
-size_t rb_id_table_size(const struct rb_id_table *tbl);
-
 static inline uint32_t
 ROBJECT_FIELDS_COUNT(VALUE obj)
 {
@@ -241,7 +194,7 @@ ROBJECT_FIELDS_COUNT(VALUE obj)
     else {
         RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
         RUBY_ASSERT(!rb_shape_obj_too_complex_p(obj));
-        return RSHAPE(ROBJECT_SHAPE_ID(obj))->next_field_index;
+        return RSHAPE(RBASIC_SHAPE_ID(obj))->next_field_index;
     }
 }
 
