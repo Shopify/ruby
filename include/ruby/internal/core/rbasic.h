@@ -110,6 +110,9 @@ RBasic {
     RBasic() :
         flags(RBIMPL_VALUE_NULL),
         klass(RBIMPL_VALUE_NULL)
+#if RBASIC_SHAPE_ID_FIELD
+        , shape_id(RBIMPL_VALUE_NULL)
+#endif
     {
     }
 #endif
