@@ -37,7 +37,7 @@
 /* This depends on that the allocated memory by Ruby's allocator or
  * mmap is not located at an odd address. */
 #define SINGLE_CHILD_TAG 0x1
-#define TAG_SINGLE_CHILD(x) (struct rb_id_table *)((uintptr_t)(x) | SINGLE_CHILD_TAG)
+#define TAG_SINGLE_CHILD(x) (VALUE)((uintptr_t)(x) | SINGLE_CHILD_TAG)
 #define SINGLE_CHILD_MASK (~((uintptr_t)SINGLE_CHILD_TAG))
 #define SINGLE_CHILD_P(x) ((uintptr_t)(x) & SINGLE_CHILD_TAG)
 #define SINGLE_CHILD(x) (rb_shape_t *)((uintptr_t)(x) & SINGLE_CHILD_MASK)
@@ -310,6 +310,55 @@ redblack_insert(redblack_node_t *tree, ID key, rb_shape_t *value)
 
 rb_shape_tree_t *rb_shape_tree_ptr = NULL;
 
+static void
+edge_table_free(void *data)
+{
+    struct rb_id_table *edges = (struct rb_id_table *)data;
+    rb_id_table_free_items(edges);
+}
+
+static const rb_data_type_t edge_table_type = {
+    .wrap_struct_name = "VM/shape_edge_table",
+    .function = {
+        .dmark = NULL, // Nothing to mark
+        .dfree = (RUBY_DATA_FUNC)edge_table_free,
+        .dsize = NULL // TODO
+    },
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+};
+
+static VALUE
+edge_table_new(size_t capa, struct rb_id_table *edges)
+{
+    VALUE obj = TypedData_Make_Struct(0, struct rb_id_table, &edge_table_type, edges);
+    rb_id_table_init(edges, capa);
+    return obj;
+}
+
+static struct rb_id_table *
+edge_table_ptr(VALUE obj)
+{
+    return RTYPEDDATA_GET_DATA(obj);
+}
+
+static enum rb_id_table_iterator_result edge_table_dup_i(ID id, VALUE val, void *data)
+{
+    struct rb_id_table *new_edges = (struct rb_id_table *)data;
+    rb_id_table_insert(new_edges, id, val);
+    return ID_TABLE_CONTINUE;
+}
+
+static VALUE
+edge_table_dup(VALUE old_table)
+{
+    struct rb_id_table *new_edges;
+    VALUE obj = TypedData_Make_Struct(0, struct rb_id_table, &edge_table_type, new_edges);
+    struct rb_id_table *old_edges = edge_table_ptr(old_table);
+    rb_id_table_init(new_edges, old_edges->num + 1);
+    rb_id_table_foreach(old_edges, edge_table_dup_i, new_edges);
+    return obj;
+}
+
 /*
  * Shape getters
  */
@@ -410,7 +459,7 @@ rb_shape_alloc_with_parent_id(ID edge_name, shape_id_t parent_id)
     shape->edge_name = edge_name;
     shape->next_field_index = 0;
     shape->parent_id = parent_id;
-    shape->edges = NULL;
+    shape->edges = 0;
 
     return shape;
 }
@@ -498,6 +547,8 @@ rb_shape_alloc_new_child(ID id, rb_shape_t *shape, enum shape_type shape_type)
 
 static rb_shape_t *shape_transition_too_complex(rb_shape_t *original_shape);
 
+#define RUBY_ATOMIC_VALUE_LOAD(x) (VALUE)(RUBY_ATOMIC_PTR_LOAD(x))
+
 static rb_shape_t *
 get_next_shape_internal(rb_shape_t *shape, ID id, enum shape_type shape_type, bool *variation_created, bool new_variations_allowed)
 {
@@ -509,9 +560,9 @@ get_next_shape_internal(rb_shape_t *shape, ID id, enum shape_type shape_type, bo
     *variation_created = false;
 
     // Fast path: if the shape has a single child, we can check it without a lock
-    struct rb_id_table *edges = RUBY_ATOMIC_PTR_LOAD(shape->edges);
-    if (edges && SINGLE_CHILD_P(edges)) {
-        rb_shape_t *child = SINGLE_CHILD(edges);
+    VALUE edges_table = RUBY_ATOMIC_VALUE_LOAD(shape->edges);
+    if (edges_table && SINGLE_CHILD_P(edges_table)) {
+        rb_shape_t *child = SINGLE_CHILD(edges_table);
         if (child->edge_name == id) {
             return child;
         }
@@ -521,13 +572,13 @@ get_next_shape_internal(rb_shape_t *shape, ID id, enum shape_type shape_type, bo
     {
         // The situation may have changed while we waited for the lock.
         // So we load the edge again.
-        edges = RUBY_ATOMIC_PTR_LOAD(shape->edges);
+        edges_table = RUBY_ATOMIC_VALUE_LOAD(shape->edges);
 
         // If the current shape has children
-        if (edges) {
+        if (edges_table) {
             // Check if it only has one child
-            if (SINGLE_CHILD_P(edges)) {
-                rb_shape_t *child = SINGLE_CHILD(edges);
+            if (SINGLE_CHILD_P(edges_table)) {
+                rb_shape_t *child = SINGLE_CHILD(edges_table);
                 // If the one child has a matching edge name, then great,
                 // we found what we want.
                 if (child->edge_name == id) {
@@ -537,7 +588,7 @@ get_next_shape_internal(rb_shape_t *shape, ID id, enum shape_type shape_type, bo
             else {
                 // If it has more than one child, do a hash lookup to find it.
                 VALUE lookup_result;
-                if (rb_id_table_lookup(edges, id, &lookup_result)) {
+                if (rb_id_table_lookup(edge_table_ptr(edges_table), id, &lookup_result)) {
                     res = (rb_shape_t *)lookup_result;
                 }
             }
@@ -551,27 +602,34 @@ get_next_shape_internal(rb_shape_t *shape, ID id, enum shape_type shape_type, bo
                 res = shape_transition_too_complex(shape);
             }
             else {
+                VALUE new_edges_table = 0;
+                struct rb_id_table *edges = NULL;
+
                 rb_shape_t *new_shape = rb_shape_alloc_new_child(id, shape, shape_type);
 
-                if (!edges) {
+                if (!edges_table) {
                     // If the shape had no edge yet, we can directly set the new child
-                    edges = TAG_SINGLE_CHILD(new_shape);
+                    edges_table = TAG_SINGLE_CHILD(new_shape);
                 }
                 else {
                     // If the edge was single child we need to allocate a table.
-                    if (SINGLE_CHILD_P(shape->edges)) {
-                        rb_shape_t *old_child = SINGLE_CHILD(edges);
-                        edges = rb_id_table_create(2);
+                    if (SINGLE_CHILD_P(edges_table)) {
+                        rb_shape_t *old_child = SINGLE_CHILD(edges_table);
+                        new_edges_table = edge_table_new(2, edges);
                         rb_id_table_insert(edges, old_child->edge_name, (VALUE)old_child);
+                    }
+                    else {
+                        new_edges_table = edge_table_dup(edges_table);
+                        edges = edge_table_ptr(new_edges_table);
                     }
 
                     rb_id_table_insert(edges, new_shape->edge_name, (VALUE)new_shape);
                     *variation_created = true;
                 }
 
-                // We must use an atomic when setting the edges to ensure the writes
-                // from rb_shape_alloc_new_child are committed.
-                RUBY_ATOMIC_PTR_SET(shape->edges, edges);
+                if (edges_table != RUBY_ATOMIC_VALUE_CAS(shape->edges, edges_table, new_edges_table)) {
+                    // Another thread updated the table;
+                }
 
                 res = new_shape;
             }
@@ -1025,7 +1083,7 @@ shape_traverse_from_new_root(rb_shape_t *initial_shape, rb_shape_t *dest_shape)
             }
         }
         else {
-            if (rb_id_table_lookup(next_shape->edges, dest_shape->edge_name, &lookup_result)) {
+            if (rb_id_table_lookup(edge_table_ptr(next_shape->edges), dest_shape->edge_name, &lookup_result)) {
                 next_shape = (rb_shape_t *)lookup_result;
             }
             else {
@@ -1119,7 +1177,7 @@ rb_shape_edges_count(shape_id_t shape_id)
             return 1;
         }
         else {
-            return rb_id_table_size(shape->edges);
+            return rb_id_table_size(edge_table_ptr(shape->edges));
         }
     }
     return 0;
@@ -1132,7 +1190,7 @@ rb_shape_memsize(shape_id_t shape_id)
 
     size_t memsize = sizeof(rb_shape_t);
     if (shape->edges && !SINGLE_CHILD_P(shape->edges)) {
-        memsize += rb_id_table_memsize(shape->edges);
+        memsize += rb_id_table_memsize(edge_table_ptr(shape->edges));
     }
     return memsize;
 }
@@ -1420,7 +1478,8 @@ Init_default_shapes(void)
         t_object_shape->type = SHAPE_T_OBJECT;
         t_object_shape->heap_index = i;
         t_object_shape->capacity = (uint32_t)((sizes[i] - offsetof(struct RObject, as.ary)) / sizeof(VALUE));
-        t_object_shape->edges = rb_id_table_create(0);
+        struct rb_id_table *ignore = NULL;
+        t_object_shape->edges = edge_table_new(32, ignore);
         t_object_shape->ancestor_index = LEAF;
         RUBY_ASSERT(rb_shape_id(t_object_shape) == rb_shape_root(i));
     }
@@ -1438,15 +1497,6 @@ Init_default_shapes(void)
 void
 rb_shape_free_all(void)
 {
-    rb_shape_t *cursor = rb_shape_get_root_shape();
-    rb_shape_t *end = RSHAPE(GET_SHAPE_TREE()->next_shape_id);
-    while (cursor < end) {
-        if (cursor->edges && !SINGLE_CHILD_P(cursor->edges)) {
-            rb_id_table_free(cursor->edges);
-        }
-        cursor++;
-    }
-
     xfree(GET_SHAPE_TREE());
 }
 

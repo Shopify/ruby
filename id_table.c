@@ -12,8 +12,6 @@
 #endif
 #include "ruby_assert.h"
 
-typedef rb_id_serial_t id_key_t;
-
 static inline ID
 key2id(id_key_t key)
 {
@@ -29,21 +27,6 @@ id2key(ID id)
 /* simple open addressing with quadratic probing.
    uses mark-bit on collisions - need extra 1 bit,
    ID is strictly 3 bits larger than rb_id_serial_t */
-
-typedef struct rb_id_item {
-    id_key_t key;
-#if SIZEOF_VALUE == 8
-    int      collision;
-#endif
-    VALUE    val;
-} item_t;
-
-struct rb_id_table {
-    int capa;
-    int num;
-    int used;
-    item_t *items;
-};
 
 #if SIZEOF_VALUE == 8
 #define ITEM_GET_KEY(tbl, i) ((tbl)->items[i].key)
@@ -80,9 +63,10 @@ round_capa(int capa)
     return (capa + 1) << 2;
 }
 
-static struct rb_id_table *
-rb_id_table_init(struct rb_id_table *tbl, int capa)
+struct rb_id_table *
+rb_id_table_init(struct rb_id_table *tbl, size_t s_capa)
 {
+    int capa = (int)s_capa;
     MEMZERO(tbl, struct rb_id_table, 1);
     if (capa > 0) {
         capa = round_capa(capa);
@@ -96,7 +80,13 @@ struct rb_id_table *
 rb_id_table_create(size_t capa)
 {
     struct rb_id_table *tbl = ALLOC(struct rb_id_table);
-    return rb_id_table_init(tbl, (int)capa);
+    return rb_id_table_init(tbl, capa);
+}
+
+void
+rb_id_table_free_items(struct rb_id_table *tbl)
+{
+    xfree(tbl->items);
 }
 
 void

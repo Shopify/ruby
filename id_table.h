@@ -1,10 +1,26 @@
 #ifndef RUBY_ID_TABLE_H
 #define RUBY_ID_TABLE_H 1
+#include "symbol.h"
 #include "ruby/internal/config.h"
 #include <stddef.h>
 #include "ruby/ruby.h"
 
-struct rb_id_table;
+typedef rb_id_serial_t id_key_t;
+
+typedef struct rb_id_item {
+    id_key_t key;
+#if SIZEOF_VALUE == 8
+    int      collision;
+#endif
+    VALUE    val;
+} item_t;
+
+struct rb_id_table {
+    int capa;
+    int num;
+    int used;
+    item_t *items;
+};
 
 /* compatible with ST_* */
 enum rb_id_table_iterator_result {
@@ -16,7 +32,10 @@ enum rb_id_table_iterator_result {
 };
 
 struct rb_id_table *rb_id_table_create(size_t size);
+struct rb_id_table *rb_id_table_init(struct rb_id_table *tbl, size_t capa);
+
 void rb_id_table_free(struct rb_id_table *tbl);
+void rb_id_table_free_items(struct rb_id_table *tbl);
 void rb_id_table_clear(struct rb_id_table *tbl);
 
 size_t rb_id_table_memsize(const struct rb_id_table *tbl);
