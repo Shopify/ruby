@@ -810,12 +810,17 @@ shape_get_next(rb_shape_t *shape, VALUE obj, ID id, bool emit_warnings)
         klass = rb_singleton_class(obj);
         allow_new_root = true;
         break;
+      case T_IMEMO:
+        RUBY_ASSERT(IMEMO_TYPE_P(obj, imemo_obj_fields));
+        allow_new_root = true;
+        klass = Qfalse;
+        break;
       default:
         klass = rb_obj_class(obj);
         break;
     }
 
-    bool allow_new_shape = RCLASS_VARIATION_COUNT(klass) < SHAPE_MAX_VARIATIONS;
+    bool allow_new_shape = !klass || RCLASS_VARIATION_COUNT(klass) < SHAPE_MAX_VARIATIONS;
     bool variation_created = false;
     allow_new_root &= allow_new_shape;
 
@@ -833,7 +838,7 @@ shape_get_next(rb_shape_t *shape, VALUE obj, ID id, bool emit_warnings)
     rb_shape_t *new_shape = get_next_shape_internal(shape, id, SHAPE_IVAR, &variation_created, allow_new_shape);
 
     // Check if we should update max_iv_count on the object's class
-    if (obj != klass && new_shape->next_field_index > RCLASS_MAX_IV_COUNT(klass)) {
+    if (klass && new_shape->next_field_index > RCLASS_MAX_IV_COUNT(klass)) {
         RCLASS_SET_MAX_IV_COUNT(klass, new_shape->next_field_index);
     }
 

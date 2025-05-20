@@ -569,7 +569,7 @@ RCLASS_SET_FIELDS_HASH(VALUE obj, st_table *tbl)
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
 
-    VALUE fields = rb_imemo_obj_fields_new(sizeof(tbl));
+    VALUE fields = rb_imemo_obj_fields_new(obj, sizeof(tbl));
     IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
     RCLASSEXT_SET_FIELDS(RCLASS_EXT_PRIME(obj), fields);
 }
@@ -580,7 +580,7 @@ RCLASS_WRITE_FIELDS_HASH(VALUE obj, st_table *tbl)
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
 
-    VALUE fields = rb_imemo_obj_fields_new(sizeof(tbl));
+    VALUE fields = rb_imemo_obj_fields_new(obj, sizeof(tbl));
     IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
     RCLASSEXT_SET_FIELDS(RCLASS_EXT_WRITABLE(obj), fields);
 }

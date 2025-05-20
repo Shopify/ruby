@@ -260,9 +260,7 @@ MEMO_V2_SET(struct MEMO *m, VALUE v)
 
 struct rb_obj_fields {
     VALUE flags;
-    // We're padding the struct so that capacity match T_OBJECT.
-    // Ideally we'd have a different root to make use of that extra slot.
-    VALUE _unused;
+    VALUE klass;
     union {
         struct {
             VALUE fields[1];
@@ -280,8 +278,8 @@ struct rb_obj_fields {
 #define OBJ_FIELD_COMPLEX  IMEMO_FL_USER1
 #define IMEMO_OBJ_FIELDS(fields) ((struct rb_obj_fields *)fields)
 
-VALUE rb_imemo_obj_fields_new(size_t capa);
-VALUE rb_imemo_obj_fields_new_complex(st_table *tbl);
+VALUE rb_imemo_obj_fields_new(VALUE klass, size_t capa);
+VALUE rb_imemo_obj_fields_new_complex(VALUE klass, st_table *tbl);
 
 static inline VALUE *
 rb_imemo_obj_fields_ptr(VALUE obj_fields)

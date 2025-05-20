@@ -278,7 +278,7 @@ class_duplicate_iclass_classext(VALUE iclass, rb_classext_t *mod_ext, const rb_n
     else {
         RCLASSEXT_M_TBL(ext) = RCLASSEXT_M_TBL(mod_ext);
     }
-    RCLASSEXT_SET_FIELDS(ext, rb_imemo_obj_fields_new_complex(st_init_numtable()));
+
     RCLASSEXT_CONST_TBL(ext) = RCLASSEXT_CONST_TBL(mod_ext);
     RCLASSEXT_CVC_TBL(ext) = RCLASSEXT_CVC_TBL(mod_ext);
 
@@ -318,11 +318,11 @@ rb_class_duplicate_classext(rb_classext_t *orig, VALUE klass, const rb_namespace
     // TODO: consider shapes for performance
     if (RCLASSEXT_FIELDS(orig)) {
         st_table *tbl = st_copy((st_table *)RCLASSEXT_FIELDS(orig));
-        RCLASSEXT_SET_FIELDS(ext, rb_imemo_obj_fields_new_complex(tbl));
+        RCLASSEXT_SET_FIELDS(ext, rb_imemo_obj_fields_new_complex(klass, tbl));
         rb_autoload_copy_table_for_namespace((st_table *)RCLASSEXT_FIELDS(ext), ns);
     }
     else {
-        RCLASSEXT_SET_FIELDS(ext, rb_imemo_obj_fields_new_complex(st_init_numtable()));
+        RCLASSEXT_SET_FIELDS(ext, rb_imemo_obj_fields_new_complex(klass, st_init_numtable()));
     }
 
     if (RCLASSEXT_SHARED_CONST_TBL(orig)) {

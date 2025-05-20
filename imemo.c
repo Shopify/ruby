@@ -112,15 +112,17 @@ rb_imemo_tmpbuf_parser_heap(void *buf, rb_imemo_tmpbuf_t *old_heap, size_t cnt)
 static const size_t IMEMO_BUF_OVERHEAD = sizeof(VALUE); // flags
 
 VALUE
-rb_imemo_obj_fields_new(size_t capa)
+rb_imemo_obj_fields_new(VALUE klass, size_t capa)
 {
+    klass = rb_singleton_class(klass);
+
     if (rb_gc_size_allocatable_p(capa + IMEMO_BUF_OVERHEAD)) {
-        VALUE fields = rb_imemo_new(imemo_obj_fields, 0, capa + IMEMO_BUF_OVERHEAD);
+        VALUE fields = rb_imemo_new(imemo_obj_fields, klass, capa + IMEMO_BUF_OVERHEAD);
         RUBY_ASSERT(IMEMO_TYPE_P(fields, imemo_obj_fields));
         return fields;
     }
     else {
-        VALUE fields = rb_imemo_new(imemo_obj_fields, 0, sizeof(VALUE *));
+        VALUE fields = rb_imemo_new(imemo_obj_fields, klass, sizeof(VALUE *));
         FL_SET_RAW(fields, OBJ_FIELD_EXTERNAL);
         // TODO: malloc + tag.
         rb_bug("TODO: malloc + tag.");
@@ -129,9 +131,9 @@ rb_imemo_obj_fields_new(size_t capa)
 }
 
 VALUE
-rb_imemo_obj_fields_new_complex(st_table *tbl)
+rb_imemo_obj_fields_new_complex(VALUE klass, st_table *tbl)
 {
-    VALUE fields = rb_imemo_obj_fields_new(sizeof(tbl));
+    VALUE fields = rb_imemo_obj_fields_new(klass, sizeof(tbl));
     IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
     return fields;
 }
