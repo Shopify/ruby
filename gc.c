@@ -1224,12 +1224,7 @@ classext_free(rb_classext_t *ext, bool is_prime, VALUE namespace, void *arg)
 
     rb_id_table_free(RCLASSEXT_M_TBL(ext));
     rb_cc_tbl_free(RCLASSEXT_CC_TBL(ext), args->klass);
-    if (args->obj_too_complex) {
-        st_free_table((st_table *)RCLASSEXT_FIELDS(ext));
-    }
-    else if (ext->fields) {
-        xfree(RCLASSEXT_FIELDS(ext));
-    }
+
     if (!RCLASSEXT_SHARED_CONST_TBL(ext) && (tbl = RCLASSEXT_CONST_TBL(ext)) != NULL) {
         rb_free_const_table(tbl);
     }
