@@ -4736,9 +4736,13 @@ class_ivar_set_shape_fields(VALUE obj, void *_data)
 }
 
 static void
-class_ivar_set_shape_resize_fields(VALUE obj, attr_index_t _old_capa, attr_index_t new_capa, void *_data)
+class_ivar_set_shape_resize_fields(VALUE obj, attr_index_t old_capa, attr_index_t new_capa, void *_data)
 {
-    REALLOC_N(RCLASS_PRIME_FIELDS(obj), VALUE, new_capa);
+    VALUE new_fields = rb_imemo_obj_fields_new(new_capa);
+    if (old_capa) {
+        MEMCPY(rb_imemo_obj_fields_ptr(new_fields), RCLASS_PRIME_FIELDS(obj), VALUE, old_capa);
+    }
+    RCLASS_PRIME_SET_FIELDS(obj, new_fields);
 }
 
 static void

@@ -42,6 +42,7 @@ enum imemo_type {
     imemo_callinfo       = 11,
     imemo_callcache      = 12,
     imemo_constcache     = 13,
+    imemo_obj_fields     = 14,
 };
 
 /* CREF (Class REFerence) is defined in method.h */
@@ -255,6 +256,41 @@ static inline void
 MEMO_V2_SET(struct MEMO *m, VALUE v)
 {
     RB_OBJ_WRITE(m, &m->v2, v);
+}
+
+struct rb_obj_fields {
+    VALUE flags;
+    union {
+        struct {
+            VALUE fields[1];
+        } embed;
+        struct {
+            VALUE *ptr;
+        } external;
+        struct {
+            st_table *table; // TODO: embed
+        } complex;
+    } as;
+};
+
+#define OBJ_FIELD_EXTERNAL IMEMO_FL_USER0
+#define OBJ_FIELD_COMPLEX  IMEMO_FL_USER1
+#define IMEMO_OBJ_FIELDS(fields) ((struct rb_obj_fields *)fields)
+
+VALUE rb_imemo_obj_fields_new(size_t capa);
+VALUE rb_imemo_obj_fields_new_complex(st_table *tbl);
+
+static inline VALUE *
+rb_imemo_obj_fields_ptr(VALUE obj_fields)
+{
+    RUBY_ASSERT(IMEMO_TYPE_P(obj_fields, imemo_obj_fields));
+
+    if (RB_UNLIKELY(FL_TEST_RAW(obj_fields, OBJ_FIELD_EXTERNAL))) {
+        return IMEMO_OBJ_FIELDS(obj_fields)->as.external.ptr;
+    }
+    else {
+        return IMEMO_OBJ_FIELDS(obj_fields)->as.embed.fields;
+    }
 }
 
 #endif /* INTERNAL_IMEMO_H */

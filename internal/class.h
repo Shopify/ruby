@@ -79,7 +79,7 @@ struct rb_cvar_class_tbl_entry {
 struct rb_classext_struct {
     const rb_namespace_t *ns;
     VALUE super;
-    VALUE *fields; // Fields are either ivar or other internal properties stored inline
+    VALUE fields; // Fields are either ivar or other internal properties stored inline
     struct rb_id_table *m_tbl;
     struct rb_id_table *const_tbl;
     struct rb_id_table *callable_m_tbl;
@@ -176,7 +176,15 @@ static inline rb_classext_t * RCLASS_EXT_WRITABLE(VALUE obj);
 
 #define RCLASSEXT_NS(ext) (ext->ns)
 #define RCLASSEXT_SUPER(ext) (ext->super)
-#define RCLASSEXT_FIELDS(ext) (ext->fields)
+#define RCLASSEXT_FIELDS(ext) (rb_imemo_obj_fields_ptr(ext->fields))
+
+static inline void
+RCLASSEXT_SET_FIELDS(rb_classext_t *ext, VALUE fields)
+{
+    // TODO: Write barrier
+    ext->fields = fields;
+}
+
 #define RCLASSEXT_M_TBL(ext) (ext->m_tbl)
 #define RCLASSEXT_CONST_TBL(ext) (ext->const_tbl)
 #define RCLASSEXT_CALLABLE_M_TBL(ext) (ext->callable_m_tbl)
@@ -209,7 +217,14 @@ static inline void RCLASSEXT_SET_INCLUDER(rb_classext_t *ext, VALUE klass, VALUE
 #define RCLASS_PRIME_NS(c) (RCLASS_EXT_PRIME(c)->ns)
 // To invalidate CC by inserting&invalidating method entry into tables containing the target cme
 // See clear_method_cache_by_id_in_class()
-#define RCLASS_PRIME_FIELDS(c) (RCLASS_EXT_PRIME(c)->fields)
+#define RCLASS_PRIME_FIELDS(c) (rb_imemo_obj_fields_ptr(RCLASS_EXT_PRIME(c)->fields))
+
+static inline void
+RCLASS_PRIME_SET_FIELDS(VALUE klass, VALUE fields)
+{
+    RB_OBJ_WRITE(klass, &RCLASS_EXT_PRIME(klass)->fields, fields);
+}
+
 #define RCLASS_PRIME_M_TBL(c) (RCLASS_EXT_PRIME(c)->m_tbl)
 #define RCLASS_PRIME_CONST_TBL(c) (RCLASS_EXT_PRIME(c)->const_tbl)
 #define RCLASS_PRIME_CALLABLE_M_TBL(c) (RCLASS_EXT_PRIME(c)->callable_m_tbl)
@@ -258,8 +273,8 @@ static inline void RCLASS_WRITE_SUPER(VALUE klass, VALUE super);
 static inline st_table * RCLASS_FIELDS_HASH(VALUE obj);
 static inline st_table * RCLASS_WRITABLE_FIELDS_HASH(VALUE obj);
 static inline uint32_t RCLASS_FIELDS_COUNT(VALUE obj);
-static inline void RCLASS_SET_FIELDS_HASH(VALUE obj, const st_table *table);
-static inline void RCLASS_WRITE_FIELDS_HASH(VALUE obj, const st_table *table);
+static inline void RCLASS_SET_FIELDS_HASH(VALUE obj, st_table *table);
+static inline void RCLASS_WRITE_FIELDS_HASH(VALUE obj, st_table *table);
 // TODO: rename RCLASS_SET_M_TBL_WORKAROUND (and _WRITE_) to RCLASS_SET_M_TBL with write barrier
 static inline void RCLASS_SET_M_TBL_WORKAROUND(VALUE klass, struct rb_id_table *table, bool check_promoted);
 static inline void RCLASS_WRITE_M_TBL_WORKAROUND(VALUE klass, struct rb_id_table *table, bool check_promoted);
@@ -548,19 +563,25 @@ RCLASS_WRITABLE_FIELDS_HASH(VALUE obj)
 }
 
 static inline void
-RCLASS_SET_FIELDS_HASH(VALUE obj, const st_table *tbl)
+RCLASS_SET_FIELDS_HASH(VALUE obj, st_table *tbl)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
-    RCLASSEXT_FIELDS(RCLASS_EXT_PRIME(obj)) = (VALUE *)tbl;
+
+    VALUE fields = rb_imemo_obj_fields_new(sizeof(tbl));
+    IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
+    RCLASSEXT_SET_FIELDS(RCLASS_EXT_PRIME(obj), fields);
 }
 
 static inline void
-RCLASS_WRITE_FIELDS_HASH(VALUE obj, const st_table *tbl)
+RCLASS_WRITE_FIELDS_HASH(VALUE obj, st_table *tbl)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
-    RCLASSEXT_FIELDS(RCLASS_EXT_WRITABLE(obj)) = (VALUE *)tbl;
+
+    VALUE fields = rb_imemo_obj_fields_new(sizeof(tbl));
+    IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
+    RCLASSEXT_SET_FIELDS(RCLASS_EXT_WRITABLE(obj), fields);
 }
 
 static inline uint32_t

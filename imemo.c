@@ -29,10 +29,10 @@ rb_imemo_name(enum imemo_type type)
         IMEMO_NAME(svar);
         IMEMO_NAME(throw_data);
         IMEMO_NAME(tmpbuf);
+        IMEMO_NAME(obj_fields);
 #undef IMEMO_NAME
-      default:
-        rb_bug("unreachable");
     }
+    rb_bug("unreachable");
 }
 
 /* =========================================================================
@@ -107,6 +107,33 @@ rb_imemo_tmpbuf_parser_heap(void *buf, rb_imemo_tmpbuf_t *old_heap, size_t cnt)
     tmpbuf->cnt = cnt;
 
     return tmpbuf;
+}
+
+static const size_t IMEMO_BUF_OVERHEAD = sizeof(VALUE); // flags
+
+VALUE
+rb_imemo_obj_fields_new(size_t capa)
+{
+    if (rb_gc_size_allocatable_p(capa + IMEMO_BUF_OVERHEAD)) {
+        VALUE fields = rb_imemo_new(imemo_obj_fields, 0, capa + IMEMO_BUF_OVERHEAD);
+        RUBY_ASSERT(IMEMO_TYPE_P(fields, imemo_obj_fields));
+        return fields;
+    }
+    else {
+        VALUE fields = rb_imemo_new(imemo_obj_fields, 0, sizeof(VALUE *));
+        FL_SET_RAW(fields, OBJ_FIELD_EXTERNAL);
+        // TODO: malloc + tag.
+        rb_bug("TODO: malloc + tag.");
+        return fields;
+    }
+}
+
+VALUE
+rb_imemo_obj_fields_new_complex(st_table *tbl)
+{
+    VALUE fields = rb_imemo_obj_fields_new(sizeof(tbl));
+    IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
+    return fields;
 }
 
 /* =========================================================================
@@ -420,6 +447,10 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
 
         break;
       }
+      case imemo_obj_fields: {
+        // The object is responsible for marking
+        break;
+      }
       default:
         rb_bug("unreachable");
     }
@@ -513,6 +544,17 @@ rb_cc_tbl_free(struct rb_id_table *cc_tbl, VALUE klass)
     rb_id_table_free(cc_tbl);
 }
 
+static inline void
+imemo_obj_fields_free(struct rb_obj_fields *fields)
+{
+    if (FL_TEST_RAW((VALUE)fields, OBJ_FIELD_COMPLEX)) {
+        st_free_table(fields->as.complex.table);
+    }
+    else if (FL_TEST_RAW((VALUE)fields, OBJ_FIELD_EXTERNAL)) {
+        xfree(fields->as.external.ptr);
+    }
+}
+
 void
 rb_imemo_free(VALUE obj)
 {
@@ -576,6 +618,7 @@ rb_imemo_free(VALUE obj)
         break;
       case imemo_svar:
         RB_DEBUG_COUNTER_INC(obj_imemo_svar);
+
         break;
       case imemo_throw_data:
         RB_DEBUG_COUNTER_INC(obj_imemo_throw_data);
@@ -585,6 +628,10 @@ rb_imemo_free(VALUE obj)
         xfree(((rb_imemo_tmpbuf_t *)obj)->ptr);
         RB_DEBUG_COUNTER_INC(obj_imemo_tmpbuf);
 
+        break;
+      case imemo_obj_fields:
+        imemo_obj_fields_free((struct rb_obj_fields *)obj);
+        RB_DEBUG_COUNTER_INC(obj_imemo_obj_fields);
         break;
       default:
         rb_bug("unreachable");

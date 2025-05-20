@@ -3106,6 +3106,9 @@ gc_mark_classext_module(rb_classext_t *ext, bool prime, VALUE namespace, void *a
     if (RCLASSEXT_SUPER(ext)) {
         gc_mark_internal(RCLASSEXT_SUPER(ext));
     }
+
+    gc_mark_internal(ext->fields);
+
     mark_m_tbl(objspace, RCLASSEXT_M_TBL(ext));
     if (rb_shape_obj_too_complex_p(obj)) {
         gc_mark_tbl_no_pin((st_table *)RCLASSEXT_FIELDS(ext));
