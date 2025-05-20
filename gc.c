@@ -2326,15 +2326,6 @@ rb_obj_memsize_of(VALUE obj)
       case T_MODULE:
       case T_CLASS:
         rb_class_classext_foreach(obj, classext_memsize, (void *)&size);
-
-        if (rb_shape_obj_too_complex_p(obj)) {
-            rb_class_classext_foreach(obj, classext_fields_hash_memsize, (void *)&size);
-        }
-        else {
-            // class IV sizes are allocated as powers of two
-            size += SIZEOF_VALUE << bit_length(RCLASS_FIELDS_COUNT(obj));
-        }
-
         rb_class_classext_foreach(obj, classext_superclasses_memsize, (void *)&size);
         break;
       case T_ICLASS:

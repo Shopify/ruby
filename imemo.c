@@ -183,6 +183,14 @@ rb_imemo_memsize(VALUE obj)
         size += ((rb_imemo_tmpbuf_t *)obj)->cnt * sizeof(VALUE);
 
         break;
+      case imemo_obj_fields:
+        if (FL_TEST_RAW(obj, OBJ_FIELD_COMPLEX)) {
+            size += st_memsize(IMEMO_OBJ_FIELDS(obj)->as.complex.table);
+        }
+        else if (FL_TEST_RAW(obj, OBJ_FIELD_EXTERNAL)) {
+            size += 0; // TODO: Get record the size
+        }
+        break;
       default:
         rb_bug("unreachable");
     }
@@ -630,7 +638,7 @@ rb_imemo_free(VALUE obj)
 
         break;
       case imemo_obj_fields:
-        imemo_obj_fields_free((struct rb_obj_fields *)obj);
+        imemo_obj_fields_free(IMEMO_OBJ_FIELDS(obj));
         RB_DEBUG_COUNTER_INC(obj_imemo_obj_fields);
         break;
       default:
