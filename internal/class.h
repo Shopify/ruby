@@ -218,6 +218,7 @@ static inline void RCLASSEXT_SET_INCLUDER(rb_classext_t *ext, VALUE klass, VALUE
 // To invalidate CC by inserting&invalidating method entry into tables containing the target cme
 // See clear_method_cache_by_id_in_class()
 #define RCLASS_PRIME_FIELDS(c) (rb_imemo_obj_fields_ptr(RCLASS_EXT_PRIME(c)->fields))
+#define RCLASS_PRIME_FIELDS_VALUE(c) (RCLASS_EXT_PRIME(c)->fields)
 
 static inline void
 RCLASS_PRIME_SET_FIELDS(VALUE klass, VALUE fields)

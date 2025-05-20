@@ -260,6 +260,9 @@ MEMO_V2_SET(struct MEMO *m, VALUE v)
 
 struct rb_obj_fields {
     VALUE flags;
+    // We're padding the struct so that capacity match T_OBJECT.
+    // Ideally we'd have a different root to make use of that extra slot.
+    VALUE _unused;
     union {
         struct {
             VALUE fields[1];
@@ -283,6 +286,7 @@ VALUE rb_imemo_obj_fields_new_complex(st_table *tbl);
 static inline VALUE *
 rb_imemo_obj_fields_ptr(VALUE obj_fields)
 {
+    RUBY_ASSERT(obj_fields);
     RUBY_ASSERT(IMEMO_TYPE_P(obj_fields, imemo_obj_fields));
 
     if (RB_UNLIKELY(FL_TEST_RAW(obj_fields, OBJ_FIELD_EXTERNAL))) {

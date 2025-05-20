@@ -1227,7 +1227,7 @@ classext_free(rb_classext_t *ext, bool is_prime, VALUE namespace, void *arg)
     if (args->obj_too_complex) {
         st_free_table((st_table *)RCLASSEXT_FIELDS(ext));
     }
-    else {
+    else if (ext->fields) {
         xfree(RCLASSEXT_FIELDS(ext));
     }
     if (!RCLASSEXT_SHARED_CONST_TBL(ext) && (tbl = RCLASSEXT_CONST_TBL(ext)) != NULL) {
@@ -2272,20 +2272,6 @@ classext_memsize(rb_classext_t *ext, bool prime, VALUE namespace, void *arg)
         s += sizeof(rb_classext_t);
     }
     *size += s;
-}
-
-static void
-classext_fields_hash_memsize(rb_classext_t *ext, bool prime, VALUE namespace, void *arg)
-{
-    size_t *size = (size_t *)arg;
-    size_t count;
-    RB_VM_LOCK_ENTER();
-    {
-        count = rb_st_table_size((st_table *)RCLASSEXT_FIELDS(ext));
-    }
-    RB_VM_LOCK_LEAVE();
-    // class IV sizes are allocated as powers of two
-    *size += SIZEOF_VALUE << bit_length(count);
 }
 
 static void
@@ -3835,8 +3821,13 @@ update_classext(rb_classext_t *ext, bool is_prime, VALUE namespace, void *arg)
     }
     else {
         // Classext is not copied in this case
-        for (attr_index_t i = 0; i < RCLASS_FIELDS_COUNT(klass); i++) {
-            UPDATE_IF_MOVED(objspace, RCLASSEXT_FIELDS(RCLASS_EXT_PRIME(klass))[i]);
+        if (ext->fields) {
+            UPDATE_IF_MOVED(objspace, ext->fields);
+
+            VALUE *fields_ptr = RCLASSEXT_FIELDS(RCLASS_EXT_PRIME(klass));
+            for (attr_index_t i = 0; i < RCLASS_FIELDS_COUNT(klass); i++) {
+                UPDATE_IF_MOVED(objspace, fields_ptr[i]);
+            }
         }
     }
 

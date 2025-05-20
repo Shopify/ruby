@@ -784,6 +784,8 @@ rb_shape_get_next_iv_shape(shape_id_t shape_id, ID id)
     return rb_shape_id(next_shape);
 }
 
+static rb_shape_t *shape_rebuild_from_new_root(rb_shape_t *initial_shape, rb_shape_t *dest_shape);
+
 static inline rb_shape_t *
 shape_get_next(rb_shape_t *shape, VALUE obj, ID id, bool emit_warnings)
 {
@@ -799,11 +801,14 @@ shape_get_next(rb_shape_t *shape, VALUE obj, ID id, bool emit_warnings)
     }
 #endif
 
+    bool allow_new_root = false;
+
     VALUE klass;
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
       case T_MODULE:
         klass = rb_singleton_class(obj);
+        allow_new_root = true;
         break;
       default:
         klass = rb_obj_class(obj);
@@ -812,6 +817,19 @@ shape_get_next(rb_shape_t *shape, VALUE obj, ID id, bool emit_warnings)
 
     bool allow_new_shape = RCLASS_VARIATION_COUNT(klass) < SHAPE_MAX_VARIATIONS;
     bool variation_created = false;
+    allow_new_root &= allow_new_shape;
+
+    if (allow_new_root) {
+        if (!shape->capacity) {
+            shape = RSHAPE(rb_shape_root(0));
+        }
+        else if (shape->capacity == shape->next_field_index) {
+            // TODO: handle max size
+            rb_shape_t *new_root = RSHAPE(rb_shape_root(shape->heap_index + 1));
+            shape = shape_rebuild_from_new_root(new_root, shape);
+        }
+    }
+
     rb_shape_t *new_shape = get_next_shape_internal(shape, id, SHAPE_IVAR, &variation_created, allow_new_shape);
 
     // Check if we should update max_iv_count on the object's class
@@ -1033,6 +1051,34 @@ shape_traverse_from_new_root(rb_shape_t *initial_shape, rb_shape_t *dest_shape)
             }
         }
         break;
+      case SHAPE_ROOT:
+      case SHAPE_T_OBJECT:
+        break;
+      case SHAPE_OBJ_TOO_COMPLEX:
+        rb_bug("Unreachable");
+        break;
+    }
+
+    return next_shape;
+}
+
+static rb_shape_t *
+shape_rebuild_from_new_root(rb_shape_t *initial_shape, rb_shape_t *dest_shape)
+{
+    RUBY_ASSERT(initial_shape->type == SHAPE_T_OBJECT || initial_shape->type == SHAPE_ROOT);
+    rb_shape_t *next_shape = initial_shape;
+
+    if (dest_shape->type != SHAPE_ROOT && dest_shape->type != SHAPE_T_OBJECT) {
+        next_shape = shape_rebuild_from_new_root(initial_shape, RSHAPE(dest_shape->parent_id));
+    }
+
+    bool dont_care = true;
+
+    switch ((enum shape_type)dest_shape->type) {
+      case SHAPE_IVAR:
+      case SHAPE_OBJ_ID:
+      case SHAPE_FROZEN:
+        return get_next_shape_internal(next_shape, dest_shape->edge_name, dest_shape->type, &dont_care, true);
       case SHAPE_ROOT:
       case SHAPE_T_OBJECT:
         break;
