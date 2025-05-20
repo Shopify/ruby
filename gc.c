@@ -3816,14 +3816,15 @@ update_classext(rb_classext_t *ext, bool is_prime, VALUE namespace, void *arg)
 
     update_m_tbl(objspace, RCLASSEXT_M_TBL(ext));
 
-    if (args->obj_too_complex) {
-        gc_ref_update_table_values_only((st_table *)RCLASSEXT_FIELDS(ext));
-    }
-    else {
-        // Classext is not copied in this case
-        if (ext->fields) {
-            UPDATE_IF_MOVED(objspace, ext->fields);
 
+    if (ext->fields) {
+        UPDATE_IF_MOVED(objspace, ext->fields);
+
+        if (args->obj_too_complex) {
+            gc_ref_update_table_values_only((st_table *)RCLASSEXT_FIELDS(ext));
+        }
+        else {
+            // Classext is not copied in this case
             VALUE *fields_ptr = RCLASSEXT_FIELDS(RCLASS_EXT_PRIME(klass));
             for (attr_index_t i = 0; i < RCLASS_FIELDS_COUNT(klass); i++) {
                 UPDATE_IF_MOVED(objspace, fields_ptr[i]);
