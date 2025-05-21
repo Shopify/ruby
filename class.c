@@ -318,11 +318,11 @@ rb_class_duplicate_classext(rb_classext_t *orig, VALUE klass, const rb_namespace
     // TODO: consider shapes for performance
     if (RCLASSEXT_FIELDS(orig)) {
         st_table *tbl = st_copy((st_table *)RCLASSEXT_FIELDS(orig));
-        RCLASSEXT_SET_FIELDS(ext, rb_imemo_obj_fields_new_complex(klass, tbl));
+        RCLASSEXT_SET_FIELDS_OBJ(klass, ext, rb_imemo_obj_fields_new_complex(klass, tbl));
         rb_autoload_copy_table_for_namespace((st_table *)RCLASSEXT_FIELDS(ext), ns);
     }
     else {
-        RCLASSEXT_SET_FIELDS(ext, rb_imemo_obj_fields_new_complex(klass, st_init_numtable()));
+        RCLASSEXT_SET_FIELDS_OBJ(klass, ext, rb_imemo_obj_fields_new_complex(klass, st_init_numtable()));
     }
 
     if (RCLASSEXT_SHARED_CONST_TBL(orig)) {

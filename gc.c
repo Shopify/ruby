@@ -3079,7 +3079,7 @@ gc_mark_classext_module(rb_classext_t *ext, bool prime, VALUE namespace, void *a
         gc_mark_internal(RCLASSEXT_SUPER(ext));
     }
 
-    gc_mark_internal(ext->fields);
+    gc_mark_internal(ext->fields_obj);
 
     mark_m_tbl(objspace, RCLASSEXT_M_TBL(ext));
     if (rb_shape_obj_too_complex_p(obj)) {
@@ -3812,8 +3812,8 @@ update_classext(rb_classext_t *ext, bool is_prime, VALUE namespace, void *arg)
     update_m_tbl(objspace, RCLASSEXT_M_TBL(ext));
 
 
-    if (ext->fields) {
-        UPDATE_IF_MOVED(objspace, ext->fields);
+    if (ext->fields_obj) {
+        UPDATE_IF_MOVED(objspace, ext->fields_obj);
 
         if (args->obj_too_complex) {
             gc_ref_update_table_values_only((st_table *)RCLASSEXT_FIELDS(ext));

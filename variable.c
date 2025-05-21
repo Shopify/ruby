@@ -4740,7 +4740,7 @@ class_ivar_set_shape_resize_fields(VALUE obj, attr_index_t old_capa, attr_index_
     if (old_capa) {
         MEMCPY(rb_imemo_obj_fields_ptr(new_fields), RCLASS_PRIME_FIELDS(obj), VALUE, old_capa);
     }
-    RCLASS_PRIME_SET_FIELDS(obj, new_fields);
+    RCLASS_PRIME_SET_FIELDS_OBJ(obj, new_fields);
 }
 
 static void
