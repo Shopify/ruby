@@ -4808,7 +4808,9 @@ class_atomic_ivar_set(VALUE obj, ID id, VALUE val)
     VALUE *fields = rb_imemo_obj_fields_ptr(fields_obj);
     RB_OBJ_WRITE(obj, &fields[index], val);
     if (!existing) {
+        // TODO: save duplicating the shape_id
         rb_shape_set_shape_id(fields_obj, next_shape_id);
+        rb_shape_set_shape_id(obj, next_shape_id);
     }
 
     if (fields_obj != original_fields_obj) {
