@@ -217,7 +217,7 @@ static inline void RCLASSEXT_SET_INCLUDER(rb_classext_t *ext, VALUE klass, VALUE
 // To invalidate CC by inserting&invalidating method entry into tables containing the target cme
 // See clear_method_cache_by_id_in_class()
 #define RCLASS_PRIME_FIELDS(c) (rb_imemo_class_fields_ptr(RCLASS_EXT_PRIME(c)->fields_obj))
-#define RCLASS_PRIME_FIELDS_VALUE(c) (RCLASS_EXT_PRIME(c)->fields_obj)
+#define RCLASS_PRIME_FIELDS_OBJ(c) (RCLASS_EXT_PRIME(c)->fields_obj)
 
 static inline void
 RCLASS_PRIME_SET_FIELDS_OBJ(VALUE klass, VALUE fields)
@@ -270,8 +270,8 @@ RCLASS_PRIME_SET_FIELDS_OBJ(VALUE klass, VALUE fields)
 
 static inline void RCLASS_SET_SUPER(VALUE klass, VALUE super);
 static inline void RCLASS_WRITE_SUPER(VALUE klass, VALUE super);
-static inline st_table * RCLASS_FIELDS_HASH(VALUE obj);
-static inline st_table * RCLASS_WRITABLE_FIELDS_HASH(VALUE obj);
+static inline st_table *RCLASS_FIELDS_HASH(VALUE obj);
+static inline st_table *RCLASS_WRITABLE_FIELDS_HASH(VALUE obj);
 static inline uint32_t RCLASS_FIELDS_COUNT(VALUE obj);
 static inline void RCLASS_SET_FIELDS_HASH(VALUE obj, st_table *table);
 static inline void RCLASS_WRITE_FIELDS_HASH(VALUE obj, st_table *table);
@@ -551,7 +551,8 @@ RCLASS_FIELDS_HASH(VALUE obj)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
-    return (st_table *)RCLASSEXT_FIELDS(RCLASS_EXT_READABLE(obj));
+    VALUE fields_obj = RCLASS_EXT_READABLE(obj)->fields_obj;
+    return rb_imemo_class_fields_complex_tbl(fields_obj);
 }
 
 static inline st_table *
@@ -559,7 +560,9 @@ RCLASS_WRITABLE_FIELDS_HASH(VALUE obj)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
-    return (st_table *)RCLASSEXT_FIELDS(RCLASS_EXT_WRITABLE(obj));
+
+    VALUE fields_obj = RCLASS_EXT_WRITABLE(obj)->fields_obj;
+    return rb_imemo_class_fields_complex_tbl(fields_obj);
 }
 
 static inline void
@@ -568,8 +571,8 @@ RCLASS_SET_FIELDS_HASH(VALUE obj, st_table *tbl)
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
 
-    VALUE fields = rb_imemo_class_fields_new(obj, sizeof(tbl));
-    IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
+    VALUE fields = rb_imemo_class_fields_new_complex(obj, tbl);
+    rb_shape_set_shape_id(fields, RBASIC_SHAPE_ID(obj));
     RCLASSEXT_SET_FIELDS_OBJ(obj, RCLASS_EXT_PRIME(obj), fields);
 }
 

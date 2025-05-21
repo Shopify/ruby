@@ -289,6 +289,7 @@ rb_imemo_class_fields_ptr(VALUE obj_fields)
     }
 
     RUBY_ASSERT(IMEMO_TYPE_P(obj_fields, imemo_class_fields));
+    RUBY_ASSERT(!FL_TEST_RAW(obj_fields, OBJ_FIELD_COMPLEX));
 
     if (RB_UNLIKELY(FL_TEST_RAW(obj_fields, OBJ_FIELD_EXTERNAL))) {
         return IMEMO_OBJ_FIELDS(obj_fields)->as.external.ptr;
@@ -296,6 +297,19 @@ rb_imemo_class_fields_ptr(VALUE obj_fields)
     else {
         return IMEMO_OBJ_FIELDS(obj_fields)->as.embed.fields;
     }
+}
+
+static inline st_table *
+rb_imemo_class_fields_complex_tbl(VALUE obj_fields)
+{
+    if (!obj_fields) {
+        return NULL;
+    }
+
+    RUBY_ASSERT(IMEMO_TYPE_P(obj_fields, imemo_class_fields));
+    RUBY_ASSERT(FL_TEST_RAW(obj_fields, OBJ_FIELD_COMPLEX));
+
+    return IMEMO_OBJ_FIELDS(obj_fields)->as.complex.table;
 }
 
 #endif /* INTERNAL_IMEMO_H */

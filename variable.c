@@ -1417,7 +1417,7 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
             bool found = false;
             VALUE val = undef;
 
-            VALUE fields_obj = RCLASS_PRIME_FIELDS_VALUE(obj); // TODO: figure namespaces
+            VALUE fields_obj = RCLASS_PRIME_FIELDS_OBJ(obj); // TODO: figure namespaces
             if (fields_obj) {
 #if !SHAPE_IN_BASIC_FLAGS
                 shape_id = get_shape_id_from_flags(fields_obj);
@@ -2042,6 +2042,18 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
 
 #if SHAPE_IN_BASIC_FLAGS
     RBASIC_SET_SHAPE_ID(obj, shape_id);
+    switch (BUILTIN_TYPE(obj)) {
+      case T_CLASS:
+      case T_MODULE: {
+        VALUE fields_obj = RCLASS_PRIME_FIELDS_OBJ(obj);
+        if (fields_obj) {
+            RBASIC_SET_SHAPE_ID(fields_obj, shape_id);
+        }
+        break;
+      }
+      default:
+        break;
+    }
 #else
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
@@ -4768,7 +4780,7 @@ class_atomic_ivar_set(VALUE obj, ID id, VALUE val)
 {
     bool existing = true;
 
-    VALUE original_fields_obj = RCLASS_PRIME_FIELDS_VALUE(obj); // TODO: figure out namespaces
+    VALUE original_fields_obj = RCLASS_PRIME_FIELDS_OBJ(obj); // TODO: figure out namespaces
     VALUE fields_obj = original_fields_obj;
 
     if (!fields_obj) {
@@ -4814,7 +4826,7 @@ class_atomic_ivar_set(VALUE obj, ID id, VALUE val)
     }
 
     if (fields_obj != original_fields_obj) {
-        RUBY_ATOMIC_VALUE_SET(RCLASS_PRIME_FIELDS_VALUE(obj), fields_obj);
+        RUBY_ATOMIC_VALUE_SET(RCLASS_PRIME_FIELDS_OBJ(obj), fields_obj);
     }
 
     return existing;
@@ -4873,7 +4885,7 @@ rb_fields_tbl_copy(VALUE dst, VALUE src)
     RUBY_ASSERT(RB_TYPE_P(dst, T_CLASS) || RB_TYPE_P(dst, T_MODULE));
 
     RUBY_ASSERT(rb_obj_shape(dst)->type == SHAPE_ROOT);
-    RUBY_ASSERT(!RCLASS_PRIME_FIELDS_VALUE(dst));
+    RUBY_ASSERT(!RCLASS_PRIME_FIELDS_OBJ(dst));
 
     rb_ivar_foreach(src, tbl_copy_i, dst);
 }

@@ -133,6 +133,7 @@ VALUE
 rb_imemo_class_fields_new_complex(VALUE klass, st_table *tbl)
 {
     VALUE fields = rb_imemo_class_fields_new(klass, sizeof(tbl));
+    FL_SET_RAW(fields, OBJ_FIELD_COMPLEX);
     IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
     return fields;
 }
