@@ -244,6 +244,7 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_catch_throw_in_require
+    pend "Tempfile"
     bug7185 = '[ruby-dev:46234]'
     Tempfile.create(["dep", ".rb"]) {|t|
       t.puts("throw :extdep, 42")
@@ -253,6 +254,7 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_catch_throw_in_require_cant_be_rescued
+    pend "Tempfile"
     bug18562 = '[ruby-core:107403]'
     Tempfile.create(["dep", ".rb"]) {|t|
       t.puts("throw :extdep, 42")
