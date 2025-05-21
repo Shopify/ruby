@@ -1437,7 +1437,7 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
                     found = rb_shape_get_iv_index(shape, id, &index);
 
                     if (found) {
-                        ivar_list = rb_imemo_obj_fields_ptr(fields_obj);
+                        ivar_list = rb_imemo_class_fields_ptr(fields_obj);
                         RUBY_ASSERT(ivar_list);
 
                         val = ivar_list[index];
@@ -4736,9 +4736,9 @@ class_ivar_set_shape_fields(VALUE obj, void *_data)
 static void
 class_ivar_set_shape_resize_fields(VALUE obj, attr_index_t old_capa, attr_index_t new_capa, void *_data)
 {
-    VALUE new_fields = rb_imemo_obj_fields_new(obj, new_capa);
+    VALUE new_fields = rb_imemo_class_fields_new(obj, new_capa);
     if (old_capa) {
-        MEMCPY(rb_imemo_obj_fields_ptr(new_fields), RCLASS_PRIME_FIELDS(obj), VALUE, old_capa);
+        MEMCPY(rb_imemo_class_fields_ptr(new_fields), RCLASS_PRIME_FIELDS(obj), VALUE, old_capa);
     }
     RCLASS_PRIME_SET_FIELDS_OBJ(obj, new_fields);
 }
@@ -4772,7 +4772,7 @@ class_atomic_ivar_set(VALUE obj, ID id, VALUE val)
     VALUE fields_obj = original_fields_obj;
 
     if (!fields_obj) {
-        fields_obj = rb_imemo_obj_fields_new(obj, 0);
+        fields_obj = rb_imemo_class_fields_new(obj, 0);
     }
 
     rb_shape_t *current_shape = rb_obj_shape(fields_obj);
@@ -4798,14 +4798,14 @@ class_atomic_ivar_set(VALUE obj, ID id, VALUE val)
         }
         else if (UNLIKELY(next_shape->capacity != current_shape->capacity)) {
             RUBY_ASSERT(next_shape->capacity > current_shape->capacity);
-            fields_obj = rb_imemo_obj_fields_new(obj, next_shape->capacity);
+            fields_obj = rb_imemo_class_fields_new(obj, next_shape->capacity);
         }
 
         RUBY_ASSERT(next_shape->type == SHAPE_IVAR);
         RUBY_ASSERT(index == (next_shape->next_field_index - 1));
     }
 
-    VALUE *fields = rb_imemo_obj_fields_ptr(fields_obj);
+    VALUE *fields = rb_imemo_class_fields_ptr(fields_obj);
     RB_OBJ_WRITE(obj, &fields[index], val);
     if (!existing) {
         // TODO: save duplicating the shape_id

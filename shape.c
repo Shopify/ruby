@@ -811,7 +811,7 @@ shape_get_next(rb_shape_t *shape, VALUE obj, ID id, bool emit_warnings)
         allow_new_root = true;
         break;
       case T_IMEMO:
-        RUBY_ASSERT(IMEMO_TYPE_P(obj, imemo_obj_fields));
+        RUBY_ASSERT(IMEMO_TYPE_P(obj, imemo_class_fields));
         allow_new_root = true;
         klass = Qfalse;
         break;

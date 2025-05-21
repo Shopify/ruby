@@ -94,7 +94,7 @@ static inline shape_id_t
 get_shape_id_from_flags(VALUE obj)
 {
     RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
-    RUBY_ASSERT(!RB_TYPE_P(obj, T_IMEMO) || IMEMO_TYPE_P(obj, imemo_obj_fields));
+    RUBY_ASSERT(!RB_TYPE_P(obj, T_IMEMO) || IMEMO_TYPE_P(obj, imemo_class_fields));
     return (shape_id_t)((RBASIC(obj)->flags) >> SHAPE_FLAG_SHIFT);
 }
 
@@ -102,7 +102,7 @@ static inline void
 set_shape_id_in_flags(VALUE obj, shape_id_t shape_id)
 {
     RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
-    RUBY_ASSERT(!RB_TYPE_P(obj, T_IMEMO) || IMEMO_TYPE_P(obj, imemo_obj_fields));
+    RUBY_ASSERT(!RB_TYPE_P(obj, T_IMEMO) || IMEMO_TYPE_P(obj, imemo_class_fields));
     // Ractors are occupying the upper 32 bits of flags, but only in debug mode
     // Object shapes are occupying top bits
     RBASIC(obj)->flags &= SHAPE_FLAG_MASK;

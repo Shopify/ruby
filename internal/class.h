@@ -176,7 +176,7 @@ static inline rb_classext_t * RCLASS_EXT_WRITABLE(VALUE obj);
 
 #define RCLASSEXT_NS(ext) (ext->ns)
 #define RCLASSEXT_SUPER(ext) (ext->super)
-#define RCLASSEXT_FIELDS(ext) (rb_imemo_obj_fields_ptr(ext->fields_obj))
+#define RCLASSEXT_FIELDS(ext) (rb_imemo_class_fields_ptr(ext->fields_obj))
 
 static inline void
 RCLASSEXT_SET_FIELDS_OBJ(VALUE klass, rb_classext_t *ext, VALUE fields)
@@ -216,7 +216,7 @@ static inline void RCLASSEXT_SET_INCLUDER(rb_classext_t *ext, VALUE klass, VALUE
 #define RCLASS_PRIME_NS(c) (RCLASS_EXT_PRIME(c)->ns)
 // To invalidate CC by inserting&invalidating method entry into tables containing the target cme
 // See clear_method_cache_by_id_in_class()
-#define RCLASS_PRIME_FIELDS(c) (rb_imemo_obj_fields_ptr(RCLASS_EXT_PRIME(c)->fields_obj))
+#define RCLASS_PRIME_FIELDS(c) (rb_imemo_class_fields_ptr(RCLASS_EXT_PRIME(c)->fields_obj))
 #define RCLASS_PRIME_FIELDS_VALUE(c) (RCLASS_EXT_PRIME(c)->fields_obj)
 
 static inline void
@@ -568,7 +568,7 @@ RCLASS_SET_FIELDS_HASH(VALUE obj, st_table *tbl)
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
 
-    VALUE fields = rb_imemo_obj_fields_new(obj, sizeof(tbl));
+    VALUE fields = rb_imemo_class_fields_new(obj, sizeof(tbl));
     IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
     RCLASSEXT_SET_FIELDS_OBJ(obj, RCLASS_EXT_PRIME(obj), fields);
 }
@@ -579,7 +579,7 @@ RCLASS_WRITE_FIELDS_HASH(VALUE obj, st_table *tbl)
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
 
-    VALUE fields = rb_imemo_obj_fields_new(obj, sizeof(tbl));
+    VALUE fields = rb_imemo_class_fields_new(obj, sizeof(tbl));
     IMEMO_OBJ_FIELDS(fields)->as.complex.table = tbl;
     RCLASSEXT_SET_FIELDS_OBJ(obj, RCLASS_EXT_WRITABLE(obj), fields);
 }
