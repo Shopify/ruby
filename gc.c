@@ -3811,7 +3811,6 @@ update_classext(rb_classext_t *ext, bool is_prime, VALUE namespace, void *arg)
 
     update_m_tbl(objspace, RCLASSEXT_M_TBL(ext));
 
-
     if (ext->fields_obj) {
         UPDATE_IF_MOVED(objspace, ext->fields_obj);
 

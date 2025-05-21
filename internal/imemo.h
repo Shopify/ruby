@@ -284,7 +284,10 @@ VALUE rb_imemo_class_fields_new_complex(VALUE klass, st_table *tbl);
 static inline VALUE *
 rb_imemo_class_fields_ptr(VALUE obj_fields)
 {
-    RUBY_ASSERT(obj_fields);
+    if (!obj_fields) {
+        return NULL;
+    }
+
     RUBY_ASSERT(IMEMO_TYPE_P(obj_fields, imemo_class_fields));
 
     if (RB_UNLIKELY(FL_TEST_RAW(obj_fields, OBJ_FIELD_EXTERNAL))) {
