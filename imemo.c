@@ -109,15 +109,14 @@ rb_imemo_tmpbuf_parser_heap(void *buf, rb_imemo_tmpbuf_t *old_heap, size_t cnt)
     return tmpbuf;
 }
 
-static const size_t IMEMO_BUF_OVERHEAD = sizeof(VALUE); // flags
-
 VALUE
 rb_imemo_obj_fields_new(VALUE klass, size_t capa)
 {
     klass = rb_singleton_class(klass);
 
-    if (rb_gc_size_allocatable_p(capa + IMEMO_BUF_OVERHEAD)) {
-        VALUE fields = rb_imemo_new(imemo_obj_fields, klass, capa + IMEMO_BUF_OVERHEAD);
+    size_t embedded_size = sizeof(struct rb_obj_fields) + ((capa - 1) * sizeof(VALUE));
+    if (rb_gc_size_allocatable_p(embedded_size)) {
+        VALUE fields = rb_imemo_new(imemo_obj_fields, klass, embedded_size);
         RUBY_ASSERT(IMEMO_TYPE_P(fields, imemo_obj_fields));
         return fields;
     }
