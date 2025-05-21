@@ -274,6 +274,7 @@ module Test
       end
 
       def assert_normal_exit(testsrc, message = '', child_env: nil, **opt)
+        pend "#{__method__}" if non_main_ractor?
         assert_valid_syntax(testsrc, caller_locations(1, 1)[0])
         if child_env
           child_env = [child_env]

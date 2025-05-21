@@ -397,6 +397,7 @@ class TestRubyOptimization < Test::Unit::TestCase
   end
 
   def tailcall(*args)
+    pend "tailcall" if non_main_ractor?
     self.class.tailcall(singleton_class, *args)
   end
 
