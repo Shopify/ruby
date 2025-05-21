@@ -460,10 +460,12 @@ end
 
 if defined?(RbConfig)
   module RbConfig
-    @ruby = EnvUtil.rubybin
+    RUBY__ = EnvUtil.rubybin.freeze
     class << self
       undef ruby if method_defined?(:ruby)
-      attr_reader :ruby
+      def ruby
+        RUBY__
+      end
     end
     dir = File.dirname(ruby)
     CONFIG['bindir'] = dir
