@@ -571,9 +571,9 @@ RCLASS_SET_FIELDS_HASH(VALUE obj, st_table *tbl)
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
 
-    VALUE fields = rb_imemo_class_fields_new_complex(obj, tbl);
-    rb_shape_set_shape_id(fields, RBASIC_SHAPE_ID(obj));
-    RCLASSEXT_SET_FIELDS_OBJ(obj, RCLASS_EXT_PRIME(obj), fields);
+    VALUE fields_obj = rb_imemo_class_fields_new_complex(obj, tbl);
+    rb_shape_set_shape_id(fields_obj, RBASIC_SHAPE_ID(obj));
+    RCLASSEXT_SET_FIELDS_OBJ(obj, RCLASS_EXT_PRIME(obj), fields_obj);
 }
 
 static inline void

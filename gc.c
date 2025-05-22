@@ -3165,12 +3165,8 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         foreach_args.objspace = objspace;
         foreach_args.obj = obj;
         rb_class_classext_foreach(obj, gc_mark_classext_module, (void *)&foreach_args);
-
-        if (!rb_shape_obj_too_complex_p(obj)) {
-            for (attr_index_t i = 0; i < RCLASS_FIELDS_COUNT(obj); i++) {
-                gc_mark_internal(RCLASS_PRIME_FIELDS(obj)[i]);
-            }
-        }
+        gc_mark_internal(RCLASS_EXT_READABLE(obj)->fields_obj);
+        // FIXME: other namespaces should be marked too
         break;
 
       case T_ICLASS:

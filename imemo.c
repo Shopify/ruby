@@ -458,7 +458,16 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
         break;
       }
       case imemo_class_fields: {
-        // The object is responsible for marking
+        if (rb_shape_obj_too_complex_p(obj)) {
+            rb_mark_tbl_no_pin(rb_imemo_class_fields_complex_tbl(obj));
+        }
+        else {
+            VALUE *fields = rb_imemo_class_fields_ptr(obj);
+            uint32_t len = RSHAPE(rb_obj_shape_id(obj))->next_field_index;
+            for (uint32_t i = 0; i < len; i++) {
+                rb_gc_mark_and_move(&fields[i]);
+            }
+        }
         break;
       }
       default:

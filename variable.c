@@ -1595,9 +1595,8 @@ obj_transition_too_complex(VALUE obj, st_table *table)
         break;
       case T_CLASS:
       case T_MODULE:
-        rb_shape_set_shape_id(obj, shape_id);
         // FIXME: RCLASS_SET_FIELDS_HASH allocates, if GC trigger `table` might be corrupted.
-        RCLASS_SET_FIELDS_HASH(obj, table);
+        rb_bug("obj_transition_too_complex can't be used with T_CLASS/T_MODULE, see class_ivar_set_transition_too_complex");
         break;
       default:
         RB_VM_LOCK_ENTER();
@@ -2213,6 +2212,7 @@ struct iv_itr_data {
     st_data_t arg;
     rb_ivar_foreach_callback_func *func;
     bool ivar_only;
+    VALUE *fields;
 };
 
 /*
@@ -2236,22 +2236,7 @@ iterate_over_shapes_with_callback(rb_shape_t *shape, rb_ivar_foreach_callback_fu
             return true;
         }
 
-        VALUE * iv_list;
-        switch (BUILTIN_TYPE(itr_data->obj)) {
-          case T_OBJECT:
-            RUBY_ASSERT(!rb_shape_obj_too_complex_p(itr_data->obj));
-            iv_list = ROBJECT_FIELDS(itr_data->obj);
-            break;
-          case T_CLASS:
-          case T_MODULE:
-            RUBY_ASSERT(!rb_shape_obj_too_complex_p(itr_data->obj));
-            iv_list = RCLASS_PRIME_FIELDS(itr_data->obj);
-            break;
-          default:
-            iv_list = itr_data->fields_tbl->as.shape.fields;
-            break;
-        }
-        VALUE val = iv_list[shape->next_field_index - 1];
+        VALUE val = itr_data->fields[shape->next_field_index - 1];
         if (!UNDEF_P(val)) {
             switch (callback(shape->edge_name, val, itr_data->arg)) {
               case ST_CHECK:
@@ -2296,6 +2281,7 @@ obj_fields_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg, b
         rb_st_foreach(ROBJECT_FIELDS_HASH(obj), each_hash_iv, (st_data_t)&itr_data);
     }
     else {
+        itr_data.fields = ROBJECT_FIELDS(obj);
         iterate_over_shapes_with_callback(shape, func, &itr_data);
     }
 }
@@ -2319,6 +2305,7 @@ gen_fields_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg, b
         rb_st_foreach(fields_tbl->as.complex.table, each_hash_iv, (st_data_t)&itr_data);
     }
     else {
+        itr_data.fields = fields_tbl->as.shape.fields;
         iterate_over_shapes_with_callback(shape, func, &itr_data);
     }
 }
@@ -2329,6 +2316,8 @@ class_fields_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg,
     RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
 
     rb_shape_t *shape = rb_obj_shape(obj);
+    VALUE fields_obj = RCLASS_EXT_WRITABLE(obj)->fields_obj;
+
     struct iv_itr_data itr_data = {
         .obj = obj,
         .arg = arg,
@@ -2337,11 +2326,13 @@ class_fields_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg,
     };
 
     if (rb_shape_obj_too_complex_p(obj)) {
-        rb_st_foreach(RCLASS_WRITABLE_FIELDS_HASH(obj), each_hash_iv, (st_data_t)&itr_data);
+        rb_st_foreach(rb_imemo_class_fields_complex_tbl(fields_obj), each_hash_iv, (st_data_t)&itr_data);
     }
     else {
+        itr_data.fields = rb_imemo_class_fields_ptr(fields_obj);
         iterate_over_shapes_with_callback(shape, func, &itr_data);
     }
+    RB_GC_GUARD(fields_obj);
 }
 
 void
@@ -2487,12 +2478,7 @@ rb_field_foreach(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg, 
         break;
       case T_CLASS:
       case T_MODULE:
-        IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(0);
-        RB_VM_LOCK_ENTER();
-        {
-            class_fields_each(obj, func, arg, ivar_only);
-        }
-        RB_VM_LOCK_LEAVE();
+        class_fields_each(obj, func, arg, ivar_only);
         break;
       default:
         if (FL_TEST(obj, FL_EXIVAR)) {
@@ -4764,7 +4750,21 @@ class_ivar_set_set_shape_id(VALUE obj, shape_id_t shape_id, void *_data)
 static void
 class_ivar_set_transition_too_complex(VALUE obj, void *_data)
 {
-    rb_evict_fields_to_hash(obj);
+    void rb_obj_copy_fields_to_hash_table(VALUE obj, st_table *table);
+
+    RUBY_ASSERT(!rb_shape_obj_too_complex_p(obj));
+
+    rb_shape_t *shape = rb_obj_shape(obj);
+    st_table *table = st_init_numtable_with_size(shape->next_field_index);
+    VALUE fields_obj = rb_imemo_class_fields_new_complex(obj, table);
+    rb_obj_copy_fields_to_hash_table(obj, table);
+
+    shape_id_t shape_id = rb_shape_transition_complex(obj);
+    rb_shape_set_shape_id(obj, shape_id);
+    rb_shape_set_shape_id(fields_obj, RBASIC_SHAPE_ID(obj));
+    RCLASSEXT_SET_FIELDS_OBJ(obj, RCLASS_EXT_PRIME(obj), fields_obj);
+
+    RUBY_ASSERT(rb_shape_obj_too_complex_p(obj));
 }
 
 static st_table *
