@@ -286,6 +286,7 @@ module Test
       end
 
       def assert_ruby_status(args, test_stdin="", message=nil, **opt)
+        pend "#{__method__}" if non_main_ractor?
         out, _, status = EnvUtil.invoke_ruby(args, test_stdin, true, :merge_to_stdout, **opt)
         desc = FailDesc[status, message, out]
         assert(!status.signaled?, desc)
