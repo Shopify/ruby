@@ -1595,8 +1595,8 @@ obj_transition_too_complex(VALUE obj, st_table *table)
         break;
       case T_CLASS:
       case T_MODULE:
-        old_fields = RCLASS_PRIME_FIELDS(obj);
         rb_shape_set_shape_id(obj, shape_id);
+        // FIXME: RCLASS_SET_FIELDS_HASH allocates, if GC trigger `table` might be corrupted.
         RCLASS_SET_FIELDS_HASH(obj, table);
         break;
       default:

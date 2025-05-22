@@ -289,7 +289,8 @@ rb_imemo_class_fields_ptr(VALUE obj_fields)
     }
 
     RUBY_ASSERT(IMEMO_TYPE_P(obj_fields, imemo_class_fields));
-    RUBY_ASSERT(!FL_TEST_RAW(obj_fields, OBJ_FIELD_COMPLEX));
+    // vm_getivar unconditionally ask for a fields ptr.
+    // RUBY_ASSERT(!FL_TEST_RAW(obj_fields, OBJ_FIELD_COMPLEX));
 
     if (RB_UNLIKELY(FL_TEST_RAW(obj_fields, OBJ_FIELD_EXTERNAL))) {
         return IMEMO_OBJ_FIELDS(obj_fields)->as.external.ptr;
