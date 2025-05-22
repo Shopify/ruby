@@ -229,11 +229,11 @@ module Test
         @__name__ = name
         @__io__ = nil
         @__passed__ = nil
-        @@__current__ = self # FIX: make thread local
+        Ractor.current[:__test_current__] = self
       end
 
       def self.current # :nodoc:
-        @@__current__ # FIX: make thread local
+        Ractor.current[:__test_current__]
       end
 
       ##

@@ -1688,12 +1688,10 @@ module Test
           trace = true
         end
 
-        run_tests_in_ractors = ENV["RUBY_TESTS_WITH_RACTORS"]
-
+        run_tests_inside_ractors_num = ENV["RUBY_TESTS_WITH_RACTORS"].to_i
         tests_run = 0
         assertions = all_test_methods.map { |method|
-
-          inst = suite.new method
+          inst = suite.new method.to_s
           _start_method(inst)
           inst._assertions = 0
 
@@ -1704,34 +1702,62 @@ module Test
             if trace
               ObjectSpace.trace_object_allocations {inst.run self}
             else
-              if run_tests_in_ractors
-                port = Ractor::Port.new
-                r = Ractor.new(port) do |p|
-                  instance = Ractor.receive
-                  runner = Ractor.receive
-                  res = instance.run runner
-                  movable_ivars = {:@_assertions => true, :@__passed__ => true, :@__name__ => true}
-                  instance.instance_variables.each do |ivar|
-                    unless movable_ivars[ivar]
-                      instance.remove_instance_variable(ivar)
+              if run_tests_inside_ractors_num > 0
+                old_report = self.report
+                old_failures = self.failures
+                old_errors = self.errors
+                old_skips = self.skips
+                old_assertion_count = self.assertion_count
+                old_test_count = self.test_count
+                self.report = []
+                self.failures = 0
+                self.errors = 0
+                self.skips = 0
+                self.assertion_count = 0
+                self.test_count = 0
+                rs = run_tests_inside_ractors_num.times.map do
+                  r = Ractor.new(inst, self) do |instance, runner|
+                    res = instance.run runner
+                    testcase_copyable_ivars = {:@_assertions => true, :@__passed__ => true, :@__name__ => true}
+                    runner_copyable_ivars = {:@report => true, :@failures => true, :@errors => true, :@skips => true, :@assertion_count => true, :@test_count => true}
+                    instance.instance_variables.each do |ivar|
+                      unless testcase_copyable_ivars[ivar]
+                        instance.remove_instance_variable(ivar)
+                      end
                     end
+                    runner.instance_variables.each do |ivar|
+                      unless runner_copyable_ivars[ivar]
+                        runner.remove_instance_variable(ivar)
+                      end
+                    end
+                    [instance, runner, res]
                   end
-                  p.send(instance, move: true)
-                  p.send(runner)
-                  res
                 end
-                r.send(inst, move: true)
-                r.send(self, move: false)
-                inst = port.receive
-                runner = port.receive
-                result = r.value
-                _merge_results_from_ractor(runner)
-                port.close
-                result
+                ractor_results = []
+                while rs.any?
+                  r, obj = Ractor.select(*rs)
+                  _inst, runner, res = *obj
+                  ractor_results << [res, runner]
+                  rs.delete(r)
+                end
+                # ractors done
+                self.report = old_report
+                self.failures = old_failures
+                self.errors = old_errors
+                self.skips = old_skips
+                self.assertion_count = old_assertion_count
+                self.test_count = old_test_count
+                res = ""
+                ractor_results.each do |(res0, runner)|
+                  res += res0
+                  _merge_results_from_ractor(runner)
+                end
+                res
               else
                 inst.run self
               end
             end
+
           tests_run += 1
 
           print "%.2f s = " % (Time.now - start_time) if @verbose
@@ -1747,13 +1773,16 @@ module Test
         return assertions.size, assertions.inject(0) { |sum, n| sum + n }
       end
 
+      def __init_runner(runner)
+      end
+
       def _merge_results_from_ractor(runner_cpy)
-        @report = runner_cpy.report
-        @failures = runner_cpy.failures
-        @errors = runner_cpy.errors
-        @skips = runner_cpy.skips
-        @assertion_count = runner_cpy.assertion_count
-        @test_count = runner_cpy.test_count
+        @report += runner_cpy.report
+        @failures += runner_cpy.failures
+        @errors += runner_cpy.errors
+        @skips += runner_cpy.skips
+        @assertion_count += runner_cpy.assertion_count
+        @test_count += runner_cpy.test_count
       end
 
       def _start_method(inst)
