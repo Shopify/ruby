@@ -1716,7 +1716,7 @@ module Test
                 self.assertion_count = 0
                 self.test_count = 0
                 rs = run_tests_inside_ractors_num.times.map do
-                  r = Ractor.new(inst, self) do |instance, runner|
+                  Ractor.new(inst, self) do |instance, runner|
                     res = instance.run runner
                     testcase_copyable_ivars = {:@_assertions => true, :@__passed__ => true, :@__name__ => true}
                     runner_copyable_ivars = {:@report => true, :@failures => true, :@errors => true, :@skips => true, :@assertion_count => true, :@test_count => true}
@@ -1849,7 +1849,11 @@ module Test
         self.options.merge! args
 
         puts "Run options: #{help}"
-        puts "\nNOTE: Running tests inside ractors" if ENV["RUBY_TESTS_WITH_RACTORS"]
+        ractors_num = ENV["RUBY_TESTS_WITH_RACTORS"].to_i
+
+        if ractors_num > 0
+          puts "\nNOTE: Running tests inside ractors (each test method inside #{ractors_num} ractors)"
+        end
 
         self.class.plugins.each do |plugin|
           send plugin
