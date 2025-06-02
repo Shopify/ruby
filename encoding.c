@@ -397,7 +397,11 @@ enc_from_index(struct enc_table *enc_table, int index)
 rb_encoding *
 rb_enc_from_index(int index)
 {
-    return enc_from_index(&global_enc_table, index);
+    rb_encoding *enc;
+    GLOBAL_ENC_TABLE_LOCKING(enc_table) {
+        enc = enc_from_index(enc_table, index);
+    }
+    return enc;
 }
 
 int
@@ -803,13 +807,17 @@ rb_enc_autoload(rb_encoding *enc)
 int
 rb_enc_find_index(const char *name)
 {
-    int i = enc_registered(&global_enc_table, name);
+
+    int i;
+    GLOBAL_ENC_TABLE_LOCKING(enc_table) {
+        i = enc_registered(enc_table, name);
+        if (i < 0) {
+            i = load_encoding(name);
+        }
+    }
     rb_encoding *enc;
 
-    if (i < 0) {
-        i = load_encoding(name);
-    }
-    else if (!(enc = rb_enc_from_index(i))) {
+    if (!(enc = rb_enc_from_index(i))) {
         if (i != UNSPECIFIED_ENCODING) {
             rb_raise(rb_eArgError, "encoding %s is not registered", name);
         }
@@ -1484,14 +1492,14 @@ rb_locale_encindex(void)
 
     if (idx < 0) idx = ENCINDEX_UTF_8;
 
-    if (enc_registered(&global_enc_table, "locale") < 0) {
+    GLOBAL_ENC_TABLE_LOCKING(enc_table) {
+        if (enc_registered(enc_table, "locale") < 0) {
 # if defined _WIN32
-        void Init_w32_codepage(void);
-        Init_w32_codepage();
+            void Init_w32_codepage(void);
+            Init_w32_codepage();
 # endif
-        GLOBAL_ENC_TABLE_LOCKING(enc_table) {
-            enc_alias_internal(enc_table, "locale", idx);
         }
+        enc_alias_internal(enc_table, "locale", idx);
     }
 
     return idx;

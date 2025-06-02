@@ -19,6 +19,7 @@
 #include "internal/object.h"
 #include "internal/string.h"
 #include "internal/transcode.h"
+#include "vm_sync.h"
 #include "ruby/encoding.h"
 
 #include "transcode_data.h"
@@ -2662,23 +2663,26 @@ rb_econv_open_opts(const char *source_encoding, const char *destination_encoding
         replacement = rb_hash_aref(opthash, sym_replace);
     }
 
-    ec = rb_econv_open(source_encoding, destination_encoding, ecflags);
-    if (!ec)
-        return ec;
+    RB_VM_LOCK_ENTER();
+    {
+        ec = rb_econv_open(source_encoding, destination_encoding, ecflags);
+        if (ec) {
+            if (!NIL_P(replacement)) {
+                int ret;
+                rb_encoding *enc = rb_enc_get(replacement);
 
-    if (!NIL_P(replacement)) {
-        int ret;
-        rb_encoding *enc = rb_enc_get(replacement);
-
-        ret = rb_econv_set_replacement(ec,
-                (const unsigned char *)RSTRING_PTR(replacement),
-                RSTRING_LEN(replacement),
-                rb_enc_name(enc));
-        if (ret == -1) {
-            rb_econv_close(ec);
-            return NULL;
+                ret = rb_econv_set_replacement(ec,
+                        (const unsigned char *)RSTRING_PTR(replacement),
+                        RSTRING_LEN(replacement),
+                        rb_enc_name(enc));
+                if (ret == -1) {
+                    rb_econv_close(ec);
+                    return NULL;
+                }
+            }
         }
     }
+    RB_VM_LOCK_LEAVE();
     return ec;
 }
 
