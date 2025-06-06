@@ -1736,8 +1736,8 @@ module Test
                 ractor_results = []
                 while rs.any?
                   r, obj = Ractor.select(*rs)
-                  _inst, runner, res = *obj
-                  ractor_results << [res, runner]
+                  inst, runner, res = *obj
+                  ractor_results << [res, inst, runner]
                   rs.delete(r)
                 end
                 # ractors done
@@ -1747,11 +1747,12 @@ module Test
                 self.skips = old_skips
                 self.assertion_count = old_assertion_count
                 self.test_count = old_test_count
-                res = ""
-                ractor_results.each do |(res0, runner)|
-                  res += res0
-                  _merge_results_from_ractor(runner)
+                res = +""
+                ractor_results.each do |(res0, inst, runner)|
+                  res << res0
+                  _merge_results_from_ractor(inst, runner)
                 end
+                inst._assertions = self.assertion_count - old_assertion_count
                 res
               else
                 inst.run self
@@ -1776,13 +1777,13 @@ module Test
       def __init_runner(runner)
       end
 
-      def _merge_results_from_ractor(runner_cpy)
-        @report += runner_cpy.report
-        @failures += runner_cpy.failures
-        @errors += runner_cpy.errors
-        @skips += runner_cpy.skips
-        @assertion_count += runner_cpy.assertion_count
-        @test_count += runner_cpy.test_count
+      def _merge_results_from_ractor(inst, runner_cpy)
+        self.report += runner_cpy.report
+        self.failures += runner_cpy.failures
+        self.errors += runner_cpy.errors
+        self.skips += runner_cpy.skips
+        self.assertion_count += inst._assertions
+        self.test_count += runner_cpy.test_count
       end
 
       def _start_method(inst)
@@ -1852,7 +1853,8 @@ module Test
         ractors_num = ENV["RUBY_TESTS_WITH_RACTORS"].to_i
 
         if ractors_num > 0
-          puts "\nNOTE: Running tests inside ractors (each test method inside #{ractors_num} ractors)"
+          puts "\nNOTE: Running tests inside ractors (each test method inside #{ractors_num} " \
+            "ractor#{ractors_num > 1 ? 's' : ''})"
         end
 
         self.class.plugins.each do |plugin|

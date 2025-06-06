@@ -210,6 +210,7 @@ class TestAst < Test::Unit::TestCase
   end
 
   def test_parse_file_raises_syntax_error
+    omit "Tempfile" unless main_ractor?
     Tempfile.create(%w"test_ast .rb") do |f|
       f.puts "end"
       f.close
@@ -377,6 +378,7 @@ class TestAst < Test::Unit::TestCase
 
   def test_of_proc_and_method
     omit if ParserSupport.prism_enabled? || ParserSupport.prism_enabled_in_subprocess?
+    omit "Tempfile" unless main_ractor?
 
     proc = Proc.new { 1 + 2 }
     method = self.method(__method__)

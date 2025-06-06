@@ -660,14 +660,16 @@ class TestArray < Test::Unit::TestCase
     assert_raise(TypeError) { @cls[0].concat(:foo) }
     assert_raise(FrozenError) { @cls[0].freeze.concat(:foo) }
 
-    a = @cls[nil]
-    def (x = Object.new).to_ary
-      ary = Array.new(2)
-      ary << [] << [] << :ok
+    unless multiple_ractors?
+      a = @cls[nil]
+      def (x = Object.new).to_ary
+        ary = Array.new(2)
+        ary << [] << [] << :ok
+      end
+      EnvUtil.under_gc_stress {a.concat(x)}
+      GC.start
+      assert_equal(:ok, a.last)
     end
-    EnvUtil.under_gc_stress {a.concat(x)}
-    GC.start
-    assert_equal(:ok, a.last)
   end
 
   def test_count
@@ -1501,6 +1503,7 @@ class TestArray < Test::Unit::TestCase
   end
 
   def test_replace_wb_variable_width_alloc
+    omit "not working properly across ractors" if multiple_ractors?
     small_embed = []
     4.times { GC.start } # age small_embed
     large_embed = [1, 2, 3, 4, 5, Array.new] # new young object
@@ -2469,11 +2472,13 @@ class TestArray < Test::Unit::TestCase
     assert_equal(@cls[], @cls[1,2].product([]))
 
     bug3394 = '[ruby-dev:41540]'
-    acc = []
-    EnvUtil.under_gc_stress {[1,2].product([3,4,5],[6,8]){|array| acc << array}}
-    assert_equal([[1, 3, 6], [1, 3, 8], [1, 4, 6], [1, 4, 8], [1, 5, 6], [1, 5, 8],
-                  [2, 3, 6], [2, 3, 8], [2, 4, 6], [2, 4, 8], [2, 5, 6], [2, 5, 8]],
-                 acc, bug3394)
+    unless multiple_ractors?
+      acc = []
+      EnvUtil.under_gc_stress {[1,2].product([3,4,5],[6,8]){|array| acc << array}}
+      assert_equal([[1, 3, 6], [1, 3, 8], [1, 4, 6], [1, 4, 8], [1, 5, 6], [1, 5, 8],
+                    [2, 3, 6], [2, 3, 8], [2, 4, 6], [2, 4, 8], [2, 5, 6], [2, 5, 8]],
+                  acc, bug3394)
+    end
 
     def (o = Object.new).to_ary; GC.start; [3,4] end
     acc = [1,2].product(*[o]*10)
