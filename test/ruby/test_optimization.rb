@@ -1225,6 +1225,7 @@ class TestRubyOptimization < Test::Unit::TestCase
   end
 
   def test_opt_new
+    omit "RubyVM::Iseq.compile/eval not working across multiple ractors" if multiple_ractors?
     pos_initialize = "
       def initialize a, b
         @a = a
