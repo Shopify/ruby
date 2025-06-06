@@ -2280,6 +2280,7 @@ static const rb_data_type_t cross_ractor_require_data_type = {
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
+// called in main ractor
 static VALUE
 require_body(VALUE data)
 {

@@ -317,6 +317,7 @@ class TestThreadQueue < Test::Unit::TestCase
   end
 
   def test_queue_thread_raise
+    pend "Timeout" if non_main_ractor?
     q = Thread::Queue.new
     th1 = Thread.new do
       begin

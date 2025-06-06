@@ -324,7 +324,7 @@ class TestIOBuffer < Test::Unit::TestCase
   end
 
   # We check that values are correctly round tripped.
-  RANGES = {
+  Ractor.make_shareable(RANGES = {
     :U8 => [0, 2**8-1],
     :S8 => [-2**7, 0, 2**7-1],
 
@@ -345,7 +345,7 @@ class TestIOBuffer < Test::Unit::TestCase
 
     :F32 => [-1.0, 0.0, 0.5, 1.0, 128.0],
     :F64 => [-1.0, 0.0, 0.5, 1.0, 128.0],
-  }
+  })
 
   def test_get_set_value
     buffer = IO::Buffer.new(128)
@@ -451,6 +451,7 @@ class TestIOBuffer < Test::Unit::TestCase
   end
 
   def hello_world_tempfile(repeats = 1)
+    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
     repeats.times do
       io.write("Hello World")
@@ -496,6 +497,7 @@ class TestIOBuffer < Test::Unit::TestCase
   end
 
   def test_write
+    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
 
     buffer = IO::Buffer.new(128)
@@ -505,10 +507,11 @@ class TestIOBuffer < Test::Unit::TestCase
     io.seek(0)
     assert_equal "Hello", io.read(5)
   ensure
-    io.close!
+    io&.close!
   end
 
   def test_write_with_length_and_offset
+    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
 
     buffer = IO::Buffer.new(5)
@@ -518,10 +521,11 @@ class TestIOBuffer < Test::Unit::TestCase
     io.seek(0)
     assert_equal "ello", io.read(4)
   ensure
-    io.close!
+    io&.close!
   end
 
   def test_pread
+    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
     io.write("Hello World")
     io.seek(0)
@@ -532,10 +536,11 @@ class TestIOBuffer < Test::Unit::TestCase
     assert_equal "World", buffer.get_string(0, 5)
     assert_equal 0, io.tell
   ensure
-    io.close!
+    io&.close!
   end
 
   def test_pread_offset
+    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
     io.write("Hello World")
     io.seek(0)
@@ -546,10 +551,11 @@ class TestIOBuffer < Test::Unit::TestCase
     assert_equal "World", buffer.get_string(6, 5)
     assert_equal 0, io.tell
   ensure
-    io.close!
+    io&.close!
   end
 
   def test_pwrite
+    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
 
     buffer = IO::Buffer.new(128)
@@ -561,10 +567,11 @@ class TestIOBuffer < Test::Unit::TestCase
     io.seek(6)
     assert_equal "World", io.read(5)
   ensure
-    io.close!
+    io&.close!
   end
 
   def test_pwrite_offset
+    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
 
     buffer = IO::Buffer.new(128)
@@ -576,7 +583,7 @@ class TestIOBuffer < Test::Unit::TestCase
     io.seek(6)
     assert_equal "World", io.read(5)
   ensure
-    io.close!
+    io&.close!
   end
 
   def test_operators
@@ -615,6 +622,7 @@ class TestIOBuffer < Test::Unit::TestCase
   end
 
   def test_private
+    pend "Tempfile" if non_main_ractor?
     Tempfile.create(%w"buffer .txt") do |file|
       file.write("Hello World")
 

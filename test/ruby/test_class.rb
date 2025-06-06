@@ -38,6 +38,7 @@ class TestClass < Test::Unit::TestCase
   # ------------------
 
   def test_s_inherited
+    pend "accesses class variables" if non_main_ractor?
     assert_equal([ClassTwo, ClassThree, ClassFour], ClassOne.new.subs)
   end
 
@@ -465,20 +466,26 @@ class TestClass < Test::Unit::TestCase
     }
   end
 
-  define_method :test_invalid_reset_superclass do
-    class A; end
-    class SuperclassCannotBeReset < A
-    end
+  def test_invalid_reset_superclass
+    self.class.class_eval <<-RUBY
+      class A; end
+      class SuperclassCannotBeReset < A
+      end
+    RUBY
     assert_equal A, SuperclassCannotBeReset.superclass
 
     assert_raise_with_message(TypeError, /superclass mismatch/) {
-      class SuperclassCannotBeReset < String
-      end
+      self.class.class_eval <<-RUBY
+        class SuperclassCannotBeReset < String
+        end
+      RUBY
     }
 
     assert_raise_with_message(TypeError, /superclass mismatch/, "[ruby-core:75446]") {
-      class SuperclassCannotBeReset < Object
-      end
+      self.class.class_eval <<-RUBY
+        class SuperclassCannotBeReset < Object
+        end
+      RUBY
     }
 
     assert_equal A, SuperclassCannotBeReset.superclass
@@ -574,6 +581,7 @@ class TestClass < Test::Unit::TestCase
   end
 
   def test_singleton_class_should_has_own_namespace
+    pend "Accesses global" if non_main_ractor?
     # CONST in singleton class
     objs = []
     $i = 0
@@ -763,7 +771,11 @@ class TestClass < Test::Unit::TestCase
     ssc = Class.new(sc)
     [c, sc, ssc].each do |k|
       k.include Module.new
-      k.new.define_singleton_method(:force_singleton_class){}
+      k.new.define_singleton_method(:force_singleton_class, &Ractor.make_shareable(
+        nil.instance_eval do
+          proc { }
+        end
+      ))
     end
     assert_equal([sc], c.subclasses)
     assert_equal([ssc], sc.subclasses)

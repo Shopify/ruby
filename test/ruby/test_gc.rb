@@ -885,6 +885,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_old_to_young_reference
+    pend "ObjectSpace.dump not yet ractor safe" if non_main_ractor?
     EnvUtil.without_gc do
       require "objspace"
 

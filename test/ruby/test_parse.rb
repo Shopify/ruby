@@ -135,6 +135,7 @@ class TestParse < Test::Unit::TestCase
   end
 
   def test_mlhs_node
+    omit "class ivars" if non_main_ractor?
     c = Class.new
     class << c
       attr_accessor :foo, :bar, :Foo, :Bar
@@ -364,6 +365,7 @@ class TestParse < Test::Unit::TestCase
   end
 
   def test_dstr
+    omit "class variables" if non_main_ractor?
     @@foo = 1
     assert_equal("foo 1 bar", "foo #@@foo bar")
     "1" =~ /(.)/
@@ -897,6 +899,7 @@ x = __ENCODING__
   end
 
   def test_global_variable
+    omit "global variable access" if non_main_ractor?
     assert_equal(nil, assert_warning(/not initialized/) {eval('$-x')})
     assert_equal(nil, eval('alias $preserve_last_match $&'))
     assert_equal(nil, eval('alias $& $test_parse_foobarbazqux'))
@@ -1449,11 +1452,11 @@ x = __ENCODING__
     end;
   end
 
-  NONASCII_CONSTANTS = [
+  NONASCII_CONSTANTS = Ractor.make_shareable([
     *%W"\u{00de} \u{00C0}".flat_map {|c| [c, c.encode("iso-8859-15")]},
     "\u{1c4}", "\u{1f2}", "\u{1f88}", "\u{370}",
     *%W"\u{391} \u{ff21}".flat_map {|c| [c, c.encode("cp932"), c.encode("euc-jp")]},
-  ]
+  ])
 
   def assert_nonascii_const
     assert_all_assertions_foreach("NONASCII_CONSTANTS", *NONASCII_CONSTANTS) do |n|
@@ -1544,6 +1547,7 @@ x = __ENCODING__
   end
 
   def test_shareable_constant_value_simple
+    omit "can't access unshareables" if non_main_ractor?
     obj = [['unsharable_value']]
     a, b, c = eval_separately("#{<<~"begin;"}\n#{<<~'end;'}")
     begin;
@@ -1610,6 +1614,7 @@ x = __ENCODING__
   end
 
   def test_shareable_constant_value_nested
+    omit "can't access unshareables" if non_main_ractor?
     a, b = eval_separately("#{<<~"begin;"}\n#{<<~'end;'}")
     begin;
       # shareable_constant_value: none

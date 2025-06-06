@@ -36,12 +36,13 @@ module EnvUtil
   end
   module_function :rubybin
 
-  LANG_ENVS = %w"LANG LC_ALL LC_CTYPE"
+  LANG_ENVS = %w"LANG LC_ALL LC_CTYPE".freeze
 
   DEFAULT_SIGNALS = Signal.list
   DEFAULT_SIGNALS.delete("TERM") if /mswin|mingw/ =~ RUBY_PLATFORM
+  DEFAULT_SIGNALS.freeze
 
-  RUBYLIB = ENV["RUBYLIB"]
+  RUBYLIB = ENV["RUBYLIB"].to_s.freeze
 
   class << self
     attr_accessor :timeout_scale
@@ -54,7 +55,7 @@ module EnvUtil
       @original_verbose = $VERBOSE
       @original_warning =
         if defined?(Warning.categories)
-          Warning.categories.to_h {|i| [i, Warning[i]]}
+          Warning.categories.to_h {|i| [i, Warning[i]]}.freeze
         elsif defined?(Warning.[]) # 2.7+
           %i[deprecated experimental performance].to_h do |i|
             [i, begin Warning[i]; rescue ArgumentError; end]
@@ -379,8 +380,8 @@ module EnvUtil
   module_function :labeled_class
 
   if /darwin/ =~ RUBY_PLATFORM
-    DIAGNOSTIC_REPORTS_PATH = File.expand_path("~/Library/Logs/DiagnosticReports")
-    DIAGNOSTIC_REPORTS_TIMEFORMAT = '%Y-%m-%d-%H%M%S'
+    DIAGNOSTIC_REPORTS_PATH = File.expand_path("~/Library/Logs/DiagnosticReports").freeze
+    DIAGNOSTIC_REPORTS_TIMEFORMAT = '%Y-%m-%d-%H%M%S'.freeze
     @ruby_install_name = RbConfig::CONFIG['RUBY_INSTALL_NAME']
 
     def self.diagnostic_reports(signame, pid, now)

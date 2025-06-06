@@ -26,7 +26,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
     assert_equal 4, c
   end
 
-  C_Setup = -> do
+  C_Setup = Ractor.make_shareable(proc do
     remove_const :C if defined? ::TestRubyPrimitive::C
     remove_const :A if defined? ::TestRubyPrimitive::A
 
@@ -46,7 +46,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
     (1..2).map {
       A::B::C::Const
     }
-  end
+  end)
 
   def test_constant
     C_Setup.call
@@ -109,6 +109,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_constant_cache3
+    omit "global variable access" if non_main_ractor?
     assert_equal 7, $test_ruby_primitive_constant_cache3
   end
 
@@ -120,6 +121,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_constatant_cache4
+    omit "global variable access" if non_main_ractor?
     assert_equal 8, $test_ruby_primitive_constant_cache4
   end
 
@@ -138,10 +140,12 @@ class TestRubyPrimitive < Test::Unit::TestCase
   $test_ruby_primitive_constant_cache5 = [A6.foo, B6.foo, C6.foo]
 
   def test_constant_cache5
+    omit "global variable access" if non_main_ractor?
     assert_equal [0, 1, 2], $test_ruby_primitive_constant_cache5
   end
 
   def test_gvar
+    omit "global variable access" if non_main_ractor?
     $test_ruby_primitive_gvar = 7
     assert_equal 7, $test_ruby_primitive_gvar
     assert_equal 7, $test_ruby_primitive_gvar
@@ -164,6 +168,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_cvar_from_instance_method
+    omit "class variables" if non_main_ractor?
     A7_Setup.call
 
     assert_equal 2, A7.new.m
@@ -185,6 +190,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_cvar_from_singleton_method
+    omit "class variables" if non_main_ractor?
     A8_Setup.call
 
     assert_equal 2, A8.m
@@ -204,6 +210,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_cvar_from_singleton_method2
+    omit "class variables" if non_main_ractor?
     A9_Setup.call
 
     assert_equal 2, A9.m
@@ -225,18 +232,20 @@ class TestRubyPrimitive < Test::Unit::TestCase
     assert_equal 4, @iv
 
     # init @@cv
-    @@cv = nil
+    if main_ractor?
+      @@cv = nil
 
-    @@cv ||= 1
-    assert_equal 1, @@cv
-    @@cv &&= 2
-    assert_equal 2, @@cv
-    @@cv ||= 99
-    assert_equal 2, @@cv
+      @@cv ||= 1
+      assert_equal 1, @@cv
+      @@cv &&= 2
+      assert_equal 2, @@cv
+      @@cv ||= 99
+      assert_equal 2, @@cv
 
-    $gv = 3
-    $gv += 4
-    assert_equal 7, $gv
+      $gv = 3
+      $gv += 4
+      assert_equal 7, $gv
+    end
 
     obj = A10.new
     obj.a = 9

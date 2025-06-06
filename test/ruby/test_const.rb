@@ -25,6 +25,7 @@ class TestConst < Test::Unit::TestCase
   end
 
   def test_const
+    omit "not ractor safe" if non_main_ractor?
     Constants_Setup.call
 
     assert defined?(TEST1)

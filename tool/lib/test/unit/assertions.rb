@@ -544,8 +544,12 @@ module Test
       # Takes a block and wraps it with the runner's shared mutex.
 
       def synchronize
-        Test::Unit::Runner.runner.synchronize do
+        if non_main_ractor?
           yield
+        else
+          Test::Unit::Runner.runner.synchronize do
+            yield
+          end
         end
       end
 

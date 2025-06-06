@@ -32,6 +32,7 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_must_ascii_compatible
+    pend "Tempfile" if non_main_ractor?
     require 'tempfile'
     f = Tempfile.new("must_ac_")
     Encoding.list.each do |enc|
@@ -49,6 +50,7 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_script_lines
+    pend "Tempfile" if non_main_ractor?
     require 'tempfile'
     f = Tempfile.new("bug4361_")
     bug4361 = '[ruby-dev:43168]'
@@ -220,7 +222,11 @@ class TestSyntax < Test::Unit::TestCase
       m = m.tr_s('()', ' ').strip if n3 == 'do'
       name = "test_#{n3}_block_after_blockcall_#{n1}_#{n2}_arg"
       code = "#{blockcall}#{c}#{m} #{b}"
-      define_method(name) {assert_valid_syntax(code, bug6115)}
+      class_eval <<-RUBY
+        def #{name}
+          assert_valid_syntax(#{code.inspect}, #{bug6115.inspect})
+        end
+      RUBY
     end
   end
 
@@ -830,6 +836,7 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_unassignable
+    omit "global variable access" if non_main_ractor?
     gvar = global_variables
     %w[self nil true false __FILE__ __LINE__ __ENCODING__].each do |kwd|
       assert_syntax_error("#{kwd} = nil", /Can't .* #{kwd}$/)
@@ -837,7 +844,7 @@ class TestSyntax < Test::Unit::TestCase
     end
   end
 
-  Bug7559 = '[ruby-dev:46737]'
+  Bug7559 = '[ruby-dev:46737]'.freeze
 
   def test_lineno_command_call_quote
     expected = __LINE__ + 1
@@ -1481,6 +1488,7 @@ eom
   end
 
   def test_return_toplevel
+    pend "Tempfile" if non_main_ractor?
     feature4840 = '[ruby-core:36785] [Feature #4840]'
     line = __LINE__+2
     code = "#{<<~"begin;"}#{<<~'end;'}"
@@ -1530,6 +1538,7 @@ eom
   end
 
   def test_eval_return_toplevel
+    pend "Tempfile" if non_main_ractor?
     feature4840 = '[ruby-core:36785] [Feature #4840]'
     line = __LINE__+2
     code = "#{<<~"begin;"}#{<<~'end;'}"

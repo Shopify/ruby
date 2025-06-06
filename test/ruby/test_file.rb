@@ -5,7 +5,6 @@ require "-test-/file"
 require_relative 'ut_eof'
 
 class TestFile < Test::Unit::TestCase
-
   # I don't know Ruby's spec about "unlink-before-close" exactly.
   # This test asserts current behaviour.
   def test_unlink_before_close
@@ -41,6 +40,7 @@ class TestFile < Test::Unit::TestCase
   include TestEOF::Seek
 
   def test_empty_file_bom
+    pend "Tempfile" if non_main_ractor?
     bug6487 = '[ruby-core:45203]'
     Tempfile.create(__method__.to_s) {|f|
       assert_file.exist?(f.path)
@@ -50,6 +50,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def assert_bom(bytes, name)
+    pend "Tempfile" if non_main_ractor?
     bug6487 = '[ruby-core:45203]'
 
     Tempfile.create(name.to_s) {|f|
@@ -91,6 +92,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_truncate_wbuf
+    pend "Tempfile" if non_main_ractor?
     Tempfile.create("test-truncate") {|f|
       f.print "abc"
       f.truncate(0)
@@ -101,6 +103,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_truncate_rbuf
+    pend "Tempfile" if non_main_ractor?
     Tempfile.create("test-truncate") {|f|
       f.puts "abc"
       f.puts "def"
@@ -112,6 +115,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_truncate_beyond_eof
+    pend "Tempfile" if non_main_ractor?
     Tempfile.create("test-truncate") {|f|
       f.print "abc"
       f.truncate 10
@@ -120,6 +124,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_truncate_size
+    pend "Tempfile" if non_main_ractor?
     Tempfile.create("test-truncate") do |f|
       q1 = Thread::Queue.new
       q2 = Thread::Queue.new
@@ -147,6 +152,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_read_all_extended_file
+    pend "Tempfile" if non_main_ractor?
     [{}, {:textmode=>true}, {:binmode=>true}].each do |mode|
       Tempfile.create("test-extended-file", **mode) {|f|
         assert_nil(f.getc)
@@ -158,6 +164,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_gets_extended_file
+    pend "Tempfile" if non_main_ractor?
     [{}, {:textmode=>true}, {:binmode=>true}].each do |mode|
       Tempfile.create("test-extended-file", **mode) {|f|
         assert_nil(f.getc)
@@ -169,6 +176,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_gets_para_extended_file
+    pend "Tempfile" if non_main_ractor?
     [{}, {:textmode=>true}, {:binmode=>true}].each do |mode|
       Tempfile.create("test-extended-file", **mode) {|f|
         assert_nil(f.getc)
@@ -193,6 +201,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_each_byte_extended_file
+    pend "Tempfile" if non_main_ractor?
     [{}, {:textmode=>true}, {:binmode=>true}].each do |mode|
       Tempfile.create("test-extended-file", **mode) {|f|
         assert_nil(f.getc)
@@ -217,6 +226,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_getbyte_extended_file
+    pend "Tempfile" if non_main_ractor?
     [{}, {:textmode=>true}, {:binmode=>true}].each do |mode|
       Tempfile.create("test-extended-file", **mode) {|f|
         assert_nil(f.getc)
@@ -233,6 +243,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_chown
+    pend "Tempfile" if non_main_ractor?
     Tempfile.create("test-chown") {|f|
       assert_nothing_raised {f.chown(-1, -1)}
       assert_nothing_raised("[ruby-dev:27140]") {f.chown(nil, nil)}
@@ -339,6 +350,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_utime
+    pend "Tempfile" if non_main_ractor?
     bug6385 = '[ruby-core:44776]'
 
     mod_time_contents = Time.at 1306527039
@@ -372,6 +384,7 @@ class TestFile < Test::Unit::TestCase
   end
 
   def test_stat
+    pend "Tempfile" if non_main_ractor?
     tb = Process.clock_gettime(Process::CLOCK_REALTIME)
     Tempfile.create("stat") {|file|
       tb = (tb + Process.clock_gettime(Process::CLOCK_REALTIME)) / 2

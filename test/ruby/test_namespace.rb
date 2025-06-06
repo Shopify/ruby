@@ -472,6 +472,7 @@ class TestNamespace < Test::Unit::TestCase
   end
 
   def test_global_variables
+    omit "global variable access" if non_main_ractor?
     default_l = $-0
     default_f = $,
 
@@ -509,7 +510,7 @@ class TestNamespace < Test::Unit::TestCase
     EnvUtil.suppress_warning do
       $-0 = default_l
       $, = default_f
-    end
+    end if main_ractor?
   end
 
   def test_load_path_and_loaded_features

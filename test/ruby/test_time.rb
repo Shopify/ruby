@@ -209,6 +209,7 @@ class TestTime < Test::Unit::TestCase
   end
 
   def test_timegm
+    pend "accesses current_repeat_count" if non_main_ractor?
     if negative_time_t?
       assert_equal(-0x80000000, Time.utc(1901, 12, 13, 20, 45, 52).tv_sec)
       assert_equal(-2, Time.utc(1969, 12, 31, 23, 59, 58).tv_sec)
@@ -472,7 +473,7 @@ class TestTime < Test::Unit::TestCase
       "[ruby-dev:44827] [Bug #5586]")
   end
 
-  Bug8795 = '[ruby-core:56648] [Bug #8795]'
+  Bug8795 = '[ruby-core:56648] [Bug #8795]'.freeze
 
   def test_marshal_broken_offset
     data = "\x04\bIu:\tTime\r\xEFF\x1C\x80\x00\x00\x00\x00\x06:\voffset"
@@ -570,6 +571,7 @@ class TestTime < Test::Unit::TestCase
   end
 
   def test_time_interval
+    pend "Timeout" if non_main_ractor?
     m = Thread::Mutex.new.lock
     assert_nothing_raised {
       Timeout.timeout(10) {
@@ -1293,6 +1295,7 @@ class TestTime < Test::Unit::TestCase
   end
 
   def test_2038
+    pend "accesses current_repeat_count" if non_main_ractor?
     # Giveup to try 2nd test because some state is changed.
     omit if Test::Unit::Runner.current_repeat_count > 0
 

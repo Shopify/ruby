@@ -27,12 +27,14 @@ class TestOpen3 < Test::Unit::TestCase
   end
 
   def test_stdout
+    omit if non_main_ractor?
     Open3.popen3(RUBY, '-e', 'STDOUT.print "foo"') {|i,o,e,t|
       assert_equal("foo", o.read)
     }
   end
 
   def test_stderr
+    omit if non_main_ractor?
     Open3.popen3(RUBY, '-e', 'STDERR.print "bar"') {|i,o,e,t|
       assert_equal("bar", e.read)
     }
@@ -118,13 +120,13 @@ class TestOpen3 < Test::Unit::TestCase
 
   def test_popen2
     with_pipe {|r, w|
-      with_reopen(STDERR, w) {|old|
+      with_reopen($stderr, w) {|old|
         w.close
         Open3.popen2(RUBY, '-e', 's=STDIN.read; STDOUT.print s+"o"; STDERR.print s+"e"') {|i,o,t|
           assert_kind_of(Thread, t)
           i.print "z"
           i.close
-          STDERR.reopen(old)
+          $stderr.reopen(old)
           assert_equal("zo", o.read)
           assert_equal("ze", r.read)
         }
@@ -134,13 +136,13 @@ class TestOpen3 < Test::Unit::TestCase
 
   def test_popen2e
     with_pipe {|r, w|
-      with_reopen(STDERR, w) {|old|
+      with_reopen($stderr, w) {|old|
         w.close
         Open3.popen2e(RUBY, '-e', 's=STDIN.read; STDOUT.print s+"o"; STDOUT.flush; STDERR.print s+"e"') {|i,o,t|
           assert_kind_of(Thread, t)
           i.print "y"
           i.close
-          STDERR.reopen(old)
+          $stderr.reopen(old)
           assert_equal("yoye", o.read)
           assert_equal("", r.read)
         }
