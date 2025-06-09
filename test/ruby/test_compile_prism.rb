@@ -3,6 +3,10 @@
 # This file is organized to match itemization in https://github.com/ruby/prism/issues/1335
 module Prism
   class TestCompilePrism < Test::Unit::TestCase
+    def setup
+      omit "Not ractor safe" if multiple_ractors?
+    end
+
     def test_iseq_has_node_id
       code = "proc { <<END }\n hello\nEND"
       iseq = RubyVM::InstructionSequence.compile_prism(code)

@@ -1718,7 +1718,7 @@ module Test
                 rs = run_tests_inside_ractors_num.times.map do
                   Ractor.new(inst, self) do |instance, runner|
                     res = instance.run runner
-                    testcase_copyable_ivars = {:@_assertions => true, :@__passed__ => true, :@__name__ => true}
+                    testcase_copyable_ivars = {:@_assertions => true, :@__passed__ => true, :@__name__ => true, :@__after_all_ractors_block => true}
                     runner_copyable_ivars = {:@report => true, :@failures => true, :@errors => true, :@skips => true, :@assertion_count => true, :@test_count => true}
                     instance.instance_variables.each do |ivar|
                       unless testcase_copyable_ivars[ivar]

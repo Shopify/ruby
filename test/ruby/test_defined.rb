@@ -391,6 +391,7 @@ class TestDefined < Test::Unit::TestCase
   end
 
   def test_respond_to
+    omit "Warning[]= used" if multiple_ractors?
     obj = "#{self.class.name}##{__method__}"
     class << obj
       def respond_to?(mid)
