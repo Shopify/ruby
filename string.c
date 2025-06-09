@@ -11262,8 +11262,15 @@ rb_str_crypt(VALUE str, VALUE salt)
         CRYPT_END();
         rb_syserr_fail(err, "crypt");
     }
-    result = rb_str_new_cstr(res);
+
+    size_t res_size = strlen(res)+1;
+    char *dup = malloc(res_size); // need to hold onto lock while duplicating a potentially static buffer
+    memcpy(dup, res, res_size);
     CRYPT_END();
+    // Don't allocate a ruby object while holding this lock, we could hit a VM barrier, which
+    // causes a deadlock if other ractors are waiting on this lock.
+    result = rb_str_new_cstr(dup);
+    free(dup);
     return result;
 }
 
