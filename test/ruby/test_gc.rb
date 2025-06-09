@@ -9,6 +9,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_gc
+    omit "global side effects" if multiple_ractors?
     prev_stress = GC.stress
     GC.stress = false
 
@@ -40,6 +41,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_enable_disable
+    omit "global side effects" if multiple_ractors?
     EnvUtil.without_gc do
       GC.enable
       assert_equal(false, GC.enable)
@@ -53,6 +55,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_gc_config_full_mark_by_default
+    omit "races with other ractors" if multiple_ractors?
     config = GC.config
     assert_not_empty(config)
     assert_true(config[:rgengc_allow_full_mark])
@@ -63,6 +66,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_gc_config_setting_returns_updated_config_hash
+    omit "global side effects" if multiple_ractors?
     old_value = GC.config[:rgengc_allow_full_mark]
     assert_true(old_value)
 
@@ -84,6 +88,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_gc_config_disable_major
+    omit "global side effects" if multiple_ractors?
     GC.enable
     GC.start
 
@@ -106,6 +111,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_gc_config_disable_major_gc_start_always_works
+    omit "global side effects" if multiple_ractors?
     GC.config(full_mark: false)
 
     major_count = GC.stat[:major_gc_count]
@@ -132,6 +138,7 @@ class TestGc < Test::Unit::TestCase
 
   def test_start_full_mark
     return unless use_rgengc?
+    omit "latest_gc_info could race" if multiple_ractors?
     omit 'stress' if GC.stress
 
     3.times { GC.start } # full mark and next time it should be minor mark
@@ -143,6 +150,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_start_immediate_sweep
+    omit "latest_gc_info could race" if multiple_ractors?
     omit 'stress' if GC.stress
 
     GC.start(immediate_sweep: false)
@@ -159,6 +167,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_stat
+    omit "global side effects" if multiple_ractors?
     res = GC.stat
     assert_equal(false, res.empty?)
     assert_kind_of(Integer, res[:count])
@@ -204,6 +213,7 @@ class TestGc < Test::Unit::TestCase
 
   def test_stat_constraints
     omit 'stress' if GC.stress
+    omit "racy" if multiple_ractors?
 
     stat = GC.stat
     # marking_time + sweeping_time could differ from time by 1 because they're stored in nanoseconds
@@ -220,6 +230,7 @@ class TestGc < Test::Unit::TestCase
 
   def test_stat_heap
     omit 'stress' if GC.stress
+    omit "global side effects" if multiple_ractors?
 
     stat_heap = {}
     stat = {}
@@ -276,6 +287,7 @@ class TestGc < Test::Unit::TestCase
 
   def test_stat_heap_constraints
     omit 'stress' if GC.stress
+    omit "races with other ractors" if multiple_ractors?
 
     stat = GC.stat
     stat_heap = GC.stat_heap
@@ -352,6 +364,7 @@ class TestGc < Test::Unit::TestCase
   def test_latest_gc_info_need_major_by
     return unless use_rgengc?
     omit 'stress' if GC.stress
+    omit "global side effects" if multiple_ractors?
 
     3.times { GC.start }
     assert_nil GC.latest_gc_info(:need_major_by)
@@ -599,6 +612,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_profiler_raw_data
+    omit "racy" if multiple_ractors?
     GC::Profiler.enable
     GC.start
     assert GC::Profiler.raw_data
@@ -607,6 +621,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_profiler_total_time
+    omit "racy" if multiple_ractors?
     GC::Profiler.enable
     GC::Profiler.clear
 
@@ -800,6 +815,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_gc_disabled_start
+    omit "global side effects" if multiple_ractors?
     EnvUtil.without_gc do
       c = GC.count
       GC.start
@@ -879,6 +895,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_ast_node_buffer
+    omit "TODO: freezes process" if multiple_ractors?
     # https://github.com/ruby/ruby/pull/4416
     Module.new.class_eval( (["# shareable_constant_value: literal"] +
                             (0..100000).map {|i| "M#{ i } = {}" }).join("\n"))

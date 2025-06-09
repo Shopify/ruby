@@ -320,7 +320,7 @@ class TestSyntax < Test::Unit::TestCase
     assert_equal({foo: 1, bar: 2}, o.kw(foo: 1, bar: 2), bug5989)
     EnvUtil.under_gc_stress do
       eval("def o.m(k: 0) k end")
-    end
+    end unless multiple_ractors?
     assert_equal(42, o.m(k: 42), '[ruby-core:45744]')
     bug7922 = '[ruby-core:52744] [Bug #7922]'
     def o.bug7922(**) end
