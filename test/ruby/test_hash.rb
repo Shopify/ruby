@@ -872,6 +872,7 @@ class TestHash < Test::Unit::TestCase
   end
 
   def test_inspect
+    omit "global side effects" if multiple_ractors?
     no_quote = '{a: 1, a!: 1, a?: 1}'
     quote0 = '{"": 1}'
     quote1 = '{"0": 1, "!": 1, "%": 1, "&": 1, "*": 1, "+": 1, "-": 1, "/": 1, "<": 1, ">": 1, "^": 1, "`": 1, "|": 1, "~": 1}'
@@ -2003,6 +2004,7 @@ class TestHashOnly < Test::Unit::TestCase
   end
 
   def test_AREF_fstring_key
+    omit "EnvUtil.without_gc" unless main_ractor?
     # warmup ObjectSpace.count_objects
     ObjectSpace.count_objects
 

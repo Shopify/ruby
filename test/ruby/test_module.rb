@@ -261,7 +261,7 @@ class TestModule < Test::Unit::TestCase
       assert_raise(EncodingError) do
         Math.const_defined?("\xC3")
       end
-    end
+    end unless multiple_ractors?
   end
 
   def each_bad_constants(m, &b)

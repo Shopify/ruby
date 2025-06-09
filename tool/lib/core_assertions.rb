@@ -679,6 +679,7 @@ eom
       end
 
       def assert_warning(pat, msg = nil)
+        return if multiple_ractors? # These envutil methods with blocks are racy across ractors
         result = nil
         stderr = EnvUtil.with_default_internal(of: pat) {
           EnvUtil.verbose_warning {

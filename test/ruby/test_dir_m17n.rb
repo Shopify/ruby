@@ -4,6 +4,10 @@ require 'tmpdir'
 require '-test-/file'
 
 class TestDir_M17N < Test::Unit::TestCase
+  def setup
+    omit "Uses Dir.chdir" if multiple_ractors?
+  end
+
   def with_tmpdir
     Dir.mktmpdir {|dir|
       Dir.chdir(dir) {

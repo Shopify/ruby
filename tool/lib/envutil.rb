@@ -329,6 +329,7 @@ module EnvUtil
   end
   module_function :suppress_warning
 
+  # NOTE: not safe to use when testing under multiple ractors.
   def under_gc_stress(stress = true)
     stress, GC.stress = GC.stress, stress
     yield
@@ -337,6 +338,7 @@ module EnvUtil
   end
   module_function :under_gc_stress
 
+  # NOTE: not safe to use when testing under multiple ractors.
   def under_gc_compact_stress(val = :empty, &block)
     raise "compaction doesn't work well on s390x. Omit the test in the caller." if RUBY_PLATFORM =~ /s390x/ # https://github.com/ruby/ruby/pull/5077
 
@@ -351,6 +353,7 @@ module EnvUtil
   end
   module_function :under_gc_compact_stress
 
+  # NOTE: not safe to use when testing under multiple ractors.
   def without_gc
     prev_disabled = GC.disable
     yield
@@ -359,6 +362,7 @@ module EnvUtil
   end
   module_function :without_gc
 
+  # NOTE: not safe to use when testing under multiple ractors.
   def with_default_external(enc = nil, of: nil)
     enc = of.encoding if defined?(of.encoding)
     suppress_warning { Encoding.default_external = enc }
@@ -368,6 +372,7 @@ module EnvUtil
   end
   module_function :with_default_external
 
+  # NOTE: not safe to use when testing under multiple ractors.
   def with_default_internal(enc = nil, of: nil)
     enc = of.encoding if defined?(of.encoding)
     suppress_warning { Encoding.default_internal = enc }
