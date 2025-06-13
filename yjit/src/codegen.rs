@@ -6275,11 +6275,13 @@ fn jit_rb_str_dup(
 
     jit_prepare_call_with_gc(jit, asm);
 
-    // Check !FL_ANY_RAW(str, FL_EXIVAR), which is part of BARE_STRING_P.
+    // Check SHAPE_ID_HAS_IVAR_MASK, which is part of BARE_STRING_P.
     let recv_opnd = asm.stack_pop(1);
     let recv_opnd = asm.load(recv_opnd);
-    let flags_opnd = Opnd::mem(64, recv_opnd, RUBY_OFFSET_RBASIC_FLAGS);
-    asm.test(flags_opnd, Opnd::Imm(RUBY_FL_EXIVAR as i64));
+
+    let shape_id_offset = unsafe { rb_shape_id_offset() };
+    let shape_opnd = Opnd::mem(SHAPE_ID_NUM_BITS as u8, recv_opnd, shape_id_offset);
+    asm.test(shape_opnd, Opnd::Imm((SHAPE_ID_HAS_IVAR_MASK as u32).into()));
     asm.jnz(Target::side_exit(Counter::send_str_dup_exivar));
 
     // Call rb_str_dup

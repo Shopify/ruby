@@ -388,12 +388,7 @@ fstring_hash(VALUE str)
 static inline bool
 BARE_STRING_P(VALUE str)
 {
-    if (RBASIC_CLASS(str) != rb_cString) return false;
-
-    if (FL_TEST_RAW(str, FL_EXIVAR)) {
-        return rb_ivar_count(str) == 0;
-    }
-    return true;
+    return RBASIC_CLASS(str) == rb_cString && !rb_shape_obj_has_ivars(str);
 }
 
 static inline st_index_t

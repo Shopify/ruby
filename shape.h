@@ -10,6 +10,14 @@ typedef uint32_t shape_id_t;
 
 STATIC_ASSERT(shape_id_num_bits, SHAPE_ID_NUM_BITS == sizeof(shape_id_t) * CHAR_BIT);
 
+enum shape_flags {
+    SHAPE_FL_FROZEN             = 1 << 0,
+    SHAPE_FL_HAS_OBJECT_ID      = 1 << 1,
+    SHAPE_FL_TOO_COMPLEX        = 1 << 2,
+
+    SHAPE_FL_NON_CANONICAL_MASK = SHAPE_FL_FROZEN | SHAPE_FL_HAS_OBJECT_ID,
+};
+
 #define SHAPE_BUFFER_SIZE (1 << SHAPE_ID_OFFSET_NUM_BITS)
 #define SHAPE_ID_OFFSET_MASK (SHAPE_BUFFER_SIZE - 1)
 #define SHAPE_ID_FLAGS_MASK (shape_id_t)(((1 << (SHAPE_ID_NUM_BITS - SHAPE_ID_OFFSET_NUM_BITS)) - 1) << SHAPE_ID_OFFSET_NUM_BITS)
@@ -22,6 +30,11 @@ STATIC_ASSERT(shape_id_num_bits, SHAPE_ID_NUM_BITS == sizeof(shape_id_t) * CHAR_
 #define SHAPE_ID_HEAP_INDEX_OFFSET (SHAPE_ID_NUM_BITS - SHAPE_ID_HEAP_INDEX_BITS)
 #define SHAPE_ID_HEAP_INDEX_MAX ((1 << SHAPE_ID_HEAP_INDEX_BITS) - 1)
 #define SHAPE_ID_HEAP_INDEX_MASK (SHAPE_ID_HEAP_INDEX_MAX << SHAPE_ID_HEAP_INDEX_OFFSET)
+
+// This masks allows to check if a shape_id contains any ivar.
+// It rely on ROOT_SHAPE_WITH_OBJ_ID==1.
+#define SHAPE_ID_HAS_IVAR_MASK 0x27fffe
+STATIC_ASSERT(shape_id_has_ivar_mask, SHAPE_ID_HAS_IVAR_MASK == (SHAPE_ID_FL_TOO_COMPLEX | (SHAPE_ID_OFFSET_MASK - 1)));
 
 // The interpreter doesn't care about frozen status or slot size when reading ivars.
 // So we normalize shape_id by clearing these bits to improve cache hits.
@@ -70,14 +83,6 @@ enum shape_type {
     SHAPE_ROOT,
     SHAPE_IVAR,
     SHAPE_OBJ_ID,
-};
-
-enum shape_flags {
-    SHAPE_FL_FROZEN             = 1 << 0,
-    SHAPE_FL_HAS_OBJECT_ID      = 1 << 1,
-    SHAPE_FL_TOO_COMPLEX        = 1 << 2,
-
-    SHAPE_FL_NON_CANONICAL_MASK = SHAPE_FL_FROZEN | SHAPE_FL_HAS_OBJECT_ID,
 };
 
 typedef struct {
@@ -325,6 +330,18 @@ static inline bool
 rb_shape_obj_has_id(VALUE obj)
 {
     return rb_shape_has_object_id(RBASIC_SHAPE_ID(obj));
+}
+
+static inline bool
+rb_shape_has_ivars(shape_id_t shape_id)
+{
+    return shape_id & SHAPE_ID_HAS_IVAR_MASK;
+}
+
+static inline bool
+rb_shape_obj_has_ivars(VALUE obj)
+{
+    return rb_shape_has_ivars(RBASIC_SHAPE_ID(obj));
 }
 
 // For ext/objspace
