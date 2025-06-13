@@ -220,7 +220,7 @@ assert_equal 'Sub', %q{
   call(Sub.new('o')).class
 }
 
-# String#dup with FL_EXIVAR
+# String#dup with instance variables
 assert_equal '["str", "ivar"]', %q{
   def str_dup(str) = str.dup
   str = "str"

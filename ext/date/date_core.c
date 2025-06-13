@@ -7517,9 +7517,8 @@ d_lite_marshal_dump_old(VALUE self)
 		    m_of_in_day(dat),
 		    DBL2NUM(m_sg(dat)));
 
-    if (FL_TEST(self, FL_EXIVAR)) {
-	rb_copy_generic_ivar(a, self);
-	FL_SET(a, FL_EXIVAR);
+    if (rb_obj_has_exivar(self)) {
+        rb_copy_generic_ivar(a, self);
     }
 
     return a;
@@ -7542,9 +7541,8 @@ d_lite_marshal_dump(VALUE self)
 		    INT2FIX(m_of(dat)),
 		    DBL2NUM(m_sg(dat)));
 
-    if (FL_TEST(self, FL_EXIVAR)) {
-	rb_copy_generic_ivar(a, self);
-	FL_SET(a, FL_EXIVAR);
+    if (rb_obj_has_exivar(self)) {
+        rb_copy_generic_ivar(a, self);
     }
 
     return a;
@@ -7618,9 +7616,8 @@ d_lite_marshal_load(VALUE self, VALUE a)
 		       HAVE_JD | HAVE_DF);
     }
 
-    if (FL_TEST(a, FL_EXIVAR)) {
-	rb_copy_generic_ivar(self, a);
-	FL_SET(self, FL_EXIVAR);
+    if (rb_obj_has_exivar(self)) {
+        rb_copy_generic_ivar(a, self);
     }
 
     return self;

@@ -344,6 +344,43 @@ rb_shape_obj_has_ivars(VALUE obj)
     return rb_shape_has_ivars(RBASIC_SHAPE_ID(obj));
 }
 
+static inline bool
+rb_shape_has_fields(shape_id_t shape_id)
+{
+    return shape_id & (SHAPE_ID_OFFSET_MASK | SHAPE_ID_FL_TOO_COMPLEX);
+}
+
+static inline bool
+rb_shape_obj_has_fields(VALUE obj)
+{
+    return rb_shape_has_fields(RBASIC_SHAPE_ID(obj));
+}
+
+static inline bool
+rb_obj_has_exivar(VALUE obj)
+{
+    switch (TYPE(obj)) {
+        case T_NONE:
+        case T_OBJECT:
+        case T_CLASS:
+        case T_MODULE:
+        case T_IMEMO:
+          return false;
+        default:
+          break;
+    }
+    return rb_shape_obj_has_fields(obj);
+}
+
+// Reset all shape transition, keeps frozen status.
+// To be called after external fields are freed.
+static inline void
+rb_shape_obj_clear(VALUE obj)
+{
+    shape_id_t original_shape_id = RBASIC_SHAPE_ID(obj);
+    RBASIC_SET_SHAPE_ID(obj, original_shape_id & SHAPE_ID_FL_FROZEN);
+}
+
 // For ext/objspace
 RUBY_SYMBOL_EXPORT_BEGIN
 typedef void each_shape_callback(shape_id_t shape_id, void *data);
