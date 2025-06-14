@@ -652,13 +652,6 @@ class TestZJIT < Test::Unit::TestCase
     }, call_threshold: 2
   end
 
-  # We need to support either setconstant or defineclass insns to support ConstBase's
-  # test case, like
-  #
-  # ```
-  # Foo = 1
-  # class Module::Bar; end
-  # ```
   def test_putspecialobject_vm_core_and_cbase
     assert_compiles '10', %q{
       def test
@@ -669,6 +662,21 @@ class TestZJIT < Test::Unit::TestCase
       test
       bar
     }, insns: [:putspecialobject]
+  end
+
+  # We need to warm up constant cache by calling test before ZJIT compilation
+  # This makes sure that the GetConstantPath instruction is not included in the
+  # ZJIT code by the optimization pass, which's codegen is still not implemented.
+  def test_putspecialobject_const_base
+    assert_compiles '1', %q{
+      Foo = 1
+
+      def test = Foo
+
+      # Warm up the constant cache by calling test before ZJIT compilation
+      test
+      test
+    }, call_threshold: 3
   end
 
   # tool/ruby_vm/views/*.erb relies on the zjit instructions a) being contiguous and
