@@ -1982,7 +1982,7 @@ static VALUE vm_call_general(rb_execution_context_t *ec, rb_control_frame_t *reg
 static VALUE vm_mtbl_dump(VALUE klass, ID target_mid);
 
 static struct rb_class_cc_entries *
-vm_ccs_create(VALUE klass, struct rb_id_table *cc_tbl, ID mid, const rb_callable_method_entry_t *cme)
+vm_ccs_create(VALUE klass, VALUE cc_tbl, ID mid, const rb_callable_method_entry_t *cme)
 {
     struct rb_class_cc_entries *ccs = ALLOC(struct rb_class_cc_entries);
 #if VM_CHECK_MODE > 0
@@ -1994,7 +1994,8 @@ vm_ccs_create(VALUE klass, struct rb_id_table *cc_tbl, ID mid, const rb_callable
     METHOD_ENTRY_CACHED_SET((rb_callable_method_entry_t *)cme);
     ccs->entries = NULL;
 
-    rb_id_table_insert(cc_tbl, mid, (VALUE)ccs);
+    rb_managed_id_table_insert(cc_tbl, mid, (VALUE)ccs);
+    RB_OBJ_WRITTEN(cc_tbl, Qundef, cme);
     RB_OBJ_WRITTEN(klass, Qundef, cme);
     return ccs;
 }
@@ -2067,20 +2068,20 @@ static const struct rb_callcache *
 vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
 {
     const ID mid = vm_ci_mid(ci);
-    struct rb_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
+    VALUE cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
     struct rb_class_cc_entries *ccs = NULL;
     VALUE ccs_data;
 
     if (cc_tbl) {
         // CCS data is keyed on method id, so we don't need the method id
         // for doing comparisons in the `for` loop below.
-        if (rb_id_table_lookup(cc_tbl, mid, &ccs_data)) {
+        if (rb_managed_id_table_lookup(cc_tbl, mid, &ccs_data)) {
             ccs = (struct rb_class_cc_entries *)ccs_data;
             const int ccs_len = ccs->len;
 
             if (UNLIKELY(METHOD_ENTRY_INVALIDATED(ccs->cme))) {
                 rb_vm_ccs_invalidate_and_free(ccs);
-                rb_id_table_delete(cc_tbl, mid);
+                rb_managed_id_table_delete(cc_tbl, mid);
                 ccs = NULL;
             }
             else {
@@ -2113,7 +2114,7 @@ vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
         }
     }
     else {
-        cc_tbl = rb_id_table_create(2);
+        cc_tbl = vm_cc_table_create(2);
         RCLASS_WRITE_CC_TBL(klass, cc_tbl);
     }
 
@@ -2144,9 +2145,9 @@ vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
     METHOD_ENTRY_CACHED_SET((struct rb_callable_method_entry_struct *)cme);
 
     if (ccs == NULL) {
-        VM_ASSERT(cc_tbl != NULL);
+        VM_ASSERT(cc_tbl != 0);
 
-        if (LIKELY(rb_id_table_lookup(cc_tbl, mid, &ccs_data))) {
+        if (LIKELY(rb_managed_id_table_lookup(cc_tbl, mid, &ccs_data))) {
             // rb_callable_method_entry() prepares ccs.
             ccs = (struct rb_class_cc_entries *)ccs_data;
         }
@@ -2160,6 +2161,7 @@ vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
 
     const struct rb_callcache *cc = vm_cc_new(klass, cme, vm_call_general, cc_type_normal);
     vm_ccs_push(klass, ccs, ci, cc);
+    RB_OBJ_WRITTEN(cc_tbl, Qundef, cc);
 
     VM_ASSERT(vm_cc_cme(cc) != NULL);
     VM_ASSERT(cme->called_id == mid);
