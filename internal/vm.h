@@ -99,7 +99,7 @@ const struct rb_callcache *rb_vm_search_method_slowpath(const struct rb_callinfo
 
 /* vm_method.c */
 int rb_ec_obj_respond_to(struct rb_execution_context_struct *ec, VALUE obj, ID id, int priv);
-void rb_vm_cc_table_invalidate_ccs(struct rb_id_table *cc_table, VALUE klass);
+void rb_vm_cc_table_invalidate_ccs(VALUE cc_table, VALUE klass);
 void rb_clear_constant_cache(void);
 
 /* vm_dump.c */

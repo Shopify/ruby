@@ -535,54 +535,6 @@ rb_free_const_table(struct rb_id_table *tbl)
     rb_id_table_free(tbl);
 }
 
-static void
-vm_ccs_invalidate(struct rb_class_cc_entries *ccs)
-{
-    if (ccs->entries) {
-        for (int i=0; i<ccs->len; i++) {
-            const struct rb_callcache *cc = ccs->entries[i].cc;
-            VM_ASSERT(!vm_cc_super_p(cc) && !vm_cc_refinement_p(cc));
-            vm_cc_invalidate(cc);
-        }
-    }
-}
-
-static void
-vm_ccs_free(struct rb_class_cc_entries *ccs)
-{
-    if (ccs->entries) {
-        ruby_xfree(ccs->entries);
-    }
-    ruby_xfree(ccs);
-}
-
-void
-rb_vm_ccs_invalidate_and_free(struct rb_class_cc_entries *ccs)
-{
-    RB_DEBUG_COUNTER_INC(ccs_free);
-    vm_ccs_invalidate(ccs);
-    vm_ccs_free(ccs);
-}
-
-static enum rb_id_table_iterator_result
-cc_table_free_i(VALUE ccs_ptr, void *data)
-{
-    struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_ptr;
-    VM_ASSERT(vm_ccs_p(ccs));
-
-    vm_ccs_free(ccs);
-
-    return ID_TABLE_CONTINUE;
-}
-
-void
-rb_cc_tbl_free(struct rb_id_table *cc_tbl)
-{
-    if (!cc_tbl) return;
-    rb_id_table_foreach_values(cc_tbl, cc_table_free_i, NULL);
-    rb_id_table_free(cc_tbl);
-}
-
 static inline void
 imemo_fields_free(struct rb_fields *fields)
 {
