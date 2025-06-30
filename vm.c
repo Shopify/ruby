@@ -65,6 +65,8 @@ VALUE vm_exec(rb_execution_context_t *);
 
 extern const char *const rb_debug_counter_names[];
 
+static VALUE vm_cc_table_create(size_t capa);
+
 PUREFUNC(static inline const VALUE *VM_EP_LEP(const VALUE *));
 static inline const VALUE *
 VM_EP_LEP(const VALUE *ep)
