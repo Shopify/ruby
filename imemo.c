@@ -278,47 +278,6 @@ rb_imemo_memsize(VALUE obj)
  * mark
  * ========================================================================= */
 
-static enum rb_id_table_iterator_result
-cc_table_mark_i(VALUE ccs_ptr, void *data)
-{
-    // looks duplicate to mark_cc_entry_i (gc.c)
-    struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_ptr;
-    VM_ASSERT(vm_ccs_p(ccs));
-#if VM_CHECK_MODE > 0
-    VALUE klass = (VALUE)data;
-
-    VALUE lookup_val;
-    VM_ASSERT(rb_id_table_lookup(RCLASS_WRITABLE_CC_TBL(klass), ccs->cme->called_id, &lookup_val));
-    VM_ASSERT(lookup_val == ccs_ptr);
-#endif
-
-    if (METHOD_ENTRY_INVALIDATED(ccs->cme)) {
-        rb_vm_ccs_free(ccs);
-        return ID_TABLE_DELETE;
-    }
-    else {
-        rb_gc_mark_movable((VALUE)ccs->cme);
-
-        for (int i=0; i<ccs->len; i++) {
-            VM_ASSERT(klass == ccs->entries[i].cc->klass);
-            VM_ASSERT(vm_cc_check_cme(ccs->entries[i].cc, ccs->cme));
-
-            rb_gc_mark_movable((VALUE)ccs->entries[i].cc);
-        }
-        return ID_TABLE_CONTINUE;
-    }
-}
-
-void
-rb_cc_table_mark(VALUE klass)
-{
-    // TODO: delete this (and cc_table_mark_i) if it's ok
-    struct rb_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
-    if (cc_tbl) {
-        rb_id_table_foreach_values(cc_tbl, cc_table_mark_i, (void *)klass);
-    }
-}
-
 static bool
 moved_or_living_object_strictly_p(VALUE obj)
 {
@@ -574,75 +533,6 @@ rb_free_const_table(struct rb_id_table *tbl)
 {
     rb_id_table_foreach_values(tbl, free_const_entry_i, 0);
     rb_id_table_free(tbl);
-}
-
-// alive: if false, target pointers can be freed already.
-static void
-vm_ccs_free(struct rb_class_cc_entries *ccs, int alive, VALUE klass)
-{
-    if (ccs->entries) {
-        for (int i=0; i<ccs->len; i++) {
-            const struct rb_callcache *cc = ccs->entries[i].cc;
-            if (!alive) {
-                // ccs can be free'ed.
-                if (rb_gc_pointer_to_heap_p((VALUE)cc) &&
-                    !rb_objspace_garbage_object_p((VALUE)cc) &&
-                    IMEMO_TYPE_P(cc, imemo_callcache) &&
-                    cc->klass == klass) {
-                    // OK. maybe target cc.
-                }
-                else {
-                    continue;
-                }
-            }
-
-            VM_ASSERT(!vm_cc_super_p(cc) && !vm_cc_refinement_p(cc));
-            vm_cc_invalidate(cc);
-        }
-        ruby_xfree(ccs->entries);
-    }
-    ruby_xfree(ccs);
-}
-
-void
-rb_vm_ccs_free(struct rb_class_cc_entries *ccs)
-{
-    RB_DEBUG_COUNTER_INC(ccs_free);
-    vm_ccs_free(ccs, true, Qundef);
-}
-
-static enum rb_id_table_iterator_result
-cc_table_free_i(VALUE ccs_ptr, void *data)
-{
-    struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_ptr;
-    VALUE klass = (VALUE)data;
-    VM_ASSERT(vm_ccs_p(ccs));
-
-    vm_ccs_free(ccs, false, klass);
-
-    return ID_TABLE_CONTINUE;
-}
-
-void
-rb_cc_table_free(VALUE klass)
-{
-    // This can be called and work well only for IClass
-    // And classext_iclass_free uses rb_cc_tbl_free now.
-    // TODO: remove this if it's ok
-    struct rb_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
-
-    if (cc_tbl) {
-        rb_id_table_foreach_values(cc_tbl, cc_table_free_i, (void *)klass);
-        rb_id_table_free(cc_tbl);
-    }
-}
-
-void
-rb_cc_tbl_free(struct rb_id_table *cc_tbl, VALUE klass)
-{
-    if (!cc_tbl) return;
-    rb_id_table_foreach_values(cc_tbl, cc_table_free_i, (void *)klass);
-    rb_id_table_free(cc_tbl);
 }
 
 static inline void
