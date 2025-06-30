@@ -47,7 +47,7 @@ struct rb_id_table {
 
 #if SIZEOF_VALUE == 8
 #define ITEM_GET_KEY(tbl, i) ((tbl)->items[i].key)
-#define ITEM_KEY_ISSET(tbl, i) ((tbl)->items[i].key)
+#define ITEM_KEY_ISSET(tbl, i) ((tbl)->items && (tbl)->items[i].key)
 #define ITEM_COLLIDED(tbl, i) ((tbl)->items[i].collision)
 #define ITEM_SET_COLLIDED(tbl, i) ((tbl)->items[i].collision = 1)
 static inline void
@@ -331,29 +331,29 @@ rb_id_table_foreach_values_with_replace(struct rb_id_table *tbl, rb_id_table_for
     }
 }
 
-static void
-managed_id_table_free(void *data)
+void
+rb_managed_id_table_free(void *data)
 {
     struct rb_id_table *tbl = (struct rb_id_table *)data;
     rb_id_table_free_items(tbl);
 }
 
-static size_t
-managed_id_table_memsize(const void *data)
+const rb_data_type_t rb_managed_id_table_type = {
+    .wrap_struct_name = "VM/managed_id_table",
+    .function = {
+        .dmark = NULL, // Nothing to mark
+        .dfree = (RUBY_DATA_FUNC)rb_managed_id_table_free,
+        .dsize = rb_managed_id_table_memsize,
+    },
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+};
+
+size_t
+rb_managed_id_table_memsize(const void *data)
 {
     const struct rb_id_table *tbl = (const struct rb_id_table *)data;
     return rb_id_table_memsize(tbl) - sizeof(struct rb_id_table);
 }
-
-static const rb_data_type_t managed_id_table_type = {
-    .wrap_struct_name = "VM/managed_id_table",
-    .function = {
-        .dmark = NULL, // Nothing to mark
-        .dfree = (RUBY_DATA_FUNC)managed_id_table_free,
-        .dsize = managed_id_table_memsize,
-    },
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
-};
 
 static inline struct rb_id_table *
 managed_id_table_ptr(VALUE obj)
@@ -362,12 +362,18 @@ managed_id_table_ptr(VALUE obj)
 }
 
 VALUE
-rb_managed_id_table_new(size_t capa)
+rb_managed_id_table_create(const rb_data_type_t *type, size_t capa)
 {
     struct rb_id_table *tbl;
-    VALUE obj = TypedData_Make_Struct(0, struct rb_id_table, &managed_id_table_type, tbl);
+    VALUE obj = TypedData_Make_Struct(0, struct rb_id_table, type, tbl);
     rb_id_table_init(tbl, capa);
     return obj;
+}
+
+VALUE
+rb_managed_id_table_new(size_t capa)
+{
+    return rb_managed_id_table_create(&rb_managed_id_table_type, capa);
 }
 
 static enum rb_id_table_iterator_result
@@ -382,10 +388,10 @@ VALUE
 rb_managed_id_table_dup(VALUE old_table)
 {
     RUBY_ASSERT(RB_TYPE_P(old_table, T_DATA));
-    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(old_table), &managed_id_table_type));
+    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(old_table), &rb_managed_id_table_type));
 
     struct rb_id_table *new_tbl;
-    VALUE obj = TypedData_Make_Struct(0, struct rb_id_table, &managed_id_table_type, new_tbl);
+    VALUE obj = TypedData_Make_Struct(0, struct rb_id_table, &rb_managed_id_table_type, new_tbl);
     struct rb_id_table *old_tbl = RTYPEDDATA_GET_DATA(old_table);
     rb_id_table_init(new_tbl, old_tbl->num + 1);
     rb_id_table_foreach(old_tbl, managed_id_table_dup_i, new_tbl);
@@ -396,7 +402,7 @@ int
 rb_managed_id_table_lookup(VALUE table, ID id, VALUE *valp)
 {
     RUBY_ASSERT(RB_TYPE_P(table, T_DATA));
-    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &managed_id_table_type));
+    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &rb_managed_id_table_type));
 
     return rb_id_table_lookup(RTYPEDDATA_GET_DATA(table), id, valp);
 }
@@ -405,7 +411,7 @@ int
 rb_managed_id_table_insert(VALUE table, ID id, VALUE val)
 {
     RUBY_ASSERT(RB_TYPE_P(table, T_DATA));
-    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &managed_id_table_type));
+    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &rb_managed_id_table_type));
 
     return rb_id_table_insert(RTYPEDDATA_GET_DATA(table), id, val);
 }
@@ -414,7 +420,7 @@ size_t
 rb_managed_id_table_size(VALUE table)
 {
     RUBY_ASSERT(RB_TYPE_P(table, T_DATA));
-    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &managed_id_table_type));
+    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &rb_managed_id_table_type));
 
     return rb_id_table_size(RTYPEDDATA_GET_DATA(table));
 }
@@ -423,7 +429,25 @@ void
 rb_managed_id_table_foreach(VALUE table, rb_id_table_foreach_func_t *func, void *data)
 {
     RUBY_ASSERT(RB_TYPE_P(table, T_DATA));
-    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &managed_id_table_type));
+    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &rb_managed_id_table_type));
 
     rb_id_table_foreach(RTYPEDDATA_GET_DATA(table), func, data);
+}
+
+void
+rb_managed_id_table_foreach_values(VALUE table, rb_id_table_foreach_values_func_t *func, void *data)
+{
+    RUBY_ASSERT(RB_TYPE_P(table, T_DATA));
+    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &rb_managed_id_table_type));
+
+    rb_id_table_foreach_values(RTYPEDDATA_GET_DATA(table), func, data);
+}
+
+int
+rb_managed_id_table_delete(VALUE table, ID id)
+{
+    RUBY_ASSERT(RB_TYPE_P(table, T_DATA));
+    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(table), &rb_managed_id_table_type));
+
+    return rb_id_table_delete(RTYPEDDATA_GET_DATA(table), id);
 }
