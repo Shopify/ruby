@@ -537,22 +537,19 @@ rb_free_const_table(struct rb_id_table *tbl)
 
 // alive: if false, target pointers can be freed already.
 static void
-vm_ccs_free(struct rb_class_cc_entries *ccs, int alive, VALUE klass)
+vm_ccs_free(struct rb_class_cc_entries *ccs)
 {
     if (ccs->entries) {
         for (int i=0; i<ccs->len; i++) {
             const struct rb_callcache *cc = ccs->entries[i].cc;
-            if (!alive) {
-                // ccs can be free'ed.
-                if (rb_gc_pointer_to_heap_p((VALUE)cc) &&
-                    !rb_objspace_garbage_object_p((VALUE)cc) &&
-                    IMEMO_TYPE_P(cc, imemo_callcache) &&
-                    cc->klass == klass) {
-                    // OK. maybe target cc.
-                }
-                else {
-                    continue;
-                }
+            if (rb_gc_pointer_to_heap_p((VALUE)cc) &&
+                !rb_objspace_garbage_object_p((VALUE)cc) &&
+                IMEMO_TYPE_P(cc, imemo_callcache)) {
+                // OK. maybe target cc.
+            }
+            else {
+                /* rb_bug("Freeing garbage cc"); */
+                continue;
             }
 
             VM_ASSERT(!vm_cc_super_p(cc) && !vm_cc_refinement_p(cc));
@@ -567,7 +564,7 @@ void
 rb_vm_ccs_free(struct rb_class_cc_entries *ccs)
 {
     RB_DEBUG_COUNTER_INC(ccs_free);
-    vm_ccs_free(ccs, true, Qundef);
+    vm_ccs_free(ccs);
 }
 
 static inline void
