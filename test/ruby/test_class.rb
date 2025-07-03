@@ -291,6 +291,7 @@ class TestClass < Test::Unit::TestCase
   end
 
   def test_nonascii_name
+    omit "global side effects" if multiple_ractors?
     c = eval("class ::C\u{df}; self; end")
     assert_equal("C\u{df}", c.name, '[ruby-core:24600]')
     c = eval("class C\u{df}; self; end")

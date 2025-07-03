@@ -1689,6 +1689,11 @@ module Test
         end
 
         run_tests_inside_ractors_num = ENV["RUBY_TESTS_WITH_RACTORS"].to_i
+        if run_tests_inside_ractors_num > 1
+          def GC.stress=(val)
+            raise "Cannot call GC.stress=(val) concurrently (it might not be set back properly after teardown)"
+          end
+        end
         tests_run = 0
         assertions = all_test_methods.map { |method|
           inst = suite.new method.to_s
@@ -1718,7 +1723,7 @@ module Test
                 rs = run_tests_inside_ractors_num.times.map do
                   Ractor.new(inst, self) do |instance, runner|
                     res = instance.run runner
-                    testcase_copyable_ivars = {:@_assertions => true, :@__passed__ => true, :@__name__ => true, :@__after_all_ractors_block => true}
+                    testcase_copyable_ivars = {:@_assertions => true, :@__passed__ => true, :@__name__ => true}
                     runner_copyable_ivars = {:@report => true, :@failures => true, :@errors => true, :@skips => true, :@assertion_count => true, :@test_count => true}
                     instance.instance_variables.each do |ivar|
                       unless testcase_copyable_ivars[ivar]
