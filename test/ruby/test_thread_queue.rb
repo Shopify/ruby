@@ -682,6 +682,7 @@ class TestThreadQueue < Test::Unit::TestCase
   end
 
   def test_fork_while_queue_waiting
+    omit "fork" unless main_ractor?
     q = Thread::Queue.new
     sq = Thread::SizedQueue.new(1)
     thq = Thread.new { q.pop }

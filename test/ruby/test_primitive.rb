@@ -49,6 +49,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end)
 
   def test_constant
+    omit "global side effects" if multiple_ractors?
     C_Setup.call
 
     assert_equal 1, C
@@ -109,7 +110,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_constant_cache3
-    omit "global variable access" if non_main_ractor?
+    omit "global variable access" unless main_ractor?
     assert_equal 7, $test_ruby_primitive_constant_cache3
   end
 
@@ -121,7 +122,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_constatant_cache4
-    omit "global variable access" if non_main_ractor?
+    omit "global variable access" unless main_ractor?
     assert_equal 8, $test_ruby_primitive_constant_cache4
   end
 
@@ -140,12 +141,12 @@ class TestRubyPrimitive < Test::Unit::TestCase
   $test_ruby_primitive_constant_cache5 = [A6.foo, B6.foo, C6.foo]
 
   def test_constant_cache5
-    omit "global variable access" if non_main_ractor?
+    omit "global variable access" unless main_ractor?
     assert_equal [0, 1, 2], $test_ruby_primitive_constant_cache5
   end
 
   def test_gvar
-    omit "global variable access" if non_main_ractor?
+    omit "global variable access" unless main_ractor?
     $test_ruby_primitive_gvar = 7
     assert_equal 7, $test_ruby_primitive_gvar
     assert_equal 7, $test_ruby_primitive_gvar
@@ -168,7 +169,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_cvar_from_instance_method
-    omit "class variables" if non_main_ractor?
+    omit "class variables" unless main_ractor?
     A7_Setup.call
 
     assert_equal 2, A7.new.m
@@ -190,7 +191,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_cvar_from_singleton_method
-    omit "class variables" if non_main_ractor?
+    omit "class variables" unless main_ractor?
     A8_Setup.call
 
     assert_equal 2, A8.m
@@ -210,7 +211,7 @@ class TestRubyPrimitive < Test::Unit::TestCase
   end
 
   def test_cvar_from_singleton_method2
-    omit "class variables" if non_main_ractor?
+    omit "class variables" unless main_ractor?
     A9_Setup.call
 
     assert_equal 2, A9.m

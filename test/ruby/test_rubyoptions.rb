@@ -44,7 +44,7 @@ class TestRubyOptions < Test::Unit::TestCase
   end
 
   def setup
-    omit "separate process" if non_main_ractor?
+    omit "separate process" unless main_ractor?
   end
 
   def test_source_file

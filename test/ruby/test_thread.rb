@@ -1218,6 +1218,7 @@ q.pop
   end unless /mswin|mingw/ =~ RUBY_PLATFORM
 
   def test_blocking_mutex_unlocked_on_fork
+    omit "fork" unless main_ractor?
     bug8433 = '[ruby-core:55102] [Bug #8433]'
 
     mutex = Thread::Mutex.new
@@ -1243,7 +1244,7 @@ q.pop
   end if Process.respond_to?(:fork)
 
   def test_fork_in_thread
-    pend "fork ractor_confirm_belonging issue" if non_main_ractor?
+    omit "fork" unless main_ractor?
     bug9751 = '[ruby-core:62070] [Bug #9751]'
     f = nil
     th = Thread.start do
@@ -1265,6 +1266,7 @@ q.pop
   end if Process.respond_to?(:fork)
 
   def test_fork_value
+    omit "fork" unless main_ractor?
     bug18902 = "[Bug #18902]"
     th = Thread.start { sleep 2 }
     begin
@@ -1280,6 +1282,7 @@ q.pop
   end if Process.respond_to?(:fork)
 
   def test_fork_while_locked
+    omit "fork" unless main_ractor?
     m = Thread::Mutex.new
     thrs = []
     3.times do |i|
@@ -1292,6 +1295,7 @@ q.pop
 
   def test_fork_while_parent_locked
     omit 'needs fork' unless Process.respond_to?(:fork)
+    omit "fork" unless main_ractor?
     m = Thread::Mutex.new
     nr = 1
     thrs = []
@@ -1458,6 +1462,7 @@ q.pop
   end
 
   def test_thread_native_thread_id_across_fork_on_linux
+    omit "fork" unless main_ractor?
     begin
       require '-test-/thread/id'
     rescue LoadError

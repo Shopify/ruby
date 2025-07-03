@@ -17,6 +17,7 @@ class TestTimeTZ < Test::Unit::TestCase
   if force_tz_test
     module Util
       def with_tz(tz)
+        omit "global side effects" if multiple_ractors? && self.is_a?(TestTimeTZ)
         old = ENV["TZ"]
         begin
           ENV["TZ"] = tz
@@ -29,6 +30,7 @@ class TestTimeTZ < Test::Unit::TestCase
   else
     module Util
       def with_tz(tz)
+        omit "global side effects" if multiple_ractors? && self.is_a?(TestTimeTZ)
         if ENV["TZ"] == tz
           yield
         end

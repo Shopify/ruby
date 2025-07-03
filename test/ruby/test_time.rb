@@ -442,12 +442,14 @@ class TestTime < Test::Unit::TestCase
     assert_equal('UTC', t.zone)
     assert_equal('UTC', Marshal.load(Marshal.dump(t)).zone)
 
-    in_timezone('JST-9') do
-      t = Time.local(2013, 2, 24)
-      assert_equal('JST', Time.local(2013, 2, 24).zone)
-      t = Marshal.load(Marshal.dump(t))
-      assert_equal('JST', t.zone)
-      assert_equal('JST', (t+1).zone, '[ruby-core:81892] [Bug #13710]')
+    unless multiple_ractors?
+      in_timezone('JST-9') do
+        t = Time.local(2013, 2, 24)
+        assert_equal('JST', Time.local(2013, 2, 24).zone)
+        t = Marshal.load(Marshal.dump(t))
+        assert_equal('JST', t.zone)
+        assert_equal('JST', (t+1).zone, '[ruby-core:81892] [Bug #13710]')
+      end
     end
   end
 
@@ -476,6 +478,7 @@ class TestTime < Test::Unit::TestCase
   Bug8795 = '[ruby-core:56648] [Bug #8795]'.freeze
 
   def test_marshal_broken_offset
+    omit "global side effects" if multiple_ractors?
     data = "\x04\bIu:\tTime\r\xEFF\x1C\x80\x00\x00\x00\x00\x06:\voffset"
     t1 = t2 = nil
     in_timezone('UTC') do
@@ -489,6 +492,7 @@ class TestTime < Test::Unit::TestCase
   end
 
   def test_marshal_broken_zone
+    omit "global side effects" if multiple_ractors?
     data = "\x04\bIu:\tTime\r\xEFF\x1C\x80\x00\x00\x00\x00\x06:\tzone"
     t1 = t2 = nil
     in_timezone('UTC') do
@@ -1443,6 +1447,7 @@ class TestTime < Test::Unit::TestCase
   end
 
   def test_deconstruct_keys
+    omit "global side effects" if multiple_ractors?
     t = in_timezone('JST-9') { Time.local(2022, 10, 16, 14, 1, 30, 500) }
     assert_equal(
       {year: 2022, month: 10, day: 16, wday: 0, yday: 289,

@@ -2265,6 +2265,7 @@ class TestHashOnly < Test::Unit::TestCase
   end
 
   def test_broken_hash_value
+    omit "too many objects" if multiple_ractors?
     bug14218 = '[ruby-core:84395] [Bug #14218]'
 
     assert_equal(0, 1_000_000.times.count{a=Object.new.hash; b=Object.new.hash; a < 0 && b < 0 && a + b > 0}, bug14218)

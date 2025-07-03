@@ -541,6 +541,7 @@ class TestSuper < Test::Unit::TestCase
 
   # [Bug #18329]
   def test_super_missing_prepended_module
+    omit "GC.stress" if multiple_ractors?
     a = Module.new do
       def probe(*methods)
         prepend(probing_module(methods))

@@ -373,6 +373,8 @@ class TestDefined < Test::Unit::TestCase
   end
 
   def test_super_in_basic_object
+    omit "global side effects" if multiple_ractors?
+    run_ensure = true
     BasicObject.class_eval do
       def a
         defined?(super)
@@ -383,7 +385,7 @@ class TestDefined < Test::Unit::TestCase
   ensure
     BasicObject.class_eval do
       undef_method :a if defined?(a)
-    end
+    end if run_ensure
   end
 
   def test_super_toplevel

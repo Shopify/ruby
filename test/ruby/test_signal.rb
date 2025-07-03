@@ -27,6 +27,7 @@ class TestSignal < Test::Unit::TestCase
   end if Process.respond_to?(:kill)
 
   def test_signal_process_group
+    omit "Process.spawn" unless main_ractor?
     bug4362 = '[ruby-dev:43169]'
     assert_nothing_raised(bug4362) do
       cmd = [ EnvUtil.rubybin, '--disable=gems' '-e', 'sleep 10' ]
@@ -135,6 +136,7 @@ class TestSignal < Test::Unit::TestCase
   end if Process.respond_to?(:kill)
 
   def test_trap
+    omit "not ractor safe" unless main_ractor?
     begin
       oldtrap = Signal.trap(:INT) {|sig| }
 
@@ -316,6 +318,7 @@ class TestSignal < Test::Unit::TestCase
   def test_self_stop
     omit unless Process.respond_to?(:fork)
     omit unless defined?(Process::WUNTRACED)
+    omit "fork" unless main_ractor?
 
     # Make a process that stops itself
     child_pid = fork do

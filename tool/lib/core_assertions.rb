@@ -157,7 +157,7 @@ module Test
       end
 
       def assert_no_memory_leak(args, prepare, code, message=nil, limit: 2.0, rss: false, **opt)
-        omit "separate process" if non_main_ractor?
+        omit "separate process" unless main_ractor?
         # TODO: consider choosing some appropriate limit for RJIT and stop skipping this once it does not randomly fail
         pend 'assert_no_memory_leak may consider RJIT memory usage as leak' if defined?(RubyVM::RJIT) && RubyVM::RJIT.enabled?
         # For previous versions which implemented MJIT
@@ -274,7 +274,7 @@ module Test
       end
 
       def assert_normal_exit(testsrc, message = '', child_env: nil, **opt)
-        pend "#{__method__}" if non_main_ractor?
+        pend "#{__method__}" unless main_ractor?
         assert_valid_syntax(testsrc, caller_locations(1, 1)[0])
         if child_env
           child_env = [child_env]
@@ -286,7 +286,7 @@ module Test
       end
 
       def assert_ruby_status(args, test_stdin="", message=nil, **opt)
-        pend "#{__method__}" if non_main_ractor?
+        pend "#{__method__}" unless main_ractor?
         out, _, status = EnvUtil.invoke_ruby(args, test_stdin, true, :merge_to_stdout, **opt)
         desc = FailDesc[status, message, out]
         assert(!status.signaled?, desc)
@@ -310,7 +310,7 @@ module Test
       end
 
       def assert_separately(args, file = nil, line = nil, src, ignore_stderr: nil, **opt)
-        pend "#{__method__}" if non_main_ractor?
+        pend "#{__method__}" unless main_ractor?
         unless file and line
           loc, = caller_locations(1,1)
           file ||= loc.path
@@ -509,11 +509,18 @@ eom
         end
 
         ex = m = nil
-        EnvUtil.with_default_internal(of: expected) do
-          ex = assert_raise(exception, msg || proc {"Exception(#{exception}) with message matches to #{expected.inspect}"}) do
-            yield
+        if multiple_ractors?
+            ex = assert_raise(exception, msg || proc {"Exception(#{exception}) with message matches to #{expected.inspect}"}) do
+              yield
+            end
+            m = ex.message
+        else
+          EnvUtil.with_default_internal(of: expected) do
+            ex = assert_raise(exception, msg || proc {"Exception(#{exception}) with message matches to #{expected.inspect}"}) do
+              yield
+            end
+            m = ex.message
           end
-          m = ex.message
         end
         msg = message(msg, "") {"Expected Exception(#{exception}) was raised, but the message doesn't match"}
 
@@ -682,13 +689,18 @@ eom
       end
 
       def assert_warning(pat, msg = nil)
-        return if multiple_ractors? # These envutil methods with blocks are racy across ractors
         result = nil
-        stderr = EnvUtil.with_default_internal(of: pat) {
-          EnvUtil.verbose_warning {
+        if multiple_ractors?
+          stderr = EnvUtil.verbose_warning {
             result = yield
           }
-        }
+        else
+          stderr = EnvUtil.with_default_internal(of: pat) {
+            EnvUtil.verbose_warning {
+              result = yield
+            }
+          }
+        end
         msg = message(msg) {diff pat, stderr}
         assert(pat === stderr, msg)
         result
@@ -861,7 +873,7 @@ eom
       # :yield: each elements of +seq+.
       def assert_linear_performance(seq, rehearsal: nil, pre: ->(n) {n})
         pend "No PERFORMANCE_CLOCK found" unless defined?(PERFORMANCE_CLOCK)
-        pend "Timeout" if non_main_ractor?
+        pend "Timeout" unless main_ractor?
 
         # Timeout testing generally doesn't work when RJIT compilation happens.
         rjit_enabled = defined?(RubyVM::RJIT) && RubyVM::RJIT.enabled?

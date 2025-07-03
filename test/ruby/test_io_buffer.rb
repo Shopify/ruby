@@ -617,6 +617,7 @@ class TestIOBuffer < Test::Unit::TestCase
   end
 
   def test_shared
+    omit "fork" unless main_ractor?
     message = "Hello World"
     buffer = IO::Buffer.new(64, IO::Buffer::MAPPED | IO::Buffer::SHARED)
 
@@ -705,6 +706,7 @@ class TestIOBuffer < Test::Unit::TestCase
   # https://bugs.ruby-lang.org/issues/21210
   def test_bug_21210
     omit "compaction is not supported on this platform" unless GC.respond_to?(:compact)
+    omit "verify_compaction_references" unless main_ractor?
 
     str = +"hello"
     buf = IO::Buffer.for(str)
