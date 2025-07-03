@@ -22,20 +22,18 @@ static inline rb_method_entry_t *lookup_method_table(VALUE klass, ID id);
 #define ruby_running (GET_VM()->running)
 /* int ruby_running = 0; */
 
-// alive: if false, target pointers can be freed already.
 static void
-vm_ccs_free(struct rb_class_cc_entries *ccs, int alive, VALUE klass)
+vm_ccs_free(struct rb_class_cc_entries *ccs, bool invalidate_ccs)
 {
     if (ccs->entries) {
         for (int i=0; i<ccs->len; i++) {
             const struct rb_callcache *cc = ccs->entries[i].cc;
-            if (!alive) {
-                // ccs can be free'ed.
+            if (invalidate_ccs) {
                 if (rb_gc_pointer_to_heap_p((VALUE)cc) &&
                     !rb_objspace_garbage_object_p((VALUE)cc) &&
                     IMEMO_TYPE_P(cc, imemo_callcache) &&
-                    cc->klass == klass) {
-                    // OK. maybe target cc.
+                    cc->klass == ccs->klass) {
+                    // can be invalidated
                 }
                 else {
                     continue;
@@ -54,7 +52,7 @@ void
 rb_vm_ccs_free(struct rb_class_cc_entries *ccs)
 {
     RB_DEBUG_COUNTER_INC(ccs_free);
-    vm_ccs_free(ccs, true, Qundef);
+    vm_ccs_free(ccs, false); // don't invalidate callcaches
 }
 
 static enum rb_id_table_iterator_result
@@ -72,6 +70,7 @@ mark_cc_entry_i(VALUE ccs_ptr, void *data)
         rb_gc_mark_movable((VALUE)ccs->cme);
 
         for (int i=0; i<ccs->len; i++) {
+            VM_ASSERT(ccs->klass == ccs->entries[i].cc->klass);
             VM_ASSERT(vm_cc_check_cme(ccs->entries[i].cc, ccs->cme));
 
             rb_gc_mark_movable((VALUE)ccs->entries[i].cc);
@@ -95,7 +94,7 @@ cc_table_free_i(VALUE ccs_ptr, void *data)
     struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_ptr;
     VM_ASSERT(vm_ccs_p(ccs));
 
-    rb_vm_ccs_free(ccs);
+    vm_ccs_free(ccs, true); // invalidate callcaches
 
     return ID_TABLE_CONTINUE;
 }
