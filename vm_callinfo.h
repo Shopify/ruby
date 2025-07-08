@@ -563,6 +563,7 @@ struct rb_class_cc_entries {
     int capa;
     int len;
     const struct rb_callable_method_entry_struct *cme;
+    const VALUE klass; // for checking which CCs should be invalidated
     struct rb_class_cc_entries_entry {
         unsigned int argc;
         unsigned int flag;

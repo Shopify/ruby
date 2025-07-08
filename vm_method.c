@@ -123,6 +123,7 @@ compact_cc_entry_i(VALUE ccs_ptr, void *data)
 
     ccs->cme = (const struct rb_callable_method_entry_struct *)rb_gc_location((VALUE)ccs->cme);
     VM_ASSERT(vm_ccs_p(ccs));
+    *(VALUE *)&ccs->klass = rb_gc_location(ccs->klass);
 
     for (int i=0; i<ccs->len; i++) {
         ccs->entries[i].cc = (const struct rb_callcache *)rb_gc_location((VALUE)ccs->entries[i].cc);

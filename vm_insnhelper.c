@@ -1990,6 +1990,7 @@ vm_ccs_create(VALUE klass, VALUE cc_tbl, ID mid, const rb_callable_method_entry_
 #endif
     ccs->capa = 0;
     ccs->len = 0;
+    *(VALUE *)&ccs->klass = klass;
     ccs->cme = cme;
     METHOD_ENTRY_CACHED_SET((rb_callable_method_entry_t *)cme);
     ccs->entries = NULL;
@@ -2018,6 +2019,7 @@ vm_ccs_push(VALUE klass, struct rb_class_cc_entries *ccs, const struct rb_callin
         }
     }
     VM_ASSERT(ccs->len < ccs->capa);
+    VM_ASSERT(ccs->klass == klass);
 
     const int pos = ccs->len++;
     ccs->entries[pos].argc = vm_ci_argc(ci);
