@@ -2079,7 +2079,7 @@ vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
             const int ccs_len = ccs->len;
 
             if (UNLIKELY(METHOD_ENTRY_INVALIDATED(ccs->cme))) {
-                rb_vm_ccs_free(ccs);
+                rb_vm_ccs_invalidate_and_free(ccs);
                 rb_id_table_delete(cc_tbl, mid);
                 ccs = NULL;
             }

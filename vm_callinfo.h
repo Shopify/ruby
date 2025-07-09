@@ -281,7 +281,7 @@ struct rb_callcache {
     /* inline cache: key */
     const VALUE klass; // should not mark it because klass can not be free'd
                        // because of this marking. When klass is collected,
-                       // cc will be cleared (cc->klass = 0) at vm_ccs_free().
+                       // cc will be cleared (cc->klass = 0) at rb_vm_cc_table_invalidate_ccs().
 
     /* inline cache: values */
     const struct rb_callable_method_entry_struct * const cme_;
@@ -607,6 +607,6 @@ vm_cc_check_cme(const struct rb_callcache *cc, const rb_callable_method_entry_t 
 #endif
 
 // gc.c
-void rb_vm_ccs_free(struct rb_class_cc_entries *ccs);
+void rb_vm_ccs_invalidate_and_free(struct rb_class_cc_entries *ccs);
 
 #endif /* RUBY_VM_CALLINFO_H */
