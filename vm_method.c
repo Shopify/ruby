@@ -23,6 +23,37 @@ static inline rb_method_entry_t *lookup_method_table(VALUE klass, ID id);
 /* int ruby_running = 0; */
 
 static enum rb_id_table_iterator_result
+vm_cc_table_invalidate_ccs_i(VALUE ccs_ptr, void *data)
+{
+    struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_ptr;
+    VALUE klass = (VALUE)data;
+    VM_ASSERT(vm_ccs_p(ccs));
+
+    if (ccs->entries) {
+        for (int i=0; i<ccs->len; i++) {
+            const struct rb_callcache *cc = ccs->entries[i].cc;
+            // cc is a "weak" reference, so it might have been freed or reused
+            // it might have been reused for a callcache too so we need to check its klass
+            if (rb_gc_pointer_to_heap_p((VALUE)cc) &&
+                    !rb_objspace_garbage_object_p((VALUE)cc) &&
+                    IMEMO_TYPE_P(cc, imemo_callcache) &&
+                    cc->klass == klass) {
+                VM_ASSERT(!vm_cc_super_p(cc) && !vm_cc_refinement_p(cc));
+                vm_cc_invalidate(cc);
+            }
+        }
+    }
+    return ID_TABLE_CONTINUE;
+}
+
+void
+rb_vm_cc_table_invalidate_ccs(struct rb_id_table *cc_table, VALUE klass)
+{
+    if (!cc_table) return;
+    rb_id_table_foreach_values(cc_table, vm_cc_table_invalidate_ccs_i, (void *)klass);
+}
+
+static enum rb_id_table_iterator_result
 vm_ccs_dump_i(ID mid, VALUE val, void *data)
 {
     const struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)val;
@@ -176,7 +207,7 @@ invalidate_method_cache_in_cc_table(struct rb_id_table *tbl, ID mid)
         struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_data;
         rb_yjit_cme_invalidate((rb_callable_method_entry_t *)ccs->cme);
         if (NIL_P(ccs->cme->owner)) invalidate_negative_cache(mid);
-        rb_vm_ccs_free(ccs);
+        rb_vm_ccs_invalidate_and_free(ccs);
         rb_id_table_delete(tbl, mid);
         RB_DEBUG_COUNTER_INC(cc_invalidate_leaf_ccs);
     }
@@ -1572,7 +1603,7 @@ cached_callable_method_entry(VALUE klass, ID mid)
             return ccs->cme;
         }
         else {
-            rb_vm_ccs_free(ccs);
+            rb_vm_ccs_invalidate_and_free(ccs);
             rb_id_table_delete(cc_tbl, mid);
         }
     }
