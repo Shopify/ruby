@@ -352,11 +352,8 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
          *   reachable only through cc in these cases.
          */
         struct rb_callcache *cc = (struct rb_callcache *)obj;
-        if (reference_updating) {
-            if (!cc->klass) {
-                // already invalidated
-            }
-            else {
+        if (vm_cc_valid(cc)) {
+            if (reference_updating) {
                 if (moved_or_living_object_strictly_p(cc->klass) &&
                         moved_or_living_object_strictly_p((VALUE)cc->cme_)) {
                     *((VALUE *)&cc->klass) = rb_gc_location(cc->klass);
@@ -367,11 +364,11 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
                     vm_cc_invalidate(cc);
                 }
             }
-        }
-        else {
-            if (cc->klass && (vm_cc_super_p(cc) || vm_cc_refinement_p(cc))) {
-                rb_gc_mark_movable((VALUE)cc->cme_);
-                rb_gc_mark_movable((VALUE)cc->klass);
+            else {
+                rb_gc_mark_weak((VALUE *)&cc->klass);
+                if ((vm_cc_super_p(cc) || vm_cc_refinement_p(cc))) {
+                    rb_gc_mark_movable((VALUE)cc->cme_);
+                }
             }
         }
 
@@ -522,32 +519,12 @@ rb_free_const_table(struct rb_id_table *tbl)
 }
 
 static void
-vm_ccs_invalidate(struct rb_class_cc_entries *ccs)
-{
-    if (ccs->entries) {
-        for (int i=0; i<ccs->len; i++) {
-            const struct rb_callcache *cc = ccs->entries[i].cc;
-            VM_ASSERT(!vm_cc_super_p(cc) && !vm_cc_refinement_p(cc));
-            vm_cc_invalidate(cc);
-        }
-    }
-}
-
-static void
 vm_ccs_free(struct rb_class_cc_entries *ccs)
 {
     if (ccs->entries) {
         ruby_xfree(ccs->entries);
     }
     ruby_xfree(ccs);
-}
-
-void
-rb_vm_ccs_invalidate_and_free(struct rb_class_cc_entries *ccs)
-{
-    RB_DEBUG_COUNTER_INC(ccs_free);
-    vm_ccs_invalidate(ccs);
-    vm_ccs_free(ccs);
 }
 
 static enum rb_id_table_iterator_result
