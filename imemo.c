@@ -365,7 +365,7 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
          */
         struct rb_callcache *cc = (struct rb_callcache *)obj;
         if (reference_updating) {
-            if (!cc->klass) {
+            if (!cc->klass || cc->klass == Qundef) {
                 // already invalidated
             }
             else {
@@ -381,9 +381,16 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
             }
         }
         else {
-            if (cc->klass && (vm_cc_super_p(cc) || vm_cc_refinement_p(cc))) {
-                rb_gc_mark_movable((VALUE)cc->cme_);
-                rb_gc_mark_movable((VALUE)cc->klass);
+            if (cc->klass && cc->klass != Qundef) {
+                if (vm_cc_super_p(cc) || vm_cc_refinement_p(cc)) {
+                    rb_gc_mark_movable((VALUE)cc->cme_);
+                    rb_gc_mark_movable((VALUE)cc->klass);
+                }
+                else {
+                    // we need a weakref to the class so that the class isn't freed before its CCs
+                    // this lets us invalidate the CCs which may be stored in vm->global_cc_cache_table
+                    rb_gc_mark_weak((VALUE *)&cc->klass);
+                }
             }
         }
 

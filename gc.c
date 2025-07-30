@@ -1211,7 +1211,6 @@ classext_free(rb_classext_t *ext, bool is_prime, VALUE namespace, void *arg)
     struct classext_foreach_args *args = (struct classext_foreach_args *)arg;
 
     rb_id_table_free(RCLASSEXT_M_TBL(ext));
-    rb_vm_cc_table_invalidate_ccs(RCLASSEXT_CC_TBL(ext), args->klass);
     if (!RCLASSEXT_SHARED_CONST_TBL(ext) && (tbl = RCLASSEXT_CONST_TBL(ext)) != NULL) {
         rb_free_const_table(tbl);
     }
@@ -1241,7 +1240,6 @@ classext_iclass_free(rb_classext_t *ext, bool is_prime, VALUE namespace, void *a
     if (RCLASSEXT_CALLABLE_M_TBL(ext) != NULL) {
         rb_id_table_free(RCLASSEXT_CALLABLE_M_TBL(ext));
     }
-    rb_vm_cc_table_invalidate_ccs(RCLASSEXT_CC_TBL(ext), args->klass);
 
     rb_class_classext_free_subclasses(ext, args->klass);
 

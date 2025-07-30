@@ -89,6 +89,7 @@ cc_table_free_i(VALUE ccs_ptr, void *data)
     struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_ptr;
     VM_ASSERT(vm_ccs_p(ccs));
 
+    // CCs will be invalidated if the class is freed
     vm_ccs_free(ccs);
 
     return ID_TABLE_CONTINUE;

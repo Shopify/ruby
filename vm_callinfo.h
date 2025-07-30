@@ -384,7 +384,7 @@ static inline bool
 vm_cc_class_check(const struct rb_callcache *cc, VALUE klass)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    VM_ASSERT(cc->klass == 0 ||
+    VM_ASSERT(cc->klass == 0 || cc->klass == Qundef ||
               RB_TYPE_P(cc->klass, T_CLASS) || RB_TYPE_P(cc->klass, T_ICLASS));
     return cc->klass == klass;
 }
