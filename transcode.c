@@ -21,8 +21,10 @@
 #include "internal/transcode.h"
 #include "ruby/encoding.h"
 #include "vm_sync.h"
+#include "ruby_atomic.h"
 
 #include "transcode_data.h"
+#include "id_table.h"
 #include "id.h"
 
 #define ENABLE_ECONV_NEWLINE_OPTION 1
@@ -61,6 +63,8 @@ static VALUE sym_source_buffer_empty;
 static VALUE sym_finished;
 static VALUE sym_after_output;
 static VALUE sym_incomplete_input;
+
+static VALUE fast_transcoder_table;
 
 static unsigned char *
 allocate_converted_string(const char *sname, const char *dname,
@@ -340,7 +344,7 @@ transcode_search_path(const char *sname, const char *dname,
     bfs.queue_last_ptr = &q->next;
     bfs.queue = q;
 
-    bfs.visited = st_init_strcasetable();
+    bfs.visited = st_init_strcasetable(); // due to base encodings, we need to do search in a loop
     st_add_direct(bfs.visited, (st_data_t)sname, (st_data_t)NULL);
 
     RB_VM_LOCKING() {
@@ -351,14 +355,14 @@ transcode_search_path(const char *sname, const char *dname,
                 bfs.queue_last_ptr = &bfs.queue;
             }
 
-            lookup_res = st_lookup(transcoder_table, (st_data_t)q->enc, &val);
+            lookup_res = st_lookup(transcoder_table, (st_data_t)q->enc, &val); // src => table2
             if (!lookup_res) {
                 xfree(q);
                 continue;
             }
             table2 = (st_table *)val;
 
-            if (st_lookup(table2, (st_data_t)dname, &val)) {
+            if (st_lookup(table2, (st_data_t)dname, &val)) { // dest => econv
                 st_add_direct(bfs.visited, (st_data_t)dname, (st_data_t)q->enc);
                 xfree(q);
                 found = true;
@@ -411,8 +415,7 @@ int rb_require_internal_silent(VALUE fname);
 static const rb_transcoder *
 load_transcoder_entry(transcoder_entry_t *entry)
 {
-    // changes result of entry->transcoder depending on if it's required or not, so needs lock
-    ASSERT_vm_locking();
+    ASSERT_vm_unlocking();
     if (entry->transcoder)
         return entry->transcoder;
 
@@ -427,7 +430,7 @@ load_transcoder_entry(transcoder_entry_t *entry)
         memcpy(path + sizeof(transcoder_lib_prefix) - 1, lib, len);
         rb_str_set_len(fn, total_len);
         OBJ_FREEZE(fn);
-        rb_require_internal_silent(fn);
+        rb_require_internal_silent(fn); // Sets entry->transcoder
     }
 
     if (entry->transcoder)
@@ -977,19 +980,19 @@ rb_econv_add_transcoder_at(rb_econv_t *ec, const rb_transcoder *tr, int i)
 }
 
 static rb_econv_t *
-rb_econv_open_by_transcoder_entries(int n, transcoder_entry_t **entries)
+rb_econv_open_by_transcoder_entries(transcoder_entry_t **entries)
 {
     rb_econv_t *ec;
     int i, ret;
-    ASSERT_vm_locking();
 
-    for (i = 0; i < n; i++) {
+    for (i = 0; entries && entries[i]; i++) {
         const rb_transcoder *tr;
         tr = load_transcoder_entry(entries[i]);
         if (!tr)
             return NULL;
     }
 
+    int n = i;
     ec = rb_econv_alloc(n);
 
     for (i = 0; i < n; i++) {
@@ -1015,7 +1018,9 @@ trans_open_i(const char *sname, const char *dname, int depth, void *arg)
     struct trans_open_t *toarg = arg;
 
     if (!toarg->entries) {
-        toarg->entries = ALLOC_N(transcoder_entry_t *, depth+1+toarg->num_additional);
+        size_t num = depth+1+toarg->num_additional+1;
+        toarg->entries = ALLOC_N(transcoder_entry_t *, num);
+        memset(toarg->entries + num - 1, 0, sizeof(transcoder_entry_t*)); // last entry is 0
     }
     toarg->entries[depth] = get_transcoder_entry(sname, dname);
 }
@@ -1026,12 +1031,9 @@ rb_econv_open0(const char *sname, const char *dname, int ecflags)
     transcoder_entry_t **entries = NULL;
     int num_trans;
     rb_econv_t *ec;
-    ASSERT_vm_locking();
 
-    /* Just check if sname and dname are defined */
-    /* (This check is needed?) */
-    if (*sname) rb_enc_find_index(sname);
-    if (*dname) rb_enc_find_index(dname);
+    if (*sname) rb_enc_find_index(sname); // loads encoding if not already loaded
+    if (*dname) rb_enc_find_index(dname); // loads encoding if not already loaded
 
     if (*sname == '\0' && *dname == '\0') {
         num_trans = 0;
@@ -1042,16 +1044,36 @@ rb_econv_open0(const char *sname, const char *dname, int ecflags)
         struct trans_open_t toarg;
         toarg.entries = NULL;
         toarg.num_additional = 0;
-        num_trans = transcode_search_path(sname, dname, trans_open_i, (void *)&toarg);
-        entries = toarg.entries;
-        if (num_trans < 0) {
-            xfree(entries);
-            return NULL;
+        char buf[128] = { 0 }; // encoding namelen max is currently 63 bytes, so this is enough
+        char *p = buf;
+        size_t slen = strlen(sname);
+        memcpy(p, sname, slen);
+        p += slen;
+        memcpy(p, ":", 1);
+        p += 1;
+        memcpy(p, dname, strlen(dname));
+        ID src_to_dest_id = rb_intern(buf);
+        VALUE managed_val;
+        VALUE tbl = RUBY_ATOMIC_VALUE_LOAD(fast_transcoder_table);
+        if (rb_managed_id_table_lookup(tbl, src_to_dest_id, &managed_val)) {
+            entries = (transcoder_entry_t **)managed_val;
+        } else {
+            num_trans = transcode_search_path(sname, dname, trans_open_i, (void *)&toarg);
+            entries = toarg.entries;
+            if (num_trans < 0) {
+                xfree(entries);
+                return NULL;
+            }
+            // No need for CAS loop if it's not most recent `fast_transcoder_table`, some values
+            // can be lost. It will just go through the slow path next time for the lost src/dst encoding
+            // pairs
+            VALUE new_transcoder_tbl = rb_managed_id_table_dup(tbl);
+            rb_managed_id_table_insert(new_transcoder_tbl, src_to_dest_id, (VALUE)entries);
+            RUBY_ATOMIC_VALUE_SET(fast_transcoder_table, new_transcoder_tbl);
         }
     }
 
-    ec = rb_econv_open_by_transcoder_entries(num_trans, entries);
-    xfree(entries);
+    ec = rb_econv_open_by_transcoder_entries(entries);
     if (!ec)
         return NULL;
 
@@ -1117,15 +1139,13 @@ rb_econv_open(const char *sname, const char *dname, int ecflags)
     if (num_decorators == -1)
         return NULL;
 
-    RB_VM_LOCKING() {
-        ec = rb_econv_open0(sname, dname, ecflags & ECONV_ERROR_HANDLER_MASK);
-        if (ec) {
-            for (i = 0; i < num_decorators; i++) {
-                if (rb_econv_decorate_at_last(ec, decorators[i]) == -1) {
-                    rb_econv_close(ec);
-                    ec = NULL;
-                    break;
-                }
+    ec = rb_econv_open0(sname, dname, ecflags & ECONV_ERROR_HANDLER_MASK);
+    if (ec) {
+        for (i = 0; i < num_decorators; i++) {
+            if (rb_econv_decorate_at_last(ec, decorators[i]) == -1) {
+                rb_econv_close(ec);
+                ec = NULL;
+                break;
             }
         }
     }
@@ -1960,13 +1980,11 @@ rb_econv_add_converter(rb_econv_t *ec, const char *sname, const char *dname, int
     if (ec->started != 0)
         return -1;
 
-    RB_VM_LOCKING() {
-        entry = get_transcoder_entry(sname, dname);
-        if (entry) {
-            tr = load_transcoder_entry(entry);
-        }
-
+    entry = get_transcoder_entry(sname, dname);
+    if (entry) {
+        tr = load_transcoder_entry(entry);
     }
+
 
     return tr ? rb_econv_add_transcoder_at(ec, tr, n) : -1;
 }
@@ -2681,21 +2699,19 @@ rb_econv_open_opts(const char *source_encoding, const char *destination_encoding
         replacement = rb_hash_aref(opthash, sym_replace);
     }
 
-    RB_VM_LOCKING() {
-        ec = rb_econv_open(source_encoding, destination_encoding, ecflags);
-        if (ec) {
-            if (!NIL_P(replacement)) {
-                int ret;
-                rb_encoding *enc = rb_enc_get(replacement);
+    ec = rb_econv_open(source_encoding, destination_encoding, ecflags);
+    if (ec) {
+        if (!NIL_P(replacement)) {
+            int ret;
+            rb_encoding *enc = rb_enc_get(replacement);
 
-                ret = rb_econv_set_replacement(ec,
-                        (const unsigned char *)RSTRING_PTR(replacement),
-                        RSTRING_LEN(replacement),
-                        rb_enc_name(enc));
-                if (ret == -1) {
-                    rb_econv_close(ec);
-                    ec = NULL;
-                }
+            ret = rb_econv_set_replacement(ec,
+                    (const unsigned char *)RSTRING_PTR(replacement),
+                    RSTRING_LEN(replacement),
+                    rb_enc_name(enc));
+            if (ret == -1) {
+                rb_econv_close(ec);
+                ec = NULL;
             }
         }
     }
@@ -3132,10 +3148,8 @@ decorate_convpath(VALUE convpath, int ecflags)
             const char *dname = rb_enc_name(rb_to_encoding(RARRAY_AREF(pair, 1)));
             transcoder_entry_t *entry;
             const rb_transcoder *tr;
-            RB_VM_LOCKING() {
-                entry = get_transcoder_entry(sname, dname);
-                tr = load_transcoder_entry(entry);
-            }
+            entry = get_transcoder_entry(sname, dname);
+            tr = load_transcoder_entry(entry);
             if (!tr)
                 return -1;
             if (!DECORATOR_P(tr->src_encoding, tr->dst_encoding) &&
@@ -4486,6 +4500,8 @@ void
 Init_transcode(void)
 {
     transcoder_table = st_init_strcasetable();
+    fast_transcoder_table = rb_managed_id_table_new(8); // NOTE: size is arbitrarily chosen
+    rb_gc_register_address(&fast_transcoder_table);
 
     id_destination_encoding = rb_intern_const("destination_encoding");
     id_destination_encoding_name = rb_intern_const("destination_encoding_name");
