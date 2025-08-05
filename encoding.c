@@ -856,6 +856,7 @@ rb_enc_autoload_p(rb_encoding *enc)
 int
 rb_enc_find_index(const char *name)
 {
+    ASSERT_vm_unlocking(); // it needs to be unlocked so it can call `load_encoding` if necessary
     size_t input_len = strlen(name);
     switch(input_len) {
         case 5:
@@ -873,7 +874,6 @@ rb_enc_find_index(const char *name)
         default:
             break;
     }
-    ASSERT_vm_unlocking(); // it needs to be unlocked so it can call `load_encoding` if necessary
     int i;
     GLOBAL_ENC_TABLE_LOCKING(enc_table) {
         i = enc_registered(enc_table, name);
@@ -1556,6 +1556,9 @@ int rb_locale_charmap_index(void);
 int
 rb_locale_encindex(void)
 {
+    // `rb_locale_charmap_index` can call `enc_find_index`, which can
+    // load an encoding. This needs to be done without VM lock held.
+    ASSERT_vm_unlocking();
     int idx = rb_locale_charmap_index();
 
     if (idx < 0) idx = ENCINDEX_UTF_8;
