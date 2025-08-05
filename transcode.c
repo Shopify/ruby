@@ -29,6 +29,7 @@
 
 #define ENABLE_ECONV_NEWLINE_OPTION 1
 #define SRC_ENC_TO_DST_ENC_KEY_SIZE 128
+STATIC_ASSERT(encoding_namelen, SRC_ENC_TO_DST_ENC_KEY_SIZE > (ENCODING_NAMELEN_MAX * 2 + 1));
 
 /* VALUE rb_cEncoding = rb_define_class("Encoding", rb_cObject); */
 static VALUE rb_eUndefinedConversionError;
@@ -211,7 +212,7 @@ rb_free_transcoder_table(void)
 }
 
 static void
-gen_src_to_dst_encodings_key(const char key_buf[SRC_ENC_TO_DST_ENC_KEY_SIZE], const char *sname, const char *dname)
+gen_src_to_dst_encodings_key(const char *key_buf, const char *sname, const char *dname)
 {
     char *p = (char*)key_buf;
     size_t slen = strlen(sname);
@@ -231,6 +232,7 @@ make_transcoder_entry(const char *sname, const char *dname)
     st_table *table2;
     transcoder_entry_t *entry = NULL;
 
+    // TODO: we should be able to remove this table soon
     RB_VM_LOCKING() {
         if (!st_lookup(transcoder_table, (st_data_t)sname, &val)) {
             val = (st_data_t)st_init_strcasetable();
@@ -251,10 +253,20 @@ make_transcoder_entry(const char *sname, const char *dname)
     }
     char key_buf[SRC_ENC_TO_DST_ENC_KEY_SIZE] = { 0 };
     gen_src_to_dst_encodings_key(key_buf, sname, dname);
-    VALUE tbl = fast_transcoder_entry_table;
-    VALUE new_tbl = rb_managed_id_table_dup(tbl);
-    rb_managed_id_table_insert(new_tbl, rb_intern(key_buf), (VALUE)entry);
-    RUBY_ATOMIC_VALUE_SET(fast_transcoder_entry_table, new_tbl); // TODO: use CAS
+    ID key = rb_intern(key_buf);
+    while (1) {
+        VALUE tbl = fast_transcoder_entry_table;
+        VALUE entry_got;
+        if (rb_managed_id_table_lookup(tbl, key, &entry_got)) {
+            break;
+        } else {
+            VALUE new_tbl = rb_managed_id_table_dup(tbl);
+            rb_managed_id_table_insert(new_tbl, key, (VALUE)entry);
+            if (RUBY_ATOMIC_VALUE_CAS(fast_transcoder_entry_table, tbl, new_tbl) == tbl) {
+                break;
+            }
+        }
+    }
     return entry;
 }
 
@@ -266,11 +278,11 @@ get_transcoder_entry(const char *sname, const char *dname)
     char key_buf[SRC_ENC_TO_DST_ENC_KEY_SIZE] = { 0 };
     gen_src_to_dst_encodings_key(key_buf, sname, dname);
     VALUE entry_val;
-    // TODO: once we CAS in `make_transcoder_entry`, we no longer need to check regular transcoder_table after
     if (rb_managed_id_table_lookup(fast_transcoder_entry_table, rb_intern(key_buf), &entry_val)) {
         return (transcoder_entry_t*)entry_val;
     }
 
+    // TODO: we should be able to remove this table soon
     RB_VM_LOCKING() {
         if (st_lookup(transcoder_table, (st_data_t)sname, &val)) {
             table2 = (st_table *)val;
@@ -1065,11 +1077,12 @@ rb_econv_open0(rb_encoding *senc, const char *sname, rb_encoding *denc, const ch
     int num_trans;
     rb_econv_t *ec;
 
+    // load encodings, if necessary
     if (*sname && (!senc || !senc->max_enc_len)) {
-        rb_enc_find_index(sname); // loads encoding
+        rb_enc_find_index(sname);
     }
     if (*dname && (!denc || !denc->max_enc_len)) {
-        rb_enc_find_index(dname); // loads encoding
+        rb_enc_find_index(dname);
     }
 
     if (*sname == '\0' && *dname == '\0') {
