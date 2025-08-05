@@ -28,6 +28,7 @@
 #include "id.h"
 
 #define ENABLE_ECONV_NEWLINE_OPTION 1
+#define SRC_ENC_TO_DST_ENC_KEY_SIZE 128
 
 /* VALUE rb_cEncoding = rb_define_class("Encoding", rb_cObject); */
 static VALUE rb_eUndefinedConversionError;
@@ -64,7 +65,8 @@ static VALUE sym_finished;
 static VALUE sym_after_output;
 static VALUE sym_incomplete_input;
 
-static VALUE fast_transcoder_table;
+static VALUE fast_transcoder_path_table;
+static VALUE fast_transcoder_entry_table;
 
 static unsigned char *
 allocate_converted_string(const char *sname, const char *dname,
@@ -208,11 +210,26 @@ rb_free_transcoder_table(void)
     st_free_table(transcoder_table);
 }
 
+static void
+gen_src_to_dst_encodings_key(const char key_buf[SRC_ENC_TO_DST_ENC_KEY_SIZE], const char *sname, const char *dname)
+{
+    char *p = (char*)key_buf;
+    size_t slen = strlen(sname);
+    memcpy(p, sname, slen);
+    p += slen;
+    memcpy(p, ":", 1);
+    p += 1;
+    size_t dlen = strlen(dname);
+    RUBY_ASSERT(slen + dlen < SRC_ENC_TO_DST_ENC_KEY_SIZE);
+    memcpy(p, dname, dlen);
+}
+
 static transcoder_entry_t *
 make_transcoder_entry(const char *sname, const char *dname)
 {
     st_data_t val;
     st_table *table2;
+    transcoder_entry_t *entry = NULL;
 
     RB_VM_LOCKING() {
         if (!st_lookup(transcoder_table, (st_data_t)sname, &val)) {
@@ -221,16 +238,24 @@ make_transcoder_entry(const char *sname, const char *dname)
         }
         table2 = (st_table *)val;
         if (!st_lookup(table2, (st_data_t)dname, &val)) {
-            transcoder_entry_t *entry = ALLOC(transcoder_entry_t);
+            entry = ALLOC(transcoder_entry_t);
             entry->sname = sname;
             entry->dname = dname;
             entry->lib = NULL;
             entry->transcoder = NULL;
             val = (st_data_t)entry;
             st_add_direct(table2, (st_data_t)dname, val);
+        } else {
+            entry = (transcoder_entry_t*)val;
         }
     }
-    return (transcoder_entry_t *)val;
+    char key_buf[SRC_ENC_TO_DST_ENC_KEY_SIZE] = { 0 };
+    gen_src_to_dst_encodings_key(key_buf, sname, dname);
+    VALUE tbl = fast_transcoder_entry_table;
+    VALUE new_tbl = rb_managed_id_table_dup(tbl);
+    rb_managed_id_table_insert(new_tbl, rb_intern(key_buf), (VALUE)entry);
+    RUBY_ATOMIC_VALUE_SET(fast_transcoder_entry_table, new_tbl); // TODO: use CAS
+    return entry;
 }
 
 static transcoder_entry_t *
@@ -238,6 +263,14 @@ get_transcoder_entry(const char *sname, const char *dname)
 {
     st_data_t val = 0;
     st_table *table2;
+    char key_buf[SRC_ENC_TO_DST_ENC_KEY_SIZE] = { 0 };
+    gen_src_to_dst_encodings_key(key_buf, sname, dname);
+    VALUE entry_val;
+    // TODO: once we CAS in `make_transcoder_entry`, we no longer need to check regular transcoder_table after
+    if (rb_managed_id_table_lookup(fast_transcoder_entry_table, rb_intern(key_buf), &entry_val)) {
+        return (transcoder_entry_t*)entry_val;
+    }
+
     RB_VM_LOCKING() {
         if (st_lookup(transcoder_table, (st_data_t)sname, &val)) {
             table2 = (st_table *)val;
@@ -1032,8 +1065,12 @@ rb_econv_open0(rb_encoding *senc, const char *sname, rb_encoding *denc, const ch
     int num_trans;
     rb_econv_t *ec;
 
-    if (*sname && (!senc || !senc->max_enc_len)) rb_enc_find_index(sname); // loads encoding if not already loaded
-    if (*dname && (!denc || !denc->max_enc_len)) rb_enc_find_index(dname); // loads encoding if not already loaded
+    if (*sname && (!senc || !senc->max_enc_len)) {
+        rb_enc_find_index(sname); // loads encoding
+    }
+    if (*dname && (!denc || !denc->max_enc_len)) {
+        rb_enc_find_index(dname); // loads encoding
+    }
 
     if (*sname == '\0' && *dname == '\0') {
         num_trans = 0;
@@ -1044,17 +1081,11 @@ rb_econv_open0(rb_encoding *senc, const char *sname, rb_encoding *denc, const ch
         struct trans_open_t toarg;
         toarg.entries = NULL;
         toarg.num_additional = 0;
-        char buf[128] = { 0 }; // encoding namelen max is currently 63 bytes, so this is enough
-        char *p = buf;
-        size_t slen = strlen(sname);
-        memcpy(p, sname, slen);
-        p += slen;
-        memcpy(p, ":", 1);
-        p += 1;
-        memcpy(p, dname, strlen(dname));
-        ID src_to_dest_id = rb_intern(buf);
+        char key_buf[SRC_ENC_TO_DST_ENC_KEY_SIZE] = { 0 };
+        gen_src_to_dst_encodings_key(key_buf, sname, dname);
+        ID src_to_dest_id = rb_intern(key_buf);
         VALUE managed_val;
-        VALUE tbl = RUBY_ATOMIC_VALUE_LOAD(fast_transcoder_table);
+        VALUE tbl = RUBY_ATOMIC_VALUE_LOAD(fast_transcoder_path_table);
         if (rb_managed_id_table_lookup(tbl, src_to_dest_id, &managed_val)) {
             entries = (transcoder_entry_t **)managed_val;
         } else {
@@ -1067,9 +1098,9 @@ rb_econv_open0(rb_encoding *senc, const char *sname, rb_encoding *denc, const ch
             // No need for CAS loop if it's not most recent `fast_transcoder_table`, some values
             // can be lost. It will just go through the slow path next time for the lost src/dst encoding
             // pairs
-            VALUE new_transcoder_tbl = rb_managed_id_table_dup(tbl);
-            rb_managed_id_table_insert(new_transcoder_tbl, src_to_dest_id, (VALUE)entries);
-            RUBY_ATOMIC_VALUE_SET(fast_transcoder_table, new_transcoder_tbl);
+            VALUE new_tbl = rb_managed_id_table_dup(tbl);
+            rb_managed_id_table_insert(new_tbl, src_to_dest_id, (VALUE)entries);
+            RUBY_ATOMIC_VALUE_SET(fast_transcoder_path_table, new_tbl);
         }
     }
 
@@ -1159,30 +1190,7 @@ rb_econv_open_enc(rb_encoding *senc, const char *sname, rb_encoding *denc, const
 rb_econv_t *
 rb_econv_open(const char *sname, const char *dname, int ecflags)
 {
-    rb_econv_t *ec;
-    int num_decorators;
-    const char *decorators[MAX_ECFLAGS_DECORATORS];
-    int i;
-
-    num_decorators = decorator_names(ecflags, decorators);
-    if (num_decorators == -1)
-        return NULL;
-
-    ec = rb_econv_open0(NULL, sname, NULL, dname, ecflags & ECONV_ERROR_HANDLER_MASK);
-    if (ec) {
-        for (i = 0; i < num_decorators; i++) {
-            if (rb_econv_decorate_at_last(ec, decorators[i]) == -1) {
-                rb_econv_close(ec);
-                ec = NULL;
-                break;
-            }
-        }
-    }
-
-    if (ec) {
-        ec->flags |= ecflags & ~ECONV_ERROR_HANDLER_MASK;
-    }
-    return ec; // can be NULL
+    return rb_econv_open_enc(NULL, sname, NULL, dname, ecflags);
 }
 
 static int
@@ -2755,35 +2763,7 @@ rb_econv_open_opts_enc(rb_encoding *senc, const char *source_encoding, rb_encodi
 rb_econv_t *
 rb_econv_open_opts(const char *source_encoding, const char *destination_encoding, int ecflags, VALUE opthash)
 {
-    rb_econv_t *ec;
-    VALUE replacement;
-
-    if (NIL_P(opthash)) {
-        replacement = Qnil;
-    }
-    else {
-        if (!RB_TYPE_P(opthash, T_HASH) || !OBJ_FROZEN(opthash))
-            rb_bug("rb_econv_open_opts called with invalid opthash");
-        replacement = rb_hash_aref(opthash, sym_replace);
-    }
-
-    ec = rb_econv_open(source_encoding, destination_encoding, ecflags);
-    if (ec) {
-        if (!NIL_P(replacement)) {
-            int ret;
-            rb_encoding *enc = rb_enc_get(replacement);
-
-            ret = rb_econv_set_replacement(ec,
-                    (const unsigned char *)RSTRING_PTR(replacement),
-                    RSTRING_LEN(replacement),
-                    rb_enc_name(enc));
-            if (ret == -1) {
-                rb_econv_close(ec);
-                ec = NULL;
-            }
-        }
-    }
-    return ec; // can be NULL
+    return rb_econv_open_opts_enc(NULL, source_encoding, NULL, destination_encoding, ecflags, opthash);
 }
 
 static int
@@ -4568,8 +4548,10 @@ void
 Init_transcode(void)
 {
     transcoder_table = st_init_strcasetable();
-    fast_transcoder_table = rb_managed_id_table_new(8); // NOTE: size is arbitrarily chosen
-    rb_gc_register_address(&fast_transcoder_table);
+    fast_transcoder_path_table = rb_managed_id_table_new(8); // NOTE: size is arbitrarily chosen
+    rb_gc_register_address(&fast_transcoder_path_table);
+    fast_transcoder_entry_table = rb_managed_id_table_new(8);
+    rb_gc_register_address(&fast_transcoder_entry_table);
 
     id_destination_encoding = rb_intern_const("destination_encoding");
     id_destination_encoding_name = rb_intern_const("destination_encoding_name");
