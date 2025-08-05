@@ -73,6 +73,10 @@ static struct enc_table {
     st_table *names;
 } global_enc_table;
 
+static const char *string_UTF_8;
+static const char *string_US_ASCII;
+static const char *string_ASCII_8BIT;
+
 static int
 enc_names_free_i(st_data_t name, st_data_t idx, st_data_t args)
 {
@@ -710,7 +714,8 @@ rb_enc_init(struct enc_table *enc_table)
         enc_table->names = st_init_strcasetable_with_size(ENCODING_LIST_CAPA);
     }
 #define OnigEncodingASCII_8BIT OnigEncodingASCII
-#define ENC_REGISTER(enc) enc_register_at(enc_table, ENCINDEX_##enc, rb_enc_name(&OnigEncoding##enc), &OnigEncoding##enc)
+#define ENC_REGISTER(enc) string_##enc = rb_enc_name(&OnigEncoding##enc); \
+                          enc_register_at(enc_table, ENCINDEX_##enc, string_##enc, &OnigEncoding##enc)
     ENC_REGISTER(ASCII_8BIT);
     ENC_REGISTER(UTF_8);
     ENC_REGISTER(US_ASCII);
@@ -851,6 +856,23 @@ rb_enc_autoload_p(rb_encoding *enc)
 int
 rb_enc_find_index(const char *name)
 {
+    size_t input_len = strlen(name);
+    switch(input_len) {
+        case 5:
+            if (strncmp(name, string_UTF_8, 5) == 0) {
+                return ENCINDEX_UTF_8;
+            }
+        case 8:
+            if (strncmp(name, string_US_ASCII, 8) == 0) {
+                return ENCINDEX_US_ASCII;
+            }
+        case 10:
+            if (strncmp(name, string_ASCII_8BIT, 10) == 0) {
+                return ENCINDEX_ASCII_8BIT;
+            }
+        default:
+            break;
+    }
     ASSERT_vm_unlocking(); // it needs to be unlocked so it can call `load_encoding` if necessary
     int i;
     GLOBAL_ENC_TABLE_LOCKING(enc_table) {
