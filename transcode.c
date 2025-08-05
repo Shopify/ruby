@@ -1026,14 +1026,14 @@ trans_open_i(const char *sname, const char *dname, int depth, void *arg)
 }
 
 static rb_econv_t *
-rb_econv_open0(const char *sname, const char *dname, int ecflags)
+rb_econv_open0(rb_encoding *senc, const char *sname, rb_encoding *denc, const char *dname, int ecflags)
 {
     transcoder_entry_t **entries = NULL;
     int num_trans;
     rb_econv_t *ec;
 
-    if (*sname) rb_enc_find_index(sname); // loads encoding if not already loaded
-    if (*dname) rb_enc_find_index(dname); // loads encoding if not already loaded
+    if (*sname && (!senc || !senc->max_enc_len)) rb_enc_find_index(sname); // loads encoding if not already loaded
+    if (*dname && (!denc || !denc->max_enc_len)) rb_enc_find_index(dname); // loads encoding if not already loaded
 
     if (*sname == '\0' && *dname == '\0') {
         num_trans = 0;
@@ -1127,6 +1127,35 @@ decorator_names(int ecflags, const char **decorators_ret)
     return num_decorators;
 }
 
+static rb_econv_t *
+rb_econv_open_enc(rb_encoding *senc, const char *sname, rb_encoding *denc, const char *dname, int ecflags)
+{
+    rb_econv_t *ec;
+    int num_decorators;
+    const char *decorators[MAX_ECFLAGS_DECORATORS];
+    int i;
+
+    num_decorators = decorator_names(ecflags, decorators);
+    if (num_decorators == -1)
+        return NULL;
+
+    ec = rb_econv_open0(senc, sname, denc, dname, ecflags & ECONV_ERROR_HANDLER_MASK);
+    if (ec) {
+        for (i = 0; i < num_decorators; i++) {
+            if (rb_econv_decorate_at_last(ec, decorators[i]) == -1) {
+                rb_econv_close(ec);
+                ec = NULL;
+                break;
+            }
+        }
+    }
+
+    if (ec) {
+        ec->flags |= ecflags & ~ECONV_ERROR_HANDLER_MASK;
+    }
+    return ec; // can be NULL
+}
+
 rb_econv_t *
 rb_econv_open(const char *sname, const char *dname, int ecflags)
 {
@@ -1139,7 +1168,7 @@ rb_econv_open(const char *sname, const char *dname, int ecflags)
     if (num_decorators == -1)
         return NULL;
 
-    ec = rb_econv_open0(sname, dname, ecflags & ECONV_ERROR_HANDLER_MASK);
+    ec = rb_econv_open0(NULL, sname, NULL, dname, ecflags & ECONV_ERROR_HANDLER_MASK);
     if (ec) {
         for (i = 0; i < num_decorators; i++) {
             if (rb_econv_decorate_at_last(ec, decorators[i]) == -1) {
@@ -2360,11 +2389,16 @@ aref_fallback(VALUE fallback, VALUE c)
     return rb_funcallv_public(fallback, idAREF, 1, &c);
 }
 
+static rb_econv_t *
+rb_econv_open_opts_enc(rb_encoding *senc, const char *source_encoding, rb_encoding *denc, const char *destination_encoding, int ecflags, VALUE opthash);
+
 static void
 transcode_loop(const unsigned char **in_pos, unsigned char **out_pos,
                const unsigned char *in_stop, unsigned char *out_stop,
                VALUE destination,
                unsigned char *(*resize_destination)(VALUE, size_t, size_t),
+               rb_encoding *senc,
+               rb_encoding *denc,
                const char *src_encoding,
                const char *dst_encoding,
                int ecflags,
@@ -2379,7 +2413,7 @@ transcode_loop(const unsigned char **in_pos, unsigned char **out_pos,
     VALUE fallback = Qnil;
     VALUE (*fallback_func)(VALUE, VALUE) = 0;
 
-    ec = rb_econv_open_opts(src_encoding, dst_encoding, ecflags, ecopts);
+    ec = rb_econv_open_opts_enc(senc, src_encoding, denc, dst_encoding, ecflags, ecopts);
     if (!ec)
         rb_exc_raise(rb_econv_open_exc(src_encoding, dst_encoding, ecflags));
 
@@ -2684,6 +2718,40 @@ rb_econv_prepare_opts(VALUE opthash, VALUE *opts)
     return rb_econv_prepare_options(opthash, opts, 0);
 }
 
+static rb_econv_t *
+rb_econv_open_opts_enc(rb_encoding *senc, const char *source_encoding, rb_encoding *denc, const char *destination_encoding, int ecflags, VALUE opthash)
+{
+    rb_econv_t *ec;
+    VALUE replacement;
+
+    if (NIL_P(opthash)) {
+        replacement = Qnil;
+    }
+    else {
+        if (!RB_TYPE_P(opthash, T_HASH) || !OBJ_FROZEN(opthash))
+            rb_bug("rb_econv_open_opts called with invalid opthash");
+        replacement = rb_hash_aref(opthash, sym_replace);
+    }
+
+    ec = rb_econv_open_enc(senc, source_encoding, denc, destination_encoding, ecflags);
+    if (ec) {
+        if (!NIL_P(replacement)) {
+            int ret;
+            rb_encoding *enc = rb_enc_get(replacement);
+
+            ret = rb_econv_set_replacement(ec,
+                    (const unsigned char *)RSTRING_PTR(replacement),
+                    RSTRING_LEN(replacement),
+                    rb_enc_name(enc));
+            if (ret == -1) {
+                rb_econv_close(ec);
+                ec = NULL;
+            }
+        }
+    }
+    return ec; // can be NULL
+}
+
 rb_econv_t *
 rb_econv_open_opts(const char *source_encoding, const char *destination_encoding, int ecflags, VALUE opthash)
 {
@@ -2778,7 +2846,7 @@ str_transcode0(int argc, VALUE *argv, VALUE *self, int ecflags, VALUE ecopts)
     long blen, slen;
     unsigned char *buf, *bp, *sp;
     const unsigned char *fromp;
-    rb_encoding *senc, *denc;
+    rb_encoding *senc = NULL, *denc = NULL;
     const char *sname, *dname;
     int dencidx;
     int explicitly_invalid_replace = TRUE;
@@ -2847,7 +2915,7 @@ str_transcode0(int argc, VALUE *argv, VALUE *self, int ecflags, VALUE ecopts)
     dest = rb_str_tmp_new(blen);
     bp = (unsigned char *)RSTRING_PTR(dest);
 
-    transcode_loop(&fromp, &bp, (sp+slen), (bp+blen), dest, str_transcoding_resize, sname, dname, ecflags, ecopts);
+    transcode_loop(&fromp, &bp, (sp+slen), (bp+blen), dest, str_transcoding_resize, senc, denc, sname, dname, ecflags, ecopts);
     if (fromp != sp+slen) {
         rb_raise(rb_eArgError, "not fully converted, %"PRIdPTRDIFF" bytes left", sp+slen-fromp);
     }
