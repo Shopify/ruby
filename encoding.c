@@ -860,15 +860,15 @@ rb_enc_find_index(const char *name)
     size_t input_len = strlen(name);
     switch(input_len) {
         case 5:
-            if (strncmp(name, string_UTF_8, 5) == 0) {
+            if (STRCASECMP(name, string_UTF_8) == 0) {
                 return ENCINDEX_UTF_8;
             }
         case 8:
-            if (strncmp(name, string_US_ASCII, 8) == 0) {
+            if (STRCASECMP(name, string_US_ASCII) == 0) {
                 return ENCINDEX_US_ASCII;
             }
         case 10:
-            if (strncmp(name, string_ASCII_8BIT, 10) == 0) {
+            if (STRCASECMP(name, string_ASCII_8BIT) == 0) {
                 return ENCINDEX_ASCII_8BIT;
             }
         default:
