@@ -2342,6 +2342,24 @@ class TestTranscode < Test::Unit::TestCase
     end;
   end
 
+  def test_ractor_lazy_load_encoding_random
+    assert_ractor("#{<<~"begin;"}\n#{<<~'end;'}")
+    begin;
+      rs = []
+      100.times do
+        rs << Ractor.new do
+          "\u0300".encode(Encoding.list.sample) rescue Encoding::UndefinedConversionError
+        end
+      end
+
+      while rs.any?
+        r, _obj = Ractor.select(*rs)
+        rs.delete(r)
+      end
+      assert rs.empty?
+    end;
+  end
+
   private
 
   def assert_conversion_both_ways_utf8(utf8, raw, encoding)
