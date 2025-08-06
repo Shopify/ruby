@@ -220,7 +220,7 @@ gen_src_to_dst_encodings_key(const char *key_buf, const char *sname, const char 
     memcpy(p, ":", 1);
     p += 1;
     size_t dlen = strlen(dname);
-    RUBY_ASSERT(slen + dlen < SRC_ENC_TO_DST_ENC_KEY_SIZE);
+    RUBY_ASSERT(slen + dlen + 1 < SRC_ENC_TO_DST_ENC_KEY_SIZE);
     memcpy(p, dname, dlen);
 }
 
@@ -280,7 +280,8 @@ get_transcoder_entry(const char *sname, const char *dname)
     char key_buf[SRC_ENC_TO_DST_ENC_KEY_SIZE] = { 0 };
     gen_src_to_dst_encodings_key(key_buf, sname, dname);
     VALUE entry_val;
-    if (rb_managed_st_table_lookup(fast_transcoder_entry_table, (st_data_t)key_buf, &entry_val)) {
+    VALUE tbl = RUBY_ATOMIC_VALUE_LOAD(fast_transcoder_entry_table);
+    if (rb_managed_st_table_lookup(tbl, (st_data_t)key_buf, &entry_val)) {
         return (transcoder_entry_t*)entry_val;
     }
     return NULL;
@@ -1057,7 +1058,7 @@ trans_open_i(const char *sname, const char *dname, int depth, void *arg)
     if (!toarg->entries) {
         size_t num = depth+1+toarg->num_additional+1;
         toarg->entries = ALLOC_N(transcoder_entry_t *, num);
-        memset(toarg->entries + num - 1, 0, sizeof(transcoder_entry_t*)); // last entry is 0
+        memset(toarg->entries + num - 1, 0, sizeof(transcoder_entry_t*)); // last entry is 0 so we can loop over it
     }
     toarg->entries[depth] = get_transcoder_entry(sname, dname);
 }
