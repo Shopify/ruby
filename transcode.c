@@ -28,8 +28,7 @@
 #include "id.h"
 
 #define ENABLE_ECONV_NEWLINE_OPTION 1
-#define SRC_ENC_TO_DST_ENC_KEY_SIZE 128
-STATIC_ASSERT(encoding_namelen, SRC_ENC_TO_DST_ENC_KEY_SIZE > (ENCODING_NAMELEN_MAX * 2 + 1));
+#define SRC_ENC_TO_DST_ENC_KEY_SIZE (ENCODING_NAMELEN_MAX * 2 + 2)
 
 /* VALUE rb_cEncoding = rb_define_class("Encoding", rb_cObject); */
 static VALUE rb_eUndefinedConversionError;
@@ -1088,26 +1087,30 @@ rb_econv_open0(rb_encoding *senc, const char *sname, rb_encoding *denc, const ch
         toarg.entries = NULL;
         toarg.num_additional = 0;
         char key_buf[SRC_ENC_TO_DST_ENC_KEY_SIZE] = { 0 };
-        char *key;
+        char *key = NULL;
         gen_src_to_dst_encodings_key(key_buf, sname, dname);
         VALUE managed_val;
-        VALUE tbl = RUBY_ATOMIC_VALUE_LOAD(fast_transcoder_path_table);
-        if (rb_managed_st_table_lookup(tbl, (st_data_t)key_buf, &managed_val)) {
-            entries = (transcoder_entry_t **)managed_val;
-        } else {
-            num_trans = transcode_search_path(sname, dname, trans_open_i, (void *)&toarg);
-            entries = toarg.entries;
-            if (num_trans < 0) {
-                xfree(entries);
-                return NULL;
+        while (1) {
+            VALUE tbl = fast_transcoder_path_table;
+            if (rb_managed_st_table_lookup(tbl, (st_data_t)key_buf, &managed_val)) {
+                entries = (transcoder_entry_t **)managed_val;
+                break;
+            } else {
+                if (!entries) {
+                    num_trans = transcode_search_path(sname, dname, trans_open_i, (void *)&toarg);
+                    entries = toarg.entries;
+                    if (num_trans < 0) {
+                        xfree(entries);
+                        return NULL;
+                    }
+                }
+                VALUE new_tbl = rb_managed_st_table_dup(tbl);
+                if (!key) key = strdup(key_buf);
+                rb_managed_st_table_insert(new_tbl, (st_data_t)key, (VALUE)entries);
+                if (RUBY_ATOMIC_VALUE_CAS(fast_transcoder_path_table, tbl, new_tbl) == tbl) {
+                    break;
+                }
             }
-            // No need for CAS loop if it's not most recent `fast_transcoder_table`, some values
-            // can be lost. It will just go through the slow path next time for the lost src/dst encoding
-            // pairs
-            VALUE new_tbl = rb_managed_st_table_dup(tbl);
-            key = strdup(key_buf);
-            rb_managed_st_table_insert(new_tbl, (st_data_t)key, (VALUE)entries);
-            RUBY_ATOMIC_VALUE_SET(fast_transcoder_path_table, new_tbl);
         }
     }
 
