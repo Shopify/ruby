@@ -29,6 +29,7 @@
 #include "ruby/util.h"
 #include "ruby_assert.h"
 #include "vm_sync.h"
+#include "ruby_atomic.h"
 
 #ifndef ENC_DEBUG
 #define ENC_DEBUG 0
@@ -144,10 +145,14 @@ enc_list_update(int index, rb_raw_encoding *encoding)
 {
     RUBY_ASSERT(index < ENCODING_LIST_CAPA);
 
-    VALUE list = rb_encoding_list;
+    VALUE list = RUBY_ATOMIC_VALUE_LOAD(rb_encoding_list);
+
     if (list && NIL_P(rb_ary_entry(list, index))) {
+        VALUE new_list = rb_ary_dup(list);
+        RBASIC_CLEAR_CLASS(new_list);
         /* initialize encoding data */
-        rb_ary_store(list, index, enc_new(encoding));
+        rb_ary_store(new_list, index, enc_new(encoding));
+        RUBY_ATOMIC_VALUE_SET(rb_encoding_list, new_list);
     }
 }
 
@@ -157,7 +162,7 @@ enc_list_lookup(int idx)
     VALUE list, enc = Qnil;
 
     if (idx < ENCODING_LIST_CAPA) {
-        list = rb_encoding_list;
+        list = RUBY_ATOMIC_VALUE_LOAD(rb_encoding_list);
         RUBY_ASSERT(list);
         enc = rb_ary_entry(list, idx);
     }
@@ -1387,7 +1392,8 @@ static VALUE
 enc_list(VALUE klass)
 {
     VALUE ary = rb_ary_new2(0);
-    rb_ary_replace(ary, rb_encoding_list);
+    VALUE list = RUBY_ATOMIC_VALUE_LOAD(rb_encoding_list);
+    rb_ary_replace(ary, list);
     return ary;
 }
 
@@ -1982,9 +1988,9 @@ Init_Encoding(void)
 
     struct enc_table *enc_table = &global_enc_table;
 
+    rb_gc_register_address(&rb_encoding_list);
     list = rb_encoding_list = rb_ary_new2(ENCODING_LIST_CAPA);
     RBASIC_CLEAR_CLASS(list);
-    rb_vm_register_global_object(list);
 
     for (i = 0; i < enc_table->count; ++i) {
         rb_ary_push(list, enc_new(enc_table->list[i].enc));
