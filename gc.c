@@ -1755,7 +1755,6 @@ rb_gc_pointer_to_heap_p(VALUE obj)
 #define LAST_OBJECT_ID() (object_id_counter * OBJ_ID_INCREMENT)
 static VALUE id2ref_value = 0;
 static st_table *id2ref_tbl = NULL;
-static bool id2ref_tbl_built = false;
 
 #if SIZEOF_SIZE_T == SIZEOF_LONG_LONG
 static size_t object_id_counter = 1;
@@ -1947,6 +1946,7 @@ build_id2ref_i(VALUE obj, void *data)
       case T_CLASS:
       case T_MODULE:
         if (RCLASS(obj)->object_id) {
+            RUBY_ASSERT(!rb_objspace_garbage_object_p(obj));
             st_insert(id2ref_tbl, RCLASS(obj)->object_id, obj);
         }
         break;
@@ -1955,6 +1955,7 @@ build_id2ref_i(VALUE obj, void *data)
         break;
       default:
         if (rb_shape_obj_has_id(obj)) {
+            RUBY_ASSERT(!rb_objspace_garbage_object_p(obj));
             st_insert(id2ref_tbl, rb_obj_id(obj), obj);
         }
         break;
@@ -1979,12 +1980,12 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
 
         // build_id2ref_i will most certainly malloc, which could trigger GC and sweep
         // objects we just added to the table.
-        bool gc_disabled = RTEST(rb_gc_disable_no_rest());
+        // By calling rb_gc_disable() we also save having to handle potentially garbage objects.
+        bool gc_disabled = RTEST(rb_gc_disable());
         {
             rb_gc_impl_each_object(objspace, build_id2ref_i, (void *)id2ref_tbl);
         }
         if (!gc_disabled) rb_gc_enable();
-        id2ref_tbl_built = true;
     }
 
     VALUE obj;
@@ -2036,10 +2037,9 @@ obj_free_object_id(VALUE obj)
             RUBY_ASSERT(FIXNUM_P(obj_id) || RB_TYPE_P(obj_id, T_BIGNUM));
 
             if (!st_delete(id2ref_tbl, (st_data_t *)&obj_id, NULL)) {
-                // If we're currently building the table then it's not a bug.
                 // The the object is a T_IMEMO/fields, then it's possible the actual object
                 // has been garbage collected already.
-                if (id2ref_tbl_built && !RB_TYPE_P(obj, T_IMEMO)) {
+                if (!RB_TYPE_P(obj, T_IMEMO)) {
                     rb_bug("Object ID seen, but not in _id2ref table: object_id=%llu object=%s", NUM2ULL(obj_id), rb_obj_info(obj));
                 }
             }
@@ -3028,7 +3028,7 @@ rb_gc_mark_roots(void *objspace, const char **categoryp)
     mark_current_machine_context(ec);
 
     MARK_CHECKPOINT("global_symbols");
-    rb_sym_global_symbols_mark();
+    rb_sym_global_symbols_mark_and_move();
 
     MARK_CHECKPOINT("finish");
 
@@ -3258,6 +3258,10 @@ rb_gc_mark_children(void *objspace, VALUE obj)
 
         for (long i = 0; i < len; i++) {
             gc_mark_internal(ptr[i]);
+        }
+
+        if (!FL_TEST_RAW(obj, RSTRUCT_GEN_FIELDS)) {
+            gc_mark_internal(RSTRUCT_FIELDS_OBJ(obj));
         }
 
         break;
@@ -4041,7 +4045,7 @@ rb_gc_update_vm_references(void *objspace)
 
     rb_vm_update_references(vm);
     rb_gc_update_global_tbl();
-    rb_sym_global_symbols_update_references();
+    rb_sym_global_symbols_mark_and_move();
 
 #if USE_YJIT
     void rb_yjit_root_update_references(void); // in Rust
@@ -4187,6 +4191,15 @@ rb_gc_update_object_references(void *objspace, VALUE obj)
 
             for (i = 0; i < len; i++) {
                 UPDATE_IF_MOVED(objspace, ptr[i]);
+            }
+
+            if (RSTRUCT_EMBED_LEN(obj)) {
+                if (!FL_TEST_RAW(obj, RSTRUCT_GEN_FIELDS)) {
+                    UPDATE_IF_MOVED(objspace, ptr[len]);
+                }
+            }
+            else {
+                UPDATE_IF_MOVED(objspace, RSTRUCT(obj)->as.heap.fields_obj);
             }
         }
         break;

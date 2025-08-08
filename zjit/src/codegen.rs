@@ -4,8 +4,8 @@ use std::ffi::{c_int, c_void};
 
 use crate::asm::Label;
 use crate::backend::current::{Reg, ALLOC_REGS};
-use crate::invariants::{track_bop_assumption, track_cme_assumption, track_stable_constant_names_assumption};
-use crate::gc::{get_or_create_iseq_payload, append_gc_offsets};
+use crate::invariants::{track_bop_assumption, track_cme_assumption, track_single_ractor_assumption, track_stable_constant_names_assumption};
+use crate::gc::{append_gc_offsets, get_or_create_iseq_payload, get_or_create_iseq_payload_ptr};
 use crate::state::ZJITState;
 use crate::stats::{counter_ptr, Counter};
 use crate::{asm::CodeBlock, cruby::*, options::debug, virtualmem::CodePtr};
@@ -329,7 +329,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::NewArray { elements, state } => gen_new_array(asm, opnds!(elements), &function.frame_state(*state)),
         Insn::NewRange { low, high, flag, state } => gen_new_range(asm, opnd!(low), opnd!(high), *flag, &function.frame_state(*state)),
         Insn::ArrayDup { val, state } => gen_array_dup(asm, opnd!(val), &function.frame_state(*state)),
-        Insn::StringCopy { val, chilled } => gen_string_copy(asm, opnd!(val), *chilled),
+        Insn::StringCopy { val, chilled, state } => gen_string_copy(asm, opnd!(val), *chilled, &function.frame_state(*state)),
         Insn::Param { idx } => unreachable!("block.insns should not have Insn::Param({idx})"),
         Insn::Snapshot { .. } => return Some(()), // we don't need to do anything for this instruction at the moment
         Insn::Jump(branch) => return gen_jump(jit, asm, branch),
@@ -340,7 +340,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::SendWithoutBlockDirect { cd, state, self_val, args, .. } if args.len() + 1 > C_ARG_OPNDS.len() => // +1 for self
             gen_send_without_block(jit, asm, *cd, &function.frame_state(*state), opnd!(self_val), opnds!(args))?,
         Insn::SendWithoutBlockDirect { cme, iseq, self_val, args, state, .. } => gen_send_without_block_direct(cb, jit, asm, *cme, *iseq, opnd!(self_val), opnds!(args), &function.frame_state(*state))?,
-        Insn::InvokeBuiltin { bf, args, state, .. } => gen_invokebuiltin(asm, &function.frame_state(*state), bf, opnds!(args))?,
+        Insn::InvokeBuiltin { bf, args, state, .. } => gen_invokebuiltin(jit, asm, &function.frame_state(*state), bf, opnds!(args))?,
         Insn::Return { val } => return Some(gen_return(asm, opnd!(val))?),
         Insn::FixnumAdd { left, right, state } => gen_fixnum_add(jit, asm, opnd!(left), opnd!(right), &function.frame_state(*state))?,
         Insn::FixnumSub { left, right, state } => gen_fixnum_sub(jit, asm, opnd!(left), opnd!(right), &function.frame_state(*state))?,
@@ -364,12 +364,12 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::GetGlobal { id, state: _ } => gen_getglobal(asm, *id),
         &Insn::GetLocal { ep_offset, level } => gen_getlocal_with_ep(asm, ep_offset, level)?,
         Insn::SetLocal { val, ep_offset, level } => return gen_setlocal_with_ep(asm, opnd!(val), *ep_offset, *level),
-        Insn::GetConstantPath { ic, state } => gen_get_constant_path(asm, *ic, &function.frame_state(*state)),
+        Insn::GetConstantPath { ic, state } => gen_get_constant_path(jit, asm, *ic, &function.frame_state(*state))?,
         Insn::SetIvar { self_val, id, val, state: _ } => return gen_setivar(asm, opnd!(self_val), *id, opnd!(val)),
         Insn::SideExit { state, reason } => return gen_side_exit(jit, asm, reason, &function.frame_state(*state)),
         Insn::PutSpecialObject { value_type } => gen_putspecialobject(asm, *value_type),
         Insn::AnyToString { val, str, state } => gen_anytostring(asm, opnd!(val), opnd!(str), &function.frame_state(*state))?,
-        Insn::Defined { op_type, obj, pushval, v } => gen_defined(jit, asm, *op_type, *obj, *pushval, opnd!(v))?,
+        Insn::Defined { op_type, obj, pushval, v, state } => gen_defined(jit, asm, *op_type, *obj, *pushval, opnd!(v), &function.frame_state(*state))?,
         &Insn::IncrCounter(counter) => return Some(gen_incr_counter(asm, counter)),
         Insn::ArrayExtend { .. }
         | Insn::ArrayMax { .. }
@@ -438,7 +438,7 @@ fn gen_get_ep(asm: &mut Assembler, level: u32) -> Opnd {
     ep_opnd
 }
 
-fn gen_defined(jit: &JITState, asm: &mut Assembler, op_type: usize, _obj: VALUE, pushval: VALUE, _tested_value: Opnd) -> Option<Opnd> {
+fn gen_defined(jit: &JITState, asm: &mut Assembler, op_type: usize, obj: VALUE, pushval: VALUE, tested_value: Opnd, state: &FrameState) -> Option<Opnd> {
     match op_type as defined_type {
         DEFINED_YIELD => {
             // `yield` goes to the block handler stowed in the "local" iseq which is
@@ -455,7 +455,17 @@ fn gen_defined(jit: &JITState, asm: &mut Assembler, op_type: usize, _obj: VALUE,
                 Some(Qnil.into())
             }
         }
-        _ => None
+        _ => {
+            // Save the PC and SP because the callee may allocate or call #respond_to?
+            gen_prepare_non_leaf_call(jit, asm, state)?;
+
+            // TODO: Inline the cases for each op_type
+            // Call vm_defined(ec, reg_cfp, op_type, obj, v)
+            let def_result = asm_ccall!(asm, rb_vm_defined, EC, CFP, op_type.into(), obj.into(), tested_value);
+
+            asm.cmp(def_result.with_num_bits(8), 0.into());
+            Some(asm.csel_ne(pushval.into(), Qnil.into()))
+        }
     }
 }
 
@@ -490,25 +500,26 @@ fn gen_setlocal_with_ep(asm: &mut Assembler, val: Opnd, local_ep_offset: u32, le
     Some(())
 }
 
-fn gen_get_constant_path(asm: &mut Assembler, ic: *const iseq_inline_constant_cache, state: &FrameState) -> Opnd {
+fn gen_get_constant_path(jit: &JITState, asm: &mut Assembler, ic: *const iseq_inline_constant_cache, state: &FrameState) -> Option<Opnd> {
     unsafe extern "C" {
         fn rb_vm_opt_getconstant_path(ec: EcPtr, cfp: CfpPtr, ic: *const iseq_inline_constant_cache) -> VALUE;
     }
 
-    // Save PC since the call can allocate an IC
-    gen_save_pc(asm, state);
+    // Anything could be called on const_missing
+    gen_prepare_non_leaf_call(jit, asm, state)?;
 
-    asm_ccall!(asm, rb_vm_opt_getconstant_path, EC, CFP, Opnd::const_ptr(ic))
+    Some(asm_ccall!(asm, rb_vm_opt_getconstant_path, EC, CFP, Opnd::const_ptr(ic)))
 }
 
-fn gen_invokebuiltin(asm: &mut Assembler, state: &FrameState, bf: &rb_builtin_function, args: Vec<Opnd>) -> Option<lir::Opnd> {
+fn gen_invokebuiltin(jit: &JITState, asm: &mut Assembler, state: &FrameState, bf: &rb_builtin_function, args: Vec<Opnd>) -> Option<lir::Opnd> {
     // Ensure we have enough room fit ec, self, and arguments
     // TODO remove this check when we have stack args (we can use Time.new to test it)
     if bf.argc + 2 > (C_ARG_OPNDS.len() as i32) {
         return None;
     }
 
-    gen_save_pc(asm, state);
+    // Anything can happen inside builtin functions
+    gen_prepare_non_leaf_call(jit, asm, state)?;
 
     let mut cargs = vec![EC];
     cargs.extend(args);
@@ -520,6 +531,7 @@ fn gen_invokebuiltin(asm: &mut Assembler, state: &FrameState, bf: &rb_builtin_fu
 
 /// Record a patch point that should be invalidated on a given invariant
 fn gen_patch_point(jit: &mut JITState, asm: &mut Assembler, invariant: &Invariant, state: &FrameState) -> Option<()> {
+    let payload_ptr = get_or_create_iseq_payload_ptr(jit.iseq);
     let label = asm.new_label("patch_point").unwrap_label();
     let invariant = invariant.clone();
 
@@ -531,19 +543,19 @@ fn gen_patch_point(jit: &mut JITState, asm: &mut Assembler, invariant: &Invarian
         match invariant {
             Invariant::BOPRedefined { klass, bop } => {
                 let side_exit_ptr = cb.resolve_label(label);
-                track_bop_assumption(klass, bop, code_ptr, side_exit_ptr);
+                track_bop_assumption(klass, bop, code_ptr, side_exit_ptr, payload_ptr);
             }
             Invariant::MethodRedefined { klass: _, method: _, cme } => {
                 let side_exit_ptr = cb.resolve_label(label);
-                track_cme_assumption(cme, code_ptr, side_exit_ptr);
+                track_cme_assumption(cme, code_ptr, side_exit_ptr, payload_ptr);
             }
             Invariant::StableConstantNames { idlist } => {
                 let side_exit_ptr = cb.resolve_label(label);
-                track_stable_constant_names_assumption(idlist, code_ptr, side_exit_ptr);
+                track_stable_constant_names_assumption(idlist, code_ptr, side_exit_ptr, payload_ptr);
             }
-            _ => {
-                debug!("ZJIT: gen_patch_point: unimplemented invariant {invariant:?}");
-                return;
+            Invariant::SingleRactorMode => {
+                let side_exit_ptr = cb.resolve_label(label);
+                track_single_ractor_assumption(code_ptr, side_exit_ptr, payload_ptr);
             }
         }
     });
@@ -772,19 +784,17 @@ fn gen_send_without_block(
     self_val: Opnd,
     args: Vec<Opnd>,
 ) -> Option<lir::Opnd> {
-    // Spill locals onto the stack.
-    // TODO: Don't spill locals eagerly; lazily reify frames
-    asm_comment!(asm, "spill locals");
-    for (idx, &insn_id) in state.locals().enumerate() {
-        asm.mov(Opnd::mem(64, SP, (-local_idx_to_ep_offset(jit.iseq, idx) - 1) * SIZEOF_VALUE_I32), jit.get_opnd(insn_id)?);
-    }
+    gen_spill_locals(jit, asm, state)?;
     // Spill the receiver and the arguments onto the stack.
     // They need to be on the interpreter stack to let the interpreter access them.
     // TODO: Avoid spilling operands that have been spilled before.
+    // TODO: Despite https://github.com/ruby/ruby/pull/13468, Kokubun thinks this should
+    // spill the whole stack in case it raises an exception. The HIR might need to change
+    // for opt_aref_with, which pushes to the stack in the middle of the instruction.
     asm_comment!(asm, "spill receiver and arguments");
     for (idx, &val) in [self_val].iter().chain(args.iter()).enumerate() {
         // Currently, we don't move the SP register. So it's equal to the base pointer.
-        let stack_opnd = Opnd::mem(64, SP, idx as i32  * SIZEOF_VALUE_I32);
+        let stack_opnd = Opnd::mem(64, SP, idx as i32 * SIZEOF_VALUE_I32);
         asm.mov(stack_opnd, val);
     }
 
@@ -821,15 +831,8 @@ fn gen_send_without_block_direct(
     gen_save_pc(asm, state);
     gen_save_sp(asm, state.stack().len() - args.len() - 1); // -1 for receiver
 
-    // Spill the virtual stack and the locals of the caller onto the stack
-    // TODO: Lazily materialize caller frames on side exits or when needed
-    asm_comment!(asm, "spill locals and stack");
-    for (idx, &insn_id) in state.locals().enumerate() {
-        asm.mov(Opnd::mem(64, SP, (-local_idx_to_ep_offset(jit.iseq, idx) - 1) * SIZEOF_VALUE_I32), jit.get_opnd(insn_id)?);
-    }
-    for (idx, &insn_id) in state.stack().enumerate() {
-        asm.mov(Opnd::mem(64, SP, idx as i32 * SIZEOF_VALUE_I32), jit.get_opnd(insn_id)?);
-    }
+    gen_spill_locals(jit, asm, state)?;
+    gen_spill_stack(jit, asm, state)?;
 
     // Set up the new frame
     // TODO: Lazily materialize caller frames on side exits or when needed
@@ -879,8 +882,9 @@ fn gen_send_without_block_direct(
 }
 
 /// Compile a string resurrection
-fn gen_string_copy(asm: &mut Assembler, recv: Opnd, chilled: bool) -> Opnd {
+fn gen_string_copy(asm: &mut Assembler, recv: Opnd, chilled: bool, state: &FrameState) -> Opnd {
     // TODO: split rb_ec_str_resurrect into separate functions
+    gen_prepare_call_with_gc(asm, state);
     let chilled = if chilled { Opnd::Imm(1) } else { Opnd::Imm(0) };
     asm_ccall!(asm, rb_ec_str_resurrect, EC, recv, chilled)
 }
@@ -891,8 +895,7 @@ fn gen_array_dup(
     val: lir::Opnd,
     state: &FrameState,
 ) -> lir::Opnd {
-    // Save PC
-    gen_save_pc(asm, state);
+    gen_prepare_call_with_gc(asm, state);
 
     asm_ccall!(asm, rb_ary_resurrect, val)
 }
@@ -903,8 +906,7 @@ fn gen_new_array(
     elements: Vec<Opnd>,
     state: &FrameState,
 ) -> lir::Opnd {
-    // Save PC
-    gen_save_pc(asm, state);
+    gen_prepare_call_with_gc(asm, state);
 
     let length: ::std::os::raw::c_long = elements.len().try_into().expect("Unable to fit length of elements into c_long");
 
@@ -925,8 +927,7 @@ fn gen_new_range(
     flag: RangeType,
     state: &FrameState,
 ) -> lir::Opnd {
-    // Save PC
-    gen_save_pc(asm, state);
+    gen_prepare_call_with_gc(asm, state);
 
     // Call rb_range_new(low, high, flag)
     asm_ccall!(asm, rb_range_new, low, high, (flag as i64).into())
@@ -1040,8 +1041,7 @@ fn gen_isnil(asm: &mut Assembler, val: lir::Opnd) -> Option<lir::Opnd> {
 }
 
 fn gen_anytostring(asm: &mut Assembler, val: lir::Opnd, str: lir::Opnd, state: &FrameState) -> Option<lir::Opnd> {
-    // Save PC
-    gen_save_pc(asm, state);
+    gen_prepare_call_with_gc(asm, state);
 
     Some(asm_ccall!(asm, rb_obj_as_string_result, str, val))
 }
@@ -1070,7 +1070,8 @@ fn gen_guard_type(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, guard
     } else if guard_type.is_subtype(types::StaticSymbol) {
         // Static symbols have (val & 0xff) == RUBY_SYMBOL_FLAG
         // Use 8-bit comparison like YJIT does
-        asm.cmp(val.with_num_bits(8).unwrap(), Opnd::UImm(RUBY_SYMBOL_FLAG as u64));
+        debug_assert!(val.try_num_bits(8).is_some(), "GuardType should not be used for a known constant, but val was: {val:?}");
+        asm.cmp(val.try_num_bits(8)?, Opnd::UImm(RUBY_SYMBOL_FLAG as u64));
         asm.jne(side_exit(jit, state, GuardType(guard_type))?);
     } else if guard_type.is_subtype(types::NilClass) {
         asm.cmp(val, Qnil.into());
@@ -1079,17 +1080,35 @@ fn gen_guard_type(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, guard
         asm.cmp(val, Qtrue.into());
         asm.jne(side_exit(jit, state, GuardType(guard_type))?);
     } else if guard_type.is_subtype(types::FalseClass) {
-        assert!(Qfalse.as_i64() == 0);
-        asm.test(val, val);
+        asm.cmp(val, Qfalse.into());
         asm.jne(side_exit(jit, state, GuardType(guard_type))?);
+    } else if guard_type.is_immediate() {
+        // All immediate types' guard should have been handled above
+        panic!("unexpected immediate guard type: {guard_type}");
     } else if let Some(expected_class) = guard_type.runtime_exact_ruby_class() {
-        asm_comment!(asm, "guard exact class");
+        asm_comment!(asm, "guard exact class for non-immediate types");
 
-        // Get the class of the value
-        let klass = asm.ccall(rb_yarv_class_of as *const u8, vec![val]);
+        // If val isn't in a register, load it to use it as the base of Opnd::mem later.
+        // TODO: Max thinks codegen should not care about the shapes of the operands except to create them. (Shopify/ruby#685)
+        let val = match val {
+            Opnd::Reg(_) | Opnd::VReg { .. } => val,
+            _ => asm.load(val),
+        };
+
+        // Check if it's a special constant
+        let side_exit = side_exit(jit, state, GuardType(guard_type))?;
+        asm.test(val, (RUBY_IMMEDIATE_MASK as u64).into());
+        asm.jnz(side_exit.clone());
+
+        // Check if it's false
+        asm.cmp(val, Qfalse.into());
+        asm.je(side_exit.clone());
+
+        // Load the class from the object's klass field
+        let klass = asm.load(Opnd::mem(64, val, RUBY_OFFSET_RBASIC_KLASS));
 
         asm.cmp(klass, Opnd::Value(expected_class));
-        asm.jne(side_exit(jit, state, GuardType(guard_type))?);
+        asm.jne(side_exit);
     } else {
         unimplemented!("unsupported type: {guard_type}");
     }
@@ -1133,6 +1152,54 @@ fn gen_save_sp(asm: &mut Assembler, stack_size: usize) {
     let sp_addr = asm.lea(Opnd::mem(64, SP, stack_size as i32 * SIZEOF_VALUE_I32));
     let cfp_sp = Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SP);
     asm.mov(cfp_sp, sp_addr);
+}
+
+/// Spill locals onto the stack.
+fn gen_spill_locals(jit: &JITState, asm: &mut Assembler, state: &FrameState) -> Option<()> {
+    // TODO: Avoid spilling locals that have been spilled before and not changed.
+    asm_comment!(asm, "spill locals");
+    for (idx, &insn_id) in state.locals().enumerate() {
+        asm.mov(Opnd::mem(64, SP, (-local_idx_to_ep_offset(jit.iseq, idx) - 1) * SIZEOF_VALUE_I32), jit.get_opnd(insn_id)?);
+    }
+    Some(())
+}
+
+/// Spill the virtual stack onto the stack.
+fn gen_spill_stack(jit: &JITState, asm: &mut Assembler, state: &FrameState) -> Option<()> {
+    // This function does not call gen_save_sp() at the moment because
+    // gen_send_without_block_direct() spills stack slots above SP for arguments.
+    asm_comment!(asm, "spill stack");
+    for (idx, &insn_id) in state.stack().enumerate() {
+        asm.mov(Opnd::mem(64, SP, idx as i32 * SIZEOF_VALUE_I32), jit.get_opnd(insn_id)?);
+    }
+    Some(())
+}
+
+/// Prepare for calling a C function that may call an arbitrary method.
+/// Use gen_prepare_call_with_gc() if the method is leaf but allocates objects.
+#[must_use]
+fn gen_prepare_non_leaf_call(jit: &JITState, asm: &mut Assembler, state: &FrameState) -> Option<()> {
+    // TODO: Lazily materialize caller frames when needed
+    // Save PC for backtraces and allocation tracing
+    gen_save_pc(asm, state);
+
+    // Save SP and spill the virtual stack in case it raises an exception
+    // and the interpreter uses the stack for handling the exception
+    gen_save_sp(asm, state.stack().len());
+    gen_spill_stack(jit, asm, state)?;
+
+    // Spill locals in case the method looks at caller Bindings
+    gen_spill_locals(jit, asm, state)?;
+    Some(())
+}
+
+/// Prepare for calling a C function that may allocate objects and trigger GC.
+/// Use gen_prepare_non_leaf_call() if it may also call an arbitrary method.
+fn gen_prepare_call_with_gc(asm: &mut Assembler, state: &FrameState) {
+    // Save PC for allocation tracing
+    gen_save_pc(asm, state);
+    // Unlike YJIT, we don't need to save the stack to protect them from GC
+    // because the backend spills all live registers onto the C stack on asm.ccall().
 }
 
 /// Frame metadata written by gen_push_frame()

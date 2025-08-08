@@ -70,6 +70,15 @@ class TestZJIT < Test::Unit::TestCase
     }
   end
 
+  def test_call_a_forwardable_method
+    assert_runs '[]', %q{
+      def test_root = forwardable
+      def forwardable(...) = Array.[](...)
+      test_root
+      test_root
+    }, call_threshold: 2
+  end
+
   def test_setlocal_on_eval_with_spill
     assert_compiles '1', %q{
       @b = binding
@@ -145,6 +154,18 @@ class TestZJIT < Test::Unit::TestCase
 
       test # profile send
       test
+    }, call_threshold: 2
+  end
+
+  def test_send_on_heap_object_in_spilled_arg
+    # This leads to a register spill, so not using `assert_compiles`
+    assert_runs 'Hash', %q{
+      def entry(a1, a2, a3, a4, a5, a6, a7, a8, a9)
+        a9.itself.class
+      end
+
+      entry(1, 2, 3, 4, 5, 6, 7, 8, {}) # profile
+      entry(1, 2, 3, 4, 5, 6, 7, 8, {})
     }, call_threshold: 2
   end
 
@@ -280,6 +301,14 @@ class TestZJIT < Test::Unit::TestCase
       def test(a, b) = a == b
       test(0, 2) # profile opt_eq
       [test(1, 1), test(0, 1)]
+    }, insns: [:opt_eq], call_threshold: 2
+  end
+
+  def test_opt_eq_with_minus_one
+    assert_compiles '[false, true]', %q{
+      def test(a) = a == -1
+      test(1) # profile opt_eq
+      [test(0), test(-1)]
     }, insns: [:opt_eq], call_threshold: 2
   end
 
@@ -879,6 +908,38 @@ class TestZJIT < Test::Unit::TestCase
     }
   end
 
+  def test_attr_reader
+    assert_compiles '[4, 4]', %q{
+      class C
+        attr_reader :foo
+
+        def initialize
+          @foo = 4
+        end
+      end
+
+      def test(c) = c.foo
+      c = C.new
+      [test(c), test(c)]
+    }, call_threshold: 2, insns: [:opt_send_without_block]
+  end
+
+  def test_attr_accessor
+    assert_compiles '[4, 4]', %q{
+      class C
+        attr_accessor :foo
+
+        def initialize
+          @foo = 4
+        end
+      end
+
+      def test(c) = c.foo
+      c = C.new
+      [test(c), test(c)]
+    }, call_threshold: 2, insns: [:opt_send_without_block]
+  end
+
   def test_uncached_getconstant_path
     assert_compiles RUBY_COPYRIGHT.dump, %q{
       def test = RUBY_COPYRIGHT
@@ -942,6 +1003,26 @@ class TestZJIT < Test::Unit::TestCase
     RUBY
   end
 
+  def test_single_ractor_mode_invalidation
+    # Without invalidating the single-ractor mode, the test would crash
+    assert_compiles '"errored but not crashed"', <<~RUBY, call_threshold: 2, insns: [:opt_getconstant_path]
+      C = Object.new
+
+      def test
+        C
+      rescue Ractor::IsolationError
+        "errored but not crashed"
+      end
+
+      test
+      test
+
+      Ractor.new {
+        test
+      }.value
+    RUBY
+  end
+
   def test_dupn
     assert_compiles '[[1], [1, 1], :rhs, [nil, :rhs]]', <<~RUBY, insns: [:dupn]
       def test(array) = (array[1, 2] ||= :rhs)
@@ -981,6 +1062,26 @@ class TestZJIT < Test::Unit::TestCase
       end
       test
     }
+  end
+
+  def test_defined_with_defined_values
+    assert_compiles '["constant", "method", "global-variable"]', %q{
+      class Foo; end
+      def bar; end
+      $ruby = 1
+
+      def test = return defined?(Foo), defined?(bar), defined?($ruby)
+
+      test
+    }, insns: [:defined]
+  end
+
+  def test_defined_with_undefined_values
+    assert_compiles '[nil, nil, nil]', %q{
+      def test = return defined?(Foo), defined?(bar), defined?($ruby)
+
+      test
+    }, insns: [:defined]
   end
 
   def test_defined_yield
@@ -1370,6 +1471,30 @@ class TestZJIT < Test::Unit::TestCase
       test(Kernel)
       test(nil)
     }, call_threshold: 2, insns: [:opt_nil_p]
+  end
+
+  def test_basic_object_guard_works_with_immediate
+    assert_compiles 'NilClass', %q{
+      class Foo; end
+
+      def test(val) = val.class
+
+      test(Foo.new)
+      test(Foo.new)
+      test(nil)
+    }, call_threshold: 2
+  end
+
+  def test_basic_object_guard_works_with_false
+    assert_compiles 'FalseClass', %q{
+      class Foo; end
+
+      def test(val) = val.class
+
+      test(Foo.new)
+      test(Foo.new)
+      test(false)
+    }, call_threshold: 2
   end
 
   private
