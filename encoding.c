@@ -1366,7 +1366,10 @@ enc_names(VALUE self)
 
     args[0] = (VALUE)rb_to_encoding_index(self);
     args[1] = rb_ary_new2(0);
-    st_foreach(global_enc_table.names, enc_names_i, (st_data_t)args);
+
+    GLOBAL_ENC_TABLE_LOCKING(enc_table) {
+        st_foreach(enc_table->names, enc_names_i, (st_data_t)args);
+    }
     return args[1];
 }
 
@@ -1873,8 +1876,11 @@ rb_enc_name_list_i(st_data_t name, st_data_t idx, st_data_t arg)
 static VALUE
 rb_enc_name_list(VALUE klass)
 {
-    VALUE ary = rb_ary_new2(global_enc_table.names->num_entries);
-    st_foreach(global_enc_table.names, rb_enc_name_list_i, (st_data_t)ary);
+    VALUE ary;
+    GLOBAL_ENC_TABLE_LOCKING(enc_table) {
+        ary = rb_ary_new2(enc_table->names->num_entries);
+        st_foreach(enc_table->names, rb_enc_name_list_i, (st_data_t)ary);
+    }
     return ary;
 }
 
@@ -1920,7 +1926,9 @@ rb_enc_aliases(VALUE klass)
     aliases[0] = rb_hash_new();
     aliases[1] = rb_ary_new();
 
-    st_foreach(global_enc_table.names, rb_enc_aliases_enc_i, (st_data_t)aliases);
+    GLOBAL_ENC_TABLE_LOCKING(enc_table) {
+        st_foreach(enc_table->names, rb_enc_aliases_enc_i, (st_data_t)aliases);
+    }
 
     return aliases[0];
 }
@@ -2022,5 +2030,7 @@ Init_encodings(void)
 void
 rb_enc_foreach_name(int (*func)(st_data_t name, st_data_t idx, st_data_t arg), st_data_t arg)
 {
-    st_foreach(global_enc_table.names, func, arg);
+    GLOBAL_ENC_TABLE_LOCKING(enc_table) {
+        st_foreach(enc_table->names, func, arg);
+    }
 }
