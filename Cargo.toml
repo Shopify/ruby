@@ -49,3 +49,34 @@ overflow-checks = true
 debug = true
 # Use ThinLTO. Much smaller output for a small amount of build time increase.
 lto = "thin"
+
+[workspace.lints.clippy]
+correctness = { level = "forbid", priority = 1 }
+suspicious = { level = "forbid", priority = 1 }
+perf = { level = "forbid", priority = 1 }
+
+complexity = { level = "deny", priority = -1 }
+
+style = { level = "allow", priority = -1 }
+pedantic = { level = "allow", priority = -1 }
+restriction = { level = "allow", priority = -1 }
+
+too_many_arguments = "allow"
+identity_op = "allow"
+
+ptr_arg = "forbid"
+ref_option = "forbid"
+inefficient_to_string = "forbid"
+from_over_into = "forbid"
+unwrap_or_default = "forbid"
+redundant_static_lifetimes = "forbid"
+match_like_matches_macro = "forbid"
+field_reassign_with_default = "forbid"
+inherent_to_string = "forbid"
+owned_cow = "forbid"
+redundant_clone = "forbid"
+str_to_string = "forbid"
+single_char_pattern = "forbid"
+single_char_add_str = "forbid"
+unnecessary_owned_empty_strings = "forbid"
+manual_string_new = "forbid"

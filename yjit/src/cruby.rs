@@ -97,7 +97,7 @@ pub type size_t = u64;
 pub type RedefinitionFlag = u32;
 
 #[allow(dead_code)]
-#[allow(clippy::all)]
+#[allow(clippy::complexity)]
 mod autogened {
     use super::*;
     // Textually include output from rust-bindgen as suggested by its user guide.
@@ -223,7 +223,7 @@ pub fn insn_name(opcode: usize) -> String {
         let op_name = CStr::from_ptr(op_name).to_str().unwrap();
 
         // Convert into an owned string
-        op_name.to_string()
+        op_name.into()
     }
 }
 
@@ -619,7 +619,7 @@ pub fn cstr_to_rust_string(c_char_ptr: *const c_char) -> Option<String> {
     let c_str: &CStr = unsafe { CStr::from_ptr(c_char_ptr) };
 
     match c_str.to_str() {
-        Ok(rust_str) => Some(rust_str.to_string()),
+        Ok(rust_str) => Some(rust_str.into()),
         Err(_) => None
     }
 }

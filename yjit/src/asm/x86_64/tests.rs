@@ -454,7 +454,7 @@ fn block_comments() {
     let third_write_ptr = cb.get_write_ptr().raw_addr(&cb);
     cb.add_comment("Ten bytes in");
 
-    assert_eq!(&vec!( "Beginning".to_string() ), cb.comments_at(first_write_ptr).unwrap());
-    assert_eq!(&vec!( "Two bytes in".to_string(), "Still two bytes in".to_string() ), cb.comments_at(second_write_ptr).unwrap());
-    assert_eq!(&vec!( "Ten bytes in".to_string() ), cb.comments_at(third_write_ptr).unwrap());
+    assert_eq!(&vec!( "Beginning".to_owned() ), cb.comments_at(first_write_ptr).unwrap());
+    assert_eq!(&vec!( "Two bytes in".to_owned(), "Still two bytes in".to_owned() ), cb.comments_at(second_write_ptr).unwrap());
+    assert_eq!(&vec!( "Ten bytes in".to_owned() ), cb.comments_at(third_write_ptr).unwrap());
 }

@@ -92,10 +92,7 @@ pub fn ruby_str_to_rust(v: VALUE) -> String {
     let str_ptr = unsafe { rb_RSTRING_PTR(v) } as *mut u8;
     let str_len: usize = unsafe { rb_RSTRING_LEN(v) }.try_into().unwrap();
     let str_slice: &[u8] = unsafe { slice::from_raw_parts(str_ptr, str_len) };
-    match String::from_utf8(str_slice.to_vec()) {
-        Ok(utf8) => utf8,
-        Err(_) => String::new(),
-    }
+    String::from_utf8(str_slice.to_vec()).unwrap_or_default()
 }
 
 // Location is the file defining the method, colon, method name.
@@ -107,17 +104,17 @@ pub fn iseq_get_location(iseq: IseqPtr, pos: u16) -> String {
     let iseq_lineno = unsafe { rb_iseq_line_no(iseq, pos as usize) };
 
     let mut s = if iseq_label == Qnil {
-        "None".to_string()
+        "None".into()
     } else {
         ruby_str_to_rust(iseq_label)
     };
-    s.push_str("@");
+    s.push('@');
     if iseq_path == Qnil {
         s.push_str("None");
     } else {
         s.push_str(&ruby_str_to_rust(iseq_path));
     }
-    s.push_str(":");
+    s.push(':');
     s.push_str(&iseq_lineno.to_string());
     s
 }

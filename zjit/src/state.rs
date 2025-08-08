@@ -78,7 +78,7 @@ impl ZJITState {
             );
             let mem_block = Rc::new(RefCell::new(mem_block));
 
-            CodeBlock::new(mem_block.clone(), get_option!(dump_disasm))
+            CodeBlock::new(mem_block, get_option!(dump_disasm))
         };
         #[cfg(test)]
         let mut cb = CodeBlock::new_dummy();

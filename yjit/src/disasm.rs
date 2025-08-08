@@ -69,7 +69,7 @@ pub extern "C" fn rb_yjit_disasm_iseq(_ec: EcPtr, _ruby_self: VALUE, iseqw: VALU
 /// Only call while holding the VM lock.
 #[cfg(feature = "disasm")]
 pub fn disasm_iseq_insn_range(iseq: IseqPtr, start_idx: u16, end_idx: u16) -> String {
-    let mut out = String::from("");
+    let mut out = String::new();
 
     // Get a list of block versions generated for this iseq
     let block_list = get_or_create_iseq_block_list(iseq);
@@ -161,7 +161,7 @@ pub fn dump_disasm_addr_range(cb: &CodeBlock, start_addr: CodePtr, end_addr: Cod
 
 #[cfg(feature = "disasm")]
 pub fn disasm_addr_range(cb: &CodeBlock, start_addr: usize, end_addr: usize) -> String {
-    let mut out = String::from("");
+    let mut out = String::new();
 
     // Initialize capstone
     use capstone::prelude::*;

@@ -103,7 +103,7 @@ pub type RedefinitionFlag = u32;
 
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(dead_code)]
-#[allow(clippy::all)] // warning meant to help with reading; not useful for generated code
+#[allow(clippy::complexity)]
 mod autogened {
     use super::*;
     // Textually include output from rust-bindgen as suggested by its user guide.
@@ -230,7 +230,7 @@ pub fn insn_name(opcode: usize) -> String {
         let op_name = CStr::from_ptr(op_name).to_str().unwrap();
 
         // Convert into an owned string
-        op_name.to_string()
+        op_name.into()
     }
 }
 
@@ -696,23 +696,23 @@ pub fn rust_str_to_sym(str: &str) -> VALUE {
 
 /// Produce an owned Rust String from a C char pointer
 pub fn cstr_to_rust_string(c_char_ptr: *const c_char) -> Option<String> {
-    assert!(c_char_ptr != std::ptr::null());
+    assert!(!c_char_ptr.is_null());
 
     let c_str: &CStr = unsafe { CStr::from_ptr(c_char_ptr) };
 
     match c_str.to_str() {
-        Ok(rust_str) => Some(rust_str.to_string()),
+        Ok(rust_str) => Some(rust_str.into()),
         Err(_) => None
     }
 }
 
 pub fn iseq_name(iseq: IseqPtr) -> String {
     if iseq.is_null() {
-        return "<NULL>".to_string();
+        return "<NULL>".into();
     }
     let iseq_label = unsafe { rb_iseq_label(iseq) };
     if iseq_label == Qnil {
-        "None".to_string()
+        "None".into()
     } else {
         ruby_str_to_rust_string(iseq_label)
     }
@@ -726,13 +726,13 @@ pub fn iseq_get_location(iseq: IseqPtr, pos: u32) -> String {
     let iseq_lineno = unsafe { rb_iseq_line_no(iseq, pos as usize) };
 
     let mut s = iseq_name(iseq);
-    s.push_str("@");
+    s.push('@');
     if iseq_path == Qnil {
         s.push_str("None");
     } else {
         s.push_str(&ruby_str_to_rust_string(iseq_path));
     }
-    s.push_str(":");
+    s.push(':');
     s.push_str(&iseq_lineno.to_string());
     s
 }
@@ -745,10 +745,7 @@ fn ruby_str_to_rust_string(v: VALUE) -> String {
     let str_ptr = unsafe { rb_RSTRING_PTR(v) } as *mut u8;
     let str_len: usize = unsafe { rb_RSTRING_LEN(v) }.try_into().unwrap();
     let str_slice: &[u8] = unsafe { std::slice::from_raw_parts(str_ptr, str_len) };
-    match String::from_utf8(str_slice.to_vec()) {
-        Ok(utf8) => utf8,
-        Err(_) => String::new(),
-    }
+    String::from_utf8(str_slice.to_vec()).unwrap_or_default()
 }
 
 pub fn ruby_sym_to_rust_string(v: VALUE) -> String {
@@ -1077,7 +1074,7 @@ pub mod test_utils {
     /// Remove the minimum indent from every line, skipping the first and last lines if `trim_lines`.
     pub fn unindent(string: &str, trim_lines: bool) -> String {
         // Break up a string into multiple lines
-        let mut lines: Vec<String> = string.split_inclusive("\n").map(|s| s.to_string()).collect();
+        let mut lines: Vec<String> = string.split_inclusive('\n').map(|s| s.into()).collect();
         if trim_lines { // raw string literals come with extra lines
             lines.remove(0);
             lines.remove(lines.len() - 1);
@@ -1184,7 +1181,7 @@ pub fn get_class_name(class: VALUE) -> String {
         None
     }.and_then(|class| unsafe {
         cstr_to_rust_string(rb_class2name(class))
-    }).unwrap_or_else(|| "Unknown".to_string())
+    }).unwrap_or_else(|| "Unknown".into())
 }
 
 /// Interned ID values for Ruby symbols and method names.

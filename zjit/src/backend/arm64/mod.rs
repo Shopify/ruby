@@ -139,50 +139,55 @@ fn emit_load_value(cb: &mut CodeBlock, rd: A64Opnd, value: u64) -> usize {
         // If the value fits into a single movz
         // instruction, then we'll use that.
         movz(cb, rd, A64Opnd::new_uimm(current), 0);
-        return 1;
-    } else if u16::try_from(!value).is_ok() {
+        return 1
+    }
+
+    if u16::try_from(!value).is_ok() {
         // For small negative values, use a single movn
         movn(cb, rd, A64Opnd::new_uimm(!value), 0);
         return 1;
-    } else if BitmaskImmediate::try_from(current).is_ok() {
+    }
+
+    if BitmaskImmediate::try_from(current).is_ok() {
         // Otherwise, if the immediate can be encoded
         // with the special bitmask immediate encoding,
         // we'll use that.
         mov(cb, rd, A64Opnd::new_uimm(current));
         return 1;
-    } else {
-        // Finally we'll fall back to encoding the value
-        // using movz for the first 16 bits and movk for
-        // each subsequent set of 16 bits as long we
-        // they are necessary.
-        movz(cb, rd, A64Opnd::new_uimm(current & 0xffff), 0);
-        let mut num_insns = 1;
-
-        // (We're sure this is necessary since we
-        // checked if it only fit into movz above).
-        current >>= 16;
-        movk(cb, rd, A64Opnd::new_uimm(current & 0xffff), 16);
-        num_insns += 1;
-
-        if current > 0xffff {
-            current >>= 16;
-            movk(cb, rd, A64Opnd::new_uimm(current & 0xffff), 32);
-            num_insns += 1;
-        }
-
-        if current > 0xffff {
-            current >>= 16;
-            movk(cb, rd, A64Opnd::new_uimm(current & 0xffff), 48);
-            num_insns += 1;
-        }
-        return num_insns;
     }
+
+    // Finally we'll fall back to encoding the value
+    // using movz for the first 16 bits and movk for
+    // each subsequent set of 16 bits as long we
+    // they are necessary.
+    movz(cb, rd, A64Opnd::new_uimm(current & 0xffff), 0);
+    let mut num_insns = 1;
+
+    // (We're sure this is necessary since we
+    // checked if it only fit into movz above).
+    current >>= 16;
+    movk(cb, rd, A64Opnd::new_uimm(current & 0xffff), 16);
+    num_insns += 1;
+
+    if current > 0xffff {
+        current >>= 16;
+        movk(cb, rd, A64Opnd::new_uimm(current & 0xffff), 32);
+        num_insns += 1;
+    }
+
+    if current > 0xffff {
+        current >>= 16;
+        movk(cb, rd, A64Opnd::new_uimm(current & 0xffff), 48);
+        num_insns += 1;
+    }
+
+    num_insns
 }
 
 /// List of registers that can be used for register allocation.
 /// This has the same number of registers for x86_64 and arm64.
 /// SCRATCH0 and SCRATCH1 are excluded.
-pub const ALLOC_REGS: &'static [Reg] = &[
+pub const ALLOC_REGS: &[Reg] = &[
     X0_REG,
     X1_REG,
     X2_REG,
@@ -480,7 +485,7 @@ impl Assembler
                     // which is both the return value and first argument register
                     if !opnds.is_empty() {
                         let mut args: Vec<(Reg, Opnd)> = vec![];
-                        for (idx, opnd) in opnds.into_iter().enumerate().rev() {
+                        for (idx, opnd) in opnds.iter_mut().enumerate().rev() {
                             // If the value that we're sending is 0, then we can use
                             // the zero register, so in this case we'll just send
                             // a UImm of 0 along as the argument to the move.
@@ -1106,8 +1111,8 @@ impl Assembler
                     // be stored is first and the address is second. However in
                     // our IR we have the address first and the register second.
                     match dest_num_bits {
-                        64 | 32 => stur(cb, src.into(), dest.into()),
-                        16 => sturh(cb, src.into(), dest.into()),
+                        64 | 32 => stur(cb, src, dest),
+                        16 => sturh(cb, src, dest),
                         num_bits => panic!("unexpected dest num_bits: {} (src: {:#?}, dest: {:#?})", num_bits, src, dest),
                     }
                 },
@@ -1306,7 +1311,7 @@ impl Assembler
                     last_patch_pos = Some(cb.get_write_pos());
                 },
                 Insn::IncrCounter { mem, value } => {
-                    let label = cb.new_label("incr_counter_loop".to_string());
+                    let label = cb.new_label("incr_counter_loop".into());
                     cb.write_label(label);
 
                     ldaxr(cb, Self::SCRATCH0, mem.into());
@@ -1411,7 +1416,7 @@ impl Assembler
 ///
 /// If a, b, and c are all registers.
 fn merge_three_reg_mov(
-    live_ranges: &Vec<LiveRange>,
+    live_ranges: &[LiveRange],
     iterator: &mut std::iter::Peekable<impl Iterator<Item = (usize, Insn)>>,
     left: &Opnd,
     right: &Opnd,
@@ -1566,7 +1571,7 @@ mod tests {
 
     #[test]
     fn frame_setup_and_teardown() {
-        const THREE_REGS: &'static [Opnd] = &[Opnd::Reg(X19_REG), Opnd::Reg(X20_REG), Opnd::Reg(X21_REG)];
+        const THREE_REGS: &[Opnd] = &[Opnd::Reg(X19_REG), Opnd::Reg(X20_REG), Opnd::Reg(X21_REG)];
         // Test 3 preserved regs (odd), odd slot_count
         {
             let (mut asm, mut cb) = setup_asm();
@@ -1607,7 +1612,7 @@ mod tests {
 
         // Test 4 preserved regs (even), odd slot_count
         {
-            static FOUR_REGS: &'static [Opnd] = &[Opnd::Reg(X19_REG), Opnd::Reg(X20_REG), Opnd::Reg(X21_REG), Opnd::Reg(X22_REG)];
+            static FOUR_REGS: &[Opnd] = &[Opnd::Reg(X19_REG), Opnd::Reg(X20_REG), Opnd::Reg(X21_REG), Opnd::Reg(X22_REG)];
             let (mut asm, mut cb) = setup_asm();
             asm.frame_setup(FOUR_REGS, 3);
             asm.frame_teardown(FOUR_REGS);
