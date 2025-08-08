@@ -187,6 +187,14 @@ CONSTFUNC(st_index_t rb_st_hash_start(st_index_t h));
 
 void rb_hash_bulk_insert_into_st_table(long, const VALUE *, VALUE);
 
+VALUE rb_managed_st_table_create_numtable(size_t capa);
+VALUE rb_managed_st_table_create_strtable(size_t capa);
+VALUE rb_managed_st_table_create_strcasetable(size_t capa);
+int rb_managed_st_table_lookup(VALUE tbl, st_data_t key, st_data_t *value);
+int rb_managed_st_table_insert(VALUE tbl, st_data_t key, st_data_t value);
+void rb_managed_st_table_add_direct(VALUE tbl, st_data_t key, st_data_t value);
+VALUE rb_managed_st_table_dup(VALUE old_table);
+
 RUBY_SYMBOL_EXPORT_END
 
 #if defined(__cplusplus)

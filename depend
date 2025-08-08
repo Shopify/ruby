@@ -17738,6 +17738,7 @@ transcode.$(OBJEXT): $(top_srcdir)/internal/transcode.h
 transcode.$(OBJEXT): $(top_srcdir)/internal/variable.h
 transcode.$(OBJEXT): $(top_srcdir)/internal/warnings.h
 transcode.$(OBJEXT): {$(VPATH)}assert.h
+transcode.$(OBJEXT): {$(VPATH)}atomic.h
 transcode.$(OBJEXT): {$(VPATH)}backward/2/assume.h
 transcode.$(OBJEXT): {$(VPATH)}backward/2/attributes.h
 transcode.$(OBJEXT): {$(VPATH)}backward/2/bool.h
@@ -17909,6 +17910,7 @@ transcode.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 transcode.$(OBJEXT): {$(VPATH)}missing.h
 transcode.$(OBJEXT): {$(VPATH)}onigmo.h
 transcode.$(OBJEXT): {$(VPATH)}oniguruma.h
+transcode.$(OBJEXT): {$(VPATH)}ruby_atomic.h
 transcode.$(OBJEXT): {$(VPATH)}shape.h
 transcode.$(OBJEXT): {$(VPATH)}st.h
 transcode.$(OBJEXT): {$(VPATH)}subst.h

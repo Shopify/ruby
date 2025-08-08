@@ -3206,4 +3206,106 @@ set_compact_table(set_table *tab)
     }
 }
 
+static void
+managed_st_table_free(void *data)
+{
+    st_table *tbl = (st_table *)data;
+    free(tbl->bins);
+    free(tbl->entries);
+}
+
+static size_t
+managed_st_table_memsize(const void *data)
+{
+    st_table *tbl = (st_table*)data;
+    return st_memsize(tbl) - sizeof(st_table);
+}
+
+const rb_data_type_t rb_managed_st_table_type = {
+    .wrap_struct_name = "VM/managed_st_table",
+    .function = {
+        .dmark = NULL, // Nothing to mark
+        .dfree = (RUBY_DATA_FUNC)managed_st_table_free,
+        .dsize = managed_st_table_memsize,
+    },
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+};
+
+static inline st_table *
+managed_st_table_ptr(VALUE obj)
+{
+    RUBY_ASSERT(RB_TYPE_P(obj, T_DATA));
+    RUBY_ASSERT(rb_typeddata_inherited_p(RTYPEDDATA_TYPE(obj), &rb_managed_st_table_type));
+
+    return RTYPEDDATA_GET_DATA(obj);
+}
+
+static VALUE
+rb_managed_st_table_create_type(const rb_data_type_t *type, const struct st_hash_type *table_type, size_t capa)
+{
+    struct st_table *tbl;
+    VALUE obj = TypedData_Make_Struct(0, struct st_table, type, tbl);
+    st_init_existing_table_with_size(tbl, table_type, capa);
+    return obj;
+}
+
+VALUE
+rb_managed_st_table_create_numtable(size_t capa)
+{
+    return rb_managed_st_table_create_type(&rb_managed_st_table_type, &type_numhash, capa);
+}
+
+VALUE
+rb_managed_st_table_create_strtable(size_t capa)
+{
+    return rb_managed_st_table_create_type(&rb_managed_st_table_type, &type_strhash, capa);
+}
+
+VALUE
+rb_managed_st_table_create_strcasetable(size_t capa)
+{
+    return rb_managed_st_table_create_type(&rb_managed_st_table_type, &type_strcasehash, capa);
+}
+
+int
+rb_managed_st_table_lookup(VALUE tbl, st_data_t key, VALUE *value)
+{
+    st_table *st = managed_st_table_ptr(tbl);
+    st_data_t *val = (st_data_t*)value;
+    return st_lookup(st, key, val);
+}
+
+int
+rb_managed_st_table_insert(VALUE tbl, st_data_t key, VALUE value)
+{
+    st_table *st =  managed_st_table_ptr(tbl);
+    return st_insert(st, key, (st_data_t)value);
+}
+
+void
+rb_managed_st_table_add_direct(VALUE tbl, st_data_t key, st_data_t value)
+{
+    st_table *st =  managed_st_table_ptr(tbl);
+    return st_add_direct(st, key, value);
+}
+
+static int
+managed_st_table_dup_i(st_data_t key, st_data_t val, st_data_t data) {
+    st_table *tbl = (st_table *)data;
+    st_insert(tbl, key, val);
+    return ST_CONTINUE;
+}
+
+VALUE
+rb_managed_st_table_dup(VALUE old_table)
+{
+    struct st_table *new_tbl;
+    VALUE obj = TypedData_Make_Struct(0, struct st_table, RTYPEDDATA_TYPE(old_table), new_tbl);
+    struct st_table *old_tbl = managed_st_table_ptr(old_table);
+    st_init_existing_table_with_size(new_tbl, old_tbl->type, old_tbl->num_entries+1);
+    st_foreach(old_tbl, managed_st_table_dup_i, (st_data_t)new_tbl);
+
+    return obj;
+}
+
 #endif
