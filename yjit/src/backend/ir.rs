@@ -186,7 +186,7 @@ impl Opnd
 
     /// Maps the indices from a previous list of instructions to a new list of
     /// instructions.
-    pub fn map_index(self, indices: &Vec<usize>) -> Opnd {
+    pub fn map_index(self, indices: &[usize]) -> Opnd {
         match self {
             Opnd::InsnOut { idx, num_bits } => {
                 Opnd::InsnOut { idx: indices[idx], num_bits }
@@ -1266,11 +1266,11 @@ impl Assembler
 
     /// Spill all live registers to the stack
     pub fn spill_regs(&mut self) {
-        self.spill_regs_except(&vec![]);
+        self.spill_regs_except(&[]);
     }
 
     /// Spill all live registers except `ignored_temps` to the stack
-    pub fn spill_regs_except(&mut self, ignored_temps: &Vec<RegOpnd>) {
+    pub fn spill_regs_except(&mut self, ignored_temps: &[RegOpnd]) {
         // Forget registers above the stack top
         let mut reg_mapping = self.ctx.get_reg_mapping();
         for stack_idx in self.ctx.get_stack_size()..MAX_CTX_TEMPS as u8 {
@@ -1348,6 +1348,7 @@ impl Assembler
 
     // Shuffle register moves, sometimes adding extra moves using SCRATCH_REG,
     // so that they will not rewrite each other before they are used.
+    #[allow(clippy::ptr_arg)]
     pub fn reorder_reg_moves(old_moves: &Vec<(Reg, Opnd)>) -> Vec<(Reg, Opnd)> {
         // Return the index of a move whose destination is not used as a source if any.
         fn find_safe_move(moves: &Vec<(Reg, Opnd)>) -> Option<usize> {
@@ -1385,6 +1386,7 @@ impl Assembler
     /// Sets the out field on the various instructions that require allocated
     /// registers because their output is used as the operand on a subsequent
     /// instruction. This is our implementation of the linear scan algorithm.
+    #[allow(clippy::useless_conversion)]
     pub(super) fn alloc_regs(mut self, regs: Vec<Reg>) -> Assembler
     {
         //dbg!(&self);
@@ -1394,7 +1396,7 @@ impl Assembler
 
         // Mutate the pool bitmap to indicate that the register at that index
         // has been allocated and is live.
-        fn alloc_reg(pool: &mut u32, regs: &Vec<Reg>) -> Option<Reg> {
+        fn alloc_reg(pool: &mut u32, regs: &[Reg]) -> Option<Reg> {
             for (index, reg) in regs.iter().enumerate() {
                 if (*pool & (1 << index)) == 0 {
                     *pool |= 1 << index;
@@ -1405,7 +1407,7 @@ impl Assembler
         }
 
         // Allocate a specific register
-        fn take_reg(pool: &mut u32, regs: &Vec<Reg>, reg: &Reg) -> Reg {
+        fn take_reg(pool: &mut u32, regs: &[Reg], reg: &Reg) -> Reg {
             let reg_index = regs.iter().position(|elem| elem.reg_no == reg.reg_no);
 
             if let Some(reg_index) = reg_index {
@@ -1419,7 +1421,7 @@ impl Assembler
         // Mutate the pool bitmap to indicate that the given register is being
         // returned as it is no longer used by the instruction that previously
         // held it.
-        fn dealloc_reg(pool: &mut u32, regs: &Vec<Reg>, reg: &Reg) {
+        fn dealloc_reg(pool: &mut u32, regs: &[Reg], reg: &Reg) {
             let reg_index = regs.iter().position(|elem| elem.reg_no == reg.reg_no);
 
             if let Some(reg_index) = reg_index {
@@ -1791,7 +1793,7 @@ impl Assembler {
     }
 
     /// Let vm_check_canary() assert the leafness of this ccall if leaf_ccall is set
-    fn set_stack_canary(&mut self, opnds: &Vec<Opnd>) -> Option<Opnd> {
+    fn set_stack_canary(&mut self, opnds: &[Opnd]) -> Option<Opnd> {
         // Use the slot right above the stack top for verifying leafness.
         let canary_opnd = self.stack_opnd(-1);
 
