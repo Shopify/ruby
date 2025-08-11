@@ -13,7 +13,7 @@ fn main() {
         // ordered after -lminiruby above.
         let link_flags = env::var("RUBY_LD_FLAGS").unwrap();
 
-        let mut split_iter = link_flags.split(" ");
+        let mut split_iter = link_flags.split(' ');
         while let Some(token) = split_iter.next() {
             if token == "-framework" {
                 if let Some(framework) = split_iter.next() {

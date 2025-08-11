@@ -121,24 +121,12 @@ impl Type {
 
     /// Check if the type is an immediate
     pub fn is_imm(&self) -> bool {
-        match self {
-            Type::UnknownImm => true,
-            Type::Nil => true,
-            Type::True => true,
-            Type::False => true,
-            Type::Fixnum => true,
-            Type::Flonum => true,
-            Type::ImmSymbol => true,
-            _ => false,
-        }
+        matches!(self, Type::UnknownImm | Type::Nil | Type::True | Type::False | Type::Fixnum | Type::Flonum | Type::ImmSymbol)
     }
 
     /// Returns true when the type is not specific.
     pub fn is_unknown(&self) -> bool {
-        match self {
-            Type::Unknown | Type::UnknownImm | Type::UnknownHeap => true,
-            _ => false,
-        }
+        matches!(self, Type::Unknown | Type::UnknownImm | Type::UnknownHeap)
     }
 
     /// Returns true when we know the VALUE is a specific handle type,
@@ -150,17 +138,7 @@ impl Type {
 
     /// Check if the type is a heap object
     pub fn is_heap(&self) -> bool {
-        match self {
-            Type::UnknownHeap => true,
-            Type::TArray => true,
-            Type::CArray => true,
-            Type::THash => true,
-            Type::CHash => true,
-            Type::TString => true,
-            Type::CString => true,
-            Type::BlockParamProxy => true,
-            _ => false,
-        }
+        matches!(self, Type::UnknownHeap | Type::TArray | Type::CArray | Type::THash | Type::CHash | Type::TString | Type::CString | Type::BlockParamProxy)
     }
 
     /// Check if it's a T_ARRAY object (both TArray and CArray are T_ARRAY)
@@ -797,8 +775,10 @@ mod bitvector_tests {
         let ctx0 = Context::default();
         let idx0 = ctx0.encode_into(&mut bits);
 
-        let mut ctx1 = Context::default();
-        ctx1.reg_mapping = RegMapping([Some(RegOpnd::Stack(0)), None, None, None, None]);
+        let ctx1 = Context {
+            reg_mapping: RegMapping([Some(RegOpnd::Stack(0)), None, None, None, None]),
+            ..Default::default()
+        };
         let idx1 = ctx1.encode_into(&mut bits);
 
         // Make sure that we can encode two contexts successively
@@ -811,8 +791,10 @@ mod bitvector_tests {
     #[test]
     fn regress_reg_mapping() {
         let mut bits = BitVector::new();
-        let mut ctx = Context::default();
-        ctx.reg_mapping = RegMapping([Some(RegOpnd::Stack(0)), None, None, None, None]);
+        let ctx = Context {
+          reg_mapping: RegMapping([Some(RegOpnd::Stack(0)), None, None, None, None]),
+          ..Default::default()
+        };
         ctx.encode_into(&mut bits);
 
         let b0 = bits.read_u1(&mut 0);
@@ -1099,7 +1081,7 @@ impl Context {
                 MapToLocal(local_idx) => {
                     bits.push_op(CtxOp::MapTempLocal);
                     bits.push_u3(stack_idx as u8);
-                    bits.push_u3(local_idx as u8);
+                    bits.push_u3(local_idx);
                 }
 
                 MapToSelf => {
@@ -1170,19 +1152,19 @@ impl Context {
 
             match op {
                 CtxOp::SetSelfType => {
-                    ctx.self_type = unsafe { transmute(bits.read_u4(&mut idx)) };
+                    ctx.self_type = unsafe { transmute::<u8, Type>(bits.read_u4(&mut idx)) };
                 }
 
                 CtxOp::SetLocalType => {
                     let local_idx = bits.read_u3(&mut idx) as usize;
-                    let t = unsafe { transmute(bits.read_u4(&mut idx)) };
+                    let t = unsafe { transmute::<u8, Type>(bits.read_u4(&mut idx)) };
                     ctx.set_local_type(local_idx, t);
                 }
 
                 // Map temp to stack (known type)
                 CtxOp::SetTempType => {
                     let temp_idx = bits.read_u3(&mut idx) as usize;
-                    let temp_type = unsafe { transmute(bits.read_u4(&mut idx)) };
+                    let temp_type = unsafe { transmute::<u8, Type>(bits.read_u4(&mut idx)) };
                     ctx.set_temp_mapping(temp_idx, TempMapping::MapToStack(temp_type));
                 }
 
@@ -2294,7 +2276,7 @@ pub fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context {
         let generic_ctx = ctx.get_generic_ctx();
 
         if cfg!(debug_assertions) {
-            let mut ctx = ctx.clone();
+            let mut ctx = *ctx;
             if ctx.inline() {
                 // Suppress TypeDiff::Incompatible from ctx.diff(). We return TypeDiff::Incompatible
                 // to keep inlining blocks until we hit the limit, but it's safe to give up inlining.
@@ -2510,10 +2492,12 @@ impl Context {
 
     /// Create a new Context that is compatible with self but doesn't have type information.
     pub fn get_generic_ctx(&self) -> Context {
-        let mut generic_ctx = Context::default();
-        generic_ctx.stack_size = self.stack_size;
-        generic_ctx.sp_offset = self.sp_offset;
-        generic_ctx.reg_mapping = self.reg_mapping;
+        let mut generic_ctx = Context {
+            stack_size: self.stack_size,
+            sp_offset: self.sp_offset,
+            reg_mapping: self. reg_mapping,
+            ..Default::default()
+         };
         if self.is_return_landing() {
             generic_ctx.set_as_return_landing();
         }
@@ -2920,7 +2904,7 @@ impl Context {
         }
 
         // Prepare a Context with the same registers
-        let mut dst_with_same_regs = dst.clone();
+        let mut dst_with_same_regs = *dst;
         dst_with_same_regs.set_reg_mapping(self.get_reg_mapping());
 
         // Diff registers and other stuff separately, and merge them
@@ -3233,9 +3217,7 @@ fn gen_entry_point_body(blockid: BlockId, stack_size: u8, ec: EcPtr, jit_excepti
     let (code_ptr, reg_mapping) = gen_entry_prologue(cb, ocb, blockid, stack_size, jit_exception)?;
 
     // Find or compile a block version
-    let mut ctx = Context::default();
-    ctx.stack_size = stack_size;
-    ctx.reg_mapping = reg_mapping;
+    let ctx = Context { stack_size, reg_mapping, ..Default::default()};
     let block = match find_block_version(blockid, &ctx) {
         // If an existing block is found, generate a jump to the block.
         Some(blockref) => {
@@ -3359,9 +3341,7 @@ fn entry_stub_hit_body(
     asm.compile(cb, Some(ocb))?;
 
     // Find or compile a block version
-    let mut ctx = Context::default();
-    ctx.stack_size = stack_size;
-    ctx.reg_mapping = reg_mapping;
+    let ctx = Context { stack_size, reg_mapping, ..Default::default()};
     let blockref = match find_block_version(blockid, &ctx) {
         // If an existing block is found, generate a jump to the block.
         Some(blockref) => {
@@ -3823,7 +3803,7 @@ pub fn gen_branch_stub_hit_trampoline(ocb: &mut OutlinedCb) -> Option<CodePtr> {
 }
 
 /// Return registers to be pushed and popped on branch_stub_hit.
-pub fn caller_saved_temp_regs() -> impl Iterator<Item = &'static Reg> + DoubleEndedIterator {
+pub fn caller_saved_temp_regs() -> impl DoubleEndedIterator<Item = &'static Reg> {
     let temp_regs = Assembler::get_temp_regs().iter();
     let len = temp_regs.len();
     // The return value gen_leave() leaves in C_RET_REG

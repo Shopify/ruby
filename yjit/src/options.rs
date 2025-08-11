@@ -115,7 +115,7 @@ pub static mut OPTIONS: Options = Options {
 
 /// YJIT option descriptions for `ruby --help`.
 /// Note that --help allows only 80 characters per line, including indentation.   80-character limit --> |
-pub const YJIT_OPTIONS: &'static [(&str, &str)] = &[
+pub const YJIT_OPTIONS: &[(&str, &str)] = &[
     ("--yjit-mem-size=num",                "Soft limit on YJIT memory usage in MiB (default: 128)."),
     ("--yjit-exec-mem-size=num",           "Hard limit on executable memory block in MiB."),
     ("--yjit-call-threshold=num",          "Number of calls to trigger JIT."),
@@ -319,7 +319,7 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
                 eprintln!("WARNING: the {} option is only available when YJIT is built in dev mode, i.e. ./configure --enable-yjit=dev", opt_name);
             }
 
-            OPTIONS.dump_iseq_disasm = Some(opt_val.to_string());
+            OPTIONS.dump_iseq_disasm = Some(opt_val.into());
         },
 
         ("no-type-prop", "") => unsafe { OPTIONS.no_type_prop = true },
@@ -346,7 +346,7 @@ pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
                 let log_file_path = if std::path::Path::new(arg_value).is_dir() {
                     format!("{arg_value}/yjit_{}.log", std::process::id())
                 } else {
-                    arg_value.to_string()
+                    arg_value.into()
                 };
 
                 match File::options().create(true).write(true).truncate(true).open(&log_file_path) {

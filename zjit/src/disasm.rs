@@ -6,7 +6,7 @@ pub const BOLD_END: &str = "\x1b[22m";
 pub fn disasm_addr_range(cb: &CodeBlock, start_addr: usize, end_addr: usize) -> String {
     use std::fmt::Write;
 
-    let mut out = String::from("");
+    let mut out = String::new();
 
     // Initialize capstone
     use capstone::prelude::*;

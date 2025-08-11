@@ -43,6 +43,7 @@ type InsnGenFn = fn(
 
 /// Ephemeral code generation state.
 /// Represents a [crate::core::Block] while we build it.
+#[allow(clippy::type_complexity)]
 pub struct JITState<'a> {
     /// Instruction sequence for the compiling block
     pub iseq: IseqPtr,
@@ -403,7 +404,7 @@ impl<'a> JITState<'a> {
         if !self.perf_stack.is_empty() {
             self.perf_symbol_range_end(asm);
         }
-        self.perf_stack.push(symbol_name.to_string());
+        self.perf_stack.push(symbol_name.into());
         self.perf_symbol_range_start(asm, symbol_name);
     }
 
@@ -453,12 +454,9 @@ impl<'a> JITState<'a> {
 
     /// Return true if we're compiling a send-like instruction, not an opt_* instruction.
     pub fn is_sendish(&self) -> bool {
-        match unsafe { rb_iseq_opcode_at_pc(self.iseq, self.pc) } as u32 {
-            YARVINSN_send |
+        matches!(unsafe { rb_iseq_opcode_at_pc(self.iseq, self.pc) } as u32, YARVINSN_send |
             YARVINSN_opt_send_without_block |
-            YARVINSN_invokesuper => true,
-            _ => false,
-        }
+            YARVINSN_invokesuper)
     }
 
     /// Return the number of locals in the current ISEQ
@@ -1178,14 +1176,14 @@ pub fn gen_entry_reg_mapping(asm: &mut Assembler, blockid: BlockId, stack_size: 
     // Find an existing callee block. If it's not found or uses no register, skip loading registers.
     let mut ctx = Context::default();
     ctx.set_stack_size(stack_size);
-    let reg_mapping = find_most_compatible_reg_mapping(blockid, &ctx).unwrap_or(RegMapping::default());
+    let reg_mapping = find_most_compatible_reg_mapping(blockid, &ctx).unwrap_or_default();
     if reg_mapping == RegMapping::default() {
         return reg_mapping;
     }
 
     // If found, load the same registers to reuse the block.
     asm_comment!(asm, "reuse maps: {:?}", reg_mapping);
-    let local_table_size: u32 = unsafe { get_iseq_body_local_table_size(blockid.iseq) }.try_into().unwrap();
+    let local_table_size: u32 = unsafe { get_iseq_body_local_table_size(blockid.iseq) };
     for &reg_opnd in reg_mapping.get_reg_opnds().iter() {
         match reg_opnd {
             RegOpnd::Local(local_idx) => {
@@ -1299,7 +1297,7 @@ pub fn gen_single_block(
     #[cfg(feature = "disasm")]
     if get_option_ref!(dump_disasm).is_some() {
         let blockid_idx = blockid.idx;
-        let chain_depth = if asm.ctx.get_chain_depth() > 0 { format!("(chain_depth: {})", asm.ctx.get_chain_depth()) } else { "".to_string() };
+        let chain_depth = if asm.ctx.get_chain_depth() > 0 { format!("(chain_depth: {})", asm.ctx.get_chain_depth()) } else { String::new() };
         asm_comment!(asm, "Block: {} {}", iseq_get_location(blockid.iseq, blockid_idx), chain_depth);
         asm_comment!(asm, "reg_mapping: {:?}", asm.ctx.get_reg_mapping());
     }
@@ -7708,7 +7706,7 @@ fn gen_send_iseq(
         // runtime guards later in copy_splat_args_for_rest_callee()
         if !iseq_has_rest {
             let supplying = argc - 1 - i32::from(kw_splat) + array_length as i32;
-            if (required_num..=required_num + opt_num).contains(&supplying) == false {
+            if !(required_num..=required_num + opt_num).contains(&supplying) {
                 gen_counter_incr(jit, asm, Counter::send_iseq_splat_arity_error);
                 return None;
             }
@@ -9546,7 +9544,7 @@ fn get_class_name(class: Option<VALUE>) -> String {
         unsafe { RB_TYPE_P(class, RUBY_T_MODULE) || RB_TYPE_P(class, RUBY_T_CLASS) }
     }).and_then(|class| unsafe {
         cstr_to_rust_string(rb_class2name(class))
-    }).unwrap_or_else(|| "Unknown".to_string())
+    }).unwrap_or_else(|| "Unknown".into())
 }
 
 /// Assemble "{class_name}#{method_name}" from a class pointer and a method ID
@@ -9556,7 +9554,7 @@ fn get_method_name(class: Option<VALUE>, mid: u64) -> String {
         unsafe { cstr_to_rust_string(rb_id2name(mid)) }
     } else {
         None
-    }.unwrap_or_else(|| "Unknown".to_string());
+    }.unwrap_or_else(|| "Unknown".into());
     format!("{}#{}", class_name, method_name)
 }
 
@@ -9564,7 +9562,7 @@ fn get_method_name(class: Option<VALUE>, mid: u64) -> String {
 fn get_iseq_name(iseq: IseqPtr) -> String {
     let c_string = unsafe { rb_yjit_iseq_inspect(iseq) };
     let string = unsafe { CStr::from_ptr(c_string) }.to_str()
-        .unwrap_or_else(|_| "not UTF-8").to_string();
+        .unwrap_or_else(|_| "not UTF-8").into();
     unsafe { ruby_xfree(c_string as *mut c_void); }
     string
 }

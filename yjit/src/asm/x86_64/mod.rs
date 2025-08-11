@@ -163,10 +163,7 @@ impl X86Opnd {
     }
 
     pub fn is_some(&self) -> bool {
-        match self {
-            X86Opnd::None => false,
-            _ => true
-        }
+        !matches!(self, X86Opnd::None)
     }
 
 }

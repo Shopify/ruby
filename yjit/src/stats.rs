@@ -95,7 +95,7 @@ fn get_method_idx(
         Some(idx) => *idx,
         None => {
             let idx = name_to_idx.len();
-            name_to_idx.insert(name.to_string(), idx);
+            name_to_idx.insert(name.into(), idx);
 
             // Resize the call count vector
             if idx >= call_count.len() {
@@ -269,7 +269,7 @@ macro_rules! make_counters {
 
 /// The list of counters that are available without --yjit-stats.
 /// They are incremented only by `incr_counter!` and don't use `gen_counter_incr`.
-pub const DEFAULT_COUNTERS: &'static [Counter] = &[
+pub const DEFAULT_COUNTERS: &[Counter] = &[
     Counter::code_gc_count,
     Counter::compiled_iseq_entry,
     Counter::cold_iseq_entry,

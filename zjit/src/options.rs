@@ -75,7 +75,7 @@ impl Default for Options {
 
 /// `ruby --help` descriptions for user-facing options. Do not add options for ZJIT developers.
 /// Note that --help allows only 80 chars per line, including indentation.    80-char limit --> |
-pub const ZJIT_OPTIONS: &'static [(&str, &str)] = &[
+pub const ZJIT_OPTIONS: &[(&str, &str)] = &[
     ("--zjit-call-threshold=num", "Number of calls to trigger JIT (default: 2)."),
     ("--zjit-num-profiles=num",   "Number of profiled calls before JIT (default: 1, max: 255)."),
     ("--zjit-stats",              "Enable collecting ZJIT statistics."),
@@ -128,7 +128,7 @@ fn parse_jit_list(path_like: &str) -> HashSet<String> {
         for line in lines.lines() {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
-                result.insert(trimmed.to_string());
+                result.insert(trimmed.into());
             }
         }
     } else {

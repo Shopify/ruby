@@ -97,7 +97,7 @@ impl CodeBlock {
 
         // Unless this comment is the same as the last one at this same line, add it.
         if this_line_comments.last().map(String::as_str) != Some(comment) {
-            this_line_comments.push(comment.to_string());
+            this_line_comments.push(comment.into());
         }
     }
 

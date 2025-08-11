@@ -1243,7 +1243,7 @@ impl Assembler
                     emit_cmp_zero_jump(cb, opnd.into(), false, compile_side_exit(*target, self, ocb)?);
                 },
                 Insn::IncrCounter { mem, value } => {
-                    let label = cb.new_label("incr_counter_loop".to_string());
+                    let label = cb.new_label("incr_counter_loop".into());
                     cb.write_label(label);
 
                     ldaxr(cb, Self::SCRATCH0, mem.into());
