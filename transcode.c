@@ -2993,10 +2993,12 @@ static rb_encoding *
 make_encoding(const char *name)
 {
     rb_encoding *enc;
-    RB_VM_LOCKING() {
-        enc = rb_enc_find(name);
-        if (!enc)
+    enc = rb_enc_find(name);
+    if (!enc) {
+        RB_VM_LOCKING() {
+            // TODO: check again. We may need to export `enc_registered` from encoding.c
             enc = make_dummy_encoding(name);
+        }
     }
     return enc;
 }
