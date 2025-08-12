@@ -1601,7 +1601,7 @@ enc_set_default_encoding(struct default_encoding *def, VALUE encoding, const cha
         overridden = TRUE;
 
     if (!NIL_P(encoding)) {
-        enc_check_encoding(encoding); // loads it if necessary. Needs to be done outside of VM lock.
+        must_encoding(encoding); // loads it if necessary. Needs to be done outside of VM lock.
     }
 
     GLOBAL_ENC_TABLE_LOCKING(enc_table) {

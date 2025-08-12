@@ -1826,7 +1826,9 @@ rb_econv_asciicompat_encoding(const char *ascii_incompat_name)
     st_table *table2;
     struct asciicompat_encoding_t data = {0};
 
-    RB_VM_LOCKING() {
+    unsigned int lev;
+    RB_VM_LOCK_ENTER_LEV(&lev);
+    {
         if (st_lookup(transcoder_table, (st_data_t)ascii_incompat_name, &v)) {
             table2 = (st_table *)v;
             /*
@@ -1839,12 +1841,14 @@ rb_econv_asciicompat_encoding(const char *ascii_incompat_name)
             if (table2->num_entries == 1) {
                 data.ascii_incompat_name = ascii_incompat_name;
                 data.ascii_compat_name = NULL;
+                RB_VM_LOCK_LEAVE_LEV(&lev);
                 st_foreach(table2, asciicompat_encoding_i, (st_data_t)&data);
+                RB_VM_LOCK_ENTER_LEV(&lev);
             }
 
         }
-
     }
+    RB_VM_LOCK_LEAVE_LEV(&lev);
 
     return data.ascii_compat_name; // can be NULL
 }
@@ -3029,10 +3033,9 @@ econv_s_asciicompat_encoding(VALUE klass, VALUE arg)
     VALUE enc = Qnil;
 
     enc_arg(&arg, &arg_name, &arg_enc);
+    result_name = rb_econv_asciicompat_encoding(arg_name);
 
     RB_VM_LOCKING() {
-        result_name = rb_econv_asciicompat_encoding(arg_name);
-
         if (result_name) {
             result_enc = make_encoding(result_name);
             enc = rb_enc_from_encoding(result_enc);
