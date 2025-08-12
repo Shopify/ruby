@@ -115,6 +115,10 @@ class TestSprintfComb < Test::Unit::TestCase
     AllPairs.each(*args, &b)
   end
 
+  def setup
+    omit "unshareable procs" if non_main_ractor?
+  end
+
   def emu_int(format, v)
     /\A%( )?(\#)?(\+)?(-)?(0)?(\d+)?(?:\.(\d*))?(.)\z/ =~ format
     sp = $1

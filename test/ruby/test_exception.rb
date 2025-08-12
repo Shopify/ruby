@@ -665,7 +665,7 @@ end.join
     assert_equal([__FILE__, line], [loc.path, loc.lineno])
   end
 
-  Bug4438 = '[ruby-core:35364]'
+  Bug4438 = '[ruby-core:35364]'.freeze
 
   def test_rescue_single_argument
     assert_raise(TypeError, Bug4438) do
@@ -1099,6 +1099,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warning_warn
+    omit "global variable access" if non_main_ractor?
     warning = capture_warning_warn {$asdfasdsda_test_warning_warn}
     assert_match(/global variable '\$asdfasdsda_test_warning_warn' not initialized/, warning[0])
 
@@ -1108,6 +1109,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warn_deprecated_backwards_compatibility_category
+    omit "accesses global variable" if non_main_ractor?
     (message, category), = capture_warning_warn(category: true) do
       $; = "www"
       $; = nil
@@ -1149,6 +1151,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warning_warn_circular_require_backtrace
+    omit "accesses $LOAD_PATH and $LOADED_FEATURES" if non_main_ractor?
     warning = nil
     path = nil
     Tempfile.create(%w[circular .rb]) do |t|

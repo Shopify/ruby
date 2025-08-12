@@ -334,11 +334,11 @@ class TestMarshal < Test::Unit::TestCase
 
   class DumpTest
     def marshal_dump
-      @@block.call(:marshal_dump)
+      @block.call(:marshal_dump)
     end
 
     def dump_each(&block)
-      @@block = block
+      @block = block
       Marshal.dump(self)
     end
   end
@@ -357,6 +357,7 @@ class TestMarshal < Test::Unit::TestCase
   end
 
   def test_context_switch
+    omit "access class variables" if non_main_ractor?
     o = DumpTest.new
     e = o.enum_for(:dump_each)
     assert_equal(:marshal_dump, e.next)
@@ -404,14 +405,14 @@ class TestMarshal < Test::Unit::TestCase
 
   class C6
     def initialize
-      @stdin = STDIN
+      @stdin = $stdin
     end
     attr_reader :stdin
     def marshal_dump
       1
     end
     def marshal_load(x)
-      @stdin = STDIN
+      @stdin = $stdin
     end
   end
   def test_marshal_dump_extra_iv
@@ -421,7 +422,7 @@ class TestMarshal < Test::Unit::TestCase
       m = Marshal.dump(o)
     }
     o2 = Marshal.load(m)
-    assert_equal(STDIN, o2.stdin)
+    assert_equal($stdin, o2.stdin)
   end
 
   def test_marshal_string_encoding

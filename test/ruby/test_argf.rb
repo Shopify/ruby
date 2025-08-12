@@ -7,6 +7,7 @@ require 'fileutils'
 
 class TestArgf < Test::Unit::TestCase
   def setup
+    omit "ARGF is not shareable" if non_main_ractor?
     @tmpdir = Dir.mktmpdir
     @tmp_count = 0
     @t1 = make_tempfile("argf-foo", %w"1 2", binmode: true)
@@ -15,6 +16,7 @@ class TestArgf < Test::Unit::TestCase
   end
 
   def teardown
+    return if non_main_ractor?
     FileUtils.rmtree(@tmpdir)
   end
 

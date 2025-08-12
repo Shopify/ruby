@@ -572,8 +572,16 @@ class TestTimeExtension < Test::Unit::TestCase # :nodoc:
 
   instance_methods(false).grep(/\Asub(test_xmlschema.*)/) do |sub|
     test = $1
-    define_method(test) {__send__(sub, :xmlschema)}
-    define_method(test.sub(/xmlschema/, 'iso8601')) {__send__(sub, :iso8601)}
+    class_eval <<-RUBY
+      def #{test}
+        __send__(#{sub.inspect}, :xmlschema)
+      end
+      def #{test.sub(/xmlschema/, 'iso8601')}
+        __send__(#{sub.inspect}, :iso8601)
+      end
+    RUBY
+    #define_method(test) {__send__(sub, :xmlschema)}
+    #define_method(test.sub(/xmlschema/, 'iso8601')) {__send__(sub, :iso8601)}
   end
 
   def test_parse_with_various_object

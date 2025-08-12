@@ -278,13 +278,14 @@ class TestRand < Test::Unit::TestCase
   end
 
   def assert_fork_status(n, mesg, &block)
+    pend "ractor_confirm_belonging issue with fork" if non_main_ractor?
     IO.pipe do |r, w|
       (1..n).map do
         st = desc = nil
         IO.pipe do |re, we|
           p1 = fork {
             re.close
-            STDERR.reopen(we)
+            $stderr.reopen(we)
             w.puts(block.call.to_s)
           }
           we.close

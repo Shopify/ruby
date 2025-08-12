@@ -15,6 +15,7 @@ class TestDefaultGems < Test::Unit::TestCase
   end
 
   def test_validate_gemspec
+    omit "loading gemspecs accesses load path" if non_main_ractor?
     srcdir = File.expand_path('../../..', __FILE__)
     specs = 0
     Dir.chdir(srcdir) do

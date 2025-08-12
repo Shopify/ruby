@@ -365,6 +365,7 @@ module MarshalTestLib
   end
 
   def test_singleton
+    omit "ivar of singleton class" if non_main_ractor?
     o = Object.new
     def o.m() end
     assert_raise(TypeError) { marshaltest(o) }

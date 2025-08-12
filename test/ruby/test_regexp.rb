@@ -1012,6 +1012,7 @@ class TestRegexp < Test::Unit::TestCase
   end
 
   def test_ignorecase
+    omit "global variable access" if non_main_ractor?
     v = assert_deprecated_warning(/variable \$= is no longer effective/) { $= }
     assert_equal(false, v)
     assert_deprecated_warning(/variable \$= is no longer effective; ignored/) { $= = nil }
@@ -1066,6 +1067,7 @@ class TestRegexp < Test::Unit::TestCase
   end
 
   def test_getter
+    omit "global variable access" if non_main_ractor?
     alias $__REGEXP_TEST_LASTMATCH__ $&
     alias $__REGEXP_TEST_PREMATCH__ $`
     alias $__REGEXP_TEST_POSTMATCH__ $'
@@ -1628,8 +1630,12 @@ class TestRegexp < Test::Unit::TestCase
                        "WHITE CROSS MARK..TOP LEFT JUSTIFIED LOWER RIGHT QUARTER BLACK CIRCLE")
   end
 
-  UnicodeAgeRegexps = Hash.new do |h, age|
-    h[age] = [/\A\p{age=#{age}}+\z/u, /\A\P{age=#{age}}+\z/u].freeze
+  def unicode_age_regexps
+    @unicode_age_regexps ||= begin
+      Hash.new do |h, age|
+        h[age] = [/\A\p{age=#{age}}+\z/u, /\A\P{age=#{age}}+\z/u]
+      end
+    end
   end
 
   def assert_unicode_age(char, mesg = nil, matches: @matches, unmatches: @unmatches)
@@ -1638,13 +1644,13 @@ class TestRegexp < Test::Unit::TestCase
     end
 
     matches.each do |age|
-      pos, neg = UnicodeAgeRegexps[age]
+      pos, neg = unicode_age_regexps[age]
       assert_match(pos, char, mesg)
       assert_not_match(neg, char, mesg)
     end
 
     unmatches.each do |age|
-      pos, neg = UnicodeAgeRegexps[age]
+      pos, neg = unicode_age_regexps[age]
       assert_not_match(pos, char, mesg)
       assert_match(neg, char, mesg)
     end
@@ -1973,6 +1979,7 @@ class TestRegexp < Test::Unit::TestCase
   end
 
   def test_bug_20453
+    pend "Timeout" if non_main_ractor?
     re = Regexp.new("^(a*)x$", timeout: 0.001)
 
     assert_raise(Regexp::TimeoutError) do
@@ -1981,6 +1988,7 @@ class TestRegexp < Test::Unit::TestCase
   end
 
   def test_bug_20886
+    pend "Timeout" if non_main_ractor?
     re = Regexp.new("d()*+|a*a*bc", timeout: 0.02)
     assert_raise(Regexp::TimeoutError) do
       re === "b" + "a" * 1000

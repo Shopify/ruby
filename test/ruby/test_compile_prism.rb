@@ -81,6 +81,7 @@ module Prism
     end
 
     def test_ClassVariableReadNode
+      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 1; @@pit; end")
     end
 
@@ -134,9 +135,11 @@ module Prism
       assert_prism_eval("defined? [a: [:b, :c]]")
       assert_prism_eval("defined? 1 in 1")
 
-      assert_prism_eval("defined? @a")
-      assert_prism_eval("defined? $a")
-      assert_prism_eval("defined? @@a")
+      assert_prism_eval("defined? @a", raw: true)
+      if main_ractor?
+        assert_prism_eval("defined? $a")
+        assert_prism_eval("defined? @@a")
+      end
       assert_prism_eval("defined? A")
       assert_prism_eval("defined? ::A")
       assert_prism_eval("defined? A::B")
@@ -151,29 +154,31 @@ module Prism
       assert_prism_eval("defined? X &= 1")
       assert_prism_eval("defined? X ||= 1")
 
-      assert_prism_eval("defined? $1")
-      assert_prism_eval("defined? $2")
-      assert_prism_eval("defined? $`")
-      assert_prism_eval("defined? $'")
-      assert_prism_eval("defined? $+")
+      if main_ractor?
+        assert_prism_eval("defined? $1")
+        assert_prism_eval("defined? $2")
+        assert_prism_eval("defined? $`")
+        assert_prism_eval("defined? $'")
+        assert_prism_eval("defined? $+")
 
-      assert_prism_eval("defined? $X = 1")
-      assert_prism_eval("defined? $X *= 1")
-      assert_prism_eval("defined? $X /= 1")
-      assert_prism_eval("defined? $X &= 1")
-      assert_prism_eval("defined? $X ||= 1")
+        assert_prism_eval("defined? $X = 1")
+        assert_prism_eval("defined? $X *= 1")
+        assert_prism_eval("defined? $X /= 1")
+        assert_prism_eval("defined? $X &= 1")
+        assert_prism_eval("defined? $X ||= 1")
 
-      assert_prism_eval("defined? @@X = 1")
-      assert_prism_eval("defined? @@X *= 1")
-      assert_prism_eval("defined? @@X /= 1")
-      assert_prism_eval("defined? @@X &= 1")
-      assert_prism_eval("defined? @@X ||= 1")
+        assert_prism_eval("defined? @@X = 1")
+        assert_prism_eval("defined? @@X *= 1")
+        assert_prism_eval("defined? @@X /= 1")
+        assert_prism_eval("defined? @@X &= 1")
+        assert_prism_eval("defined? @@X ||= 1")
+      end
 
-      assert_prism_eval("defined? @X = 1")
-      assert_prism_eval("defined? @X *= 1")
-      assert_prism_eval("defined? @X /= 1")
-      assert_prism_eval("defined? @X &= 1")
-      assert_prism_eval("defined? @X ||= 1")
+      assert_prism_eval("defined? @X = 1", raw: true)
+      assert_prism_eval("defined? @X *= 1", raw: true)
+      assert_prism_eval("defined? @X /= 1", raw: true)
+      assert_prism_eval("defined? @X &= 1", raw: true)
+      assert_prism_eval("defined? @X ||= 1", raw: true)
 
       assert_prism_eval("x = 1; defined? x = 1")
       assert_prism_eval("x = 1; defined? x *= 1")
@@ -275,10 +280,12 @@ module Prism
     end
 
     def test_GlobalVariableReadNode
+      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit = 1; $pit")
     end
 
     def test_InstanceVariableReadNode
+      omit "class ivars" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @pit = 1; @pit; end")
     end
 
@@ -296,19 +303,23 @@ module Prism
     ############################################################################
 
     def test_ClassVariableAndWriteNode
+      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 0; @@pit &&= 1; end")
     end
 
     def test_ClassVariableOperatorWriteNode
+      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 0; @@pit += 1; end")
     end
 
     def test_ClassVariableOrWriteNode
+      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 1; @@pit ||= 0; end")
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = nil; @@pit ||= 1; end")
     end
 
     def test_ClassVariableWriteNode
+      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 1; end")
     end
 
@@ -359,34 +370,39 @@ module Prism
     end
 
     def test_GlobalVariableAndWriteNode
+      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit = 0; $pit &&= 1")
     end
 
     def test_GlobalVariableOperatorWriteNode
+      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit = 0; $pit += 1")
     end
 
     def test_GlobalVariableOrWriteNode
+      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit ||= 1")
     end
 
     def test_GlobalVariableWriteNode
+      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit = 1")
     end
 
     def test_InstanceVariableAndWriteNode
-      assert_prism_eval("@pit = 0; @pit &&= 1")
+      assert_prism_eval("@pit = 0; @pit &&= 1", raw: non_main_ractor?)
     end
 
     def test_InstanceVariableOperatorWriteNode
-      assert_prism_eval("@pit = 0; @pit += 1")
+      assert_prism_eval("@pit = 0; @pit += 1", raw: non_main_ractor?)
     end
 
     def test_InstanceVariableOrWriteNode
-      assert_prism_eval("@pit ||= 1")
+      assert_prism_eval("@pit ||= 1", raw: non_main_ractor?)
     end
 
     def test_InstanceVariableWriteNode
+      omit "class ivars" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @pit = 1; end")
     end
 
@@ -438,6 +454,7 @@ module Prism
     ############################################################################
 
     def test_ClassVariableTargetNode
+      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit, @@pit1 = 1; end")
     end
 
@@ -473,10 +490,12 @@ module Prism
     end
 
     def test_GlobalVariableTargetNode
+      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit, $pit1 = 1")
     end
 
     def test_InstanceVariableTargetNode
+      omit "class ivars" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @pit, @pit1 = 1; end")
     end
 
@@ -584,16 +603,19 @@ module Prism
     end
 
     def test_EmbeddedVariableNode
+      omit "class ivars" if non_main_ractor?
       assert_prism_eval('class Prism::TestCompilePrism; @pit = 1; "#@pit"; end')
       assert_prism_eval('class Prism::TestCompilePrism; @@pit = 1; "#@@pit"; end')
       assert_prism_eval('$pit = 1; "#$pit"')
     end
 
     def test_InterpolatedMatchLastLineNode
+      omit "global variables access" if non_main_ractor?
       assert_prism_eval('$pit = ".oo"; if /"#{$pit}"/mix; end')
     end
 
     def test_InterpolatedRegularExpressionNode
+      omit "global variables access" if non_main_ractor?
       assert_prism_eval('$pit = 1; /1 #$pit 1/')
       assert_prism_eval('$pit = 1; /#$pit/i')
       assert_prism_eval('/1 #{1 + 2} 1/')
@@ -601,6 +623,7 @@ module Prism
     end
 
     def test_InterpolatedStringNode
+      omit "global variables access" if non_main_ractor?
       assert_prism_eval('$pit = 1; "1 #$pit 1"')
       assert_prism_eval('"1 #{1 + 2} 1"')
       assert_prism_eval('"Prism" "::" "TestCompilePrism"')
@@ -636,6 +659,7 @@ module Prism
     end
 
     def test_InterpolatedSymbolNode
+      omit "global variable access" if non_main_ractor?
       assert_prism_eval('$pit = 1; :"1 #$pit 1"')
       assert_prism_eval(':"1 #{1 + 2} 1"')
     end
@@ -992,8 +1016,10 @@ module Prism
       assert_prism_eval('if "a"..; end')
       assert_prism_eval('if .."b"; end')
       assert_prism_eval('if ..1; end')
-      assert_prism_eval('if 1..; end')
-      assert_prism_eval('if 1..2; end')
+      if main_ractor?
+        assert_prism_eval('if 1..; end') # accesses $. implicitly
+        assert_prism_eval('if 1..2; end')
+      end
       assert_prism_eval('if true or true; end');
     end
 
@@ -1047,8 +1073,10 @@ module Prism
 
     def test_ForNode
       assert_prism_eval("for i in [1,2] do; i; end")
-      assert_prism_eval("for @i in [1,2] do; @i; end")
-      assert_prism_eval("for $i in [1,2] do; $i; end")
+      assert_prism_eval("for @i in [1,2] do; @i; end", raw: non_main_ractor?)
+      if main_ractor?
+        assert_prism_eval("for $i in [1,2] do; $i; end")
+      end
 
       assert_prism_eval("for foo, in  [1,2,3] do end")
 
@@ -1207,9 +1235,9 @@ a
 
       # Bug #21001
       assert_prism_eval(<<~RUBY)
-        RUN_ARRAY = [1,2]
+        RUN_ARRAY = [1,2].freeze
 
-        MAP_PROC = Proc.new do |&blk|
+        MAP_PROC = Ractor.make_shareable(Proc.new do |&blk|
           block_results = []
           RUN_ARRAY.each do |value|
             block_value = blk.call(value)
@@ -1218,7 +1246,7 @@ a
           block_results
         ensure
           next block_results
-        end
+        end)
 
         MAP_PROC.call do |value|
           break if value > 1
@@ -1848,8 +1876,10 @@ end
 
     def test_PostExecutionNode
       assert_prism_eval("END { 1 }")
-      assert_prism_eval("END { @b }; @b = 1")
-      assert_prism_eval("END { @b; 0 }; @b = 1")
+      if main_ractor?
+        assert_prism_eval("END { @b }; @b = 1")
+        assert_prism_eval("END { @b; 0 }; @b = 1")
+      end
       assert_prism_eval("foo = 1; END { foo.nil? }")
       assert_prism_eval("foo = 1; END { END { foo.nil? }}")
     end
@@ -2270,6 +2300,7 @@ end
     ############################################################################
 
     def test_AliasGlobalVariableNode
+      omit "global variable access" if non_main_ractor?
       assert_prism_eval("alias $prism_foo $prism_bar")
     end
 
@@ -2612,9 +2643,11 @@ end
     end
 
     def test_PinnedVariableNode
-      assert_prism_eval("module Prism; @@prism = 1; 1 in ^@@prism; end")
-      assert_prism_eval("module Prism; @prism = 1; 1 in ^@prism; end")
-      assert_prism_eval("$prism = 1; 1 in ^$prism")
+      if main_ractor?
+        assert_prism_eval("module Prism; @@prism = 1; 1 in ^@@prism; end")
+        assert_prism_eval("module Prism; @prism = 1; 1 in ^@prism; end")
+        assert_prism_eval("$prism = 1; 1 in ^$prism")
+      end
       assert_prism_eval("prism = 1; 1 in ^prism")
       assert_prism_eval("[1].each { 1 => ^it }")
     end
