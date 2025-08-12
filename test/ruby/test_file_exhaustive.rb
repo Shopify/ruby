@@ -7,7 +7,7 @@ require '-test-/file'
 
 class TestFileExhaustive < Test::Unit::TestCase
   ROOT_REGEXP = %r'\A(?:[a-z]:(?=(/))|//[^/]+/[^/]+)'i
-  DRIVE = Dir.pwd[ROOT_REGEXP]
+  DRIVE = Dir.pwd[ROOT_REGEXP].freeze
   POSIX = /cygwin|mswin|bccwin|mingw|emx/ !~ RUBY_PLATFORM
   NTFS = !(/mingw|mswin|bccwin/ !~ RUBY_PLATFORM)
 
@@ -874,6 +874,7 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_expand_path_memsize
+    pend "ObjectSpace.memsize_of not yet ractor safe" if non_main_ractor?
     bug9934 = '[ruby-core:63114] [Bug #9934]'
     require "objspace"
     path = File.expand_path("/foo")

@@ -24,6 +24,7 @@ class TestDefined < Test::Unit::TestCase
   end
 
   def test_defined_global_variable
+    omit "global var" if non_main_ractor?
     $x = nil
 
     assert(defined?($x))		# global variable
@@ -302,6 +303,7 @@ class TestDefined < Test::Unit::TestCase
   end
 
   def test_autoloaded_noload
+    omit "accesses load path" if non_main_ractor?
     loaded = $".dup
     $".clear
     loadpath = $:.dup
@@ -311,8 +313,8 @@ class TestDefined < Test::Unit::TestCase
     assert_nil(x.b?)
     assert_equal([], $")
   ensure
-    $".replace(loaded)
-    $:.replace(loadpath)
+    $".replace(loaded) if loaded
+    $:.replace(loadpath) if loadpath
   end
 
   def test_exception

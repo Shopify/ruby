@@ -87,13 +87,13 @@ class TestModule < Test::Unit::TestCase
     private :user3
   end
 
-  OtherSetup = -> do
+  OtherSetup = Ractor.make_shareable(proc do
     remove_const :Other if defined? ::TestModule::Other
     module Other
       def other
       end
     end
-  end
+  end)
 
   class AClass
     def AClass.cm1
@@ -225,6 +225,7 @@ class TestModule < Test::Unit::TestCase
   @@class_eval = 'b'
 
   def test_class_eval
+    omit "class variable access" if non_main_ractor?
     OtherSetup.call
 
     Other.class_eval("CLASS_EVAL = 1")
@@ -383,6 +384,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_const_set
+    omit "class ivars" if non_main_ractor?
     OtherSetup.call
 
     assert_not_operator(Other, :const_defined?, :KOALA)
@@ -426,6 +428,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_initialize_copy_empty
+    omit "module instance variable access" if non_main_ractor?
     m = Module.new do
       def x
       end
@@ -471,6 +474,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_module_subclass_initialize
+    omit "module instance variable access" if non_main_ractor?
     mod = Bug18185.new
     c = Class.new(Bug18185::Foo) do
       include mod
@@ -1164,6 +1168,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_s_nesting
+    omit "global variable access" if non_main_ractor?
     assert_equal([],                               $m0)
     assert_equal([TestModule::M1, TestModule],     $m1)
     assert_equal([TestModule::M1::M2,
@@ -1195,6 +1200,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_attr_obsoleted_flag
+    omit "class ivars" if non_main_ractor?
     c = Class.new do
       extend Test::Unit::Assertions
       extend Test::Unit::CoreAssertions
@@ -1217,6 +1223,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_attr_public_at_toplevel
+    omit "TOPLEVEL_BINDING" if non_main_ractor?
     s = Object.new
     TOPLEVEL_BINDING.eval(<<-END).call(s.singleton_class)
       proc do |c|
@@ -1366,6 +1373,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_class_variable_get
+    omit "class variables" if non_main_ractor?
     c = Class.new
     c.class_eval('@@foo = :foo')
     assert_equal(:foo, c.class_variable_get(:@@foo))
@@ -1384,6 +1392,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_class_variable_set
+    omit "class variables" if non_main_ractor?
     c = Class.new
     c.class_variable_set(:@@foo, :foo)
     assert_equal(:foo, c.class_eval('@@foo'))
@@ -1402,6 +1411,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_class_variable_defined
+    omit "class variables" if non_main_ractor?
     c = Class.new
     c.class_eval('@@foo = :foo')
     assert_equal(true, c.class_variable_defined?(:@@foo))
@@ -1419,6 +1429,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_remove_class_variable
+    omit "class variables" if non_main_ractor?
     c = Class.new
     c.class_eval('@@foo = :foo')
     c.class_eval { remove_class_variable(:@@foo) }
@@ -1757,6 +1768,7 @@ class TestModule < Test::Unit::TestCase
 
 
   def test_const_added
+    omit "class ivars" if non_main_ractor?
     eval(<<~RUBY)
       module TestConstAdded
         @memo = []
@@ -1996,6 +2008,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_uninitialized_toplevel_constant
+    omit "TOPLEVEL_BINDING" if non_main_ractor?
     bug3123 = '[ruby-dev:40951]'
     e = assert_raise(NameError) {eval("Bug3123", TOPLEVEL_BINDING)}
     assert_not_match(/Object::/, e.message, bug3123)
@@ -2024,7 +2037,7 @@ class TestModule < Test::Unit::TestCase
 
   def test_private_constant_in_class
     c = Class.new
-    c.const_set(:FOO, "foo")
+    c.const_set(:FOO, "foo".freeze)
     assert_equal("foo", c::FOO)
     c.private_constant(:FOO)
     e = assert_raise(NameError) {c::FOO}
@@ -2033,7 +2046,7 @@ class TestModule < Test::Unit::TestCase
     assert_equal("foo", c.class_eval("FOO"))
     assert_equal("foo", c.const_get("FOO"))
     $VERBOSE, verbose = nil, $VERBOSE
-    c.const_set(:FOO, "foo")
+    c.const_set(:FOO, "foo".freeze)
     $VERBOSE = verbose
     e = assert_raise(NameError) {c::FOO}
     assert_equal(c, e.receiver)
@@ -2047,7 +2060,7 @@ class TestModule < Test::Unit::TestCase
 
   def test_private_constant_in_module
     m = Module.new
-    m.const_set(:FOO, "foo")
+    m.const_set(:FOO, "foo".freeze)
     assert_equal("foo", m::FOO)
     m.private_constant(:FOO)
     e = assert_raise(NameError) {m::FOO}
@@ -2056,7 +2069,7 @@ class TestModule < Test::Unit::TestCase
     assert_equal("foo", m.class_eval("FOO"))
     assert_equal("foo", m.const_get("FOO"))
     $VERBOSE, verbose = nil, $VERBOSE
-    m.const_set(:FOO, "foo")
+    m.const_set(:FOO, "foo".freeze)
     $VERBOSE = verbose
     e = assert_raise(NameError) {m::FOO}
     assert_equal(m, e.receiver)
@@ -2075,8 +2088,8 @@ class TestModule < Test::Unit::TestCase
 
   def test_private_constant2
     c = Class.new
-    c.const_set(:FOO, "foo")
-    c.const_set(:BAR, "bar")
+    c.const_set(:FOO, "foo".freeze)
+    c.const_set(:BAR, "bar".freeze)
     assert_equal("foo", c::FOO)
     assert_equal("bar", c::BAR)
     c.private_constant(:FOO, :BAR)
@@ -2096,6 +2109,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_private_constant_const_missing
+    omit "can't access ivars of singleton class" if non_main_ractor?
     c = Class.new
     c.const_set(:FOO, "foo")
     c.private_constant(:FOO)
@@ -2129,7 +2143,7 @@ class TestModule < Test::Unit::TestCase
 
   def test_public_constant
     c = Class.new
-    c.const_set(:FOO, "foo")
+    c.const_set(:FOO, "foo".freeze)
     assert_equal("foo", c::FOO)
     c.private_constant(:FOO)
     assert_raise(NameError) { c::FOO }
@@ -2140,7 +2154,7 @@ class TestModule < Test::Unit::TestCase
 
   def test_deprecate_constant
     c = Class.new
-    c.const_set(:FOO, "foo")
+    c.const_set(:FOO, "foo".freeze)
     c.deprecate_constant(:FOO)
     assert_warn(/deprecated/) do
       Warning[:deprecated] = true
@@ -2805,6 +2819,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_class_variables
+    omit "class variable access" if non_main_ractor?
     m = Module.new
     m.class_variable_set(:@@foo, 1)
     m2 = Module.new
@@ -2817,6 +2832,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_class_variable_in_dup_class
+    omit "class variable access" if non_main_ractor?
     a = Class.new do
       @@a = 'A'
       def a=(x)
@@ -2832,9 +2848,10 @@ class TestModule < Test::Unit::TestCase
     assert_equal 'A', a.new.a, '[ruby-core:17019]'
   end
 
-  Bug6891 = '[ruby-core:47241]'
+  Bug6891 = '[ruby-core:47241]'.freeze
 
   def test_extend_module_with_protected_method
+    omit "class ivars" if non_main_ractor?
     list = []
 
     x = Class.new {
@@ -2947,6 +2964,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_uninitialized_attr_class
+    omit "class ivars" if non_main_ractor?
     assert_warning '' do
       assert_nil(AttrTest.cattr)
     end
@@ -3005,6 +3023,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_private_constant_reopen
+    omit "TOPLEVEL_BINDING" if non_main_ractor?
     assert_raise(NameError) do
       eval <<-EOS, TOPLEVEL_BINDING
         module TestModule::PrivateConstantReopen::PRIVATE_CONSTANT
@@ -3249,7 +3268,7 @@ class TestModule < Test::Unit::TestCase
     }
   end
 
-  ConstLocation = [__FILE__, __LINE__]
+  ConstLocation = Ractor.make_shareable([__FILE__, __LINE__])
 
   def test_const_source_location
     assert_equal(ConstLocation, self.class.const_source_location(:ConstLocation))

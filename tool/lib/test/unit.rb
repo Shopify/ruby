@@ -171,8 +171,10 @@ module Test
         opts = option_parser
         setup_options(opts, options)
         opts.parse!(args)
+        @option_parser = nil
         orig_args -= args
         args = @init_hook.call(args, options) if @init_hook
+        @init_hook = nil
         non_options(args, options)
         @run_options = orig_args
 
@@ -818,6 +820,10 @@ module Test
       end
 
       def _run_suites suites, type
+        if ENV["RUBY_TESTS_WITH_RACTORS"]
+          Ractor.make_shareable(RbConfig::CONFIG)
+          Ractor.make_shareable(RbConfig::MAKEFILE_CONFIG)
+        end
         _prepare_run(suites, type)
         @interrupt = nil
         result = []
@@ -1270,6 +1276,7 @@ module Test
         result = false
         files.each {|f|
           d = File.dirname(path = File.realpath(f))
+          # TODO: get enc tests working with ractors
           unless $:.include? d
             $: << d
           end
@@ -1513,7 +1520,7 @@ module Test
       end
 
       @@installed_at_exit ||= false
-      @@out = $stdout
+      OUT = "$stdout"
       @@after_tests = []
       @@current_repeat_count = 0
 
@@ -1531,15 +1538,29 @@ module Test
       # Returns the stream to use for output.
 
       def self.output
-        @@out
+        if String === OUT
+          eval OUT # due to Ractors
+        else
+          OUT
+        end
       end
 
       ##
       # Sets Test::Unit::Runner to write output to +stream+.  $stdout is the default
-      # output
+      # output. NOTE: if not $stdout or $stderr, may not be ractor safe!
 
       def self.output= stream
-        @@out = stream
+        old_verbose = $VERBOSE
+        $VERBOSE = nil
+        fd_num = stream.to_i
+        if [1,2].include?(fd_num)
+          stream = fd_num == 1 ? "$stdout" : "$stderr" # best guess
+          const_set(:OUT, stream)
+        else
+          const_set(:OUT, stream)
+        end
+      ensure
+        $VERBOSE = old_verbose
       end
 
       ##
@@ -1667,6 +1688,9 @@ module Test
           trace = true
         end
 
+        run_tests_in_ractors = ENV["RUBY_TESTS_WITH_RACTORS"]
+
+        tests_run = 0
         assertions = all_test_methods.map { |method|
 
           inst = suite.new method
@@ -1680,8 +1704,32 @@ module Test
             if trace
               ObjectSpace.trace_object_allocations {inst.run self}
             else
-              inst.run self
+              if run_tests_in_ractors
+                port = Ractor::Port.new
+                r = Ractor.new(port) do |p|
+                  instance = Ractor.receive
+                  runner = Ractor.receive
+                  instance.run runner
+                  movable_ivars = {:@_assertions => true, :@__passed__ => true, :@__name__ => true}
+                  instance.instance_variables.each do |ivar|
+                    unless movable_ivars[ivar]
+                      instance.remove_instance_variable(ivar)
+                    end
+                  end
+                  p.send(instance, move: true)
+                  runner
+                end
+                r.send(inst, move: true)
+                r.send(self, move: false)
+                inst = port.receive
+                runner = r.value # done
+                _merge_results_from_ractor(runner)
+                port.close
+              else
+                inst.run self
+              end
             end
+          tests_run += 1
 
           print "%.2f s = " % (Time.now - start_time) if @verbose
           print result
@@ -1695,6 +1743,15 @@ module Test
           inst._assertions
         }
         return assertions.size, assertions.inject(0) { |sum, n| sum + n }
+      end
+
+      def _merge_results_from_ractor(runner_cpy)
+        @report = runner_cpy.report
+        @failures = runner_cpy.failures
+        @errors = runner_cpy.errors
+        @skips = runner_cpy.skips
+        @assertion_count = runner_cpy.assertion_count
+        @test_count = runner_cpy.test_count
       end
 
       def _start_method(inst)
@@ -1734,8 +1791,6 @@ module Test
         @report = []
         @errors = @failures = @skips = 0
         @verbose = false
-        @mutex = Thread::Mutex.new
-        @info_signal = Signal.list['INFO']
         @repeat_count = nil
       end
 
@@ -1763,6 +1818,7 @@ module Test
         self.options.merge! args
 
         puts "Run options: #{help}"
+        puts "\nNOTE: Running tests inside ractors" if ENV["RUBY_TESTS_WITH_RACTORS"]
 
         self.class.plugins.each do |plugin|
           send plugin

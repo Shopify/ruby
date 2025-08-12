@@ -214,11 +214,13 @@ class TestSuper < Test::Unit::TestCase
       str.reverse
     end
 
-    assert_nothing_raised('[ruby-core:27230]') do
-      mid=Indexed.new
-      mid.instance_eval(&Overlaid)
-      mid.subseq
-      mid.subseq
+    if main_ractor?
+      assert_nothing_raised('[ruby-core:27230]') do
+        mid=Indexed.new
+        mid.instance_eval(&Overlaid)
+        mid.subseq
+        mid.subseq
+      end
     end
   end
 
@@ -427,9 +429,9 @@ class TestSuper < Test::Unit::TestCase
   end
 
   class Y < X
-    define_method(:foo) do |*args|
+    define_method(:foo, &Ractor.make_shareable(proc do |*args|
       super(*args)
-    end
+    end))
   end
 
   def test_super_splat
@@ -620,6 +622,7 @@ class TestSuper < Test::Unit::TestCase
   end
 
   def test_public_zsuper_with_prepend
+    pend "Timeout" if non_main_ractor?
     bug12876 = '[ruby-core:77784] [Bug #12876]'
     m = EnvUtil.labeled_module("M")
     c = EnvUtil.labeled_class("C") {prepend m; public :initialize}

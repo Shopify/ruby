@@ -140,6 +140,7 @@ class TestAssignment < Test::Unit::TestCase
   end
 
   def test_massign_const_order
+    pend "mutated constants" if non_main_ractor?
     order = []
 
     test_mod_class = Class.new(Module) do
@@ -928,6 +929,7 @@ class TestAssignmentGen < Test::Unit::TestCase
   end
 
   def test_assignment
+    pend "errors with ractors" if non_main_ractor?
     syntax = Sentence.expand_syntax(Syntax)
     Sentence.each(syntax, :xassign, 4) {|assign|
       check(assign)

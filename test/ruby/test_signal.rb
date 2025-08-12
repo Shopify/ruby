@@ -5,6 +5,7 @@ require 'tempfile'
 
 class TestSignal < Test::Unit::TestCase
   def test_signal
+    omit "signals run in main ractor" if non_main_ractor?
     begin
       x = 0
       oldtrap = Signal.trap(:INT) {|sig| x = 2 }
@@ -39,6 +40,7 @@ class TestSignal < Test::Unit::TestCase
     Process.respond_to?(:pgroup) # for mswin32
 
   def test_exit_action
+    pend "Timeout" if non_main_ractor?
     if Signal.list[sig = "USR1"]
       term = :TERM
     else
@@ -97,6 +99,7 @@ class TestSignal < Test::Unit::TestCase
   end
 
   def test_signal2
+    pend "Timeout" if non_main_ractor?
     begin
       x = false
       oldtrap = Signal.trap(:INT) {|sig| x = true }
@@ -169,11 +172,11 @@ class TestSignal < Test::Unit::TestCase
     end
   end if Process.respond_to?(:kill)
 
-  %w"KILL STOP".each do |sig|
+  Ractor.make_shareable(%w"KILL STOP").each do |sig|
     if Signal.list.key?(sig)
-      define_method("test_trap_uncatchable_#{sig}") do
+      define_method("test_trap_uncatchable_#{sig}", &Ractor.make_shareable(proc do
         assert_raise(Errno::EINVAL, "SIG#{sig} is not allowed to be caught") { Signal.trap(sig) {} }
-      end
+      end))
     end
   end
 
@@ -260,6 +263,7 @@ class TestSignal < Test::Unit::TestCase
   end if Process.respond_to?(:kill)
 
   def test_hup_me
+    pend "Timeout" if non_main_ractor?
     # [Bug #7951] [ruby-core:52864]
     # This is MRI specific spec. ruby has no guarantee
     # that signal will be deliverd synchronously.

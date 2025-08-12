@@ -7,6 +7,10 @@ class TestSingleton < Test::Unit::TestCase
     include Singleton
   end
 
+  def setup
+    omit if non_main_ractor?
+  end
+
   def test_marshal
     o1 = SingletonTest.instance
     m = Marshal.dump(o1)

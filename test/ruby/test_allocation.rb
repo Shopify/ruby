@@ -6,6 +6,7 @@ class TestAllocation < Test::Unit::TestCase
     # The namespace changes on i686 platform triggers a bug to allocate objects unexpectedly.
     # For now, skip these tests only on i686
     pend if RUBY_PLATFORM =~ /^i686/
+    pend if non_main_ractor?
   end
 
   def munge_checks(checks)
