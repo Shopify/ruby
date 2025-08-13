@@ -4,6 +4,10 @@ require 'tmpdir'
 require '-test-/file'
 
 class TestDir_M17N < Test::Unit::TestCase
+  def setup
+    omit "Uses Dir.chdir" if multiple_ractors?
+  end
+
   def with_tmpdir
     Dir.mktmpdir {|dir|
       Dir.chdir(dir) {
@@ -395,6 +399,7 @@ class TestDir_M17N < Test::Unit::TestCase
   end
 
   def test_entries_compose
+    omit "accesses non-shareable object PP" if non_main_ractor?
     bug7267 = '[ruby-core:48745] [Bug #7267]'
 
     with_tmpdir {|d|
@@ -410,6 +415,7 @@ class TestDir_M17N < Test::Unit::TestCase
   end
 
   def test_pwd
+    omit "accesses non-shareable object PP" if non_main_ractor?
     orig = %W"d\u{e9}tente x\u{304c 304e 3050 3052 3054}"
     expected = []
     results = []

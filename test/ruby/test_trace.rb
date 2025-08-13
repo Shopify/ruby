@@ -3,6 +3,7 @@ require 'test/unit'
 
 class TestTrace < Test::Unit::TestCase
   def test_trace
+    omit "global variable access" if non_main_ractor?
     $x = 1234
     $y = 0
     trace_var :$x, proc{$y = $x}
@@ -21,20 +22,22 @@ class TestTrace < Test::Unit::TestCase
   end
 
   def test_trace_proc_that_raises_exception
+    omit "global variable access" if non_main_ractor?
     $x = 1234
     trace_var :$x, proc { raise }
     assert_raise(RuntimeError) { $x = 42 }
   ensure
-    untrace_var :$x
+    untrace_var :$x if main_ractor?
   end
 
   def test_trace_string
+    omit "global variable access" if non_main_ractor?
     $x = 1234
     trace_var :$x, "$y = :bar"
     $x = 42
     assert_equal(:bar, $y)
   ensure
-    untrace_var :$x
+    untrace_var :$x if main_ractor?
   end
 
   def test_trace_break

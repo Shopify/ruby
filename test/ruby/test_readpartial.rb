@@ -47,6 +47,7 @@ class TestReadPartial < Test::Unit::TestCase
   end
 
   def test_open_pipe
+    pend "Timeout" if non_main_ractor?
     pipe {|r, w|
       w << 'abc'
       assert_equal('ab', r.readpartial(2))
@@ -58,6 +59,7 @@ class TestReadPartial < Test::Unit::TestCase
   end
 
   def test_with_stdio
+    pend "Timeout" if non_main_ractor?
     pipe {|r, w|
       w << "abc\ndef\n"
       assert_equal("abc\n", r.gets)

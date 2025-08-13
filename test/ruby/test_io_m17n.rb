@@ -11,9 +11,10 @@ class TestIO_M17N < Test::Unit::TestCase
     Encoding::EUC_JP,
     Encoding::Shift_JIS,
     Encoding::UTF_8
-  ]
+  ].freeze
 
   def with_tmpdir
+    omit "Dir.chdir" unless main_ractor?
     Dir.mktmpdir {|dir|
       Dir.chdir(dir) {
         yield dir
@@ -404,18 +405,18 @@ EOT
   end
 
   def test_stdin
-    assert_equal(Encoding.default_external, STDIN.external_encoding)
-    assert_equal(nil, STDIN.internal_encoding)
+    assert_equal(Encoding.default_external, $stdin.external_encoding)
+    assert_equal(nil, $stdin.internal_encoding)
   end
 
   def test_stdout
-    assert_equal(nil, STDOUT.external_encoding)
-    assert_equal(nil, STDOUT.internal_encoding)
+    assert_equal(nil, $stdout.external_encoding)
+    assert_equal(nil, $stdout.internal_encoding)
   end
 
   def test_stderr
-    assert_equal(nil, STDERR.external_encoding)
-    assert_equal(nil, STDERR.internal_encoding)
+    assert_equal(nil, $stderr.external_encoding)
+    assert_equal(nil, $stderr.internal_encoding)
   end
 
   def test_terminator_conversion
@@ -464,6 +465,7 @@ EOT
   end
 
   def test_pipe_terminator_conversion
+    pend "Timeout" if non_main_ractor?
     rs = "\xA2\xA2".encode("utf-8", "euc-jp")
     pipe("euc-jp:utf-8",
          proc do |w|
@@ -1326,6 +1328,7 @@ EOT
   end unless /mswin|mingw/ =~ RUBY_PLATFORM # passing non-stdio fds is not supported
 
   def test_popen_r_enc
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 255'", "r:ascii-8bit") {|f|
       assert_equal(Encoding::ASCII_8BIT, f.external_encoding)
       assert_equal(nil, f.internal_encoding)
@@ -1336,6 +1339,7 @@ EOT
   end
 
   def test_popen_r_enc_in_opt
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 255'", "r", encoding: "ascii-8bit") {|f|
       assert_equal(Encoding::ASCII_8BIT, f.external_encoding)
       assert_equal(nil, f.internal_encoding)
@@ -1346,6 +1350,7 @@ EOT
   end
 
   def test_popen_r_enc_in_opt2
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 255'", "r", external_encoding: "ascii-8bit") {|f|
       assert_equal(Encoding::ASCII_8BIT, f.external_encoding)
       assert_equal(nil, f.internal_encoding)
@@ -1356,6 +1361,7 @@ EOT
   end
 
   def test_popen_r_enc_enc
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 0xa1'", "r:shift_jis:euc-jp") {|f|
       assert_equal(Encoding::Shift_JIS, f.external_encoding)
       assert_equal(Encoding::EUC_JP, f.internal_encoding)
@@ -1366,6 +1372,7 @@ EOT
   end
 
   def test_popen_r_enc_enc_in_opt
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 0xa1'", "r", encoding: "shift_jis:euc-jp") {|f|
       assert_equal(Encoding::Shift_JIS, f.external_encoding)
       assert_equal(Encoding::EUC_JP, f.internal_encoding)
@@ -1376,6 +1383,7 @@ EOT
   end
 
   def test_popen_r_enc_enc_in_opt2
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 0xa1'", "r", external_encoding: "shift_jis", internal_encoding: "euc-jp") {|f|
       assert_equal(Encoding::Shift_JIS, f.external_encoding)
       assert_equal(Encoding::EUC_JP, f.internal_encoding)
@@ -1386,6 +1394,7 @@ EOT
   end
 
   def test_popenv_r_enc_enc_in_opt2
+    omit "subprocess" unless main_ractor?
     IO.popen([EnvUtil.rubybin, "-e", "putc 0xa1"], "r", external_encoding: "shift_jis", internal_encoding: "euc-jp") {|f|
       assert_equal(Encoding::Shift_JIS, f.external_encoding)
       assert_equal(Encoding::EUC_JP, f.internal_encoding)
@@ -1396,6 +1405,7 @@ EOT
   end
 
   def test_open_pipe_r_enc
+    omit "racy" if multiple_ractors?
     EnvUtil.suppress_warning do # https://bugs.ruby-lang.org/issues/19630
       open("|#{EnvUtil.rubybin} -e 'putc 255'", "r:ascii-8bit") {|f|
         assert_equal(Encoding::ASCII_8BIT, f.external_encoding)
@@ -1408,6 +1418,7 @@ EOT
   end
 
   def test_open_pipe_r_enc2
+    omit "racy" if multiple_ractors?
     EnvUtil.suppress_warning do # https://bugs.ruby-lang.org/issues/19630
       open("|#{EnvUtil.rubybin} -e 'putc \"\\u3042\"'", "r:UTF-8") {|f|
         assert_equal(Encoding::UTF_8, f.external_encoding)
@@ -1657,18 +1668,17 @@ EOT
     }
   end
 
-  SYSTEM_NEWLINE = []
   def system_newline
-    return SYSTEM_NEWLINE.first if !SYSTEM_NEWLINE.empty?
+    return @_system_newline if defined?(@_system_newline)
     with_tmpdir {
       open("newline", "wt") {|f|
         f.print "\n"
       }
       open("newline", "rb") {|f|
-        SYSTEM_NEWLINE << f.read
+        @_system_newline = f.read
       }
     }
-    SYSTEM_NEWLINE.first
+    @_system_newline
   end
 
   def test_textmode_encode_newline
@@ -2168,31 +2178,34 @@ EOT
   end
 
   %w/UTF-8 UTF-16BE UTF-16LE UTF-32BE UTF-32LE/.each do |name|
-    define_method("test_strip_bom:#{name}") do
-      path = "#{name}-bom.txt"
-      with_tmpdir {
-        text = "\uFEFF\u0100a"
-        stripped = "\u0100a"
-        content = text.encode(name)
-        generate_file(path, content)
-        result = File.read(path, mode: 'rb:BOM|UTF-8')
-        assert_equal(Encoding.find(name), result.encoding, name)
-        assert_equal(content[1..-1].b, result.b, name)
-        %w[rb rt r].each do |mode|
-          message = "#{name}, mode: #{mode.dump}"
-          result = File.read(path, mode: "#{mode}:BOM|UTF-8:UTF-8")
-          assert_equal(Encoding::UTF_8, result.encoding, message)
-          assert_equal(stripped, result, message)
-        end
+    class_eval <<-RUBY
+      def test_strip_bom_#{name.sub('-', '_')}
+        name = #{name.inspect}
+        path = "#{name}-bom.txt"
+        with_tmpdir {
+          text = "#{'\uFEFF\u0100a'}"
+          stripped = "#{'\u0100a'}"
+          content = text.encode(name)
+          generate_file(path, content)
+          result = File.read(path, mode: 'rb:BOM|UTF-8')
+          assert_equal(Encoding.find(name), result.encoding, name)
+          assert_equal(content[1..-1].b, result.b, name)
+          %w[rb rt r].each do |mode|
+            message = #{name.inspect} + ", mode: \#{mode.dump}"
+            result = File.read(path, mode: "\#{mode}:BOM|UTF-8:UTF-8")
+            assert_equal(Encoding::UTF_8, result.encoding, message)
+            assert_equal(stripped, result, message)
+          end
 
-        File.open(path, "rb") {|f|
-          assert_equal(Encoding.find(name), f.set_encoding_by_bom)
+          File.open(path, "rb") {|f|
+            assert_equal(Encoding.find(name), f.set_encoding_by_bom)
+          }
+          File.open(path, "rb", encoding: "iso-8859-1") {|f|
+            assert_raise(ArgumentError) {f.set_encoding_by_bom}
+          }
         }
-        File.open(path, "rb", encoding: "iso-8859-1") {|f|
-          assert_raise(ArgumentError) {f.set_encoding_by_bom}
-        }
-      }
-    end
+      end
+    RUBY
   end
 
   def test_strip_bom_no_conv
@@ -2289,12 +2302,14 @@ EOT
     assert_equal(Encoding::US_ASCII, enc)
 
     tlhInganHol = "\u{f8e4 f8d9 f8d7 f8dc f8d0 f8db} \u{f8d6 f8dd f8d9}"
-    assert_warn(/#{tlhInganHol}/) {
-      EnvUtil.with_default_internal(nil) {
-        open(IO::NULL, "w:bom|#{tlhInganHol}") {|f| enc = f.external_encoding}
+    if main_ractor?
+      assert_warn(/#{tlhInganHol}/) {
+        EnvUtil.with_default_internal(nil) {
+          open(IO::NULL, "w:bom|#{tlhInganHol}") {|f| enc = f.external_encoding}
+        }
       }
-    }
-    assert_nil(enc)
+      assert_nil(enc)
+    end
   end
 
   def test_bom_non_reading
@@ -2794,6 +2809,7 @@ EOT
   end
 
   def test_each_codepoint_need_more
+    pend "Tempfile" unless main_ractor?
     bug11444 = '[ruby-core:70379] [Bug #11444]'
     tests = [
       ["incomplete multibyte", "\u{1f376}".b[0,3], [], ["invalid byte sequence in UTF-8"]],

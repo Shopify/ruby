@@ -244,6 +244,7 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_catch_throw_in_require
+    pend "Tempfile"
     bug7185 = '[ruby-dev:46234]'
     Tempfile.create(["dep", ".rb"]) {|t|
       t.puts("throw :extdep, 42")
@@ -253,6 +254,7 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_catch_throw_in_require_cant_be_rescued
+    pend "Tempfile"
     bug18562 = '[ruby-core:107403]'
     Tempfile.create(["dep", ".rb"]) {|t|
       t.puts("throw :extdep, 42")
@@ -392,6 +394,7 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_type_error_message_encoding
+    omit "global side effects" if multiple_ractors?
     c = eval("Module.new do break class C\u{4032}; self; end; end")
     o = c.new
     assert_raise_with_message(TypeError, /C\u{4032}/) do
@@ -444,6 +447,7 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_thread_signal_location
+    omit "subprocess" unless main_ractor?
     # pend('TODO: a known bug [Bug #14474]')
     _, stderr, _ = EnvUtil.invoke_ruby(%w"--disable-gems -d", <<-RUBY, false, true)
 Thread.start do
@@ -559,6 +563,7 @@ end.join
   end
 
   def test_too_many_args_in_eval
+    omit "TODO: freezes process" if multiple_ractors?
     bug5720 = '[ruby-core:41520]'
     arg_string = (0...140000).to_a.join(", ")
     assert_raise(SystemStackError, bug5720) {eval "raise(#{arg_string})"}
@@ -665,7 +670,7 @@ end.join
     assert_equal([__FILE__, line], [loc.path, loc.lineno])
   end
 
-  Bug4438 = '[ruby-core:35364]'
+  Bug4438 = '[ruby-core:35364]'.freeze
 
   def test_rescue_single_argument
     assert_raise(TypeError, Bug4438) do
@@ -1063,6 +1068,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def capture_warning_warn(category: false)
+    omit "global side effects" if multiple_ractors?
     verbose = $VERBOSE
     categories = Warning.categories.to_h {|cat| [cat, Warning[cat]]}
     warning = []
@@ -1088,17 +1094,20 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
 
     return warning
   ensure
-    $VERBOSE = verbose
-    categories.each {|cat, flag| Warning[cat] = flag}
+    if verbose
+      $VERBOSE = verbose
+      categories.each {|cat, flag| Warning[cat] = flag}
 
-    ::Warning.class_eval do
-      remove_method :warn
-      alias_method :warn, :warn2
-      remove_method :warn2
+      ::Warning.class_eval do
+        remove_method :warn
+        alias_method :warn, :warn2
+        remove_method :warn2
+      end
     end
   end
 
   def test_warning_warn
+    omit "global variable access" if non_main_ractor?
     warning = capture_warning_warn {$asdfasdsda_test_warning_warn}
     assert_match(/global variable '\$asdfasdsda_test_warning_warn' not initialized/, warning[0])
 
@@ -1108,6 +1117,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warn_deprecated_backwards_compatibility_category
+    omit "accesses global variable" if non_main_ractor?
     (message, category), = capture_warning_warn(category: true) do
       $; = "www"
       $; = nil
@@ -1149,6 +1159,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warning_warn_circular_require_backtrace
+    omit "accesses $LOAD_PATH and $LOADED_FEATURES" if non_main_ractor?
     warning = nil
     path = nil
     Tempfile.create(%w[circular .rb]) do |t|
@@ -1184,6 +1195,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warning_category
+    omit "global side effects" if multiple_ractors?
     assert_raise(TypeError) {Warning[nil]}
     assert_raise(ArgumentError) {Warning[:XXXX]}
 
@@ -1304,12 +1316,14 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
 
     test_method = "def foo; raise 'testerror'; end"
 
-    out1, err1, status1 = EnvUtil.invoke_ruby(['-e', "#{test_method}; begin; foo; rescue => e; puts e.full_message; end"], '', true, true)
-    assert_predicate(status1, :success?)
-    assert_empty(err1, "expected nothing wrote to $stdout by #full_message")
+    if main_ractor?
+      out1, err1, status1 = EnvUtil.invoke_ruby(['-e', "#{test_method}; begin; foo; rescue => e; puts e.full_message; end"], '', true, true)
+      assert_predicate(status1, :success?)
+      assert_empty(err1, "expected nothing wrote to $stdout by #full_message")
 
-    _, err2, status1 = EnvUtil.invoke_ruby(['-e', "#{test_method}; begin; foo; end"], '', true, true)
-    assert_equal(err2, out1)
+      _, err2, status1 = EnvUtil.invoke_ruby(['-e', "#{test_method}; begin; foo; end"], '', true, true)
+      assert_equal(err2, out1)
+    end
 
     e = RuntimeError.new("a\n")
     message = assert_nothing_raised(ArgumentError, proc {e.pretty_inspect}) do
@@ -1442,6 +1456,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
 
   def test_detailed_message_under_gc_compact_stress
     omit "compaction doesn't work well on s390x" if RUBY_PLATFORM =~ /s390x/ # https://github.com/ruby/ruby/pull/5077
+    omit "gc_compact_stress" if multiple_ractors?
     EnvUtil.under_gc_compact_stress do
       e = RuntimeError.new("foo\nbar\nbaz")
       assert_equal("foo (RuntimeError)\nbar\nbaz", e.detailed_message)

@@ -24,6 +24,7 @@ class TestDefined < Test::Unit::TestCase
   end
 
   def test_defined_global_variable
+    omit "global var" if non_main_ractor?
     $x = nil
 
     assert(defined?($x))		# global variable
@@ -302,6 +303,7 @@ class TestDefined < Test::Unit::TestCase
   end
 
   def test_autoloaded_noload
+    omit "accesses load path" if non_main_ractor?
     loaded = $".dup
     $".clear
     loadpath = $:.dup
@@ -311,8 +313,8 @@ class TestDefined < Test::Unit::TestCase
     assert_nil(x.b?)
     assert_equal([], $")
   ensure
-    $".replace(loaded)
-    $:.replace(loadpath)
+    $".replace(loaded) if loaded
+    $:.replace(loadpath) if loadpath
   end
 
   def test_exception
@@ -371,6 +373,8 @@ class TestDefined < Test::Unit::TestCase
   end
 
   def test_super_in_basic_object
+    omit "global side effects" if multiple_ractors?
+    run_ensure = true
     BasicObject.class_eval do
       def a
         defined?(super)
@@ -381,7 +385,7 @@ class TestDefined < Test::Unit::TestCase
   ensure
     BasicObject.class_eval do
       undef_method :a if defined?(a)
-    end
+    end if run_ensure
   end
 
   def test_super_toplevel
@@ -389,6 +393,7 @@ class TestDefined < Test::Unit::TestCase
   end
 
   def test_respond_to
+    omit "Warning[]= used" if multiple_ractors?
     obj = "#{self.class.name}##{__method__}"
     class << obj
       def respond_to?(mid)

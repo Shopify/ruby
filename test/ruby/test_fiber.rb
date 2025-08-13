@@ -395,6 +395,7 @@ class TestFiber < Test::Unit::TestCase
 
   def test_fork_from_fiber
     omit 'fork not supported' unless Process.respond_to?(:fork)
+    omit "maybe fork not supported unless main ractor" unless main_ractor?
     pid = nil
     bug5700 = '[ruby-core:41456]'
     assert_nothing_raised(bug5700) do

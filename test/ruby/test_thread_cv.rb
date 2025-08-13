@@ -55,6 +55,7 @@ class TestThreadConditionVariable < Test::Unit::TestCase
   end
 
   def test_condvar_wait_and_broadcast
+    pend "Timeout" if non_main_ractor?
     nr_threads = 3
     threads = Array.new
     mutex = Thread::Mutex.new
@@ -84,8 +85,8 @@ class TestThreadConditionVariable < Test::Unit::TestCase
 
     assert_equal ["C1", "C1", "C1", "P1", "P2", "C2", "C2", "C2"], result
   ensure
-    threads.each(&:kill)
-    threads.each(&:join)
+    threads&.each(&:kill)
+    threads&.each(&:join)
   end
 
   def test_condvar_wait_deadlock
@@ -109,6 +110,7 @@ INPUT
   end
 
   def test_condvar_wait_deadlock_2
+    pend "Timeout" if non_main_ractor?
     nr_threads = 3
     threads = Array.new
     mutex = Thread::Mutex.new
@@ -220,6 +222,7 @@ INPUT
   end
 
   def test_condvar_fork
+    omit "fork" unless main_ractor?
     mutex = Thread::Mutex.new
     condvar = Thread::ConditionVariable.new
     thrs = (1..10).map do

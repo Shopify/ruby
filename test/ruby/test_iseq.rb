@@ -4,6 +4,10 @@ require 'tempfile'
 class TestISeq < Test::Unit::TestCase
   ISeq = RubyVM::InstructionSequence
 
+  def setup
+    omit "not ractor safe" unless main_ractor?
+  end
+
   def test_no_linenum
     bug5894 = '[ruby-dev:45130]'
     assert_normal_exit('p RubyVM::InstructionSequence.compile("1", "mac", "", 0).to_a', bug5894)
@@ -348,6 +352,7 @@ class TestISeq < Test::Unit::TestCase
   end
 
   def test_frozen_string_literal_compile_option
+    omit "global variable access" if non_main_ractor?
     $f = 'f'
     line = __LINE__ + 2
     code = <<-'EOS'
@@ -693,8 +698,8 @@ class TestISeq < Test::Unit::TestCase
       class P
         def p; end
         def q; end
-        E = ""
-        N = "#{E}"
+        E = "".freeze
+        N = "#{E}".freeze
         attr_reader :i
       end
     end;

@@ -5,7 +5,7 @@ class TestString < Test::Unit::TestCase
   WIDE_ENCODINGS = [
      Encoding::UTF_16BE, Encoding::UTF_16LE,
      Encoding::UTF_32BE, Encoding::UTF_32LE,
-  ]
+  ].freeze
 
   def initialize(*args)
     @cls = String
@@ -399,7 +399,7 @@ CODE
 
   end
 
-  Bug2463 = '[ruby-dev:39856]'
+  Bug2463 = '[ruby-dev:39856]'.freeze
   def test_center
     assert_equal(S("hello"),       S("hello").center(4))
     assert_equal(S("   hello   "), S("hello").center(11))
@@ -408,6 +408,8 @@ CODE
   end
 
   def test_chomp
+    omit "$/ set" if multiple_ractors?
+    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     assert_equal(S("hello"), S("hello").chomp("\n"))
@@ -474,11 +476,15 @@ CODE
     s = "foo\r"
     assert_equal("foo", s.chomp("\n"))
   ensure
-    $/ = save
-    $VERBOSE = verbose
+    if run_ensure
+      $/ = save
+      $VERBOSE = verbose
+    end
   end
 
   def test_chomp!
+    omit "$/ set " if multiple_ractors?
+    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     a = S("hello")
@@ -598,8 +604,10 @@ CODE
 
     assert_raise(ArgumentError) {String.new.chomp!("", "")}
   ensure
-    $/ = save
-    $VERBOSE = verbose
+    if run_ensure
+      $/ = save
+      $VERBOSE = verbose
+    end
   end
 
   def test_chop
@@ -673,6 +681,7 @@ CODE
 
   def test_string_interpolations_across_heaps_get_embedded
     omit if GC::INTERNAL_CONSTANTS[:HEAP_COUNT] == 1
+    omit "ObjectSpace.dump" if non_main_ractor?
 
     require 'objspace'
     base_slot_size = GC::INTERNAL_CONSTANTS[:BASE_SLOT_SIZE]
@@ -738,12 +747,15 @@ CODE
       assert_raise(ArgumentError) {S("mypassword".encode(enc)).crypt(S("aa"))}
     end
 
-    @cls == String and
+    #pend "String#crypt unsafe?"
+    if main_ractor?
+      @cls == String and
       assert_no_memory_leak([], "s = ''; salt_proc = proc{#{(crypt_supports_des_crypt? ? '..' : good_salt).inspect}}", "#{<<~"begin;"}\n#{<<~'end;'}")
 
-    begin;
-      1000.times { s.crypt(-salt_proc.call).clear  }
-    end;
+      begin;
+        1000.times { s.crypt(-salt_proc.call).clear  }
+      end;
+    end
   end
 
   def test_delete
@@ -943,6 +955,8 @@ CODE
   end
 
   def test_each
+    omit "set $/" if multiple_ractors?
+    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     save = $/
@@ -963,8 +977,10 @@ CODE
     assert_equal(S("hello!"), res[0])
     assert_equal(S("world"),  res[1])
   ensure
-    $/ = save
-    $VERBOSE = verbose
+    if run_ensure
+      $/ = save
+      $VERBOSE = verbose
+    end
   end
 
   def test_each_byte
@@ -1134,6 +1150,8 @@ CODE
   end
 
   def test_each_line
+    omit "set $/" if multiple_ractors?
+    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     save = $/
@@ -1181,8 +1199,10 @@ CODE
       S("\n\u0100").each_line("\n") {}
     end
   ensure
-    $/ = save
-    $VERBOSE = verbose
+    if run_ensure
+      $/ = save
+      $VERBOSE = verbose
+    end
   end
 
   def test_each_line_chomp
@@ -1804,6 +1824,7 @@ CODE
   end
 
   def test_split
+    omit "global variable access" if non_main_ractor?
     fs, $; = $;, nil
     assert_equal([S("a"), S("b"), S("c")], S(" a   b\t c ").split)
     assert_equal([S("a"), S("b"), S("c")], S(" a   b\t c ").split(S(" ")))
@@ -1827,10 +1848,11 @@ CODE
 
     assert_equal([], S("").split(//, 1))
   ensure
-    EnvUtil.suppress_warning {$; = fs}
+    EnvUtil.suppress_warning {$; = fs} if main_ractor?
   end
 
   def test_split_with_block
+    omit "global variable access" if non_main_ractor?
     fs, $; = $;, nil
     result = []; S(" a   b\t c ").split {|s| result << s}
     assert_equal([S("a"), S("b"), S("c")], result)
@@ -1877,10 +1899,11 @@ CODE
       end
     }
   ensure
-    EnvUtil.suppress_warning {$; = fs}
+    EnvUtil.suppress_warning {$; = fs} if main_ractor?
   end
 
   def test_fs
+    omit "global variable access" if non_main_ractor?
     return unless @cls == String
 
     assert_raise_with_message(TypeError, /\$;/) {
@@ -3391,10 +3414,12 @@ CODE
     assert_same(str, +str)
     assert_not_same(str, -str)
 
-    require 'objspace'
-
     str = "test_uplus_minus_str".freeze
-    assert_includes ObjectSpace.dump(str), '"fstring":true'
+    if main_ractor?
+      require 'objspace'
+
+      assert_includes ObjectSpace.dump(str), '"fstring":true'
+    end
 
     assert_predicate(str, :frozen?)
     assert_not_predicate(+str, :frozen?)
@@ -3403,8 +3428,10 @@ CODE
     assert_not_same(str, +str)
     assert_same(str, -str)
 
-    bar = -%w(test uplus minus str).join('_')
-    assert_same(str, bar, "uminus deduplicates [Feature #13077] str: #{ObjectSpace.dump(str)} bar: #{ObjectSpace.dump(bar)}")
+    if main_ractor?
+      bar = -%w(test uplus minus str).join('_')
+      assert_same(str, bar, "uminus deduplicates [Feature #13077] str: #{ObjectSpace.dump(str)} bar: #{ObjectSpace.dump(bar)}")
+    end
   end
 
   def test_uminus_dedup_in_place
@@ -3415,6 +3442,7 @@ CODE
 
   def test_uminus_frozen
     return unless @cls == String
+    omit "not always same" if multiple_ractors?
 
     # embedded
     str1 = ("foobar" * 3).freeze
@@ -3722,6 +3750,7 @@ CODE
   end
 
   def test_chilled_string_setivar
+    omit "monkey patch" if multiple_ractors?
     deprecated = Warning[:deprecated]
     Warning[:deprecated] = false
 
