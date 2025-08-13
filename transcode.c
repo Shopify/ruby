@@ -3036,12 +3036,9 @@ econv_s_asciicompat_encoding(VALUE klass, VALUE arg)
 
     enc_arg(&arg, &arg_name, &arg_enc);
     result_name = rb_econv_asciicompat_encoding(arg_name);
-
-    RB_VM_LOCKING() {
-        if (result_name) {
-            result_enc = make_encoding(result_name);
-            enc = rb_enc_from_encoding(result_enc);
-        }
+    result_enc = make_encoding(result_name);
+    if (result_name) {
+        enc = rb_enc_from_encoding(result_enc);
     }
     return enc;
 }
