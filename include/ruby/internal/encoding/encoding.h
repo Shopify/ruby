@@ -1018,6 +1018,12 @@ void rb_enc_set_default_internal(VALUE encoding);
  */
 VALUE rb_locale_charmap(VALUE klass);
 
+/**
+ * Returns an index >= 0 of the registered encoding or -1 if
+ * it's not registered.
+ */
+int rb_enc_registered(const char *name);
+
 RBIMPL_SYMBOL_EXPORT_END()
 
 /** @cond INTERNAL_MACRO */
