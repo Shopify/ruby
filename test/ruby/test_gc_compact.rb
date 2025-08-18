@@ -18,6 +18,7 @@ class TestGCCompact < Test::Unit::TestCase
 
     def setup
       omit "GC compaction not supported on this platform" unless supports_compact?
+      omit "GC.auto_compact = true then setting back to prev is racy" if multiple_ractors?
       super
     end
   end

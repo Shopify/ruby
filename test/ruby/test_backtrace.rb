@@ -258,6 +258,7 @@ class TestBacktrace < Test::Unit::TestCase
   end
 
   def test_caller_locations_path
+    omit "Tempfile" unless main_ractor?
     loc, = caller_locations(0, 1)
     assert_equal(__FILE__, loc.path)
     Tempfile.create(%w"caller_locations .rb") do |f|
@@ -269,6 +270,7 @@ class TestBacktrace < Test::Unit::TestCase
   end
 
   def test_caller_locations_absolute_path
+    omit "Tempfile" unless main_ractor?
     loc, = caller_locations(0, 1)
     assert_equal(__FILE__, loc.absolute_path)
     Tempfile.create(%w"caller_locations .rb") do |f|
@@ -279,6 +281,7 @@ class TestBacktrace < Test::Unit::TestCase
   end
 
   def test_caller_locations_lineno
+    omit "Tempfile" unless main_ractor?
     loc, = caller_locations(0, 1)
     assert_equal(__LINE__-1, loc.lineno)
     Tempfile.create(%w"caller_locations .rb") do |f|

@@ -7,6 +7,7 @@ require 'fileutils'
 class TestDir < Test::Unit::TestCase
 
   def setup
+    omit "lots of Dir.chdir" if multiple_ractors?
     @verbose = $VERBOSE
     @root = File.realpath(Dir.mktmpdir('__test_dir__'))
     @nodir = File.join(@root, "dummy")
@@ -23,6 +24,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def teardown
+    return if multiple_ractors?
     $VERBOSE = @verbose
     FileUtils.remove_entry_secure @root if File.directory?(@root)
     ENV.update(@envs) if @envs
@@ -97,6 +99,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_class_chdir
+    omit "Dir.chdir" unless main_ractor?
     pwd = Dir.pwd
     setup_envs
 
@@ -129,13 +132,14 @@ class TestDir < Test::Unit::TestCase
 
   ensure
     begin
-      Dir.chdir(pwd)
+      Dir.chdir(pwd) if pwd
     rescue
       abort("cannot return the original directory: #{ pwd }")
     end
   end
 
   def test_instance_chdir
+    omit "Dir.chdir" unless main_ractor?
     pwd = Dir.pwd
     dir = Dir.new(pwd)
     root_dir = Dir.new(@root)
@@ -194,15 +198,16 @@ class TestDir < Test::Unit::TestCase
     assert_equal(42, ret)
   ensure
     begin
-      assert_equal(0, dir.chdir)
+      assert_equal(0, dir.chdir) if dir
     rescue
       abort("cannot return the original directory: #{ pwd }")
     end
-    dir.close
-    root_dir.close
+    dir&.close
+    root_dir&.close
   end
 
   def test_chdir_conflict
+    omit "Dir.chdir" unless main_ractor?
     pwd = Dir.pwd
     q = Thread::Queue.new
     t = Thread.new do
@@ -279,6 +284,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_glob_recursive
+    omit "Dir.chdir" unless main_ractor?
     bug6977 = '[ruby-core:47418]'
     bug8006 = '[ruby-core:53108] [Bug #8006]'
     Dir.chdir(@root) do
@@ -308,6 +314,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_glob_recursive_directory
+    omit "Dir.chdir" unless main_ractor?
     Dir.chdir(@root) do
       ['d', 'e'].each do |path|
         FileUtils.mkdir_p("c/#{path}/a/b/c")
@@ -325,6 +332,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_glob_starts_with_brace
+    omit "Dir.chdir" unless main_ractor?
     Dir.chdir(@root) do
       bug15649 = '[ruby-core:91728] [Bug #15649]'
       assert_equal(["#{@root}/a", "#{@root}/b"],
@@ -333,6 +341,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_glob_recursive_with_brace
+    omit "Dir.chdir" unless main_ractor?
     Dir.chdir(@root) do
       bug19042 = '[ruby-core:110220] [Bug #19042]'
       %w"c/dir_a c/dir_b c/dir_b/dir".each do |d|
@@ -347,6 +356,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_glob_order
+    omit "Dir.chdir" unless main_ractor?
     Dir.chdir(@root) do
       assert_equal(["#{@root}/a", "#{@root}/b"], Dir.glob("#{@root}/[ba]"))
       assert_equal(["#{@root}/b", "#{@root}/a"], Dir.glob(%W"#{@root}/b #{@root}/a"))
@@ -376,6 +386,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_glob_base
+    omit "Dir.chdir" unless main_ractor?
     files = %w[a/foo.c c/bar.c]
     files.each {|n| File.write(File.join(@root, n), "")}
     Dir.mkdir(File.join(@root, "a/dir"))
@@ -416,6 +427,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_glob_base_dir
+    omit "Dir.chdir" unless main_ractor?
     files = %w[a/foo.c c/bar.c]
     files.each {|n| File.write(File.join(@root, n), "")}
     Dir.mkdir(File.join(@root, "a/dir"))
@@ -438,6 +450,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_glob_ignore_casefold_invalid_encoding
+    omit "Dir.chdir" unless main_ractor?
     bug14456 = "[ruby-core:85448]"
     filename = "\u00AAa123".encode('ISO-8859-1')
     File.write(File.join(@root, filename), "")
@@ -555,6 +568,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_glob_cases
+    omit "Dir.chdir" unless main_ractor?
     feature5994 = "[ruby-core:42469] [Feature #5994]"
     feature5994 << "\nDir.glob should return the filename with actual cases on the filesystem"
     Dir.chdir(File.join(@root, "a")) do
@@ -659,6 +673,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_home
+    omit "not ractor safe" unless main_ractor?
     setup_envs
 
     ENV["HOME"] = @nodir
@@ -690,6 +705,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_symlinks_not_resolved
+    omit "not ractors safe (Dir.chdir)" unless main_ractor?
     Dir.mktmpdir do |dirname|
       Dir.chdir(dirname) do
         begin
@@ -718,6 +734,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_for_fd
+    omit "Dir.chdir" unless main_ractor?
     if Dir.respond_to? :for_fd
       begin
         new_dir = Dir.new('..')

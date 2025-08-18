@@ -125,6 +125,7 @@ class TestShapes < Test::Unit::TestCase
   end
 
   def test_ordered_alloc_is_not_complex
+    pend "ObjectSpace.dump" if non_main_ractor?
     5.times { OrderedAlloc.new.add_ivars }
     obj = JSON.parse(ObjectSpace.dump(OrderedAlloc))
     assert_operator obj["variation_count"], :<, RubyVM::Shape::SHAPE_MAX_VARIATIONS
@@ -147,6 +148,8 @@ class TestShapes < Test::Unit::TestCase
   end
 
   def test_too_many_ivs_on_class
+    # could be safe due to not having a constant attached
+    pend "class ivars"
     obj = Class.new
 
     obj.instance_variable_set(:@test_too_many_ivs_on_class, 1)
@@ -160,6 +163,8 @@ class TestShapes < Test::Unit::TestCase
   end
 
   def test_removing_when_too_many_ivs_on_class
+    # could be safe due to not having a constant attached
+    pend "class ivars"
     obj = Class.new
 
     (MANY_IVS + 2).times do
@@ -173,6 +178,8 @@ class TestShapes < Test::Unit::TestCase
   end
 
   def test_removing_when_too_many_ivs_on_module
+    # could be safe due to not having a constant attached
+    pend "module ivars" if non_main_ractor?
     obj = Module.new
 
     (MANY_IVS + 2).times do

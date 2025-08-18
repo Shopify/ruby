@@ -62,17 +62,18 @@ class TestHash < Test::Unit::TestCase
     x.default = 5
     assert_equal(5, x[23])
 
+    z = nil
     x = Hash.new
-    def x.default(k)
-      $z = k
+    x.singleton_class.define_method(:default) do |k|
+      z = k
       self[k] = k*2
     end
-    $z = 0
+    z = 0
     assert_equal(44, x[22])
-    assert_equal(22, $z)
-    $z = 0
+    assert_equal(22, z)
+    z = 0
     assert_equal(44, x[22])
-    assert_equal(0, $z)
+    assert_equal(0, z)
   end
 
   # From rubicon
@@ -859,6 +860,7 @@ class TestHash < Test::Unit::TestCase
   end
 
   def test_to_s
+    omit "Accesses global variable" if non_main_ractor?
     h = @cls[ 1 => 2, "cat" => "dog", 1.5 => :fred ]
     assert_equal(h.inspect, h.to_s)
     assert_deprecated_warning { $, = ":" }
@@ -866,10 +868,11 @@ class TestHash < Test::Unit::TestCase
     h = @cls[]
     assert_equal(h.inspect, h.to_s)
   ensure
-    $, = nil
+    $, = nil if main_ractor?
   end
 
   def test_inspect
+    omit "global side effects" if multiple_ractors?
     no_quote = '{a: 1, a!: 1, a?: 1}'
     quote0 = '{"": 1}'
     quote1 = '{"0": 1, "!": 1, "%": 1, "&": 1, "*": 1, "+": 1, "-": 1, "/": 1, "<": 1, ">": 1, "^": 1, "`": 1, "|": 1, "~": 1}'
@@ -2001,6 +2004,7 @@ class TestHashOnly < Test::Unit::TestCase
   end
 
   def test_AREF_fstring_key
+    omit "EnvUtil.without_gc" unless main_ractor?
     # warmup ObjectSpace.count_objects
     ObjectSpace.count_objects
 
@@ -2137,6 +2141,7 @@ class TestHashOnly < Test::Unit::TestCase
   end
 
   def test_iterlevel_in_ivar_bug19589
+    pend "Ractor bug!" if non_main_ractor? # NOTE: we get stack level too deep within a ractor
     h = { a: nil }
     # Recursion level should be over 127 to actually test iterlevel being set in an instance variable,
     # but it should be under 131 not to overflow the stack under MN threads/ractors.
@@ -2173,6 +2178,7 @@ class TestHashOnly < Test::Unit::TestCase
   end
 
   def test_memory_size_after_delete
+    pend "ObjectSpace.memsize_of not yet ractor safe" if non_main_ractor?
     require 'objspace'
     h = {}
     1000.times {|i| h[i] = true}
@@ -2259,6 +2265,7 @@ class TestHashOnly < Test::Unit::TestCase
   end
 
   def test_broken_hash_value
+    omit "too many objects" if multiple_ractors?
     bug14218 = '[ruby-core:84395] [Bug #14218]'
 
     assert_equal(0, 1_000_000.times.count{a=Object.new.hash; b=Object.new.hash; a < 0 && b < 0 && a + b > 0}, bug14218)

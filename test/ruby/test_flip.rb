@@ -53,6 +53,7 @@ class TestFlip < Test::Unit::TestCase
   end
 
   def test_input_line_number_range
+    omit "Cannot access $." if non_main_ractor?
     bug12947 = '[ruby-core:78162] [Bug #12947]'
     ary = b1 = b2 = nil
     EnvUtil.suppress_warning do

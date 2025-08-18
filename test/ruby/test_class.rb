@@ -38,6 +38,7 @@ class TestClass < Test::Unit::TestCase
   # ------------------
 
   def test_s_inherited
+    pend "accesses class variables" if non_main_ractor?
     assert_equal([ClassTwo, ClassThree, ClassFour], ClassOne.new.subs)
   end
 
@@ -243,9 +244,11 @@ class TestClass < Test::Unit::TestCase
     assert_raise(TypeError) { Class.new(c) }
     assert_raise(TypeError) { Class.new(Class) }
     assert_raise(TypeError) { eval("class Foo < Class; end") }
-    m = "M\u{1f5ff}"
-    o = Class.new {break eval("class #{m}; self; end.new")}
-    assert_raise_with_message(TypeError, /#{m}/) {Class.new(o)}
+    if main_ractor?
+      m = "M\u{1f5ff}"
+      o = Class.new {break eval("class #{m}; self; end.new")}
+      assert_raise_with_message(TypeError, /#{m}/) {Class.new(o)}
+    end
   end
 
   def test_initialize_copy
@@ -288,6 +291,7 @@ class TestClass < Test::Unit::TestCase
   end
 
   def test_nonascii_name
+    omit "global side effects" if multiple_ractors?
     c = eval("class ::C\u{df}; self; end")
     assert_equal("C\u{df}", c.name, '[ruby-core:24600]')
     c = eval("class C\u{df}; self; end")
@@ -465,20 +469,26 @@ class TestClass < Test::Unit::TestCase
     }
   end
 
-  define_method :test_invalid_reset_superclass do
-    class A; end
-    class SuperclassCannotBeReset < A
-    end
+  def test_invalid_reset_superclass
+    self.class.class_eval <<-RUBY
+      class A; end
+      class SuperclassCannotBeReset < A
+      end
+    RUBY
     assert_equal A, SuperclassCannotBeReset.superclass
 
     assert_raise_with_message(TypeError, /superclass mismatch/) {
-      class SuperclassCannotBeReset < String
-      end
+      self.class.class_eval <<-RUBY
+        class SuperclassCannotBeReset < String
+        end
+      RUBY
     }
 
     assert_raise_with_message(TypeError, /superclass mismatch/, "[ruby-core:75446]") {
-      class SuperclassCannotBeReset < Object
-      end
+      self.class.class_eval <<-RUBY
+        class SuperclassCannotBeReset < Object
+        end
+      RUBY
     }
 
     assert_equal A, SuperclassCannotBeReset.superclass
@@ -574,6 +584,7 @@ class TestClass < Test::Unit::TestCase
   end
 
   def test_singleton_class_should_has_own_namespace
+    pend "Accesses global" if non_main_ractor?
     # CONST in singleton class
     objs = []
     $i = 0
@@ -696,9 +707,11 @@ class TestClass < Test::Unit::TestCase
   def test_namescope_error_message
     m = Module.new
     o = m.module_eval "class A\u{3042}; self; end.new"
-    assert_raise_with_message(TypeError, /A\u{3042}/) {
-      o::Foo
-    }
+    EnvUtil.with_default_internal(Encoding::UTF_8) do
+      assert_raise_with_message(TypeError, /A\u{3042}/) {
+        o::Foo
+      }
+    end
   end
 
   def test_redefinition_mismatch
@@ -763,7 +776,11 @@ class TestClass < Test::Unit::TestCase
     ssc = Class.new(sc)
     [c, sc, ssc].each do |k|
       k.include Module.new
-      k.new.define_singleton_method(:force_singleton_class){}
+      k.new.define_singleton_method(:force_singleton_class, &Ractor.make_shareable(
+        nil.instance_eval do
+          proc { }
+        end
+      ))
     end
     assert_equal([sc], c.subclasses)
     assert_equal([ssc], sc.subclasses)

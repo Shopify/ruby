@@ -252,6 +252,7 @@ class TestRubyOptimization < Test::Unit::TestCase
   end
 
   def test_string_freeze_saves_memory
+    pend "ObjectSpace.memsize_of" if non_main_ractor? # TODO: memsize_of should be safe
     n = 16384
     data = '.'.freeze
     r, w = IO.pipe
@@ -396,6 +397,7 @@ class TestRubyOptimization < Test::Unit::TestCase
   end
 
   def tailcall(*args)
+    pend "tailcall" if non_main_ractor?
     self.class.tailcall(singleton_class, *args)
   end
 
@@ -519,6 +521,7 @@ class TestRubyOptimization < Test::Unit::TestCase
   end
 
   def test_tailcall_interrupted_by_sigint
+    omit "in a subprocess" if non_main_ractor?
     bug12576 = 'ruby-core:76327'
     script = "#{<<-"begin;"}\n#{<<~'end;'}"
     begin;
@@ -1222,6 +1225,7 @@ class TestRubyOptimization < Test::Unit::TestCase
   end
 
   def test_opt_new
+    omit "RubyVM::Iseq.compile/eval not working across multiple ractors" if multiple_ractors?
     pos_initialize = "
       def initialize a, b
         @a = a
