@@ -220,6 +220,22 @@ class TestZJIT < Test::Unit::TestCase
     }, call_threshold: 2
   end
 
+  def test_send_exit_with_uninitialized_locals
+    assert_runs 'nil', %q{
+      def entry(init)
+        function_stub_exit(init)
+      end
+
+      def function_stub_exit(init)
+        uninitialized_local = 1 if init
+        uninitialized_local
+      end
+
+      entry(true) # profile and set 1 to the local slot
+      entry(false)
+    }, call_threshold: 2, allowed_iseqs: 'entry@-e:2'
+  end
+
   def test_invokebuiltin
     omit 'Test fails at the moment due to not handling optional parameters'
     assert_compiles '["."]', %q{
@@ -507,6 +523,116 @@ class TestZJIT < Test::Unit::TestCase
       test(2, 3) # profile opt_ge
       [test(0, 1), test(0, 0), test(1, 0)]
     }, insns: [:opt_ge], call_threshold: 2
+  end
+
+  def test_new_hash_empty
+    assert_compiles '{}', %q{
+      def test = {}
+      test
+    }, insns: [:newhash]
+  end
+
+  def test_new_hash_nonempty
+    assert_compiles '{"key" => "value", 42 => 100}', %q{
+      def test
+        key = "key"
+        value = "value"
+        num = 42
+        result = 100
+        {key => value, num => result}
+      end
+      test
+    }, insns: [:newhash]
+  end
+
+  def test_new_hash_single_key_value
+    assert_compiles '{"key" => "value"}', %q{
+      def test = {"key" => "value"}
+      test
+    }, insns: [:newhash]
+  end
+
+  def test_new_hash_with_computation
+    assert_compiles '{"sum" => 5, "product" => 6}', %q{
+      def test(a, b)
+        {"sum" => a + b, "product" => a * b}
+      end
+      test(2, 3)
+    }, insns: [:newhash]
+  end
+
+  def test_new_hash_with_user_defined_hash_method
+    assert_runs 'true', %q{
+      class CustomKey
+        attr_reader :val
+
+        def initialize(val)
+          @val = val
+        end
+
+        def hash
+          @val.hash
+        end
+
+        def eql?(other)
+          other.is_a?(CustomKey) && @val == other.val
+        end
+      end
+
+      def test
+        key = CustomKey.new("key")
+        hash = {key => "value"}
+        hash[key] == "value"
+      end
+      test
+    }
+  end
+
+  def test_new_hash_with_user_hash_method_exception
+    assert_runs 'RuntimeError', %q{
+      class BadKey
+        def hash
+          raise "Hash method failed!"
+        end
+      end
+
+      def test
+        key = BadKey.new
+        {key => "value"}
+      end
+
+      begin
+        test
+      rescue => e
+        e.class
+      end
+    }
+  end
+
+  def test_new_hash_with_user_eql_method_exception
+    assert_runs 'RuntimeError', %q{
+      class BadKey
+        def hash
+          42
+        end
+
+        def eql?(other)
+          raise "Eql method failed!"
+        end
+      end
+
+      def test
+        key1 = BadKey.new
+        key2 = BadKey.new
+        {key1 => "value1", key2 => "value2"}
+      end
+
+      begin
+        test
+      rescue => e
+        e.class
+      end
+    }
   end
 
   def test_opt_hash_freeze
@@ -1135,6 +1261,14 @@ class TestZJIT < Test::Unit::TestCase
     }, insns: [:defined]
   end
 
+  def test_defined_with_method_call
+    assert_compiles '["method", nil]', %q{
+      def test = return defined?("x".reverse(1)), defined?("x".reverse(1).reverse)
+
+      test
+    }, insns: [:defined]
+  end
+
   def test_defined_yield
     assert_compiles "nil", "defined?(yield)"
     assert_compiles '[nil, nil, "yield"]', %q{
@@ -1729,6 +1863,29 @@ class TestZJIT < Test::Unit::TestCase
     }, insns: [:concatstrings]
   end
 
+  def test_regexp_interpolation
+    assert_compiles '/123/', %q{
+      def test = /#{1}#{2}#{3}/
+
+      test
+    }, insns: [:toregexp]
+  end
+
+  def test_new_range_non_leaf
+    assert_compiles '(0/1)..1', %q{
+      def jit_entry(v) = make_range_then_exit(v)
+
+      def make_range_then_exit(v)
+        range = (v..1)
+        super rescue range # TODO(alan): replace super with side-exit intrinsic
+      end
+
+      jit_entry(0)    # profile
+      jit_entry(0)    # compile
+      jit_entry(0/1r) # run without stub
+    }, call_threshold: 2
+  end
+
   private
 
   # Assert that every method call in `test_script` can be compiled by ZJIT
@@ -1786,6 +1943,7 @@ class TestZJIT < Test::Unit::TestCase
     zjit: true,
     stats: false,
     debug: true,
+    allowed_iseqs: nil,
     timeout: 1000,
     pipe_fd:
   )
@@ -1795,6 +1953,12 @@ class TestZJIT < Test::Unit::TestCase
       args << "--zjit-num-profiles=#{num_profiles}"
       args << "--zjit-stats" if stats
       args << "--zjit-debug" if debug
+      if allowed_iseqs
+        jitlist = Tempfile.new("jitlist")
+        jitlist.write(allowed_iseqs)
+        jitlist.close
+        args << "--zjit-allowed-iseqs=#{jitlist.path}"
+      end
     end
     args << "-e" << script_shell_encode(script)
     pipe_r, pipe_w = IO.pipe
@@ -1814,6 +1978,7 @@ class TestZJIT < Test::Unit::TestCase
     pipe_reader&.join(timeout)
     pipe_r&.close
     pipe_w&.close
+    jitlist&.unlink
   end
 
   def script_shell_encode(s)

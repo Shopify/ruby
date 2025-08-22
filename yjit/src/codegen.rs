@@ -3104,7 +3104,7 @@ fn gen_set_ivar(
 
     // Get the iv index
     let shape_too_complex = comptime_receiver.shape_too_complex();
-    let ivar_index = if !shape_too_complex {
+    let ivar_index = if !comptime_receiver.special_const_p() && !shape_too_complex {
         let shape_id = comptime_receiver.shape_id_of();
         let mut ivar_index: u16 = 0;
         if unsafe { rb_shape_get_iv_index(shape_id, ivar_name, &mut ivar_index) } {
@@ -3369,7 +3369,7 @@ fn gen_definedivar(
     // Specialize base on compile time values
     let comptime_receiver = jit.peek_at_self();
 
-    if comptime_receiver.shape_too_complex() || asm.ctx.get_chain_depth() >= GET_IVAR_MAX_DEPTH {
+    if comptime_receiver.special_const_p() || comptime_receiver.shape_too_complex() || asm.ctx.get_chain_depth() >= GET_IVAR_MAX_DEPTH {
         // Fall back to calling rb_ivar_defined
 
         // Save the PC and SP because the callee may allocate
@@ -4315,11 +4315,11 @@ fn gen_opt_ary_freeze(
         return None;
     }
 
-    let str = jit.get_arg(0);
+    let ary = jit.get_arg(0);
 
     // Push the return value onto the stack
     let stack_ret = asm.stack_push(Type::CArray);
-    asm.mov(stack_ret, str.into());
+    asm.mov(stack_ret, ary.into());
 
     Some(KeepCompiling)
 }
@@ -4332,11 +4332,11 @@ fn gen_opt_hash_freeze(
         return None;
     }
 
-    let str = jit.get_arg(0);
+    let hash = jit.get_arg(0);
 
     // Push the return value onto the stack
     let stack_ret = asm.stack_push(Type::CHash);
-    asm.mov(stack_ret, str.into());
+    asm.mov(stack_ret, hash.into());
 
     Some(KeepCompiling)
 }

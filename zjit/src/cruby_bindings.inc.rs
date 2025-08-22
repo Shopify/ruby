@@ -30,6 +30,11 @@ impl<T> ::std::fmt::Debug for __IncompleteArrayField<T> {
         fmt.write_str("__IncompleteArrayField")
     }
 }
+pub const ONIG_OPTION_IGNORECASE: u32 = 1;
+pub const ONIG_OPTION_EXTEND: u32 = 2;
+pub const ONIG_OPTION_MULTILINE: u32 = 4;
+pub const ARG_ENCODING_FIXED: u32 = 16;
+pub const ARG_ENCODING_NONE: u32 = 32;
 pub const INTEGER_REDEFINED_OP_FLAG: u32 = 1;
 pub const FLOAT_REDEFINED_OP_FLAG: u32 = 2;
 pub const STRING_REDEFINED_OP_FLAG: u32 = 4;
@@ -719,7 +724,6 @@ pub const DEFINED_REF: defined_type = 15;
 pub const DEFINED_FUNC: defined_type = 16;
 pub const DEFINED_CONST_FROM: defined_type = 17;
 pub type defined_type = u32;
-pub const RB_SPECIAL_CONST_SHAPE_ID: _bindgen_ty_38 = 33554432;
 pub const RB_INVALID_SHAPE_ID: _bindgen_ty_38 = 4294967295;
 pub type _bindgen_ty_38 = u32;
 pub type rb_iseq_param_keyword_struct = rb_iseq_constant_body__bindgen_ty_1_rb_iseq_param_keyword;

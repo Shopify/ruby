@@ -1032,16 +1032,29 @@ class TestShapes < Test::Unit::TestCase
     assert_shape_equal(RubyVM::Shape.root_shape, RubyVM::Shape.of([]))
   end
 
-  def test_true_has_special_const_shape_id
-    assert_equal(RubyVM::Shape::SPECIAL_CONST_SHAPE_ID, RubyVM::Shape.of(true).id)
+  def test_raise_on_special_consts
+    assert_raise ArgumentError do
+      RubyVM::Shape.of(true)
+    end
+    assert_raise ArgumentError do
+      RubyVM::Shape.of(false)
+    end
+    assert_raise ArgumentError do
+      RubyVM::Shape.of(nil)
+    end
+    assert_raise ArgumentError do
+      RubyVM::Shape.of(0)
+    end
+    # 32-bit platforms don't have flonums or static symbols as special
+    # constants
+    # TODO(max): Add ArgumentError tests for symbol and flonum, skipping if
+    # RUBY_PLATFORM =~ /i686/
   end
 
-  def test_nil_has_special_const_shape_id
-    assert_equal(RubyVM::Shape::SPECIAL_CONST_SHAPE_ID, RubyVM::Shape.of(nil).id)
-  end
-
-  def test_root_shape_transition_to_special_const_on_frozen
-    assert_equal(RubyVM::Shape::SPECIAL_CONST_SHAPE_ID, RubyVM::Shape.of([].freeze).id)
+  def test_root_shape_frozen
+    frozen_root_shape = RubyVM::Shape.of([].freeze)
+    assert_predicate(frozen_root_shape, :frozen?)
+    assert_equal(RubyVM::Shape.root_shape.id, frozen_root_shape.raw_id)
   end
 
   def test_basic_shape_transition

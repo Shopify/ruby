@@ -259,6 +259,13 @@ fn main() {
 
         // From internal/re.h
         .allowlist_function("rb_reg_new_ary")
+        .allowlist_var("ARG_ENCODING_FIXED")
+        .allowlist_var("ARG_ENCODING_NONE")
+
+        // From include/ruby/onigmo.h
+        .allowlist_var("ONIG_OPTION_IGNORECASE")
+        .allowlist_var("ONIG_OPTION_EXTEND")
+        .allowlist_var("ONIG_OPTION_MULTILINE")
 
         // `ruby_value_type` is a C enum and this stops it from
         // prefixing all the members with the name of the type
@@ -354,7 +361,6 @@ fn main() {
         .allowlist_function("rb_zjit_singleton_class_p")
         .allowlist_type("robject_offsets")
         .allowlist_type("rstring_offsets")
-        .allowlist_var("RB_SPECIAL_CONST_SHAPE_ID")
         .allowlist_var("RB_INVALID_SHAPE_ID")
 
         // From jit.c

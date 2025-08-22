@@ -369,7 +369,7 @@ RUBY_FUNC_EXPORTED shape_id_t
 rb_obj_shape_id(VALUE obj)
 {
     if (RB_SPECIAL_CONST_P(obj)) {
-        return SPECIAL_CONST_SHAPE_ID;
+        rb_bug("rb_obj_shape_id: called on a special constant");
     }
 
     if (BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE) {
@@ -1180,6 +1180,7 @@ rb_shape_copy_complex_ivars(VALUE dest, VALUE obj, shape_id_t src_shape_id, st_t
         st_delete(table, &id, NULL);
     }
     rb_obj_init_too_complex(dest, table);
+    rb_gc_writebarrier_remember(dest);
 }
 
 size_t
@@ -1424,6 +1425,9 @@ rb_shape_parent(VALUE self)
 static VALUE
 rb_shape_debug_shape(VALUE self, VALUE obj)
 {
+    if (RB_SPECIAL_CONST_P(obj)) {
+        rb_raise(rb_eArgError, "Can't get shape of special constant");
+    }
     return shape_id_t_to_rb_cShape(rb_obj_shape_id(obj));
 }
 
@@ -1621,7 +1625,6 @@ Init_shape(void)
     rb_define_const(rb_cShape, "SHAPE_IVAR", INT2NUM(SHAPE_IVAR));
     rb_define_const(rb_cShape, "SHAPE_ID_NUM_BITS", INT2NUM(SHAPE_ID_NUM_BITS));
     rb_define_const(rb_cShape, "SHAPE_FLAG_SHIFT", INT2NUM(SHAPE_FLAG_SHIFT));
-    rb_define_const(rb_cShape, "SPECIAL_CONST_SHAPE_ID", INT2NUM(SPECIAL_CONST_SHAPE_ID));
     rb_define_const(rb_cShape, "SHAPE_MAX_VARIATIONS", INT2NUM(SHAPE_MAX_VARIATIONS));
     rb_define_const(rb_cShape, "SIZEOF_RB_SHAPE_T", INT2NUM(sizeof(rb_shape_t)));
     rb_define_const(rb_cShape, "SIZEOF_REDBLACK_NODE_T", INT2NUM(sizeof(redblack_node_t)));
