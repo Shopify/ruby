@@ -397,6 +397,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::GetSpecialNumber { nth, state } => gen_getspecial_number(asm, *nth, &function.frame_state(*state)),
         &Insn::IncrCounter(counter) => no_output!(gen_incr_counter(asm, counter)),
         Insn::ObjToString { val, cd, state, .. } => gen_objtostring(jit, asm, opnd!(val), *cd, &function.frame_state(*state)),
+        Insn::RegexpMatch2 { regexp, string, state, .. } => gen_regexpmatch2(jit, asm, opnd!(regexp), opnd!(string), &function.frame_state(*state)),
         &Insn::CheckInterrupts { state } => no_output!(gen_check_interrupts(jit, asm, &function.frame_state(state))),
         &Insn::HashDup { val, state } => { gen_hash_dup(asm, opnd!(val), &function.frame_state(state)) },
         &Insn::ArrayPush { array, val, state } => { no_output!(gen_array_push(asm, opnd!(array), opnd!(val), &function.frame_state(state))) },
@@ -472,6 +473,20 @@ fn gen_objtostring(jit: &mut JITState, asm: &mut Assembler, val: Opnd, cd: *cons
     asm_comment!(asm, "side-exit if rb_vm_objtostring returns Qundef");
     asm.cmp(ret, Qundef.into());
     asm.je(side_exit(jit, state, ObjToStringFallback));
+
+    ret
+}
+
+fn gen_regexpmatch2(jit: &mut JITState, asm: &mut Assembler, regexp: Opnd, string: Opnd, state: &FrameState) -> Opnd {
+    gen_prepare_non_leaf_call(jit, asm, state);
+
+    // Call vm_opt_regexpmatch2(regexp, string)
+    let ret = asm_ccall!(asm, rb_vm_opt_regexpmatch2, regexp, string);
+
+    // If vm_opt_regexpmatch2 returns Qundef, we need to fall back to calling the method
+    asm_comment!(asm, "side-exit if rb_vm_opt_regexpmatch2 returns Qundef");
+    asm.cmp(ret, Qundef.into());
+    asm.je(side_exit(jit, state, RegexpMatch2Fallback));
 
     ret
 }

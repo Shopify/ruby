@@ -7131,6 +7131,10 @@ vm_opt_regexpmatch2(VALUE recv, VALUE obj)
     }
 }
 
+VALUE rb_vm_opt_regexpmatch2(VALUE recv, VALUE obj) {
+    return vm_opt_regexpmatch2(recv, obj);
+}
+
 rb_event_flag_t rb_iseq_event_flags(const rb_iseq_t *iseq, size_t pos);
 
 NOINLINE(static void vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp));

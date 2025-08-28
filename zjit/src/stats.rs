@@ -100,6 +100,7 @@ make_counters! {
     specific_exit_patchpoint,
     specific_exit_callee_side_exit,
     specific_exit_obj_to_string_fallback,
+    specific_exit_regexp_match2_fallback,
     specific_exit_interrupt,
 }
 
@@ -145,6 +146,7 @@ pub fn specific_exit_counter_ptr(reason: crate::hir::SideExitReason) -> *mut u64
         PatchPoint(_)             => specific_exit_patchpoint,
         CalleeSideExit            => specific_exit_callee_side_exit,
         ObjToStringFallback       => specific_exit_obj_to_string_fallback,
+        RegexpMatch2Fallback      => specific_exit_regexp_match2_fallback,
         Interrupt                 => specific_exit_interrupt,
     };
     counter_ptr(counter)

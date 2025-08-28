@@ -442,6 +442,7 @@ pub enum SideExitReason {
     PatchPoint(Invariant),
     CalleeSideExit,
     ObjToStringFallback,
+    RegexpMatch2Fallback,
     Interrupt,
 }
 
@@ -588,6 +589,9 @@ pub enum Insn {
     // Distinct from `SendWithoutBlock` with `mid:to_s` because does not have a patch point for String to_s being redefined
     ObjToString { val: InsnId, cd: *const rb_call_data, state: InsnId },
     AnyToString { val: InsnId, str: InsnId, state: InsnId },
+
+    // opt_regexpmatch2 - regexp =~ string operation
+    RegexpMatch2 { regexp: InsnId, string: InsnId, state: InsnId },
 
     /// Side-exit if val doesn't have the expected type.
     GuardType { val: InsnId, guard_type: Type, state: InsnId },
@@ -851,6 +855,7 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
             Insn::ArrayExtend { left, right, .. } => write!(f, "ArrayExtend {left}, {right}"),
             Insn::ArrayPush { array, val, .. } => write!(f, "ArrayPush {array}, {val}"),
             Insn::ObjToString { val, .. } => { write!(f, "ObjToString {val}") },
+            Insn::RegexpMatch2 { regexp, string, .. } => { write!(f, "RegexpMatch2 {regexp}, {string}") },
             Insn::StringIntern { val, .. } => { write!(f, "StringIntern {val}") },
             Insn::AnyToString { val, str, .. } => { write!(f, "AnyToString {val}, str: {str}") },
             Insn::SideExit { reason, .. } => write!(f, "SideExit {reason}"),
@@ -1249,6 +1254,11 @@ impl Function {
                 cd: cd,
                 state,
             },
+            &RegexpMatch2 { regexp, string, state } => RegexpMatch2 {
+                regexp: find!(regexp),
+                string: find!(string),
+                state,
+            },
             &AnyToString { val, str, state } => AnyToString {
                 val: find!(val),
                 str: find!(str),
@@ -1390,6 +1400,7 @@ impl Function {
             Insn::ToNewArray { .. } => types::ArrayExact,
             Insn::ToArray { .. } => types::ArrayExact,
             Insn::ObjToString { .. } => types::BasicObject,
+            Insn::RegexpMatch2 { .. } => types::BasicObject,  // Returns match position or nil
             Insn::AnyToString { .. } => types::String,
             Insn::GetLocal { .. } => types::BasicObject,
             // The type of Snapshot doesn't really matter; it's never materialized. It's used only
@@ -2083,6 +2094,11 @@ impl Function {
             }
             &Insn::ObjToString { val, state, .. } => {
                 worklist.push_back(val);
+                worklist.push_back(state);
+            }
+            &Insn::RegexpMatch2 { regexp, string, state, .. } => {
+                worklist.push_back(regexp);
+                worklist.push_back(string);
                 worklist.push_back(state);
             }
             &Insn::AnyToString { val, str, state, .. } => {
@@ -3289,7 +3305,6 @@ pub fn iseq_to_hir(iseq: *const rb_iseq_t) -> Result<Function, ParseError> {
                 YARVINSN_opt_and |
                 YARVINSN_opt_or |
                 YARVINSN_opt_not |
-                YARVINSN_opt_regexpmatch2 |
                 YARVINSN_opt_send_without_block => {
                     let cd: *const rb_call_data = get_arg(pc, 0).as_ptr();
                     let call_info = unsafe { rb_get_call_data_ci(cd) };
@@ -3471,6 +3486,13 @@ pub fn iseq_to_hir(iseq: *const rb_iseq_t) -> Result<Function, ParseError> {
                         let result = fun.push_insn(block, Insn::GetSpecialNumber { nth: svar, state: exit_id });
                         state.stack_push(result);
                     }
+                }
+                YARVINSN_opt_regexpmatch2 => {
+                    let string = state.stack_pop()?;
+                    let regexp = state.stack_pop()?;
+                    let exit_id = fun.push_insn(block, Insn::Snapshot { state: exit_state });
+                    let result = fun.push_insn(block, Insn::RegexpMatch2 { regexp, string, state: exit_id });
+                    state.stack_push(result);
                 }
                 _ => {
                     // Unknown opcode; side-exit into the interpreter
@@ -5307,13 +5329,31 @@ mod tests {
     #[test]
     fn opt_regexpmatch2() {
         eval("
+            def test = /foo/ =~ 'bar'
+        ");
+        assert_contains_opcode("test", YARVINSN_opt_regexpmatch2);
+        assert_snapshot!(hir_string("test"), @r"
+        fn test@<compiled>:2:
+        bb0(v0:BasicObject):
+          v2:RegexpExact[VALUE(0x1000)] = Const Value(VALUE(0x1000))
+          v3:StringExact[VALUE(0x1008)] = Const Value(VALUE(0x1008))
+          v5:StringExact = StringCopy v3
+          v7:BasicObject = RegexpMatch2 v2, v5
+          CheckInterrupts
+          Return v7
+        ");
+    }
+
+    #[test]
+    fn opt_regexpmatch2_with_params() {
+        eval("
             def test(regexp, matchee) = regexp =~ matchee
         ");
         assert_contains_opcode("test", YARVINSN_opt_regexpmatch2);
         assert_snapshot!(hir_string("test"), @r"
         fn test@<compiled>:2:
         bb0(v0:BasicObject, v1:BasicObject, v2:BasicObject):
-          v5:BasicObject = SendWithoutBlock v1, :=~, v2
+          v5:BasicObject = RegexpMatch2 v1, v2
           CheckInterrupts
           Return v5
         ");

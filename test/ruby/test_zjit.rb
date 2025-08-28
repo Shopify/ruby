@@ -610,6 +610,29 @@ class TestZJIT < Test::Unit::TestCase
     RUBY
   end
 
+  def test_opt_regexpmatch2_literal
+    assert_compiles('nil', <<~RUBY, insns: [:opt_regexpmatch2])
+      def test = /foo/ =~ "bar"
+      test
+    RUBY
+  end
+
+  def test_opt_regexpmatch2_match_found
+    assert_compiles('[0, 3, nil]', <<~RUBY, insns: [:opt_regexpmatch2], call_threshold: 2)
+      def test(pattern, text) = pattern =~ text
+      test(/foo/, "bar")  # profile
+      [test(/foo/, "foobar"), test(/bar/, "foobar"), test(/baz/, "foobar")]
+    RUBY
+  end
+
+  def test_opt_regexpmatch2_string_regexp
+    assert_compiles('[0, 3]', <<~RUBY, insns: [:opt_regexpmatch2], call_threshold: 2)
+      def test(text, pattern) = text =~ pattern
+      test("bar", /foo/)  # profile
+      [test("foobar", /foo/), test("foobar", /bar/)]
+    RUBY
+  end
+
   def test_opt_ge
     assert_compiles '[false, true, true]', %q{
       def test(a, b) = a >= b
