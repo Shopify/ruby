@@ -12,9 +12,13 @@ While we use ZJIT (Ruby's experimental next-generation JIT) as our reference, th
 
 ## Ruby's Building Blocks: ISEQs and Bytecode
 
+This post assumes basic familiarity with how interpreters and compilers work. In Ruby's case, your source code is first compiled to YARV bytecode, which the interpreter executes one by one.
+
+A JIT compiler can then translate frequently-used bytecode into native machine code that runs directly on your CPU. If you're new to bytecode or want to dive deeper into YARV instructions, I highly recommend [Kevin Newton's Advent of YARV series](https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html).
+
 ### From Ruby Code to Bytecode
 
-When Ruby loads your code, it doesn't execute the source directly. Instead, each method is compiled into an Instruction Sequence (ISEQ) - a data structure containing bytecode instructions that the Ruby VM can execute.
+When Ruby loads your code, it doesn't execute the source directly. Instead, each method is compiled into an Instruction Sequence (ISEQ) - a data structure containing YARV instructions that the Ruby VM can execute.
 
 Let's look at a simple example:
 
@@ -44,34 +48,8 @@ Running `ruby --dump=insn example.rb` shows us the bytecode:
 Each method becomes its own ISEQ with a sequence of bytecode instructions. The `foo` method has three instructions:
 
 - `putself` - pushes `self` onto the stack
-- `opt_send_without_block` - optimized method call to `bar`
+- `opt_send_without_block` - send method call to `bar`, without passing a Ruby block
 - `leave` - returns from the method
-
-To learn a bit more about YARV bytecode, I highly recommend reading [Kevin Newton](https://github.com/kddnewton)'s [Advent of YARV blog posts](https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html).
-
-### Where JIT Code Lives
-
-The critical insight is that JIT-compiled code doesn't replace bytecode - it lives alongside it in the ISEQ structure. Here's what an ISEQ looks like internally:
-
-```text
-ISEQ (foo method)
-├── body
-│   ├── bytecode: [putself, opt_send_without_block, leave]
-│   ├── jit_entry: NULL  // Initially no JIT code
-│   └── jit_entry_calls: 0  // Call counter
-```
-
-After a method is called enough times and gets JIT-compiled:
-
-```text
-ISEQ (foo method)
-├── body
-│   ├── bytecode: [putself, opt_send_without_block, leave]  // Still here!
-│   ├── jit_entry: 0x7f8b2c001000  // Pointer to native machine code
-│   └── jit_entry_calls: 1000  // Reached compilation threshold
-```
-
-The `jit_entry` field is the gateway to native code. When it's NULL, Ruby interprets bytecode. When it points to compiled code, Ruby jumps directly to machine instructions.
 
 ## Flow 1: Pure Interpreter Execution
 
@@ -195,14 +173,10 @@ if (body->jit_entry == NULL && rb_zjit_enabled_p) {
 
 This two-phase approach allows the JIT to:
 
-1. Profile execution patterns before compilation
+1. Profile execution patterns before compilation (e.g. understand the arguments' types at runtime)
 2. Generate optimized code based on actual runtime behavior
 
-## ZJIT Compilation Timeline
-
-While this post focuses on execution instead of compilation, I think understanding the general idea of compilation timeline and thresholds will help you understand the execution too.
-
-Here's how a typical method evolves from interpreted to JIT-compiled with ZJIT enabled:
+Here's how a typical method evolves from interpreted to JIT-compiled:
 
 ```text
 Method 'calculate' lifecycle:
@@ -217,16 +191,39 @@ Timeline:  Cold start  Gathering  Optimization complete,
 
 Key thresholds (ZJIT defaults, may change in the future):
 
-- **Profile threshold**: 25 calls - Start gathering type information (5 calls of profiling)
+- **Profile threshold**: 25 calls - Start gathering type information
 - **Compile threshold**: 30 calls - Generate optimized native code
 - **Steady state**: 30+ calls - Execute compiled code
 
-The specific numbers here is not important now and will likely change in the future.
+This is why JIT compilers need time to "warm up" to reach optimal speed - they need to observe your code's behavior before optimizing it.
 
-What's important is that this is why JIT compilers usually need time to "warm up" to get to
-the optimal speed.
+And to learn more about how ZJIT compiles Ruby code, I recommend reading [ZJIT has been merged into Ruby](https://railsatscale.com/2025-05-14-merge-zjit/).
 
-With all three execution flows understood - pure interpretation, transitioning to JIT, and falling back via deoptimization - we can now appreciate the elegant dance Ruby performs behind the scenes.
+### Where JIT Code Lives
+
+I used to think that JIT-compiled code would replace the bytecode as it's "faster", "better optimized"...etc. But it's actually not true - it lives alongside it in the ISEQ structure. Here's what an ISEQ looks like internally:
+
+```text
+ISEQ (foo method)
+├── body
+│   ├── bytecode: [putself, opt_send_without_block, leave]
+│   ├── jit_entry: NULL  // Initially no JIT code
+│   └── jit_entry_calls: 0  // Call counter
+```
+
+After a method is called enough times and gets JIT-compiled:
+
+```text
+ISEQ (foo method)
+├── body
+│   ├── bytecode: [putself, opt_send_without_block, leave]  // Still here!
+│   ├── jit_entry: 0x7f8b2c001000  // Pointer to native machine code
+│   └── jit_entry_calls: 1000  // Reached compilation threshold
+```
+
+The `jit_entry` field is the gateway to native code. When it's NULL, Ruby interprets bytecode. When it points to compiled code, Ruby jumps directly to machine instructions.
+
+Now that we understand how Ruby code becomes bytecode and where JIT code lives, let's see how Ruby actually executes this code.
 
 ### The Transition Sequence
 
@@ -447,7 +444,7 @@ Besides type guards, JIT returns to interpreter for:
 
 The key insight: deoptimization isn't failure - it's a normal part of Ruby's execution strategy. The VM seamlessly handles the transition, ensuring your code always runs correctly even when optimistic assumptions prove wrong.
 
-We've explored the three execution flows in detail. To round out the picture, let's briefly look at when and how methods actually get compiled in the first place.
+With all three execution flows understood - pure interpretation, transitioning to JIT, and falling back via deoptimization - we can now appreciate the elegant dance Ruby performs behind the scenes.
 
 ## Takeaways
 
