@@ -42,9 +42,12 @@ Running `ruby --dump=insn example.rb` shows us the bytecode:
 ```
 
 Each method becomes its own ISEQ with a sequence of bytecode instructions. The `foo` method has three instructions:
+
 - `putself` - pushes `self` onto the stack
 - `opt_send_without_block` - optimized method call to `bar`
 - `leave` - returns from the method
+
+To learn a bit more about YARV bytecode, I highly recommend reading [Kevin Newton](https://github.com/kddnewton)'s [Advent of YARV blog posts](https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html).
 
 ### Where JIT Code Lives
 
@@ -70,23 +73,13 @@ ISEQ (foo method)
 
 The `jit_entry` field is the gateway to native code. When it's NULL, Ruby interprets bytecode. When it points to compiled code, Ruby jumps directly to machine instructions.
 
-### Key Bytecode Instructions
-
-For understanding execution flow, these instructions are most important:
-
-- `opt_send_without_block` - Optimized method call without a block argument
-- `leave` - Returns from current method
-- `opt_plus`, `opt_minus` - Optimized arithmetic operations
-
-Now that we understand how Ruby code becomes bytecode and where JIT code lives, let's see how Ruby actually executes this code. We'll start with the simplest case: pure interpretation without any JIT compilation.
-
 ## Flow 1: Pure Interpreter Execution
 
 When JIT is disabled or a method hasn't been compiled yet, Ruby executes bytecode through the interpreter. This is the baseline execution mode.
 
 ### The Interpreter Loop
 
-The heart of Ruby's interpreter is `vm_exec_core()` (vm.c:2639), which implements a classic fetch-decode-execute loop:
+The heart of Ruby's interpreter is `vm_exec_core()`, which implements a classic fetch-decode-execute loop:
 
 1. **Fetch** - Read the next bytecode instruction at the current program counter
 2. **Decode** - Determine what operation to perform
@@ -187,14 +180,15 @@ Methods don't start with JIT code. They earn it through usage. ZJIT uses a two-p
 if (body->jit_entry == NULL && rb_zjit_enabled_p) {
     body->jit_entry_calls++;
 
-    // First phase: Profile at threshold
+    // At profile-threshold, rewrite some of the YARV instructions
+    // to zjit_* instructions to profile these instructions.
     if (body->jit_entry_calls == rb_zjit_profile_threshold) {
-        rb_zjit_profile_iseq_entry(iseq, ec);  // Gather runtime info
+        rb_zjit_profile_enable(iseq);
     }
-    // Second phase: Compile at higher threshold
-    else if (body->jit_entry_calls == rb_zjit_compile_threshold) {
-        rb_zjit_compile_iseq(iseq, ec, false);  // Generate native code
-        // After this, iseq->body->jit_entry points to compiled code
+
+    // At call-threshold, compile the ISEQ with ZJIT.
+    if (body->jit_entry_calls == rb_zjit_call_threshold) {
+        rb_zjit_compile_iseq(iseq, false);
     }
 }
 ```
@@ -203,6 +197,36 @@ This two-phase approach allows the JIT to:
 
 1. Profile execution patterns before compilation
 2. Generate optimized code based on actual runtime behavior
+
+## ZJIT Compilation Timeline
+
+While this post focuses on execution instead of compilation, I think understanding the general idea of compilation timeline and thresholds will help you understand the execution too.
+
+Here's how a typical method evolves from interpreted to JIT-compiled with ZJIT enabled:
+
+```text
+Method 'calculate' lifecycle:
+
+Calls:     0 ──────── 25 ──────── 30 ─────────────────►
+           │          │           │
+Mode:      └─Interpret┴─Profile──┴─Native Code (JIT compiled)
+
+Timeline:  Cold start  Gathering  Optimization complete,
+                      type info   executing native code
+```
+
+Key thresholds (ZJIT defaults, may change in the future):
+
+- **Profile threshold**: 25 calls - Start gathering type information (5 calls of profiling)
+- **Compile threshold**: 30 calls - Generate optimized native code
+- **Steady state**: 30+ calls - Execute compiled code
+
+The specific numbers here is not important now and will likely change in the future.
+
+What's important is that this is why JIT compilers usually need time to "warm up" to get to
+the optimal speed.
+
+With all three execution flows understood - pure interpretation, transitioning to JIT, and falling back via deoptimization - we can now appreciate the elegant dance Ruby performs behind the scenes.
 
 ### The Transition Sequence
 
@@ -266,7 +290,7 @@ Once execution transfers to JIT code, native CPU instructions execute directly. 
 
 # Guard: check object class matches expected type
 0x1200c00a0: tst x0, #7
-0x1200c00a4: b.ne #0x1200c0188     # side exit if guard fails
+0x1200c00a4: b.ne #0x1200c0188     # side exit if guard fails (we'll explore this in Flow 3)
 
 # Direct method call to 'bar' (no method lookup!)
 0x1200c00e4: stur x0, [x21]
@@ -424,36 +448,6 @@ Besides type guards, JIT returns to interpreter for:
 The key insight: deoptimization isn't failure - it's a normal part of Ruby's execution strategy. The VM seamlessly handles the transition, ensuring your code always runs correctly even when optimistic assumptions prove wrong.
 
 We've explored the three execution flows in detail. To round out the picture, let's briefly look at when and how methods actually get compiled in the first place.
-
-## ZJIT Compilation Timeline
-
-While this post focuses on execution instead of compilation, I think understanding the general idea of compilation timeline and thresholds will help you understand the execution too.
-
-Here's how a typical method evolves from interpreted to JIT-compiled with ZJIT enabled:
-
-```text
-Method 'calculate' lifecycle:
-
-Calls:     0 ──────── 25 ──────── 30 ─────────────────►
-           │          │           │
-Mode:      └─Interpret┴─Profile──┴─Native Code (JIT compiled)
-
-Timeline:  Cold start  Gathering  Optimization complete,
-                      type info   executing native code
-```
-
-Key thresholds (ZJIT defaults, may change in the future):
-
-- **Profile threshold**: 25 calls - Start gathering type information (5 calls of profiling)
-- **Compile threshold**: 30 calls - Generate optimized native code
-- **Steady state**: 30+ calls - Execute compiled code
-
-The specific numbers here is not important now and will likely change in the future.
-
-What's important is that this is why JIT compilers usually need time to "warm up" to get to
-the optimal speed.
-
-With all three execution flows understood - pure interpretation, transitioning to JIT, and falling back via deoptimization - we can now appreciate the elegant dance Ruby performs behind the scenes.
 
 ## Takeaways
 
