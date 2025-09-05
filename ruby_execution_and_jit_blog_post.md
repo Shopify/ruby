@@ -137,22 +137,22 @@ Now let's see what happens when a method has been JIT-compiled and the interpret
 
 ### The JIT_EXEC Gateway
 
-Remember the `JIT_EXEC` check we saw in Flow 1? It appeared after every method call setup, always checking for JIT code even when none existed. Now, this same check becomes the gateway to native code.
-
-When a method has been JIT-compiled, the check finally finds something:
+Remember the `JIT_EXEC` check we saw in Flow 1? It appeared after every method call setup, always checking for JIT code even when none existed. Now, what happens when the ISEQ has JIT-compiled code?
 
 ```text
-JIT_EXEC logic (method has JIT code):
-if (method_was_set_up && method_has_jit_code) {
-    jump_to_native_code();
+if (method_was_called && method_has_jit_code) {
+    jump_to_jit_code();
+} else {
+    continue_interpreting();
 }
 ```
 
-The difference from Flow 1? The second condition is now true - `jit_compile()` finds actual compiled code at the method's `jit_entry` pointer instead of NULL.
-
 ### How Methods Get JIT Compiled
 
-Methods don't start with JIT code. They earn it through usage. ZJIT uses a two-phase approach:
+Normally, methods don't get compiled by JIT compilers right away. They only get compiled after
+it's been executed by the interpreter enough times to pass a threshold.
+
+If we use ZJIT as the example, it uses a two-phase approach:
 
 ```c
 if (body->jit_entry == NULL && rb_zjit_enabled_p) {
@@ -184,24 +184,17 @@ Method 'calculate' lifecycle:
 Calls:     0 ──────── 25 ──────── 30 ─────────────────►
            │          │           │
 Mode:      └─Interpret┴─Profile──┴─Native Code (JIT compiled)
-
-Timeline:  Cold start  Gathering  Optimization complete,
-                      type info   executing native code
 ```
 
-Key thresholds (ZJIT defaults, may change in the future):
-
-- **Profile threshold**: 25 calls - Start gathering type information
-- **Compile threshold**: 30 calls - Generate optimized native code
-- **Steady state**: 30+ calls - Execute compiled code
-
-This is why JIT compilers need time to "warm up" to reach optimal speed - they need to observe your code's behavior before optimizing it.
+This is why JIT compilers need time to "warm up" to reach optimal performance - they need to observe your code's behavior before optimizing it.
 
 And to learn more about how ZJIT compiles Ruby code, I recommend reading [ZJIT has been merged into Ruby](https://railsatscale.com/2025-05-14-merge-zjit/).
 
 ### Where JIT Code Lives
 
-I used to think that JIT-compiled code would replace the bytecode as it's "faster", "better optimized"...etc. But it's actually not true - it lives alongside it in the ISEQ structure. Here's what an ISEQ looks like internally:
+So how does Ruby store the JIT compiled code? I used to think the compiled code would replace the bytecode as it's "faster". But it's actually not true - it lives alongside it in the ISEQ structure.
+
+Here's what an ISEQ looks like internally:
 
 ```text
 ISEQ (foo method)
@@ -216,9 +209,9 @@ After a method is called enough times and gets JIT-compiled:
 ```text
 ISEQ (foo method)
 ├── body
-│   ├── bytecode: [putself, opt_send_without_block, leave]  // Still here!
+│   ├── bytecode: [putself, opt_send_without_block, leave]  // Still here
 │   ├── jit_entry: 0x7f8b2c001000  // Pointer to native machine code
-│   └── jit_entry_calls: 1000  // Reached compilation threshold
+│   └── jit_entry_calls: 35  // Reached compilation threshold
 ```
 
 The `jit_entry` field is the gateway to native code. When it's NULL, Ruby interprets bytecode. When it points to compiled code, Ruby jumps directly to machine instructions.
@@ -253,29 +246,6 @@ Interpreter executing foo() [not JITted]:
    - No more bytecode interpretation
 ```
 
-### Visual: ISEQ State During Transition
-
-Before the call to bar:
-
-```text
-ISEQ (bar)
-├── body
-│   ├── jit_entry: 0x7f8b2c001000  ← JIT code exists!
-│   ├── jit_entry_calls: 1000       ← Reached threshold
-│   └── bytecode: [putobject 42, leave]  ← Still available
-```
-
-During the transition:
-
-```text
-Method:              Execution Mode:
-foo()          →     Interpreter (executing opt_send_without_block)
-     ↓
-bar()          →     JIT (about to execute native code at 0x7f8b2c001000)
-```
-
-The transition is remarkably simple - it's just a function pointer call. The interpreter jumps directly to the machine code address stored in `jit_entry`.
-
 ### What Happens in JIT Code
 
 Once execution transfers to JIT code, native CPU instructions execute directly. Here's a glimpse of what the `bar` method looks like after JIT compilation (ARM64 assembly):
@@ -303,9 +273,8 @@ Key differences from interpreter execution:
 
 - Native CPU instructions execute directly
 - No instruction fetch/decode overhead
-- Guards ensure type safety with conditional branches
+- Guards ensure type safety with conditional branches (more on this later)
 - Direct jumps to other JIT code (no method lookup)
-- Register allocation instead of stack manipulation
 
 The JIT code has full access to the Ruby VM's data structures and can:
 
@@ -354,7 +323,7 @@ result = INT2FIX(FIX2INT(a) + FIX2INT(b));
 return result;
 ```
 
-The JIT inserts type guards using instructions like:
+The JIT inserts type guards using HIR (high-level intermediate representation) like:
 
 ```rust
 Insn::GuardType { val, guard_type: types::Fixnum, state }
