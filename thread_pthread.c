@@ -1419,8 +1419,10 @@ rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
 
         // release VM lock
         lock_rec = vm->ractor.sync.lock_rec;
+        rb_fiber_t *fiber = vm->ractor.sync.lock_owner_fiber;
         vm->ractor.sync.lock_rec = 0;
         vm->ractor.sync.lock_owner = NULL;
+        vm->ractor.sync.lock_owner_fiber = NULL;
         rb_native_mutex_unlock(&vm->ractor.sync.lock);
 
         // interrupts all running threads
@@ -1450,6 +1452,7 @@ rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
         rb_native_mutex_lock(&vm->ractor.sync.lock);
         vm->ractor.sync.lock_rec = lock_rec;
         vm->ractor.sync.lock_owner = cr;
+        vm->ractor.sync.lock_owner_fiber = fiber;
     }
 
     // do not release ractor_sched_lock and threre is no newly added (resumed) thread
@@ -1582,6 +1585,12 @@ thread_sched_atfork(struct rb_thread_sched *sched)
         vm->ractor.sched.snt_cnt = 1;
     }
     vm->ractor.sched.running_cnt = 0;
+
+    vm->ractor.sync.lock_rec = 0;
+    th->ec->tag->lock_rec = 0;
+    vm->ractor.sync.lock_owner = NULL;
+    vm->ractor.sync.lock_owner_fiber = NULL;
+    rb_native_mutex_initialize(&vm->ractor.sync.lock);
 
     rb_native_mutex_initialize(&vm->ractor.sched.lock);
 #if VM_CHECK_MODE > 0

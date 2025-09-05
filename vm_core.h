@@ -676,6 +676,7 @@ typedef struct rb_vm_struct {
             // monitor
             rb_nativethread_lock_t lock;
             struct rb_ractor_struct *lock_owner;
+            struct rb_fiber_struct *lock_owner_fiber;
             unsigned int lock_rec;
 
             // join at exit
@@ -2073,10 +2074,10 @@ void rb_ec_vm_lock_rec_release(const rb_execution_context_t *ec,
 /* This technically is a data race, as it's checked without the lock, however we
  * check against a value only our own thread will write. */
 NO_SANITIZE("thread", static inline bool
-vm_locked_by_ractor_p(rb_vm_t *vm, rb_ractor_t *cr))
+vm_locked_by_fiber_p(rb_vm_t *vm, rb_fiber_t *cur_f))
 {
-    VM_ASSERT(cr == GET_RACTOR());
-    return vm->ractor.sync.lock_owner == cr;
+    VM_ASSERT(cur_f == GET_THREAD()->ec->fiber_ptr);
+    return vm->ractor.sync.lock_owner_fiber == cur_f;
 }
 
 static inline unsigned int
@@ -2084,7 +2085,7 @@ rb_ec_vm_lock_rec(const rb_execution_context_t *ec)
 {
     rb_vm_t *vm = rb_ec_vm_ptr(ec);
 
-    if (!vm_locked_by_ractor_p(vm, rb_ec_ractor_ptr(ec))) {
+    if (!vm_locked_by_fiber_p(vm, ec->fiber_ptr)) {
         return 0;
     }
     else {

@@ -12,7 +12,7 @@ void rb_ractor_sched_barrier_end(rb_vm_t *vm, rb_ractor_t *cr);
 static bool
 vm_locked(rb_vm_t *vm)
 {
-    return vm_locked_by_ractor_p(vm, GET_RACTOR());
+    return vm_locked_by_fiber_p(vm, GET_THREAD()->ec->fiber_ptr);
 }
 
 #if RUBY_DEBUG > 0
@@ -62,7 +62,7 @@ vm_need_barrier(bool no_barrier, const rb_ractor_t *cr, const rb_vm_t *vm)
 }
 
 static void
-vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, unsigned int *lev APPEND_LOCATION_ARGS)
+vm_lock_enter(rb_ractor_t *cr, rb_fiber_t *fiber, rb_vm_t *vm, bool locked, bool no_barrier, unsigned int *lev APPEND_LOCATION_ARGS)
 {
     RUBY_DEBUG_LOG2(file, line, "start locked:%d", locked);
 
@@ -77,6 +77,7 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, unsign
         // lock
         rb_native_mutex_lock(&vm->ractor.sync.lock);
         VM_ASSERT(vm->ractor.sync.lock_owner == NULL);
+        VM_ASSERT(vm->ractor.sync.lock_owner_fiber == NULL);
         VM_ASSERT(vm->ractor.sync.lock_rec == 0);
 
         // barrier
@@ -93,7 +94,9 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, unsign
 
         VM_ASSERT(vm->ractor.sync.lock_rec == 0);
         VM_ASSERT(vm->ractor.sync.lock_owner == NULL);
+        VM_ASSERT(vm->ractor.sync.lock_owner_fiber == NULL);
         vm->ractor.sync.lock_owner = cr;
+        vm->ractor.sync.lock_owner_fiber = fiber;
     }
 
     vm->ractor.sync.lock_rec++;
@@ -130,6 +133,7 @@ vm_lock_leave(rb_vm_t *vm, bool no_barrier, unsigned int *lev APPEND_LOCATION_AR
 
     if (vm->ractor.sync.lock_rec == 0) {
         vm->ractor.sync.lock_owner = NULL;
+        vm->ractor.sync.lock_owner_fiber = NULL;
         rb_native_mutex_unlock(&vm->ractor.sync.lock);
     }
 }
@@ -139,10 +143,10 @@ rb_vm_lock_enter_body(unsigned int *lev APPEND_LOCATION_ARGS)
 {
     rb_vm_t *vm = GET_VM();
     if (vm_locked(vm)) {
-        vm_lock_enter(NULL, vm, true, false, lev APPEND_LOCATION_PARAMS);
+        vm_lock_enter(NULL, NULL, vm, true, false, lev APPEND_LOCATION_PARAMS);
     }
     else {
-        vm_lock_enter(GET_RACTOR(), vm, false, false, lev APPEND_LOCATION_PARAMS);
+        vm_lock_enter(GET_RACTOR(), GET_THREAD()->ec->fiber_ptr, vm, false, false, lev APPEND_LOCATION_PARAMS);
     }
 }
 
@@ -151,10 +155,10 @@ rb_vm_lock_enter_body_nb(unsigned int *lev APPEND_LOCATION_ARGS)
 {
     rb_vm_t *vm = GET_VM();
     if (vm_locked(vm)) {
-        vm_lock_enter(NULL, vm, true, true, lev APPEND_LOCATION_PARAMS);
+        vm_lock_enter(NULL, NULL, vm, true, true, lev APPEND_LOCATION_PARAMS);
     }
     else {
-        vm_lock_enter(GET_RACTOR(), vm, false, true, lev APPEND_LOCATION_PARAMS);
+        vm_lock_enter(GET_RACTOR(), GET_THREAD()->ec->fiber_ptr, vm, false, true, lev APPEND_LOCATION_PARAMS);
     }
 }
 
@@ -162,7 +166,7 @@ void
 rb_vm_lock_enter_body_cr(rb_ractor_t *cr, unsigned int *lev APPEND_LOCATION_ARGS)
 {
     rb_vm_t *vm = GET_VM();
-    vm_lock_enter(cr, vm, vm_locked(vm), false, lev APPEND_LOCATION_PARAMS);
+    vm_lock_enter(cr, GET_THREAD()->ec->fiber_ptr, vm, vm_locked(vm), false, lev APPEND_LOCATION_PARAMS);
 }
 
 void
@@ -174,7 +178,7 @@ rb_vm_lock_leave_body_nb(unsigned int *lev APPEND_LOCATION_ARGS)
 void
 rb_vm_lock_leave_body(unsigned int *lev APPEND_LOCATION_ARGS)
 {
-    vm_lock_leave(GET_VM(),  false, lev APPEND_LOCATION_PARAMS);
+    vm_lock_leave(GET_VM(), false, lev APPEND_LOCATION_PARAMS);
 }
 
 void
@@ -183,7 +187,7 @@ rb_vm_lock_body(LOCATION_ARGS)
     rb_vm_t *vm = GET_VM();
     ASSERT_vm_unlocking();
 
-    vm_lock_enter(GET_RACTOR(), vm, false, false, &vm->ractor.sync.lock_rec APPEND_LOCATION_PARAMS);
+    vm_lock_enter(GET_RACTOR(), GET_THREAD()->ec->fiber_ptr, vm, false, false, &vm->ractor.sync.lock_rec APPEND_LOCATION_PARAMS);
 }
 
 void
@@ -201,9 +205,11 @@ vm_cond_wait(rb_vm_t *vm, rb_nativethread_cond_t *cond, unsigned long msec)
     ASSERT_vm_locking();
     unsigned int lock_rec = vm->ractor.sync.lock_rec;
     rb_ractor_t *cr = vm->ractor.sync.lock_owner;
+    rb_fiber_t *fiber = vm->ractor.sync.lock_owner_fiber;
 
     vm->ractor.sync.lock_rec = 0;
     vm->ractor.sync.lock_owner = NULL;
+    vm->ractor.sync.lock_owner_fiber = NULL;
     if (msec > 0) {
         rb_native_cond_timedwait(cond, &vm->ractor.sync.lock, msec);
     }
@@ -212,6 +218,7 @@ vm_cond_wait(rb_vm_t *vm, rb_nativethread_cond_t *cond, unsigned long msec)
     }
     vm->ractor.sync.lock_rec = lock_rec;
     vm->ractor.sync.lock_owner = cr;
+    vm->ractor.sync.lock_owner_fiber = fiber;
 }
 
 void
