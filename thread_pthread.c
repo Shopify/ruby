@@ -1401,7 +1401,7 @@ void
 rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
 {
     VM_ASSERT(cr == GET_RACTOR());
-    VM_ASSERT(vm->ractor.sync.lock_owner == cr); // VM is locked
+    VM_ASSERT(rb_fiber_threadptr(vm->ractor.sync.lock_owner_fiber)->ractor == cr); // VM is locked
     VM_ASSERT(!vm->ractor.sched.barrier_waiting);
     VM_ASSERT(vm->ractor.sched.barrier_waiting_cnt == 0);
     VM_ASSERT(vm->ractor.sched.barrier_ractor == NULL);
@@ -1421,7 +1421,6 @@ rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
         lock_rec = vm->ractor.sync.lock_rec;
         rb_fiber_t *fiber = vm->ractor.sync.lock_owner_fiber;
         vm->ractor.sync.lock_rec = 0;
-        vm->ractor.sync.lock_owner = NULL;
         vm->ractor.sync.lock_owner_fiber = NULL;
         rb_native_mutex_unlock(&vm->ractor.sync.lock);
 
@@ -1451,7 +1450,6 @@ rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
         // acquire VM lock
         rb_native_mutex_lock(&vm->ractor.sync.lock);
         vm->ractor.sync.lock_rec = lock_rec;
-        vm->ractor.sync.lock_owner = cr;
         vm->ractor.sync.lock_owner_fiber = fiber;
     }
 
@@ -1503,11 +1501,10 @@ ractor_sched_barrier_join_wait_locked(rb_vm_t *vm, rb_thread_t *th)
 }
 
 void
-rb_ractor_sched_barrier_join(rb_vm_t *vm, rb_ractor_t *cr)
+rb_ractor_sched_barrier_join(rb_vm_t *vm, rb_ractor_t *cr, rb_fiber_t *fiber)
 {
     VM_ASSERT(cr->threads.sched.running != NULL); // running ractor
     VM_ASSERT(cr == GET_RACTOR());
-    VM_ASSERT(vm->ractor.sync.lock_owner == NULL); // VM is locked, but owner == NULL
     VM_ASSERT(vm->ractor.sched.barrier_waiting);  // VM needs barrier sync
 
 #if USE_RUBY_DEBUG_LOG || VM_CHECK_MODE > 0
@@ -1588,14 +1585,13 @@ thread_sched_atfork(struct rb_thread_sched *sched)
 
     vm->ractor.sync.lock_rec = 0;
     th->ec->tag->lock_rec = 0;
-    vm->ractor.sync.lock_owner = NULL;
     vm->ractor.sync.lock_owner_fiber = NULL;
     rb_native_mutex_initialize(&vm->ractor.sync.lock);
 
     rb_native_mutex_initialize(&vm->ractor.sched.lock);
 #if VM_CHECK_MODE > 0
-    vm->ractor.sched.lock_owner = NULL;
     vm->ractor.sched.locked = false;
+    vm->ractor.sched.lock_owner = NULL;
 #endif
 
     // rb_native_cond_destroy(&vm->ractor.sched.cond);

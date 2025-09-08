@@ -121,8 +121,6 @@ rb_mutex_num_waiting(rb_mutex_t *mutex)
     return n;
 }
 
-rb_thread_t* rb_fiber_threadptr(const rb_fiber_t *fiber);
-
 static void
 mutex_free(void *ptr)
 {

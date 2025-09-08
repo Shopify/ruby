@@ -968,9 +968,9 @@ rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
 }
 
 void
-rb_ractor_sched_barrier_join(rb_vm_t *vm, rb_ractor_t *cr)
+rb_ractor_sched_barrier_join(rb_vm_t *vm, rb_ractor_t *cr, rb_fiber_t *fiber)
 {
-    vm->ractor.sync.lock_owner = cr;
+    vm->ractor.sync.lock_owner_fiber = fiber;
     unsigned int barrier_cnt = vm->ractor.sync.barrier_cnt;
     rb_thread_t *th = GET_THREAD();
     bool running;
@@ -1005,7 +1005,7 @@ rb_ractor_sched_barrier_join(rb_vm_t *vm, rb_ractor_t *cr)
         rb_vm_ractor_blocking_cnt_dec(vm, cr, __FILE__, __LINE__);
     }
 
-        vm->ractor.sync.lock_owner = NULL;
+    vm->ractor.sync.lock_owner_fiber = NULL;
 }
 
 bool

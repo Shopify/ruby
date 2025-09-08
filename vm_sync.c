@@ -6,7 +6,7 @@
 #include "vm_debug.h"
 
 void rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr);
-void rb_ractor_sched_barrier_join(rb_vm_t *vm, rb_ractor_t *cr);
+void rb_ractor_sched_barrier_join(rb_vm_t *vm, rb_ractor_t *cr, rb_fiber_t *fiber);
 void rb_ractor_sched_barrier_end(rb_vm_t *vm, rb_ractor_t *cr);
 
 static bool
@@ -76,7 +76,6 @@ vm_lock_enter(rb_ractor_t *cr, rb_fiber_t *fiber, rb_vm_t *vm, bool locked, bool
 #endif
         // lock
         rb_native_mutex_lock(&vm->ractor.sync.lock);
-        VM_ASSERT(vm->ractor.sync.lock_owner == NULL);
         VM_ASSERT(vm->ractor.sync.lock_owner_fiber == NULL);
         VM_ASSERT(vm->ractor.sync.lock_rec == 0);
 
@@ -88,14 +87,12 @@ vm_lock_enter(rb_ractor_t *cr, rb_fiber_t *fiber, rb_vm_t *vm, bool locked, bool
             do {
                 VM_ASSERT(vm_need_barrier_waiting(vm));
                 RUBY_DEBUG_LOG("barrier serial:%u", vm->ractor.sched.barrier_serial);
-                rb_ractor_sched_barrier_join(vm, cr);
+                rb_ractor_sched_barrier_join(vm, cr, fiber);
             } while (vm_need_barrier_waiting(vm));
         }
 
         VM_ASSERT(vm->ractor.sync.lock_rec == 0);
-        VM_ASSERT(vm->ractor.sync.lock_owner == NULL);
         VM_ASSERT(vm->ractor.sync.lock_owner_fiber == NULL);
-        vm->ractor.sync.lock_owner = cr;
         vm->ractor.sync.lock_owner_fiber = fiber;
     }
 
@@ -103,13 +100,13 @@ vm_lock_enter(rb_ractor_t *cr, rb_fiber_t *fiber, rb_vm_t *vm, bool locked, bool
     *lev = vm->ractor.sync.lock_rec;
 
     RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%u", vm->ractor.sync.lock_rec,
-                    (unsigned int)rb_ractor_id(vm->ractor.sync.lock_owner));
+                    (unsigned int)rb_ractor_id(cr));
 }
 
 static void
 vm_lock_leave(rb_vm_t *vm, bool no_barrier, unsigned int *lev APPEND_LOCATION_ARGS)
 {
-    MAYBE_UNUSED(rb_ractor_t *cr = vm->ractor.sync.lock_owner);
+    MAYBE_UNUSED(rb_ractor_t *cr = rb_fiber_threadptr(vm->ractor.sync.lock_owner_fiber)->ractor);
 
     RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%u%s", vm->ractor.sync.lock_rec,
                     (unsigned int)rb_ractor_id(cr),
@@ -132,7 +129,6 @@ vm_lock_leave(rb_vm_t *vm, bool no_barrier, unsigned int *lev APPEND_LOCATION_AR
     *lev = vm->ractor.sync.lock_rec;
 
     if (vm->ractor.sync.lock_rec == 0) {
-        vm->ractor.sync.lock_owner = NULL;
         vm->ractor.sync.lock_owner_fiber = NULL;
         rb_native_mutex_unlock(&vm->ractor.sync.lock);
     }
@@ -204,11 +200,9 @@ vm_cond_wait(rb_vm_t *vm, rb_nativethread_cond_t *cond, unsigned long msec)
 {
     ASSERT_vm_locking();
     unsigned int lock_rec = vm->ractor.sync.lock_rec;
-    rb_ractor_t *cr = vm->ractor.sync.lock_owner;
     rb_fiber_t *fiber = vm->ractor.sync.lock_owner_fiber;
 
     vm->ractor.sync.lock_rec = 0;
-    vm->ractor.sync.lock_owner = NULL;
     vm->ractor.sync.lock_owner_fiber = NULL;
     if (msec > 0) {
         rb_native_cond_timedwait(cond, &vm->ractor.sync.lock, msec);
@@ -217,7 +211,6 @@ vm_cond_wait(rb_vm_t *vm, rb_nativethread_cond_t *cond, unsigned long msec)
         rb_native_cond_wait(cond, &vm->ractor.sync.lock);
     }
     vm->ractor.sync.lock_rec = lock_rec;
-    vm->ractor.sync.lock_owner = cr;
     vm->ractor.sync.lock_owner_fiber = fiber;
 }
 
@@ -249,12 +242,11 @@ rb_vm_barrier(void)
     RB_DEBUG_COUNTER_INC(vm_sync_barrier);
 
     if (!rb_multi_ractor_p()) {
-        // no other ractors
         return;
     }
     else {
         rb_vm_t *vm = GET_VM();
-        rb_ractor_t *cr = vm->ractor.sync.lock_owner;
+        rb_ractor_t *cr = rb_fiber_threadptr(vm->ractor.sync.lock_owner_fiber)->ractor;
 
         ASSERT_vm_locking();
         VM_ASSERT(cr == GET_RACTOR());

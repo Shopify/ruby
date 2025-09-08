@@ -675,7 +675,6 @@ typedef struct rb_vm_struct {
         struct {
             // monitor
             rb_nativethread_lock_t lock;
-            struct rb_ractor_struct *lock_owner;
             struct rb_fiber_struct *lock_owner_fiber;
             unsigned int lock_rec;
 
@@ -2151,6 +2150,7 @@ void rb_execution_context_mark(const rb_execution_context_t *ec);
 void rb_fiber_close(rb_fiber_t *fib);
 void Init_native_thread(rb_thread_t *th);
 int rb_vm_check_ints_blocking(rb_execution_context_t *ec);
+rb_thread_t* rb_fiber_threadptr(const rb_fiber_t *fiber);
 
 // vm_sync.h
 void rb_vm_cond_wait(rb_vm_t *vm, rb_nativethread_cond_t *cond);
