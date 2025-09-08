@@ -245,10 +245,9 @@ rb_vm_barrier(void)
         return;
     }
     else {
+        ASSERT_vm_locking();
         rb_vm_t *vm = GET_VM();
         rb_ractor_t *cr = rb_fiber_threadptr(vm->ractor.sync.lock_owner_fiber)->ractor;
-
-        ASSERT_vm_locking();
         VM_ASSERT(cr == GET_RACTOR());
         VM_ASSERT(rb_ractor_status_p(cr, ractor_running));
 
