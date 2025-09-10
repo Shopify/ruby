@@ -1514,10 +1514,11 @@ rb_check_overloaded_cme(const rb_callable_method_entry_t *cme, const struct rb_c
         (int)vm_ci_argc(ci) == ISEQ_BODY(method_entry_iseqptr(cme))->param.lead_num) {
         VM_ASSERT(cme->def->type == VM_METHOD_TYPE_ISEQ, "type: %d", cme->def->type); // iseq_overload is marked only on ISEQ methods
 
-        cme = get_overloaded_cme(cme);
-
-        VM_ASSERT(cme != NULL);
-        METHOD_ENTRY_CACHED_SET((struct rb_callable_method_entry_struct *)cme);
+        RB_VM_LOCKING() {
+            cme = get_overloaded_cme(cme);
+            VM_ASSERT(cme != NULL);
+            METHOD_ENTRY_CACHED_SET((struct rb_callable_method_entry_struct *)cme);
+        }
     }
 
     return cme;
