@@ -993,7 +993,11 @@ rb_gvar_set_entry(struct rb_global_entry *entry, VALUE val)
         var->block_trace = 1;
         trace.trace = var->trace;
         trace.val = val;
-        rb_ensure(trace_ev, (VALUE)&trace, trace_en, (VALUE)var);
+        RB_VM_UNLOCK();
+        {
+            rb_ensure(trace_ev, (VALUE)&trace, trace_en, (VALUE)var);
+        }
+        RB_VM_LOCK();
     }
     return val;
 }
@@ -1048,9 +1052,13 @@ rb_gvar_get(ID id)
             }
             else {
                 retval = (*var->getter)(entry->id, var->data);
-                if (rb_obj_respond_to(retval, rb_intern("clone"), 1)) {
-                    retval = rb_funcall(retval, rb_intern("clone"), 0);
+                RB_VM_UNLOCK();
+                {
+                    if (rb_obj_respond_to(retval, rb_intern("clone"), 1)) {
+                        retval = rb_funcall(retval, rb_intern("clone"), 0);
+                    }
                 }
+                RB_VM_LOCK();
                 rb_hash_aset(gvars, key, retval);
             }
         }
@@ -3849,6 +3857,7 @@ static void
 const_added(VALUE klass, ID const_name)
 {
     if (GET_VM()->running) {
+        ASSERT_vm_unlocking();
         VALUE name = ID2SYM(const_name);
         rb_funcallv(klass, idConst_added, 1, &name);
     }

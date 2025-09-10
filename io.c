@@ -10360,7 +10360,12 @@ static void
 argf_lineno_setter(VALUE val, ID id, VALUE *var)
 {
     VALUE argf = *var;
-    int n = NUM2INT(val);
+    int n;
+    RB_VM_UNLOCK();
+    {
+        n = NUM2INT(val); // can context switch
+    }
+    RB_VM_LOCK();
     ARGF.last_lineno = ARGF.lineno = n;
 }
 
@@ -14432,7 +14437,13 @@ argf_filename(VALUE argf)
 static VALUE
 argf_filename_getter(ID id, VALUE *var)
 {
-    return argf_filename(*var);
+    VALUE filename = Qnil;
+    RB_VM_UNLOCK();
+    {
+        filename = argf_filename(*var);
+    }
+    RB_VM_LOCK();
+    return filename;
 }
 
 /*

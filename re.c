@@ -24,6 +24,7 @@
 #include "internal/object.h"
 #include "internal/ractor.h"
 #include "internal/variable.h"
+#include "vm_sync.h"
 #include "regint.h"
 #include "ruby/encoding.h"
 #include "ruby/re.h"
@@ -4588,14 +4589,22 @@ rb_reg_regsub(VALUE str, VALUE src, struct re_registers *regs, VALUE regexp)
 static VALUE
 ignorecase_getter(ID _x, VALUE *_y)
 {
-    rb_category_warn(RB_WARN_CATEGORY_DEPRECATED, "variable $= is no longer effective");
+    RB_VM_UNLOCK();
+    {
+        rb_category_warn(RB_WARN_CATEGORY_DEPRECATED, "variable $= is no longer effective");
+    }
+    RB_VM_LOCK();
     return Qfalse;
 }
 
 static void
 ignorecase_setter(VALUE val, ID id, VALUE *_)
 {
-    rb_category_warn(RB_WARN_CATEGORY_DEPRECATED, "variable $= is no longer effective; ignored");
+    RB_VM_UNLOCK();
+    {
+        rb_category_warn(RB_WARN_CATEGORY_DEPRECATED, "variable $= is no longer effective; ignored");
+    }
+    RB_VM_LOCK();
 }
 
 static VALUE

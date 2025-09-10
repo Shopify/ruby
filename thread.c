@@ -1472,6 +1472,7 @@ rb_thread_sleep(int sec)
 static void
 rb_thread_schedule_limits(uint32_t limits_us)
 {
+    ASSERT_vm_unlocking();
     if (!rb_thread_alone()) {
         rb_thread_t *th = GET_THREAD();
         RUBY_DEBUG_LOG("us:%u", (unsigned int)limits_us);
@@ -2675,7 +2676,7 @@ rb_threadptr_execute_interrupts(rb_thread_t *th, int blocking_timing)
             rb_threadptr_to_kill(th);
         }
 
-        if (timer_interrupt) {
+        if (timer_interrupt && th->vm->ractor.sync.lock_owner != th->ractor) {
             uint32_t limits_us = thread_default_quantum_ms * 1000;
 
             if (th->priority > 0)
