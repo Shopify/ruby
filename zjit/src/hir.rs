@@ -583,7 +583,7 @@ pub enum Insn {
     /// Un-optimized fallback implementation (dynamic dispatch) for send-ish instructions
     /// Ignoring keyword arguments etc for now
     SendWithoutBlock { self_val: InsnId, cd: *const rb_call_data, args: Vec<InsnId>, state: InsnId },
-    Send { cd: *const rb_call_data, blockiseq: IseqPtr, args: Vec<InsnId>, state: InsnId },
+    Send { cd: *const rb_call_data, blockiseq: IseqPtr, state: InsnId },
     InvokeSuper { cd: *const rb_call_data, blockiseq: IseqPtr, args: Vec<InsnId>, state: InsnId },
     InvokeBlock { cd: *const rb_call_data, args: Vec<InsnId>, state: InsnId },
 
@@ -829,15 +829,11 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
                 }
                 Ok(())
             }
-            Insn::Send { cd, args, blockiseq, .. } => {
+            Insn::Send { cd, blockiseq, .. } => {
                 // For tests, we want to check HIR snippets textually. Addresses change
                 // between runs, making tests fail. Instead, pick an arbitrary hex value to
                 // use as a "pointer" so we can check the rest of the HIR.
-                write!(f, "Send {:p}, :{}", self.ptr_map.map_ptr(blockiseq), ruby_call_method_name(*cd))?;
-                for arg in args {
-                    write!(f, ", {arg}")?;
-                }
-                Ok(())
+                write!(f, "Send {:p}, :{}", self.ptr_map.map_ptr(blockiseq), ruby_call_method_name(*cd))
             }
             Insn::InvokeSuper { blockiseq, args, .. } => {
                 write!(f, "InvokeSuper {:p}", self.ptr_map.map_ptr(blockiseq))?;
@@ -1343,10 +1339,9 @@ impl Function {
                 args: find_vec!(args),
                 state,
             },
-            &Send { cd, blockiseq, ref args, state } => Send {
+            &Send { cd, blockiseq,  state } => Send {
                 cd,
                 blockiseq,
-                args: find_vec!(args),
                 state,
             },
             &InvokeSuper { cd, blockiseq, ref args, state } => InvokeSuper {
@@ -2193,6 +2188,7 @@ impl Function {
                 {}
             &Insn::PatchPoint { state, .. }
             | &Insn::CheckInterrupts { state }
+            | &Insn::Send { state, .. }
             | &Insn::GetConstantPath { ic: _, state } => {
                 worklist.push_back(state);
             }
@@ -2287,7 +2283,6 @@ impl Function {
                 worklist.push_back(state);
             }
             &Insn::InvokeSuper { ref args, state, .. }
-            | &Insn::Send { ref args, state, .. }
             | &Insn::InvokeBuiltin { ref args, state, .. }
             | &Insn::InvokeBlock { ref args, state, .. } => {
                 worklist.extend(args);
@@ -3621,10 +3616,10 @@ pub fn iseq_to_hir(iseq: *const rb_iseq_t) -> Result<Function, ParseError> {
                     }
                     let argc = unsafe { vm_ci_argc((*cd).ci) };
 
-                    let args = state.stack_pop_n(argc as usize)?;
+                    let _args = state.stack_pop_n(argc as usize)?;
                     let _recv = state.stack_pop()?;
                     let exit_id = fun.push_insn(block, Insn::Snapshot { state: exit_state });
-                    let send = fun.push_insn(block, Insn::Send { cd, blockiseq, args, state: exit_id });
+                    let send = fun.push_insn(block, Insn::Send { cd, blockiseq, state: exit_id });
                     state.stack_push(send);
 
                     // Reload locals that may have been modified by the blockiseq.
