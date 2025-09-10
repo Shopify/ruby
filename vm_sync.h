@@ -4,7 +4,7 @@
 #include "vm_debug.h"
 #include "debug_counter.h"
 
-#if USE_RUBY_DEBUG_LOG
+#if USE_RUBY_DEBUG_LOG || RUBY_DEBUG > 0 || VM_CHECK_MODE > 0
 #define LOCATION_ARGS const char *file, int line
 #define LOCATION_PARAMS file, line
 #define APPEND_LOCATION_ARGS , const char *file, int line
@@ -56,6 +56,12 @@ rb_vm_lock(const char *file, int line)
 
     if (rb_multi_ractor_p()) {
         rb_vm_lock_body(LOCATION_PARAMS);
+    } else {
+#if VM_CHECK_MODE > 0
+        if (rb_current_execution_context(false)) {
+            rb_vm_lock_body(LOCATION_PARAMS);
+        }
+#endif
     }
 }
 
@@ -64,6 +70,12 @@ rb_vm_unlock(const char *file, int line)
 {
     if (rb_multi_ractor_p()) {
         rb_vm_unlock_body(LOCATION_PARAMS);
+    } else {
+#if VM_CHECK_MODE > 0
+        if (rb_current_execution_context(false)) {
+            rb_vm_unlock_body(LOCATION_PARAMS);
+        }
+#endif
     }
 }
 
@@ -74,6 +86,12 @@ rb_vm_lock_enter(unsigned int *lev, const char *file, int line)
 
     if (rb_multi_ractor_p()) {
         rb_vm_lock_enter_body(lev APPEND_LOCATION_PARAMS);
+    } else {
+#if VM_CHECK_MODE > 0
+        if (rb_current_execution_context(false)) {
+            rb_vm_lock_enter_body(lev APPEND_LOCATION_PARAMS);
+        }
+#endif
     }
 }
 
@@ -84,6 +102,12 @@ rb_vm_lock_enter_nb(unsigned int *lev, const char *file, int line)
 
     if (rb_multi_ractor_p()) {
         rb_vm_lock_enter_body_nb(lev APPEND_LOCATION_PARAMS);
+    } else {
+#if VM_CHECK_MODE > 0
+        if (rb_current_execution_context(false)) {
+            rb_vm_lock_enter_body_nb(lev APPEND_LOCATION_PARAMS);
+        }
+#endif
     }
 }
 
@@ -92,6 +116,12 @@ rb_vm_lock_leave_nb(unsigned int *lev, const char *file, int line)
 {
     if (rb_multi_ractor_p()) {
         rb_vm_lock_leave_body_nb(lev APPEND_LOCATION_PARAMS);
+    } else {
+#if VM_CHECK_MODE > 0
+        if (rb_current_execution_context(false)) {
+            rb_vm_lock_leave_body_nb(lev APPEND_LOCATION_PARAMS);
+        }
+#endif
     }
 }
 
@@ -100,6 +130,12 @@ rb_vm_lock_leave(unsigned int *lev, const char *file, int line)
 {
     if (rb_multi_ractor_p()) {
         rb_vm_lock_leave_body(lev APPEND_LOCATION_PARAMS);
+    } else {
+#if VM_CHECK_MODE > 0
+        if (rb_current_execution_context(false)) {
+            rb_vm_lock_leave_body(lev APPEND_LOCATION_PARAMS);
+        }
+#endif
     }
 }
 
