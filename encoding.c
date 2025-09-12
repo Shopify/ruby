@@ -28,6 +28,7 @@
 #include "ruby/encoding.h"
 #include "ruby/util.h"
 #include "ruby_assert.h"
+#include "vm_core.h"
 #include "vm_sync.h"
 #include "ruby_atomic.h"
 
@@ -421,6 +422,7 @@ int
 rb_enc_register(const char *name, rb_encoding *encoding)
 {
     int index;
+    bool set_const = false;
 
     GLOBAL_ENC_TABLE_LOCKING(enc_table) {
         index = enc_registered(enc_table, name);
@@ -439,8 +441,11 @@ rb_enc_register(const char *name, rb_encoding *encoding)
         }
         else {
             index = enc_register(enc_table, name, encoding);
-            set_encoding_const(name, rb_enc_from_index(index));
+            set_const = true;
         }
+    }
+    if (set_const) {
+        set_encoding_const(name, rb_enc_from_index(index));
     }
     return index;
 }
@@ -472,13 +477,14 @@ rb_enc_registered(const char *name)
 void
 rb_encdb_declare(const char *name)
 {
+    int idx;
     GLOBAL_ENC_TABLE_LOCKING(enc_table) {
-        int idx = enc_registered(enc_table, name);
+        idx = enc_registered(enc_table, name);
         if (idx < 0) {
             idx = enc_register(enc_table, name, 0);
         }
-        set_encoding_const(name, rb_enc_from_index(idx));
     }
+    set_encoding_const(name, rb_enc_from_index(idx));
 }
 
 static void
@@ -537,7 +543,6 @@ enc_replicate(struct enc_table *enc_table, const char *name, rb_encoding *encodi
     idx = enc_register(enc_table, name, encoding);
     if (idx < 0) rb_raise(rb_eArgError, "invalid encoding name: %s", name);
     set_base_encoding(enc_table, idx, encoding);
-    set_encoding_const(name, rb_enc_from_index(idx));
     return idx;
 }
 
@@ -552,7 +557,6 @@ enc_replicate_with_index(struct enc_table *enc_table, const char *name, rb_encod
     }
     if (idx >= 0) {
         set_base_encoding(enc_table, idx, origenc);
-        set_encoding_const(name, rb_enc_from_index(idx));
     }
     else {
         rb_raise(rb_eArgError, "failed to replicate encoding");
@@ -575,6 +579,8 @@ rb_encdb_replicate(const char *name, const char *orig)
         r = enc_replicate_with_index(enc_table, name, rb_enc_from_index(origidx), idx);
     }
 
+    set_encoding_const(name, rb_enc_from_index(r));
+
     return r;
 }
 
@@ -588,6 +594,7 @@ rb_define_dummy_encoding(const char *name)
         rb_encoding *enc = enc_table->list[index].enc;
         ENC_SET_DUMMY((rb_raw_encoding *)enc);
     }
+    set_encoding_const(name, rb_enc_from_index(index));
 
     return index;
 }
@@ -604,6 +611,8 @@ rb_encdb_dummy(const char *name)
         rb_encoding *enc = enc_table->list[index].enc;
         ENC_SET_DUMMY((rb_raw_encoding *)enc);
     }
+
+    set_encoding_const(name, rb_enc_from_index(index));
 
     return index;
 }
@@ -671,11 +680,12 @@ enc_alias_internal(struct enc_table *enc_table, const char *alias, int idx)
 }
 
 static int
-enc_alias(struct enc_table *enc_table, const char *alias, int idx)
+enc_alias(struct enc_table *enc_table, const char *alias, int idx, bool *set_const)
 {
     if (!valid_encoding_name_p(alias)) return -1;
-    if (!enc_alias_internal(enc_table, alias, idx))
-        set_encoding_const(alias, enc_from_index(enc_table, idx));
+    if (!enc_alias_internal(enc_table, alias, idx)) {
+        *set_const = true;
+    }
     return idx;
 }
 
@@ -683,6 +693,7 @@ int
 rb_enc_alias(const char *alias, const char *orig)
 {
     int idx, r;
+    bool set_const = false;
     GLOBAL_ENC_TABLE_LOCKING(enc_table) {
         enc_check_addable(enc_table, alias); // can raise
     }
@@ -691,7 +702,11 @@ rb_enc_alias(const char *alias, const char *orig)
     if (idx < 0) return -1;
 
     GLOBAL_ENC_TABLE_LOCKING(enc_table) {
-        r = enc_alias(enc_table, alias, idx);
+        r = enc_alias(enc_table, alias, idx, &set_const);
+    }
+
+    if (set_const) {
+        set_encoding_const(alias, rb_enc_from_index(idx));
     }
 
     return r;
@@ -701,6 +716,7 @@ int
 rb_encdb_alias(const char *alias, const char *orig)
 {
     int r;
+    bool set_const = false;
 
     GLOBAL_ENC_TABLE_LOCKING(enc_table) {
         int idx = enc_registered(enc_table, orig);
@@ -708,7 +724,10 @@ rb_encdb_alias(const char *alias, const char *orig)
         if (idx < 0) {
             idx = enc_register(enc_table, orig, 0);
         }
-        r = enc_alias(enc_table, alias, idx);
+        r = enc_alias(enc_table, alias, idx, &set_const);
+    }
+    if (set_const) {
+        set_encoding_const(alias, rb_enc_from_index(r));
     }
 
     return r;
@@ -717,34 +736,35 @@ rb_encdb_alias(const char *alias, const char *orig)
 static void
 rb_enc_init(struct enc_table *enc_table)
 {
-    ASSERT_vm_locking();
-    enc_table_expand(enc_table, ENCODING_COUNT + 1);
-    if (!enc_table->names) {
-        enc_table->names = st_init_strcasetable_with_size(ENCODING_LIST_CAPA);
-    }
+    RB_VM_LOCKING() {
+        enc_table_expand(enc_table, ENCODING_COUNT + 1);
+        if (!enc_table->names) {
+            enc_table->names = st_init_strcasetable_with_size(ENCODING_LIST_CAPA);
+        }
 #define OnigEncodingASCII_8BIT OnigEncodingASCII
 #define ENC_REGISTER(enc) enc_register_at(enc_table, ENCINDEX_##enc, rb_enc_name(&OnigEncoding##enc), &OnigEncoding##enc)
-    ENC_REGISTER(ASCII_8BIT);
-    ENC_REGISTER(UTF_8);
-    ENC_REGISTER(US_ASCII);
-    global_enc_ascii = enc_table->list[ENCINDEX_ASCII_8BIT].enc;
-    global_enc_utf_8 = enc_table->list[ENCINDEX_UTF_8].enc;
-    global_enc_us_ascii = enc_table->list[ENCINDEX_US_ASCII].enc;
+        ENC_REGISTER(ASCII_8BIT);
+        ENC_REGISTER(UTF_8);
+        ENC_REGISTER(US_ASCII);
+        global_enc_ascii = enc_table->list[ENCINDEX_ASCII_8BIT].enc;
+        global_enc_utf_8 = enc_table->list[ENCINDEX_UTF_8].enc;
+        global_enc_us_ascii = enc_table->list[ENCINDEX_US_ASCII].enc;
 #undef ENC_REGISTER
 #undef OnigEncodingASCII_8BIT
 #define ENCDB_REGISTER(name, enc) enc_register_at(enc_table, ENCINDEX_##enc, name, NULL)
-    ENCDB_REGISTER("UTF-16BE", UTF_16BE);
-    ENCDB_REGISTER("UTF-16LE", UTF_16LE);
-    ENCDB_REGISTER("UTF-32BE", UTF_32BE);
-    ENCDB_REGISTER("UTF-32LE", UTF_32LE);
-    ENCDB_REGISTER("UTF-16", UTF_16);
-    ENCDB_REGISTER("UTF-32", UTF_32);
-    ENCDB_REGISTER("UTF8-MAC", UTF8_MAC);
+        ENCDB_REGISTER("UTF-16BE", UTF_16BE);
+        ENCDB_REGISTER("UTF-16LE", UTF_16LE);
+        ENCDB_REGISTER("UTF-32BE", UTF_32BE);
+        ENCDB_REGISTER("UTF-32LE", UTF_32LE);
+        ENCDB_REGISTER("UTF-16", UTF_16);
+        ENCDB_REGISTER("UTF-32", UTF_32);
+        ENCDB_REGISTER("UTF8-MAC", UTF8_MAC);
 
-    ENCDB_REGISTER("EUC-JP", EUC_JP);
-    ENCDB_REGISTER("Windows-31J", Windows_31J);
+        ENCDB_REGISTER("EUC-JP", EUC_JP);
+        ENCDB_REGISTER("Windows-31J", Windows_31J);
 #undef ENCDB_REGISTER
-    enc_table->count = ENCINDEX_BUILTIN_MAX;
+        enc_table->count = ENCINDEX_BUILTIN_MAX;
+    }
 }
 
 rb_encoding *
@@ -865,7 +885,11 @@ int
 rb_enc_find_index(const char *name)
 {
     int i;
-    ASSERT_vm_unlocking(); // it needs to be unlocked so it can call `load_encoding` if necessary
+#if RUBY_DEBUG > 0
+    if (rb_multi_ractor_p() || !rb_enc_registered(name)) {
+        ASSERT_vm_unlocking(); // it needs to be unlocked so it can call `load_encoding` if necessary
+    }
+#endif
     GLOBAL_ENC_TABLE_LOCKING(enc_table) {
         i = enc_registered(enc_table, name);
     }
@@ -1812,6 +1836,7 @@ set_default_internal(VALUE klass, VALUE encoding)
 static void
 set_encoding_const(const char *name, rb_encoding *enc)
 {
+    ASSERT_vm_unlocking();
     VALUE encoding = rb_enc_from_encoding(enc);
     char *s = (char *)name;
     int haslower = 0, hasupper = 0, valid = 0;

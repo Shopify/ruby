@@ -129,6 +129,7 @@ rb_vm_get_insns_address_table(void)
 static VALUE
 vm_exec_core(rb_execution_context_t *ec)
 {
+    ASSERT_vm_unlocking();
     register rb_control_frame_t *reg_cfp = ec->cfp;
     rb_thread_t *th;
 

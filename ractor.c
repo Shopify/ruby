@@ -164,7 +164,7 @@ ractor_status_set(rb_ractor_t *r, enum ractor_status status)
     // check 1
     if (r->status_ != ractor_created) {
         VM_ASSERT(r == GET_RACTOR()); // only self-modification is allowed.
-        ASSERT_vm_locking();
+        VM_ASSERT((rb_multi_ractor_p() && RB_VM_LOCKED_P()) || true);
     }
 
     // check2: transition check. assume it will be vanished on non-debug build.

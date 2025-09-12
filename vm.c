@@ -1675,6 +1675,7 @@ invoke_block_from_c_bh(rb_execution_context_t *ec, VALUE block_handler,
                        int kw_splat, VALUE passed_block_handler, const rb_cref_t *cref,
                        int is_lambda, int force_blockarg)
 {
+    ASSERT_vm_unlocking();
   again:
     switch (vm_block_handler_type(block_handler)) {
       case block_handler_type_iseq:
@@ -1717,6 +1718,7 @@ check_block_handler(rb_execution_context_t *ec)
 static VALUE
 vm_yield_with_cref(rb_execution_context_t *ec, int argc, const VALUE *argv, int kw_splat, const rb_cref_t *cref, int is_lambda)
 {
+    ASSERT_vm_unlocking();
     return invoke_block_from_c_bh(ec, check_block_handler(ec),
                                   argc, argv, kw_splat, VM_BLOCK_HANDLER_NONE,
                                   cref, is_lambda, FALSE);
