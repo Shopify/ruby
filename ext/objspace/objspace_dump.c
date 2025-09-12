@@ -29,7 +29,7 @@
 #include "ruby/util.h"
 #include "ruby/io.h"
 #include "vm_callinfo.h"
-#include "vm_core.h"
+#include "vm_sync.h"
 
 RUBY_EXTERN const char ruby_hexdigits[];
 
@@ -59,6 +59,7 @@ dump_flush(struct dump_config *dc)
 {
     if (dc->buffer_len) {
         if (dc->stream) {
+            // use raw fwrite, don't allow context switch
             size_t written = fwrite(dc->buffer, sizeof(dc->buffer[0]), dc->buffer_len, dc->stream);
             if (written < dc->buffer_len) {
                 MEMMOVE(dc->buffer, dc->buffer + written, char, dc->buffer_len - written);
@@ -776,15 +777,23 @@ static VALUE
 objspace_dump(VALUE os, VALUE obj, VALUE output)
 {
     struct dump_config dc = {0,};
-    if (!RB_SPECIAL_CONST_P(obj)) {
-        dc.cur_page_slot_size = rb_gc_obj_slot_size(obj);
+    VALUE result = Qnil;
+    RB_VM_LOCK_LOCK();
+    {
+        rb_vm_barrier();
+
+        if (!RB_SPECIAL_CONST_P(obj)) {
+            dc.cur_page_slot_size = rb_gc_obj_slot_size(obj);
+        }
+
+        dump_output(&dc, output, Qnil, Qnil, Qnil);
+
+        dump_object(obj, &dc);
+
+        result = dump_result(&dc);
     }
-
-    dump_output(&dc, output, Qnil, Qnil, Qnil);
-
-    dump_object(obj, &dc);
-
-    return dump_result(&dc);
+    RB_VM_LOCK_UNLOCK();
+    return result;
 }
 
 static void
@@ -840,22 +849,30 @@ static VALUE
 objspace_dump_all(VALUE os, VALUE output, VALUE full, VALUE since, VALUE shapes)
 {
     struct dump_config dc = {0,};
-    dump_output(&dc, output, full, since, shapes);
+    VALUE result = Qnil;
+    RB_VM_LOCK_LOCK();
+    {
+        rb_vm_barrier();
 
-    if (!dc.partial_dump || dc.since == 0) {
-        /* dump roots */
-        rb_objspace_reachable_objects_from_root(root_obj_i, &dc);
-        if (dc.roots) dump_append(&dc, "]}\n");
+        dump_output(&dc, output, full, since, shapes);
+
+        if (!dc.partial_dump || dc.since == 0) {
+            /* dump roots */
+            rb_objspace_reachable_objects_from_root(root_obj_i, &dc);
+            if (dc.roots) dump_append(&dc, "]}\n");
+        }
+
+        if (RTEST(shapes)) {
+            rb_shape_each_shape_id(shape_id_i, &dc);
+        }
+
+        /* dump all objects */
+        rb_objspace_each_objects(heap_i, &dc);
+
+        result = dump_result(&dc);
     }
-
-    if (RTEST(shapes)) {
-        rb_shape_each_shape_id(shape_id_i, &dc);
-    }
-
-    /* dump all objects */
-    rb_objspace_each_objects(heap_i, &dc);
-
-    return dump_result(&dc);
+    RB_VM_LOCK_UNLOCK();
+    return result;
 }
 
 /* :nodoc: */
@@ -863,12 +880,20 @@ static VALUE
 objspace_dump_shapes(VALUE os, VALUE output, VALUE shapes)
 {
     struct dump_config dc = {0,};
-    dump_output(&dc, output, Qfalse, Qnil, shapes);
+    VALUE result = Qnil;
+    RB_VM_LOCK_LOCK();
+    {
+        rb_vm_barrier();
 
-    if (RTEST(shapes)) {
-        rb_shape_each_shape_id(shape_id_i, &dc);
+        dump_output(&dc, output, Qfalse, Qnil, shapes);
+
+        if (RTEST(shapes)) {
+            rb_shape_each_shape_id(shape_id_i, &dc);
+        }
+        result = dump_result(&dc);
     }
-    return dump_result(&dc);
+    RB_VM_LOCK_UNLOCK();
+    return result;
 }
 
 void

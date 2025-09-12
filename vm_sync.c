@@ -283,3 +283,17 @@ rb_ec_vm_lock_rec_release(const rb_execution_context_t *ec,
 
     VM_ASSERT(recorded_lock_rec == rb_ec_vm_lock_rec(ec));
 }
+
+// For extensions, to be used like: RB_VM_LOCK_LOCK()
+void
+rb_vm_lock_lock(const char *file, int line)
+{
+    rb_vm_lock(file, line);
+}
+
+
+// for extensions, to be used like: RB_VM_LOCK_UNLOCK
+void rb_vm_lock_unlock(const char *file, int line)
+{
+    rb_vm_unlock(file, line);
+}
