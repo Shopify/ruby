@@ -1,5 +1,8 @@
 # frozen_string_literal: false
 
+require 'fiddle'
+Fiddle::Pointer.new(1)[0]
+
 class LocalBarrier
   def initialize(n)
     @wait = Thread::Queue.new
