@@ -2597,6 +2597,8 @@ rb_threadptr_execute_interrupts(rb_thread_t *th, int blocking_timing)
 
     VM_ASSERT(GET_THREAD() == th);
 
+    ASSERT_vm_unlocking();
+
     if (th->ec->raised_flag) return ret;
 
     while ((interrupt = threadptr_get_interrupts(th)) != 0) {
@@ -2676,7 +2678,7 @@ rb_threadptr_execute_interrupts(rb_thread_t *th, int blocking_timing)
             rb_threadptr_to_kill(th);
         }
 
-        if (timer_interrupt && th->vm->ractor.sync.lock_owner != th->ractor) {
+        if (timer_interrupt) {
             uint32_t limits_us = thread_default_quantum_ms * 1000;
 
             if (th->priority > 0)

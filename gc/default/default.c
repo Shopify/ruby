@@ -2765,20 +2765,23 @@ rb_gc_impl_define_finalizer(void *objspace_ptr, VALUE obj, VALUE block)
 
     if (st_lookup(finalizer_table, obj, &data)) {
         table = (VALUE)data;
+        VALUE dup_table = rb_ary_dup(table);
 
+        RB_GC_VM_UNLOCK(lev);
         /* avoid duplicate block, table is usually small */
         {
             long len = RARRAY_LEN(table);
             long i;
 
             for (i = 0; i < len; i++) {
-                VALUE recv = RARRAY_AREF(table, i);
-                if (rb_equal(recv, block)) { // TODO: unsafe, can context switch
-                    RB_GC_VM_UNLOCK(lev);
+                VALUE recv = RARRAY_AREF(dup_table, i);
+                if (rb_equal(recv, block)) { // can't be called with VM lock held
                     return recv;
                 }
             }
         }
+        lev = RB_GC_VM_LOCK();
+        RB_GC_GUARD(dup_table);
 
         rb_ary_push(table, block);
     }

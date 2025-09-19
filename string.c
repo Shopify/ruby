@@ -11444,6 +11444,7 @@ void
 rb_str_setter(VALUE val, ID id, VALUE *var)
 {
     if (!NIL_P(val) && !RB_TYPE_P(val, T_STRING)) {
+        RB_VM_UNLOCK_ALL();
         rb_raise(rb_eTypeError, "value of %"PRIsVALUE" must be String", rb_id2str(id));
     }
     *var = val;
@@ -11452,15 +11453,19 @@ rb_str_setter(VALUE val, ID id, VALUE *var)
 static void
 rb_fs_setter(VALUE val, ID id, VALUE *var)
 {
-    val = rb_fs_check(val);
-    if (!val) {
-        rb_raise(rb_eTypeError,
-                 "value of %"PRIsVALUE" must be String or Regexp",
-                 rb_id2str(id));
+    RB_VM_UNLOCK();
+    {
+        val = rb_fs_check(val);
+        if (!val) {
+            rb_raise(rb_eTypeError,
+                    "value of %"PRIsVALUE" must be String or Regexp",
+                    rb_id2str(id));
+        }
+        if (!NIL_P(val)) {
+                rb_warn_deprecated("'$;'", NULL);
+        }
     }
-    if (!NIL_P(val)) {
-        rb_warn_deprecated("'$;'", NULL);
-    }
+    RB_VM_LOCK();
     *var = val;
 }
 

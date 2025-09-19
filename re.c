@@ -4627,7 +4627,9 @@ static void
 match_setter(VALUE val, ID _x, VALUE *_y)
 {
     if (!NIL_P(val)) {
+        RB_VM_UNLOCK();
         Check_Type(val, T_MATCH);
+        RB_VM_LOCK();
     }
     rb_backref_set(val);
 }

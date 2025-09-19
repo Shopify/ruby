@@ -1856,13 +1856,9 @@ rb_econv_asciicompat_encoding(const char *ascii_incompat_name)
                     RB_VM_LOCK_ENTER_LEV(&lev);
                 }
                 else {
-#if RUBY_DEBUG > 0
                     RB_VM_LOCK_LEAVE_LEV(&lev);
-#endif
                     st_foreach(table2, asciicompat_encoding_i, (st_data_t)&data);
-#if RUBY_DEBUG > 0
                     RB_VM_LOCK_ENTER_LEV(&lev);
-#endif
                 }
             }
 

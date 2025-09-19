@@ -42,6 +42,7 @@
 
 #include "dln.h"
 #include "eval_intern.h"
+#include "vm_sync.h"
 #include "internal.h"
 #include "internal/cmdlineopt.h"
 #include "internal/cont.h"
@@ -3019,10 +3020,13 @@ ruby_setproctitle(VALUE title)
 static void
 set_arg0(VALUE val, ID id, VALUE *_)
 {
-    if (origarg.argv == 0)
+    RB_VM_UNLOCK();
+    if (origarg.argv == 0) {
         rb_raise(rb_eRuntimeError, "$0 not initialized");
+    }
 
     rb_progname = rb_str_new_frozen(ruby_setproctitle(val));
+    RB_VM_LOCK();
 }
 
 static inline VALUE

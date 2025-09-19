@@ -14795,7 +14795,9 @@ ruby.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
 ruby.$(OBJEXT): {$(VPATH)}thread_native.h
 ruby.$(OBJEXT): {$(VPATH)}util.h
 ruby.$(OBJEXT): {$(VPATH)}vm_core.h
+ruby.$(OBJEXT): {$(VPATH)}vm_debug.h
 ruby.$(OBJEXT): {$(VPATH)}vm_opts.h
+ruby.$(OBJEXT): {$(VPATH)}vm_sync.h
 ruby.$(OBJEXT): {$(VPATH)}yjit.h
 ruby_parser.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 ruby_parser.$(OBJEXT): $(top_srcdir)/internal/array.h

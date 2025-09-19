@@ -345,6 +345,7 @@ static int
 enc_table_expand(struct enc_table *enc_table, int newsize)
 {
     if (newsize > ENCODING_LIST_CAPA) {
+        RB_VM_UNLOCK();
         rb_raise(rb_eEncodingError, "too many encoding (> %d)", ENCODING_LIST_CAPA);
     }
     return newsize;
@@ -491,9 +492,11 @@ static void
 enc_check_addable(struct enc_table *enc_table, const char *name)
 {
     if (enc_registered(enc_table, name) >= 0) {
+        RB_VM_UNLOCK();
         rb_raise(rb_eArgError, "encoding %s is already registered", name);
     }
     else if (!valid_encoding_name_p(name)) {
+        RB_VM_UNLOCK();
         rb_raise(rb_eArgError, "invalid encoding name: %s", name);
     }
 }
@@ -541,7 +544,10 @@ enc_replicate(struct enc_table *enc_table, const char *name, rb_encoding *encodi
 
     enc_check_addable(enc_table, name);
     idx = enc_register(enc_table, name, encoding);
-    if (idx < 0) rb_raise(rb_eArgError, "invalid encoding name: %s", name);
+    if (idx < 0) {
+        RB_VM_UNLOCK();
+        rb_raise(rb_eArgError, "invalid encoding name: %s", name);
+    }
     set_base_encoding(enc_table, idx, encoding);
     return idx;
 }
@@ -559,6 +565,7 @@ enc_replicate_with_index(struct enc_table *enc_table, const char *name, rb_encod
         set_base_encoding(enc_table, idx, origenc);
     }
     else {
+        RB_VM_UNLOCK();
         rb_raise(rb_eArgError, "failed to replicate encoding");
     }
     return idx;
@@ -885,7 +892,7 @@ int
 rb_enc_find_index(const char *name)
 {
     int i;
-#if RUBY_DEBUG > 0
+#if RUBY_DEBUG
     if (rb_multi_ractor_p() || !rb_enc_registered(name)) {
         ASSERT_vm_unlocking(); // it needs to be unlocked so it can call `load_encoding` if necessary
     }

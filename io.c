@@ -8675,7 +8675,11 @@ deprecated_str_setter(VALUE val, ID id, VALUE *var)
 {
     rb_str_setter(val, id, &val);
     if (!NIL_P(val)) {
-        rb_warn_deprecated("'%s'", NULL, rb_id2name(id));
+        RB_VM_UNLOCK();
+        {
+            rb_warn_deprecated("'%s'", NULL, rb_id2name(id));
+        }
+        RB_VM_LOCK();
     }
     *var = val;
 }
@@ -8684,17 +8688,21 @@ static void
 deprecated_rs_setter(VALUE val, ID id, VALUE *var)
 {
     if (!NIL_P(val)) {
-        if (!RB_TYPE_P(val, T_STRING)) {
-            rb_raise(rb_eTypeError, "value of %"PRIsVALUE" must be String", rb_id2str(id));
+        RB_VM_UNLOCK();
+        {
+            if (!RB_TYPE_P(val, T_STRING)) {
+                rb_raise(rb_eTypeError, "value of %"PRIsVALUE" must be String", rb_id2str(id));
+            }
+            if (rb_str_equal(val, rb_default_rs)) {
+                val = rb_default_rs;
+            }
+            else {
+                val = rb_str_frozen_bare_string(val);
+            }
+            rb_enc_str_coderange(val);
+            rb_warn_deprecated("'%s'", NULL, rb_id2name(id));
         }
-        if (rb_str_equal(val, rb_default_rs)) {
-            val = rb_default_rs;
-        }
-        else {
-            val = rb_str_frozen_bare_string(val);
-        }
-        rb_enc_str_coderange(val);
-        rb_warn_deprecated("'%s'", NULL, rb_id2name(id));
+        RB_VM_LOCK();
     }
     *var = val;
 }
@@ -9246,7 +9254,11 @@ stdin_getter(ID id, VALUE *ptr)
 static void
 stdout_setter(VALUE val, ID id, VALUE *ptr)
 {
-    must_respond_to(id_write, val, id);
+    RB_VM_UNLOCK();
+    {
+        must_respond_to(id_write, val, id);
+    }
+    RB_VM_LOCK();
     rb_ractor_stdout_set(val);
 }
 
@@ -9259,7 +9271,11 @@ stdout_getter(ID id, VALUE *ptr)
 static void
 stderr_setter(VALUE val, ID id, VALUE *ptr)
 {
-    must_respond_to(id_write, val, id);
+    RB_VM_UNLOCK();
+    {
+        must_respond_to(id_write, val, id);
+    }
+    RB_VM_LOCK();
     rb_ractor_stderr_set(val);
 }
 
