@@ -1307,6 +1307,8 @@ collect_outer_variable_names(ID id, VALUE val, void *ptr)
 static const rb_env_t *
 env_copy(const VALUE *src_ep, VALUE read_only_variables)
 {
+    ASSERT_vm_unlocking();
+
     const rb_env_t *src_env = (rb_env_t *)VM_ENV_ENVVAL(src_ep);
     VM_ASSERT(src_env->ep == src_ep);
 

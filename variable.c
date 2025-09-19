@@ -596,6 +596,7 @@ rb_find_global_entry(ID id)
     }
 
     if (UNLIKELY(!rb_ractor_main_p()) && (!entry || !entry->ractor_local)) {
+        if (RB_VM_LOCKED_P()) RB_VM_UNLOCK_ALL();
         rb_raise(rb_eRactorIsolationError, "can not access global variable %s from non-main Ractor", rb_id2name(id));
     }
 
@@ -653,7 +654,11 @@ rb_global_entry(ID id)
 VALUE
 rb_gvar_undef_getter(ID id, VALUE *_)
 {
-    rb_warning("global variable '%"PRIsVALUE"' not initialized", QUOTE_ID(id));
+    RB_VM_UNLOCK();
+    {
+        rb_warning("global variable '%"PRIsVALUE"' not initialized", QUOTE_ID(id));
+    }
+    RB_VM_LOCK();
 
     return Qnil;
 }
@@ -732,6 +737,7 @@ rb_gvar_var_marker(VALUE *var)
 void
 rb_gvar_readonly_setter(VALUE v, ID id, VALUE *_)
 {
+    RB_VM_UNLOCK();
     rb_name_error(id, "%"PRIsVALUE" is a read-only variable", QUOTE_ID(id));
 }
 
@@ -993,7 +999,11 @@ rb_gvar_set_entry(struct rb_global_entry *entry, VALUE val)
         var->block_trace = 1;
         trace.trace = var->trace;
         trace.val = val;
-        rb_ensure(trace_ev, (VALUE)&trace, trace_en, (VALUE)var);
+        RB_VM_UNLOCK();
+        {
+            rb_ensure(trace_ev, (VALUE)&trace, trace_en, (VALUE)var);
+        }
+        RB_VM_LOCK();
     }
     return val;
 }
@@ -1048,9 +1058,13 @@ rb_gvar_get(ID id)
             }
             else {
                 retval = (*var->getter)(entry->id, var->data);
-                if (rb_obj_respond_to(retval, rb_intern("clone"), 1)) {
-                    retval = rb_funcall(retval, rb_intern("clone"), 0);
+                RB_VM_UNLOCK();
+                {
+                    if (rb_obj_respond_to(retval, rb_intern("clone"), 1)) {
+                        retval = rb_funcall(retval, rb_intern("clone"), 0);
+                    }
                 }
+                RB_VM_LOCK();
                 rb_hash_aset(gvars, key, retval);
             }
         }
@@ -1157,6 +1171,7 @@ rb_alias_variable(ID name1, ID name2)
         else if ((entry1 = (struct rb_global_entry *)data1)->var != entry2->var) {
             struct rb_global_variable *var = entry1->var;
             if (var->block_trace) {
+                RB_VM_UNLOCK();
                 rb_raise(rb_eRuntimeError, "can't alias in tracer");
             }
             var->counter--;
@@ -3983,14 +3998,28 @@ const_tbl_update(struct autoload_const *ac, int autoload_force)
         else {
             VALUE name = QUOTE_ID(id);
             visibility = ce->flag;
-            if (klass == rb_cObject)
-                rb_warn("already initialized constant %"PRIsVALUE"", name);
-            else
-                rb_warn("already initialized constant %"PRIsVALUE"::%"PRIsVALUE"",
-                        rb_class_name(klass), name);
+            if (klass == rb_cObject) {
+                RB_VM_UNLOCK();
+                {
+                    rb_warn("already initialized constant %"PRIsVALUE"", name);
+                }
+                RB_VM_LOCK();
+            }
+            else {
+                RB_VM_UNLOCK();
+                {
+                    rb_warn("already initialized constant %"PRIsVALUE"::%"PRIsVALUE"",
+                            rb_class_name(klass), name);
+                }
+                RB_VM_LOCK();
+            }
             if (!NIL_P(ce->file) && ce->line) {
-                rb_compile_warn(RSTRING_PTR(ce->file), ce->line,
-                                "previous definition of %"PRIsVALUE" was here", name);
+                RB_VM_UNLOCK();
+                {
+                    rb_compile_warn(RSTRING_PTR(ce->file), ce->line,
+                                    "previous definition of %"PRIsVALUE" was here", name);
+                }
+                RB_VM_LOCK();
             }
         }
         rb_clear_constant_cache_for_id(id);

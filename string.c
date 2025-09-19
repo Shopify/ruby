@@ -11520,6 +11520,7 @@ void
 rb_str_setter(VALUE val, ID id, VALUE *var)
 {
     if (!NIL_P(val) && !RB_TYPE_P(val, T_STRING)) {
+        RB_VM_UNLOCK_ALL();
         rb_raise(rb_eTypeError, "value of %"PRIsVALUE" must be String", rb_id2str(id));
     }
     *var = val;
@@ -11528,15 +11529,19 @@ rb_str_setter(VALUE val, ID id, VALUE *var)
 static void
 rb_fs_setter(VALUE val, ID id, VALUE *var)
 {
-    val = rb_fs_check(val);
-    if (!val) {
-        rb_raise(rb_eTypeError,
-                 "value of %"PRIsVALUE" must be String or Regexp",
-                 rb_id2str(id));
+    RB_VM_UNLOCK();
+    {
+        val = rb_fs_check(val);
+        if (!val) {
+            rb_raise(rb_eTypeError,
+                    "value of %"PRIsVALUE" must be String or Regexp",
+                    rb_id2str(id));
+        }
+        if (!NIL_P(val)) {
+                rb_warn_deprecated("'$;'", NULL);
+        }
     }
-    if (!NIL_P(val)) {
-        rb_warn_deprecated("'$;'", NULL);
-    }
+    RB_VM_LOCK();
     *var = val;
 }
 
@@ -12783,7 +12788,9 @@ Init_String(void)
 {
     rb_cString  = rb_define_class("String", rb_cObject);
 
-    rb_concurrent_set_foreach_with_replace(fstring_table_obj, fstring_set_class_i, NULL);
+    RB_VM_LOCKING() {
+        rb_concurrent_set_foreach_with_replace(fstring_table_obj, fstring_set_class_i, NULL);
+    }
 
     rb_include_module(rb_cString, rb_mComparable);
     rb_define_alloc_func(rb_cString, empty_str_alloc);

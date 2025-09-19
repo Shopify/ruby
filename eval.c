@@ -2078,7 +2078,14 @@ errat_getter(ID id, VALUE *_)
 {
     VALUE err = get_errinfo();
     if (!NIL_P(err)) {
-        return rb_get_backtrace(err);
+        VALUE bt;
+        RB_VM_UNLOCK();
+        {
+            bt = rb_get_backtrace(err);
+        }
+        RB_VM_LOCK();
+
+        return bt;
     }
     else {
         return Qnil;
@@ -2089,10 +2096,14 @@ static void
 errat_setter(VALUE val, ID id, VALUE *var)
 {
     VALUE err = get_errinfo();
-    if (NIL_P(err)) {
-        rb_raise(rb_eArgError, "$! not set");
+    RB_VM_UNLOCK();
+    {
+        if (NIL_P(err)) {
+            rb_raise(rb_eArgError, "$! not set");
+        }
+        set_backtrace(err, val);
     }
-    set_backtrace(err, val);
+    RB_VM_LOCK();
 }
 
 /*
