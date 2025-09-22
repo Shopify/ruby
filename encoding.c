@@ -1634,7 +1634,7 @@ enc_set_default_encoding(struct default_encoding *def, VALUE encoding, const cha
 
     int index = 0;
     if (!NIL_P(encoding)) {
-        enc_check_encoding(encoding); // loads it if necessary. Needs to be done outside of VM lock.
+        must_encoding(encoding); // loads it if necessary. Needs to be done outside of VM lock.
         index = rb_enc_to_index(rb_to_encoding(encoding));
     }
 
