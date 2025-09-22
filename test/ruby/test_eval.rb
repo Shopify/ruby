@@ -404,24 +404,26 @@ class TestEval < Test::Unit::TestCase
     end
     assert(!bad)
 
-    # !! use class_eval to avoid nested definition
-    x = self.class.class_eval %q(
-      module EvTest
-	EVTEST1 = 25
-	evtest2 = 125
-	evtest2 = evtest2
-	binding
+    unless multiple_ractors?
+      # !! use class_eval to avoid nested definition
+      x = self.class.class_eval %q(
+        module EvTest
+          EVTEST1 = 25
+          evtest2 = 125
+          evtest2 = evtest2
+          binding
+        end
+      )
+      assert_equal(25, eval("EVTEST1", x))	# constant in module
+      assert_equal(125, eval("evtest2", x))	# local var in module
+      bad = true
+      begin
+        eval("EVTEST1")
+      rescue NameError		# must raise error
+        bad = false
       end
-    )
-    assert_equal(25, eval("EVTEST1", x))	# constant in module
-    assert_equal(125, eval("evtest2", x))	# local var in module
-    bad = true
-    begin
-      eval("EVTEST1")
-    rescue NameError		# must raise error
-      bad = false
+      assert(!bad)
     end
-    assert(!bad)
 
     x = binding
     eval "i = 1", x
@@ -453,7 +455,7 @@ class TestEval < Test::Unit::TestCase
 
     self.class.class_eval do
       remove_const :EvTest
-    end
+    end unless multiple_ractors?
   end
 
   def test_nil_instance_eval_cvar
@@ -539,6 +541,7 @@ class TestEval < Test::Unit::TestCase
   end
 
   def test_eval_with_toplevel_binding # [ruby-dev:37142]
+    omit "subprocess" unless main_ractor?
     ruby("-e", "x = 0; eval('p x', TOPLEVEL_BINDING)") do |f|
       f.close_write
       assert_equal("0", f.read.chomp)

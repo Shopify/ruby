@@ -77,6 +77,7 @@ class TestIO < Test::Unit::TestCase
   end
 
   def mkcdtmpdir
+    omit "Dir.chdir" unless main_ractor?
     Dir.mktmpdir {|d|
       Dir.chdir(d) {
         yield
@@ -114,6 +115,7 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_binmode_pipe
+    omit "global side effects" if multiple_ractors?
     EnvUtil.with_default_internal(Encoding::UTF_8) do
       EnvUtil.with_default_external(Encoding::UTF_8) do
         begin
@@ -2548,7 +2550,7 @@ class TestIO < Test::Unit::TestCase
     feature2250 = '[ruby-core:26222]'
     pre = 'ft2250'
 
-    Dir.mktmpdir {|d|
+    Dir.mktmpdir("#{Ractor.current.object_id}") {|d|
       t = open("#{d}/#{pre}", "w")
       f = IO.for_fd(t.fileno)
       assert_equal(true, f.autoclose?)

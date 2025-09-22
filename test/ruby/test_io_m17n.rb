@@ -14,6 +14,7 @@ class TestIO_M17N < Test::Unit::TestCase
   ].freeze
 
   def with_tmpdir
+    omit "Dir.chdir" unless main_ractor?
     Dir.mktmpdir {|dir|
       Dir.chdir(dir) {
         yield dir
@@ -1327,6 +1328,7 @@ EOT
   end unless /mswin|mingw/ =~ RUBY_PLATFORM # passing non-stdio fds is not supported
 
   def test_popen_r_enc
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 255'", "r:ascii-8bit") {|f|
       assert_equal(Encoding::ASCII_8BIT, f.external_encoding)
       assert_equal(nil, f.internal_encoding)
@@ -1337,6 +1339,7 @@ EOT
   end
 
   def test_popen_r_enc_in_opt
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 255'", "r", encoding: "ascii-8bit") {|f|
       assert_equal(Encoding::ASCII_8BIT, f.external_encoding)
       assert_equal(nil, f.internal_encoding)
@@ -1347,6 +1350,7 @@ EOT
   end
 
   def test_popen_r_enc_in_opt2
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 255'", "r", external_encoding: "ascii-8bit") {|f|
       assert_equal(Encoding::ASCII_8BIT, f.external_encoding)
       assert_equal(nil, f.internal_encoding)
@@ -1357,6 +1361,7 @@ EOT
   end
 
   def test_popen_r_enc_enc
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 0xa1'", "r:shift_jis:euc-jp") {|f|
       assert_equal(Encoding::Shift_JIS, f.external_encoding)
       assert_equal(Encoding::EUC_JP, f.internal_encoding)
@@ -1367,6 +1372,7 @@ EOT
   end
 
   def test_popen_r_enc_enc_in_opt
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 0xa1'", "r", encoding: "shift_jis:euc-jp") {|f|
       assert_equal(Encoding::Shift_JIS, f.external_encoding)
       assert_equal(Encoding::EUC_JP, f.internal_encoding)
@@ -1377,6 +1383,7 @@ EOT
   end
 
   def test_popen_r_enc_enc_in_opt2
+    omit "subprocess" unless main_ractor?
     IO.popen("#{EnvUtil.rubybin} -e 'putc 0xa1'", "r", external_encoding: "shift_jis", internal_encoding: "euc-jp") {|f|
       assert_equal(Encoding::Shift_JIS, f.external_encoding)
       assert_equal(Encoding::EUC_JP, f.internal_encoding)
@@ -1387,6 +1394,7 @@ EOT
   end
 
   def test_popenv_r_enc_enc_in_opt2
+    omit "subprocess" unless main_ractor?
     IO.popen([EnvUtil.rubybin, "-e", "putc 0xa1"], "r", external_encoding: "shift_jis", internal_encoding: "euc-jp") {|f|
       assert_equal(Encoding::Shift_JIS, f.external_encoding)
       assert_equal(Encoding::EUC_JP, f.internal_encoding)
@@ -1397,6 +1405,7 @@ EOT
   end
 
   def test_open_pipe_r_enc
+    omit "racy" if multiple_ractors?
     EnvUtil.suppress_warning do # https://bugs.ruby-lang.org/issues/19630
       open("|#{EnvUtil.rubybin} -e 'putc 255'", "r:ascii-8bit") {|f|
         assert_equal(Encoding::ASCII_8BIT, f.external_encoding)
@@ -1409,6 +1418,7 @@ EOT
   end
 
   def test_open_pipe_r_enc2
+    omit "racy" if multiple_ractors?
     EnvUtil.suppress_warning do # https://bugs.ruby-lang.org/issues/19630
       open("|#{EnvUtil.rubybin} -e 'putc \"\\u3042\"'", "r:UTF-8") {|f|
         assert_equal(Encoding::UTF_8, f.external_encoding)
@@ -2292,12 +2302,14 @@ EOT
     assert_equal(Encoding::US_ASCII, enc)
 
     tlhInganHol = "\u{f8e4 f8d9 f8d7 f8dc f8d0 f8db} \u{f8d6 f8dd f8d9}"
-    assert_warn(/#{tlhInganHol}/) {
-      EnvUtil.with_default_internal(nil) {
-        open(IO::NULL, "w:bom|#{tlhInganHol}") {|f| enc = f.external_encoding}
+    if main_ractor?
+      assert_warn(/#{tlhInganHol}/) {
+        EnvUtil.with_default_internal(nil) {
+          open(IO::NULL, "w:bom|#{tlhInganHol}") {|f| enc = f.external_encoding}
+        }
       }
-    }
-    assert_nil(enc)
+      assert_nil(enc)
+    end
   end
 
   def test_bom_non_reading
@@ -2797,7 +2809,7 @@ EOT
   end
 
   def test_each_codepoint_need_more
-    pend "Tempfile" if non_main_ractor?
+    pend "Tempfile" unless main_ractor?
     bug11444 = '[ruby-core:70379] [Bug #11444]'
     tests = [
       ["incomplete multibyte", "\u{1f376}".b[0,3], [], ["invalid byte sequence in UTF-8"]],

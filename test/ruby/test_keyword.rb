@@ -912,6 +912,7 @@ class TestKeywordArguments < Test::Unit::TestCase
   end
 
   def test_Thread_new_kwsplat
+    omit "global side effects" if multiple_ractors?
     Thread.report_on_exception = false
     kw = {}
     h = {:a=>1}

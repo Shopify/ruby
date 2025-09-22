@@ -19,7 +19,7 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def setup
-    @dir = Dir.mktmpdir("ruby-test")
+    @dir = Dir.mktmpdir("#{Ractor.current.object_id}")
     File.chown(-1, Process.gid, @dir)
   end
 
@@ -279,7 +279,7 @@ class TestFileExhaustive < Test::Unit::TestCase
   end if DRIVE
 
   def test_stat_dotted_prefix
-    Dir.mktmpdir do |dir|
+    Dir.mktmpdir("#{Ractor.current.object_id}") do |dir|
       prefix = File.join(dir, "...a")
       Dir.mkdir(prefix)
       assert_file.exist?(prefix)
@@ -288,7 +288,7 @@ class TestFileExhaustive < Test::Unit::TestCase
 
       Dir.chdir(dir) do
         assert_nothing_raised { File.stat(File.basename(prefix)) }
-      end
+      end if main_ractor?
     end
   end if NTFS
 
@@ -717,7 +717,7 @@ class TestFileExhaustive < Test::Unit::TestCase
         File.write(path, "") rescue next
         assert_equal(1, File.utime(nil, nil, path))
       end
-    end
+    end if main_ractor?
   end
 
   def test_utime_symlinkfile
@@ -824,6 +824,7 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_umask
+    omit "global side effects" if multiple_ractors?
     prev = File.umask(0777)
     assert_equal(0777, File.umask)
     open(nofile, "w") { }
@@ -926,6 +927,7 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_expand_path_encoding_filesystem
+    omit "global side effects" if multiple_ractors?
     home = ENV["HOME"]
     ENV["HOME"] = "#{DRIVE}/UserHome"
 
@@ -936,12 +938,13 @@ class TestFileExhaustive < Test::Unit::TestCase
     assert_equal fs, File.expand_path(path).encoding
     assert_equal fs, File.expand_path(path, dir).encoding
   ensure
-    ENV["HOME"] = home
+    ENV["HOME"] = home if home
   end
 
   UnknownUserHome = "~foo_bar_baz_unknown_user_wahaha".freeze
 
   def test_expand_path_home
+    omit "global side effects" if multiple_ractors?
     assert_kind_of(String, File.expand_path("~")) if ENV["HOME"]
     assert_raise(ArgumentError) { File.expand_path(UnknownUserHome) }
     assert_raise(ArgumentError) { File.expand_path(UnknownUserHome, "/") }
@@ -960,14 +963,17 @@ class TestFileExhaustive < Test::Unit::TestCase
       ENV["HOME"] = "."
       assert_raise(ArgumentError, bug3630) { File.expand_path("~") }
     ensure
-      ENV["HOME"] = home
-      ENV["HOMEDRIVE"] = home_drive
-      ENV["HOMEPATH"] = home_path
-      ENV["USERPROFILE"] = user_profile
+      if home
+        ENV["HOME"] = home
+        ENV["HOMEDRIVE"] = home_drive
+        ENV["HOMEPATH"] = home_path
+        ENV["USERPROFILE"] = user_profile
+      end
     end
   end
 
   def test_expand_path_home_dir_string
+    omit "global side effects" if multiple_ractors?
     home = ENV["HOME"]
     new_home = "#{DRIVE}/UserHome"
     ENV["HOME"] = new_home
@@ -981,7 +987,7 @@ class TestFileExhaustive < Test::Unit::TestCase
     ENV["HOME"] = "#{DRIVE}UserHome"
     assert_raise(ArgumentError) { File.expand_path("~") }
   ensure
-    ENV["HOME"] = home
+    ENV["HOME"] = home if home
   end
 
   if /mswin|mingw/ =~ RUBY_PLATFORM
@@ -1103,31 +1109,34 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_expand_path_converts_a_pathname_to_an_absolute_pathname_using_home_as_base
+    omit "global side effects" if multiple_ractors?
     old_home = ENV["HOME"]
     home = ENV["HOME"] = "#{DRIVE}/UserHome"
     assert_equal(home, File.expand_path("~"))
     assert_equal(home, File.expand_path("~", "C:/FooBar"))
     assert_equal(File.join(home, "a"), File.expand_path("~/a", "C:/FooBar"))
   ensure
-    ENV["HOME"] = old_home
+    ENV["HOME"] = old_home if old_home
   end
 
   def test_expand_path_converts_a_pathname_to_an_absolute_pathname_using_unc_home
+    omit "global side effects" if multiple_ractors?
     old_home = ENV["HOME"]
     unc_home = ENV["HOME"] = "//UserHome"
     assert_equal(unc_home, File.expand_path("~"))
   ensure
-    ENV["HOME"] = old_home
+    ENV["HOME"] = old_home if old_home
   end if DRIVE
 
   def test_expand_path_does_not_modify_a_home_string_argument
+    omit "global side effects" if multiple_ractors?
     old_home = ENV["HOME"]
     home = ENV["HOME"] = "#{DRIVE}/UserHome"
     str = "~/a"
     assert_equal("#{home}/a", File.expand_path(str))
     assert_equal("~/a", str)
   ensure
-    ENV["HOME"] = old_home
+    ENV["HOME"] = old_home if old_home
   end
 
   def test_expand_path_raises_argument_error_for_any_supplied_username
@@ -1147,11 +1156,12 @@ class TestFileExhaustive < Test::Unit::TestCase
   end unless DRIVE
 
   def test_expand_path_error_for_non_absolute_home
+    omit "global side effects" if multiple_ractors?
     old_home = ENV["HOME"]
     ENV["HOME"] = "./UserHome"
     assert_raise_with_message(ArgumentError, /non-absolute home/) {File.expand_path("~")}
   ensure
-    ENV["HOME"] = old_home
+    ENV["HOME"] = old_home if old_home
   end
 
   def test_expand_path_raises_a_type_error_if_not_passed_a_string_type
@@ -1199,6 +1209,7 @@ class TestFileExhaustive < Test::Unit::TestCase
 
   if /darwin/ =~ RUBY_PLATFORM and Encoding.find("filesystem") == Encoding::UTF_8
     def test_expand_path_compose
+      omit "Dir.chdir" unless main_ractor?
       pp = Object.new.extend(Test::Unit::Assertions)
       def pp.mu_pp(str) #:nodoc:
         str.dump
@@ -1428,6 +1439,7 @@ class TestFileExhaustive < Test::Unit::TestCase
 
   def test_flock_exclusive
     omit "[Bug #18613]" if /freebsd/ =~ RUBY_PLATFORM
+    omit "subprocess" unless main_ractor?
 
     timeout = EnvUtil.apply_timeout_scale(1).to_s
     File.open(regular_file, "r+") do |f|
@@ -1459,6 +1471,7 @@ class TestFileExhaustive < Test::Unit::TestCase
 
   def test_flock_shared
     omit "[Bug #18613]" if /freebsd/ =~ RUBY_PLATFORM
+    omit "subprocess" unless main_ractor?
 
     timeout = EnvUtil.apply_timeout_scale(1).to_s
     File.open(regular_file, "r+") do |f|
