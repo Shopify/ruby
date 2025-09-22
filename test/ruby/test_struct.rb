@@ -406,6 +406,7 @@ module TestStruct
   end
 
   def test_comparison_when_recursive
+    pend "Timeout" if non_main_ractor?
     klass1 = @Struct.new(:a, :b, :c)
 
     x = klass1.new(1, 2, nil); x.c = x

@@ -7,10 +7,11 @@ class TestObjectSpace < Test::Unit::TestCase
     file = $`
     line = $1.to_i
     code = <<"End"
-    define_method("test_id2ref_#{line}") {\
+    define_method("test_id2ref_#{line}", &Ractor.make_shareable(proc {\
+      omit "id2ref" if non_main_ractor?
       o = EnvUtil.suppress_warning { ObjectSpace._id2ref(obj.object_id) }
       assert_same(obj, o, "didn't round trip: \#{obj.inspect}");\
-    }
+    }))
 End
     eval code, binding, file, line
   end
@@ -29,7 +30,7 @@ End
   deftest_id2ref(:a)
   deftest_id2ref(:abcdefghijilkjl)
   deftest_id2ref(:==)
-  deftest_id2ref(Object.new)
+  deftest_id2ref(Object.new.freeze)
   deftest_id2ref(self)
   deftest_id2ref(true)
   deftest_id2ref(false)
@@ -56,6 +57,7 @@ End
   end
 
   def test_id2ref_invalid_argument
+    omit "id2ref" if non_main_ractor?
     msg = /no implicit conversion/
     assert_raise_with_message(TypeError, msg) { EnvUtil.suppress_warning { ObjectSpace._id2ref(nil) } }
     assert_raise_with_message(TypeError, msg) { EnvUtil.suppress_warning { ObjectSpace._id2ref(false) } }
@@ -66,6 +68,7 @@ End
   end
 
   def test_id2ref_invalid_symbol_id
+    omit "id2ref" if non_main_ractor?
     # RB_STATIC_SYM_P checks for static symbols by checking that the bottom
     # 8 bits of the object is equal to RUBY_SYMBOL_FLAG, so we need to make
     # sure that the bottom 8 bits remain unchanged.
@@ -74,6 +77,7 @@ End
   end
 
   def test_count_objects
+    omit "count_objects" if non_main_ractor?
     h = {}
     ObjectSpace.count_objects(h)
     assert_kind_of(Hash, h)
@@ -235,6 +239,7 @@ End
   end
 
   def test_each_object
+    omit "each_object" if non_main_ractor?
     klass = Class.new
     new_obj = klass.new
 
@@ -248,6 +253,7 @@ End
   end
 
   def test_each_object_enumerator
+    omit "each_object" if non_main_ractor?
     klass = Class.new
     new_obj = klass.new
 

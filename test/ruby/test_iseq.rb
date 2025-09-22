@@ -343,6 +343,7 @@ class TestISeq < Test::Unit::TestCase
   end
 
   def test_frozen_string_literal_compile_option
+    omit "global variable access" if non_main_ractor?
     $f = 'f'
     line = __LINE__ + 2
     code = <<-'EOS'
@@ -688,8 +689,8 @@ class TestISeq < Test::Unit::TestCase
       class P
         def p; end
         def q; end
-        E = ""
-        N = "#{E}"
+        E = "".freeze
+        N = "#{E}".freeze
         attr_reader :i
       end
     end;

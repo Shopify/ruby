@@ -66,6 +66,7 @@ p Foo::Bar
   end
 
   def test_autoload_p_with_static_extensions
+    pend "belonging issue" if non_main_ractor?
     require 'rbconfig'
     omit unless RbConfig::CONFIG['EXTSTATIC'] == 'static'
     begin
@@ -84,6 +85,7 @@ p Foo::Bar
   end
 
   def test_autoload_with_unqualified_file_name # [ruby-core:69206]
+    omit "global variable access" if non_main_ractor?
     Object.send(:remove_const, :A) if Object.const_defined?(:A)
 
     lp = $LOAD_PATH.dup
@@ -106,12 +108,13 @@ p Foo::Bar
       end
     }
   ensure
-    $LOAD_PATH.replace lp
-    $LOADED_FEATURES.replace lf
+    $LOAD_PATH.replace lp if lp
+    $LOADED_FEATURES.replace lf if lf
     Object.send(:remove_const, :A) if Object.const_defined?(:A)
   end
 
   def test_require_explicit
+    pend "Tempfile" if non_main_ractor?
     Tempfile.create(['autoload', '.rb']) {|file|
       file.puts 'class Object; AutoloadTest = 1; end'
       file.close
@@ -128,6 +131,7 @@ p Foo::Bar
   end
 
   def test_threaded_accessing_constant
+    pend "Tempfile" if non_main_ractor?
     # Suppress "warning: loading in progress, circular require considered harmful"
     EnvUtil.default_warning {
       Tempfile.create(['autoload', '.rb']) {|file|
@@ -148,6 +152,7 @@ p Foo::Bar
   end
 
   def test_threaded_accessing_inner_constant
+    pend "Tempfile" if non_main_ractor?
     # Suppress "warning: loading in progress, circular require considered harmful"
     EnvUtil.default_warning {
       Tempfile.create(['autoload', '.rb']) {|file|
@@ -168,6 +173,7 @@ p Foo::Bar
   end
 
   def test_nameerror_when_autoload_did_not_define_the_constant
+    pend "Tempfile" if non_main_ractor?
     verbose_bak, $VERBOSE = $VERBOSE, nil
     Tempfile.create(['autoload', '.rb']) {|file|
       file.puts ''
@@ -186,6 +192,7 @@ p Foo::Bar
   end
 
   def test_override_autoload
+    pend "Tempfile" if non_main_ractor?
     Tempfile.create(['autoload', '.rb']) {|file|
       file.puts ''
       file.close
@@ -200,6 +207,7 @@ p Foo::Bar
   end
 
   def test_override_while_autoloading
+    pend "Tempfile" if non_main_ractor?
     Tempfile.create(['autoload', '.rb']) {|file|
       file.puts 'class AutoloadTest; sleep 0.5; end'
       file.close
@@ -251,6 +259,7 @@ p Foo::Bar
   end
 
   def test_require_implemented_in_ruby_is_called
+    pend "Tempfile" if non_main_ractor?
     ruby_impl_require do |called_with|
       Tempfile.create(['autoload', '.rb']) {|file|
         file.puts 'class AutoloadTest; end'
@@ -268,6 +277,7 @@ p Foo::Bar
   end
 
   def test_autoload_while_autoloading
+    pend "Tempfile" if non_main_ractor?
     ruby_impl_require do |called_with|
       Tempfile.create(%w(a .rb)) do |a|
         Tempfile.create(%w(b .rb)) do |b|
@@ -397,6 +407,7 @@ p Foo::Bar
   end
 
   def test_autoload_fork
+    pend "Tempfile" if non_main_ractor?
     EnvUtil.default_warning do
       Tempfile.create(['autoload', '.rb']) {|file|
         file.puts 'sleep 0.3; class AutoloadTest; end'
