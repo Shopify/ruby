@@ -310,6 +310,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_nested_get
+    omit "global side effects" if multiple_ractors?
     OtherSetup.call
 
     assert_equal Other, Object.const_get([self.class, 'Other'].join('::'))
@@ -320,6 +321,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_nested_get_symbol
+    omit "global side effects" if multiple_ractors?
     OtherSetup.call
 
     const = [self.class, Other].join('::').to_sym
@@ -348,6 +350,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_nested_defined
+    omit "global side effects" if multiple_ractors?
     OtherSetup.call
 
     assert_send([Object, :const_defined?, [self.class.name, 'Other'].join('::')])
@@ -357,6 +360,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_nested_defined_symbol
+    omit "global side effects" if multiple_ractors?
     OtherSetup.call
 
     const = [self.class, Other].join('::').to_sym
@@ -479,6 +483,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_dup
+    omit "global side effects" if multiple_ractors?
     OtherSetup.call
 
     bug6454 = '[ruby-core:45132]'
@@ -836,8 +841,9 @@ class TestModule < Test::Unit::TestCase
     assert User.method_defined?(:user, false)
     assert !User.method_defined?(:mixin, false)
     assert Mixin.method_defined?(:mixin, false)
+    const_name = "FOO#{Ractor.current.object_id}"
 
-    User.const_set(:FOO, c = Class.new)
+    User.const_set(const_name, c = Class.new)
 
     c.prepend(User)
     assert !c.method_defined?(:user, false)
@@ -854,7 +860,7 @@ class TestModule < Test::Unit::TestCase
 
     # cleanup
     User.class_eval do
-      remove_const :FOO
+      remove_const const_name
     end
   end
 
@@ -868,6 +874,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_module_exec
+    omit "global side effects" if multiple_ractors?
     User.module_exec do
       def dynamically_added_method_1; end
     end
@@ -897,6 +904,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_module_eval
+    omit "global side effects" if multiple_ractors?
     User.module_eval("MODULE_EVAL = 1")
     assert_equal(1, User::MODULE_EVAL)
     assert_include(User.constants, :MODULE_EVAL)
@@ -946,15 +954,16 @@ class TestModule < Test::Unit::TestCase
     assert_match(/::N$/, m::N.name)
     assert_match(/\A#<Module:.*>::O\z/, m::O.name)
     assert_match(/\A#<Module:.*>::C\z/, m::C.name)
-    self.class.const_set(:M, m)
-    prefix = self.class.name + "::M::"
+    m_name = "M#{Ractor.current.object_id}"
+    self.class.const_set(m_name, m)
+    prefix = self.class.name + "::#{m_name}::"
     assert_equal(prefix+"N", m.const_get(:N).name)
     assert_equal(prefix+"O", m.const_get(:O).name)
     assert_equal(prefix+"C", m.const_get(:C).name)
     c = m.class_eval("Bug15891 = Class.new.freeze")
     assert_equal(prefix+"Bug15891", c.name)
   ensure
-    self.class.class_eval {remove_const(:M)}
+    self.class.class_eval {remove_const(m_name)}
   end
 
   def test_private_class_method
@@ -1110,6 +1119,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_s_constants
+    omit "global side effects" unless main_ractor?
     c1 = Module.constants
     Object.module_eval "WALTER = 99"
     c2 = Module.constants
@@ -1749,14 +1759,15 @@ class TestModule < Test::Unit::TestCase
 
 
   def test_nonascii_name
-    c = eval("class ::C\u{df}; self; end")
-    assert_equal("C\u{df}", c.name, '[ruby-core:24600]')
-    c = eval("class C\u{df}; self; end")
-    assert_equal("TestModule::C\u{df}", c.name, '[ruby-core:24600]')
+    c_name = "C#{Ractor.current.object_id}"
+    c = eval("class ::#{c_name}\u{df}; self; end")
+    assert_equal("#{c_name}\u{df}", c.name, '[ruby-core:24600]')
+    c = eval("class #{c_name}\u{df}; self; end")
+    assert_equal("TestModule::#{c_name}\u{df}", c.name, '[ruby-core:24600]')
     c = Module.new.module_eval("class X\u{df} < Module; self; end")
     assert_match(/::X\u{df}:/, c.new.to_s)
   ensure
-    Object.send(:remove_const, "C\u{df}")
+    Object.send(:remove_const, "#{c_name}\u{df}")
   end
 
 
@@ -2122,16 +2133,17 @@ class TestModule < Test::Unit::TestCase
   private_constant :PrivateClass
 
   def test_define_module_under_private_constant
+    const_name = "TestModule#{Ractor.current.object_id}"
     assert_raise(NameError) do
       eval %q{class TestModule::PrivateClass; end}
     end
     assert_raise(NameError) do
-      eval %q{module TestModule::PrivateClass::TestModule; end}
+      eval %Q{module TestModule::PrivateClass::#{const_name}; end}
     end
     eval %q{class PrivateClass; end}
-    eval %q{module PrivateClass::TestModule; end}
-    assert_instance_of(Module, PrivateClass::TestModule)
-    PrivateClass.class_eval { remove_const(:TestModule) }
+    eval %Q{module PrivateClass::#{const_name}; end}
+    assert_instance_of(Module, PrivateClass.const_get(const_name))
+    PrivateClass.class_eval { remove_const(const_name) }
   end
 
   def test_public_constant
@@ -2146,6 +2158,7 @@ class TestModule < Test::Unit::TestCase
   end
 
   def test_deprecate_constant
+    omit "Setting Warning[]" if multiple_ractors?
     c = Class.new
     c.const_set(:FOO, "foo".freeze)
     c.deprecate_constant(:FOO)

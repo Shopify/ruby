@@ -500,6 +500,7 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_relative_symlink
+    omit "Dir.chdir" if multiple_ractors?
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
         Dir.mkdir "a"
@@ -519,6 +520,7 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_relative_symlink_realpath
+    omit "Dir.chdir" if multiple_ractors?
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
         Dir.mkdir "a"
@@ -667,6 +669,7 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_changed_current_dir
+    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -692,6 +695,7 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_not_modified_load_path
+    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -713,6 +717,7 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_changed_home
+    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -733,6 +738,7 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_to_path_redefined_in_load_path
+    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -761,6 +767,7 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_to_str_redefined_in_load_path
+    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -789,6 +796,7 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def assert_require_with_shared_array_modified(add, del)
+    omit "Dir.chdir" if multiple_ractors?
     bug7383 = '[ruby-core:49518]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -826,6 +834,7 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_local_var_on_toplevel
+    omit "Dir.chdir" if multiple_ractors?
     bug7536 = '[ruby-core:50701]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {

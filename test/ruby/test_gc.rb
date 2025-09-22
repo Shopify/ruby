@@ -323,6 +323,7 @@ class TestGc < Test::Unit::TestCase
 
   def test_latest_gc_info
     omit 'stress' if GC.stress
+    omit "GC.stress=" if multiple_ractors?
 
     assert_separately([], __FILE__, __LINE__, <<-'RUBY')
       GC.start
@@ -342,10 +343,12 @@ class TestGc < Test::Unit::TestCase
     assert_equal true,    h[:immediate_sweep]
     assert_equal true,    h.key?(:need_major_by)
 
-    GC.stress = true
-    assert_equal :force, GC.latest_gc_info[:major_by]
-  ensure
-    GC.stress = false
+    begin
+      GC.stress = true
+      assert_equal :force, GC.latest_gc_info[:major_by]
+    ensure
+      GC.stress = false
+    end
   end
 
   def test_latest_gc_info_argument
@@ -909,7 +912,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_old_to_young_reference
-    pend "ObjectSpace.dump not yet ractor safe" if non_main_ractor?
+    pend "ObjectSpace.dump not yet ractor safe" unless main_ractor?
     EnvUtil.without_gc do
       require "objspace"
 

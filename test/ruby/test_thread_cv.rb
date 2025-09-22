@@ -222,6 +222,7 @@ INPUT
   end
 
   def test_condvar_fork
+    omit "fork" unless main_ractor?
     mutex = Thread::Mutex.new
     condvar = Thread::ConditionVariable.new
     thrs = (1..10).map do

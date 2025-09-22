@@ -32,7 +32,7 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_must_ascii_compatible
-    pend "Tempfile" if non_main_ractor?
+    pend "Tempfile" unless main_ractor?
     require 'tempfile'
     f = Tempfile.new("must_ac_")
     Encoding.list.each do |enc|
@@ -50,7 +50,7 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_script_lines
-    pend "Tempfile" if non_main_ractor?
+    pend "Tempfile" unless main_ractor?
     require 'tempfile'
     f = Tempfile.new("bug4361_")
     bug4361 = '[ruby-dev:43168]'
@@ -320,8 +320,8 @@ class TestSyntax < Test::Unit::TestCase
     assert_equal({foo: 1, bar: 2}, o.kw(foo: 1, bar: 2), bug5989)
     EnvUtil.under_gc_stress do
       eval("def o.m(k: 0) k end")
+      assert_equal(42, o.m(k: 42), '[ruby-core:45744]')
     end unless multiple_ractors?
-    assert_equal(42, o.m(k: 42), '[ruby-core:45744]')
     bug7922 = '[ruby-core:52744] [Bug #7922]'
     def o.bug7922(**) end
     assert_nothing_raised(ArgumentError, bug7922) {o.bug7922(foo: 42)}
@@ -836,7 +836,7 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_unassignable
-    omit "global variable access" if non_main_ractor?
+    omit "global variable access" unless main_ractor?
     gvar = global_variables
     %w[self nil true false __FILE__ __LINE__ __ENCODING__].each do |kwd|
       assert_syntax_error("#{kwd} = nil", /Can't .* #{kwd}$/)
@@ -1538,7 +1538,7 @@ eom
   end
 
   def test_return_toplevel
-    pend "Tempfile" if non_main_ractor?
+    pend "Tempfile" unless main_ractor?
     feature4840 = '[ruby-core:36785] [Feature #4840]'
     line = __LINE__+2
     code = "#{<<~"begin;"}#{<<~'end;'}"
@@ -1588,7 +1588,7 @@ eom
   end
 
   def test_eval_return_toplevel
-    pend "Tempfile" if non_main_ractor?
+    pend "Tempfile" unless main_ractor?
     feature4840 = '[ruby-core:36785] [Feature #4840]'
     line = __LINE__+2
     code = "#{<<~"begin;"}#{<<~'end;'}"

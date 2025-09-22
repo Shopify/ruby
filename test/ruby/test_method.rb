@@ -436,7 +436,7 @@ class TestMethod < Test::Unit::TestCase
   end
 
   def test_define_method_in_private_scope
-    omit "TOPLEVEL_BINDING" if non_main_ractor?
+    omit "TOPLEVEL_BINDING" unless main_ractor?
     bug9005 = '[ruby-core:57747] [Bug #9005]'
     c = Class.new
     class << c
@@ -448,7 +448,7 @@ class TestMethod < Test::Unit::TestCase
   end
 
   def test_singleton_define_method_in_private_scope
-    omit "TOPLEVEL_BINDING" if non_main_ractor?
+    omit "TOPLEVEL_BINDING" unless main_ractor?
     bug9141 = '[ruby-core:58497] [Bug #9141]'
     o = Object.new
     class << o
@@ -1732,7 +1732,7 @@ class TestMethod < Test::Unit::TestCase
   end
 
   def test_method_list
-    pend "ObjectSpace.each_object doesn't work with ractors right now" if non_main_ractor?
+    pend "ObjectSpace.each_object doesn't work with ractors right now" unless main_ractor?
     # chkbuild lists all methods.
     # The following code emulate this listing.
 

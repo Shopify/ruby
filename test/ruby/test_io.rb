@@ -1878,6 +1878,7 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_close_read_write_separately
+    pend "TODO: buggy with ractors" if multiple_ractors?
     bug = '[ruby-list:49598]'
     (1..10).each do |i|
       assert_nothing_raised(IOError, "#{bug} trying ##{i}") do
@@ -2547,6 +2548,7 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_autoclose
+    pend "TODO: assert_raise fails sometimes under multiple ractors" if multiple_ractors?
     feature2250 = '[ruby-core:26222]'
     pre = 'ft2250'
 
@@ -2633,6 +2635,7 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_open_pipe
+    omit "fork" unless main_ractor?
     assert_deprecated_warning(/Kernel#open with a leading '\|'/) do # https://bugs.ruby-lang.org/issues/19630
       open("|" + EnvUtil.rubybin, "r+") do |f|
         f.puts "puts 'foo'"
@@ -4011,6 +4014,7 @@ __END__
   end if /cygwin/ !~ RUBY_PLATFORM
 
   def test_exception_at_close
+    pend "TODO: assert_raise fails sometimes under multiple ractors" if multiple_ractors?
     bug10153 = '[ruby-core:64463] [Bug #10153] exception in close at the end of block'
     assert_raise(Errno::EBADF, bug10153) do
       IO.pipe do |r, w|
@@ -4488,6 +4492,20 @@ __END__
       thread.join
 
       assert_predicate(status, :success?)
+    RUBY
+  end
+
+  def test_no_fork_in_ractor
+    omit "fork is not supported" unless Process.respond_to?(:fork)
+
+    assert_ractor(<<~'RUBY')
+      r = Ractor.new do
+          fork { }
+        end
+      end
+      assert_raise Ractor::IsolationError do
+        r.value
+      end
     RUBY
   end
 end

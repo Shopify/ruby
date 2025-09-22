@@ -268,6 +268,7 @@ class TestRand < Test::Unit::TestCase
   end
 
   def test_fork_shuffle
+    omit "fork" unless main_ractor?
     pid = fork do
       (1..10).to_a.shuffle
       raise 'default seed is not set' if srand == 0

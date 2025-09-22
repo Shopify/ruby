@@ -408,6 +408,8 @@ CODE
   end
 
   def test_chomp
+    omit "$/ set" if multiple_ractors?
+    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     assert_equal(S("hello"), S("hello").chomp("\n"))
@@ -474,11 +476,15 @@ CODE
     s = "foo\r"
     assert_equal("foo", s.chomp("\n"))
   ensure
-    $/ = save
-    $VERBOSE = verbose
+    if run_ensure
+      $/ = save
+      $VERBOSE = verbose
+    end
   end
 
   def test_chomp!
+    omit "$/ set " if multiple_ractors?
+    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     a = S("hello")
@@ -598,8 +604,10 @@ CODE
 
     assert_raise(ArgumentError) {String.new.chomp!("", "")}
   ensure
-    $/ = save
-    $VERBOSE = verbose
+    if run_ensure
+      $/ = save
+      $VERBOSE = verbose
+    end
   end
 
   def test_chop
@@ -947,6 +955,8 @@ CODE
   end
 
   def test_each
+    omit "set $/" if multiple_ractors?
+    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     save = $/
@@ -967,8 +977,10 @@ CODE
     assert_equal(S("hello!"), res[0])
     assert_equal(S("world"),  res[1])
   ensure
-    $/ = save
-    $VERBOSE = verbose
+    if run_ensure
+      $/ = save
+      $VERBOSE = verbose
+    end
   end
 
   def test_each_byte
@@ -1138,6 +1150,8 @@ CODE
   end
 
   def test_each_line
+    omit "set $/" if multiple_ractors?
+    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     save = $/
@@ -1185,8 +1199,10 @@ CODE
       S("\n\u0100").each_line("\n") {}
     end
   ensure
-    $/ = save
-    $VERBOSE = verbose
+    if run_ensure
+      $/ = save
+      $VERBOSE = verbose
+    end
   end
 
   def test_each_line_chomp
@@ -3420,6 +3436,7 @@ CODE
 
   def test_uminus_frozen
     return unless @cls == String
+    omit "not always same" if multiple_ractors?
 
     # embedded
     str1 = ("foobar" * 3).freeze
@@ -3727,6 +3744,7 @@ CODE
   end
 
   def test_chilled_string_setivar
+    omit "monkey patch" if multiple_ractors?
     deprecated = Warning[:deprecated]
     Warning[:deprecated] = false
 
