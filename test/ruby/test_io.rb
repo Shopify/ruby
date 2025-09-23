@@ -4500,12 +4500,14 @@ __END__
 
     assert_ractor(<<~'RUBY')
       r = Ractor.new do
+        begin
           fork { }
+          :ng
+        rescue Ractor::IsolationError
+          :ok
         end
       end
-      assert_raise Ractor::IsolationError do
-        r.value
-      end
+      assert_equal :ok, r.value
     RUBY
   end
 end

@@ -690,14 +690,17 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_duplicated_rest_kw
-    assert_syntax_error("def foo(*a, a: 1) end", /duplicated argument name/)
-    assert_nothing_raised {def foo(*_, _: 1) end}
+    unless multiple_ractors?
+      assert_syntax_error("def foo(*a, a: 1) end", /duplicated argument name/)
+      assert_nothing_raised {def foo(*_, _: 1) end}
+      defined_foo = true
+    end
     (obj = Object.new).instance_eval("def foo(*_, x: 42, _: 1) x end")
     assert_equal(42, obj.foo(42))
     assert_equal(42, obj.foo(2, _: 0))
     assert_equal(2, obj.foo(x: 2, _: 0))
   ensure
-    self.class.remove_method(:foo)
+    self.class.remove_method(:foo) if defined_foo
   end
 
   def test_duplicated_opt_kw

@@ -31,6 +31,7 @@ class TestEnv < Test::Unit::TestCase
   end
 
   def teardown
+    return if multiple_ractors?
     if @verbose
       $VERBOSE = @verbose
       ENV.clear

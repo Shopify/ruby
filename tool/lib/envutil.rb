@@ -196,11 +196,6 @@ module EnvUtil
                   signal: :TERM,
                   rubybin: EnvUtil.rubybin, precommand: nil,
                   **opt)
-
-    #if Ractor.current != Ractor.main
-      #raise Test::Unit::PendedError.new("not ractor safe (#{__method__}): uses spawn")
-    #end
-
     timeout = apply_timeout_scale(timeout)
 
     in_c, in_p = IO.pipe
@@ -340,11 +335,10 @@ module EnvUtil
   # NOTE: not safe to use when testing under multiple ractors.
   def under_gc_stress(stress = true)
     raise Test::Unit::PendedError.new("not ractor safe (#{__method__})") if MULTIPLE_RACTORS
-    run_ensure = true
     stress, GC.stress = GC.stress, stress
-    yield
-  ensure
-    if run_ensure
+    begin
+      yield
+    ensure
       GC.stress = stress
     end
   end
@@ -385,12 +379,11 @@ module EnvUtil
   # NOTE: not safe to use when testing under multiple ractors.
   def with_default_external(enc = nil, of: nil)
     raise Test::Unit::PendedError.new("not ractor safe (#{__method__})") if MULTIPLE_RACTORS
-    run_ensure = true
     enc = of.encoding if defined?(of.encoding)
     suppress_warning { Encoding.default_external = enc }
-    yield
-  ensure
-    if run_ensure
+    begin
+      yield
+    ensure
       suppress_warning { Encoding.default_external = EnvUtil.original_external_encoding }
     end
   end
@@ -399,12 +392,11 @@ module EnvUtil
   # NOTE: not safe to use when testing under multiple ractors.
   def with_default_internal(enc = nil, of: nil)
     raise Test::Unit::PendedError.new("not ractor safe (#{__method__})") if MULTIPLE_RACTORS
-    run_ensure = true
     enc = of.encoding if defined?(of.encoding)
     suppress_warning { Encoding.default_internal = enc }
-    yield
-  ensure
-    if run_ensure
+    begin
+      yield
+    ensure
       suppress_warning { Encoding.default_internal = EnvUtil.original_internal_encoding }
     end
   end

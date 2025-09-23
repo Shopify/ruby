@@ -436,6 +436,7 @@ class TestVariable < Test::Unit::TestCase
   end
 
   def test_remove_instance_variables_class
+    omit "class ivars" unless main_ractor?
     add_and_remove_ivar(RemoveIvar)
     add_and_remove_ivar(RemoveIvar)
   end

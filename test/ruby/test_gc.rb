@@ -164,7 +164,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_stat
-    omit "global side effects" if multiple_ractors?
+    omit "GC.stat inaccurate in non-main ractors" unless main_ractor?
     res = GC.stat
     assert_equal(false, res.empty?)
     assert_kind_of(Integer, res[:count])

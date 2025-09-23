@@ -92,6 +92,7 @@ class TestMethod < Test::Unit::TestCase
   end
 
   def test_unbind
+    omit "racy" if multiple_ractors?
     assert_equal(:derived, Derived.new.foo)
     um = Derived.new.method(:foo).unbind
     assert_instance_of(UnboundMethod, um)

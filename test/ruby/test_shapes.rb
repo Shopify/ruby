@@ -1206,14 +1206,17 @@ class TestShapes < Test::Unit::TestCase
   end
 
   def test_object_too_complex_during_delete
+    omit "can not set instance variables of classes/modules by non-main Ractors" unless main_ractor?
     assert_too_complex_during_delete(Class.new.new)
   end
 
   def test_class_too_complex_during_delete
+    omit "can not set instance variables of classes/modules by non-main Ractors" unless main_ractor?
     assert_too_complex_during_delete(Module.new)
   end
 
   def test_generic_too_complex_during_delete
+    omit "can not set instance variables of classes/modules by non-main Ractors" unless main_ractor?
     assert_too_complex_during_delete(Class.new(Array).new)
   end
 end if defined?(RubyVM::Shape)
