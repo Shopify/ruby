@@ -10,7 +10,7 @@ end
 class TestBasicInstructions < Test::Unit::TestCase
 
   def setup
-    omit "Lots of unfrozen strings in constants" if non_main_ractor?
+    omit "Lots of unfrozen strings in constants" unless main_ractor?
   end
 
   def test_immediates

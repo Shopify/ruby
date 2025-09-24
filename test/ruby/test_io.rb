@@ -702,6 +702,7 @@ class TestIO < Test::Unit::TestCase
   if have_nonblock?
     def test_copy_stream_no_busy_wait
       omit "multiple threads already active" if Thread.list.size > 1
+      omit "unpredictable" unless main_ractor?
 
       msg = 'r58534 [ruby-core:80969] [Backport #13533]'
       IO.pipe do |r,w|

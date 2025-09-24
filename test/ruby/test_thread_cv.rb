@@ -137,6 +137,7 @@ INPUT
   end
 
   def test_condvar_timed_wait
+    omit "unpredictable" if multiple_ractors?
     mutex = Thread::Mutex.new
     condvar = Thread::ConditionVariable.new
     timeout = 0.3

@@ -1580,6 +1580,7 @@ class TestMethod < Test::Unit::TestCase
   end)
 
   def test_method_in_method_visibility_should_be_public
+    omit "racy" if multiple_ractors?
     MethodInMethodClass_Setup.call
 
     assert_equal([:m1].sort, MethodInMethodClass.public_instance_methods(false).sort)

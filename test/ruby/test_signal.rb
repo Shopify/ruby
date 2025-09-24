@@ -4,8 +4,12 @@ require 'timeout'
 require 'tempfile'
 
 class TestSignal < Test::Unit::TestCase
+
+  def setup
+    omit "racy" unless main_ractor?
+  end
+
   def test_signal
-    omit "signals run in main ractor" if non_main_ractor?
     begin
       x = 0
       oldtrap = Signal.trap(:INT) {|sig| x = 2 }
@@ -27,7 +31,6 @@ class TestSignal < Test::Unit::TestCase
   end if Process.respond_to?(:kill)
 
   def test_signal_process_group
-    omit "Process.spawn" unless main_ractor?
     bug4362 = '[ruby-dev:43169]'
     assert_nothing_raised(bug4362) do
       cmd = [ EnvUtil.rubybin, '--disable=gems' '-e', 'sleep 10' ]
@@ -41,7 +44,6 @@ class TestSignal < Test::Unit::TestCase
     Process.respond_to?(:pgroup) # for mswin32
 
   def test_exit_action
-    pend "Timeout" if non_main_ractor?
     if Signal.list[sig = "USR1"]
       term = :TERM
     else
@@ -100,7 +102,6 @@ class TestSignal < Test::Unit::TestCase
   end
 
   def test_signal2
-    pend "Timeout" if non_main_ractor?
     begin
       x = false
       oldtrap = Signal.trap(:INT) {|sig| x = true }
@@ -136,7 +137,6 @@ class TestSignal < Test::Unit::TestCase
   end if Process.respond_to?(:kill)
 
   def test_trap
-    omit "not ractor safe" unless main_ractor?
     begin
       oldtrap = Signal.trap(:INT) {|sig| }
 
@@ -265,7 +265,6 @@ class TestSignal < Test::Unit::TestCase
   end if Process.respond_to?(:kill)
 
   def test_hup_me
-    pend "Timeout" if non_main_ractor?
     # [Bug #7951] [ruby-core:52864]
     # This is MRI specific spec. ruby has no guarantee
     # that signal will be deliverd synchronously.
@@ -318,7 +317,6 @@ class TestSignal < Test::Unit::TestCase
   def test_self_stop
     omit unless Process.respond_to?(:fork)
     omit unless defined?(Process::WUNTRACED)
-    omit "fork" unless main_ractor?
 
     # Make a process that stops itself
     child_pid = fork do

@@ -928,17 +928,19 @@ class TestFileExhaustive < Test::Unit::TestCase
 
   def test_expand_path_encoding_filesystem
     omit "global side effects" if multiple_ractors?
-    home = ENV["HOME"]
-    ENV["HOME"] = "#{DRIVE}/UserHome"
+    begin
+      home = ENV["HOME"]
+      ENV["HOME"] = "#{DRIVE}/UserHome"
 
-    path = "~".encode("US-ASCII")
-    dir = "C:/".encode("IBM437")
-    fs = Encoding.find("filesystem")
+      path = "~".encode("US-ASCII")
+      dir = "C:/".encode("IBM437")
+      fs = Encoding.find("filesystem")
 
-    assert_equal fs, File.expand_path(path).encoding
-    assert_equal fs, File.expand_path(path, dir).encoding
-  ensure
-    ENV["HOME"] = home if home
+      assert_equal fs, File.expand_path(path).encoding
+      assert_equal fs, File.expand_path(path, dir).encoding
+    ensure
+      ENV["HOME"] = home
+    end
   end
 
   UnknownUserHome = "~foo_bar_baz_unknown_user_wahaha".freeze
@@ -963,31 +965,31 @@ class TestFileExhaustive < Test::Unit::TestCase
       ENV["HOME"] = "."
       assert_raise(ArgumentError, bug3630) { File.expand_path("~") }
     ensure
-      if home
-        ENV["HOME"] = home
-        ENV["HOMEDRIVE"] = home_drive
-        ENV["HOMEPATH"] = home_path
-        ENV["USERPROFILE"] = user_profile
-      end
+      ENV["HOME"] = home
+      ENV["HOMEDRIVE"] = home_drive
+      ENV["HOMEPATH"] = home_path
+      ENV["USERPROFILE"] = user_profile
     end
   end
 
   def test_expand_path_home_dir_string
     omit "global side effects" if multiple_ractors?
-    home = ENV["HOME"]
-    new_home = "#{DRIVE}/UserHome"
-    ENV["HOME"] = new_home
-    bug8034 = "[ruby-core:53168]"
+    begin
+      home = ENV["HOME"]
+      new_home = "#{DRIVE}/UserHome"
+      ENV["HOME"] = new_home
+      bug8034 = "[ruby-core:53168]"
 
-    assert_equal File.join(new_home, "foo"), File.expand_path("foo", "~"), bug8034
-    assert_equal File.join(new_home, "bar", "foo"), File.expand_path("foo", "~/bar"), bug8034
+      assert_equal File.join(new_home, "foo"), File.expand_path("foo", "~"), bug8034
+      assert_equal File.join(new_home, "bar", "foo"), File.expand_path("foo", "~/bar"), bug8034
 
-    assert_raise(ArgumentError) { File.expand_path(".", UnknownUserHome) }
-    assert_nothing_raised(ArgumentError) { File.expand_path("#{DRIVE}/", UnknownUserHome) }
-    ENV["HOME"] = "#{DRIVE}UserHome"
-    assert_raise(ArgumentError) { File.expand_path("~") }
-  ensure
-    ENV["HOME"] = home if home
+      assert_raise(ArgumentError) { File.expand_path(".", UnknownUserHome) }
+      assert_nothing_raised(ArgumentError) { File.expand_path("#{DRIVE}/", UnknownUserHome) }
+      ENV["HOME"] = "#{DRIVE}UserHome"
+      assert_raise(ArgumentError) { File.expand_path("~") }
+    ensure
+      ENV["HOME"] = home
+    end
   end
 
   if /mswin|mingw/ =~ RUBY_PLATFORM
@@ -1110,33 +1112,39 @@ class TestFileExhaustive < Test::Unit::TestCase
 
   def test_expand_path_converts_a_pathname_to_an_absolute_pathname_using_home_as_base
     omit "global side effects" if multiple_ractors?
-    old_home = ENV["HOME"]
-    home = ENV["HOME"] = "#{DRIVE}/UserHome"
-    assert_equal(home, File.expand_path("~"))
-    assert_equal(home, File.expand_path("~", "C:/FooBar"))
-    assert_equal(File.join(home, "a"), File.expand_path("~/a", "C:/FooBar"))
-  ensure
-    ENV["HOME"] = old_home if old_home
+    begin
+      old_home = ENV["HOME"]
+      home = ENV["HOME"] = "#{DRIVE}/UserHome"
+      assert_equal(home, File.expand_path("~"))
+      assert_equal(home, File.expand_path("~", "C:/FooBar"))
+      assert_equal(File.join(home, "a"), File.expand_path("~/a", "C:/FooBar"))
+    ensure
+      ENV["HOME"] = old_home
+    end
   end
 
   def test_expand_path_converts_a_pathname_to_an_absolute_pathname_using_unc_home
     omit "global side effects" if multiple_ractors?
-    old_home = ENV["HOME"]
-    unc_home = ENV["HOME"] = "//UserHome"
-    assert_equal(unc_home, File.expand_path("~"))
-  ensure
-    ENV["HOME"] = old_home if old_home
+    begin
+      old_home = ENV["HOME"]
+      unc_home = ENV["HOME"] = "//UserHome"
+      assert_equal(unc_home, File.expand_path("~"))
+    ensure
+      ENV["HOME"] = old_home
+    end
   end if DRIVE
 
   def test_expand_path_does_not_modify_a_home_string_argument
     omit "global side effects" if multiple_ractors?
-    old_home = ENV["HOME"]
-    home = ENV["HOME"] = "#{DRIVE}/UserHome"
-    str = "~/a"
-    assert_equal("#{home}/a", File.expand_path(str))
-    assert_equal("~/a", str)
-  ensure
-    ENV["HOME"] = old_home if old_home
+    begin
+      old_home = ENV["HOME"]
+      home = ENV["HOME"] = "#{DRIVE}/UserHome"
+      str = "~/a"
+      assert_equal("#{home}/a", File.expand_path(str))
+      assert_equal("~/a", str)
+    ensure
+      ENV["HOME"] = old_home
+    end
   end
 
   def test_expand_path_raises_argument_error_for_any_supplied_username
@@ -1157,11 +1165,13 @@ class TestFileExhaustive < Test::Unit::TestCase
 
   def test_expand_path_error_for_non_absolute_home
     omit "global side effects" if multiple_ractors?
-    old_home = ENV["HOME"]
-    ENV["HOME"] = "./UserHome"
-    assert_raise_with_message(ArgumentError, /non-absolute home/) {File.expand_path("~")}
-  ensure
-    ENV["HOME"] = old_home if old_home
+    begin
+      old_home = ENV["HOME"]
+      ENV["HOME"] = "./UserHome"
+      assert_raise_with_message(ArgumentError, /non-absolute home/) {File.expand_path("~")}
+    ensure
+      ENV["HOME"] = old_home
+    end
   end
 
   def test_expand_path_raises_a_type_error_if_not_passed_a_string_type

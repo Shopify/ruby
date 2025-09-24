@@ -167,7 +167,7 @@ class TestBeginEndBlock < Test::Unit::TestCase
 
   if defined?(fork)
     def test_internal_errinfo_at_exit
-      omit "at_exit handlers cannot use ractor-local objects" if non_main_ractor?
+      omit "fork" unless main_ractor?
       # TODO: use other than break-in-fork to throw an internal
       # error info.
       error, pid, status = IO.pipe do |r, w|
