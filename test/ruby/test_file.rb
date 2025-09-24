@@ -317,7 +317,7 @@ class TestFile < Test::Unit::TestCase
       assert_equal(File.join(realdir, "foo"), File.realdirpath("foo", tst))
       if main_ractor?
         assert_equal(realdir, Dir.chdir(realdir) {File.realdirpath(".")})
-        assert_equal(File.join(realdir, "foo"), Dir.chdir(realdir) {File.realdirpath("foo")}) if main
+        assert_equal(File.join(realdir, "foo"), Dir.chdir(realdir) {File.realdirpath("foo")})
       end
     }
     begin

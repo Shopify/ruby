@@ -1069,32 +1069,31 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
 
   def capture_warning_warn(category: false)
     omit "global side effects" if multiple_ractors?
-    verbose = $VERBOSE
-    categories = Warning.categories.to_h {|cat| [cat, Warning[cat]]}
-    warning = []
+    begin
+      verbose = $VERBOSE
+      categories = Warning.categories.to_h {|cat| [cat, Warning[cat]]}
+      warning = []
 
-    ::Warning.class_eval do
-      alias_method :warn2, :warn
-      remove_method :warn
+      ::Warning.class_eval do
+        alias_method :warn2, :warn
+        remove_method :warn
 
-      if category
-        define_method(:warn) do |str, category: nil|
-          warning << [str, category]
-        end
-      else
-        define_method(:warn) do |str, category: nil|
-          warning << str
+        if category
+          define_method(:warn) do |str, category: nil|
+            warning << [str, category]
+          end
+        else
+          define_method(:warn) do |str, category: nil|
+            warning << str
+          end
         end
       end
-    end
 
-    $VERBOSE = true
-    Warning.categories.each {|cat| Warning[cat] = true}
-    yield
-
-    return warning
-  ensure
-    if verbose
+      $VERBOSE = true
+      Warning.categories.each {|cat| Warning[cat] = true}
+      yield
+      return warning
+    ensure
       $VERBOSE = verbose
       categories.each {|cat, flag| Warning[cat] = flag}
 

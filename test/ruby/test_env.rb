@@ -23,7 +23,8 @@ class TestEnv < Test::Unit::TestCase
   end
 
   def setup
-    omit "unpredictable results" if multiple_ractors?
+    @multiple_ractors = multiple_ractors? # save because test might mess with ENV
+    omit "unpredictable results" if @multiple_ractors
     @verbose = $VERBOSE
     @backup = ENV.to_hash
     ENV.delete('test')
@@ -31,12 +32,10 @@ class TestEnv < Test::Unit::TestCase
   end
 
   def teardown
-    return if multiple_ractors?
-    if @verbose
-      $VERBOSE = @verbose
-      ENV.clear
-      @backup.each {|k, v| ENV[k] = v }
-    end
+    return if @multiple_ractors
+    $VERBOSE = @verbose
+    ENV.clear
+    @backup.each {|k, v| ENV[k] = v }
   end
 
   def test_bracket

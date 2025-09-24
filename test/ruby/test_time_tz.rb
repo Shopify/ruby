@@ -572,7 +572,7 @@ End
     }
   end
 
-  unless will_run_in_non_main_ractor?
+  if will_run_in_main_ractor?
     # tzdata-2014g fixed the offset for lisbon from -0:36:32 to -0:36:45.
     # [ruby-core:65058] [Bug #10245]
     gen_variational_zdump_test "lisbon", <<'End' if has_lisbon_tz

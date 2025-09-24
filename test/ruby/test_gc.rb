@@ -352,6 +352,7 @@ class TestGc < Test::Unit::TestCase
   end
 
   def test_latest_gc_info_argument
+    omit "racy" if multiple_ractors?
     info = {}
     GC.latest_gc_info(info)
 
