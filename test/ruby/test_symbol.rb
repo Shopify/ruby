@@ -214,17 +214,14 @@ class TestSymbol < Test::Unit::TestCase
     end
   }
   def test_to_proc_arg_with_refinements
-    omit "ractor_confirm_belonging issue" if non_main_ractor?
     assert_equal(:hoge, _test_to_proc_arg_with_refinements_call(&:hoge))
   end
 
   def test_to_proc_lambda_with_refinements
-    omit "ractor_confirm_belonging issue" if non_main_ractor?
     assert_predicate(_test_to_proc_with_refinements_call(&:hoge), :lambda?)
   end
 
   def test_to_proc_arity_with_refinements
-    omit "ractor_confirm_belonging issue" if non_main_ractor?
     assert_equal(-2, _test_to_proc_with_refinements_call(&:hoge).arity)
   end
 

@@ -5,7 +5,6 @@ require 'timeout'
 
 module TestStruct
   def test_struct
-    omit "constant redef" if multiple_ractors?
     struct_test = @Struct.new("Test", :foo, :bar)
     assert_equal(@Struct::Test, struct_test)
 
@@ -100,7 +99,6 @@ module TestStruct
   end
 
   def test_struct_new
-    omit "global side effects" if multiple_ractors?
     assert_raise(NameError) { @Struct.new("foo") }
     assert_nothing_raised { @Struct.new("Foo") }
     @Struct.instance_eval { remove_const(:Foo) }
@@ -116,7 +114,6 @@ module TestStruct
   end
 
   def test_struct_new_with_keyword_init
-    omit "constant redef" if multiple_ractors?
     @Struct.new("KeywordInitTrue", :a, :b, keyword_init: true)
     @Struct.new("KeywordInitFalse", :a, :b, keyword_init: false)
 
@@ -364,7 +361,6 @@ module TestStruct
   end
 
   def test_redefinition_warning
-    omit "constant redef" unless main_ractor?
     @Struct.new(name = "RedefinitionWarning")
     e = EnvUtil.verbose_warning do
       @Struct.new("RedefinitionWarning")
@@ -388,7 +384,6 @@ module TestStruct
   end
 
   def test_nonascii
-    omit "constant redef" if multiple_ractors?
     struct_test = @Struct.new(name = "R\u{e9}sum\u{e9}", :"r\u{e9}sum\u{e9}")
     assert_equal(@Struct.const_get("R\u{e9}sum\u{e9}"), struct_test, '[ruby-core:24849]')
     a = struct_test.new(42)
@@ -406,7 +401,6 @@ module TestStruct
   end
 
   def test_junk
-    omit "global side effects" if multiple_ractors?
     struct_test = @Struct.new("Foo", "a\000")
     o = struct_test.new(1)
     assert_equal(1, o.send("a\000"))
@@ -414,7 +408,6 @@ module TestStruct
   end
 
   def test_comparison_when_recursive
-    pend "Timeout" if non_main_ractor?
     klass1 = @Struct.new(:a, :b, :c)
 
     x = klass1.new(1, 2, nil); x.c = x

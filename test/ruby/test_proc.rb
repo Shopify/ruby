@@ -172,12 +172,10 @@ class TestProc < Test::Unit::TestCase
 
     assert_equal p1.hash, p2.hash
 
-    if main_ractor?
-      # symbol backed proc
-      p1 = :hello.to_proc
-      p2 = :hello.to_proc
-      assert_equal p1.hash, p2.hash
-    end
+    # symbol backed proc
+    p1 = :hello.to_proc
+    p2 = :hello.to_proc
+    assert_equal p1.hash, p2.hash
   end
 
   def test_hash_uniqueness

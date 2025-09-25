@@ -235,7 +235,6 @@ class TestEval < Test::Unit::TestCase
   end
 
   def test_instance_eval_cvar
-    omit "class variable access" if non_main_ractor?
     [Object.new, [], 7, :sym, true, false, nil].each do |obj|
       assert_equal(13, obj.instance_eval("@@cvar"))
       assert_equal(13, obj.instance_eval{@@cvar})
@@ -245,7 +244,6 @@ class TestEval < Test::Unit::TestCase
   end
 
   def test_instance_exec_cvar
-    omit "class variable access" if non_main_ractor?
     [Object.new, [], 7, :sym, true, false, nil].each do |obj|
       assert_equal(13, obj.instance_exec{@@cvar})
     end
@@ -267,7 +265,6 @@ class TestEval < Test::Unit::TestCase
   end
 
   def test_instance_eval_on_argf_singleton_class
-    omit "ARGF access" if non_main_ractor?
     bug8188 = '[ruby-core:53839] [Bug #8188]'
     assert_warning('', bug8188) do
       ARGF.singleton_class.instance_eval{}
@@ -459,7 +456,6 @@ class TestEval < Test::Unit::TestCase
   end
 
   def test_nil_instance_eval_cvar
-    omit "class variable access" if non_main_ractor?
     def nil.test_binding
       binding
     end
@@ -471,12 +467,10 @@ class TestEval < Test::Unit::TestCase
   end
 
   def test_fixnum_instance_eval_cvar
-    omit "class variable access" if non_main_ractor?
     assert_raise(NameError, "[ruby-dev:24213]") { 1.instance_eval "@@a" }
   end
 
   def test_cvar_scope_with_instance_eval
-    omit "class variable read/write" if non_main_ractor?
     # TODO: check
     Integer.class_eval "@@test_cvar_scope_with_instance_eval = 1" # depends on [ruby-dev:24229]
     @@test_cvar_scope_with_instance_eval = 4
@@ -511,7 +505,6 @@ class TestEval < Test::Unit::TestCase
   end
 
   def test_define_method_toplevel
-    omit "access TOPLEVEL_BINDING" if non_main_ractor?
     feature6609 = '[ruby-core:45715]'
     main = eval("self", TOPLEVEL_BINDING)
     assert_nothing_raised(NoMethodError, feature6609) do
@@ -541,7 +534,6 @@ class TestEval < Test::Unit::TestCase
   end
 
   def test_eval_with_toplevel_binding # [ruby-dev:37142]
-    omit "subprocess" unless main_ractor?
     ruby("-e", "x = 0; eval('p x', TOPLEVEL_BINDING)") do |f|
       f.close_write
       assert_equal("0", f.read.chomp)

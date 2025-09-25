@@ -70,7 +70,6 @@ class TestBignum < Test::Unit::TestCase
   end
 
   def test_bignum
-    omit "global var access" if non_main_ractor?
     x = fact(40)
     assert_equal(x, x)
     assert_equal(x, fact(40))
@@ -706,7 +705,6 @@ class TestBignum < Test::Unit::TestCase
       return # GMP doesn't support interrupt during an operation.
     end
     return unless Process.respond_to?(:kill)
-    omit "Signal.trap lambda accesses outers" if non_main_ractor?
     begin
       trace = []
       oldtrap = Signal.trap(:INT) {|sig| trace << :int }

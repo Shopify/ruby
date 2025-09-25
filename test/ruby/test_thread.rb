@@ -150,7 +150,6 @@ class TestThread < Test::Unit::TestCase
   end
 
   def test_local_barrier
-    omit "global variable access" if non_main_ractor?
     dir = File.dirname(__FILE__)
     lbtest = File.join(dir, "lbtest.rb")
     $:.unshift File.join(File.dirname(dir), 'ruby')
@@ -275,7 +274,6 @@ class TestThread < Test::Unit::TestCase
     'minus_INFINITY' => -Float::INFINITY
   }.each do |name, limit|
     define_method("test_join_limit_negative_#{name}", &Ractor.make_shareable(proc do
-      pend "Timeout" if non_main_ractor?
       t = Thread.new { sleep }
       begin
         assert_nothing_raised(Timeout::Error) do
@@ -930,7 +928,6 @@ class TestThread < Test::Unit::TestCase
   end
 
   def test_thread_timer_and_ensure
-    pend "Timeout" if non_main_ractor?
     assert_normal_exit(<<_eom, 'r36492', timeout: 10)
     flag = false
     t = Thread.new do
@@ -983,7 +980,6 @@ _eom
 
   def test_thread_timer_and_interrupt
     omit "[Bug #18613]" if /freebsd/ =~ RUBY_PLATFORM
-    pend "Timeout" if non_main_ractor?
 
     bug5757 = '[ruby-dev:44985]'
     pid = nil
@@ -1218,7 +1214,6 @@ q.pop
   end unless /mswin|mingw/ =~ RUBY_PLATFORM
 
   def test_blocking_mutex_unlocked_on_fork
-    omit "fork" unless main_ractor?
     bug8433 = '[ruby-core:55102] [Bug #8433]'
 
     mutex = Thread::Mutex.new
@@ -1244,7 +1239,6 @@ q.pop
   end if Process.respond_to?(:fork)
 
   def test_fork_in_thread
-    omit "fork" unless main_ractor?
     bug9751 = '[ruby-core:62070] [Bug #9751]'
     f = nil
     th = Thread.start do
@@ -1266,7 +1260,6 @@ q.pop
   end if Process.respond_to?(:fork)
 
   def test_fork_value
-    omit "fork" unless main_ractor?
     bug18902 = "[Bug #18902]"
     th = Thread.start { sleep 2 }
     begin
@@ -1282,7 +1275,6 @@ q.pop
   end if Process.respond_to?(:fork)
 
   def test_fork_while_locked
-    omit "fork" unless main_ractor?
     m = Thread::Mutex.new
     thrs = []
     3.times do |i|
@@ -1295,7 +1287,6 @@ q.pop
 
   def test_fork_while_parent_locked
     omit 'needs fork' unless Process.respond_to?(:fork)
-    omit "fork" unless main_ractor?
     m = Thread::Mutex.new
     nr = 1
     thrs = []
@@ -1317,7 +1308,6 @@ q.pop
 
   def test_fork_while_mutex_locked_by_forker
     omit 'needs fork' unless Process.respond_to?(:fork)
-    pend "Timeout" if non_main_ractor?
     m = Thread::Mutex.new
     m.synchronize do
       pid = fork do
@@ -1462,7 +1452,6 @@ q.pop
   end
 
   def test_thread_native_thread_id_across_fork_on_linux
-    omit "fork" unless main_ractor?
     begin
       require '-test-/thread/id'
     rescue LoadError
@@ -1495,7 +1484,6 @@ q.pop
   end
 
   def test_thread_interrupt_for_killed_thread
-    pend "Timeout" if non_main_ractor?
     opts = { timeout: 5, timeout_error: nil }
 
     assert_normal_exit(<<-_end, '[Bug #8996]', **opts)

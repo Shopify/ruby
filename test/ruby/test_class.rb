@@ -38,7 +38,6 @@ class TestClass < Test::Unit::TestCase
   # ------------------
 
   def test_s_inherited
-    pend "accesses class variables" if non_main_ractor?
     assert_equal([ClassTwo, ClassThree, ClassFour], ClassOne.new.subs)
   end
 
@@ -331,7 +330,6 @@ class TestClass < Test::Unit::TestCase
   end
 
   def test_nonascii_name
-    omit "global side effects" if multiple_ractors?
     c = eval("class ::C\u{df}; self; end")
     assert_equal("C\u{df}", c.name, '[ruby-core:24600]')
     c = eval("class C\u{df}; self; end")
@@ -624,7 +622,6 @@ class TestClass < Test::Unit::TestCase
   end
 
   def test_singleton_class_should_has_own_namespace
-    pend "Accesses global" if non_main_ractor?
     # CONST in singleton class
     objs = []
     $i = 0

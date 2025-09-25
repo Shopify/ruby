@@ -4,6 +4,9 @@ require 'test/unit'
 class TestRefinement < Test::Unit::TestCase
   module Sandbox
     BINDING = binding
+    def self.create_binding # TODO: create new one each time for multiple ractors
+      BINDING
+    end
   end
 
   class Foo
@@ -225,20 +228,20 @@ class TestRefinement < Test::Unit::TestCase
     end
   end
   def test_method_should_use_refinements
-    omit "binding" if non_main_ractor?
     omit if Test::Unit::Runner.current_repeat_count > 0
 
     foo = Foo.new
     assert_raise(NameError) { foo.method(:z) }
     assert_equal("FooExt#z", FooExtClient.method_z(foo).call)
     assert_raise(NameError) { foo.method(:z) }
-    assert_equal(8, eval(<<~EOS, Sandbox::BINDING))
+    b = Sandbox.create_binding
+    assert_equal(8, eval(<<~EOS, b))
       meth = 2.method(:pow)
       using MethodIntegerPowEx
       meth.call(3)
     EOS
-    assert_equal(:refine_pow, eval_using(MethodIntegerPowEx, "2.pow(3)"))
-    assert_equal(:refine_pow, eval_using(MethodIntegerPowEx, "2.method(:pow).(3)"))
+    assert_equal(:refine_pow, eval_using(MethodIntegerPowEx, "2.pow(3)"), b)
+    assert_equal(:refine_pow, eval_using(MethodIntegerPowEx, "2.method(:pow).(3)"), b)
   end
 
   module InstanceMethodIntegerPowEx
@@ -249,19 +252,19 @@ class TestRefinement < Test::Unit::TestCase
     end
   end
   def test_instance_method_should_use_refinements
-    omit "binding" if non_main_ractor?
     omit if Test::Unit::Runner.current_repeat_count > 0
 
     foo = Foo.new
     assert_raise(NameError) { Foo.instance_method(:z) }
     assert_equal("FooExt#z", FooExtClient.instance_method_z(foo).bind(foo).call)
     assert_raise(NameError) { Foo.instance_method(:z) }
-    assert_equal(4, eval(<<~EOS, Sandbox::BINDING))
+    b = Sandbox.create_binding
+    assert_equal(4, eval(<<~EOS, b))
       meth = Integer.instance_method(:abs)
       using InstanceMethodIntegerPowEx
       meth.bind(-4).call
     EOS
-    assert_equal(:refine_abs, eval_using(InstanceMethodIntegerPowEx, "Integer.instance_method(:abs).bind(-4).call"))
+    assert_equal(:refine_abs, eval_using(InstanceMethodIntegerPowEx, "Integer.instance_method(:abs).bind(-4).call", b))
   end
 
   def test_no_local_rebinding
@@ -316,7 +319,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_override_builtin_method
-    omit "binding" if non_main_ractor?
     assert_equal(0, 1 / 2)
     assert_equal(Rational(1, 2), eval_using(IntegerSlashExt, "1 / 2"))
     assert_equal(0, 1 / 2)
@@ -330,7 +332,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_override_builtin_method_with_method_added
-    omit "binding" if non_main_ractor?
     assert_equal(3, 1 + 2)
     assert_equal("overridden", eval_using(IntegerPlusExt, "1 + 2"))
     assert_equal(3, 1 + 2)
@@ -360,7 +361,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_refine_same_class_twice
-    omit "binding" if non_main_ractor?
     assert_equal("foo", eval_using(RefineSameClass, "1.foo"))
     assert_equal("bar", eval_using(RefineSameClass, "1.bar"))
     assert_equal(RefineSameClass::REFINEMENT1, RefineSameClass::REFINEMENT2)
@@ -374,7 +374,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_respond_to_should_use_refinements
-    omit "binding" if non_main_ractor?
     assert_equal(false, 1.respond_to?(:foo))
     assert_equal(true, eval_using(IntegerFooExt, "1.respond_to?(:foo)"))
   end
@@ -396,7 +395,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_builtin_method_no_local_rebinding
-    omit "binding" if non_main_ractor?
     assert_equal(false, eval_using(StringCmpExt, '"1" >= "2"'))
     assert_equal(1, eval_using(ArrayEachExt, "[1, 2, 3].min"))
   end
@@ -426,7 +424,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_refine_prepended_class
-    omit "binding" if non_main_ractor?
     x = eval_using(RefinePrependedClass::M2,
                    "TestRefinement::RefinePrependedClass::C.new.foo")
     assert_equal([:c, :m1, :m2], x)
@@ -549,9 +546,8 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_main_using_is_private
-    omit "binding" if non_main_ractor?
     assert_raise(NoMethodError) do
-      eval("recv = self; recv.using Module.new", Sandbox::BINDING)
+      eval("recv = self; recv.using Module.new", Sandbox.create_binding)
     end
   end
 
@@ -565,9 +561,8 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_module_using_class
-    omit "binding" if non_main_ractor?
     assert_raise(TypeError) do
-      eval("using TestRefinement::UsingClass", Sandbox::BINDING)
+      eval("using TestRefinement::UsingClass", Sandbox.create_binding)
     end
   end
 
@@ -648,7 +643,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_redefine_refined_method
-    omit "binding" if non_main_ractor?
     x = eval_using(RedefineRefinedMethod::M,
                    "TestRefinement::RedefineRefinedMethod::C.new.foo")
     assert_equal("refined", x)
@@ -698,7 +692,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_refine_recursion
-    omit "binding" if non_main_ractor?
     x = eval_using(StringRecursiveLength, "'foo'.recursive_length")
     assert_equal(3, x)
   end
@@ -718,7 +711,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_refine_mutual_recursion
-    omit "binding" if non_main_ractor?
     x = eval_using(ToJSON, "[{1=>2}, {3=>4}].to_json")
     assert_equal('[{"1":2},{"3":4}]', x)
   end
@@ -732,32 +724,30 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_using_in_module
-    omit "binding" if non_main_ractor?
     assert_raise(RuntimeError) do
-      eval(<<-EOF, Sandbox::BINDING)
-        $main = self
+      eval(<<-EOF, Sandbox.create_binding)
+        main = self
         module M
         end
-        module M2
-          $main.send(:using, M)
+        M2 = Module.new do
+          main.send(:using, M)
         end
       EOF
     end
   end
 
   def test_using_in_method
-    omit "binding" if non_main_ractor?
     assert_raise(RuntimeError) do
-      eval(<<-EOF, Sandbox::BINDING)
-        $main = self
+      eval(<<-EOF, Sandbox.create_binding)
+        main = self
         module M
         end
-        class C
-          def call_using_in_method
-            $main.send(:using, M)
+        c = Class.new do
+          define_method(:call_using_in_method) do
+            main.send(:using, M)
           end
         end
-        C.new.call_using_in_method
+        c.new.call_using_in_method
       EOF
     end
   end
@@ -846,7 +836,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_prepend_after_refine
-    omit "binding" if non_main_ractor?
     x = eval_using(PrependAfterRefine::M,
                    "TestRefinement::PrependAfterRefine::C.new.foo")
     assert_equal("refined", x)
@@ -876,10 +865,10 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_super_in_block
-    omit "binding" if non_main_ractor?
     bug7925 = '[ruby-core:52750] [Bug #7925]'
+    b = Sandbox.create_binding
     x = eval_using(SuperInBlock::R,
-                   "TestRefinement:: SuperInBlock::C.new.foo(#{bug7925.dump})")
+                   "TestRefinement::SuperInBlock::C.new.foo(#{bug7925.dump})", b)
     assert_equal([:foo, :ref, bug7925], x, bug7925)
   end
 
@@ -935,9 +924,8 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_module_using_invalid_self
-    omit "binding" if non_main_ractor?
     assert_raise(RuntimeError) do
-      eval <<-EOF, Sandbox::BINDING
+      eval <<-EOF, Sandbox.create_binding
         module TestRefinement::TestModuleUsingInvalidSelf
           Module.new.send(:using, TestRefinement::FooExt)
         end
@@ -1912,7 +1900,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_refine_alias_in_subclass
-    omit "binding" if non_main_ractor?
     assert_equal(:refined,
                  eval_using(AliasInSubclass::M, "AliasInSubclass::D.new.bar"))
   end
@@ -2428,7 +2415,6 @@ class TestRefinement < Test::Unit::TestCase
   end
 
   def test_refine_frozen_class
-    omit "class ivar" if non_main_ractor?
     verbose_bak, $VERBOSE = $VERBOSE, nil
     singleton_class.instance_variable_set(:@x, self)
     class << self
@@ -2683,7 +2669,6 @@ class TestRefinement < Test::Unit::TestCase
 
   def test_inline_cache_invalidation
     # class has no constant associated and is belonging to this ractor, in theory it could be allowed
-    pend "class ivar" if non_main_ractor?
     klass = Class.new do
       def cached_foo_callsite = foo
 
@@ -2736,7 +2721,7 @@ class TestRefinement < Test::Unit::TestCase
 
   private
 
-  def eval_using(mod, s)
-    eval("using #{mod}; #{s}", Sandbox::BINDING)
+  def eval_using(mod, s, b = nil)
+    eval("using #{mod}; #{s}", b || Sandbox.create_binding)
   end
 end

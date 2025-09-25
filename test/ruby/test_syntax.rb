@@ -32,7 +32,6 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_must_ascii_compatible
-    pend "Tempfile" unless main_ractor?
     require 'tempfile'
     f = Tempfile.new("must_ac_")
     Encoding.list.each do |enc|
@@ -50,7 +49,6 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_script_lines
-    pend "Tempfile" unless main_ractor?
     require 'tempfile'
     f = Tempfile.new("bug4361_")
     bug4361 = '[ruby-dev:43168]'
@@ -839,7 +837,6 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_unassignable
-    omit "global variable access" unless main_ractor?
     gvar = global_variables
     %w[self nil true false __FILE__ __LINE__ __ENCODING__].each do |kwd|
       assert_syntax_error("#{kwd} = nil", /Can't .* #{kwd}$/)
@@ -1541,7 +1538,6 @@ eom
   end
 
   def test_return_toplevel
-    pend "Tempfile" unless main_ractor?
     feature4840 = '[ruby-core:36785] [Feature #4840]'
     line = __LINE__+2
     code = "#{<<~"begin;"}#{<<~'end;'}"
@@ -1591,7 +1587,6 @@ eom
   end
 
   def test_eval_return_toplevel
-    pend "Tempfile" unless main_ractor?
     feature4840 = '[ruby-core:36785] [Feature #4840]'
     line = __LINE__+2
     code = "#{<<~"begin;"}#{<<~'end;'}"

@@ -83,7 +83,6 @@ class TestMarshal < Test::Unit::TestCase
   end
 
   def test_struct_invalid_members
-    omit "global side effects" if multiple_ractors?
     begin
       TestMarshal.const_set :StructInvalidMembers, Struct.new(:a)
       assert_raise(TypeError, "[ruby-dev:31759]") {
@@ -191,7 +190,6 @@ class TestMarshal < Test::Unit::TestCase
   end
 
   def test_change_class_name
-    omit "global side effects" if multiple_ractors?
     run_ensure = true
     self.class.__send__(:remove_const, :C3) if self.class.const_defined?(:C3)
     eval("class C3; def _dump(s); 'foo'; end; end")
@@ -207,7 +205,6 @@ class TestMarshal < Test::Unit::TestCase
   end
 
   def test_change_struct
-    omit "global side effects" if multiple_ractors?
     run_ensure = true
     self.class.__send__(:remove_const, :C3) if self.class.const_defined?(:C3)
     eval("C3 = Struct.new(:foo, :bar)")
@@ -369,7 +366,6 @@ class TestMarshal < Test::Unit::TestCase
   end
 
   def test_context_switch
-    omit "access class variables" if non_main_ractor?
     o = DumpTest.new
     e = o.enum_for(:dump_each)
     assert_equal(:marshal_dump, e.next)

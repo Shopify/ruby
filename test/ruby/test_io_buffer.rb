@@ -461,7 +461,6 @@ class TestIOBuffer < Test::Unit::TestCase
   end
 
   def hello_world_tempfile(repeats = 1)
-    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
     repeats.times do
       io.write("Hello World")
@@ -507,7 +506,6 @@ class TestIOBuffer < Test::Unit::TestCase
   end
 
   def test_write
-    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
 
     buffer = IO::Buffer.new(128)
@@ -517,11 +515,10 @@ class TestIOBuffer < Test::Unit::TestCase
     io.seek(0)
     assert_equal "Hello", io.read(5)
   ensure
-    io&.close!
+    io.close!
   end
 
   def test_write_with_length_and_offset
-    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
 
     buffer = IO::Buffer.new(5)
@@ -531,11 +528,10 @@ class TestIOBuffer < Test::Unit::TestCase
     io.seek(0)
     assert_equal "ello", io.read(4)
   ensure
-    io&.close!
+    io.close!
   end
 
   def test_pread
-    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
     io.write("Hello World")
     io.seek(0)
@@ -546,11 +542,10 @@ class TestIOBuffer < Test::Unit::TestCase
     assert_equal "World", buffer.get_string(0, 5)
     assert_equal 0, io.tell
   ensure
-    io&.close!
+    io.close!
   end
 
   def test_pread_offset
-    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
     io.write("Hello World")
     io.seek(0)
@@ -561,11 +556,10 @@ class TestIOBuffer < Test::Unit::TestCase
     assert_equal "World", buffer.get_string(6, 5)
     assert_equal 0, io.tell
   ensure
-    io&.close!
+    io.close!
   end
 
   def test_pwrite
-    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
 
     buffer = IO::Buffer.new(128)
@@ -577,11 +571,10 @@ class TestIOBuffer < Test::Unit::TestCase
     io.seek(6)
     assert_equal "World", io.read(5)
   ensure
-    io&.close!
+    io.close!
   end
 
   def test_pwrite_offset
-    pend "Tempfile" if non_main_ractor?
     io = Tempfile.new
 
     buffer = IO::Buffer.new(128)
@@ -593,7 +586,7 @@ class TestIOBuffer < Test::Unit::TestCase
     io.seek(6)
     assert_equal "World", io.read(5)
   ensure
-    io&.close!
+    io.close!
   end
 
   def test_operators
@@ -617,7 +610,6 @@ class TestIOBuffer < Test::Unit::TestCase
   end
 
   def test_shared
-    omit "fork" unless main_ractor?
     message = "Hello World"
     buffer = IO::Buffer.new(64, IO::Buffer::MAPPED | IO::Buffer::SHARED)
 
@@ -633,7 +625,6 @@ class TestIOBuffer < Test::Unit::TestCase
   end
 
   def test_private
-    pend "Tempfile" if non_main_ractor?
     Tempfile.create(%w"buffer .txt") do |file|
       file.write("Hello World")
 
@@ -706,7 +697,6 @@ class TestIOBuffer < Test::Unit::TestCase
   # https://bugs.ruby-lang.org/issues/21210
   def test_bug_21210
     omit "compaction is not supported on this platform" unless GC.respond_to?(:compact)
-    omit "verify_compaction_references" unless main_ractor?
 
     str = +"hello"
     buf = IO::Buffer.for(str)

@@ -120,7 +120,6 @@ class TestBeginEndBlock < Test::Unit::TestCase
   end
 
   def test_rescue_at_exit
-    omit "subprocess" unless main_ractor?
     bug5218 = '[ruby-core:43173][Bug #5218]'
     cmd = [
       "raise 'X' rescue nil",
@@ -167,7 +166,6 @@ class TestBeginEndBlock < Test::Unit::TestCase
 
   if defined?(fork)
     def test_internal_errinfo_at_exit
-      omit "fork" unless main_ractor?
       # TODO: use other than break-in-fork to throw an internal
       # error info.
       error, pid, status = IO.pipe do |r, w|

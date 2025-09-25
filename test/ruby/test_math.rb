@@ -334,7 +334,6 @@ class TestMath < Test::Unit::TestCase
   end
 
   def test_override_integer_to_f
-    omit "global side effects" unless main_ractor?
     run_ensure = true
     Integer.class_eval do
       alias _to_f to_f
@@ -357,7 +356,6 @@ class TestMath < Test::Unit::TestCase
   end
 
   def test_override_bignum_to_f
-    omit "global side effects" unless main_ractor?
     run_ensure = true
     Integer.class_eval do
       alias _to_f to_f
@@ -379,7 +377,6 @@ class TestMath < Test::Unit::TestCase
   end
 
   def test_override_rational_to_f
-    omit "global side effects" unless main_ractor?
     run_ensure = true
     Rational.class_eval do
       alias _to_f to_f

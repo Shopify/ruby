@@ -339,7 +339,7 @@ class TestObject < Test::Unit::TestCase
       'T_CLASS,T_MODULE' => Class.new(Object),
       'generic ivar' => '',
     }.each do |desc, o|
-      if o.is_a?(Class) && non_main_ractor?
+      if o.is_a?(Class) && !main_ractor?
         next
       end
       e = assert_raise(NameError, "#{desc} iv removal raises before set") do

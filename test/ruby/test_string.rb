@@ -408,8 +408,6 @@ CODE
   end
 
   def test_chomp
-    omit "$/ set" if multiple_ractors?
-    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     assert_equal(S("hello"), S("hello").chomp("\n"))
@@ -476,15 +474,11 @@ CODE
     s = "foo\r"
     assert_equal("foo", s.chomp("\n"))
   ensure
-    if run_ensure
-      $/ = save
-      $VERBOSE = verbose
-    end
+    $/ = save
+    $VERBOSE = verbose
   end
 
   def test_chomp!
-    omit "$/ set " if multiple_ractors?
-    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     a = S("hello")
@@ -604,10 +598,8 @@ CODE
 
     assert_raise(ArgumentError) {String.new.chomp!("", "")}
   ensure
-    if run_ensure
-      $/ = save
-      $VERBOSE = verbose
-    end
+    $/ = save
+    $VERBOSE = verbose
   end
 
   def test_chop
@@ -681,7 +673,6 @@ CODE
 
   def test_string_interpolations_across_heaps_get_embedded
     omit if GC::INTERNAL_CONSTANTS[:HEAP_COUNT] == 1
-    omit "ObjectSpace.dump" if non_main_ractor?
 
     require 'objspace'
     base_slot_size = GC::INTERNAL_CONSTANTS[:BASE_SLOT_SIZE]
@@ -747,7 +738,6 @@ CODE
       assert_raise(ArgumentError) {S("mypassword".encode(enc)).crypt(S("aa"))}
     end
 
-    #pend "String#crypt unsafe?"
     if main_ractor?
       @cls == String and
       assert_no_memory_leak([], "s = ''; salt_proc = proc{#{(crypt_supports_des_crypt? ? '..' : good_salt).inspect}}", "#{<<~"begin;"}\n#{<<~'end;'}")
@@ -955,8 +945,6 @@ CODE
   end
 
   def test_each
-    omit "set $/" if multiple_ractors?
-    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     save = $/
@@ -977,10 +965,8 @@ CODE
     assert_equal(S("hello!"), res[0])
     assert_equal(S("world"),  res[1])
   ensure
-    if run_ensure
-      $/ = save
-      $VERBOSE = verbose
-    end
+    $/ = save
+    $VERBOSE = verbose
   end
 
   def test_each_byte
@@ -1150,8 +1136,6 @@ CODE
   end
 
   def test_each_line
-    omit "set $/" if multiple_ractors?
-    run_ensure = true
     verbose, $VERBOSE = $VERBOSE, nil
 
     save = $/
@@ -1199,10 +1183,8 @@ CODE
       S("\n\u0100").each_line("\n") {}
     end
   ensure
-    if run_ensure
-      $/ = save
-      $VERBOSE = verbose
-    end
+    $/ = save
+    $VERBOSE = verbose
   end
 
   def test_each_line_chomp
@@ -1824,7 +1806,6 @@ CODE
   end
 
   def test_split
-    omit "global variable access" if non_main_ractor?
     fs, $; = $;, nil
     assert_equal([S("a"), S("b"), S("c")], S(" a   b\t c ").split)
     assert_equal([S("a"), S("b"), S("c")], S(" a   b\t c ").split(S(" ")))
@@ -1848,11 +1829,10 @@ CODE
 
     assert_equal([], S("").split(//, 1))
   ensure
-    EnvUtil.suppress_warning {$; = fs} if main_ractor?
+    EnvUtil.suppress_warning {$; = fs}
   end
 
   def test_split_with_block
-    omit "global variable access" if non_main_ractor?
     fs, $; = $;, nil
     result = []; S(" a   b\t c ").split {|s| result << s}
     assert_equal([S("a"), S("b"), S("c")], result)
@@ -1899,11 +1879,10 @@ CODE
       end
     }
   ensure
-    EnvUtil.suppress_warning {$; = fs} if main_ractor?
+    EnvUtil.suppress_warning {$; = fs}
   end
 
   def test_fs
-    omit "global variable access" if non_main_ractor?
     return unless @cls == String
 
     assert_raise_with_message(TypeError, /\$;/) {
@@ -3436,7 +3415,6 @@ CODE
 
   def test_uminus_frozen
     return unless @cls == String
-    omit "not always same" if multiple_ractors?
 
     # embedded
     str1 = ("foobar" * 3).freeze
@@ -3744,7 +3722,6 @@ CODE
   end
 
   def test_chilled_string_setivar
-    omit "monkey patch" if multiple_ractors?
     deprecated = Warning[:deprecated]
     Warning[:deprecated] = false
 

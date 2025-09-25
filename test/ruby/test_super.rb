@@ -541,7 +541,6 @@ class TestSuper < Test::Unit::TestCase
 
   # [Bug #18329]
   def test_super_missing_prepended_module
-    omit "GC.stress" if multiple_ractors?
     a = Module.new do
       def probe(*methods)
         prepend(probing_module(methods))
@@ -623,7 +622,6 @@ class TestSuper < Test::Unit::TestCase
   end
 
   def test_public_zsuper_with_prepend
-    pend "Timeout" if non_main_ractor?
     bug12876 = '[ruby-core:77784] [Bug #12876]'
     m = EnvUtil.labeled_module("M")
     c = EnvUtil.labeled_class("C") {prepend m; public :initialize}

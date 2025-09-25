@@ -672,6 +672,9 @@ class TestArray < Test::Unit::TestCase
     end
   end
 
+  def test_concat_under_gc_stress
+  end
+
   def test_count
     a = @cls[1, 2, 3, 1, 2]
     assert_equal(5, a.count)
@@ -1175,52 +1178,45 @@ class TestArray < Test::Unit::TestCase
   end
 
   def test_join
-    if main_ractor?
-      assert_deprecated_warn = method(:assert_deprecated_warn)
-      assert_deprecated_warning {$, = ""}
-    else
-      assert_deprecated_warn = lambda { |*, &blk| blk.call }
-    end
+    assert_deprecated_warning {$, = ""}
 
     a = @cls[]
-    assert_equal("", assert_deprecated_warn.(/non-nil value/) {a.join})
+    assert_equal("", assert_deprecated_warn(/non-nil value/) {a.join})
     assert_equal("", a.join(','))
-    assert_equal(Encoding::US_ASCII, assert_deprecated_warn.(/non-nil value/) {a.join}.encoding)
+    assert_equal(Encoding::US_ASCII, assert_deprecated_warn(/non-nil value/) {a.join}.encoding)
 
-    assert_deprecated_warning {$, = ""} if main_ractor?
+    assert_deprecated_warning {$, = ""}
     a = @cls[1, 2]
-    assert_equal("12", assert_deprecated_warn.(/non-nil value/) {a.join})
-    assert_equal("12", assert_deprecated_warn.(/non-nil value/) {a.join(nil)})
+    assert_equal("12", assert_deprecated_warn(/non-nil value/) {a.join})
+    assert_equal("12", assert_deprecated_warn(/non-nil value/) {a.join(nil)})
     assert_equal("1,2", a.join(','))
 
-    assert_deprecated_warning {$, = ""} if main_ractor?
+    assert_deprecated_warning {$, = ""}
     a = @cls[1, 2, 3]
-    assert_equal("123", assert_deprecated_warn.(/non-nil value/) {a.join})
-    assert_equal("123", assert_deprecated_warn.(/non-nil value/) {a.join(nil)})
+    assert_equal("123", assert_deprecated_warn(/non-nil value/) {a.join})
+    assert_equal("123", assert_deprecated_warn(/non-nil value/) {a.join(nil)})
     assert_equal("1,2,3", a.join(','))
 
-    assert_deprecated_warning {$, = ":"} if main_ractor?
+    assert_deprecated_warning {$, = ":"}
     a = @cls[1, 2, 3]
-    if main_ractor?
-      assert_equal("1:2:3", assert_deprecated_warn.(/non-nil value/) {a.join})
-      assert_equal("1:2:3", assert_deprecated_warn.(/non-nil value/) {a.join(nil)})
-    end
+    assert_equal("1:2:3", assert_deprecated_warn(/non-nil value/) {a.join})
+    assert_equal("1:2:3", assert_deprecated_warn(/non-nil value/) {a.join(nil)})
     assert_equal("1,2,3", a.join(','))
 
-    assert_deprecated_warning {$, = ""} if main_ractor?
+    assert_deprecated_warning {$, = ""}
 
     e = ''.force_encoding('EUC-JP')
     u = ''.force_encoding('UTF-8')
-    assert_equal(Encoding::US_ASCII, assert_deprecated_warn.(/non-nil value/) {[[]].join}.encoding)
-    assert_equal(Encoding::US_ASCII, assert_deprecated_warn.(/non-nil value/) {[1, [u]].join}.encoding)
-    assert_equal(Encoding::UTF_8, assert_deprecated_warn.(/non-nil value/) {[u, [e]].join}.encoding)
-    assert_equal(Encoding::UTF_8, assert_deprecated_warn.(/non-nil value/) {[u, [1]].join}.encoding)
-    assert_equal(Encoding::UTF_8, assert_deprecated_warn.(/non-nil value/) {[Struct.new(:to_str).new(u)].join}.encoding)
+    assert_equal(Encoding::US_ASCII, assert_deprecated_warn(/non-nil value/) {[[]].join}.encoding)
+    assert_equal(Encoding::US_ASCII, assert_deprecated_warn(/non-nil value/) {[1, [u]].join}.encoding)
+    assert_equal(Encoding::UTF_8, assert_deprecated_warn(/non-nil value/) {[u, [e]].join}.encoding)
+    assert_equal(Encoding::UTF_8, assert_deprecated_warn(/non-nil value/) {[u, [1]].join}.encoding)
+    assert_equal(Encoding::UTF_8, assert_deprecated_warn(/non-nil value/) {[Struct.new(:to_str).new(u)].join}.encoding)
     bug5379 = '[ruby-core:39776]'
-    assert_equal(Encoding::US_ASCII, assert_deprecated_warn.(/non-nil value/) {[[], u, nil].join}.encoding, bug5379)
-    assert_equal(Encoding::UTF_8, assert_deprecated_warn.(/non-nil value/) {[[], "\u3042", nil].join}.encoding, bug5379)
+    assert_equal(Encoding::US_ASCII, assert_deprecated_warn(/non-nil value/) {[[], u, nil].join}.encoding, bug5379)
+    assert_equal(Encoding::UTF_8, assert_deprecated_warn(/non-nil value/) {[[], "\u3042", nil].join}.encoding, bug5379)
   ensure
-    $, = nil if main_ractor?
+    $, = nil
   end
 
   def test_last
@@ -1478,7 +1474,6 @@ class TestArray < Test::Unit::TestCase
   end
 
   def test_replace_wb_variable_width_alloc
-    omit "not working properly across ractors" if multiple_ractors?
     small_embed = []
     4.times { GC.start } # age small_embed
     large_embed = [1, 2, 3, 4, 5, Array.new] # new young object
@@ -1967,23 +1962,23 @@ class TestArray < Test::Unit::TestCase
   end
 
   def test_to_s
-    assert_deprecated_warning {$, = ""} if main_ractor?
+    assert_deprecated_warning {$, = ""}
     a = @cls[]
     assert_equal("[]", a.to_s)
 
-    assert_deprecated_warning {$, = ""} if main_ractor?
+    assert_deprecated_warning {$, = ""}
     a = @cls[1, 2]
     assert_equal("[1, 2]", a.to_s)
 
-    assert_deprecated_warning {$, = ""} if main_ractor?
+    assert_deprecated_warning {$, = ""}
     a = @cls[1, 2, 3]
     assert_equal("[1, 2, 3]", a.to_s)
 
-    assert_deprecated_warning {$, = ""} if main_ractor?
+    assert_deprecated_warning {$, = ""}
     a = @cls[1, 2, 3]
     assert_equal("[1, 2, 3]", a.to_s)
   ensure
-    $, = nil if main_ractor?
+    $, = nil
   end
 
   StubToH = Ractor.make_shareable([
@@ -2003,8 +1998,10 @@ class TestArray < Test::Unit::TestCase
       [[:first_one, :ok], :not_ok].to_h
     }
     assert_equal "wrong element type Symbol at 1 (expected array)", e.message
-    array = [eval("class C\u{1f5ff}; self; end").new]
-    assert_raise_with_message(TypeError, /C\u{1f5ff}/) {array.to_h}
+    unless multiple_ractors?
+      array = [eval("class C\u{1f5ff}; self; end").new]
+      assert_raise_with_message(TypeError, /C\u{1f5ff}/) {array.to_h}
+    end
     e = assert_raise(ArgumentError) {
       [[:first_one, :ok], [1, 2], [:not_ok]].to_h
     }
@@ -2992,7 +2989,6 @@ class TestArray < Test::Unit::TestCase
   end
 
   def test_equal_resize
-    omit "global variable access" if non_main_ractor?
     $test_equal_resize_a = Array.new(3, &:to_s)
     $test_equal_resize_b = $test_equal_resize_a.dup
     o = Object.new
@@ -3606,7 +3602,6 @@ class TestArray < Test::Unit::TestCase
       EnvUtil.suppress_warning {require 'continuation'}
     end
     omit 'requires callcc support' unless respond_to?(:callcc, true)
-    omit "not ractor safe" if non_main_ractor?
   end
 
   def random_generator(&block)

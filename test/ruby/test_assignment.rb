@@ -140,7 +140,6 @@ class TestAssignment < Test::Unit::TestCase
   end
 
   def test_massign_const_order
-    pend "mutated constants" if non_main_ractor?
     order = []
 
     test_mod_class = Class.new(Module) do
@@ -316,7 +315,6 @@ class TestAssignment < Test::Unit::TestCase
   end
 
   def test_yield
-    omit "lots of undefs" unless main_ractor?
     def f; yield(nil); end; f {|a| assert_nil(a)}; undef f
     def f; yield(1); end; f {|a| assert_equal(1, a)}; undef f
     def f; yield([]); end; f {|a| assert_equal([], a)}; undef f
@@ -373,7 +371,6 @@ class TestAssignment < Test::Unit::TestCase
   end
 
   def test_return
-    omit "lots of undefs" unless main_ractor?
     def r; return; end; a = r(); assert_nil(a); undef r
     def r; return nil; end; a = r(); assert_nil(a); undef r
     def r; return 1; end; a = r(); assert_equal(1, a); undef r
@@ -558,7 +555,6 @@ class TestAssignment < Test::Unit::TestCase
   end
 
   def test_next
-    omit "lots of undefs" unless main_ractor?
     def r(val); a = yield(); assert_equal(val, a); end
     r(nil){next}
     r(nil){next nil}
@@ -932,7 +928,7 @@ class TestAssignmentGen < Test::Unit::TestCase
   end
 
   def test_assignment
-    pend "errors with ractors" if non_main_ractor?
+    omit "ractor incompatible" unless main_ractor?
     syntax = Sentence.expand_syntax(Syntax)
     Sentence.each(syntax, :xassign, 4) {|assign|
       check(assign)

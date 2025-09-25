@@ -227,7 +227,6 @@ class TestAlias < Test::Unit::TestCase
   end
 
   def test_alias_class_method_added
-    omit "class ivars" if non_main_ractor?
     name = nil
     k = Class.new {
       def foo;end
@@ -242,7 +241,6 @@ class TestAlias < Test::Unit::TestCase
   end
 
   def test_alias_module_method_added
-    omit "module ivars" if non_main_ractor?
     name = nil
     k = Module.new {
       def foo;end

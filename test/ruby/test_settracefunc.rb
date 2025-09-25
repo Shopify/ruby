@@ -4,7 +4,6 @@ EnvUtil.suppress_warning {require 'continuation'}
 
 class TestSetTraceFunc < Test::Unit::TestCase
   def setup
-    omit "Tracepoint not working in ractors" unless main_ractor?
     if defined?(RubyVM)
       @original_compile_option = RubyVM::InstructionSequence.compile_option
       RubyVM::InstructionSequence.compile_option = {

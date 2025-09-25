@@ -1173,7 +1173,6 @@ class TestRange < Test::Unit::TestCase
   end
 
   def test_comparison_when_recursive
-    pend "Timeout" if non_main_ractor?
     x = CyclicRange.allocate; x.send(:initialize, x, 1)
     y = CyclicRange.allocate; y.send(:initialize, y, 1)
     Timeout.timeout(1) {

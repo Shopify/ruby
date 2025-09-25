@@ -55,7 +55,6 @@ class TestThreadConditionVariable < Test::Unit::TestCase
   end
 
   def test_condvar_wait_and_broadcast
-    pend "Timeout" if non_main_ractor?
     nr_threads = 3
     threads = Array.new
     mutex = Thread::Mutex.new
@@ -110,7 +109,6 @@ INPUT
   end
 
   def test_condvar_wait_deadlock_2
-    pend "Timeout" if non_main_ractor?
     nr_threads = 3
     threads = Array.new
     mutex = Thread::Mutex.new
@@ -137,7 +135,6 @@ INPUT
   end
 
   def test_condvar_timed_wait
-    omit "unpredictable" if multiple_ractors?
     mutex = Thread::Mutex.new
     condvar = Thread::ConditionVariable.new
     timeout = 0.3
@@ -223,7 +220,6 @@ INPUT
   end
 
   def test_condvar_fork
-    omit "fork" unless main_ractor?
     mutex = Thread::Mutex.new
     condvar = Thread::ConditionVariable.new
     thrs = (1..10).map do

@@ -3,9 +3,6 @@ require 'test/unit'
 require 'objspace'
 
 class TestStringMemory < Test::Unit::TestCase
-  def setup
-    omit "ObjectSpace.trace_object_allocations" if non_main_ractor?
-  end
 
   def capture_allocations(klass)
     allocations = []

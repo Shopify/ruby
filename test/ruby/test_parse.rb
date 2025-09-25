@@ -135,7 +135,6 @@ class TestParse < Test::Unit::TestCase
   end
 
   def test_mlhs_node
-    omit "class ivars" if non_main_ractor?
     c = Class.new
     class << c
       attr_accessor :foo, :bar, :Foo, :Bar
@@ -365,7 +364,6 @@ class TestParse < Test::Unit::TestCase
   end
 
   def test_dstr
-    omit "class variables" if non_main_ractor?
     @@foo = 1
     assert_equal("foo 1 bar", "foo #@@foo bar")
     "1" =~ /(.)/
@@ -899,7 +897,6 @@ x = __ENCODING__
   end
 
   def test_global_variable
-    omit "global variable access" if non_main_ractor?
     assert_equal(nil, assert_warning(/not initialized/) {eval('$-x')})
     assert_equal(nil, eval('alias $preserve_last_match $&'))
     assert_equal(nil, eval('alias $& $test_parse_foobarbazqux'))
@@ -1139,7 +1136,6 @@ x = __ENCODING__
   end
 
   def test_parsing_begin_statement_inside_method_definition
-    omit "global side effects" if multiple_ractors?
     assert_equal :bug_20234, eval("def (begin;end).bug_20234; end")
     NilClass.remove_method(:bug_20234)
     assert_equal :bug_20234, eval("def (begin;rescue;end).bug_20234; end")
@@ -1548,7 +1544,6 @@ x = __ENCODING__
   end
 
   def test_shareable_constant_value_simple
-    omit "can't access unshareables" if non_main_ractor?
     obj = [['unsharable_value']]
     a, b, c = eval_separately("#{<<~"begin;"}\n#{<<~'end;'}")
     begin;
@@ -1615,7 +1610,6 @@ x = __ENCODING__
   end
 
   def test_shareable_constant_value_nested
-    omit "can't access unshareables" if non_main_ractor?
     a, b = eval_separately("#{<<~"begin;"}\n#{<<~'end;'}")
     begin;
       # shareable_constant_value: none

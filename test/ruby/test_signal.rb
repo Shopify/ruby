@@ -5,10 +5,6 @@ require 'tempfile'
 
 class TestSignal < Test::Unit::TestCase
 
-  def setup
-    omit "racy" unless main_ractor?
-  end
-
   def test_signal
     begin
       x = 0

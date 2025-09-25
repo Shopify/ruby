@@ -36,12 +36,10 @@ class TestVariable < Test::Unit::TestCase
   Athena = Gods.clone
 
   def test_cloned_classes_copy_cvar_cache
-    omit "class variables" if non_main_ractor?
     assert_equal "Cronus", Athena.new.ruler0
   end
 
   def test_setting_class_variable_on_module_through_inheritance
-    omit "class variables" if non_main_ractor?
     mod = Module.new
     mod.class_variable_set(:@@foo, 1)
     mod.freeze
@@ -54,7 +52,6 @@ class TestVariable < Test::Unit::TestCase
   Zeus = Gods.clone
 
   def test_cloned_allows_setting_cvar
-    omit "class variables" if non_main_ractor?
     Zeus.class_variable_set(:@@rule, "Athena")
 
     god = Gods.new.ruler0
@@ -66,7 +63,6 @@ class TestVariable < Test::Unit::TestCase
   end
 
   def test_singleton_class_included_class_variable
-    omit "class variables" if non_main_ractor?
     c = Class.new
     c.extend(Olympians)
     assert_empty(c.singleton_class.class_variables)
@@ -95,7 +91,6 @@ class TestVariable < Test::Unit::TestCase
   end
 
   def test_cvar_overtaken_by_parent_class
-    omit "class variables" if non_main_ractor?
     error = eval <<~EORB
       class Parent
       end
@@ -126,7 +121,6 @@ class TestVariable < Test::Unit::TestCase
   end
 
   def test_cvar_overtaken_by_module
-    omit "class variables" if non_main_ractor?
     error = eval <<~EORB
       class ParentForModule
         @@cvar = 1
@@ -175,14 +169,12 @@ class TestVariable < Test::Unit::TestCase
   end
 
   def test_include_refined_module_class_variable
-    omit "class variables" if non_main_ractor?
     assert_warning('') do
       IncludeRefinedModuleClassVariableNoWarning.new.t
     end
   end
 
   def test_set_class_variable_on_frozen_object
-    omit "class variables" if non_main_ractor?
     set_cvar = EnvUtil.labeled_class("SetCVar")
     set_cvar.class_eval "#{<<~"begin;"}\n#{<<~'end;'}"
     begin;
@@ -198,7 +190,6 @@ class TestVariable < Test::Unit::TestCase
   end
 
   def test_variable
-    omit "class variables" if non_main_ractor?
     assert_instance_of(Integer, $$)
 
     # read-only variable
@@ -262,7 +253,6 @@ class TestVariable < Test::Unit::TestCase
   end
 
   def test_global_variables
-    omit "global variables" if non_main_ractor?
     gv = global_variables
     assert_empty(gv.grep(/\A(?!\$)/))
     assert_nil($~)
@@ -359,7 +349,6 @@ class TestVariable < Test::Unit::TestCase
   end
 
   def test_global_variable_popped
-    omit "global variables" if non_main_ractor?
     assert_nothing_raised {
       EnvUtil.suppress_warning {
         eval("$foo; 1")
@@ -436,7 +425,6 @@ class TestVariable < Test::Unit::TestCase
   end
 
   def test_remove_instance_variables_class
-    omit "class ivars" unless main_ractor?
     add_and_remove_ivar(RemoveIvar)
     add_and_remove_ivar(RemoveIvar)
   end

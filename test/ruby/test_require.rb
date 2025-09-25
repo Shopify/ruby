@@ -6,7 +6,6 @@ require 'tmpdir'
 
 class TestRequire < Test::Unit::TestCase
   def test_load_error_path
-    pend "Tempfile" unless main_ractor?
     Tempfile.create(["should_not_exist", ".rb"]) {|t|
       filename = t.path
       t.close
@@ -31,7 +30,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_invalid_shared_object
-    pend "Tempfile" unless main_ractor?
     Tempfile.create(["test_ruby_test_require", ".so"]) {|t|
       t.puts "dummy"
       t.close
@@ -107,7 +105,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def prepare_require_path(dir, encoding)
-    omit "global variable access" unless main_ractor?
     require 'enc/trans/single_byte'
     Dir.mktmpdir {|tmp|
       begin
@@ -145,7 +142,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_path_home_1
-    omit "global side effects" if multiple_ractors?
     begin
       env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
       pathname_too_long = /pathname too long \(ignored\).*\(LoadError\)/m
@@ -161,7 +157,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_path_home_2
-    omit "global side effects" if multiple_ractors?
     begin
       env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
       pathname_too_long = /pathname too long \(ignored\).*\(LoadError\)/m
@@ -176,7 +171,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_path_home_3
-    pend "Tempfile" unless main_ractor?
     begin
       env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
 
@@ -198,7 +192,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_with_unc
-    pend "Tempfile" unless main_ractor?
     Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
       t.puts "puts __FILE__"
       t.close
@@ -229,7 +222,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def assert_syntax_error_backtrace
-    omit "global variable access" unless main_ractor?
     begin
       loaded_features = $LOADED_FEATURES.dup
       Dir.mktmpdir do |tmp|
@@ -355,7 +347,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_load
-    pend "Tempfile" unless main_ractor?
     Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
       t.puts "module Foo; end"
       t.puts "at_exit { p :wrap_end }"
@@ -387,7 +378,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_public_in_wrapped_load
-    pend "Tempfile" unless main_ractor?
     Tempfile.create(["test_public_in_wrapped_load", ".rb"]) do |t|
       t.puts "def foo; end", "public :foo"
       t.close
@@ -398,7 +388,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_private_in_wrapped_load
-    pend "Tempfile" unless main_ractor?
     Tempfile.create(["test_private_in_wrapped_load", ".rb"]) do |t|
       t.puts "def foo; end", "private :foo"
       t.close
@@ -409,7 +398,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_load_scope
-    pend "Tempfile" unless main_ractor?
     bug1982 = '[ruby-core:25039] [Bug #1982]'
     Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
       t.puts "Hello = 'hello'"
@@ -425,7 +413,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_load_into_module
-    pend "Tempfile" unless main_ractor?
     Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
       t.puts "def b; 1 end"
       t.puts "class Foo"
@@ -480,7 +467,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_relative
-    omit "global variable access" unless main_ractor?
     begin
       load_path = $:.dup
       loaded_featrures = $LOADED_FEATURES.dup
@@ -509,7 +495,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_relative_symlink
-    omit "Dir.chdir" if multiple_ractors?
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
         Dir.mkdir "a"
@@ -529,7 +514,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_relative_symlink_realpath
-    omit "Dir.chdir" if multiple_ractors?
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
         Dir.mkdir "a"
@@ -563,7 +547,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_race_exception
-    pend "Tempfile" unless main_ractor?
     bug5754 = '[ruby-core:41618]'
     path = nil
     stderr = $stderr
@@ -628,15 +611,12 @@ class TestRequire < Test::Unit::TestCase
       assert_equal([:pre, :post], scratch, bug5754)
     }
   ensure
-    if main_ractor?
-      $VERBOSE = verbose
-      $stderr = stderr
-      $".delete(path)
-    end
+    $VERBOSE = verbose
+    $stderr = stderr
+    $".delete(path)
   end
 
   def test_loaded_features_encoding
-    omit "global variable access" unless main_ractor?
     begin
       bug6377 = '[ruby-core:44750]'
       loadpath = $:.dup
@@ -678,7 +658,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_changed_current_dir
-    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -704,7 +683,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_not_modified_load_path
-    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -726,7 +704,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_changed_home
-    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -747,7 +724,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_to_path_redefined_in_load_path
-    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -776,7 +752,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_to_str_redefined_in_load_path
-    omit "Dir.chdir" if multiple_ractors?
     bug7158 = '[ruby-core:47970]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -805,7 +780,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def assert_require_with_shared_array_modified(add, del)
-    omit "Dir.chdir" if multiple_ractors?
     bug7383 = '[ruby-core:49518]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -843,7 +817,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_local_var_on_toplevel
-    omit "Dir.chdir" if multiple_ractors?
     bug7536 = '[ruby-core:50701]'
     Dir.mktmpdir {|tmp|
       Dir.chdir(tmp) {
@@ -858,7 +831,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_with_loaded_features_pop
-    pend "Tempfile" unless main_ractor?
     bug7530 = '[ruby-core:50645]'
     Tempfile.create(%w'bug-7530- .rb') {|script|
       script.close
@@ -906,7 +878,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_loading_fifo_threading_raise
-    pend "Tempfile" unless main_ractor?
     Tempfile.create(%w'fifo .rb') {|f|
       f.close
       File.unlink(f.path)
@@ -924,7 +895,6 @@ class TestRequire < Test::Unit::TestCase
 
   def test_loading_fifo_threading_success
     omit "[Bug #18613]" if /freebsd/=~ RUBY_PLATFORM
-    pend "Tempfile" unless main_ractor?
 
     Tempfile.create(%w'fifo .rb') {|f|
       f.close
@@ -953,7 +923,6 @@ class TestRequire < Test::Unit::TestCase
 
   def test_loading_fifo_fd_leak
     omit if RUBY_PLATFORM =~ /android/ # https://rubyci.org/logs/rubyci.s3.amazonaws.com/android29-x86_64/ruby-master/log/20200419T124100Z.fail.html.gz
-    pend "Tempfile" unless main_ractor?
 
     Tempfile.create(%w'fifo .rb') {|f|
       f.close
@@ -979,7 +948,6 @@ class TestRequire < Test::Unit::TestCase
   end if File.respond_to?(:mkfifo) and defined?(Process::RLIMIT_NOFILE)
 
   def test_throw_while_loading
-    pend "Tempfile" unless main_ractor?
     Tempfile.create(%w'bug-11404 .rb') do |f|
       f.puts 'sleep'
       f.close
@@ -1024,7 +992,6 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_provide_in_required_file
-    omit "global variable access" unless main_ractor?
     begin
       paths, loaded = $:.dup, $".dup
       Dir.mktmpdir do |tmp|
@@ -1045,7 +1012,6 @@ class TestRequire < Test::Unit::TestCase
 
   if defined?($LOAD_PATH.resolve_feature_path)
     def test_resolve_feature_path
-      pend "Tempfile" unless main_ractor?
       begin
         paths, loaded = $:.dup, $".dup
         Dir.mktmpdir do |tmp|
@@ -1066,7 +1032,6 @@ class TestRequire < Test::Unit::TestCase
     end
 
     def test_resolve_feature_path_with_missing_feature
-      omit "global variable access" unless main_ractor?
       assert_nil($LOAD_PATH.resolve_feature_path("superkalifragilisticoespialidoso"))
     end
   end

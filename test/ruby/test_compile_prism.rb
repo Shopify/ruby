@@ -3,10 +3,6 @@
 # This file is organized to match itemization in https://github.com/ruby/prism/issues/1335
 module Prism
   class TestCompilePrism < Test::Unit::TestCase
-    def setup
-      omit "Not ractor safe" if multiple_ractors?
-    end
-
     def test_iseq_has_node_id
       code = "proc { <<END }\n hello\nEND"
       iseq = RubyVM::InstructionSequence.compile_prism(code)
@@ -85,7 +81,6 @@ module Prism
     end
 
     def test_ClassVariableReadNode
-      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 1; @@pit; end")
     end
 
@@ -284,12 +279,10 @@ module Prism
     end
 
     def test_GlobalVariableReadNode
-      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit = 1; $pit")
     end
 
     def test_InstanceVariableReadNode
-      omit "class ivars" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @pit = 1; @pit; end")
     end
 
@@ -307,23 +300,19 @@ module Prism
     ############################################################################
 
     def test_ClassVariableAndWriteNode
-      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 0; @@pit &&= 1; end")
     end
 
     def test_ClassVariableOperatorWriteNode
-      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 0; @@pit += 1; end")
     end
 
     def test_ClassVariableOrWriteNode
-      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 1; @@pit ||= 0; end")
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = nil; @@pit ||= 1; end")
     end
 
     def test_ClassVariableWriteNode
-      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit = 1; end")
     end
 
@@ -365,31 +354,31 @@ module Prism
     def test_ConstantPathOrWriteNode
       assert_prism_eval("Prism::CPOrWN = nil; Prism::CPOrWN ||= 1")
       assert_prism_eval("Prism::CPOrWN ||= 1")
-      assert_prism_eval("::CPOrWN = nil; ::CPOrWN ||= 1")
+      if main_ractor?
+        assert_prism_eval("::CPOrWN = nil; ::CPOrWN ||= 1")
+      end
     end
 
     def test_ConstantPathOperatorWriteNode
       assert_prism_eval("Prism::CPOWN = 0; Prism::CPOWN += 1")
-      assert_prism_eval("::CPOWN = 0; ::CPOWN += 1")
+      if main_ractor?
+        assert_prism_eval("::CPOWN = 0; ::CPOWN += 1")
+      end
     end
 
     def test_GlobalVariableAndWriteNode
-      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit = 0; $pit &&= 1")
     end
 
     def test_GlobalVariableOperatorWriteNode
-      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit = 0; $pit += 1")
     end
 
     def test_GlobalVariableOrWriteNode
-      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit ||= 1")
     end
 
     def test_GlobalVariableWriteNode
-      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit = 1")
     end
 
@@ -406,7 +395,6 @@ module Prism
     end
 
     def test_InstanceVariableWriteNode
-      omit "class ivars" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @pit = 1; end")
     end
 
@@ -458,7 +446,6 @@ module Prism
     ############################################################################
 
     def test_ClassVariableTargetNode
-      omit "class variables" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @@pit, @@pit1 = 1; end")
     end
 
@@ -494,12 +481,10 @@ module Prism
     end
 
     def test_GlobalVariableTargetNode
-      omit "global variable access" if non_main_ractor?
       assert_prism_eval("$pit, $pit1 = 1")
     end
 
     def test_InstanceVariableTargetNode
-      omit "class ivars" if non_main_ractor?
       assert_prism_eval("class Prism::TestCompilePrism; @pit, @pit1 = 1; end")
     end
 
@@ -607,19 +592,16 @@ module Prism
     end
 
     def test_EmbeddedVariableNode
-      omit "class ivars" if non_main_ractor?
       assert_prism_eval('class Prism::TestCompilePrism; @pit = 1; "#@pit"; end')
       assert_prism_eval('class Prism::TestCompilePrism; @@pit = 1; "#@@pit"; end')
       assert_prism_eval('$pit = 1; "#$pit"')
     end
 
     def test_InterpolatedMatchLastLineNode
-      omit "global variables access" if non_main_ractor?
       assert_prism_eval('$pit = ".oo"; if /"#{$pit}"/mix; end')
     end
 
     def test_InterpolatedRegularExpressionNode
-      omit "global variables access" if non_main_ractor?
       assert_prism_eval('$pit = 1; /1 #$pit 1/')
       assert_prism_eval('$pit = 1; /#$pit/i')
       assert_prism_eval('/1 #{1 + 2} 1/')
@@ -627,7 +609,6 @@ module Prism
     end
 
     def test_InterpolatedStringNode
-      omit "global variables access" if non_main_ractor?
       assert_prism_eval('$pit = 1; "1 #$pit 1"')
       assert_prism_eval('"1 #{1 + 2} 1"')
       assert_prism_eval('"Prism" "::" "TestCompilePrism"')
@@ -663,7 +644,6 @@ module Prism
     end
 
     def test_InterpolatedSymbolNode
-      omit "global variable access" if non_main_ractor?
       assert_prism_eval('$pit = 1; :"1 #$pit 1"')
       assert_prism_eval(':"1 #{1 + 2} 1"')
     end
@@ -2304,7 +2284,6 @@ end
     ############################################################################
 
     def test_AliasGlobalVariableNode
-      omit "global variable access" if non_main_ractor?
       assert_prism_eval("alias $prism_foo $prism_bar")
     end
 
@@ -2760,7 +2739,7 @@ end
     private
 
     def compare_eval(source, raw:, location:)
-      source = raw ? source : "class Prism::TestCompilePrism\n#{source}\nend"
+      source = raw ? source : "class Prism::TestCompilePrism#{Ractor.current.object_id}\n#{source}\nend"
 
       ruby_eval = RubyVM::InstructionSequence.compile_parsey(source).eval
       prism_eval = RubyVM::InstructionSequence.compile_prism(source).eval

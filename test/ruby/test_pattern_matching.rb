@@ -885,7 +885,6 @@ END
   end
 
   def test_hash_pattern
-    omit "class ivars" if non_main_ractor?
     assert_block do
       [{}, C.new({})].all? do |i|
         case i
@@ -1327,7 +1326,6 @@ END
   end
 
   def test_deconstruct_keys
-    omit "can't access class ivars" if non_main_ractor?
     assert_raise(TypeError) do
       case CTypeError.new
       in {}

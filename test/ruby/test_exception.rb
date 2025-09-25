@@ -394,7 +394,6 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_type_error_message_encoding
-    omit "global side effects" if multiple_ractors?
     c = eval("Module.new do break class C\u{4032}; self; end; end")
     o = c.new
     assert_raise_with_message(TypeError, /C\u{4032}/) do
@@ -447,7 +446,6 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_thread_signal_location
-    omit "subprocess" unless main_ractor?
     # pend('TODO: a known bug [Bug #14474]')
     _, stderr, _ = EnvUtil.invoke_ruby(%w"--disable-gems -d", <<-RUBY, false, true)
 Thread.start do
@@ -563,7 +561,6 @@ end.join
   end
 
   def test_too_many_args_in_eval
-    omit "TODO: freezes process" if multiple_ractors?
     bug5720 = '[ruby-core:41520]'
     arg_string = (0...140000).to_a.join(", ")
     assert_raise(SystemStackError, bug5720) {eval "raise(#{arg_string})"}
@@ -1068,7 +1065,6 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def capture_warning_warn(category: false)
-    omit "global side effects" if multiple_ractors?
     begin
       verbose = $VERBOSE
       categories = Warning.categories.to_h {|cat| [cat, Warning[cat]]}
@@ -1106,7 +1102,6 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warning_warn
-    omit "global variable access" if non_main_ractor?
     warning = capture_warning_warn {$asdfasdsda_test_warning_warn}
     assert_match(/global variable '\$asdfasdsda_test_warning_warn' not initialized/, warning[0])
 
@@ -1116,7 +1111,6 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warn_deprecated_backwards_compatibility_category
-    omit "accesses global variable" if non_main_ractor?
     (message, category), = capture_warning_warn(category: true) do
       $; = "www"
       $; = nil
@@ -1158,7 +1152,6 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warning_warn_circular_require_backtrace
-    omit "accesses $LOAD_PATH and $LOADED_FEATURES" if non_main_ractor?
     warning = nil
     path = nil
     Tempfile.create(%w[circular .rb]) do |t|

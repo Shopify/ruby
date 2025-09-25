@@ -36,7 +36,6 @@ class TestCaseFold < Test::Unit::TestCase
   end
 
   def setup
-    pend "TODO: tests use define_method" if non_main_ractor?
     @regex_casefold_tests ||= read_tests
   rescue Errno::ENOENT => e
     @regex_casefold_tests ||= []

@@ -34,7 +34,7 @@ class TestProcess < Test::Unit::TestCase
   end
 
   def run_in_child(str) # should be called in a temporary directory
-    omit "Process.spawn" unless main_ractor?
+    omit "global side effects" unless main_ractor?
     File.write("test-script", str)
     Process.wait spawn(RUBY, "test-script")
     $?
@@ -157,7 +157,6 @@ class TestProcess < Test::Unit::TestCase
   TRUECOMMAND = Ractor.make_shareable([RUBY, '-e', ''])
 
   def test_execopts_opts
-    omit "spawn" unless main_ractor?
     assert_nothing_raised {
       Process.wait Process.spawn(*TRUECOMMAND, {})
     }
@@ -171,7 +170,6 @@ class TestProcess < Test::Unit::TestCase
 
   def test_execopts_pgroup
     omit "system(:pgroup) is not supported" if windows?
-    omit "system" unless main_ractor?
     assert_nothing_raised { system(*TRUECOMMAND, :pgroup=>false) }
 
     io = IO.popen([RUBY, "-e", "print Process.getpgrp"])
@@ -200,7 +198,6 @@ class TestProcess < Test::Unit::TestCase
   end
 
   def test_execopts_rlimit
-    omit "IO.popen" unless main_ractor?
     return unless rlimit_exist?
     assert_raise(ArgumentError) { system(*TRUECOMMAND, :rlimit_foo=>0) }
     assert_raise(ArgumentError) { system(*TRUECOMMAND, :rlimit_NOFILE=>0) }
@@ -373,7 +370,6 @@ class TestProcess < Test::Unit::TestCase
   end
 
   def test_execopt_env_path
-    omit "spawn" unless main_ractor?
     bug8004 = '[ruby-core:53103] [Bug #8004]'
     Dir.mktmpdir do |d|
       File.write("#{d}/tmp_script.cmd", ": ;\n", perm: 0o755)
@@ -384,7 +380,6 @@ class TestProcess < Test::Unit::TestCase
   end
 
   def _test_execopts_env_popen(cmd)
-    omit "ENV change" if multiple_ractors?
     message = cmd.inspect
     IO.popen({"FOO"=>"BAR"}, cmd) {|io|
       assert_equal('FOO=BAR', io.read[/^FOO=.*/], message)
@@ -453,7 +448,6 @@ class TestProcess < Test::Unit::TestCase
   end
 
   def test_execopts_unsetenv_others
-    omit "ENV change" if multiple_ractors?
     h = {}
     MANDATORY_ENVS.each {|k| e = ENV[k] and h[k] = e}
     IO.popen([h, *ENVCOMMAND, :unsetenv_others=>true]) {|io|
@@ -745,7 +739,6 @@ class TestProcess < Test::Unit::TestCase
   end unless windows? # does not support fifo
 
   def test_execopts_redirect_pipe
-    omit "spawn" unless main_ractor?
     with_pipe {|r1, w1|
       with_pipe {|r2, w2|
         opts = {$stdin=>r1, $stdout=>w2}
@@ -939,7 +932,6 @@ class TestProcess < Test::Unit::TestCase
 
   if Process.respond_to?(:fork)
     def test_popen_fork
-      omit "popen fork" unless main_ractor?
       IO.popen("-") do |io|
         if !io
           puts "fooo"
@@ -950,7 +942,6 @@ class TestProcess < Test::Unit::TestCase
     end
 
     def test_popen_fork_ensure
-      omit "popen fork" unless main_ractor?
       IO.popen("-") do |io|
         if !io
           $stderr.reopen($stdout) # issue is here
@@ -966,7 +957,6 @@ class TestProcess < Test::Unit::TestCase
 
   def test_fd_inheritance
     omit "inheritance of fd other than stdin,stdout and stderr is not supported" if windows?
-    omit "spawn" unless main_ractor?
     with_pipe {|r, w|
       system(RUBY, '-e', 'IO.new(ARGV[0].to_i, "w").puts(:ba)', w.fileno.to_s, w=>w)
       w.close
@@ -1111,7 +1101,6 @@ class TestProcess < Test::Unit::TestCase
   end unless windows? # passing non-stdio fds is not supported on Windows
 
   def test_execopts_redirect_tempfile
-    pend "Tempfile" if non_main_ractor?
     bug6269 = '[ruby-core:44181]'
     Tempfile.create("execopts") do |tmp|
       pid = assert_nothing_raised(ArgumentError, bug6269) do
@@ -1131,7 +1120,6 @@ class TestProcess < Test::Unit::TestCase
   end
 
   def test_execopts_modification
-    omit "spawn" unless main_ractor?
     h = {}
     Process.wait spawn(*TRUECOMMAND, h)
     assert_equal({}, h)
@@ -1476,7 +1464,6 @@ class TestProcess < Test::Unit::TestCase
   end
 
   def test_argv0_frozen
-    omit "global variable access" if non_main_ractor?
     assert_predicate Process.argv0, :frozen?
     assert_predicate $0, :frozen?
   end
@@ -1683,7 +1670,6 @@ class TestProcess < Test::Unit::TestCase
   end
 
   def test_seteuid_name
-    pend "unsafe Etc method" if non_main_ractor?
     user = (Etc.getpwuid(Process.euid).name rescue ENV["USER"]) or return
     assert_nothing_raised(TypeError) {Process.euid = user}
   rescue NotImplementedError
@@ -1865,8 +1851,6 @@ class TestProcess < Test::Unit::TestCase
 
   def test_system_sigpipe
     return if windows?
-    pend "Timeout" if non_main_ractor?
-
     pid = 0
 
     with_tmpchdir do
@@ -1883,7 +1867,6 @@ class TestProcess < Test::Unit::TestCase
 
   if Process.respond_to?(:daemon)
     def test_daemon_default
-      omit "fork" unless main_ractor?
       data = IO.popen("-", "r+") do |f|
         break f.read if f
         Process.daemon
@@ -1893,7 +1876,6 @@ class TestProcess < Test::Unit::TestCase
     end
 
     def test_daemon_noclose
-      omit "fork" unless main_ractor?
       data = IO.popen("-", "r+") do |f|
         break f.read if f
         Process.daemon(false, true)
@@ -1903,7 +1885,6 @@ class TestProcess < Test::Unit::TestCase
     end
 
     def test_daemon_nochdir_noclose
-      omit "fork" unless main_ractor?
       data = IO.popen("-", "r+") do |f|
         break f.read if f
         Process.daemon(true, true)
@@ -1913,7 +1894,6 @@ class TestProcess < Test::Unit::TestCase
     end
 
     def test_daemon_readwrite
-      omit "fork" unless main_ractor?
       data = IO.popen("-", "r+") do |f|
         if f
           f.puts "ok?"
@@ -1926,7 +1906,6 @@ class TestProcess < Test::Unit::TestCase
     end
 
     def test_daemon_pid
-      omit "fork" unless main_ractor?
       cpid, dpid = IO.popen("-", "r+") do |f|
         break f.pid, Integer(f.read) if f
         Process.daemon(false, true)
@@ -1936,7 +1915,6 @@ class TestProcess < Test::Unit::TestCase
     end
 
     def test_daemon_detached
-      omit "fork" unless main_ractor?
       IO.popen("-", "r+") do |f|
         if f
           assert_equal(f.pid, Process.wait(f.pid))
@@ -1960,7 +1938,6 @@ class TestProcess < Test::Unit::TestCase
 
     if File.directory?("/proc/self/task") && /netbsd[a-z]*[1-6]/ !~ RUBY_PLATFORM
       def test_daemon_no_threads
-        omit "fork" unless main_ractor?
         pid, data = IO.popen("-", "r+") do |f|
           break f.pid, f.readlines if f
           Process.daemon(true, true)
@@ -1972,7 +1949,6 @@ class TestProcess < Test::Unit::TestCase
       end
     else # darwin
       def test_daemon_no_threads
-        omit "fork" unless main_ractor?
         data = EnvUtil.timeout(3) do
           IO.popen("-") do |f|
             break f.readlines.map(&:chomp) if f
@@ -2034,8 +2010,6 @@ class TestProcess < Test::Unit::TestCase
 
   def test_execopts_new_pgroup
     return unless windows?
-    omit "system" unless main_ractor?
-
     assert_nothing_raised { system(*TRUECOMMAND, :new_pgroup=>true) }
     assert_nothing_raised { system(*TRUECOMMAND, :new_pgroup=>false) }
     assert_nothing_raised { spawn(*TRUECOMMAND, :new_pgroup=>true) }
@@ -2044,7 +2018,6 @@ class TestProcess < Test::Unit::TestCase
 
   def test_execopts_uid
     omit "root can use uid option of Kernel#system on Android platform" if RUBY_PLATFORM =~ /android/
-    omit "system" unless main_ractor?
     feature6975 = '[ruby-core:47414]'
 
     [30000, [Process.uid, ENV["USER"]]].each do |uid, user|
@@ -2077,7 +2050,6 @@ class TestProcess < Test::Unit::TestCase
   def test_execopts_gid
     omit "Process.groups not implemented on Windows platform" if windows?
     omit "root can use Process.groups on Android platform" if RUBY_PLATFORM =~ /android/
-    omit "system" unless main_ractor?
     feature6975 = '[ruby-core:47414]'
 
     groups = Process.groups.map do |g|
@@ -2432,7 +2404,6 @@ EOS
   end if defined?(fork)
 
   def test_process_detach
-    omit "fork" unless main_ractor?
     pid = fork {}
     th = Process.detach(pid)
     assert_equal pid, th.pid
@@ -2496,7 +2467,6 @@ EOS
   end
 
   def test_signals_work_after_exec_fail
-    pend "Timeout" if non_main_ractor?
     r, w = IO.pipe
     pid = status = nil
     EnvUtil.timeout(30) do
@@ -2531,7 +2501,6 @@ EOS
   end if defined?(fork)
 
   def test_threading_works_after_exec_fail
-    pend "Timeout" if non_main_ractor?
     r, w = IO.pipe
     pid = status = nil
     EnvUtil.timeout(90) do
@@ -2587,7 +2556,6 @@ EOS
   end
 
   def test_to_hash_on_arguments
-    omit "separate process" if non_main_ractor?
     all_assertions do |a|
       %w[Array String].each do |type|
         a.for(type) do
@@ -2624,28 +2592,24 @@ EOS
   end
 
   def test_last_status
-    omit "spawn" unless main_ractor?
     Process.wait spawn(RUBY, "-e", "exit 13")
     assert_same(Process.last_status, $?)
   end
 
   def test_last_status_failure
-    omit "system" unless main_ractor?
     assert_nil system("sad")
     assert_not_predicate $?, :success?
     assert_equal $?.exitstatus, 127
   end
 
   def test_exec_failure_leaves_no_child
-    omit "spawn" unless main_ractor?
     assert_raise(Errno::ENOENT) do
       spawn('inexistent_command')
     end
-    assert_empty(Process.waitall)
+    assert_empty(Process.waitall) unless multiple_ractors?
   end
 
   def test__fork
-    omit "_fork" unless main_ractor?
     r, w = IO.pipe
     pid = Process._fork
     if pid == 0
@@ -2665,7 +2629,6 @@ EOS
   end if Process.respond_to?(:_fork)
 
   def test__fork_pid_cache
-    omit "_fork" unless main_ractor?
     _parent_pid = Process.pid
     r, w = IO.pipe
     pid = Process._fork
@@ -2826,7 +2789,6 @@ EOS
   end
 
   def test_concurrent_group_and_pid_wait
-    pend "Timeout" if non_main_ractor?
     # Use a pair of pipes that will make long_pid exit when this test exits, to avoid
     # leaking temp processes.
     long_rpipe, long_wpipe = IO.pipe

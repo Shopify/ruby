@@ -186,7 +186,6 @@ class TestM17N < Test::Unit::TestCase
   end
 
   def test_string_inspect_encoding
-    omit "suppress_warning is racy" if multiple_ractors?
     EnvUtil.suppress_warning do
       begin
         orig_int = Encoding.default_internal
@@ -247,7 +246,6 @@ class TestM17N < Test::Unit::TestCase
   end
 
   def test_object_utf16_32_inspect
-    omit "suppress_warning is racy" if multiple_ractors?
     EnvUtil.suppress_warning do
       begin
         orig_int = Encoding.default_internal

@@ -7,7 +7,6 @@ class TestMetaclass < Test::Unit::TestCase
   class Baz; end
 
   def setup
-    omit "global side effects" if multiple_ractors?
     Object.class_eval do
       def method_o; end
     end

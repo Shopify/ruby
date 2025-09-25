@@ -1012,7 +1012,6 @@ class TestRegexp < Test::Unit::TestCase
   end
 
   def test_ignorecase
-    omit "global variable access" unless main_ractor?
     v = assert_deprecated_warning(/variable \$= is no longer effective/) { $= }
     assert_equal(false, v)
     assert_deprecated_warning(/variable \$= is no longer effective; ignored/) { $= = nil }
@@ -1069,7 +1068,6 @@ class TestRegexp < Test::Unit::TestCase
   end
 
   def test_getter
-    omit "global variable access" unless main_ractor?
     alias $__REGEXP_TEST_LASTMATCH__ $&
     alias $__REGEXP_TEST_PREMATCH__ $`
     alias $__REGEXP_TEST_POSTMATCH__ $'
@@ -1981,7 +1979,6 @@ class TestRegexp < Test::Unit::TestCase
   end
 
   def test_bug_20453
-    pend "Timeout" unless main_ractor?
     re = Regexp.new("^(a*)x$", timeout: 0.001)
 
     assert_raise(Regexp::TimeoutError) do
@@ -1990,7 +1987,6 @@ class TestRegexp < Test::Unit::TestCase
   end
 
   def test_bug_20886
-    pend "Timeout" unless main_ractor?
     re = Regexp.new("d()*+|a*a*bc", timeout: 0.02)
     assert_raise(Regexp::TimeoutError) do
       re === "b" + "a" * 1000

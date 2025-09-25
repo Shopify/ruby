@@ -15,10 +15,6 @@ class TestRequireLib < Test::Unit::TestCase
   # skip some problems
   scripts -= %w[bundler bundled_gems rubygems mkmf set/sorted_set]
 
-  def setup
-    omit "separate process" if non_main_ractor?
-  end
-
   scripts.each do |lib|
     define_method "test_thread_size:#{lib}" do
       assert_separately(['-W0'], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 60)

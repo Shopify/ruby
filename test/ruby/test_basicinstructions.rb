@@ -8,11 +8,6 @@ class Class
 end
 
 class TestBasicInstructions < Test::Unit::TestCase
-
-  def setup
-    omit "Lots of unfrozen strings in constants" unless main_ractor?
-  end
-
   def test_immediates
     assert_equal((1==1), true)
     assert_equal((1==2), false)

@@ -824,7 +824,6 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_umask
-    omit "global side effects" if multiple_ractors?
     prev = File.umask(0777)
     assert_equal(0777, File.umask)
     open(nofile, "w") { }
@@ -886,7 +885,6 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_expand_path_memsize
-    pend "ObjectSpace.memsize_of not yet ractor safe" if non_main_ractor?
     bug9934 = '[ruby-core:63114] [Bug #9934]'
     require "objspace"
     path = File.expand_path("/foo")
@@ -927,7 +925,6 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_expand_path_encoding_filesystem
-    omit "global side effects" if multiple_ractors?
     begin
       home = ENV["HOME"]
       ENV["HOME"] = "#{DRIVE}/UserHome"
@@ -946,7 +943,6 @@ class TestFileExhaustive < Test::Unit::TestCase
   UnknownUserHome = "~foo_bar_baz_unknown_user_wahaha".freeze
 
   def test_expand_path_home
-    omit "global side effects" if multiple_ractors?
     assert_kind_of(String, File.expand_path("~")) if ENV["HOME"]
     assert_raise(ArgumentError) { File.expand_path(UnknownUserHome) }
     assert_raise(ArgumentError) { File.expand_path(UnknownUserHome, "/") }
@@ -973,7 +969,6 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_expand_path_home_dir_string
-    omit "global side effects" if multiple_ractors?
     begin
       home = ENV["HOME"]
       new_home = "#{DRIVE}/UserHome"
@@ -1111,7 +1106,6 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_expand_path_converts_a_pathname_to_an_absolute_pathname_using_home_as_base
-    omit "global side effects" if multiple_ractors?
     begin
       old_home = ENV["HOME"]
       home = ENV["HOME"] = "#{DRIVE}/UserHome"
@@ -1124,7 +1118,6 @@ class TestFileExhaustive < Test::Unit::TestCase
   end
 
   def test_expand_path_converts_a_pathname_to_an_absolute_pathname_using_unc_home
-    omit "global side effects" if multiple_ractors?
     begin
       old_home = ENV["HOME"]
       unc_home = ENV["HOME"] = "//UserHome"
@@ -1135,7 +1128,6 @@ class TestFileExhaustive < Test::Unit::TestCase
   end if DRIVE
 
   def test_expand_path_does_not_modify_a_home_string_argument
-    omit "global side effects" if multiple_ractors?
     begin
       old_home = ENV["HOME"]
       home = ENV["HOME"] = "#{DRIVE}/UserHome"
@@ -1164,7 +1156,6 @@ class TestFileExhaustive < Test::Unit::TestCase
   end unless DRIVE
 
   def test_expand_path_error_for_non_absolute_home
-    omit "global side effects" if multiple_ractors?
     begin
       old_home = ENV["HOME"]
       ENV["HOME"] = "./UserHome"
@@ -1219,7 +1210,6 @@ class TestFileExhaustive < Test::Unit::TestCase
 
   if /darwin/ =~ RUBY_PLATFORM and Encoding.find("filesystem") == Encoding::UTF_8
     def test_expand_path_compose
-      omit "Dir.chdir" unless main_ractor?
       pp = Object.new.extend(Test::Unit::Assertions)
       def pp.mu_pp(str) #:nodoc:
         str.dump
@@ -1449,7 +1439,6 @@ class TestFileExhaustive < Test::Unit::TestCase
 
   def test_flock_exclusive
     omit "[Bug #18613]" if /freebsd/ =~ RUBY_PLATFORM
-    omit "subprocess" unless main_ractor?
 
     timeout = EnvUtil.apply_timeout_scale(1).to_s
     File.open(regular_file, "r+") do |f|
@@ -1481,7 +1470,6 @@ class TestFileExhaustive < Test::Unit::TestCase
 
   def test_flock_shared
     omit "[Bug #18613]" if /freebsd/ =~ RUBY_PLATFORM
-    omit "subprocess" unless main_ractor?
 
     timeout = EnvUtil.apply_timeout_scale(1).to_s
     File.open(regular_file, "r+") do |f|

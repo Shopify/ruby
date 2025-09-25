@@ -92,7 +92,6 @@ class TestMethod < Test::Unit::TestCase
   end
 
   def test_unbind
-    omit "racy" if multiple_ractors?
     assert_equal(:derived, Derived.new.foo)
     um = Derived.new.method(:foo).unbind
     assert_instance_of(UnboundMethod, um)
@@ -437,7 +436,6 @@ class TestMethod < Test::Unit::TestCase
   end
 
   def test_define_method_in_private_scope
-    omit "TOPLEVEL_BINDING" unless main_ractor?
     bug9005 = '[ruby-core:57747] [Bug #9005]'
     c = Class.new
     class << c
@@ -449,7 +447,6 @@ class TestMethod < Test::Unit::TestCase
   end
 
   def test_singleton_define_method_in_private_scope
-    omit "TOPLEVEL_BINDING" unless main_ractor?
     bug9141 = '[ruby-core:58497] [Bug #9141]'
     o = Object.new
     class << o
@@ -1580,7 +1577,6 @@ class TestMethod < Test::Unit::TestCase
   end)
 
   def test_method_in_method_visibility_should_be_public
-    omit "racy" if multiple_ractors?
     MethodInMethodClass_Setup.call
 
     assert_equal([:m1].sort, MethodInMethodClass.public_instance_methods(false).sort)
@@ -1734,7 +1730,6 @@ class TestMethod < Test::Unit::TestCase
   end
 
   def test_method_list
-    pend "ObjectSpace.each_object doesn't work with ractors right now" unless main_ractor?
     # chkbuild lists all methods.
     # The following code emulate this listing.
 

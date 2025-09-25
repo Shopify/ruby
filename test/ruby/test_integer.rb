@@ -7,7 +7,6 @@ class TestInteger < Test::Unit::TestCase
   LONG_MAX = RbConfig::LIMITS['LONG_MAX']
 
   def test_aref
-    pend "TODO: why taking too long" if multiple_ractors?
     [
       *-16..16,
       *(FIXNUM_MIN-2)..(FIXNUM_MIN+2),

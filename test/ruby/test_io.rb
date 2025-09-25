@@ -115,7 +115,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_binmode_pipe
-    omit "global side effects" if multiple_ractors?
     EnvUtil.with_default_internal(Encoding::UTF_8) do
       EnvUtil.with_default_external(Encoding::UTF_8) do
         begin
@@ -702,7 +701,6 @@ class TestIO < Test::Unit::TestCase
   if have_nonblock?
     def test_copy_stream_no_busy_wait
       omit "multiple threads already active" if Thread.list.size > 1
-      omit "unpredictable" unless main_ractor?
 
       msg = 'r58534 [ruby-core:80969] [Backport #13533]'
       IO.pipe do |r,w|
@@ -1020,7 +1018,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_copy_stream_socket7
-    omit "Signal.trap not ractor safe" if non_main_ractor?
     if RUBY_PLATFORM =~ /mingw|mswin/
       omit "pread(2) is not implemented."
     end
@@ -1036,7 +1033,7 @@ class TestIO < Test::Unit::TestCase
         rescue Errno::EBADF
           omit "nonblocking IO for pipe is not implemented"
         end
-        trapping_usr2 do |rd| # not ractor safe
+        trapping_usr2 do |rd|
           nr = 30
           begin
             pid = fork do
@@ -1138,7 +1135,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_copy_stream_strio_to_tempfile
-    pend "Tempfile" if non_main_ractor?
     bug11015 = '[ruby-core:68676] [Bug #11015]'
     # StringIO to Tempfile
     src = StringIO.new("abcd")
@@ -1165,7 +1161,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_copy_stream_dup_buffer
-    pend "Tempfile" if non_main_ractor?
     bug21131 = '[ruby-core:120961] [Bug #21131]'
     mkcdtmpdir do
       dst_class = Class.new do
@@ -1415,7 +1410,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_try_convert
-    omit "non-shareable value" if non_main_ractor?
     assert_equal(STDOUT, IO.try_convert(STDOUT))
     assert_equal(nil, IO.try_convert("STDOUT"))
   end
@@ -1879,7 +1873,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_close_read_write_separately
-    pend "TODO: buggy with ractors" if multiple_ractors?
     bug = '[ruby-list:49598]'
     (1..10).each do |i|
       assert_nothing_raised(IOError, "#{bug} trying ##{i}") do
@@ -1924,7 +1917,7 @@ class TestIO < Test::Unit::TestCase
   end
 
   def make_tempfile
-    pend "Tempfile" if non_main_ractor?
+    pend "Tempfile" unless main_ractor?
     t = Tempfile.new("test_io")
     t.binmode
     t.puts "foo"
@@ -1963,7 +1956,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_set_lineno_gets
-    omit "global variable access" if non_main_ractor?
     pipe(proc do |w|
       w.puts "foo"
       w.puts "bar"
@@ -2014,7 +2006,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_readline_separators_limits
-    pend "Tempfile" if non_main_ractor?
     t = Tempfile.open("readline_limit")
     str = "#" * 50
     sep = "def"
@@ -2046,7 +2037,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_readline_limit_without_separator
-    pend "Tempfile" if non_main_ractor?
     t = Tempfile.open("readline_limit")
     str = "#" * 50
     sep = "\n"
@@ -2123,7 +2113,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_set_lineno_readline
-    omit "global variable access" if non_main_ractor?
     pipe(proc do |w|
       w.puts "foo"
       w.puts "bar"
@@ -2549,7 +2538,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_autoclose
-    pend "TODO: assert_raise fails sometimes under multiple ractors" if multiple_ractors?
     feature2250 = '[ruby-core:26222]'
     pre = 'ft2250'
 
@@ -2573,7 +2561,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_autoclose_true_closed_by_finalizer
-    pend "Tempfile" if non_main_ractor?
     feature2250 = '[ruby-core:26222]'
     pre = 'ft2250'
     t = Tempfile.new(pre)
@@ -2593,7 +2580,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_autoclose_false_closed_by_finalizer
-    pend "Tempfile" if non_main_ractor?
     feature2250 = '[ruby-core:26222]'
     pre = 'ft2250'
     t = Tempfile.new(pre)
@@ -2636,7 +2622,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_open_pipe
-    omit "fork" unless main_ractor?
     assert_deprecated_warning(/Kernel#open with a leading '\|'/) do # https://bugs.ruby-lang.org/issues/19630
       open("|" + EnvUtil.rubybin, "r+") do |f|
         f.puts "puts 'foo'"
@@ -2961,7 +2946,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_print_separators
-    omit "global variable access" if non_main_ractor?
     EnvUtil.suppress_warning {
       $, = ':'
       $\ = "\n"
@@ -2977,10 +2961,8 @@ class TestIO < Test::Unit::TestCase
       r.close
     end)
   ensure
-    if main_ractor?
-      $, = nil
-      $\ = nil
-    end
+    $, = nil
+    $\ = nil
   end
 
   def test_putc
@@ -3180,7 +3162,6 @@ __END__
   end
 
   def test_threaded_flush
-    omit "separate process" if non_main_ractor?
     bug3585 = '[ruby-core:31348]'
     src = "#{<<~"begin;"}\n#{<<~'end;'}"
     begin;
@@ -3198,7 +3179,6 @@ __END__
   end
 
   def test_flush_in_finalizer1
-    pend "Tempfile" if non_main_ractor?
     bug3910 = '[ruby-dev:42341]'
     tmp = Tempfile.open("bug3910") {|t|
       path = t.path
@@ -3215,18 +3195,15 @@ __END__
       t
     }
   ensure
-    if main_ractor?
-      ObjectSpace.each_object(File) {|f|
-        if f.instance_variables.include?(:@test_flush_in_finalizer1)
-          f.close
-        end
-      }
-      tmp.close!
-    end
+    ObjectSpace.each_object(File) {|f|
+      if f.instance_variables.include?(:@test_flush_in_finalizer1)
+        f.close
+      end
+    }
+    tmp.close!
   end
 
   def test_flush_in_finalizer2
-    pend "Tempfile" if non_main_ractor?
     bug3910 = '[ruby-dev:42341]'
     Tempfile.create("bug3910") {|t|
       path = t.path
@@ -3359,7 +3336,6 @@ __END__
   end
 
   def test_fcntl_lock_linux
-    pend "Tempfile" if non_main_ractor?
     pad = 0
     Tempfile.create(self.class.name) do |f|
       r, w = IO.pipe
@@ -3392,7 +3368,6 @@ __END__
     [nil].pack("p").bytesize == 8 # unless x32 platform.
 
   def test_fcntl_lock_freebsd
-    pend "Tempfile" if non_main_ractor?
     start = 12
     len = 34
     sysid = 0
@@ -3426,7 +3401,6 @@ __END__
   end if /freebsd/ =~ RUBY_PLATFORM # A binary form of struct flock depend on platform
 
   def test_fcntl_dupfd
-    pend "Tempfile" if non_main_ractor?
     Tempfile.create(self.class.name) do |f|
       fd = f.fcntl(Fcntl::F_DUPFD, 63)
       begin
@@ -3578,7 +3552,6 @@ __END__
   end
 
   def test_race_between_read
-    pend "Tempfile" if non_main_ractor?
     Tempfile.create("test") {|file|
       begin
         path = file.path
@@ -3802,7 +3775,6 @@ __END__
   end if /linux/ =~ RUBY_PLATFORM
 
   def assert_buffer_not_raise_shared_string_error
-    pend "Tempfile" if non_main_ractor?
     bug6764 = '[ruby-core:46586]'
     bug9847 = '[ruby-core:62643] [Bug #9847]'
     size = 28
@@ -4015,7 +3987,6 @@ __END__
   end if /cygwin/ !~ RUBY_PLATFORM
 
   def test_exception_at_close
-    pend "TODO: assert_raise fails sometimes under multiple ractors" if multiple_ractors?
     bug10153 = '[ruby-core:64463] [Bug #10153] exception in close at the end of block'
     assert_raise(Errno::EBADF, bug10153) do
       IO.pipe do |r, w|
