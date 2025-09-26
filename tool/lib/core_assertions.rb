@@ -100,7 +100,7 @@ module Test
 
       def assert_in_out_err(args, test_stdin = "", test_stdout = [], test_stderr = [], message = nil,
                             success: nil, failed: nil, **opt)
-        pend "#{__method__}" unless Test::Unit::TestCase.main_ractor?
+        pend "#{__method__}" if respond_to?(:main_ractor?) && !main_ractor?
         args = Array(args).dup
         args.insert((Hash === args[0] ? 1 : 0), '--disable=gems')
         stdout, stderr, status = EnvUtil.invoke_ruby(args, test_stdin, true, true, **opt)
@@ -157,7 +157,7 @@ module Test
       end
 
       def assert_no_memory_leak(args, prepare, code, message=nil, limit: 2.0, rss: false, **opt)
-        omit "separate process" unless Test::Unit::TestCase.main_ractor?
+        omit "separate process" if respond_to?(:main_ractor?) && !main_ractor?
         # TODO: consider choosing some appropriate limit for RJIT and stop skipping this once it does not randomly fail
         pend 'assert_no_memory_leak may consider RJIT memory usage as leak' if defined?(RubyVM::RJIT) && RubyVM::RJIT.enabled?
         # For previous versions which implemented MJIT
@@ -274,7 +274,7 @@ module Test
       end
 
       def assert_normal_exit(testsrc, message = '', child_env: nil, **opt)
-        pend "#{__method__}" unless Test::Unit::TestCase.main_ractor?
+        pend "#{__method__}" if respond_to?(:main_ractor?) && !main_ractor?
         assert_valid_syntax(testsrc, caller_locations(1, 1)[0])
         if child_env
           child_env = [child_env]
@@ -286,7 +286,7 @@ module Test
       end
 
       def assert_ruby_status(args, test_stdin="", message=nil, **opt)
-        pend "#{__method__}" unless Test::Unit::TestCase.main_ractor?
+        pend "#{__method__}" if respond_to?(:main_ractor?) && !main_ractor?
         out, _, status = EnvUtil.invoke_ruby(args, test_stdin, true, :merge_to_stdout, **opt)
         desc = FailDesc[status, message, out]
         assert(!status.signaled?, desc)
@@ -310,7 +310,7 @@ module Test
       end
 
       def assert_separately(args, file = nil, line = nil, src, ignore_stderr: nil, **opt)
-        pend "#{__method__}" unless Test::Unit::TestCase.main_ractor?
+        pend "#{__method__}" if respond_to?(:main_ractor?) && !main_ractor?
         unless file and line
           loc, = caller_locations(1,1)
           file ||= loc.path
@@ -508,7 +508,7 @@ eom
           assert = :assert_match
         end
         ex = m = nil
-        if Test::Unit::TestCase.multiple_ractors?
+        if respond_to?(:multiple_ractors?) && multiple_ractors?
             ex = assert_raise(exception, msg || proc {"Exception(#{exception}) with message matches to #{expected.inspect}"}) do
               yield
             end
@@ -690,7 +690,7 @@ eom
 
       def assert_warning(pat, msg = nil)
         result = nil
-        if Test::Unit::TestCase.multiple_ractors?
+        if respond_to?(:multiple_ractors?) && multiple_ractors?
           stderr = EnvUtil.verbose_warning {
             result = yield
           }
@@ -873,7 +873,7 @@ eom
       # :yield: each elements of +seq+.
       def assert_linear_performance(seq, rehearsal: nil, pre: ->(n) {n})
         pend "No PERFORMANCE_CLOCK found" unless defined?(PERFORMANCE_CLOCK)
-        pend "Timeout" unless Test::Unit::TestCase.main_ractor?
+        pend "Timeout" if respond_to?(:main_ractor?) && !main_ractor?
 
         # Timeout testing generally doesn't work when RJIT compilation happens.
         rjit_enabled = defined?(RubyVM::RJIT) && RubyVM::RJIT.enabled?
@@ -996,7 +996,7 @@ eom
       end
 
       def self.macos?(*ver)
-        is_main_ractor = Test::Unit::TestCase.main_ractor?
+        is_main_ractor = (!respond_to?(:main_ractor?)) || main_ractor?
         # Don't cache @macos as class ivar if we're running in a ractor. That means we shell out
         # each time if we're not in main ractor, but this guard isn't used often so it's fine for now.
         if !is_main_ractor || !defined?(@macos)

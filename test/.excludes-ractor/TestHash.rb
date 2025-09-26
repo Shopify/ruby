@@ -4,3 +4,4 @@ exclude(:test_memory_size_after_delete, "ObjectSpace.memsize_of not yet ractor s
 exclude(:test_to_s, "global variables")
 exclude(:test_inspect, "global side effects")
 exclude(:test_broken_hash_value, "too many objects")
+exclude(:test_replace_bug15358, "GC.start")
