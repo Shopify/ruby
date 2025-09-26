@@ -430,19 +430,21 @@ END
       end
     end
 
-    assert_block do
-      @@TestPatternMatching = /a/
-      case 'abc'
-      in ^@@TestPatternMatching
-        true
+    if main_ractor?
+      assert_block do
+        @@TestPatternMatching = /a/
+        case 'abc'
+        in ^@@TestPatternMatching
+          true
+        end
       end
-    end
 
-    assert_block do
-      $TestPatternMatching = /a/
-      case 'abc'
-      in ^$TestPatternMatching
-        true
+      assert_block do
+        $TestPatternMatching = /a/
+        case 'abc'
+        in ^$TestPatternMatching
+          true
+        end
       end
     end
   end

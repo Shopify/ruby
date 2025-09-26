@@ -106,8 +106,8 @@ p Foo::Bar
       end
     }
   ensure
-    $LOAD_PATH.replace lp
-    $LOADED_FEATURES.replace lf
+    $LOAD_PATH.replace lp if lp
+    $LOADED_FEATURES.replace lf if lf
     Object.send(:remove_const, :A) if Object.const_defined?(:A)
   end
 

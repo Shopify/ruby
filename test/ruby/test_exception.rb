@@ -244,6 +244,7 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_catch_throw_in_require
+    pend "Tempfile"
     bug7185 = '[ruby-dev:46234]'
     Tempfile.create(["dep", ".rb"]) {|t|
       t.puts("throw :extdep, 42")
@@ -253,6 +254,7 @@ class TestException < Test::Unit::TestCase
   end
 
   def test_catch_throw_in_require_cant_be_rescued
+    pend "Tempfile"
     bug18562 = '[ruby-core:107403]'
     Tempfile.create(["dep", ".rb"]) {|t|
       t.puts("throw :extdep, 42")
@@ -665,7 +667,7 @@ end.join
     assert_equal([__FILE__, line], [loc.path, loc.lineno])
   end
 
-  Bug4438 = '[ruby-core:35364]'
+  Bug4438 = '[ruby-core:35364]'.freeze
 
   def test_rescue_single_argument
     assert_raise(TypeError, Bug4438) do
@@ -1063,38 +1065,39 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def capture_warning_warn(category: false)
-    verbose = $VERBOSE
-    categories = Warning.categories.to_h {|cat| [cat, Warning[cat]]}
-    warning = []
+    begin
+      verbose = $VERBOSE
+      categories = Warning.categories.to_h {|cat| [cat, Warning[cat]]}
+      warning = []
 
-    ::Warning.class_eval do
-      alias_method :warn2, :warn
-      remove_method :warn
+      ::Warning.class_eval do
+        alias_method :warn2, :warn
+        remove_method :warn
 
-      if category
-        define_method(:warn) do |str, category: nil|
-          warning << [str, category]
-        end
-      else
-        define_method(:warn) do |str, category: nil|
-          warning << str
+        if category
+          define_method(:warn) do |str, category: nil|
+            warning << [str, category]
+          end
+        else
+          define_method(:warn) do |str, category: nil|
+            warning << str
+          end
         end
       end
-    end
 
-    $VERBOSE = true
-    Warning.categories.each {|cat| Warning[cat] = true}
-    yield
+      $VERBOSE = true
+      Warning.categories.each {|cat| Warning[cat] = true}
+      yield
+      return warning
+    ensure
+      $VERBOSE = verbose
+      categories.each {|cat, flag| Warning[cat] = flag}
 
-    return warning
-  ensure
-    $VERBOSE = verbose
-    categories.each {|cat, flag| Warning[cat] = flag}
-
-    ::Warning.class_eval do
-      remove_method :warn
-      alias_method :warn, :warn2
-      remove_method :warn2
+      ::Warning.class_eval do
+        remove_method :warn
+        alias_method :warn, :warn2
+        remove_method :warn2
+      end
     end
   end
 
@@ -1184,6 +1187,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   end
 
   def test_warning_category
+    omit "global side effects" if multiple_ractors?
     assert_raise(TypeError) {Warning[nil]}
     assert_raise(ArgumentError) {Warning[:XXXX]}
 
@@ -1304,12 +1308,14 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
 
     test_method = "def foo; raise 'testerror'; end"
 
-    out1, err1, status1 = EnvUtil.invoke_ruby(['-e', "#{test_method}; begin; foo; rescue => e; puts e.full_message; end"], '', true, true)
-    assert_predicate(status1, :success?)
-    assert_empty(err1, "expected nothing wrote to $stdout by #full_message")
+    if main_ractor?
+      out1, err1, status1 = EnvUtil.invoke_ruby(['-e', "#{test_method}; begin; foo; rescue => e; puts e.full_message; end"], '', true, true)
+      assert_predicate(status1, :success?)
+      assert_empty(err1, "expected nothing wrote to $stdout by #full_message")
 
-    _, err2, status1 = EnvUtil.invoke_ruby(['-e', "#{test_method}; begin; foo; end"], '', true, true)
-    assert_equal(err2, out1)
+      _, err2, status1 = EnvUtil.invoke_ruby(['-e', "#{test_method}; begin; foo; end"], '', true, true)
+      assert_equal(err2, out1)
+    end
 
     e = RuntimeError.new("a\n")
     message = assert_nothing_raised(ArgumentError, proc {e.pretty_inspect}) do
@@ -1442,6 +1448,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
 
   def test_detailed_message_under_gc_compact_stress
     omit "compaction doesn't work well on s390x" if RUBY_PLATFORM =~ /s390x/ # https://github.com/ruby/ruby/pull/5077
+    omit "gc_compact_stress" if multiple_ractors?
     EnvUtil.under_gc_compact_stress do
       e = RuntimeError.new("foo\nbar\nbaz")
       assert_equal("foo (RuntimeError)\nbar\nbaz", e.detailed_message)

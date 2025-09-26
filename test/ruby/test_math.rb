@@ -334,6 +334,7 @@ class TestMath < Test::Unit::TestCase
   end
 
   def test_override_integer_to_f
+    run_ensure = true
     Integer.class_eval do
       alias _to_f to_f
       def to_f
@@ -345,7 +346,9 @@ class TestMath < Test::Unit::TestCase
     check(Math.exp((0 + 1)._to_f), Math.exp(0))
     check(Math.log((0 + 1)._to_f), Math.log(0))
   ensure
-    Integer.class_eval { undef to_f; alias to_f _to_f; undef _to_f }
+    if run_ensure
+      Integer.class_eval { undef to_f; alias to_f _to_f; undef _to_f }
+    end
   end
 
   def test_bignum_to_f
@@ -353,6 +356,7 @@ class TestMath < Test::Unit::TestCase
   end
 
   def test_override_bignum_to_f
+    run_ensure = true
     Integer.class_eval do
       alias _to_f to_f
       def to_f
@@ -363,7 +367,9 @@ class TestMath < Test::Unit::TestCase
     check(Math.cos((1 << 64 << 1)._to_f),  Math.cos(1 << 64))
     check(Math.log((1 << 64 << 1)._to_f),  Math.log(1 << 64))
   ensure
-    Integer.class_eval { undef to_f; alias to_f _to_f; undef _to_f }
+    if run_ensure
+      Integer.class_eval { undef to_f; alias to_f _to_f; undef _to_f }
+    end
   end
 
   def test_rational_to_f
@@ -371,6 +377,7 @@ class TestMath < Test::Unit::TestCase
   end
 
   def test_override_rational_to_f
+    run_ensure = true
     Rational.class_eval do
       alias _to_f to_f
       def to_f
@@ -382,6 +389,8 @@ class TestMath < Test::Unit::TestCase
     check(Math.exp((0r + 1)._to_f), Math.exp(0r))
     check(Math.log((0r + 1)._to_f), Math.log(0r))
   ensure
-    Rational.class_eval { undef to_f; alias to_f _to_f; undef _to_f }
+    if run_ensure
+      Rational.class_eval { undef to_f; alias to_f _to_f; undef _to_f }
+    end
   end
 end

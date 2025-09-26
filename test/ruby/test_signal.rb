@@ -4,6 +4,7 @@ require 'timeout'
 require 'tempfile'
 
 class TestSignal < Test::Unit::TestCase
+
   def test_signal
     begin
       x = 0
@@ -169,11 +170,11 @@ class TestSignal < Test::Unit::TestCase
     end
   end if Process.respond_to?(:kill)
 
-  %w"KILL STOP".each do |sig|
+  Ractor.make_shareable(%w"KILL STOP").each do |sig|
     if Signal.list.key?(sig)
-      define_method("test_trap_uncatchable_#{sig}") do
+      define_method("test_trap_uncatchable_#{sig}", &Ractor.make_shareable(proc do
         assert_raise(Errno::EINVAL, "SIG#{sig} is not allowed to be caught") { Signal.trap(sig) {} }
-      end
+      end))
     end
   end
 

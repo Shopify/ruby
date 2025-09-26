@@ -134,9 +134,11 @@ module Prism
       assert_prism_eval("defined? [a: [:b, :c]]")
       assert_prism_eval("defined? 1 in 1")
 
-      assert_prism_eval("defined? @a")
-      assert_prism_eval("defined? $a")
-      assert_prism_eval("defined? @@a")
+      assert_prism_eval("defined? @a", raw: true)
+      if main_ractor?
+        assert_prism_eval("defined? $a")
+        assert_prism_eval("defined? @@a")
+      end
       assert_prism_eval("defined? A")
       assert_prism_eval("defined? ::A")
       assert_prism_eval("defined? A::B")
@@ -151,29 +153,31 @@ module Prism
       assert_prism_eval("defined? X &= 1")
       assert_prism_eval("defined? X ||= 1")
 
-      assert_prism_eval("defined? $1")
-      assert_prism_eval("defined? $2")
-      assert_prism_eval("defined? $`")
-      assert_prism_eval("defined? $'")
-      assert_prism_eval("defined? $+")
+      if main_ractor?
+        assert_prism_eval("defined? $1")
+        assert_prism_eval("defined? $2")
+        assert_prism_eval("defined? $`")
+        assert_prism_eval("defined? $'")
+        assert_prism_eval("defined? $+")
 
-      assert_prism_eval("defined? $X = 1")
-      assert_prism_eval("defined? $X *= 1")
-      assert_prism_eval("defined? $X /= 1")
-      assert_prism_eval("defined? $X &= 1")
-      assert_prism_eval("defined? $X ||= 1")
+        assert_prism_eval("defined? $X = 1")
+        assert_prism_eval("defined? $X *= 1")
+        assert_prism_eval("defined? $X /= 1")
+        assert_prism_eval("defined? $X &= 1")
+        assert_prism_eval("defined? $X ||= 1")
 
-      assert_prism_eval("defined? @@X = 1")
-      assert_prism_eval("defined? @@X *= 1")
-      assert_prism_eval("defined? @@X /= 1")
-      assert_prism_eval("defined? @@X &= 1")
-      assert_prism_eval("defined? @@X ||= 1")
+        assert_prism_eval("defined? @@X = 1")
+        assert_prism_eval("defined? @@X *= 1")
+        assert_prism_eval("defined? @@X /= 1")
+        assert_prism_eval("defined? @@X &= 1")
+        assert_prism_eval("defined? @@X ||= 1")
+      end
 
-      assert_prism_eval("defined? @X = 1")
-      assert_prism_eval("defined? @X *= 1")
-      assert_prism_eval("defined? @X /= 1")
-      assert_prism_eval("defined? @X &= 1")
-      assert_prism_eval("defined? @X ||= 1")
+      assert_prism_eval("defined? @X = 1", raw: true)
+      assert_prism_eval("defined? @X *= 1", raw: true)
+      assert_prism_eval("defined? @X /= 1", raw: true)
+      assert_prism_eval("defined? @X &= 1", raw: true)
+      assert_prism_eval("defined? @X ||= 1", raw: true)
 
       assert_prism_eval("x = 1; defined? x = 1")
       assert_prism_eval("x = 1; defined? x *= 1")
@@ -350,12 +354,16 @@ module Prism
     def test_ConstantPathOrWriteNode
       assert_prism_eval("Prism::CPOrWN = nil; Prism::CPOrWN ||= 1")
       assert_prism_eval("Prism::CPOrWN ||= 1")
-      assert_prism_eval("::CPOrWN = nil; ::CPOrWN ||= 1")
+      if main_ractor?
+        assert_prism_eval("::CPOrWN = nil; ::CPOrWN ||= 1")
+      end
     end
 
     def test_ConstantPathOperatorWriteNode
       assert_prism_eval("Prism::CPOWN = 0; Prism::CPOWN += 1")
-      assert_prism_eval("::CPOWN = 0; ::CPOWN += 1")
+      if main_ractor?
+        assert_prism_eval("::CPOWN = 0; ::CPOWN += 1")
+      end
     end
 
     def test_GlobalVariableAndWriteNode
@@ -375,15 +383,15 @@ module Prism
     end
 
     def test_InstanceVariableAndWriteNode
-      assert_prism_eval("@pit = 0; @pit &&= 1")
+      assert_prism_eval("@pit = 0; @pit &&= 1", raw: non_main_ractor?)
     end
 
     def test_InstanceVariableOperatorWriteNode
-      assert_prism_eval("@pit = 0; @pit += 1")
+      assert_prism_eval("@pit = 0; @pit += 1", raw: non_main_ractor?)
     end
 
     def test_InstanceVariableOrWriteNode
-      assert_prism_eval("@pit ||= 1")
+      assert_prism_eval("@pit ||= 1", raw: non_main_ractor?)
     end
 
     def test_InstanceVariableWriteNode
@@ -992,8 +1000,10 @@ module Prism
       assert_prism_eval('if "a"..; end')
       assert_prism_eval('if .."b"; end')
       assert_prism_eval('if ..1; end')
-      assert_prism_eval('if 1..; end')
-      assert_prism_eval('if 1..2; end')
+      if main_ractor?
+        assert_prism_eval('if 1..; end') # accesses $. implicitly
+        assert_prism_eval('if 1..2; end')
+      end
       assert_prism_eval('if true or true; end');
     end
 
@@ -1047,8 +1057,10 @@ module Prism
 
     def test_ForNode
       assert_prism_eval("for i in [1,2] do; i; end")
-      assert_prism_eval("for @i in [1,2] do; @i; end")
-      assert_prism_eval("for $i in [1,2] do; $i; end")
+      assert_prism_eval("for @i in [1,2] do; @i; end", raw: non_main_ractor?)
+      if main_ractor?
+        assert_prism_eval("for $i in [1,2] do; $i; end")
+      end
 
       assert_prism_eval("for foo, in  [1,2,3] do end")
 
@@ -1207,9 +1219,9 @@ a
 
       # Bug #21001
       assert_prism_eval(<<~RUBY)
-        RUN_ARRAY = [1,2]
+        RUN_ARRAY = [1,2].freeze
 
-        MAP_PROC = Proc.new do |&blk|
+        MAP_PROC = Ractor.make_shareable(Proc.new do |&blk|
           block_results = []
           RUN_ARRAY.each do |value|
             block_value = blk.call(value)
@@ -1218,7 +1230,7 @@ a
           block_results
         ensure
           next block_results
-        end
+        end)
 
         MAP_PROC.call do |value|
           break if value > 1
@@ -1848,8 +1860,10 @@ end
 
     def test_PostExecutionNode
       assert_prism_eval("END { 1 }")
-      assert_prism_eval("END { @b }; @b = 1")
-      assert_prism_eval("END { @b; 0 }; @b = 1")
+      if main_ractor?
+        assert_prism_eval("END { @b }; @b = 1")
+        assert_prism_eval("END { @b; 0 }; @b = 1")
+      end
       assert_prism_eval("foo = 1; END { foo.nil? }")
       assert_prism_eval("foo = 1; END { END { foo.nil? }}")
     end
@@ -2612,9 +2626,11 @@ end
     end
 
     def test_PinnedVariableNode
-      assert_prism_eval("module Prism; @@prism = 1; 1 in ^@@prism; end")
-      assert_prism_eval("module Prism; @prism = 1; 1 in ^@prism; end")
-      assert_prism_eval("$prism = 1; 1 in ^$prism")
+      if main_ractor?
+        assert_prism_eval("module Prism; @@prism = 1; 1 in ^@@prism; end")
+        assert_prism_eval("module Prism; @prism = 1; 1 in ^@prism; end")
+        assert_prism_eval("$prism = 1; 1 in ^$prism")
+      end
       assert_prism_eval("prism = 1; 1 in ^prism")
       assert_prism_eval("[1].each { 1 => ^it }")
     end
@@ -2723,7 +2739,7 @@ end
     private
 
     def compare_eval(source, raw:, location:)
-      source = raw ? source : "class Prism::TestCompilePrism\n#{source}\nend"
+      source = raw ? source : "class Prism::TestCompilePrism#{Ractor.current.object_id}\n#{source}\nend"
 
       ruby_eval = RubyVM::InstructionSequence.compile_parsey(source).eval
       prism_eval = RubyVM::InstructionSequence.compile_prism(source).eval

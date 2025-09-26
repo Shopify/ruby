@@ -442,7 +442,7 @@ rb_threadptr_unlock_all_locking_mutexes(rb_thread_t *th)
         th->keeping_mutexes = mutex->next_mutex;
 
         // rb_warn("mutex #<%p> was not unlocked by thread #<%p>", (void *)mutex, (void*)th);
-
+        VM_ASSERT(mutex->fiber);
         const char *error_message = rb_mutex_unlock_th(mutex, th, mutex->fiber);
         if (error_message) rb_bug("invalid keeping_mutexes: %s", error_message);
     }
@@ -841,7 +841,7 @@ thread_create_core(VALUE thval, struct thread_create_params *params)
         th->invoke_type = thread_invoke_type_ractor_proc;
         th->ractor = params->g;
         th->ractor->threads.main = th;
-        th->invoke_arg.proc.proc = rb_proc_isolate_bang(params->proc);
+        th->invoke_arg.proc.proc = rb_proc_isolate_bang(params->proc, Qnil);
         th->invoke_arg.proc.args = INT2FIX(RARRAY_LENINT(params->args));
         th->invoke_arg.proc.kw_splat = rb_keyword_given_p();
         rb_ractor_send_parameters(ec, params->g, params->args);

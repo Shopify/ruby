@@ -175,6 +175,9 @@ rb_iseq_free(const rb_iseq_t *iseq)
             rb_yjit_live_iseq_count--;
         }
 #endif
+#if USE_ZJIT
+        rb_zjit_iseq_free(iseq);
+#endif
         ruby_xfree((void *)body->iseq_encoded);
         ruby_xfree((void *)body->insns_info.body);
         ruby_xfree((void *)body->insns_info.positions);
@@ -199,8 +202,11 @@ rb_iseq_free(const rb_iseq_t *iseq)
             }
             ruby_xfree((void *)body->param.keyword);
         }
-        if (LIKELY(body->local_table != rb_iseq_shared_exc_local_tbl))
+        if (LIKELY(body->local_table != rb_iseq_shared_exc_local_tbl)) {
             ruby_xfree((void *)body->local_table);
+        }
+        ruby_xfree((void *)body->lvar_states);
+
         compile_data_free(ISEQ_COMPILE_DATA(iseq));
         if (body->outer_variables) rb_id_table_free(body->outer_variables);
         ruby_xfree(body);

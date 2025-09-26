@@ -5,7 +5,6 @@ require "-test-/file"
 require_relative 'ut_eof'
 
 class TestFile < Test::Unit::TestCase
-
   # I don't know Ruby's spec about "unlink-before-close" exactly.
   # This test asserts current behaviour.
   def test_unlink_before_close
@@ -250,10 +249,14 @@ class TestFile < Test::Unit::TestCase
       tst = realdir + (File::SEPARATOR*3 + ".")
       assert_equal(realdir, File.realpath(tst))
       assert_equal(realdir, File.realpath(".", tst))
-      assert_equal(realdir, Dir.chdir(realdir) {File.realpath(".")})
+      if main_ractor?
+        assert_equal(realdir, Dir.chdir(realdir) {File.realpath(".")})
+      end
       realpath = File.join(realdir, "test")
       File.write(realpath, "")
-      assert_equal(realpath, Dir.chdir(realdir) {File.realpath("test")})
+      if main_ractor?
+        assert_equal(realpath, Dir.chdir(realdir) {File.realpath("test")})
+      end
       if File::ALT_SEPARATOR
         bug2961 = '[ruby-core:28653]'
         assert_equal(realdir, File.realpath(realdir.tr(File::SEPARATOR, File::ALT_SEPARATOR)), bug2961)
@@ -300,8 +303,10 @@ class TestFile < Test::Unit::TestCase
       assert_equal(realdir, File.realdirpath(tst))
       assert_equal(realdir, File.realdirpath(".", tst))
       assert_equal(File.join(realdir, "foo"), File.realdirpath("foo", tst))
-      assert_equal(realdir, Dir.chdir(realdir) {File.realdirpath(".")})
-      assert_equal(File.join(realdir, "foo"), Dir.chdir(realdir) {File.realdirpath("foo")})
+      if main_ractor?
+        assert_equal(realdir, Dir.chdir(realdir) {File.realdirpath(".")})
+        assert_equal(File.join(realdir, "foo"), Dir.chdir(realdir) {File.realdirpath("foo")})
+      end
     }
     begin
       result = File.realdirpath("bar", "//:/foo")

@@ -1,0 +1,5 @@
+exclude(/_with_callcc$/, "ractor incompatible")
+exclude(:test_join, "Uses $,")
+exclude(:test_to_s, "Uses $,")
+exclude(:test_equal_resize, "global variables")
+exclude(:test_replace_wb_variable_width_alloc, "GC.verify_internal_consistency")

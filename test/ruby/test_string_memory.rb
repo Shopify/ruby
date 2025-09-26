@@ -3,6 +3,7 @@ require 'test/unit'
 require 'objspace'
 
 class TestStringMemory < Test::Unit::TestCase
+
   def capture_allocations(klass)
     allocations = []
 

@@ -1,0 +1,7 @@
+exclude(:test_kernel_warn_uplevel, "uses capture_warning_warn")
+exclude(:test_thread_signal_location, "subprocess")
+exclude(:test_warn_deprecated_backwards_compatibility_category, "ractor incompatible")
+exclude(:test_warning_warn, "ractor incompatible")
+exclude(:test_warning_warn_circular_require_backtrace, "ractor incompatible")
+exclude(:test_type_error_message_encoding, "global side effects")
+exclude(:test_too_many_args_in_eval, "TODO: freezes process")

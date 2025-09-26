@@ -129,7 +129,7 @@ class TestDir < Test::Unit::TestCase
 
   ensure
     begin
-      Dir.chdir(pwd)
+      Dir.chdir(pwd) if pwd
     rescue
       abort("cannot return the original directory: #{ pwd }")
     end
@@ -194,12 +194,12 @@ class TestDir < Test::Unit::TestCase
     assert_equal(42, ret)
   ensure
     begin
-      assert_equal(0, dir.chdir)
+      assert_equal(0, dir.chdir) if dir
     rescue
       abort("cannot return the original directory: #{ pwd }")
     end
-    dir.close
-    root_dir.close
+    dir&.close
+    root_dir&.close
   end
 
   def test_chdir_conflict

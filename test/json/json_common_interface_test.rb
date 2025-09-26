@@ -118,6 +118,7 @@ class JSONCommonInterfaceTest < Test::Unit::TestCase
   end
 
   def test_load
+    pend "Tempfile" if non_main_ractor?
     assert_equal @hash, JSON.load(@json)
     tempfile = Tempfile.open('@json')
     tempfile.write @json
@@ -129,7 +130,7 @@ class JSONCommonInterfaceTest < Test::Unit::TestCase
     assert_equal nil, JSON.load(nil)
     assert_equal nil, JSON.load('')
   ensure
-    tempfile.close!
+    tempfile&.close!
   end
 
   def test_load_with_proc

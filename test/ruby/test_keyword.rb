@@ -42,7 +42,7 @@ class TestKeywordArguments < Test::Unit::TestCase
   end
 
 
-  define_method(:f4) {|str: "foo", num: 424242| [str, num] }
+  define_method(:f4, &Ractor.make_shareable(proc {|str: "foo", num: 424242| [str, num] }))
 
   def test_f4
     assert_equal(["foo", 424242], f4)
@@ -54,7 +54,7 @@ class TestKeywordArguments < Test::Unit::TestCase
   end
 
 
-  define_method(:f5) {|str: "foo", num: 424242, **h| [str, num, h] }
+  define_method(:f5, &Ractor.make_shareable(proc {|str: "foo", num: 424242, **h| [str, num, h] }))
 
   def test_f5
     assert_equal(["foo", 424242, {}], f5)
@@ -98,9 +98,9 @@ class TestKeywordArguments < Test::Unit::TestCase
     assert_equal([[1, 2, 3], "bar", 424242, {}], f7(1, 2, 3, str: "bar"))
   end
 
-  define_method(:f8) { |opt = :ion, *rest, key: :word|
+  define_method(:f8, &Ractor.make_shareable(proc { |opt = :ion, *rest, key: :word|
     [opt, rest, key]
-  }
+  }))
 
   def test_f8
     assert_equal([:ion, [], :word], f8)
@@ -912,61 +912,63 @@ class TestKeywordArguments < Test::Unit::TestCase
   end
 
   def test_Thread_new_kwsplat
-    Thread.report_on_exception = false
-    kw = {}
-    h = {:a=>1}
-    h2 = {'a'=>1}
-    h3 = {'a'=>1, :a=>1}
+    begin
+      Thread.report_on_exception = false
+      kw = {}
+      h = {:a=>1}
+      h2 = {'a'=>1}
+      h3 = {'a'=>1, :a=>1}
 
-    t = Thread
-    f = -> { true }
-    assert_equal(true, t.new(**{}, &f).value)
-    assert_equal(true, t.new(**kw, &f).value)
-    assert_raise(ArgumentError) { t.new(**h, &f).value }
-    assert_raise(ArgumentError) { t.new(a: 1, &f).value }
-    assert_raise(ArgumentError) { t.new(**h2, &f).value }
-    assert_raise(ArgumentError) { t.new(**h3, &f).value }
+      t = Thread
+      f = -> { true }
+      assert_equal(true, t.new(**{}, &f).value)
+      assert_equal(true, t.new(**kw, &f).value)
+      assert_raise(ArgumentError) { t.new(**h, &f).value }
+      assert_raise(ArgumentError) { t.new(a: 1, &f).value }
+      assert_raise(ArgumentError) { t.new(**h2, &f).value }
+      assert_raise(ArgumentError) { t.new(**h3, &f).value }
 
-    f = ->(a) { a }
-    assert_raise(ArgumentError) { t.new(**{}, &f).value }
-    assert_raise(ArgumentError) { t.new(**kw, &f).value }
-    assert_equal(h, t.new(**h, &f).value)
-    assert_equal(h, t.new(a: 1, &f).value)
-    assert_equal(h2, t.new(**h2, &f).value)
-    assert_equal(h3, t.new(**h3, &f).value)
-    assert_equal(h3, t.new(a: 1, **h2, &f).value)
+      f = ->(a) { a }
+      assert_raise(ArgumentError) { t.new(**{}, &f).value }
+      assert_raise(ArgumentError) { t.new(**kw, &f).value }
+      assert_equal(h, t.new(**h, &f).value)
+      assert_equal(h, t.new(a: 1, &f).value)
+      assert_equal(h2, t.new(**h2, &f).value)
+      assert_equal(h3, t.new(**h3, &f).value)
+      assert_equal(h3, t.new(a: 1, **h2, &f).value)
 
-    f = ->(**x) { x }
-    assert_equal(kw, t.new(**{}, &f).value)
-    assert_equal(kw, t.new(**kw, &f).value)
-    assert_equal(h, t.new(**h, &f).value)
-    assert_equal(h, t.new(a: 1, &f).value)
-    assert_equal(h2, t.new(**h2, &f).value)
-    assert_equal(h3, t.new(**h3, &f).value)
-    assert_equal(h3, t.new(a: 1, **h2, &f).value)
-    assert_raise(ArgumentError) { t.new(h, &f).value }
-    assert_raise(ArgumentError) { t.new(h2, &f).value }
-    assert_raise(ArgumentError) { t.new(h3, &f).value }
+      f = ->(**x) { x }
+      assert_equal(kw, t.new(**{}, &f).value)
+      assert_equal(kw, t.new(**kw, &f).value)
+      assert_equal(h, t.new(**h, &f).value)
+      assert_equal(h, t.new(a: 1, &f).value)
+      assert_equal(h2, t.new(**h2, &f).value)
+      assert_equal(h3, t.new(**h3, &f).value)
+      assert_equal(h3, t.new(a: 1, **h2, &f).value)
+      assert_raise(ArgumentError) { t.new(h, &f).value }
+      assert_raise(ArgumentError) { t.new(h2, &f).value }
+      assert_raise(ArgumentError) { t.new(h3, &f).value }
 
-    f = ->(a, **x) { [a,x] }
-    assert_raise(ArgumentError) { t.new(**{}, &f).value }
-    assert_raise(ArgumentError) { t.new(**kw, &f).value }
-    assert_raise(ArgumentError) { t.new(**h, &f).value }
-    assert_raise(ArgumentError) { t.new(a: 1, &f).value }
-    assert_raise(ArgumentError) { t.new(**h2, &f).value }
-    assert_raise(ArgumentError) { t.new(**h3, &f).value }
-    assert_raise(ArgumentError) { t.new(a: 1, **h2, &f).value }
+      f = ->(a, **x) { [a,x] }
+      assert_raise(ArgumentError) { t.new(**{}, &f).value }
+      assert_raise(ArgumentError) { t.new(**kw, &f).value }
+      assert_raise(ArgumentError) { t.new(**h, &f).value }
+      assert_raise(ArgumentError) { t.new(a: 1, &f).value }
+      assert_raise(ArgumentError) { t.new(**h2, &f).value }
+      assert_raise(ArgumentError) { t.new(**h3, &f).value }
+      assert_raise(ArgumentError) { t.new(a: 1, **h2, &f).value }
 
-    f = ->(a=1, **x) { [a, x] }
-    assert_equal([1, kw], t.new(**{}, &f).value)
-    assert_equal([1, kw], t.new(**kw, &f).value)
-    assert_equal([1, h], t.new(**h, &f).value)
-    assert_equal([1, h], t.new(a: 1, &f).value)
-    assert_equal([1, h2], t.new(**h2, &f).value)
-    assert_equal([1, h3], t.new(**h3, &f).value)
-    assert_equal([1, h3], t.new(a: 1, **h2, &f).value)
-  ensure
-    Thread.report_on_exception = true
+      f = ->(a=1, **x) { [a, x] }
+      assert_equal([1, kw], t.new(**{}, &f).value)
+      assert_equal([1, kw], t.new(**kw, &f).value)
+      assert_equal([1, h], t.new(**h, &f).value)
+      assert_equal([1, h], t.new(a: 1, &f).value)
+      assert_equal([1, h2], t.new(**h2, &f).value)
+      assert_equal([1, h3], t.new(**h3, &f).value)
+      assert_equal([1, h3], t.new(a: 1, **h2, &f).value)
+    ensure
+      Thread.report_on_exception = true if main_ractor?
+    end
   end
 
   def test_Fiber_resume_kwsplat

@@ -2,7 +2,7 @@
 
 use std::{collections::{HashMap, HashSet}, mem};
 
-use crate::{backend::lir::{asm_comment, Assembler}, cruby::{iseq_name, rb_callable_method_entry_t, rb_gc_location, ruby_basic_operators, src_loc, with_vm_lock, IseqPtr, RedefinitionFlag, ID, VALUE}, gc::IseqPayload, hir::Invariant, options::debug, state::{zjit_enabled_p, ZJITState}, virtualmem::CodePtr};
+use crate::{backend::lir::{asm_comment, Assembler}, cruby::{iseq_name, rb_callable_method_entry_t, rb_gc_location, ruby_basic_operators, src_loc, with_vm_lock, IseqPtr, RedefinitionFlag, ID}, gc::IseqPayload, hir::Invariant, options::debug, state::{zjit_enabled_p, ZJITState}, virtualmem::CodePtr};
 use crate::stats::with_time_stat;
 use crate::stats::Counter::invalidation_time_ns;
 use crate::gc::remove_gc_offsets;
@@ -66,42 +66,55 @@ impl Invariants {
     pub fn update_references(&mut self) {
         self.update_ep_escape_iseqs();
         self.update_no_ep_escape_iseq_patch_points();
+        self.update_cme_patch_points();
+    }
+
+    /// Forget an ISEQ when freeing it. We need to because a) if the address is reused, we'd be
+    /// tracking the wrong object b) dead VALUEs in the table can means we risk passing invalid
+    /// VALUEs to `rb_gc_location()`.
+    pub fn forget_iseq(&mut self, iseq: IseqPtr) {
+        // Why not patch the patch points? If the ISEQ is dead then the GC also proved that all
+        // generated code referencing the ISEQ are unreachable. We mark the ISEQs baked into
+        // generated code.
+        self.ep_escape_iseqs.remove(&iseq);
+        self.no_ep_escape_iseq_patch_points.remove(&iseq);
+    }
+
+    /// Forget a CME when freeing it. See [Self::forget_iseq] for reasoning.
+    pub fn forget_cme(&mut self, cme: *const rb_callable_method_entry_t) {
+        self.cme_patch_points.remove(&cme);
     }
 
     /// Update ISEQ references in Invariants::ep_escape_iseqs
     fn update_ep_escape_iseqs(&mut self) {
-        let mut moved: Vec<IseqPtr> = Vec::with_capacity(self.ep_escape_iseqs.len());
-
-        self.ep_escape_iseqs.retain(|&old_iseq| {
-            let new_iseq = unsafe { rb_gc_location(VALUE(old_iseq as usize)) }.0 as IseqPtr;
-            if old_iseq != new_iseq {
-                moved.push(new_iseq);
-            }
-            old_iseq == new_iseq
-        });
-
-        for new_iseq in moved {
-            self.ep_escape_iseqs.insert(new_iseq);
-        }
+        let updated = std::mem::take(&mut self.ep_escape_iseqs)
+            .into_iter()
+            .map(|iseq| unsafe { rb_gc_location(iseq.into()) }.as_iseq())
+            .collect();
+        self.ep_escape_iseqs = updated;
     }
 
     /// Update ISEQ references in Invariants::no_ep_escape_iseq_patch_points
     fn update_no_ep_escape_iseq_patch_points(&mut self) {
-        let mut moved: Vec<(IseqPtr, HashSet<PatchPoint>)> = Vec::with_capacity(self.no_ep_escape_iseq_patch_points.len());
-        let iseqs: Vec<IseqPtr> = self.no_ep_escape_iseq_patch_points.keys().cloned().collect();
+        let updated = std::mem::take(&mut self.no_ep_escape_iseq_patch_points)
+            .into_iter()
+            .map(|(iseq, patch_points)| {
+                let new_iseq = unsafe { rb_gc_location(iseq.into()) };
+                (new_iseq.as_iseq(), patch_points)
+            })
+            .collect();
+        self.no_ep_escape_iseq_patch_points = updated;
+    }
 
-        for old_iseq in iseqs {
-            let new_iseq = unsafe { rb_gc_location(VALUE(old_iseq as usize)) }.0 as IseqPtr;
-            if old_iseq != new_iseq {
-                let patch_points = self.no_ep_escape_iseq_patch_points.remove(&old_iseq).unwrap();
-                // Do not insert patch points to no_ep_escape_iseq_patch_points yet to avoid corrupting keys that had a different ISEQ
-                moved.push((new_iseq, patch_points));
-            }
-        }
-
-        for (new_iseq, patch_points) in moved {
-            self.no_ep_escape_iseq_patch_points.insert(new_iseq, patch_points);
-        }
+    fn update_cme_patch_points(&mut self) {
+        let updated_cme_patch_points = std::mem::take(&mut self.cme_patch_points)
+            .into_iter()
+            .map(|(cme, patch_points)| {
+                let new_cme = unsafe { rb_gc_location(cme.into()) };
+                (new_cme.as_cme(), patch_points)
+            })
+            .collect();
+        self.cme_patch_points = updated_cme_patch_points;
     }
 }
 

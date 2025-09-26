@@ -999,7 +999,7 @@ pub use manual_defs::*;
 pub mod test_utils {
     use std::{ptr::null, sync::Once};
 
-    use crate::{options::{internal_set_num_profiles, rb_zjit_call_threshold, rb_zjit_prepare_options, DEFAULT_CALL_THRESHOLD}, state::{rb_zjit_enabled_p, ZJITState}};
+    use crate::{options::{rb_zjit_call_threshold, rb_zjit_prepare_options, set_call_threshold, DEFAULT_CALL_THRESHOLD}, state::{rb_zjit_enabled_p, ZJITState}};
 
     use super::*;
 
@@ -1026,7 +1026,7 @@ pub mod test_utils {
 
             // The default rb_zjit_profile_threshold is too high, so lower it for HIR tests.
             if rb_zjit_call_threshold == DEFAULT_CALL_THRESHOLD {
-                internal_set_num_profiles(1);
+                set_call_threshold(2);
             }
 
             // Pass command line options so the VM loads core library methods defined in
@@ -1099,9 +1099,20 @@ pub mod test_utils {
         })
     }
 
-    /// Get the ISeq of a specified method
+    /// Get the #inspect of a given Ruby program in Rust string
+    pub fn inspect(program: &str) -> String {
+        let inspect = format!("({program}).inspect");
+        ruby_str_to_rust_string(eval(&inspect))
+    }
+
+    /// Get IseqPtr for a specified method
     pub fn get_method_iseq(recv: &str, name: &str) -> *const rb_iseq_t {
-        let wrapped_iseq = eval(&format!("RubyVM::InstructionSequence.of({}.method(:{}))", recv, name));
+        get_proc_iseq(&format!("{}.method(:{})", recv, name))
+    }
+
+    /// Get IseqPtr for a specified Proc object
+    pub fn get_proc_iseq(obj: &str) -> *const rb_iseq_t {
+        let wrapped_iseq = eval(&format!("RubyVM::InstructionSequence.of({obj})"));
         unsafe { rb_iseqw_to_iseq(wrapped_iseq) }
     }
 
@@ -1216,6 +1227,19 @@ pub fn get_class_name(class: VALUE) -> String {
     }.and_then(|class| unsafe {
         cstr_to_rust_string(rb_class2name(class))
     }).unwrap_or_else(|| "Unknown".to_string())
+}
+
+pub fn class_has_leaf_allocator(class: VALUE) -> bool {
+    // empty_hash_alloc
+    if class == unsafe { rb_cHash } { return true; }
+    // empty_ary_alloc
+    if class == unsafe { rb_cArray } { return true; }
+    // empty_str_alloc
+    if class == unsafe { rb_cString } { return true; }
+    // rb_reg_s_alloc
+    if class == unsafe { rb_cRegexp } { return true; }
+    // rb_class_allocate_instance
+    unsafe { rb_zjit_class_has_default_allocator(class) }
 }
 
 /// Interned ID values for Ruby symbols and method names.

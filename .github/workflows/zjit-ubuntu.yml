@@ -52,9 +52,15 @@ jobs:
       matrix:
         include:
           - test_task: 'check'
-            configure: '--enable-zjit=dev'
             run_opts: '--zjit-call-threshold=1'
             specopts: '-T --zjit-call-threshold=1'
+            configure: '--enable-zjit=dev'
+            test_all_opts: '--seed=39471'
+
+          - test_task: 'check'
+            run_opts: '--zjit-disable-hir-opt --zjit-call-threshold=1'
+            specopts: '-T --zjit-disable-hir-opt -T --zjit-call-threshold=1'
+            configure: '--enable-zjit=dev'
             test_all_opts: '--seed=39471'
 
           - test_task: 'zjit-check' # zjit-test + quick feedback of test_zjit.rb
@@ -152,11 +158,12 @@ jobs:
           echo "RUBY_CRASH_REPORT=$(pwd)/rb_crash_%p.txt" >> $GITHUB_ENV
 
       - name: make ${{ matrix.test_task }}
-        run: >-
-          make -s ${{ matrix.test_task }} ${TESTS:+TESTS="$TESTS"}
-          RUN_OPTS="$RUN_OPTS" MSPECOPT=--debug SPECOPTS="$SPECOPTS"
-          TESTOPTS="$TESTOPTS"
-          ZJIT_BINDGEN_DIFF_OPTS="$ZJIT_BINDGEN_DIFF_OPTS"
+        run: |
+          set -x
+          make -s ${{ matrix.test_task }} ${TESTS:+TESTS="$TESTS"} \
+            RUN_OPTS="$RUN_OPTS" MSPECOPT=--debug SPECOPTS="$SPECOPTS" \
+            TESTOPTS="$TESTOPTS" \
+            ZJIT_BINDGEN_DIFF_OPTS="$ZJIT_BINDGEN_DIFF_OPTS"
         timeout-minutes: 90
         env:
           RUBY_TESTOPTS: '-q --tty=no'

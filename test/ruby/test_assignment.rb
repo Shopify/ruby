@@ -928,6 +928,7 @@ class TestAssignmentGen < Test::Unit::TestCase
   end
 
   def test_assignment
+    omit "ractor incompatible" unless main_ractor?
     syntax = Sentence.expand_syntax(Syntax)
     Sentence.each(syntax, :xassign, 4) {|assign|
       check(assign)

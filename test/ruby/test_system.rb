@@ -118,6 +118,7 @@ class TestSystem < Test::Unit::TestCase
     if /mswin|mingw/ !~ RUBY_PLATFORM
       return
     end
+    omit "Dir.chdir" if multiple_ractors?
 
     Dir.mktmpdir("ruby_script_tmp") do |tmpdir|
       cmd = nil

@@ -308,6 +308,39 @@ class TestZJIT < Test::Unit::TestCase
     }
   end
 
+  def test_optional_arguments
+    assert_compiles '[[1, 2, 3], [10, 20, 3], [100, 200, 300]]', %q{
+      def test(a, b = 2, c = 3)
+        [a, b, c]
+      end
+      [test(1), test(10, 20), test(100, 200, 300)]
+    }
+  end
+
+  def test_optional_arguments_setlocal
+    assert_compiles '[[2, 2], [1, nil]]', %q{
+      def test(a = (b = 2))
+        [a, b]
+      end
+      [test, test(1)]
+    }
+  end
+
+  def test_optional_arguments_cyclic
+    assert_compiles '[nil, 1]', %q{
+      test = proc { |a=a| a }
+      [test.call, test.call(1)]
+    }
+  end
+
+  def test_optional_arguments_side_exit
+    # This leads to FailedOptionalArguments, so not using assert_compiles
+    assert_runs '[:foo, nil, 1]', %q{
+      def test(a = (def foo = nil)) = a
+      [test, (undef :foo), test(1)]
+    }
+  end
+
   def test_getblockparamproxy
     assert_compiles '1', %q{
       def test(&block)
@@ -470,6 +503,13 @@ class TestZJIT < Test::Unit::TestCase
     }
   end
 
+  def test_send_ccall_variadic_with_different_receiver_classes
+    assert_compiles '[true, true]', %q{
+      def test(obj) = obj.start_with?("a")
+      [test("abc"), test(:abc)]
+    }, call_threshold: 2
+  end
+
   def test_forwardable_iseq
     assert_compiles '1', %q{
       def test(...) = 1
@@ -533,7 +573,8 @@ class TestZJIT < Test::Unit::TestCase
   end
 
   def test_invokebuiltin
-    assert_compiles '["."]', %q{
+    # Not using assert_compiles due to register spill
+    assert_runs '["."]', %q{
       def test = Dir.glob(".")
       test
     }
@@ -997,31 +1038,87 @@ class TestZJIT < Test::Unit::TestCase
   end
 
   def test_opt_hash_freeze
-    assert_compiles '{}', <<~RUBY, insns: [:opt_hash_freeze]
+    assert_compiles "[{}, 5]", %q{
+      def test = {}.freeze
+      result = [test]
+      class Hash
+        def freeze = 5
+      end
+      result << test
+    }, insns: [:opt_hash_freeze], call_threshold: 1
+  end
+
+  def test_opt_hash_freeze_rewritten
+    assert_compiles "5", %q{
+      class Hash
+        def freeze = 5
+      end
       def test = {}.freeze
       test
-    RUBY
+    }, insns: [:opt_hash_freeze], call_threshold: 1
   end
 
   def test_opt_ary_freeze
-    assert_compiles '[]', <<~RUBY, insns: [:opt_ary_freeze]
+    assert_compiles "[[], 5]", %q{
+      def test = [].freeze
+      result = [test]
+      class Array
+        def freeze = 5
+      end
+      result << test
+    }, insns: [:opt_ary_freeze], call_threshold: 1
+  end
+
+  def test_opt_ary_freeze_rewritten
+    assert_compiles "5", %q{
+      class Array
+        def freeze = 5
+      end
       def test = [].freeze
       test
-    RUBY
+    }, insns: [:opt_ary_freeze], call_threshold: 1
   end
 
   def test_opt_str_freeze
-    assert_compiles '""', <<~RUBY, insns: [:opt_str_freeze]
-      def test = "".freeze
+    assert_compiles "[\"\", 5]", %q{
+      def test = ''.freeze
+      result = [test]
+      class String
+        def freeze = 5
+      end
+      result << test
+    }, insns: [:opt_str_freeze], call_threshold: 1
+  end
+
+  def test_opt_str_freeze_rewritten
+    assert_compiles "5", %q{
+      class String
+        def freeze = 5
+      end
+      def test = ''.freeze
       test
-    RUBY
+    }, insns: [:opt_str_freeze], call_threshold: 1
   end
 
   def test_opt_str_uminus
-    assert_compiles '""', <<~RUBY, insns: [:opt_str_uminus]
-      def test = -""
+    assert_compiles "[\"\", 5]", %q{
+      def test = -''
+      result = [test]
+      class String
+        def -@ = 5
+      end
+      result << test
+    }, insns: [:opt_str_uminus], call_threshold: 1
+  end
+
+  def test_opt_str_uminus_rewritten
+    assert_compiles "5", %q{
+      class String
+        def -@ = 5
+      end
+      def test = -''
       test
-    RUBY
+    }, insns: [:opt_str_uminus], call_threshold: 1
   end
 
   def test_new_array_empty
@@ -1080,19 +1177,21 @@ class TestZJIT < Test::Unit::TestCase
   def test_new_range_fixnum_both_literals_inclusive
     assert_compiles '1..2', %q{
       def test()
-        (1..2)
+        a = 2
+        (1..a)
       end
       test; test
-    }, call_threshold: 2
+    }, call_threshold: 2, insns: [:newrange]
   end
 
   def test_new_range_fixnum_both_literals_exclusive
     assert_compiles '1...2', %q{
       def test()
-        (1...2)
+        a = 2
+        (1...a)
       end
       test; test
-    }, call_threshold: 2
+    }, call_threshold: 2, insns: [:newrange]
   end
 
   def test_new_range_fixnum_low_literal_inclusive
@@ -1101,7 +1200,7 @@ class TestZJIT < Test::Unit::TestCase
         (1..a)
       end
       test(2); test(3)
-    }, call_threshold: 2
+    }, call_threshold: 2, insns: [:newrange]
   end
 
   def test_new_range_fixnum_low_literal_exclusive
@@ -1110,7 +1209,7 @@ class TestZJIT < Test::Unit::TestCase
         (1...a)
       end
       test(2); test(3)
-    }, call_threshold: 2
+    }, call_threshold: 2, insns: [:newrange]
   end
 
   def test_new_range_fixnum_high_literal_inclusive
@@ -1119,7 +1218,7 @@ class TestZJIT < Test::Unit::TestCase
         (a..10)
       end
       test(2); test(3)
-    }, call_threshold: 2
+    }, call_threshold: 2, insns: [:newrange]
   end
 
   def test_new_range_fixnum_high_literal_exclusive
@@ -1128,7 +1227,7 @@ class TestZJIT < Test::Unit::TestCase
         (a...10)
       end
       test(2); test(3)
-    }, call_threshold: 2
+    }, call_threshold: 2, insns: [:newrange]
   end
 
   def test_if
@@ -1454,7 +1553,9 @@ class TestZJIT < Test::Unit::TestCase
   def test_forty_param_method
     # This used to a trigger a miscomp on A64 due
     # to a memory displacement larger than 9 bits.
-    assert_compiles '1', %Q{
+    # Using assert_runs again due to register spill.
+    # TODO: It should be fixed by register spill support.
+    assert_runs '1', %Q{
       def foo(#{'_,' * 39} n40) = n40
 
       foo(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1)
@@ -2748,6 +2849,28 @@ class TestZJIT < Test::Unit::TestCase
     }, insns: [:opt_send_without_block]
   end
 
+  def test_allocating_in_hir_c_method_is
+    assert_compiles ":k", %q{
+      # Put opt_new in a frame JIT code sets up that doesn't set cfp->pc
+      def a(f) = test(f)
+      def test(f) = (f.new if f)
+      # A parallel couple methods that will set PC at the same stack height
+      def second = third
+      def third = nil
+
+      a(nil)
+      a(nil)
+
+      class Foo
+        def self.new = :k
+      end
+
+      second
+
+      a(Foo)
+    }, call_threshold: 2, insns: [:opt_new]
+  end
+
   private
 
   # Assert that every method call in `test_script` can be compiled by ZJIT
@@ -2761,13 +2884,14 @@ class TestZJIT < Test::Unit::TestCase
   # allows ZJIT to skip compiling methods.
   def assert_runs(expected, test_script, insns: [], assert_compiles: false, **opts)
     pipe_fd = 3
+    disasm_method = :test
 
     script = <<~RUBY
       ret_val = (_test_proc = -> { #{('RubyVM::ZJIT.assert_compiles; ' if assert_compiles)}#{test_script.lstrip} }).call
       result = {
         ret_val:,
         #{ unless insns.empty?
-          'insns: RubyVM::InstructionSequence.of(method(:test)).to_a'
+           "insns: RubyVM::InstructionSequence.of(method(#{disasm_method.inspect})).to_a"
         end}
       }
       IO.open(#{pipe_fd}).write(Marshal.dump(result))
@@ -2781,7 +2905,12 @@ class TestZJIT < Test::Unit::TestCase
 
     unless insns.empty?
       iseq = result.fetch(:insns)
-      assert_equal("YARVInstructionSequence/SimpleDataFormat", iseq.first, "failed to get iseq disassembly")
+      assert_equal(
+        "YARVInstructionSequence/SimpleDataFormat",
+        iseq.first,
+        "Failed to get ISEQ disassembly. " \
+        "Make sure to put code directly under the '#{disasm_method}' method."
+      )
       iseq_insns = iseq.last
 
       expected_insns = Set.new(insns)

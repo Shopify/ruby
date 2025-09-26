@@ -6,20 +6,22 @@ require "timeout"
 
 class TestThread < Test::Unit::TestCase
   class Thread < ::Thread
-    Threads = []
+    def self.Threads
+      Ractor.current[:__THREADS] ||= []
+    end
     def self.new(*)
       th = super
-      Threads << th
+      (Ractor.current[:__THREADS] ||= []) << th
       th
     end
   end
 
   def setup
-    Thread::Threads.clear
+    (Ractor.current[:__THREADS] ||= []).clear
   end
 
   def teardown
-    Thread::Threads.each do |t|
+    Thread.Threads.each do |t|
       t.kill if t.alive?
       begin
         t.join
@@ -255,12 +257,14 @@ class TestThread < Test::Unit::TestCase
 
   { 'FIXNUM_MAX' => RbConfig::LIMITS['FIXNUM_MAX'],
     'UINT64_MAX' => RbConfig::LIMITS['UINT64_MAX'],
-    'INFINITY'   => Float::INFINITY
+    'INFINITY'   => 'Float::INFINITY'
   }.each do |name, limit|
-    define_method("test_join_limit_#{name}") do
-      t = Thread.new {}
-      assert_same t, t.join(limit), "limit=#{limit.inspect}"
-    end
+    class_eval <<-RUBY
+      def test_join_limit_#{name}
+        t = Thread.new {}
+        assert_same t, t.join(#{limit}), %q(limit=#{limit.inspect})
+      end
+    RUBY
   end
 
   { 'minus_1'        => -1,
@@ -269,7 +273,7 @@ class TestThread < Test::Unit::TestCase
     'INT64_MIN'      => RbConfig::LIMITS['INT64_MIN'],
     'minus_INFINITY' => -Float::INFINITY
   }.each do |name, limit|
-    define_method("test_join_limit_negative_#{name}") do
+    define_method("test_join_limit_negative_#{name}", &Ractor.make_shareable(proc do
       t = Thread.new { sleep }
       begin
         assert_nothing_raised(Timeout::Error) do
@@ -280,7 +284,7 @@ class TestThread < Test::Unit::TestCase
       ensure
         t.kill
       end
-    end
+    end))
   end
 
   def test_kill_main_thread
@@ -1239,7 +1243,7 @@ q.pop
     f = nil
     th = Thread.start do
       unless f = IO.popen("-")
-        STDERR.reopen(STDOUT)
+        $stderr.reopen($stdout)
         exit
       end
       Process.wait2(f.pid)
@@ -1588,5 +1592,66 @@ q.pop
 
       frame_for_deadlock_test_2 { t.join }
     INPUT
+  end
+
+  # [Bug #21342]
+  def test_unlock_locked_mutex_with_collected_fiber
+    bug21127 = '[ruby-core:120930] [Bug #21127]'
+    assert_separately([], "#{<<~"begin;"}\n#{<<~'end;'}")
+    begin;
+      5.times do
+        m = Mutex.new
+        Thread.new do
+          m.synchronize do
+          end
+        end.join
+        Fiber.new do
+          GC.start
+          m.lock
+        end.resume
+      end
+    end;
+  end
+
+  def test_unlock_locked_mutex_with_collected_fiber2
+    assert_separately([], "#{<<~"begin;"}\n#{<<~'end;'}")
+    begin;
+      MUTEXES = []
+      5.times do
+        m = Mutex.new
+        Fiber.new do
+          GC.start
+          m.lock
+        end.resume
+        MUTEXES << m
+      end
+      10.times do
+        MUTEXES.clear
+        GC.start
+      end
+    end;
+  end
+
+  def test_mutexes_locked_in_fiber_dont_have_aba_issue_with_new_fibers
+    assert_separately([], "#{<<~"begin;"}\n#{<<~'end;'}")
+    begin;
+      mutexes = 1000.times.map do
+        Mutex.new
+      end
+
+      mutexes.map do |m|
+        Fiber.new do
+          m.lock
+        end.resume
+      end
+
+      GC.start
+
+      1000.times.map do
+        Fiber.new do
+          raise "FAILED!" if mutexes.any?(&:owned?)
+        end.resume
+      end
+    end;
   end
 end

@@ -110,7 +110,6 @@ make_counters! {
         exit_obj_to_string_fallback,
         exit_interrupt,
         exit_stackoverflow,
-        exit_optional_arguments,
         exit_block_param_proxy_modified,
         exit_block_param_proxy_not_iseq_or_ifunc,
     }
@@ -123,8 +122,14 @@ make_counters! {
     compile_error_register_spill_on_alloc,
     compile_error_parse_stack_underflow,
     compile_error_parse_malformed_iseq,
-    compile_error_parse_validation,
+    compile_error_parse_failed_optional_arguments,
     compile_error_parse_not_allowed,
+    compile_error_validation_block_has_no_terminator,
+    compile_error_validation_terminator_not_at_end,
+    compile_error_validation_mismatched_block_arity,
+    compile_error_validation_jump_target_not_in_rpo,
+    compile_error_validation_operand_not_defined,
+    compile_error_validation_duplicate_instruction,
 
     // The number of times YARV instructions are executed on JIT code
     zjit_insn_count,
@@ -138,19 +143,22 @@ make_counters! {
     dynamic_send_type_invokesuper,
 
     // Method call def_type related to fallback to dynamic dispatch
-    send_fallback_iseq,
-    send_fallback_cfunc,
-    send_fallback_attrset,
-    send_fallback_ivar,
-    send_fallback_bmethod,
-    send_fallback_zsuper,
-    send_fallback_alias,
-    send_fallback_undef,
-    send_fallback_not_implemented,
-    send_fallback_optimized,
-    send_fallback_missing,
-    send_fallback_refined,
-    send_fallback_null,
+    unspecialized_def_type_iseq,
+    unspecialized_def_type_cfunc,
+    unspecialized_def_type_attrset,
+    unspecialized_def_type_ivar,
+    unspecialized_def_type_bmethod,
+    unspecialized_def_type_zsuper,
+    unspecialized_def_type_alias,
+    unspecialized_def_type_undef,
+    unspecialized_def_type_not_implemented,
+    unspecialized_def_type_optimized,
+    unspecialized_def_type_missing,
+    unspecialized_def_type_refined,
+    unspecialized_def_type_null,
+
+    send_fallback_polymorphic,
+    send_fallback_no_profiles,
 
     // Writes to the VM frame
     vm_write_pc_count,
@@ -200,6 +208,7 @@ pub enum CompileError {
 /// Return a raw pointer to the exit counter for a given CompileError
 pub fn exit_counter_for_compile_error(compile_error: &CompileError) -> Counter {
     use crate::hir::ParseError::*;
+    use crate::hir::ValidationError::*;
     use crate::stats::CompileError::*;
     use crate::stats::Counter::*;
     match compile_error {
@@ -209,10 +218,18 @@ pub fn exit_counter_for_compile_error(compile_error: &CompileError) -> Counter {
         RegisterSpillOnAlloc  => compile_error_register_spill_on_alloc,
         RegisterSpillOnCCall  => compile_error_register_spill_on_ccall,
         ParseError(parse_error) => match parse_error {
-            StackUnderflow(_) => compile_error_parse_stack_underflow,
-            MalformedIseq(_)  => compile_error_parse_malformed_iseq,
-            Validation(_)     => compile_error_parse_validation,
-            NotAllowed        => compile_error_parse_not_allowed,
+            StackUnderflow(_)       => compile_error_parse_stack_underflow,
+            MalformedIseq(_)        => compile_error_parse_malformed_iseq,
+            FailedOptionalArguments => compile_error_parse_failed_optional_arguments,
+            NotAllowed              => compile_error_parse_not_allowed,
+            Validation(validation) => match validation {
+                BlockHasNoTerminator(_)       => compile_error_validation_block_has_no_terminator,
+                TerminatorNotAtEnd(_, _, _)   => compile_error_validation_terminator_not_at_end,
+                MismatchedBlockArity(_, _, _) => compile_error_validation_mismatched_block_arity,
+                JumpTargetNotInRPO(_)         => compile_error_validation_jump_target_not_in_rpo,
+                OperandNotDefined(_, _, _)    => compile_error_validation_operand_not_defined,
+                DuplicateInstruction(_, _)    => compile_error_validation_duplicate_instruction,
+            },
         }
     }
 }
@@ -252,19 +269,19 @@ pub fn send_fallback_counter(def_type: crate::hir::MethodType) -> Counter {
     use crate::stats::Counter::*;
 
     match def_type {
-        Iseq => send_fallback_iseq,
-        Cfunc => send_fallback_cfunc,
-        Attrset => send_fallback_attrset,
-        Ivar => send_fallback_ivar,
-        Bmethod => send_fallback_bmethod,
-        Zsuper => send_fallback_zsuper,
-        Alias => send_fallback_alias,
-        Undefined => send_fallback_undef,
-        NotImplemented => send_fallback_not_implemented,
-        Optimized => send_fallback_optimized,
-        Missing => send_fallback_missing,
-        Refined => send_fallback_refined,
-        Null => send_fallback_null,
+        Iseq => unspecialized_def_type_iseq,
+        Cfunc => unspecialized_def_type_cfunc,
+        Attrset => unspecialized_def_type_attrset,
+        Ivar => unspecialized_def_type_ivar,
+        Bmethod => unspecialized_def_type_bmethod,
+        Zsuper => unspecialized_def_type_zsuper,
+        Alias => unspecialized_def_type_alias,
+        Undefined => unspecialized_def_type_undef,
+        NotImplemented => unspecialized_def_type_not_implemented,
+        Optimized => unspecialized_def_type_optimized,
+        Missing => unspecialized_def_type_missing,
+        Refined => unspecialized_def_type_refined,
+        Null => unspecialized_def_type_null,
     }
 }
 

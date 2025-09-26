@@ -284,7 +284,7 @@ class TestRand < Test::Unit::TestCase
         IO.pipe do |re, we|
           p1 = fork {
             re.close
-            STDERR.reopen(we)
+            $stderr.reopen(we)
             w.puts(block.call.to_s)
           }
           we.close

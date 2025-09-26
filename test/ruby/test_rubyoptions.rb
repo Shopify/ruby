@@ -43,6 +43,10 @@ class TestRubyOptions < Test::Unit::TestCase
     }
   end
 
+  def setup
+    omit "separate process" unless main_ractor?
+  end
+
   def test_source_file
     assert_in_out_err([], "", [], [])
   end

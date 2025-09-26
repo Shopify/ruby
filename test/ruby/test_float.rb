@@ -657,7 +657,7 @@ class TestFloat < Test::Unit::TestCase
     -18446744073709551616.8,
     -18446744073709551617.0,
     -18446744073709551618.0,
-  ]
+  ].freeze
 
   def test_truncate
     VS.each {|f|
@@ -867,6 +867,7 @@ class TestFloat < Test::Unit::TestCase
   end
 
   def test_invalid_str
+    omit "under_gc_stress" if multiple_ractors?
     bug4310 = '[ruby-core:34820]'
     assert_raise(ArgumentError, bug4310) {under_gc_stress {Float('a'*10000)}}
   end

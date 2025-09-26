@@ -203,10 +203,12 @@ module TestStruct
     o.a = o
     assert_match(/^#<struct a=#<struct #<.*?>:...>>$/, o.inspect)
 
-    @Struct.new("Foo", :a)
-    o = @Struct::Foo.new(1)
-    assert_equal("#<struct #@Struct::Foo a=1>", o.inspect)
-    @Struct.instance_eval { remove_const(:Foo) }
+    unless multiple_ractors?
+      @Struct.new("Foo", :a)
+      o = @Struct::Foo.new(1)
+      assert_equal("#<struct #@Struct::Foo a=1>", o.inspect)
+      @Struct.instance_eval { remove_const(:Foo) }
+    end
 
     klass = @Struct.new(:a, :b)
     o = klass.new(1, 2)

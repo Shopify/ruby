@@ -8,7 +8,6 @@ class Class
 end
 
 class TestBasicInstructions < Test::Unit::TestCase
-
   def test_immediates
     assert_equal((1==1), true)
     assert_equal((1==2), false)

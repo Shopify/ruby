@@ -282,22 +282,21 @@ impl CodeBlock {
         self.mem_block.borrow_mut().mark_all_executable();
     }
 
-    /// Return the disasm of generated code for testing
+    /// Call a func with the disasm of generated code for testing
+    #[allow(unused_variables)]
     #[cfg(test)]
-    pub fn disasm(&self) -> String {
+    pub fn with_disasm<T>(&self, func: T) where T: Fn(String) {
         #[cfg(feature = "disasm")]
         {
             let start_addr = self.get_ptr(0).raw_addr(self);
             let end_addr = self.get_write_ptr().raw_addr(self);
-            crate::disasm::disasm_addr_range(self, start_addr, end_addr)
+            func(crate::disasm::disasm_addr_range(self, start_addr, end_addr));
         }
-        #[cfg(not(feature = "disasm"))]
-        unreachable!("zjit-test should enable disasm feature")
     }
 
     /// Return the hex dump of generated code for testing
     #[cfg(test)]
-    pub fn string(&self) -> String {
+    pub fn hexdump(&self) -> String {
         format!("{:x}", self)
     }
 }
@@ -318,19 +317,13 @@ impl fmt::LowerHex for CodeBlock {
 impl CodeBlock {
     /// Stubbed CodeBlock for testing. Can't execute generated code.
     pub fn new_dummy() -> Self {
-        const DEFAULT_MEM_SIZE: usize = 1024;
+        const DEFAULT_MEM_SIZE: usize = 1024 * 1024;
         CodeBlock::new_dummy_sized(DEFAULT_MEM_SIZE)
     }
 
     pub fn new_dummy_sized(mem_size: usize) -> Self {
-        use std::ptr::NonNull;
         use crate::virtualmem::*;
-        use crate::virtualmem::tests::TestingAllocator;
-
-        let alloc = TestingAllocator::new(mem_size);
-        let mem_start: *const u8 = alloc.mem_start();
-        let virt_mem = VirtualMem::new(alloc, 1, NonNull::new(mem_start as *mut u8).unwrap(), mem_size, 128 * 1024 * 1024);
-
+        let virt_mem = VirtualMem::alloc(mem_size, None);
         Self::new(Rc::new(RefCell::new(virt_mem)), false)
     }
 }

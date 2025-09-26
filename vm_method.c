@@ -754,7 +754,9 @@ rb_clear_all_refinement_method_cache(void)
 void
 rb_method_table_insert(VALUE klass, struct rb_id_table *table, ID method_id, const rb_method_entry_t *me)
 {
-    rb_method_table_insert0(klass, table, method_id, me, RB_TYPE_P(klass, T_ICLASS) && !RICLASS_OWNS_M_TBL_P(klass));
+    RB_VM_LOCKING() {
+        rb_method_table_insert0(klass, table, method_id, me, RB_TYPE_P(klass, T_ICLASS) && !RICLASS_OWNS_M_TBL_P(klass));
+    }
 }
 
 void
@@ -857,6 +859,17 @@ rb_free_method_entry_vm_weak_references(const rb_method_entry_t *me)
 void
 rb_free_method_entry(const rb_method_entry_t *me)
 {
+#if USE_ZJIT
+    if (METHOD_ENTRY_CACHED(me)) {
+        rb_zjit_cme_free((const rb_callable_method_entry_t *)me);
+    }
+#endif
+
+#if USE_YJIT
+    // YJIT rb_yjit_root_mark() roots CMEs in `Invariants`,
+    // to remove from `Invariants` here.
+#endif
+
     rb_method_definition_release(me->def);
 }
 
@@ -1545,7 +1558,9 @@ method_added(VALUE klass, ID mid)
 void
 rb_add_method(VALUE klass, ID mid, rb_method_type_t type, void *opts, rb_method_visibility_t visi)
 {
-    rb_method_entry_make(klass, mid, klass, visi, type, NULL, mid, opts);
+    RB_VM_LOCKING() {
+        rb_method_entry_make(klass, mid, klass, visi, type, NULL, mid, opts);
+    }
 
     if (type != VM_METHOD_TYPE_UNDEF && type != VM_METHOD_TYPE_REFINED) {
         method_added(klass, mid);
@@ -1570,11 +1585,14 @@ static rb_method_entry_t *
 method_entry_set(VALUE klass, ID mid, const rb_method_entry_t *me,
                  rb_method_visibility_t visi, VALUE defined_class)
 {
-    rb_method_entry_t *newme = rb_method_entry_make(klass, mid, defined_class, visi,
-                                                    me->def->type, me->def, 0, NULL);
-    if (newme == me) {
-        me->def->no_redef_warning = TRUE;
-        METHOD_ENTRY_FLAGS_SET(newme, visi, FALSE);
+    rb_method_entry_t *newme;
+    RB_VM_LOCKING() {
+        newme = rb_method_entry_make(klass, mid, defined_class, visi,
+                me->def->type, me->def, 0, NULL);
+        if (newme == me) {
+            me->def->no_redef_warning = TRUE;
+            METHOD_ENTRY_FLAGS_SET(newme, visi, FALSE);
+        }
     }
 
     method_added(klass, mid);

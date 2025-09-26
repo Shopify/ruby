@@ -311,8 +311,8 @@ class TestDefined < Test::Unit::TestCase
     assert_nil(x.b?)
     assert_equal([], $")
   ensure
-    $".replace(loaded)
-    $:.replace(loadpath)
+    $".replace(loaded) if loaded
+    $:.replace(loadpath) if loadpath
   end
 
   def test_exception
@@ -371,6 +371,7 @@ class TestDefined < Test::Unit::TestCase
   end
 
   def test_super_in_basic_object
+    run_ensure = true
     BasicObject.class_eval do
       def a
         defined?(super)
@@ -381,7 +382,7 @@ class TestDefined < Test::Unit::TestCase
   ensure
     BasicObject.class_eval do
       undef_method :a if defined?(a)
-    end
+    end if run_ensure
   end
 
   def test_super_toplevel

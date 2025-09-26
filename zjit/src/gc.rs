@@ -35,10 +35,18 @@ impl IseqPayload {
     }
 }
 
+/// Set of CodePtrs for an ISEQ
+#[derive(Clone, Debug, PartialEq)]
+pub struct IseqCodePtrs {
+    /// Entry for the interpreter
+    pub start_ptr: CodePtr,
+    /// Entries for JIT-to-JIT calls
+    pub jit_entry_ptrs: Vec<CodePtr>,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum IseqStatus {
-    /// CodePtr has the JIT code address of the first block
-    Compiled(CodePtr),
+    Compiled(IseqCodePtrs),
     CantCompile(CompileError),
     NotCompiled,
 }
@@ -118,6 +126,27 @@ pub extern "C" fn rb_zjit_iseq_update_references(payload: *mut c_void) {
         }
     };
     with_time_stat(gc_time_ns, || iseq_update_references(payload));
+}
+
+/// GC callback for finalizing an ISEQ
+#[unsafe(no_mangle)]
+pub extern "C" fn rb_zjit_iseq_free(iseq: IseqPtr) {
+    if !ZJITState::has_instance() {
+        return;
+    }
+    // TODO(Shopify/ruby#682): Free `IseqPayload`
+    let invariants = ZJITState::get_invariants();
+    invariants.forget_iseq(iseq);
+}
+
+/// GC callback for finalizing a CME
+#[unsafe(no_mangle)]
+pub extern "C" fn rb_zjit_cme_free(cme: *const rb_callable_method_entry_struct) {
+    if !ZJITState::has_instance() {
+        return;
+    }
+    let invariants = ZJITState::get_invariants();
+    invariants.forget_cme(cme);
 }
 
 /// GC callback for updating object references after all object moves

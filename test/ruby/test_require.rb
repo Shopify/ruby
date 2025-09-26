@@ -142,48 +142,53 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_require_path_home_1
-    env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
-    pathname_too_long = /pathname too long \(ignored\).*\(LoadError\)/m
+    begin
+      env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
+      pathname_too_long = /pathname too long \(ignored\).*\(LoadError\)/m
 
-    ENV["RUBYPATH"] = "~"
-    ENV["HOME"] = "/foo" * 1024
-    assert_in_out_err(%w(-S -w test_ruby_test_require), "", [], pathname_too_long)
+      ENV["RUBYPATH"] = "~"
+      ENV["HOME"] = "/foo" * 1024
+      assert_in_out_err(%w(-S -w test_ruby_test_require), "", [], pathname_too_long)
 
-  ensure
-    env_rubypath ? ENV["RUBYPATH"] = env_rubypath : ENV.delete("RUBYPATH")
-    env_home ? ENV["HOME"] = env_home : ENV.delete("HOME")
+    ensure
+      env_rubypath ? ENV["RUBYPATH"] = env_rubypath : ENV.delete("RUBYPATH")
+      env_home ? ENV["HOME"] = env_home : ENV.delete("HOME")
+    end
   end
 
   def test_require_path_home_2
-    env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
-    pathname_too_long = /pathname too long \(ignored\).*\(LoadError\)/m
+    begin
+      env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
+      pathname_too_long = /pathname too long \(ignored\).*\(LoadError\)/m
 
-    ENV["RUBYPATH"] = "~" + "/foo" * 1024
-    ENV["HOME"] = "/foo"
-    assert_in_out_err(%w(-S -w test_ruby_test_require), "", [], pathname_too_long)
-
-  ensure
-    env_rubypath ? ENV["RUBYPATH"] = env_rubypath : ENV.delete("RUBYPATH")
-    env_home ? ENV["HOME"] = env_home : ENV.delete("HOME")
+      ENV["RUBYPATH"] = "~" + "/foo" * 1024
+      ENV["HOME"] = "/foo"
+      assert_in_out_err(%w(-S -w test_ruby_test_require), "", [], pathname_too_long)
+    ensure
+      env_rubypath ? ENV["RUBYPATH"] = env_rubypath : ENV.delete("RUBYPATH")
+      env_home ? ENV["HOME"] = env_home : ENV.delete("HOME")
+    end
   end
 
   def test_require_path_home_3
-    env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
+    begin
+      env_rubypath, env_home = ENV["RUBYPATH"], ENV["HOME"]
 
-    Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
-      t.puts "p :ok"
-      t.close
+      Tempfile.create(["test_ruby_test_require", ".rb"]) {|t|
+        t.puts "p :ok"
+        t.close
 
-      ENV["RUBYPATH"] = "~"
-      ENV["HOME"] = t.path
-      assert_in_out_err(%w(-S test_ruby_test_require), "", [], /\(LoadError\)/)
+        ENV["RUBYPATH"] = "~"
+        ENV["HOME"] = t.path
+        assert_in_out_err(%w(-S test_ruby_test_require), "", [], /\(LoadError\)/)
 
-      ENV["HOME"], name = File.split(t.path)
-      assert_in_out_err(["-S", name], "", %w(:ok), [])
-    }
-  ensure
-    env_rubypath ? ENV["RUBYPATH"] = env_rubypath : ENV.delete("RUBYPATH")
-    env_home ? ENV["HOME"] = env_home : ENV.delete("HOME")
+        ENV["HOME"], name = File.split(t.path)
+        assert_in_out_err(["-S", name], "", %w(:ok), [])
+      }
+    ensure
+      env_rubypath ? ENV["RUBYPATH"] = env_rubypath : ENV.delete("RUBYPATH")
+      env_home ? ENV["HOME"] = env_home : ENV.delete("HOME")
+    end
   end
 
   def test_require_with_unc
@@ -217,18 +222,20 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def assert_syntax_error_backtrace
-    loaded_features = $LOADED_FEATURES.dup
-    Dir.mktmpdir do |tmp|
-      req = File.join(tmp, "test.rb")
-      File.write(req, ",\n")
-      e = assert_raise_with_message(SyntaxError, /unexpected/) {
-        yield req
-      }
-      assert_not_nil(bt = e.backtrace, "no backtrace")
-      assert_not_empty(bt.find_all {|b| b.start_with? __FILE__}, proc {bt.inspect})
+    begin
+      loaded_features = $LOADED_FEATURES.dup
+      Dir.mktmpdir do |tmp|
+        req = File.join(tmp, "test.rb")
+        File.write(req, ",\n")
+        e = assert_raise_with_message(SyntaxError, /unexpected/) {
+          yield req
+        }
+        assert_not_nil(bt = e.backtrace, "no backtrace")
+        assert_not_empty(bt.find_all {|b| b.start_with? __FILE__}, proc {bt.inspect})
+      end
+    ensure
+      $LOADED_FEATURES.replace loaded_features
     end
-  ensure
-    $LOADED_FEATURES.replace loaded_features
   end
 
   def test_require_syntax_error
@@ -460,29 +467,31 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_relative
-    load_path = $:.dup
-    loaded_featrures = $LOADED_FEATURES.dup
+    begin
+      load_path = $:.dup
+      loaded_featrures = $LOADED_FEATURES.dup
 
-    $:.delete(".")
-    Dir.mktmpdir do |tmp|
-      Dir.chdir(tmp) do
-        Dir.mkdir('x')
-        File.open('x/t.rb', 'wb') {}
-        File.open('x/a.rb', 'wb') {|f| f.puts("require_relative('t.rb')")}
-        assert require('./x/t.rb')
-        assert !require(File.expand_path('x/t.rb'))
-        assert_nothing_raised(LoadError) {require('./x/a.rb')}
-        assert_raise(LoadError) {require('x/t.rb')}
-        File.unlink(*Dir.glob('x/*'))
-        Dir.rmdir("#{tmp}/x")
-        $:.replace(load_path)
-        load_path = nil
-        assert(!require('tmpdir'))
+      $:.delete(".")
+      Dir.mktmpdir do |tmp|
+        Dir.chdir(tmp) do
+          Dir.mkdir('x')
+          File.open('x/t.rb', 'wb') {}
+          File.open('x/a.rb', 'wb') {|f| f.puts("require_relative('t.rb')")}
+          assert require('./x/t.rb')
+          assert !require(File.expand_path('x/t.rb'))
+          assert_nothing_raised(LoadError) {require('./x/a.rb')}
+          assert_raise(LoadError) {require('x/t.rb')}
+          File.unlink(*Dir.glob('x/*'))
+          Dir.rmdir("#{tmp}/x")
+          $:.replace(load_path)
+          load_path = nil
+          assert(!require('tmpdir'))
+        end
       end
+    ensure
+      $:.replace(load_path) if load_path
+      $LOADED_FEATURES.replace loaded_featrures
     end
-  ensure
-    $:.replace(load_path) if load_path
-    $LOADED_FEATURES.replace loaded_featrures
   end
 
   def test_relative_symlink
@@ -608,20 +617,22 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_loaded_features_encoding
-    bug6377 = '[ruby-core:44750]'
-    loadpath = $:.dup
-    features = $".dup
-    $".clear
-    $:.clear
-    Dir.mktmpdir {|tmp|
-      $: << tmp
-      open(File.join(tmp, "foo.rb"), "w") {}
-      require "foo"
-      assert_send([Encoding, :compatible?, tmp, $"[0]], bug6377)
-    }
-  ensure
-    $:.replace(loadpath)
-    $".replace(features)
+    begin
+      bug6377 = '[ruby-core:44750]'
+      loadpath = $:.dup
+      features = $".dup
+      $".clear
+      $:.clear
+      Dir.mktmpdir {|tmp|
+        $: << tmp
+        open(File.join(tmp, "foo.rb"), "w") {}
+        require "foo"
+        assert_send([Encoding, :compatible?, tmp, $"[0]], bug6377)
+      }
+    ensure
+      $:.replace(loadpath)
+      $".replace(features)
+    end
   end
 
   def test_default_loaded_features_encoding
@@ -981,39 +992,43 @@ class TestRequire < Test::Unit::TestCase
   end
 
   def test_provide_in_required_file
-    paths, loaded = $:.dup, $".dup
-    Dir.mktmpdir do |tmp|
-      provide = File.realdirpath("provide.rb", tmp)
-      File.write(File.join(tmp, "target.rb"), "raise __FILE__\n")
-      File.write(provide, '$" << '"'target.rb'\n")
-      $:.replace([tmp])
-      assert(require("provide"))
-      assert(!require("target"))
-      assert_equal($".pop, provide)
-      assert_equal($".pop, "target.rb")
-    end
-  ensure
-    $:.replace(paths)
-    $".replace(loaded)
-  end
-
-  if defined?($LOAD_PATH.resolve_feature_path)
-    def test_resolve_feature_path
+    begin
       paths, loaded = $:.dup, $".dup
       Dir.mktmpdir do |tmp|
-        Tempfile.create(%w[feature .rb], tmp) do |file|
-          file.close
-          path = File.realpath(file.path)
-          dir, base = File.split(path)
-          $:.unshift(dir)
-          assert_equal([:rb, path], $LOAD_PATH.resolve_feature_path(base))
-          $".push(path)
-          assert_equal([:rb, path], $LOAD_PATH.resolve_feature_path(base))
-        end
+        provide = File.realdirpath("provide.rb", tmp)
+        File.write(File.join(tmp, "target.rb"), "raise __FILE__\n")
+        File.write(provide, '$" << '"'target.rb'\n")
+        $:.replace([tmp])
+        assert(require("provide"))
+        assert(!require("target"))
+        assert_equal($".pop, provide)
+        assert_equal($".pop, "target.rb")
       end
     ensure
       $:.replace(paths)
       $".replace(loaded)
+    end
+  end
+
+  if defined?($LOAD_PATH.resolve_feature_path)
+    def test_resolve_feature_path
+      begin
+        paths, loaded = $:.dup, $".dup
+        Dir.mktmpdir do |tmp|
+          Tempfile.create(%w[feature .rb], tmp) do |file|
+            file.close
+            path = File.realpath(file.path)
+            dir, base = File.split(path)
+            $:.unshift(dir)
+            assert_equal([:rb, path], $LOAD_PATH.resolve_feature_path(base))
+            $".push(path)
+            assert_equal([:rb, path], $LOAD_PATH.resolve_feature_path(base))
+          end
+        end
+      ensure
+        $:.replace(paths)
+        $".replace(loaded)
+      end
     end
 
     def test_resolve_feature_path_with_missing_feature
