@@ -2220,6 +2220,8 @@ ractor_local_value_set(rb_execution_context_t *ec, VALUE self, VALUE sym, VALUE 
         tbl = cr->idkey_local_storage = rb_id_table_create(2);
     }
     rb_id_table_insert(tbl, id, val);
+    RB_OBJ_WRITTEN(self, Qundef, val);
+
     return val;
 }
 
@@ -2267,7 +2269,7 @@ ractor_local_value_store_if_absent(rb_execution_context_t *ec, VALUE self, VALUE
     }
 
     if (!cr->local_storage_store_lock) {
-        cr->local_storage_store_lock = rb_mutex_new();
+        RB_OBJ_WRITE(self, &cr->local_storage_store_lock, rb_mutex_new());
     }
 
     return rb_mutex_synchronize(cr->local_storage_store_lock, ractor_local_value_store_i, (VALUE)&data);
