@@ -177,7 +177,13 @@ rb_gc_vm_unlock_no_barrier(unsigned int lev, const char *file, int line)
 void
 rb_gc_vm_barrier(void)
 {
+    unsigned long long before;
+    unsigned long long after;
+    before = rb_barrier_time_taken_ns;
     rb_vm_barrier();
+    after = rb_barrier_time_taken_ns;
+    rb_gc_barrier_time_taken_ns += (after - before);
+    rb_gc_barrier_serial++;
 }
 
 #if USE_MODULAR_GC

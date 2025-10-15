@@ -7420,6 +7420,12 @@ enum gc_stat_sym {
     gc_stat_sym_oldmalloc_increase_bytes_limit,
 #endif
     gc_stat_sym_weak_references_count,
+
+    gc_stat_sym_barrier_time_taken_ns,
+    gc_stat_sym_barrier_serial,
+    gc_stat_sym_gc_barrier_time_taken_ns,
+    gc_stat_sym_gc_barrier_serial,
+
 #if RGENGC_PROFILE
     gc_stat_sym_total_generated_normal_object_count,
     gc_stat_sym_total_generated_shady_object_count,
@@ -7471,6 +7477,10 @@ setup_gc_stat_symbols(void)
         S(oldmalloc_increase_bytes_limit);
 #endif
         S(weak_references_count);
+        S(barrier_time_taken_ns);
+        S(barrier_serial);
+        S(gc_barrier_time_taken_ns);
+        S(gc_barrier_serial);
 #if RGENGC_PROFILE
         S(total_generated_normal_object_count);
         S(total_generated_shady_object_count);
@@ -7493,6 +7503,7 @@ VALUE
 rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
 {
     rb_objspace_t *objspace = objspace_ptr;
+    rb_vm_t *vm = GET_VM();
     VALUE hash = Qnil, key = Qnil;
 
     setup_gc_stat_symbols();
@@ -7543,6 +7554,12 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(remembered_wb_unprotected_objects_limit, objspace->rgengc.uncollectible_wb_unprotected_objects_limit);
     SET(old_objects, objspace->rgengc.old_objects);
     SET(old_objects_limit, objspace->rgengc.old_objects_limit);
+
+    SET(barrier_time_taken_ns, ULL2NUM(rb_barrier_time_taken_ns));
+    SET(barrier_serial, UINT2NUM(vm->ractor.sched.barrier_serial));
+    SET(gc_barrier_time_taken_ns, ULL2NUM(rb_gc_barrier_time_taken_ns));
+    SET(gc_barrier_serial, UINT2NUM(rb_gc_barrier_serial));
+
 #if RGENGC_ESTIMATE_OLDMALLOC
     SET(oldmalloc_increase_bytes, objspace->rgengc.oldmalloc_increase);
     SET(oldmalloc_increase_bytes_limit, objspace->rgengc.oldmalloc_increase_limit);
