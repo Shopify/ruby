@@ -835,6 +835,10 @@ typedef struct rb_vm_struct {
     VALUE require_stack;
 } rb_vm_t;
 
+RUBY_EXTERN unsigned long long rb_barrier_time_taken_ns;
+RUBY_EXTERN unsigned long long rb_gc_barrier_time_taken_ns;
+RUBY_EXTERN unsigned int rb_gc_barrier_serial;
+
 /* default values */
 
 #define RUBY_VM_SIZE_ALIGN 4096

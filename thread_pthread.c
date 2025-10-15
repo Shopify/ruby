@@ -1398,6 +1398,23 @@ ractor_sched_barrier_completed_p(rb_vm_t *vm)
     return (vm->ractor.sched.running_cnt - vm->ractor.sched.barrier_waiting_cnt) == 1;
 }
 
+static inline unsigned long long time_diff_ns(struct timespec before, struct timespec after) {
+    unsigned long long total = 0;
+    total += (after.tv_nsec - before.tv_nsec);
+    total += (after.tv_sec - before.tv_sec) * (1000 * 1000 * 1000);
+    return total;
+}
+
+static inline void gettime(struct timespec *time) {
+    if (clock_gettime(CLOCK_MONOTONIC, time) == -1) {
+        rb_sys_fail("clock_gettime");
+    }
+}
+
+unsigned long long rb_barrier_time_taken_ns = 0;
+unsigned long long rb_gc_barrier_time_taken_ns = 0;
+unsigned int rb_gc_barrier_serial = 0;
+
 void
 rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
 {
@@ -1407,6 +1424,9 @@ rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
     VM_ASSERT(vm->ractor.sched.barrier_waiting_cnt == 0);
     VM_ASSERT(vm->ractor.sched.barrier_ractor == NULL);
     VM_ASSERT(vm->ractor.sched.barrier_lock_rec == 0);
+    struct timespec barrier_time_start;
+    struct timespec barrier_time_end;
+    gettime(&barrier_time_start);
 
     RUBY_DEBUG_LOG("start serial:%u", vm->ractor.sched.barrier_serial);
 
@@ -1451,6 +1471,9 @@ rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
         rb_native_mutex_lock(&vm->ractor.sync.lock);
         vm->ractor.sync.lock_rec = lock_rec;
         vm->ractor.sync.lock_owner = cr;
+
+        gettime(&barrier_time_end);
+        rb_barrier_time_taken_ns += time_diff_ns(barrier_time_start, barrier_time_end);
     }
 
     // do not release ractor_sched_lock and threre is no newly added (resumed) thread
