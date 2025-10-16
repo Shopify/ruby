@@ -1591,7 +1591,8 @@ rb_proc_ractor_make_shareable_continue(VALUE self, VALUE replace_self)
         VALUE block_self = vm_block_self(&proc->block);
         if (!RB_SPECIAL_CONST_P(block_self) &&
                 !RB_OBJ_SHAREABLE_P(block_self)) {
-            if (!rb_ractor_shareable_p_continue(block_self)) {
+            VALUE chain = rb_ary_new();
+            if (!rb_ractor_shareable_p_continue(block_self, chain)) {
                 return false;
             }
         }
