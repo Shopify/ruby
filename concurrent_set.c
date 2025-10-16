@@ -105,6 +105,22 @@ concurrent_set_probe_next(struct concurrent_set_probe *probe)
     return probe->idx;
 }
 
+static inline unsigned long long time_diff_ns(struct timespec before, struct timespec after) {
+    unsigned long long total = 0;
+    total += (after.tv_nsec - before.tv_nsec);
+    total += (after.tv_sec - before.tv_sec) * (1000 * 1000 * 1000);
+    return total;
+}
+
+static inline void gettime(struct timespec *time) {
+    if (clock_gettime(CLOCK_MONOTONIC, time) == -1) {
+        rb_sys_fail("clock_gettime");
+    }
+}
+
+unsigned long long rb_concur_set_resize_time_taken_ns;
+unsigned int rb_concur_set_resize_serial;
+
 static void
 concurrent_set_try_resize_without_locking(VALUE old_set_obj, VALUE *set_obj_ptr)
 {
@@ -112,6 +128,10 @@ concurrent_set_try_resize_without_locking(VALUE old_set_obj, VALUE *set_obj_ptr)
     if (RUBY_ATOMIC_VALUE_LOAD(*set_obj_ptr) != old_set_obj) {
         return;
     }
+
+    struct timespec resize_time_start;
+    struct timespec resize_time_end;
+    gettime(&resize_time_start);
 
     struct concurrent_set *old_set = RTYPEDDATA_GET_DATA(old_set_obj);
 
@@ -177,6 +197,10 @@ concurrent_set_try_resize_without_locking(VALUE old_set_obj, VALUE *set_obj_ptr)
     RUBY_ATOMIC_VALUE_SET(*set_obj_ptr, new_set_obj);
 
     RB_GC_GUARD(old_set_obj);
+    gettime(&resize_time_end);
+
+    rb_concur_set_resize_time_taken_ns += time_diff_ns(resize_time_start, resize_time_end);
+    rb_concur_set_resize_serial++;
 }
 
 static void

@@ -838,6 +838,8 @@ typedef struct rb_vm_struct {
 RUBY_EXTERN unsigned long long rb_barrier_time_taken_ns;
 RUBY_EXTERN unsigned long long rb_gc_barrier_time_taken_ns;
 RUBY_EXTERN unsigned int rb_gc_barrier_serial;
+RUBY_EXTERN unsigned int rb_concur_set_resize_serial;
+RUBY_EXTERN unsigned long long rb_concur_set_resize_time_taken_ns;
 
 /* default values */
 
