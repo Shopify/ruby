@@ -895,6 +895,15 @@ assert_equal '333', %q{
   a + b + c + d + e + f
 }
 
+assert_equal '', %q{
+  a = [-> {}]
+  begin
+    Ractor.make_shareable(a)
+  rescue Ractor::IsolationError
+    puts $!.to_s.lines[1..]
+  end
+}
+
 assert_equal '["instance-variable", "instance-variable", nil]', %q{
   class C
     @iv1 = ""

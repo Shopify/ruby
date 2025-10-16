@@ -1521,10 +1521,16 @@ rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
 
         if (proc->block.type != block_type_iseq) rb_raise(rb_eRuntimeError, "not supported yet");
 
-        if (!rb_ractor_shareable_p(vm_block_self(&proc->block))) {
-            rb_raise(rb_eRactorIsolationError,
-                     "Proc's self is not shareable: %" PRIsVALUE,
-                     self);
+        VALUE block_self = vm_block_self(&proc->block);
+        if (!RB_SPECIAL_CONST_P(block_self) &&
+                !RB_OBJ_SHAREABLE_P(block_self)) {
+            VALUE chain = rb_ary_new();
+            if (!rb_ractor_shareable_p_continue(block_self, chain)) {
+                rb_raise(rb_eRactorIsolationError,
+                        "Proc's self is not shareable: %" PRIsVALUE "\n"
+                        "Reference chain: %" PRIsVALUE,
+                        self, chain);
+            }
         }
 
         VALUE read_only_variables = Qfalse;
