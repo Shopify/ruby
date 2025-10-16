@@ -1291,7 +1291,7 @@ VALUE rb_proc_ractor_make_shareable(VALUE proc, VALUE replace_self);
 RUBY_SYMBOL_EXPORT_END
 
 // TODO: what does it mean that rb_proc_ractor_make_shareable is exported?
-bool rb_proc_ractor_make_shareable_continue(VALUE proc, VALUE replace_self);
+bool rb_proc_ractor_make_shareable_continue(VALUE self, VALUE replace_self, VALUE chain);
 
 typedef struct {
     VALUE flags; /* imemo header */

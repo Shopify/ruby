@@ -986,6 +986,25 @@ assert_equal '333', %q{
   a + b + c + d + e + f
 }
 
+assert_equal 'Reference chain: [[:hash_default, #<Proc>], [:ivar, "@ivar", #<Foo @ivar={}>]]', %q{
+  class Foo
+    def initialize
+      @ivar = Hash.new { |h, k| h[k] = [] } # the default proc holds self, an instance of Foo
+    end
+    def inspect = "#<Foo @ivar=#{@ivar.inspect}>"
+  end
+
+  class Proc
+    def inspect = "#<Proc>"
+  end
+
+  begin
+    Ractor.make_shareable Foo.new
+  rescue Ractor::IsolationError
+    $!.to_s.lines[1..].join
+  end
+}
+
 assert_equal '["instance-variable", "instance-variable", nil]', %q{
   class C
     @iv1 = ""

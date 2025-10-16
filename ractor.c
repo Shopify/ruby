@@ -1197,9 +1197,9 @@ struct obj_traverse_data {
     rb_obj_traverse_leave_func leave_func;
 
     st_table *rec;
-    VALUE rec_hash;
+    VALUE rec_hash;  // objects seen during traversal
+    VALUE chain; // chain of objects that led to currently traversed object, for error reporting
 };
-
 
 struct obj_traverse_callback_data {
     bool stop;
@@ -1214,11 +1214,13 @@ obj_hash_traverse_i(VALUE key, VALUE val, VALUE ptr)
     struct obj_traverse_callback_data *d = (struct obj_traverse_callback_data *)ptr;
 
     if (obj_traverse_i(key, d->data)) {
+        if (d->data->chain) rb_ary_push(d->data->chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("hash_key")), key));
         d->stop = true;
         return ST_STOP;
     }
 
     if (obj_traverse_i(val, d->data)) {
+        if (d->data->chain) rb_ary_push(d->data->chain, rb_ary_new_from_args(4, rb_id2sym(rb_intern("hash_at")), key, val));
         d->stop = true;
         return ST_STOP;
     }
@@ -1252,6 +1254,7 @@ obj_traverse_ivar_foreach_i(ID key, VALUE val, st_data_t ptr)
     struct obj_traverse_callback_data *d = (struct obj_traverse_callback_data *)ptr;
 
     if (obj_traverse_i(val, d->data)) {
+        if (d->data->chain) rb_ary_push(d->data->chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("ivar")), rb_id2str(key)));
         d->stop = true;
         return ST_STOP;
     }
@@ -1281,7 +1284,10 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
         .data = data,
     };
     rb_ivar_foreach(obj, obj_traverse_ivar_foreach_i, (st_data_t)&d);
-    if (d.stop) return 1;
+    if (d.stop) {
+        if (data->chain) rb_ary_push(rb_ary_entry(data->chain, -1), obj);
+        return 1;
+    }
 
     switch (BUILTIN_TYPE(obj)) {
       // no child node
@@ -1303,14 +1309,21 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
 
             for (int i = 0; i < RARRAY_LENINT(obj); i++) {
                 VALUE e = rb_ary_entry(obj, i);
-                if (obj_traverse_i(e, data)) return 1;
+                if (obj_traverse_i(e, data)) {
+                    if (data->chain) rb_ary_push(data->chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("array_index")), INT2FIX(i)));
+                    return 1;
+                }
             }
         }
         break;
 
       case T_HASH:
         {
-            if (obj_traverse_i(RHASH_IFNONE(obj), data)) return 1;
+            const VALUE ifnone = RHASH_IFNONE(obj);
+            if (obj_traverse_i(ifnone, data)) {
+                if (data->chain) rb_ary_push(data->chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("hash_default")), ifnone));
+                return 1;
+            }
 
             struct obj_traverse_callback_data d = {
                 .stop = false,
@@ -1398,12 +1411,14 @@ static int
 rb_obj_traverse(VALUE obj,
                 rb_obj_traverse_enter_func enter_func,
                 rb_obj_traverse_leave_func leave_func,
-                rb_obj_traverse_final_func final_func)
+                rb_obj_traverse_final_func final_func,
+                VALUE chain)
 {
     struct obj_traverse_data data = {
         .enter_func = enter_func,
         .leave_func = leave_func,
         .rec = NULL,
+        .chain = chain,
     };
 
     if (obj_traverse_i(obj, &data)) return 1;
@@ -1521,7 +1536,7 @@ mark_shareable(VALUE obj)
 VALUE
 rb_ractor_make_shareable(VALUE obj)
 {
-    if (rb_obj_traverse(obj, make_shareable_check_shareable, null_leave, mark_shareable)) {
+    if (rb_obj_traverse(obj, make_shareable_check_shareable, null_leave, mark_shareable, Qfalse)) {
         rb_raise(rb_eRactorError, "can not make shareable object for %+"PRIsVALUE, obj);
     }
     return obj;
@@ -1575,11 +1590,11 @@ shareable_p_enter(VALUE obj)
 }
 
 bool
-rb_ractor_shareable_p_continue(VALUE obj)
+rb_ractor_shareable_p_continue(VALUE obj, VALUE chain)
 {
     if (rb_obj_traverse(obj,
                         shareable_p_enter, null_leave,
-                        mark_shareable)) {
+                        mark_shareable, chain)) {
         return false;
     }
     else {
@@ -1617,7 +1632,7 @@ static VALUE
 ractor_reset_belonging(VALUE obj)
 {
 #if RACTOR_CHECK_MODE > 0
-    rb_obj_traverse(obj, reset_belonging_enter, null_leave, NULL);
+    rb_obj_traverse(obj, reset_belonging_enter, null_leave, NULL, Qfalse);
 #endif
     return obj;
 }

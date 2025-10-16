@@ -148,7 +148,7 @@ VALUE rb_ractor_ensure_shareable(VALUE obj, VALUE name);
 RUBY_SYMBOL_EXPORT_BEGIN
 void rb_ractor_finish_marking(void);
 
-bool rb_ractor_shareable_p_continue(VALUE obj);
+bool rb_ractor_shareable_p_continue(VALUE obj, VALUE chain);
 
 // THIS FUNCTION SHOULD NOT CALL WHILE INCREMENTAL MARKING!!
 // This function is for T_DATA::free_func
