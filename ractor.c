@@ -1536,8 +1536,12 @@ mark_shareable(VALUE obj)
 VALUE
 rb_ractor_make_shareable(VALUE obj)
 {
-    if (rb_obj_traverse(obj, make_shareable_check_shareable, null_leave, mark_shareable, Qfalse)) {
-        rb_raise(rb_eRactorError, "can not make shareable object for %+"PRIsVALUE, obj);
+    VALUE chain = rb_ary_new();
+    if (rb_obj_traverse(obj, make_shareable_check_shareable, null_leave, mark_shareable, chain)) {
+        rb_raise(rb_eRactorError,
+                "can not make shareable object for %+"PRIsVALUE "\n"
+                "Reference chain: %" PRIsVALUE,
+                obj, chain);
     }
     return obj;
 }
