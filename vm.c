@@ -1566,16 +1566,18 @@ rb_proc_isolate(VALUE self)
 VALUE
 rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
 {
-    if (!rb_proc_ractor_make_shareable_continue(self, replace_self)) {
+    VALUE chain = rb_ary_new();
+    if (!rb_proc_ractor_make_shareable_continue(self, replace_self, chain)) {
         rb_raise(rb_eRactorIsolationError,
-                    "Proc's self is not shareable: %" PRIsVALUE,
-                    self);
+                    "Proc's self is not shareable: %" PRIsVALUE "\n"
+                    "Reference chain: %" PRIsVALUE,
+                    self, chain);
     }
     return self;
 }
 
 bool
-rb_proc_ractor_make_shareable_continue(VALUE self, VALUE replace_self)
+rb_proc_ractor_make_shareable_continue(VALUE self, VALUE replace_self, VALUE chain)
 {
     const rb_iseq_t *iseq = vm_proc_iseq(self);
 
@@ -1591,8 +1593,8 @@ rb_proc_ractor_make_shareable_continue(VALUE self, VALUE replace_self)
         VALUE block_self = vm_block_self(&proc->block);
         if (!RB_SPECIAL_CONST_P(block_self) &&
                 !RB_OBJ_SHAREABLE_P(block_self)) {
-            VALUE chain = rb_ary_new();
             if (!rb_ractor_shareable_p_continue(block_self, chain)) {
+                rb_ary_push(chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("proc_self")), block_self));
                 return false;
             }
         }

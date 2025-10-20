@@ -1186,7 +1186,7 @@ enum obj_traverse_iterator_result {
     traverse_stop,
 };
 
-typedef enum obj_traverse_iterator_result (*rb_obj_traverse_enter_func)(VALUE obj);
+typedef enum obj_traverse_iterator_result (*rb_obj_traverse_enter_func)(VALUE obj, VALUE chain);
 typedef enum obj_traverse_iterator_result (*rb_obj_traverse_leave_func)(VALUE obj);
 typedef enum obj_traverse_iterator_result (*rb_obj_traverse_final_func)(VALUE obj);
 
@@ -1267,7 +1267,7 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
 {
     if (RB_SPECIAL_CONST_P(obj)) return 0;
 
-    switch (data->enter_func(obj)) {
+    switch (data->enter_func(obj, data->chain)) {
       case traverse_cont: break;
       case traverse_skip: return 0; // skip children
       case traverse_stop: return 1; // stop search
@@ -1467,7 +1467,7 @@ make_shareable_check_shareable_freeze(VALUE obj, enum obj_traverse_iterator_resu
 static int obj_refer_only_shareables_p(VALUE obj);
 
 static enum obj_traverse_iterator_result
-make_shareable_check_shareable(VALUE obj)
+make_shareable_check_shareable(VALUE obj, VALUE chain)
 {
     VM_ASSERT(!SPECIAL_CONST_P(obj));
 
@@ -1490,7 +1490,9 @@ make_shareable_check_shareable(VALUE obj)
             }
         }
         else if (rb_obj_is_proc(obj)) {
-            rb_proc_ractor_make_shareable(obj, Qundef);
+            if (!rb_proc_ractor_make_shareable_continue(obj, Qundef, chain)) {
+                return traverse_stop;
+            }
             return traverse_cont;
         }
         else {
@@ -1573,7 +1575,7 @@ rb_ractor_ensure_main_ractor(const char *msg)
 }
 
 static enum obj_traverse_iterator_result
-shareable_p_enter(VALUE obj)
+shareable_p_enter(VALUE obj, VALUE chain)
 {
     if (RB_OBJ_SHAREABLE_P(obj)) {
         return traverse_skip;
@@ -1614,7 +1616,7 @@ rb_ractor_setup_belonging(VALUE obj)
 }
 
 static enum obj_traverse_iterator_result
-reset_belonging_enter(VALUE obj)
+reset_belonging_enter(VALUE obj, VALUE chain)
 {
     if (rb_ractor_shareable_p(obj)) {
         return traverse_skip;

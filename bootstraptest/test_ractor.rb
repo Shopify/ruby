@@ -986,7 +986,8 @@ assert_equal '333', %q{
   a + b + c + d + e + f
 }
 
-assert_equal 'Reference chain: [[:hash_default, #<Proc>], [:ivar, "@ivar", #<Foo @ivar={}>]]', %q{
+assert_equal 'Reference chain: [[:hash_default, #<Proc>], [:ivar, "@ivar", #<Foo @ivar={}>], [:proc_self, #<Foo @ivar={}>], ' \
+    '[:hash_default, #<Proc>], [:ivar, "@ivar", #<Foo @ivar={}>], [:ivar, "@foo", #<Bar @foo=#<Foo @ivar={}>>]]', %q{
   class Foo
     def initialize
       @ivar = Hash.new { |h, k| h[k] = [] } # the default proc holds self, an instance of Foo
@@ -994,13 +995,20 @@ assert_equal 'Reference chain: [[:hash_default, #<Proc>], [:ivar, "@ivar", #<Foo
     def inspect = "#<Foo @ivar=#{@ivar.inspect}>"
   end
 
+  class Bar
+    def initialize
+      @foo = Foo.new # holds an instance of an object that owns a Proc
+    end
+    def inspect = "#<Bar @foo=#{@foo.inspect}>"
+  end
+
   class Proc
     def inspect = "#<Proc>"
   end
 
   begin
-    Ractor.make_shareable Foo.new
-  rescue Ractor::IsolationError
+    Ractor.make_shareable Bar.new
+  rescue Ractor::Error
     $!.to_s.lines[1..].join
   end
 }
