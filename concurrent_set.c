@@ -203,8 +203,8 @@ concurrent_set_try_resize_without_locking(VALUE old_set_obj, VALUE *set_obj_ptr)
     rb_concur_set_resize_serial++;
 }
 
-static void
-concurrent_set_try_resize(VALUE old_set_obj, VALUE *set_obj_ptr)
+NOINLINE(static void
+concurrent_set_try_resize(VALUE old_set_obj, VALUE *set_obj_ptr))
 {
     RB_VM_LOCKING() {
         concurrent_set_try_resize_without_locking(old_set_obj, set_obj_ptr);

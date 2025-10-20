@@ -384,7 +384,7 @@ nt_free_stack(void *mstack)
         ch->free_stack[ch->free_stack_pos++] = idx;
 
         // clear the stack pages
-        nt_madvise_free_or_dontneed(stack, nt_thread_stack_size());
+        /*nt_madvise_free_or_dontneed(stack, nt_thread_stack_size());*/
     }
     rb_native_mutex_unlock(&nt_machine_stack_lock);
 }

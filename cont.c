@@ -709,7 +709,7 @@ fiber_pool_stack_acquire(struct fiber_pool * fiber_pool)
 }
 
 // We advise the operating system that the stack memory pages are no longer being used.
-// This introduce some performance overhead but allows system to relaim memory when there is pressure.
+// This introduce some performance overhead but allows system to reclaim memory when there is pressure.
 static inline void
 fiber_pool_stack_free(struct fiber_pool_stack * stack)
 {
@@ -806,9 +806,9 @@ fiber_pool_stack_release(struct fiber_pool_stack * stack)
 #else
         // This is entirely optional, but clears the dirty flag from the stack
         // memory, so it won't get swapped to disk when there is memory pressure:
-        if (stack->pool->free_stacks) {
-            fiber_pool_stack_free(&vacancy->stack);
-        }
+        /*if (stack->pool->free_stacks) {*/
+            /*fiber_pool_stack_free(&vacancy->stack);*/
+        /*}*/
 #endif
     }
     RB_VM_LOCK_LEAVE();
