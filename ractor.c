@@ -1186,7 +1186,8 @@ enum obj_traverse_iterator_result {
     traverse_stop,
 };
 
-typedef enum obj_traverse_iterator_result (*rb_obj_traverse_enter_func)(VALUE obj, VALUE chain);
+struct obj_traverse_data;
+typedef enum obj_traverse_iterator_result (*rb_obj_traverse_enter_func)(VALUE obj, struct obj_traverse_data *data);
 typedef enum obj_traverse_iterator_result (*rb_obj_traverse_leave_func)(VALUE obj);
 typedef enum obj_traverse_iterator_result (*rb_obj_traverse_final_func)(VALUE obj);
 
@@ -1198,7 +1199,8 @@ struct obj_traverse_data {
 
     st_table *rec;
     VALUE rec_hash;  // objects seen during traversal
-    VALUE chain; // chain of objects that led to currently traversed object, for error reporting
+    VALUE chain; // chain of objects built in the failure case
+    VALUE exception; // exception raised trying to freeze an object
 };
 
 struct obj_traverse_callback_data {
@@ -1267,7 +1269,7 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
 {
     if (RB_SPECIAL_CONST_P(obj)) return 0;
 
-    switch (data->enter_func(obj, data->chain)) {
+    switch (data->enter_func(obj, data)) {
       case traverse_cont: break;
       case traverse_skip: return 0; // skip children
       case traverse_stop: return 1; // stop search
@@ -1412,16 +1414,21 @@ rb_obj_traverse(VALUE obj,
                 rb_obj_traverse_enter_func enter_func,
                 rb_obj_traverse_leave_func leave_func,
                 rb_obj_traverse_final_func final_func,
-                VALUE chain)
+                VALUE chain,
+                VALUE *exception)
 {
     struct obj_traverse_data data = {
         .enter_func = enter_func,
         .leave_func = leave_func,
         .rec = NULL,
         .chain = chain,
+        .exception = Qfalse,
     };
 
-    if (obj_traverse_i(obj, &data)) return 1;
+    if (obj_traverse_i(obj, &data)) {
+        if (exception && data.exception) *exception = data.exception;
+        return 1;
+    }
     if (final_func && data.rec) {
         struct rb_obj_traverse_final_data f = {final_func, 0};
         st_foreach(data.rec, obj_traverse_final_i, (st_data_t)&f);
@@ -1446,14 +1453,44 @@ allow_frozen_shareable_p(VALUE obj)
     return false;
 }
 
+static VALUE
+try_freeze(VALUE obj)
+{
+    rb_funcall(obj, idFreeze, 0);
+    return Qtrue;
+}
+
+struct rescue_freeze_data {
+    VALUE exception;
+};
+
+static VALUE
+rescue_freeze(VALUE data, VALUE freeze_exception)
+{
+    struct rescue_freeze_data *rescue_freeze_data = (struct rescue_freeze_data *)data;
+    VALUE exception = rb_exc_new3(rb_eRactorError, rb_str_new_cstr("failed to call #freeze"));
+    rb_ivar_set(exception, rb_intern("cause"), freeze_exception);
+    rescue_freeze_data->exception = exception;
+    return Qfalse;
+}
+
 static enum obj_traverse_iterator_result
-make_shareable_check_shareable_freeze(VALUE obj, enum obj_traverse_iterator_result result)
+make_shareable_check_shareable_freeze(VALUE obj, enum obj_traverse_iterator_result result, struct obj_traverse_data *data)
 {
     if (!RB_OBJ_FROZEN_RAW(obj)) {
-        rb_funcall(obj, idFreeze, 0);
+        struct rescue_freeze_data rescue_freeze_data = { 0 };
+        if (!rb_rescue(try_freeze, obj, rescue_freeze, (VALUE)&rescue_freeze_data)) {
+            data->exception = rescue_freeze_data.exception;
+            return traverse_stop;
+        }
 
         if (UNLIKELY(!RB_OBJ_FROZEN_RAW(obj))) {
-            rb_raise(rb_eRactorError, "#freeze does not freeze object correctly");
+            VALUE exception = rb_exc_new3(rb_eRactorError, rb_str_new_cstr("#freeze does not freeze object correctly"));
+            if (rescue_freeze_data.exception) {
+                rb_ivar_set(exception, rb_intern("cause"), rescue_freeze_data.exception);
+            }
+            data->exception = exception;
+            return traverse_stop;
         }
 
         if (RB_OBJ_SHAREABLE_P(obj)) {
@@ -1467,7 +1504,7 @@ make_shareable_check_shareable_freeze(VALUE obj, enum obj_traverse_iterator_resu
 static int obj_refer_only_shareables_p(VALUE obj);
 
 static enum obj_traverse_iterator_result
-make_shareable_check_shareable(VALUE obj, VALUE chain)
+make_shareable_check_shareable(VALUE obj, struct obj_traverse_data *data)
 {
     VM_ASSERT(!SPECIAL_CONST_P(obj));
 
@@ -1480,7 +1517,7 @@ make_shareable_check_shareable(VALUE obj, VALUE chain)
 
         if (type->flags & RUBY_TYPED_FROZEN_SHAREABLE_NO_REC) {
             if (obj_refer_only_shareables_p(obj)) {
-                make_shareable_check_shareable_freeze(obj, traverse_skip);
+                make_shareable_check_shareable_freeze(obj, traverse_skip, data);
                 RB_OBJ_SET_SHAREABLE(obj);
                 return traverse_skip;
             }
@@ -1490,7 +1527,7 @@ make_shareable_check_shareable(VALUE obj, VALUE chain)
             }
         }
         else if (rb_obj_is_proc(obj)) {
-            if (!rb_proc_ractor_make_shareable_continue(obj, Qundef, chain)) {
+            if (!rb_proc_ractor_make_shareable_continue(obj, Qundef, data->chain)) {
                 return traverse_stop;
             }
             return traverse_cont;
@@ -1521,7 +1558,7 @@ make_shareable_check_shareable(VALUE obj, VALUE chain)
         break;
     }
 
-    return make_shareable_check_shareable_freeze(obj, traverse_cont);
+    return make_shareable_check_shareable_freeze(obj, traverse_cont, data);
 }
 
 static enum obj_traverse_iterator_result
@@ -1539,7 +1576,14 @@ VALUE
 rb_ractor_make_shareable(VALUE obj)
 {
     VALUE chain = rb_ary_new();
-    if (rb_obj_traverse(obj, make_shareable_check_shareable, null_leave, mark_shareable, chain)) {
+    VALUE exception = Qnil;
+    if (rb_obj_traverse(obj, make_shareable_check_shareable, null_leave, mark_shareable, chain, &exception)) {
+        if (exception != Qnil) {
+            VALUE message = rb_check_funcall(exception, rb_intern("message"), 0, 0);
+            exception = rb_funcall(exception, rb_intern("exception"), 1, rb_sprintf("%s\n"
+                        "Reference chain: %" PRIsVALUE, RSTRING_PTR(message), chain));
+            rb_exc_raise(exception);
+        }
         rb_raise(rb_eRactorError,
                 "can not make shareable object for %+"PRIsVALUE "\n"
                 "Reference chain: %" PRIsVALUE,
@@ -1575,7 +1619,7 @@ rb_ractor_ensure_main_ractor(const char *msg)
 }
 
 static enum obj_traverse_iterator_result
-shareable_p_enter(VALUE obj, VALUE chain)
+shareable_p_enter(VALUE obj, struct obj_traverse_data *data)
 {
     if (RB_OBJ_SHAREABLE_P(obj)) {
         return traverse_skip;
@@ -1600,7 +1644,7 @@ rb_ractor_shareable_p_continue(VALUE obj, VALUE chain)
 {
     if (rb_obj_traverse(obj,
                         shareable_p_enter, null_leave,
-                        mark_shareable, chain)) {
+                        mark_shareable, chain, NULL)) {
         return false;
     }
     else {
@@ -1616,7 +1660,7 @@ rb_ractor_setup_belonging(VALUE obj)
 }
 
 static enum obj_traverse_iterator_result
-reset_belonging_enter(VALUE obj, VALUE chain)
+reset_belonging_enter(VALUE obj, struct obj_traverse_data *data)
 {
     if (rb_ractor_shareable_p(obj)) {
         return traverse_skip;
@@ -1638,7 +1682,7 @@ static VALUE
 ractor_reset_belonging(VALUE obj)
 {
 #if RACTOR_CHECK_MODE > 0
-    rb_obj_traverse(obj, reset_belonging_enter, null_leave, NULL, Qfalse);
+    rb_obj_traverse(obj, reset_belonging_enter, null_leave, NULL, Qfalse, NULL);
 #endif
     return obj;
 }

@@ -1013,6 +1013,19 @@ assert_equal 'Reference chain: [[:hash_default, #<Proc>], [:ivar, "@ivar", #<Foo
   end
 }
 
+assert_equal '[true, true]', %q{
+  class Foo
+    undef_method :freeze
+  end
+
+  begin
+    Ractor.make_shareable Foo.new
+  rescue Ractor::Error
+    cause = $!.cause
+    [cause.class == NoMethodError, cause.name == :freeze]
+  end
+}
+
 assert_equal '["instance-variable", "instance-variable", nil]', %q{
   class C
     @iv1 = ""
