@@ -209,7 +209,6 @@ concurrent_set_try_resize_without_locking(VALUE old_set_obj, VALUE *set_obj_ptr)
     gettime(&resize_time_end);
     unsigned long long time_diff = time_diff_ns(resize_time_start, resize_time_end);
     rb_concur_set_resize_time_taken_ns += time_diff;
-    unsigned long long time_taken_ms = time_diff / (1000 * 1000);
     rb_concur_set_resize_serial++;
 }
 
@@ -322,7 +321,9 @@ rb_concurrent_set_find_or_insert(VALUE *set_obj_ptr, VALUE key, void *data)
 
             rb_atomic_t prev_size = RUBY_ATOMIC_FETCH_ADD(set->size, 1);
 
-            if (UNLIKELY(prev_size > set->capacity / 2)) {
+            double load_factor = (1.0 * prev_size) / (set->capacity);
+
+            if (UNLIKELY(load_factor >= 0.75)) {
                 concurrent_set_try_resize(set_obj, set_obj_ptr);
 
                 goto retry;
