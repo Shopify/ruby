@@ -7442,6 +7442,9 @@ enum gc_stat_sym {
     gc_stat_sym_concurrent_set_resize_time_taken_ns,
     gc_stat_sym_concurrent_set_resize_serial,
 
+    gc_stat_sym_fstring_table_size,
+    gc_stat_sym_fstring_table_capacity,
+
 #if RGENGC_PROFILE
     gc_stat_sym_total_generated_normal_object_count,
     gc_stat_sym_total_generated_shady_object_count,
@@ -7501,6 +7504,9 @@ setup_gc_stat_symbols(void)
 
         S(concurrent_set_resize_time_taken_ns);
         S(concurrent_set_resize_serial);
+
+        S(fstring_table_size);
+        S(fstring_table_capacity);
 #if RGENGC_PROFILE
         S(total_generated_normal_object_count);
         S(total_generated_shady_object_count);
@@ -7518,6 +7524,10 @@ ns_to_ms(uint64_t ns)
 {
     return ns / (1000 * 1000);
 }
+
+
+rb_atomic_t rb_fstring_table_size(void);
+int rb_fstring_table_capacity(void);
 
 VALUE
 rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
@@ -7575,13 +7585,16 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(old_objects, objspace->rgengc.old_objects);
     SET(old_objects_limit, objspace->rgengc.old_objects_limit);
 
-    SET(barrier_time_taken_ns, ULL2NUM(rb_barrier_time_taken_ns));
-    SET(barrier_serial, UINT2NUM(vm->ractor.sched.barrier_serial));
-    SET(gc_barrier_time_taken_ns, ULL2NUM(rb_gc_barrier_time_taken_ns));
-    SET(gc_barrier_serial, UINT2NUM(rb_gc_barrier_serial));
+    SET(barrier_time_taken_ns, rb_barrier_time_taken_ns);
+    SET(barrier_serial, vm->ractor.sched.barrier_serial);
+    SET(gc_barrier_time_taken_ns, rb_gc_barrier_time_taken_ns);
+    SET(gc_barrier_serial, rb_gc_barrier_serial);
 
-    SET(concurrent_set_resize_time_taken_ns, ULL2NUM(rb_concur_set_resize_time_taken_ns));
-    SET(concurrent_set_resize_serial, UINT2NUM(rb_concur_set_resize_serial));
+    SET(concurrent_set_resize_time_taken_ns, rb_concur_set_resize_time_taken_ns);
+    SET(concurrent_set_resize_serial, rb_concur_set_resize_serial);
+
+    SET(fstring_table_size, rb_fstring_table_size());
+    SET(fstring_table_capacity, rb_fstring_table_capacity());
 
 #if RGENGC_ESTIMATE_OLDMALLOC
     SET(oldmalloc_increase_bytes, objspace->rgengc.oldmalloc_increase);

@@ -618,6 +618,28 @@ rb_fstring_foreach_with_replace(int (*callback)(VALUE *str, void *data), void *d
     }
 }
 
+rb_atomic_t
+rb_fstring_table_size(void)
+{
+    if (fstring_table_obj) {
+        return rb_concurrent_set_size(RUBY_ATOMIC_VALUE_LOAD(fstring_table_obj));
+    }
+    else {
+        return 0;
+    }
+}
+
+int
+rb_fstring_table_capacity(void)
+{
+    if (fstring_table_obj) {
+        return rb_concurrent_set_capacity(RUBY_ATOMIC_VALUE_LOAD(fstring_table_obj));
+    }
+    else {
+        return 0;
+    }
+}
+
 static VALUE
 setup_fake_str(struct RString *fake_str, const char *name, long len, int encidx)
 {

@@ -81,6 +81,14 @@ rb_concurrent_set_size(VALUE set_obj)
     return RUBY_ATOMIC_LOAD(set->size);
 }
 
+int
+rb_concurrent_set_capacity(VALUE set_obj)
+{
+    struct concurrent_set *set = RTYPEDDATA_GET_DATA(set_obj);
+
+    return set->capacity;
+}
+
 struct concurrent_set_probe {
     int idx;
     int d;
@@ -118,8 +126,8 @@ static inline void gettime(struct timespec *time) {
     }
 }
 
-unsigned long long rb_concur_set_resize_time_taken_ns;
-unsigned int rb_concur_set_resize_serial;
+unsigned long long rb_concur_set_resize_time_taken_ns = 0;
+unsigned int rb_concur_set_resize_serial = 0;
 
 static void
 concurrent_set_try_resize_without_locking(VALUE old_set_obj, VALUE *set_obj_ptr)
@@ -149,7 +157,7 @@ concurrent_set_try_resize_without_locking(VALUE old_set_obj, VALUE *set_obj_ptr)
         new_capacity = old_capacity;
     }
 
-    // May cause GC and therefore deletes, so must hapen first.
+    // May cause GC and therefore deletes, so must happen first.
     VALUE new_set_obj = rb_concurrent_set_new(old_set->funcs, new_capacity);
     struct concurrent_set *new_set = RTYPEDDATA_GET_DATA(new_set_obj);
 
@@ -197,9 +205,11 @@ concurrent_set_try_resize_without_locking(VALUE old_set_obj, VALUE *set_obj_ptr)
     RUBY_ATOMIC_VALUE_SET(*set_obj_ptr, new_set_obj);
 
     RB_GC_GUARD(old_set_obj);
-    gettime(&resize_time_end);
 
-    rb_concur_set_resize_time_taken_ns += time_diff_ns(resize_time_start, resize_time_end);
+    gettime(&resize_time_end);
+    unsigned long long time_diff = time_diff_ns(resize_time_start, resize_time_end);
+    rb_concur_set_resize_time_taken_ns += time_diff;
+    unsigned long long time_taken_ms = time_diff / (1000 * 1000);
     rb_concur_set_resize_serial++;
 }
 
