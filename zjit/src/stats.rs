@@ -239,6 +239,19 @@ make_counters! {
     unspecialized_send_def_type_refined,
     unspecialized_send_def_type_null,
 
+    // unsupported parameter features
+    calls_bmethod_non_iseq_proc,
+    calls_callee_param_rest,
+    calls_callee_param_opt,
+    calls_callee_param_kw,
+    calls_callee_param_kwrest,
+    calls_callee_param_block,
+    calls_callee_param_forwardable,
+    calls_callee_bmethod_non_iseq_proc,
+
+    // unsupported caller side features
+    calls_caller_blockarg,
+
     // Writes to the VM frame
     vm_write_pc_count,
     vm_write_sp_count,

@@ -2192,44 +2192,104 @@ impl Function {
                             let send_direct = self.push_insn(block, Insn::SendWithoutBlockDirect { recv, cd, cme, iseq, args, state });
                             self.make_equal_to(insn_id, send_direct);
                         } else if def_type == VM_METHOD_TYPE_BMETHOD {
+                            struct Replacer<'fun> {
+                                function: &'fun mut Function,
+                                block: BlockId,
+                                original_insn: InsnId,
+                                new_insn: Option<InsnId>,
+                                failed: bool,
+                            }
+
+                            impl Replacer<'_> {
+                                /// push an instruction. last insruction pushed will replace the
+                                /// original.
+                                fn push_insn(&mut self, insn: Insn) -> InsnId {
+                                    let id = self.function.push_insn(self.block, insn);
+                                    self.new_insn = Some(id);
+                                    id
+                                }
+
+                                /// committed to replacing the original instruction
+                                fn will_replace(&self) -> bool {
+                                    self.new_insn.is_some()
+                                }
+
+                                /// increment a counter that explains why replacement failed
+                                fn count_failure(&mut self, counter: Counter) {
+                                    assert!( !self.will_replace(), "generated control flow doesn't make sense to fail replacement after pushing a ");
+                                    self.function.push_insn(self.block, Insn::IncrCounter(counter));
+                                    self.failed = true;
+                                }
+                            }
+
+                            impl Drop for Replacer<'_> {
+                                fn drop(&mut self) {
+                                    if let Some(new_insn) = self.new_insn {
+                                        self.function.make_equal_to(self.original_insn, new_insn);
+                                    } else {
+                                        self.function.push_insn_id(self.block, self.original_insn);
+                                    }
+                                }
+
+                            }
+                            fn count_unsupported_params(iseq: *const rb_iseq_t, replacer: &mut Replacer) {
+                                use Counter::*;
+                                if unsafe { rb_get_iseq_flags_has_rest(iseq) }    { replacer.count_failure(calls_callee_param_rest) }
+                                if unsafe { rb_get_iseq_flags_has_opt(iseq) }     { replacer.count_failure(calls_callee_param_opt) }
+                                if unsafe { rb_get_iseq_flags_has_kw(iseq) }      { replacer.count_failure(calls_callee_param_kw) }
+                                if unsafe { rb_get_iseq_flags_has_kwrest(iseq) }  { replacer.count_failure(calls_callee_param_kwrest) }
+                                if unsafe { rb_get_iseq_flags_has_block(iseq) }   { replacer.count_failure(calls_callee_param_block) }
+                                if unsafe { rb_get_iseq_flags_forwardable(iseq) } { replacer.count_failure(calls_callee_param_forwardable) }
+                            }
+
+                            self.set_dynamic_send_reason(insn_id, SendWithoutBlockNotOptimizedMethodType(MethodType::Bmethod));
+                            let mut replacer = Replacer {
+                                function: self,
+                                block,
+                                original_insn: insn_id,
+                                new_insn: None,
+                                failed: false,
+                            };
+
+
                             let procv = unsafe { rb_get_def_bmethod_proc((*cme).def) };
                             let proc = unsafe { rb_jit_get_proc_ptr(procv) };
                             let proc_block = unsafe { &(*proc).block };
                             // Target ISEQ bmethods. Can't handle for example, `define_method(:foo, &:foo)`
                             // which makes a `block_type_symbol` bmethod.
                             if proc_block.type_ != block_type_iseq {
-                                self.set_dynamic_send_reason(insn_id, SendWithoutBlockNotOptimizedMethodType(MethodType::Bmethod));
-                                self.push_insn_id(block, insn_id); continue;
+                                replacer.count_failure(Counter::calls_callee_bmethod_non_iseq_proc);
+                                continue;
                             }
                             let capture = unsafe { proc_block.as_.captured.as_ref() };
                             let iseq = unsafe { *capture.code.iseq.as_ref() };
 
-                            if !can_direct_send(iseq) {
-                                self.set_dynamic_send_reason(insn_id, SendWithoutBlockNotOptimizedMethodType(MethodType::Bmethod));
-                                self.push_insn_id(block, insn_id); continue;
-                            }
+                            count_unsupported_params(iseq, &mut replacer);
+
                             // Can't pass a block to a block for now
                             if (unsafe { rb_vm_ci_flag(ci) } & VM_CALL_ARGS_BLOCKARG) != 0 {
-                                self.set_dynamic_send_reason(insn_id, SendWithoutBlockNotOptimizedMethodType(MethodType::Bmethod));
-                                self.push_insn_id(block, insn_id); continue;
+                                replacer.count_failure(Counter::calls_caller_blockarg);
+                            }
+
+                            if replacer.failed {
+                                continue;
                             }
 
                             // Patch points:
                             // Check for "defined with an un-shareable Proc in a different Ractor"
                             if !procv.shareable_p() {
                                 // TODO(alan): Turn this into a ractor belonging guard to work better in multi ractor mode.
-                                self.push_insn(block, Insn::PatchPoint { invariant: Invariant::SingleRactorMode, state });
+                                replacer.push_insn(Insn::PatchPoint { invariant: Invariant::SingleRactorMode, state });
                             }
-                            self.push_insn(block, Insn::PatchPoint { invariant: Invariant::MethodRedefined { klass, method: mid, cme }, state });
+                            replacer.push_insn(Insn::PatchPoint { invariant: Invariant::MethodRedefined { klass, method: mid, cme }, state });
                             if klass.instance_can_have_singleton_class() {
-                                self.push_insn(block, Insn::PatchPoint { invariant: Invariant::NoSingletonClass { klass }, state });
+                                replacer.push_insn(Insn::PatchPoint { invariant: Invariant::NoSingletonClass { klass }, state });
                             }
 
                             if let Some(profiled_type) = profiled_type {
-                                recv = self.push_insn(block, Insn::GuardType { val: recv, guard_type: Type::from_profiled_type(profiled_type), state });
+                                recv = replacer.push_insn(Insn::GuardType { val: recv, guard_type: Type::from_profiled_type(profiled_type), state });
                             }
-                            let send_direct = self.push_insn(block, Insn::SendWithoutBlockDirect { recv, cd, cme, iseq, args, state });
-                            self.make_equal_to(insn_id, send_direct);
+                            replacer.push_insn(Insn::SendWithoutBlockDirect { recv, cd, cme, iseq, args, state });
                         } else if def_type == VM_METHOD_TYPE_IVAR && args.is_empty() {
                             self.push_insn(block, Insn::PatchPoint { invariant: Invariant::MethodRedefined { klass, method: mid, cme }, state });
                             if klass.instance_can_have_singleton_class() {
@@ -12453,9 +12513,43 @@ mod opt_tests {
           Jump bb2(v4)
         bb2(v6:BasicObject):
           v10:Fixnum[100] = Const Value(100)
+          IncrCounter calls_callee_bmethod_non_iseq_proc
           v12:BasicObject = SendWithoutBlock v6, :identity, v10
           CheckInterrupts
           Return v12
+        ");
+    }
+
+    #[test]
+    fn test_call_fancy_bmethod() {
+        eval("
+            define_method(:fancy) { |_a, *_b, kw: 100, **kw_rest| }
+            def test
+                splat = []
+                fancy(1)
+            end
+            test
+        ");
+        assert_snapshot!(hir_string("test"), @r"
+        fn test@<compiled>:4:
+        bb0():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          v2:NilClass = Const Value(nil)
+          Jump bb2(v1, v2)
+        bb1(v5:BasicObject):
+          EntryPoint JIT(0)
+          v6:NilClass = Const Value(nil)
+          Jump bb2(v5, v6)
+        bb2(v8:BasicObject, v9:NilClass):
+          v14:ArrayExact = NewArray
+          v17:Fixnum[1] = Const Value(1)
+          IncrCounter calls_callee_param_rest
+          IncrCounter calls_callee_param_kw
+          IncrCounter calls_callee_param_kwrest
+          v19:BasicObject = SendWithoutBlock v8, :fancy, v17
+          CheckInterrupts
+          Return v19
         ");
     }
 
