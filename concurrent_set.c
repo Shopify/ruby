@@ -115,8 +115,9 @@ concurrent_set_probe_next(struct concurrent_set_probe *probe)
 
 static inline unsigned long long time_diff_ns(struct timespec before, struct timespec after) {
     unsigned long long total = 0;
-    total += (after.tv_nsec - before.tv_nsec);
-    total += (after.tv_sec - before.tv_sec) * (1000 * 1000 * 1000);
+    total += (after.tv_sec - before.tv_sec) * (1000ULL * 1000 * 1000);
+    total += after.tv_nsec;
+    total -= before.tv_nsec;
     return total;
 }
 
