@@ -38,7 +38,7 @@ RUBY_EXTERN struct rb_ractor_struct *ruby_single_main_ractor; // ractor.c
 static inline bool
 rb_multi_ractor_p(void)
 {
-    if (LIKELY(ruby_single_main_ractor)) {
+    if (ruby_single_main_ractor) {
         // 0 on boot time.
         RUBY_ASSERT(GET_VM()->ractor.cnt <= 1);
         return false;
