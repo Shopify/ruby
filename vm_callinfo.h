@@ -330,7 +330,7 @@ cc_check_class(VALUE klass)
 }
 
 VALUE rb_vm_cc_table_create(size_t capa);
-VALUE rb_vm_cc_table_dup(VALUE old_table);
+VALUE rb_vm_cc_table_dup(VALUE old_table, VALUE klass);
 void rb_vm_cc_table_delete(VALUE table, ID mid);
 
 static inline const struct rb_callcache *
@@ -570,6 +570,9 @@ vm_cc_invalidate(const struct rb_callcache *cc)
 
     *(VALUE *)&cc->klass = Qundef;
     RB_DEBUG_COUNTER_INC(cc_ent_invalidate);
+#ifndef NO_CC_TBL_STATS
+    RUBY_ATOMIC_INC(rb_cc_invalidations);
+#endif
 }
 
 /* calldata */

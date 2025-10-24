@@ -841,6 +841,21 @@ RUBY_EXTERN unsigned int rb_gc_barrier_serial;
 RUBY_EXTERN unsigned int rb_concur_set_resize_serial;
 RUBY_EXTERN unsigned long long rb_concur_set_resize_time_taken_ns;
 
+#ifndef NO_CC_TBL_STATS
+#define CC_TBL_STATS 1
+#else
+#define CC_TBL_STATS 0
+#endif
+
+#if CC_TBL_STATS
+RUBY_EXTERN rb_atomic_t rb_cc_tbl_duplications; // rb_vm_cc_table_dup
+RUBY_EXTERN rb_atomic_t rb_cc_tbl_creations; // rb_vm_cc_table_create
+RUBY_EXTERN rb_atomic_t rb_cc_invalidations; // vm_cc_invalidate
+RUBY_EXTERN unsigned long long rb_cc_tbl_cme_evictions; // vm_evict_cc
+RUBY_EXTERN unsigned long long rb_cc_tbl_frees; // vm_cc_table_free
+RUBY_EXTERN rb_atomic_t rb_cc_tbl_duplications_unshareable_singletons; // vm_cc_table_dup
+#endif
+
 /* default values */
 
 #define RUBY_VM_SIZE_ALIGN 4096

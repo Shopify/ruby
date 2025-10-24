@@ -2075,6 +2075,10 @@ vm_ccs_verify(struct rb_class_cc_entries *ccs, ID mid, VALUE klass)
 
 const rb_callable_method_entry_t *rb_check_overloaded_cme(const rb_callable_method_entry_t *cme, const struct rb_callinfo * const ci);
 
+#if CC_TBL_STATS
+unsigned long long rb_cc_tbl_cme_evictions;
+#endif
+
 static void
 vm_evict_cc(VALUE klass, VALUE cc_tbl, ID mid)
 {
@@ -2095,12 +2099,14 @@ vm_evict_cc(VALUE klass, VALUE cc_tbl, ID mid)
             return;
         }
 
-        VALUE new_table = rb_vm_cc_table_dup(cc_tbl);
+        VALUE new_table = rb_vm_cc_table_dup(cc_tbl, klass);
         rb_vm_cc_table_delete(new_table, mid);
         RB_OBJ_ATOMIC_WRITE(klass, &RCLASS_WRITABLE_CC_TBL(klass), new_table);
+        rb_cc_tbl_cme_evictions+=1;
     }
     else {
         rb_vm_cc_table_delete(cc_tbl, mid);
+        rb_cc_tbl_cme_evictions+=1;
     }
 }
 
@@ -2117,7 +2123,7 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
         cc_tbl = rb_vm_cc_table_create(1);
     }
     else if (rb_multi_ractor_p()) {
-        cc_tbl = rb_vm_cc_table_dup(cc_tbl);
+        cc_tbl = rb_vm_cc_table_dup(cc_tbl, klass);
     }
 
     RB_DEBUG_COUNTER_INC(cc_not_found_in_ccs);

@@ -11,6 +11,14 @@ static int vm_redefinition_check_flag(VALUE klass);
 static void rb_vm_check_redefinition_opt_method(const rb_method_entry_t *me, VALUE klass);
 static inline rb_method_entry_t *lookup_method_table(VALUE klass, ID id);
 
+#if CC_TBL_STATS
+rb_atomic_t rb_cc_tbl_duplications;
+rb_atomic_t rb_cc_tbl_creations;
+rb_atomic_t rb_cc_invalidations;
+unsigned long long rb_cc_tbl_frees;
+rb_atomic_t rb_cc_tbl_duplications_unshareable_singletons;
+#endif
+
 #define object_id           idObject_id
 #define added               idMethod_added
 #define singleton_added     idSingleton_method_added
@@ -83,6 +91,9 @@ vm_cc_table_free(void *data)
 
     rb_id_table_foreach_values(tbl, cc_table_free_i, NULL);
     rb_managed_id_table_type.function.dfree(data);
+#if CC_TBL_STATS
+    rb_cc_tbl_frees++;
+#endif
 }
 
 static enum rb_id_table_iterator_result
@@ -141,6 +152,9 @@ static const rb_data_type_t cc_table_type = {
 VALUE
 rb_vm_cc_table_create(size_t capa)
 {
+#if CC_TBL_STATS
+    RUBY_ATOMIC_INC(rb_cc_tbl_creations);
+#endif
     return rb_managed_id_table_create(&cc_table_type, capa);
 }
 
@@ -167,10 +181,20 @@ vm_cc_table_dup_i(ID key, VALUE old_ccs_ptr, void *data)
 }
 
 VALUE
-rb_vm_cc_table_dup(VALUE old_table)
+rb_vm_cc_table_dup(VALUE old_table, VALUE klass)
 {
     VALUE new_table = rb_vm_cc_table_create(rb_managed_id_table_size(old_table));
     rb_managed_id_table_foreach(old_table, vm_cc_table_dup_i, (void *)new_table);
+#if CC_TBL_STATS
+    RUBY_ATOMIC_INC(rb_cc_tbl_duplications);
+    if (RCLASS_SINGLETON_P(klass)) {
+        VALUE obj = RCLASS_ATTACHED_OBJECT(klass);
+        // it could still be shareable through `Ractor.shareable?` but that's too expensive to call
+        if (!RB_OBJ_SHAREABLE_P(obj)) {
+            RUBY_ATOMIC_INC(rb_cc_tbl_duplications_unshareable_singletons);
+        }
+    }
+#endif
     return new_table;
 }
 
@@ -1787,7 +1811,7 @@ cache_callable_method_entry(VALUE klass, ID mid, const rb_callable_method_entry_
     }
     else {
         if (rb_multi_ractor_p()) {
-            VALUE new_cc_tbl = rb_vm_cc_table_dup(cc_tbl);
+            VALUE new_cc_tbl = rb_vm_cc_table_dup(cc_tbl, klass);
             vm_ccs_create(klass, new_cc_tbl, mid, cme);
             RB_OBJ_ATOMIC_WRITE(klass, &RCLASSEXT_CC_TBL(RCLASS_EXT_WRITABLE(klass)), new_cc_tbl);
         }

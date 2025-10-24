@@ -7438,6 +7438,7 @@ enum gc_stat_sym {
 #endif
     gc_stat_sym_weak_references_count,
 
+    // Added by ractor team
     gc_stat_sym_barrier_time_taken_ns,
     gc_stat_sym_barrier_serial,
     gc_stat_sym_gc_barrier_time_taken_ns,
@@ -7448,6 +7449,17 @@ enum gc_stat_sym {
 
     gc_stat_sym_fstring_table_size,
     gc_stat_sym_fstring_table_capacity,
+
+#if CC_TBL_STATS
+    gc_stat_sym_cc_table_duplications,
+    gc_stat_sym_cc_table_creations,
+    gc_stat_sym_cc_invalidations,
+    gc_stat_sym_cc_table_cme_evictions,
+    gc_stat_sym_cc_table_frees,
+    gc_stat_sym_cc_table_duplications_unshareable_singletons,
+#endif
+
+    // /Added by ractor team
 
 #if RGENGC_PROFILE
     gc_stat_sym_total_generated_normal_object_count,
@@ -7501,6 +7513,8 @@ setup_gc_stat_symbols(void)
 #endif
         S(weak_references_count);
 
+        // Added by ractor team
+
         S(barrier_time_taken_ns);
         S(barrier_serial);
         S(gc_barrier_time_taken_ns);
@@ -7511,6 +7525,17 @@ setup_gc_stat_symbols(void)
 
         S(fstring_table_size);
         S(fstring_table_capacity);
+
+#if CC_TBL_STATS
+        S(cc_table_duplications);
+        S(cc_table_creations);
+        S(cc_invalidations);
+        S(cc_table_cme_evictions);
+        S(cc_table_frees);
+        S(cc_table_duplications_unshareable_singletons);
+#endif
+        // /Added by ractor team
+
 #if RGENGC_PROFILE
         S(total_generated_normal_object_count);
         S(total_generated_shady_object_count);
@@ -7589,6 +7614,8 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(old_objects, objspace->rgengc.old_objects);
     SET(old_objects_limit, objspace->rgengc.old_objects_limit);
 
+    // Added by ractor team
+
     SET(barrier_time_taken_ns, rb_barrier_time_taken_ns);
     SET(barrier_serial, vm->ractor.sched.barrier_serial);
     SET(gc_barrier_time_taken_ns, rb_gc_barrier_time_taken_ns);
@@ -7599,6 +7626,17 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
 
     SET(fstring_table_size, rb_fstring_table_size());
     SET(fstring_table_capacity, rb_fstring_table_capacity());
+
+#if CC_TBL_STATS
+    SET(cc_table_duplications, rb_cc_tbl_duplications);
+    SET(cc_table_creations, rb_cc_tbl_creations);
+    SET(cc_invalidations, rb_cc_invalidations);
+    SET(cc_table_cme_evictions, rb_cc_tbl_cme_evictions);
+    SET(cc_table_frees, rb_cc_tbl_frees);
+    SET(cc_table_duplications_unshareable_singletons, rb_cc_tbl_duplications_unshareable_singletons);
+#endif
+
+    // /Added by ractor team
 
 #if RGENGC_ESTIMATE_OLDMALLOC
     SET(oldmalloc_increase_bytes, objspace->rgengc.oldmalloc_increase);
