@@ -1754,6 +1754,11 @@ fn gen_prepare_call_with_gc(asm: &mut Assembler, state: &FrameState, leaf: bool)
 
 fn gen_prepare_leaf_call_with_gc(asm: &mut Assembler, state: &FrameState) {
     gen_prepare_call_with_gc(asm, state, true);
+    // GC scans the VM stack from vm_stack base up to cfp->sp.
+    // So we update cfp->sp before GC-triggering leaf calls
+    // so that the GC knows where to stop looking for Ruby values
+    // (before it gets to something like the ccall stack canary).
+    gen_save_sp(asm, state.stack_size());
 }
 
 /// Save the current SP on the CFP
