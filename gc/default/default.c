@@ -8045,7 +8045,7 @@ static bool
 objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_size, size_t old_size, enum memop_type type, bool gc_allowed)
 {
     if (!rb_current_execution_context(false) || !rb_ractor_main_p()) {
-        /* HACK: ignore mallocs on other Ractors */
+        /* HACK: ignore mallocs on other Ractors. */
         return true;
     }
 
