@@ -1083,7 +1083,7 @@ refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
 
     mid = SYM2ID(symbol);
     for (klass = CLASS_OF(obj); klass; klass = RCLASS_SUPER(klass)) {
-        me = rb_callable_method_entry(klass, mid);
+        me = rb_callable_method_entry(klass, mid, true);
         if (me) {
             me = rb_resolve_refined_method_callable(refinements, me);
             if (me) break;

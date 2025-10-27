@@ -2800,7 +2800,7 @@ umethod_bind_call(int argc, VALUE *argv, VALUE method)
     const struct METHOD *data;
     TypedData_Get_Struct(method, struct METHOD, &method_data_type, data);
 
-    const rb_callable_method_entry_t *cme = rb_callable_method_entry(CLASS_OF(recv), data->me->called_id);
+    const rb_callable_method_entry_t *cme = rb_callable_method_entry(CLASS_OF(recv), data->me->called_id, true);
     if (data->me == (const rb_method_entry_t *)cme) {
         vm_passed_block_handler_set(ec, proc_to_block_handler(passed_procval));
         return rb_vm_call_kw(ec, recv, cme->called_id, argc, argv, cme, RB_PASS_CALLED_KEYWORDS);

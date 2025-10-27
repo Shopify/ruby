@@ -2118,21 +2118,19 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
     VALUE cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
     const VALUE original_cc_table = cc_tbl;
     struct rb_class_cc_entries *ccs = NULL;
+    bool rcu_cc_tbl_p = false;
 
     if (!cc_tbl) {
         cc_tbl = rb_vm_cc_table_create(1);
     }
     else {
         if (rb_multi_ractor_p()) {
-            bool needs_rcu_cc_tbl = false;
+            rcu_cc_tbl_p = true;
             if (FL_TEST_RAW(klass, FL_SINGLETON)) {
                 VALUE attach = RCLASS_ATTACHED_OBJECT(klass);
-                needs_rcu_cc_tbl = RB_TYPE_P(attach, T_CLASS) || RB_TYPE_P(attach, T_MODULE);
+                rcu_cc_tbl_p = RB_TYPE_P(attach, T_CLASS) || RB_TYPE_P(attach, T_MODULE);
             }
-            else {
-                needs_rcu_cc_tbl = rb_mod_name(klass) != Qnil;
-            }
-            if (needs_rcu_cc_tbl) {
+            if (rcu_cc_tbl_p) {
                 cc_tbl = rb_vm_cc_table_dup(cc_tbl, klass);
             }
         }
@@ -2142,15 +2140,7 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
 
     const rb_callable_method_entry_t *cme;
 
-    if (ccs) {
-        cme = ccs->cme;
-        cme = UNDEFINED_METHOD_ENTRY_P(cme) ? NULL : cme;
-
-        VM_ASSERT(cme == rb_callable_method_entry(klass, mid));
-    }
-    else {
-        cme = rb_callable_method_entry(klass, mid);
-    }
+    cme = rb_callable_method_entry(klass, mid, cc_tbl == original_cc_table);
 
     VM_ASSERT(cme == NULL || IMEMO_TYPE_P(cme, imemo_ment));
 
@@ -2164,13 +2154,11 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
 
     METHOD_ENTRY_CACHED_SET((struct rb_callable_method_entry_struct *)cme);
 
-    if (ccs == NULL) {
-        VM_ASSERT(cc_tbl);
+    VM_ASSERT(cc_tbl);
 
-        if (!LIKELY(rb_managed_id_table_lookup(cc_tbl, mid, (VALUE *)&ccs))) {
-            // TODO: required?
-            ccs = vm_ccs_create(klass, cc_tbl, mid, cme);
-        }
+    if (!LIKELY(rb_managed_id_table_lookup(cc_tbl, mid, (VALUE *)&ccs))) {
+        // TODO: required?
+        ccs = vm_ccs_create(klass, cc_tbl, mid, cme);
     }
 
     cme = rb_check_overloaded_cme(cme, ci);
@@ -4561,7 +4549,7 @@ vm_call_zsuper(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_ca
 {
     klass = RCLASS_SUPER(klass);
 
-    const rb_callable_method_entry_t *cme = klass ? rb_callable_method_entry(klass, vm_ci_mid(calling->cd->ci)) : NULL;
+    const rb_callable_method_entry_t *cme = klass ? rb_callable_method_entry(klass, vm_ci_mid(calling->cd->ci), true) : NULL;
     if (cme == NULL) {
         return vm_call_method_nome(ec, cfp, calling);
     }
@@ -4640,7 +4628,7 @@ search_refined_method(rb_execution_context_t *ec, rb_control_frame_t *cfp, struc
         if (NIL_P(refinement)) continue;
 
         const rb_callable_method_entry_t *const ref_me =
-            rb_callable_method_entry(refinement, mid);
+            rb_callable_method_entry(refinement, mid, true);
 
         if (ref_me) {
             if (vm_cc_call(cc) == vm_call_super_method) {
@@ -4669,7 +4657,7 @@ search_refined_method(rb_execution_context_t *ec, rb_control_frame_t *cfp, struc
     }
     else {
         VALUE klass = RCLASS_SUPER(vm_cc_cme(cc)->defined_class);
-        const rb_callable_method_entry_t *cme = klass ? rb_callable_method_entry(klass, mid) : NULL;
+        const rb_callable_method_entry_t *cme = klass ? rb_callable_method_entry(klass, mid, true) : NULL;
         return cme;
     }
 }
@@ -5166,7 +5154,7 @@ vm_search_super_method(const rb_control_frame_t *reg_cfp, struct rb_call_data *c
             cd->cc = empty_cc_for_super();
         }
         else if (cached_cme->called_id != mid) {
-            const rb_callable_method_entry_t *cme = rb_callable_method_entry(klass, mid);
+            const rb_callable_method_entry_t *cme = rb_callable_method_entry(klass, mid, true);
             if (cme) {
                 cc = vm_cc_new(klass, cme, vm_call_super_method, cc_type_super);
                 RB_OBJ_WRITE(reg_cfp->iseq, &cd->cc, cc);

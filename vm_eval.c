@@ -115,7 +115,7 @@ vm_call0_super(rb_execution_context_t *ec, struct rb_calling_info *calling, cons
     klass = RCLASS_SUPER(klass);
 
     if (klass) {
-        const rb_callable_method_entry_t *cme = rb_callable_method_entry(klass, mid);
+        const rb_callable_method_entry_t *cme = rb_callable_method_entry(klass, mid, true);
 
         if (cme) {
             RUBY_VM_CHECK_INTS(ec);
@@ -342,7 +342,7 @@ vm_call_super(rb_execution_context_t *ec, int argc, const VALUE *argv, int kw_sp
     klass = RCLASS_ORIGIN(me->defined_class);
     klass = RCLASS_SUPER(klass);
     id = me->def->original_id;
-    me = rb_callable_method_entry(klass, id);
+    me = rb_callable_method_entry(klass, id, true);
 
     if (!me) {
         return method_missing(ec, recv, id, argc, argv, MISSING_SUPER, kw_splat);
@@ -475,7 +475,7 @@ gccct_method_search(rb_execution_context_t *ec, VALUE recv, ID mid, const struct
             if (LIKELY(!METHOD_ENTRY_INVALIDATED(cme) &&
                        cme->called_id == mid)) {
 
-                VM_ASSERT(vm_cc_check_cme(cc, rb_callable_method_entry(klass, mid)));
+                VM_ASSERT(vm_cc_check_cme(cc, rb_callable_method_entry(klass, mid, true)));
                 RB_DEBUG_COUNTER_INC(gccct_hit);
 
                 return cc;
@@ -644,7 +644,7 @@ check_funcall_missing(rb_execution_context_t *ec, VALUE klass, VALUE recv, ID mi
     args.respond = respond > 0;
     args.respond_to_missing = !UNDEF_P(ret);
     ret = def;
-    cme = callable_method_entry(klass, idMethodMissing, &args.defined_class);
+    cme = callable_method_entry(klass, idMethodMissing, &args.defined_class, true);
 
     if (cme && !METHOD_ENTRY_BASIC(cme)) {
         VALUE argbuf, *new_args = ALLOCV_N(VALUE, argbuf, argc+1);
@@ -826,7 +826,7 @@ rb_search_method_entry(VALUE recv, ID mid)
     VALUE klass = CLASS_OF(recv);
 
     if (!klass) uncallable_object(recv, mid);
-    return rb_callable_method_entry(klass, mid);
+    return rb_callable_method_entry(klass, mid, true);
 }
 
 static inline enum method_missing_reason
@@ -1037,7 +1037,7 @@ method_missing(rb_execution_context_t *ec, VALUE obj, ID id, int argc, const VAL
 
     klass = CLASS_OF(obj);
     if (!klass) goto missing;
-    me = rb_callable_method_entry(klass, idMethodMissing);
+    me = rb_callable_method_entry(klass, idMethodMissing, true);
     if (!me || METHOD_ENTRY_BASIC(me)) goto missing;
     vm_passed_block_handler_set(ec, block_handler);
     result = rb_vm_call_kw(ec, obj, idMethodMissing, argc, argv, me, kw_splat);
@@ -1155,7 +1155,7 @@ rb_check_funcall_basic_kw(VALUE recv, ID mid, VALUE ancestor, int argc, const VA
     VALUE klass = CLASS_OF(recv);
     if (!klass) return Qundef; /* hidden object */
 
-    cme = rb_callable_method_entry(klass, mid);
+    cme = rb_callable_method_entry(klass, mid, true);
     if (cme && METHOD_ENTRY_BASIC(cme) && RBASIC_CLASS(cme->defined_class) == ancestor) {
         ec = GET_EC();
         return rb_vm_call0(ec, recv, mid, argc, argv, cme, kw_splat);

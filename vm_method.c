@@ -1813,14 +1813,14 @@ cache_callable_method_entry(VALUE klass, ID mid, const rb_callable_method_entry_
     else {
         bool needs_rcu_cc_tbl = false;
         // NOTE: this is too strict of a check, it should check shareability of attached object. However,
-        // this is probably too slow. For now this should be fine.
+        // that's too slow. For now this should be fine.
         if (!new_cc_tbl_p && rb_multi_ractor_p()) {
             if (FL_TEST_RAW(klass, FL_SINGLETON)) {
                 VALUE attach = RCLASS_ATTACHED_OBJECT(klass);
                 needs_rcu_cc_tbl = RB_TYPE_P(attach, T_CLASS) || RB_TYPE_P(attach, T_MODULE);
             }
             else {
-                needs_rcu_cc_tbl = rb_mod_name(klass) != Qnil;
+                needs_rcu_cc_tbl = true;
             }
         }
         if (needs_rcu_cc_tbl) {
@@ -1857,7 +1857,7 @@ negative_cme(ID mid)
 }
 
 static const rb_callable_method_entry_t *
-callable_method_entry_or_negative(VALUE klass, ID mid, VALUE *defined_class_ptr)
+callable_method_entry_or_negative(VALUE klass, ID mid, VALUE *defined_class_ptr, bool can_cache_cme)
 {
     const rb_callable_method_entry_t *cme;
 
@@ -1899,7 +1899,9 @@ callable_method_entry_or_negative(VALUE klass, ID mid, VALUE *defined_class_ptr)
                 cme = negative_cme(mid);
             }
 
-            cache_callable_method_entry(klass, mid, cme);
+            if (can_cache_cme) {
+                cache_callable_method_entry(klass, mid, cme);
+            }
         }
     }
 
@@ -1911,21 +1913,21 @@ callable_method_entry_or_negative(VALUE klass, ID mid, VALUE *defined_class_ptr)
 const rb_callable_method_entry_t *
 rb_callable_method_entry_or_negative(VALUE klass, ID mid)
 {
-    return callable_method_entry_or_negative(klass, mid, NULL);
+    return callable_method_entry_or_negative(klass, mid, NULL, true);
 }
 
 static const rb_callable_method_entry_t *
-callable_method_entry(VALUE klass, ID mid, VALUE *defined_class_ptr)
+callable_method_entry(VALUE klass, ID mid, VALUE *defined_class_ptr, bool can_cache_cme)
 {
     const rb_callable_method_entry_t *cme;
-    cme = callable_method_entry_or_negative(klass, mid, defined_class_ptr);
+    cme = callable_method_entry_or_negative(klass, mid, defined_class_ptr, can_cache_cme);
     return !UNDEFINED_METHOD_ENTRY_P(cme) ? cme : NULL;
 }
 
 const rb_callable_method_entry_t *
-rb_callable_method_entry(VALUE klass, ID mid)
+rb_callable_method_entry(VALUE klass, ID mid, bool can_cache_cme)
 {
-    return callable_method_entry(klass, mid, NULL);
+    return callable_method_entry(klass, mid, NULL, can_cache_cme);
 }
 
 static const rb_method_entry_t *resolve_refined_method(VALUE refinements, const rb_method_entry_t *me, VALUE *defined_class_ptr);
@@ -1976,7 +1978,7 @@ callable_method_entry_refinements0(VALUE klass, ID id, VALUE *defined_class_ptr,
 static const rb_callable_method_entry_t *
 callable_method_entry_refinements(VALUE klass, ID id, VALUE *defined_class_ptr, bool with_refinements)
 {
-    const rb_callable_method_entry_t *cme = callable_method_entry(klass, id, defined_class_ptr);
+    const rb_callable_method_entry_t *cme = callable_method_entry(klass, id, defined_class_ptr, true);
     return callable_method_entry_refinements0(klass, id, defined_class_ptr, with_refinements, cme);
 }
 
@@ -3260,7 +3262,7 @@ rb_method_basic_definition_p(VALUE klass, ID id)
 {
     const rb_callable_method_entry_t *cme;
     if (!klass) return TRUE; /* hidden object cannot be overridden */
-    cme = rb_callable_method_entry(klass, id);
+    cme = rb_callable_method_entry(klass, id, true);
     return (cme && METHOD_ENTRY_BASIC(cme)) ? TRUE : FALSE;
 }
 #ifdef __GNUC__
@@ -3283,7 +3285,7 @@ basic_obj_respond_to_missing(rb_execution_context_t *ec, VALUE klass, VALUE obj,
 {
     VALUE defined_class, args[2];
     const ID rtmid = idRespond_to_missing;
-    const rb_callable_method_entry_t *const cme = callable_method_entry(klass, rtmid, &defined_class);
+    const rb_callable_method_entry_t *const cme = callable_method_entry(klass, rtmid, &defined_class, true);
 
     if (!cme || METHOD_ENTRY_BASIC(cme)) return Qundef;
     args[0] = mid;
@@ -3314,7 +3316,7 @@ vm_respond_to(rb_execution_context_t *ec, VALUE klass, VALUE obj, ID id, int pri
 {
     VALUE defined_class;
     const ID resid = idRespond_to;
-    const rb_callable_method_entry_t *const cme = callable_method_entry(klass, resid, &defined_class);
+    const rb_callable_method_entry_t *const cme = callable_method_entry(klass, resid, &defined_class, true);
 
     if (!cme) return -1;
     if (METHOD_ENTRY_BASIC(cme)) {
