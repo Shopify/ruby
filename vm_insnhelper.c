@@ -2150,7 +2150,7 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
         return &vm_empty_cc;
     }
 
-    VM_ASSERT(cme == rb_callable_method_entry(klass, mid));
+    VM_ASSERT(cme == rb_callable_method_entry(klass, mid, false));
 
     METHOD_ENTRY_CACHED_SET((struct rb_callable_method_entry_struct *)cme);
 
