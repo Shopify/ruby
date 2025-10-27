@@ -2122,8 +2122,20 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
     if (!cc_tbl) {
         cc_tbl = rb_vm_cc_table_create(1);
     }
-    else if (rb_multi_ractor_p()) {
-        cc_tbl = rb_vm_cc_table_dup(cc_tbl, klass);
+    else {
+        if (rb_multi_ractor_p()) {
+            bool needs_rcu_cc_tbl = false;
+            if (FL_TEST_RAW(klass, FL_SINGLETON)) {
+                VALUE attach = RCLASS_ATTACHED_OBJECT(klass);
+                needs_rcu_cc_tbl = RB_TYPE_P(attach, T_CLASS) || RB_TYPE_P(attach, T_MODULE);
+            }
+            else {
+                needs_rcu_cc_tbl = rb_mod_name(klass) != Qnil;
+            }
+            if (needs_rcu_cc_tbl) {
+                cc_tbl = rb_vm_cc_table_dup(cc_tbl, klass);
+            }
+        }
     }
 
     RB_DEBUG_COUNTER_INC(cc_not_found_in_ccs);

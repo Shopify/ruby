@@ -1797,10 +1797,11 @@ cache_callable_method_entry(VALUE klass, ID mid, const rb_callable_method_entry_
 
     VALUE cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
     VALUE ccs_data;
+    bool new_cc_tbl_p = false;
 
     if (!cc_tbl) {
         cc_tbl = rb_vm_cc_table_create(2);
-        RCLASS_WRITE_CC_TBL(klass, cc_tbl);
+        new_cc_tbl_p = true;
     }
 
     if (rb_managed_id_table_lookup(cc_tbl, mid, &ccs_data)) {
@@ -1810,7 +1811,19 @@ cache_callable_method_entry(VALUE klass, ID mid, const rb_callable_method_entry_
 #endif
     }
     else {
-        if (rb_multi_ractor_p()) {
+        bool needs_rcu_cc_tbl = false;
+        // NOTE: this is too strict of a check, it should check shareability of attached object. However,
+        // this is probably too slow. For now this should be fine.
+        if (!new_cc_tbl_p && rb_multi_ractor_p()) {
+            if (FL_TEST_RAW(klass, FL_SINGLETON)) {
+                VALUE attach = RCLASS_ATTACHED_OBJECT(klass);
+                needs_rcu_cc_tbl = RB_TYPE_P(attach, T_CLASS) || RB_TYPE_P(attach, T_MODULE);
+            }
+            else {
+                needs_rcu_cc_tbl = rb_mod_name(klass) != Qnil;
+            }
+        }
+        if (needs_rcu_cc_tbl) {
             VALUE new_cc_tbl = rb_vm_cc_table_dup(cc_tbl, klass);
             vm_ccs_create(klass, new_cc_tbl, mid, cme);
             RB_OBJ_ATOMIC_WRITE(klass, &RCLASSEXT_CC_TBL(RCLASS_EXT_WRITABLE(klass)), new_cc_tbl);
@@ -1818,6 +1831,9 @@ cache_callable_method_entry(VALUE klass, ID mid, const rb_callable_method_entry_
         else {
             vm_ccs_create(klass, cc_tbl, mid, cme);
         }
+    }
+    if (new_cc_tbl_p) {
+        RCLASS_WRITE_CC_TBL(klass, cc_tbl);
     }
 }
 

@@ -17,6 +17,7 @@
 #include "internal/rational.h"
 #include "internal/struct.h"
 #include "internal/thread.h"
+#include "internal/class.h"
 #include "variable.h"
 #include "yjit.h"
 #include "zjit.h"
@@ -1469,9 +1470,20 @@ shareable_p_enter(VALUE obj)
     else if (RB_TYPE_P(obj, T_CLASS)  ||
              RB_TYPE_P(obj, T_MODULE) ||
              RB_TYPE_P(obj, T_ICLASS)) {
-        // TODO: remove it
-        mark_shareable(obj);
-        return traverse_skip;
+        if (RB_TYPE_P(obj, T_CLASS) && FL_TEST_RAW(obj, FL_SINGLETON)) {
+            if (rb_ractor_shareable_p(RCLASS_ATTACHED_OBJECT(obj))) {
+                mark_shareable(obj);
+                return traverse_skip;
+            }
+            return traverse_stop;
+        } else {
+            if ((RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE)) && rb_mod_name(obj) == Qnil) {
+                return traverse_stop;
+            }
+            // TODO: remove it
+            mark_shareable(obj);
+            return traverse_skip;
+        }
     }
     else if (RB_OBJ_FROZEN_RAW(obj) &&
              allow_frozen_shareable_p(obj)) {
