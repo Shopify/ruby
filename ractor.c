@@ -1477,9 +1477,9 @@ shareable_p_enter(VALUE obj)
             }
             return traverse_stop;
         } else {
-            if ((RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE)) && rb_mod_name(obj) == Qnil) {
-                return traverse_stop;
-            }
+            /*if ((RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE)) && rb_mod_name(obj) == Qnil) {*/
+                /*return traverse_stop;*/
+            /*}*/
             // TODO: remove it
             mark_shareable(obj);
             return traverse_skip;
