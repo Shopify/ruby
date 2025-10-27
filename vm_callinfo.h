@@ -329,7 +329,7 @@ cc_check_class(VALUE klass)
     return klass;
 }
 
-VALUE rb_vm_cc_table_create(size_t capa);
+VALUE rb_vm_cc_table_create(size_t capa, VALUE klass);
 VALUE rb_vm_cc_table_dup(VALUE old_table, VALUE klass);
 void rb_vm_cc_table_delete(VALUE table, ID mid);
 

@@ -2121,7 +2121,7 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
     bool rcu_cc_tbl_p = false;
 
     if (!cc_tbl) {
-        cc_tbl = rb_vm_cc_table_create(1);
+        cc_tbl = rb_vm_cc_table_create(1, klass);
     }
     else {
         if (rb_multi_ractor_p()) {

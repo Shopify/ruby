@@ -7451,11 +7451,13 @@ enum gc_stat_sym {
     gc_stat_sym_fstring_table_capacity,
 
 #if CC_TBL_STATS
-    gc_stat_sym_cc_table_duplications,
     gc_stat_sym_cc_table_creations,
+    gc_stat_sym_cc_table_duplications,
     gc_stat_sym_cc_invalidations,
     gc_stat_sym_cc_table_cme_evictions,
     gc_stat_sym_cc_table_frees,
+    gc_stat_sym_cc_table_creations_singletons,
+    gc_stat_sym_cc_table_duplications_singletons,
     gc_stat_sym_cc_table_duplications_unshareable_singletons,
 #endif
 
@@ -7527,11 +7529,13 @@ setup_gc_stat_symbols(void)
         S(fstring_table_capacity);
 
 #if CC_TBL_STATS
-        S(cc_table_duplications);
         S(cc_table_creations);
+        S(cc_table_duplications);
         S(cc_invalidations);
         S(cc_table_cme_evictions);
         S(cc_table_frees);
+        S(cc_table_creations_singletons);
+        S(cc_table_duplications_singletons);
         S(cc_table_duplications_unshareable_singletons);
 #endif
         // /Added by ractor team
@@ -7628,11 +7632,13 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(fstring_table_capacity, rb_fstring_table_capacity());
 
 #if CC_TBL_STATS
-    SET(cc_table_duplications, rb_cc_tbl_duplications);
     SET(cc_table_creations, rb_cc_tbl_creations);
+    SET(cc_table_duplications, rb_cc_tbl_duplications);
     SET(cc_invalidations, rb_cc_invalidations);
     SET(cc_table_cme_evictions, rb_cc_tbl_cme_evictions);
     SET(cc_table_frees, rb_cc_tbl_frees);
+    SET(cc_table_creations_singletons, rb_cc_tbl_creations_singletons);
+    SET(cc_table_duplications_singletons, rb_cc_tbl_duplications_singletons);
     SET(cc_table_duplications_unshareable_singletons, rb_cc_tbl_duplications_unshareable_singletons);
 #endif
 
