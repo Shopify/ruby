@@ -281,6 +281,9 @@ rb_obj_not_equal(VALUE obj1, VALUE obj2)
 static inline VALUE
 fake_class_p(VALUE klass)
 {
+    if (!klass) {
+        return klass;
+    }
     RUBY_ASSERT(klass);
     RUBY_ASSERT(RB_TYPE_P(klass, T_CLASS) || RB_TYPE_P(klass, T_MODULE) || RB_TYPE_P(klass, T_ICLASS));
     STATIC_ASSERT(t_iclass_overlap_t_class, !(T_CLASS & T_ICLASS));
