@@ -2130,9 +2130,6 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
                 VALUE attach = RCLASS_ATTACHED_OBJECT(klass);
                 rcu_cc_tbl_p = RB_TYPE_P(attach, T_CLASS) || RB_TYPE_P(attach, T_MODULE);
             }
-            if (rcu_cc_tbl_p) {
-                cc_tbl = rb_vm_cc_table_dup(cc_tbl, klass);
-            }
         }
     }
 
@@ -2140,7 +2137,7 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
 
     const rb_callable_method_entry_t *cme;
 
-    cme = rb_callable_method_entry(klass, mid, cc_tbl == original_cc_table);
+    cme = rb_callable_method_entry(klass, mid, !rcu_cc_tbl_p && cc_tbl == original_cc_table);
 
     VM_ASSERT(cme == NULL || IMEMO_TYPE_P(cme, imemo_ment));
 
@@ -2148,6 +2145,10 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
         // undef or not found: can't cache the information
         VM_ASSERT(vm_cc_cme(&vm_empty_cc) == NULL);
         return &vm_empty_cc;
+    }
+
+    if (rcu_cc_tbl_p) {
+        cc_tbl = rb_vm_cc_table_dup(cc_tbl, klass);
     }
 
     VM_ASSERT(cme == rb_callable_method_entry(klass, mid, false));
