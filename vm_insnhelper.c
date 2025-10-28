@@ -2102,11 +2102,15 @@ vm_evict_cc(VALUE klass, VALUE cc_tbl, ID mid)
         VALUE new_table = rb_vm_cc_table_dup(cc_tbl, klass);
         rb_vm_cc_table_delete(new_table, mid);
         RB_OBJ_ATOMIC_WRITE(klass, &RCLASS_WRITABLE_CC_TBL(klass), new_table);
+#if CC_TBL_STATS
         rb_cc_tbl_cme_evictions+=1;
+#endif
     }
     else {
         rb_vm_cc_table_delete(cc_tbl, mid);
+#if CC_TBL_STATS
         rb_cc_tbl_cme_evictions+=1;
+#endif
     }
 }
 
