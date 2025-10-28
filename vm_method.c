@@ -162,6 +162,12 @@ rb_vm_cc_table_create(size_t capa, VALUE klass)
             RUBY_ATOMIC_INC(rb_cc_tbl_creations_singletons);
         }
     }
+    RB_VM_LOCKING() {
+        if (rb_cc_tbl_stats_create) {
+            VALUE class_name = rb_class_name(klass);
+            rb_hash_aset(rb_cc_tbl_stats_create, class_name, INT2NUM(NUM2INT(rb_hash_aref(rb_cc_tbl_stats_create, class_name)) + 1));
+        }
+    }
 #endif
     return rb_managed_id_table_create(&cc_table_type, capa);
 }
@@ -195,6 +201,12 @@ rb_vm_cc_table_dup(VALUE old_table, VALUE klass)
     rb_managed_id_table_foreach(old_table, vm_cc_table_dup_i, (void *)new_table);
 #if CC_TBL_STATS
     RUBY_ATOMIC_INC(rb_cc_tbl_duplications);
+    RB_VM_LOCKING() {
+        VALUE class_name = rb_class_name(klass);
+        if (rb_cc_tbl_stats_dup) {
+            rb_hash_aset(rb_cc_tbl_stats_dup, class_name, INT2NUM(NUM2INT(rb_hash_aref(rb_cc_tbl_stats_dup, class_name)) + 1));
+        }
+    }
     if (RCLASS_SINGLETON_P(klass)) {
         VALUE obj = RCLASS_ATTACHED_OBJECT(klass);
         // it could still be shareable through `Ractor.shareable?` but that's too expensive to call

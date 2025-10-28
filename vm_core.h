@@ -856,6 +856,8 @@ RUBY_EXTERN unsigned long long rb_cc_tbl_frees; // vm_cc_table_free
 RUBY_EXTERN rb_atomic_t rb_cc_tbl_creations_singletons; // rb_vm_cc_table_create
 RUBY_EXTERN rb_atomic_t rb_cc_tbl_duplications_singletons; // vm_cc_table_dup
 RUBY_EXTERN rb_atomic_t rb_cc_tbl_duplications_unshareable_singletons; // vm_cc_table_dup
+RUBY_EXTERN VALUE rb_cc_tbl_stats_create;
+RUBY_EXTERN VALUE rb_cc_tbl_stats_dup;
 #endif
 
 /* default values */

@@ -4333,7 +4333,11 @@ rb_gc_stat(VALUE arg)
     }
 
     if (SYMBOL_P(arg)) {
-        return NUM2SIZET(ret);
+        if (FIXNUM_P(ret)) {
+            return NUM2SIZET(ret);
+        } else {
+            return ret;
+        }
     }
     else {
         return 0;

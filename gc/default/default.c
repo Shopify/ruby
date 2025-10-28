@@ -179,6 +179,11 @@
 # define HEAP_COUNT 5
 #endif
 
+#if CC_TBL_STATS
+VALUE rb_cc_tbl_stats_create;
+VALUE rb_cc_tbl_stats_dup;
+#endif
+
 typedef struct ractor_newobj_heap_cache {
     struct free_slot *freelist;
     struct heap_page *using_page;
@@ -7459,6 +7464,9 @@ enum gc_stat_sym {
     gc_stat_sym_cc_table_creations_singletons,
     gc_stat_sym_cc_table_duplications_singletons,
     gc_stat_sym_cc_table_duplications_unshareable_singletons,
+
+    gc_stat_sym_cc_table_create_stats,
+    gc_stat_sym_cc_table_dup_stats,
 #endif
 
     // /Added by ractor team
@@ -7537,6 +7545,9 @@ setup_gc_stat_symbols(void)
         S(cc_table_creations_singletons);
         S(cc_table_duplications_singletons);
         S(cc_table_duplications_unshareable_singletons);
+
+        S(cc_table_create_stats);
+        S(cc_table_dup_stats);
 #endif
         // /Added by ractor team
 
@@ -7586,6 +7597,13 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
         return SIZET2NUM(attr); \
     else if (hash != Qnil) \
         rb_hash_aset(hash, gc_stat_symbols[gc_stat_sym_##name], SIZET2NUM(attr));
+
+#define SET_HASH(name, attr) \
+    if (key == gc_stat_symbols[gc_stat_sym_##name]) { \
+        return attr; \
+    } else if (hash != Qnil) { \
+        rb_hash_aset(hash, gc_stat_symbols[gc_stat_sym_##name], attr); \
+    }
 
     SET(count, objspace->profile.count);
     SET(time, (size_t)ns_to_ms(objspace->profile.marking_time_ns + objspace->profile.sweeping_time_ns)); // TODO: UINT64T2NUM
@@ -7640,6 +7658,12 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(cc_table_creations_singletons, rb_cc_tbl_creations_singletons);
     SET(cc_table_duplications_singletons, rb_cc_tbl_duplications_singletons);
     SET(cc_table_duplications_unshareable_singletons, rb_cc_tbl_duplications_unshareable_singletons);
+
+
+    RB_VM_LOCKING() {
+        SET_HASH(cc_table_create_stats, rb_hash_dup(rb_cc_tbl_stats_create));
+        SET_HASH(cc_table_dup_stats, rb_hash_dup(rb_cc_tbl_stats_dup));
+    }
 #endif
 
     // /Added by ractor team
@@ -9564,6 +9588,17 @@ rb_gc_impl_init(void)
     rb_define_singleton_method(rb_mProfiler, "result", gc_profile_result, 0);
     rb_define_singleton_method(rb_mProfiler, "report", gc_profile_report, -1);
     rb_define_singleton_method(rb_mProfiler, "total_time", gc_profile_total_time, 0);
+
+
+#if CC_TBL_STATS
+    rb_gc_register_address(&rb_cc_tbl_stats_create);
+    rb_cc_tbl_stats_create = rb_hash_new();
+    rb_hash_set_default(rb_cc_tbl_stats_create, INT2NUM(0));
+
+    rb_gc_register_address(&rb_cc_tbl_stats_dup);
+    rb_cc_tbl_stats_dup = rb_hash_new();
+    rb_hash_set_default(rb_cc_tbl_stats_dup, INT2NUM(0));
+#endif
 
     {
         VALUE opts;
