@@ -841,6 +841,7 @@ RUBY_EXTERN unsigned int rb_gc_barrier_serial;
 RUBY_EXTERN unsigned int rb_concur_set_resize_serial;
 RUBY_EXTERN unsigned long long rb_concur_set_resize_time_taken_ns;
 
+#define NO_CC_TBL_STATS 1
 #ifndef NO_CC_TBL_STATS
 #define CC_TBL_STATS 1
 #else
