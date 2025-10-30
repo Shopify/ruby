@@ -2504,7 +2504,11 @@ count_objects(int argc, VALUE *argv, VALUE os)
     VALUE total = ID2SYM(rb_intern("TOTAL"));
     VALUE free = ID2SYM(rb_intern("FREE"));
 
-    rb_gc_impl_each_object(rb_gc_get_objspace(), count_objects_i, &data);
+    RB_VM_LOCKING() {
+        rb_gc_vm_barrier();
+
+        rb_gc_impl_each_object(rb_gc_get_objspace(), count_objects_i, &data);
+    }
 
     if (NIL_P(hash)) {
         hash = rb_hash_new();
