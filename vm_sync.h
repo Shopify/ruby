@@ -26,7 +26,15 @@ NOINLINE(void rb_vm_lock_enter_body_nb(unsigned int *lev APPEND_LOCATION_ARGS));
 NOINLINE(void rb_vm_lock_enter_body(unsigned int *lev APPEND_LOCATION_ARGS));
 void rb_vm_lock_leave_body_nb(unsigned int *lev APPEND_LOCATION_ARGS);
 void rb_vm_lock_leave_body(unsigned int *lev APPEND_LOCATION_ARGS);
-void rb_vm_barrier(void);
+
+// `objspace_dump.c` extension needs these
+RUBY_SYMBOL_EXPORT_BEGIN
+NOINLINE(void rb_vm_barrier(void));
+NOINLINE(void rb_vm_lock_lock(const char *file, int line));
+NOINLINE(void rb_vm_lock_unlock(const char *file, int line));
+RUBY_SYMBOL_EXPORT_END
+#define RB_VM_LOCK_LOCK() rb_vm_lock_lock(__FILE__, __LINE__)
+#define RB_VM_LOCK_UNLOCK() rb_vm_lock_unlock(__FILE__, __LINE__)
 
 #if RUBY_DEBUG
 // GET_VM()
