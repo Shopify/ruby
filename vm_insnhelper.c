@@ -2130,10 +2130,6 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
     else {
         if (rb_multi_ractor_p()) {
             rcu_cc_tbl_p = true;
-            if (FL_TEST_RAW(klass, FL_SINGLETON)) {
-                VALUE attach = RCLASS_ATTACHED_OBJECT(klass);
-                rcu_cc_tbl_p = RB_TYPE_P(attach, T_CLASS) || RB_TYPE_P(attach, T_MODULE);
-            }
         }
     }
 

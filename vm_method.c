@@ -1835,16 +1835,8 @@ cache_callable_method_entry(VALUE klass, ID mid, const rb_callable_method_entry_
     }
     else {
         bool needs_rcu_cc_tbl = false;
-        // NOTE: this is too strict of a check, it should check shareability of attached object. However,
-        // that's too slow. For now this should be fine.
         if (!new_cc_tbl_p && rb_multi_ractor_p()) {
-            if (FL_TEST_RAW(klass, FL_SINGLETON)) {
-                VALUE attach = RCLASS_ATTACHED_OBJECT(klass);
-                needs_rcu_cc_tbl = RB_TYPE_P(attach, T_CLASS) || RB_TYPE_P(attach, T_MODULE);
-            }
-            else {
-                needs_rcu_cc_tbl = true;
-            }
+            needs_rcu_cc_tbl = true;
         }
         if (needs_rcu_cc_tbl) {
             VALUE new_cc_tbl = rb_vm_cc_table_dup(cc_tbl, klass);
