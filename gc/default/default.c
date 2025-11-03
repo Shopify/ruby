@@ -471,8 +471,8 @@ enum gc_mode {
 
 typedef struct rb_objspace {
     struct {
-        alignas(64) size_t increase;
-        alignas(64) size_t limit;
+        size_t limit;
+        size_t increase;
 #if MALLOC_ALLOCATED_SIZE
         size_t allocated_size;
         size_t allocations;
@@ -591,8 +591,8 @@ typedef struct rb_objspace {
         size_t old_objects_limit;
 
 #if RGENGC_ESTIMATE_OLDMALLOC
-        alignas(64) size_t oldmalloc_increase;
-        alignas(64) size_t oldmalloc_increase_limit;
+        size_t oldmalloc_increase;
+        size_t oldmalloc_increase_limit;
 #endif
 
 #if RGENGC_CHECK_MODE >= 2
