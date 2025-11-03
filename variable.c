@@ -1197,7 +1197,7 @@ IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(ID id)
 
 #define CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() \
   if (UNLIKELY(!rb_ractor_main_p())) { \
-      rb_raise(rb_eRactorIsolationError, "can not access class variables from non-main Ractors"); \
+      rb_raise(rb_eRactorIsolationError, "can not access class variables from non-main Ractors (%s from %"PRIsVALUE")", RSTRING_PTR(rb_id2str(id)), klass); \
   }
 
 static inline void
@@ -1441,10 +1441,14 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
             VALUE val = rb_ivar_lookup(RCLASS_WRITABLE_FIELDS_OBJ(obj), id, undef);
             if (val != undef &&
                     rb_is_instance_id(id) &&
-                    UNLIKELY(!rb_ractor_main_p()) &&
-                    !rb_ractor_shareable_p(val)) {
-                rb_raise(rb_eRactorIsolationError,
-                        "can not get unshareable values from instance variables of classes/modules from non-main Ractors");
+                    UNLIKELY(!rb_ractor_main_p())) {
+                VALUE chain = rb_ary_new();
+                if (!rb_ractor_shareable_p_continue(val, chain)) {
+                    rb_raise(rb_eRactorIsolationError,
+                            "can not get unshareable values from instance variables of classes/modules from non-main Ractors (%s from %"PRIsVALUE")\n"\
+                            "Reference chain: %" PRIsVALUE,
+                            RSTRING_PTR(rb_id2str(id)), obj, chain);
+                }
             }
             return val;
         }
