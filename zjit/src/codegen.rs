@@ -184,6 +184,7 @@ fn register_with_perf(iseq_name: String, start_ptr: usize, code_size: usize) {
 pub fn gen_entry_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
     // Set up registers for CFP, EC, SP, and basic block arguments
     let mut asm = Assembler::new();
+    asm.new_block(true);
     gen_entry_prologue(&mut asm);
 
     // Jump to the first block using a call instruction. This trampoline is used
@@ -268,20 +269,23 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
     // Create a hash table mapping HIR block IDs to LIR block IDs
     let mut hir_to_lir: HashMap<BlockId, lir::BlockId> = HashMap::new();
 
+    // Create all LIR basic blocks corresponding to HIR basic blocks
+    for &block_id in reverse_post_order.iter() {
+        let lir_block = asm.new_block(false);
+        let lir_block_id = lir_block.id;
+        hir_to_lir.insert(block_id, lir_block_id);
+    }
+
     for &block_id in reverse_post_order.iter() {
         println!("processing block id {:?}", block_id);
 
-        let lir_block = asm.new_block();
-        let lir_block_id = lir_block.id;
-        hir_to_lir.insert(block_id, lir_block_id);
-
+        // Set the current block to the LIR block that corresponds to this
+        // HIR block.
+        let lir_block_id = hir_to_lir[&block_id];
         asm.set_current_block(lir_block_id);
 
-        // Write a label to jump to the basic block
-        let label = jit.get_label(&mut asm, block_id);
-        asm.write_label(label);
-
         let block = function.block(block_id);
+
         asm_comment!(
             asm, "{block_id}({}): {}",
             block.params().map(|param| format!("{param}")).collect::<Vec<_>>().join(", "),
@@ -310,26 +314,14 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
         for &insn_id in block.insns() {
             let insn = function.find(insn_id);
 
-            let mut lir_bb_id = lir::BlockId(block_id.0);
-
-            // if insn.is_lir_terminator() {
-            //     lir_bb_id = asm.new_block().id;
-            // }
-
-            //if is iffalse {
-            //    let val = jit.get_opnd(val);
-            //    let target = find_or_create_lir_block(target);
-            //    let fallback = asm.new_block()
-            //}
-
-            //match insn {
-            //    Insn::IfFalse { val, target } => no_output!(gen_if_false(jit, asm, opnd!(val), target)),
-
             match insn {
                 Insn::IfFalse { val, target } => {
                     let val_opnd = jit.get_opnd(val);
                     let lir_target = hir_to_lir[&target.target];
-                    gen_if_false(&mut jit, &mut asm, val_opnd, lir_target);
+                    let fall_through_target = asm.new_block(false).id;
+                    gen_if_false(&mut jit, &mut asm, val_opnd, lir_target, fall_through_target);
+                    println!("{:#?}", asm.current_block());
+                    asm.set_current_block(fall_through_target);
                 },
                 _ => {
                     if let Err(last_snapshot) = gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn) {
@@ -349,6 +341,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
         // Make sure the last patch point has enough space to insert a jump
         asm.pad_patch_point();
     }
+    std::process::exit(0);
 
     // Generate code if everything can be compiled
 
@@ -1116,11 +1109,10 @@ fn gen_if_true(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch: 
 }
 
 /// Compile a conditional branch to a basic block
-fn gen_if_false(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch: lir::BlockId) {
+fn gen_if_false(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch: lir::BlockId, fall_through: lir::BlockId) {
     // If val is not zero, move on to the next instruction.
-    // let if_true = asm.new_label("if_true");
     asm.test(val, val);
-    //asm.jnz(if_true.clone());
+    asm.jnz(Target::Block(fall_through));
 
     // If val is zero, set basic block arguments and jump to the branch target.
     // TODO: Consider generating the loads out-of-line
@@ -2204,7 +2196,7 @@ pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, C
     let (mut asm, scratch_reg) = Assembler::new_with_scratch_reg();
     asm_comment!(asm, "function_stub_hit trampoline");
 
-    asm.new_block();
+    asm.new_block(true);
 
     // Maintain alignment for x86_64, and set up a frame for arm64 properly
     asm.frame_setup(&[]);
@@ -2245,7 +2237,7 @@ pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, C
 pub fn gen_exit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
     let mut asm = Assembler::new();
 
-    asm.new_block();
+    asm.new_block(true);
 
     asm_comment!(asm, "side-exit trampoline");
     asm.frame_teardown(&[]); // matching the setup in gen_entry_point()

@@ -1410,10 +1410,13 @@ pub struct Assembler {
 impl Assembler
 {
     // Create a new LIR basic block.  Returns the newly created block
-    pub fn new_block(&mut self) -> &BasicBlock {
+    pub fn new_block(&mut self, set_current: bool) -> &BasicBlock {
         let bb_id = BlockId(self.basic_blocks.len());
         let lir_bb = BasicBlock::new(bb_id);
         self.basic_blocks.push(lir_bb);
+        if set_current {
+            self.set_current_block(bb_id);
+        }
         &self.basic_blocks[bb_id.0]
     }
 
