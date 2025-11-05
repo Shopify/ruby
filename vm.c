@@ -790,6 +790,11 @@ rb_dtrace_setup(rb_execution_context_t *ec, VALUE klass, ID id,
     return FALSE;
 }
 
+size_t rb_vm_memsize_workqueue(struct ccan_list_head *workqueue); // vm_trace.c
+static size_t vm_memsize_constant_cache(void);
+static size_t vm_memsize_at_exit_list(rb_at_exit_list *at_exit);
+static size_t vm_memsize_builtin_function_table(const struct rb_builtin_function *builtin_function_table);
+
 extern unsigned int redblack_buffer_size;
 
 /*
@@ -856,6 +861,19 @@ vm_stat(int argc, VALUE *argv, VALUE self)
     SET(next_shape_id, (rb_serial_t)rb_shapes_count());
     SET(shape_cache_size, (rb_serial_t)rb_shape_tree.cache_size);
 #undef SET
+
+    rb_vm_t *vm = GET_VM();
+    if (hash != Qnil) {
+        rb_hash_aset(hash, ID2SYM(rb_intern("rb_vm_memsize_postponed_job_queue")), ULL2NUM(rb_vm_memsize_postponed_job_queue()));
+        rb_hash_aset(hash, ID2SYM(rb_intern("rb_vm_memsize_workqueue")), ULL2NUM(rb_vm_memsize_workqueue(&vm->workqueue)));
+        rb_hash_aset(hash, ID2SYM(rb_intern("vm_memsize_at_exit_list")), ULL2NUM(vm_memsize_at_exit_list(vm->at_exit)));
+        rb_hash_aset(hash, ID2SYM(rb_intern("memsize_ci_table")), ULL2NUM(rb_st_memsize(vm->ci_table)));
+        rb_hash_aset(hash, ID2SYM(rb_intern("vm_memsize_builtin_function_table")), ULL2NUM(vm_memsize_builtin_function_table(vm->builtin_function_table)));
+        rb_hash_aset(hash, ID2SYM(rb_intern("negative_cme_table_size")), ULL2NUM(rb_id_table_memsize(vm->negative_cme_table)));
+        rb_hash_aset(hash, ID2SYM(rb_intern("overloaded_cme_table_size")), ULL2NUM(rb_st_memsize(vm->overloaded_cme_table)));
+        rb_hash_aset(hash, ID2SYM(rb_intern("cc_refinement_table_size")), ULL2NUM(rb_set_memsize(vm->cc_refinement_table)));
+        rb_hash_aset(hash, ID2SYM(rb_intern("constant_cache_size")), ULL2NUM(vm_memsize_constant_cache()));
+    }
 
 #if USE_DEBUG_COUNTER
     ruby_debug_counter_show_at_exit(FALSE);
@@ -3437,8 +3455,6 @@ ruby_vm_destruct(rb_vm_t *vm)
     RUBY_FREE_LEAVE("vm");
     return 0;
 }
-
-size_t rb_vm_memsize_workqueue(struct ccan_list_head *workqueue); // vm_trace.c
 
 // Used for VM memsize reporting. Returns the size of the at_exit list by
 // looping through the linked list and adding up the size of the structs.
