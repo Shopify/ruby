@@ -323,6 +323,12 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
                     println!("{:#?}", asm.current_block());
                     asm.set_current_block(fall_through_target);
                 },
+                Insn::Jump(target) => {
+                    let lir_target = hir_to_lir[&target.target];
+                    gen_jump(&mut jit, &mut asm, lir_target);
+                    println!("{:#?}", asm.current_block());
+                    asm.new_block(true);
+                },
                 _ => {
                     if let Err(last_snapshot) = gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn) {
                         debug!("ZJIT: gen_function: Failed to compile insn: {insn_id} {insn}. Generating side-exit.");
@@ -422,9 +428,9 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::ToRegexp { opt, values, state } => gen_toregexp(jit, asm, *opt, opnds!(values), &function.frame_state(*state)),
         Insn::Param => unreachable!("block.insns should not have Insn::Param"),
         Insn::Snapshot { .. } => return Ok(()), // we don't need to do anything for this instruction at the moment
-        Insn::Jump(branch) => no_output!(gen_jump(jit, asm, branch)),
+        Insn::Jump(..) => unreachable!("this function shouldn't handle control flow"),
         Insn::IfTrue { val, target } => no_output!(gen_if_true(jit, asm, opnd!(val), target)),
-        Insn::IfFalse { val, target } => unreachable!("gen_insn shouldn't handle control flow"),
+        Insn::IfFalse { .. } => unreachable!("this function shouldn't handle control flow"),
         &Insn::Send { cd, blockiseq, state, reason, .. } => gen_send(jit, asm, cd, blockiseq, &function.frame_state(state), reason),
         &Insn::SendForward { cd, blockiseq, state, reason, .. } => gen_send_forward(jit, asm, cd, blockiseq, &function.frame_state(state), reason),
         &Insn::SendWithoutBlock { cd, state, reason, .. } => gen_send_without_block(jit, asm, cd, &function.frame_state(state), reason),
@@ -1083,13 +1089,9 @@ fn gen_const_cptr(val: *const u8) -> lir::Opnd {
 }
 
 /// Compile a jump to a basic block
-fn gen_jump(jit: &mut JITState, asm: &mut Assembler, branch: &BranchEdge) {
-    // Set basic block arguments
-    gen_branch_params(jit, asm, branch);
-
+fn gen_jump(_jit: &mut JITState, asm: &mut Assembler, branch: lir::BlockId) {
     // Jump to the basic block
-    let target = jit.get_label(asm, branch.target);
-    asm.jmp(target);
+    asm.jmp(Target::Block(branch));
 }
 
 /// Compile a conditional branch to a basic block
