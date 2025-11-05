@@ -992,6 +992,9 @@ impl Assembler {
                         generate_branch::<CONDITION>(cb, src_addr - (cb.conditional_jump_insns() * 4) as i64, dst_addr);
                     });
                 },
+                Target::Block(block_id) => {
+                    panic!("FIXME");
+                }
                 Target::SideExit { .. } => {
                     unreachable!("Target::SideExit should have been compiled by compile_exits")
                 },
@@ -1478,6 +1481,9 @@ impl Assembler {
                                 let bytes: i32 = (dst_addr - (src_addr - 4)).try_into().unwrap();
                                 b(cb, InstructionOffset::from_bytes(bytes));
                             });
+                        },
+                        Target::Block(lir_block_id) => {
+                            panic!("fixme");
                         },
                         Target::SideExit { .. } => {
                             unreachable!("Target::SideExit should have been compiled by compile_exits")

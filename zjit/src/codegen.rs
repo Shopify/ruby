@@ -3,6 +3,7 @@
 #![allow(clippy::let_and_return)]
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::ffi::{c_int, c_long, c_void};
 use std::slice;
@@ -264,16 +265,17 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
     // Compile each basic block
     let reverse_post_order = function.rpo();
 
-    // Can't make a LUT at the moment bc bb_id doesn't necessarily
-    // Fix this Aaron (use a hash again)
-    for _ in 0..reverse_post_order.len() {
-        asm.new_block();
-    }
+    // Create a hash table mapping HIR block IDs to LIR block IDs
+    let mut hir_to_lir: HashMap<BlockId, lir::BlockId> = HashMap::new();
 
     for &block_id in reverse_post_order.iter() {
         println!("processing block id {:?}", block_id);
 
-        asm.set_current_block(lir::BlockId(block_id.0));
+        let lir_block = asm.new_block();
+        let lir_block_id = lir_block.id;
+        hir_to_lir.insert(block_id, lir_block_id);
+
+        asm.set_current_block(lir_block_id);
 
         // Write a label to jump to the basic block
         let label = jit.get_label(&mut asm, block_id);
@@ -314,11 +316,14 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
             //     lir_bb_id = asm.new_block().id;
             // }
 
-            if is iffalse {
-                let val = jit.get_opnd(val);
-                let target = find_or_create_lir_block(target);
-                let fallback = asm.new_block()
-            }
+            //if is iffalse {
+            //    let val = jit.get_opnd(val);
+            //    let target = find_or_create_lir_block(target);
+            //    let fallback = asm.new_block()
+            //}
+
+            //match insn {
+            //    Insn::IfFalse { val, target } => no_output!(gen_if_false(jit, asm, opnd!(val), target)),
 
             if let Err(last_snapshot) = gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn) {
                 debug!("ZJIT: gen_function: Failed to compile insn: {insn_id} {insn}. Generating side-exit.");
@@ -1110,11 +1115,12 @@ fn gen_if_false(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch:
     // If val is not zero, move on to the next instruction.
     // let if_true = asm.new_label("if_true");
     asm.test(val, val);
-    asm.jnz(if_true.clone());
+    //asm.jnz(if_true.clone());
 
     // If val is zero, set basic block arguments and jump to the branch target.
     // TODO: Consider generating the loads out-of-line
-    asm.jmp(Target::Block(branch.target));
+    // FIXME this is the wrong block id
+    asm.jmp(Target::Block(lir::BlockId(branch.target.0)));
 }
 
 /// Compile a dynamic dispatch with block
