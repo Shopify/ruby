@@ -325,17 +325,22 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
             //match insn {
             //    Insn::IfFalse { val, target } => no_output!(gen_if_false(jit, asm, opnd!(val), target)),
 
-            if let Err(last_snapshot) = gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn) {
-                debug!("ZJIT: gen_function: Failed to compile insn: {insn_id} {insn}. Generating side-exit.");
-                gen_side_exit(&mut jit, &mut asm, &SideExitReason::UnhandledHIRInsn(insn_id), &function.frame_state(last_snapshot));
-                // Don't bother generating code after a side-exit. We won't run it.
-                // TODO(max): Generate ud2 or equivalent.
-                break;
+            match insn {
+                Insn::IfFalse { val, target } => {
+                    let val_opnd = jit.get_opnd(val);
+                    let lir_target = hir_to_lir[&target.target];
+                    gen_if_false(&mut jit, &mut asm, val_opnd, lir_target);
+                },
+                _ => {
+                    if let Err(last_snapshot) = gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn) {
+                        debug!("ZJIT: gen_function: Failed to compile insn: {insn_id} {insn}. Generating side-exit.");
+                        gen_side_exit(&mut jit, &mut asm, &SideExitReason::UnhandledHIRInsn(insn_id), &function.frame_state(last_snapshot));
+                        // Don't bother generating code after a side-exit. We won't run it.
+                        // TODO(max): Generate ud2 or equivalent.
+                        break;
+                    };
+                }
             };
-
-            if insn.is_lir_terminator() {
-                asm.set_current_block(lir_bb_id);
-            }
 
             // It's fine; we generated the instruction
         }
@@ -426,7 +431,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::Snapshot { .. } => return Ok(()), // we don't need to do anything for this instruction at the moment
         Insn::Jump(branch) => no_output!(gen_jump(jit, asm, branch)),
         Insn::IfTrue { val, target } => no_output!(gen_if_true(jit, asm, opnd!(val), target)),
-        Insn::IfFalse { val, target } => no_output!(gen_if_false(jit, asm, opnd!(val), target)),
+        Insn::IfFalse { val, target } => unreachable!("gen_insn shouldn't handle control flow"),
         &Insn::Send { cd, blockiseq, state, reason, .. } => gen_send(jit, asm, cd, blockiseq, &function.frame_state(state), reason),
         &Insn::SendForward { cd, blockiseq, state, reason, .. } => gen_send_forward(jit, asm, cd, blockiseq, &function.frame_state(state), reason),
         &Insn::SendWithoutBlock { cd, state, reason, .. } => gen_send_without_block(jit, asm, cd, &function.frame_state(state), reason),
@@ -1111,7 +1116,7 @@ fn gen_if_true(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch: 
 }
 
 /// Compile a conditional branch to a basic block
-fn gen_if_false(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch: &BranchEdge) {
+fn gen_if_false(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch: lir::BlockId) {
     // If val is not zero, move on to the next instruction.
     // let if_true = asm.new_label("if_true");
     asm.test(val, val);
@@ -1120,7 +1125,7 @@ fn gen_if_false(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch:
     // If val is zero, set basic block arguments and jump to the branch target.
     // TODO: Consider generating the loads out-of-line
     // FIXME this is the wrong block id
-    asm.jmp(Target::Block(lir::BlockId(branch.target.0)));
+    asm.jmp(Target::Block(branch));
 }
 
 /// Compile a dynamic dispatch with block
