@@ -39,7 +39,7 @@ impl std::fmt::Display for InsnId {
 }
 
 /// The index of a [`Block`], which effectively acts like a pointer.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, PartialOrd, Ord)]
 pub struct BlockId(pub usize);
 
 impl From<BlockId> for usize {
@@ -875,6 +875,14 @@ impl Insn {
     pub fn is_terminator(&self) -> bool {
         match self {
             Insn::Jump(_) | Insn::Return { .. } | Insn::SideExit { .. } | Insn::Throw { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// Return true if the instruction ends an LIR basic block and false otherwise.
+    pub fn is_lir_terminator(&self) -> bool {
+        match self {
+            Insn::Jump(_) | Insn::IfTrue { .. } | Insn::IfFalse { .. } | Insn::Return { .. } | Insn::SideExit { .. } | Insn::Throw { .. } => true,
             _ => false,
         }
     }
@@ -3511,6 +3519,10 @@ impl Function {
         let mut entry_blocks = self.jit_entry_blocks.clone();
         entry_blocks.insert(0, self.entry_block);
         entry_blocks
+    }
+
+    pub fn is_entry_block(&self, block_id: BlockId) -> bool {
+        self.entry_block == block_id || self.jit_entry_blocks.contains(&block_id)
     }
 
     /// Return a traversal of the `Function`'s `BlockId`s in reverse post-order.

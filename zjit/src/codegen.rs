@@ -25,6 +25,19 @@ use crate::hir_type::{types, Type};
 use crate::options::get_option;
 use crate::cast::IntoUsize;
 
+#[derive(Debug)]
+pub struct VReg
+{
+    idx: usize,
+    num_bits: u8
+}
+
+impl VReg {
+    fn new(id: usize) -> Self {
+        Self { idx: id, num_bits: 0 }
+    }
+}
+
 /// Sentinel program counter stored in C frames when runtime checks are enabled.
 const PC_POISON: Option<*const VALUE> = if cfg!(feature = "runtime_checks") {
     Some(usize::MAX as *const VALUE)
@@ -246,9 +259,22 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
     let mut jit = JITState::new(iseq, function.num_insns(), function.num_blocks());
     let mut asm = Assembler::new_with_stack_slots(num_spilled_params);
 
+    let mut vreg_idx = 0;
+
     // Compile each basic block
     let reverse_post_order = function.rpo();
+
+    // Can't make a LUT at the moment bc bb_id doesn't necessarily
+    // Fix this Aaron (use a hash again)
+    for _ in 0..reverse_post_order.len() {
+        asm.new_block();
+    }
+
     for &block_id in reverse_post_order.iter() {
+        println!("processing block id {:?}", block_id);
+
+        asm.set_current_block(lir::BlockId(block_id.0));
+
         // Write a label to jump to the basic block
         let label = jit.get_label(&mut asm, block_id);
         asm.write_label(label);
@@ -260,19 +286,40 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
             iseq_get_location(iseq, block.insn_idx),
         );
 
+        if function.is_entry_block(block_id) {
+            println!("it's an entry block");
+        } else {
+            println!("not entry block");
+        }
+
         // Compile all parameters
         for (idx, &insn_id) in block.params().enumerate() {
             match function.find(insn_id) {
                 Insn::Param => {
-                    jit.opnds[insn_id.0] = Some(gen_param(&mut asm, idx));
+                    jit.opnds[insn_id.0] = Some(asm.add_parameter(64));
                 },
                 insn => unreachable!("Non-param insn found in block.params: {insn:?}"),
             }
         }
 
+        // Processing block 0 (but we've pre-allocated 0-10)
+
         // Compile all instructions
         for &insn_id in block.insns() {
             let insn = function.find(insn_id);
+
+            let mut lir_bb_id = lir::BlockId(block_id.0);
+
+            // if insn.is_lir_terminator() {
+            //     lir_bb_id = asm.new_block().id;
+            // }
+
+            if is iffalse {
+                let val = jit.get_opnd(val);
+                let target = find_or_create_lir_block(target);
+                let fallback = asm.new_block()
+            }
+
             if let Err(last_snapshot) = gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn) {
                 debug!("ZJIT: gen_function: Failed to compile insn: {insn_id} {insn}. Generating side-exit.");
                 gen_side_exit(&mut jit, &mut asm, &SideExitReason::UnhandledHIRInsn(insn_id), &function.frame_state(last_snapshot));
@@ -280,13 +327,21 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
                 // TODO(max): Generate ud2 or equivalent.
                 break;
             };
+
+            if insn.is_lir_terminator() {
+                asm.set_current_block(lir_bb_id);
+            }
+
             // It's fine; we generated the instruction
         }
+
+        println!("{:#?}", asm.current_block());
         // Make sure the last patch point has enough space to insert a jump
         asm.pad_patch_point();
     }
 
     // Generate code if everything can be compiled
+
     let result = asm.compile(cb);
     if let Ok((start_ptr, _)) = result {
         if get_option!(perf) {
@@ -1024,17 +1079,6 @@ fn gen_const_cptr(val: *const u8) -> lir::Opnd {
     Opnd::const_ptr(val)
 }
 
-/// Compile a basic block argument
-fn gen_param(asm: &mut Assembler, idx: usize) -> lir::Opnd {
-    // Allocate a register or a stack slot
-    match param_opnd(idx) {
-        // If it's a register, insert LiveReg instruction to reserve the register
-        // in the register pool for register allocation.
-        param @ Opnd::Reg(_) => asm.live_reg_opnd(param),
-        param => param,
-    }
-}
-
 /// Compile a jump to a basic block
 fn gen_jump(jit: &mut JITState, asm: &mut Assembler, branch: &BranchEdge) {
     // Set basic block arguments
@@ -1064,17 +1108,13 @@ fn gen_if_true(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch: 
 /// Compile a conditional branch to a basic block
 fn gen_if_false(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, branch: &BranchEdge) {
     // If val is not zero, move on to the next instruction.
-    let if_true = asm.new_label("if_true");
+    // let if_true = asm.new_label("if_true");
     asm.test(val, val);
     asm.jnz(if_true.clone());
 
     // If val is zero, set basic block arguments and jump to the branch target.
     // TODO: Consider generating the loads out-of-line
-    let if_false = jit.get_label(asm, branch.target);
-    gen_branch_params(jit, asm, branch);
-    asm.jmp(if_false);
-
-    asm.write_label(if_true);
+    asm.jmp(Target::Block(branch.target));
 }
 
 /// Compile a dynamic dispatch with block
@@ -2153,6 +2193,8 @@ pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, C
     let (mut asm, scratch_reg) = Assembler::new_with_scratch_reg();
     asm_comment!(asm, "function_stub_hit trampoline");
 
+    asm.new_block();
+
     // Maintain alignment for x86_64, and set up a frame for arm64 properly
     asm.frame_setup(&[]);
 
@@ -2191,6 +2233,8 @@ pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, C
 /// Generate a trampoline that is used when a function exits without restoring PC and the stack
 pub fn gen_exit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
     let mut asm = Assembler::new();
+
+    asm.new_block();
 
     asm_comment!(asm, "side-exit trampoline");
     asm.frame_teardown(&[]); // matching the setup in gen_entry_point()

@@ -14,6 +14,22 @@ use crate::virtualmem::CodePtr;
 use crate::asm::{CodeBlock, Label};
 use crate::state::rb_zjit_record_exit_stack;
 
+/// The index of a [`Block`], which effectively acts like a pointer.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, PartialOrd, Ord)]
+pub struct BlockId(pub usize);
+
+impl From<BlockId> for usize {
+    fn from(val: BlockId) -> Self {
+        val.0
+    }
+}
+
+impl std::fmt::Display for BlockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "bb{}", self.0)
+    }
+}
+
 pub use crate::backend::current::{
     mem_base_reg,
     Reg,
@@ -23,6 +39,45 @@ pub use crate::backend::current::{
 };
 
 pub static JIT_PRESERVED_REGS: &[Opnd] = &[CFP, SP, EC];
+
+#[derive(Debug)]
+pub struct Function {
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct BranchEdge {
+    pub target: BlockId,
+    pub args: Vec<Opnd>,
+}
+
+#[derive(Clone, Debug)]
+pub struct BasicBlock {
+    // Unique id for this block
+    pub id: BlockId,
+
+    // Instructions in this basic block
+    pub instructions: Vec<Insn>,
+
+    // pub predecessors: Vec<i32>,
+    // pub successors: Vec<i32>,
+
+    // Input parameters for this block
+    pub parameters: Vec<Opnd>
+}
+
+impl BasicBlock {
+    fn new(id: BlockId) -> Self {
+        Self { id, instructions: vec![], parameters: vec![] }
+    }
+
+    pub fn add_parameter(&mut self, param: Opnd) {
+        self.parameters.push(param);
+    }
+
+    pub fn push_insn(&mut self, insn: Insn) {
+        self.instructions.push(insn);
+    }
+}
 
 // Memory operand base
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -307,6 +362,8 @@ pub enum Target
     CodePtr(CodePtr),
     /// A label within the generated code
     Label(Label),
+    /// LIR basic block
+    Block(BlockId),
     /// Side exit to the interpreter
     SideExit {
         pc: *const VALUE,
@@ -1326,6 +1383,11 @@ const ASSEMBLER_INSNS_CAPACITY: usize = 256;
 pub struct Assembler {
     pub(super) insns: Vec<Insn>,
 
+    basic_blocks: Vec<BasicBlock>,
+    current_block_id: BlockId,
+
+    next_vreg_id: usize,
+
     /// Live range for each VReg indexed by its `idx``
     pub(super) live_ranges: Vec<LiveRange>,
 
@@ -1347,6 +1409,38 @@ pub struct Assembler {
 
 impl Assembler
 {
+    // Create a new LIR basic block.  Returns the newly created block
+    pub fn new_block(&mut self) -> &BasicBlock {
+        let bb_id = BlockId(self.basic_blocks.len());
+        let lir_bb = BasicBlock::new(bb_id);
+        self.basic_blocks.push(lir_bb);
+        &self.basic_blocks[bb_id.0]
+    }
+
+    pub fn set_current_block(&mut self, block_id: BlockId) {
+        self.current_block_id = block_id;
+    }
+
+    pub fn rewind_block(&mut self) {
+        self.set_current_block(BlockId(self.current_block_id.0 - 1));
+    }
+
+    pub fn fast_forward_block(&mut self) {
+        self.set_current_block(BlockId(self.current_block_id.0 + 1));
+    }
+
+    // Add a parameter to the current basic block, returns the newly
+    // created parameter.
+    pub fn add_parameter(&mut self, num_bits: u8) -> Opnd {
+        let vreg = self.new_vreg(num_bits);
+        self.current_block().add_parameter(vreg);
+        vreg
+    }
+
+    pub fn current_block(&mut self) -> &mut BasicBlock {
+        &mut self.basic_blocks[self.current_block_id.0]
+    }
+
     /// Create an Assembler with defaults
     pub fn new() -> Self {
         Self {
@@ -1356,6 +1450,9 @@ impl Assembler
             accept_scratch_reg: false,
             stack_base_idx: 0,
             leaf_ccall_stack_size: None,
+            basic_blocks: Vec::default(),
+            current_block_id: BlockId(0),
+            next_vreg_id: 0,
         }
     }
 
@@ -1417,8 +1514,8 @@ impl Assembler
 
     /// Build an Opnd::VReg and initialize its LiveRange
     pub(super) fn new_vreg(&mut self, num_bits: u8) -> Opnd {
-        let vreg = Opnd::VReg { idx: self.live_ranges.len(), num_bits };
-        self.live_ranges.push(LiveRange { start: None, end: None });
+        let vreg = Opnd::VReg { idx: self.next_vreg_id, num_bits };
+        self.next_vreg_id += 1;
         vreg
     }
 
@@ -1426,39 +1523,7 @@ impl Assembler
     /// the live ranges of any instructions whose outputs are being used as
     /// operands to this instruction.
     pub fn push_insn(&mut self, insn: Insn) {
-        // Index of this instruction
-        let insn_idx = self.insns.len();
-
-        // Initialize the live range of the output VReg to insn_idx..=insn_idx
-        if let Some(Opnd::VReg { idx, .. }) = insn.out_opnd() {
-            assert!(*idx < self.live_ranges.len());
-            assert_eq!(self.live_ranges[*idx], LiveRange { start: None, end: None });
-            self.live_ranges[*idx] = LiveRange { start: Some(insn_idx), end: Some(insn_idx) };
-        }
-
-        // If we find any VReg from previous instructions, extend the live range to insn_idx
-        let opnd_iter = insn.opnd_iter();
-        for opnd in opnd_iter {
-            match *opnd {
-                Opnd::VReg { idx, .. } |
-                Opnd::Mem(Mem { base: MemBase::VReg(idx), .. }) => {
-                    assert!(idx < self.live_ranges.len());
-                    assert_ne!(self.live_ranges[idx].end, None);
-                    self.live_ranges[idx].end = Some(self.live_ranges[idx].end().max(insn_idx));
-                }
-                _ => {}
-            }
-        }
-
-        // If this Assembler should not accept scratch registers, assert no use of them.
-        if !self.accept_scratch_reg {
-            let opnd_iter = insn.opnd_iter();
-            for opnd in opnd_iter {
-                assert!(!Self::has_scratch_reg(*opnd), "should not use scratch register: {opnd:?}");
-            }
-        }
-
-        self.insns.push(insn);
+        self.current_block().push_insn(insn);
     }
 
     /// Create a new label instance that we can jump to
