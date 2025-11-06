@@ -3479,6 +3479,46 @@ vm_memsize_constant_cache(void)
     return size;
 }
 
+static enum rb_id_table_iterator_result
+constant_cache_table_counts_i(ID id, VALUE ics, void *data)
+{
+    VALUE hash = (VALUE)data;
+    set_table *table = (set_table *)ics;
+    rb_hash_aset(hash, ID2SYM(id), SIZET2NUM(table->num_entries));
+    return ID_TABLE_CONTINUE;
+}
+
+static VALUE
+vm_constant_cache_table_counts(VALUE self)
+{
+    rb_vm_t *vm = GET_VM();
+    VALUE hash = rb_hash_new();
+
+    rb_id_table_foreach(vm->constant_cache, constant_cache_table_counts_i, (void *)hash);
+
+    return hash;
+}
+
+static enum rb_id_table_iterator_result
+constant_cache_table_sizes_i(ID id, VALUE ics, void *data)
+{
+    VALUE hash = (VALUE)data;
+    set_table *table = (set_table *)ics;
+    rb_hash_aset(hash, ID2SYM(id), SIZET2NUM(rb_set_memsize(table)));
+    return ID_TABLE_CONTINUE;
+}
+
+static VALUE
+vm_constant_cache_table_sizes(VALUE self)
+{
+    rb_vm_t *vm = GET_VM();
+    VALUE hash = rb_hash_new();
+
+    rb_id_table_foreach(vm->constant_cache, constant_cache_table_sizes_i, (void *)hash);
+
+    return hash;
+}
+
 static size_t
 vm_memsize_at_exit_list(rb_at_exit_list *at_exit)
 {
@@ -4228,6 +4268,8 @@ Init_VM(void)
     rb_undef_alloc_func(rb_cRubyVM);
     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);
+    rb_define_singleton_method(rb_cRubyVM, "constant_cache_table_counts", vm_constant_cache_table_counts, 0);
+    rb_define_singleton_method(rb_cRubyVM, "constant_cache_table_sizes", vm_constant_cache_table_sizes, 0);
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines", vm_keep_script_lines, 0);
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines=", vm_keep_script_lines_set, 1);
 
