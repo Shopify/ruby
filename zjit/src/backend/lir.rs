@@ -58,6 +58,8 @@ pub struct BasicBlock {
 
     pub hir_block_id: hir::BlockId,
 
+    pub entry: bool,
+
     // Instructions in this basic block
     pub instructions: Vec<Insn>,
 
@@ -66,8 +68,8 @@ pub struct BasicBlock {
 }
 
 impl BasicBlock {
-    fn new(id: BlockId, hir_block_id: hir::BlockId) -> Self {
-        Self { id, hir_block_id, instructions: vec![], parameters: vec![] }
+    fn new(id: BlockId, hir_block_id: hir::BlockId, entry: bool) -> Self {
+        Self { id, hir_block_id, entry, instructions: vec![], parameters: vec![] }
     }
 
     pub fn add_parameter(&mut self, param: Opnd) {
@@ -1410,9 +1412,9 @@ pub struct Assembler {
 impl Assembler
 {
     // Create a new LIR basic block.  Returns the newly created block
-    pub fn new_block(&mut self, hir_block_id: hir::BlockId, set_current: bool) -> &BasicBlock {
+    pub fn new_block(&mut self, hir_block_id: hir::BlockId, entry: bool, set_current: bool) -> &BasicBlock {
         let bb_id = BlockId(self.basic_blocks.len());
-        let lir_bb = BasicBlock::new(bb_id, hir_block_id);
+        let lir_bb = BasicBlock::new(bb_id, hir_block_id, entry);
         self.basic_blocks.push(lir_bb);
         if set_current {
             self.set_current_block(bb_id);
@@ -1949,7 +1951,12 @@ impl fmt::Display for Assembler {
         }
 
         for block in self.basic_blocks.iter() {
-            writeln!(f, "  BLOCK ID (hir source block: {}): {}", block.hir_block_id.0, block.id.0)?;
+            write!(f, "  LIR {} (HIR {}", block.id, block.hir_block_id)?;
+            if block.entry {
+                writeln!(f, ", entry!):")?;
+            } else {
+                writeln!(f, "):")?;
+            }
             for insn in block.instructions.iter() {
                 match insn {
                     Insn::Comment(comment) => {

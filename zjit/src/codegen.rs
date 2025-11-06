@@ -184,7 +184,7 @@ fn register_with_perf(iseq_name: String, start_ptr: usize, code_size: usize) {
 pub fn gen_entry_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
     // Set up registers for CFP, EC, SP, and basic block arguments
     let mut asm = Assembler::new();
-    asm.new_block(hir::BlockId(usize::MAX), true);
+    asm.new_block(hir::BlockId(usize::MAX), true, true);
     gen_entry_prologue(&mut asm);
 
     // Jump to the first block using a call instruction. This trampoline is used
@@ -271,7 +271,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
 
     // Create all LIR basic blocks corresponding to HIR basic blocks
     for &block_id in reverse_post_order.iter() {
-        let lir_block = asm.new_block(block_id, false);
+        let lir_block = asm.new_block(block_id, function.is_entry_block(block_id), false);
         let lir_block_id = lir_block.id;
         hir_to_lir.insert(block_id, lir_block_id);
     }
@@ -291,12 +291,6 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
             block.params().map(|param| format!("{param}")).collect::<Vec<_>>().join(", "),
             iseq_get_location(iseq, block.insn_idx),
         );
-
-        if function.is_entry_block(block_id) {
-            println!("it's an entry block");
-        } else {
-            println!("not entry block");
-        }
 
         // Compile all parameters
         for (idx, &insn_id) in block.params().enumerate() {
@@ -318,14 +312,14 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
                 Insn::IfFalse { val, target } => {
                     let val_opnd = jit.get_opnd(val);
                     let lir_target = hir_to_lir[&target.target];
-                    let fall_through_target = asm.new_block(block_id, false).id;
+                    let fall_through_target = asm.new_block(block_id, false, false).id;
                     gen_if_false(&mut jit, &mut asm, val_opnd, lir_target, fall_through_target);
                     asm.set_current_block(fall_through_target);
                 },
                 Insn::Jump(target) => {
                     let lir_target = hir_to_lir[&target.target];
                     gen_jump(&mut jit, &mut asm, lir_target);
-                    asm.new_block(block_id, true);
+                    asm.new_block(block_id, false, true);
                 },
                 _ => {
                     if let Err(last_snapshot) = gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn) {
@@ -344,7 +338,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
         // Make sure the last patch point has enough space to insert a jump
         asm.pad_patch_point();
     }
-    println!("ASSEMBLER {}", asm);
+    println!("{}", asm);
     std::process::exit(0);
 
     // Generate code if everything can be compiled
@@ -985,7 +979,7 @@ fn gen_check_interrupts(jit: &mut JITState, asm: &mut Assembler, state: &FrameSt
         ($condition:ident, $asm:ident, $jit:ident, $state:ident, $reason:expr) => {
             $asm.$condition(side_exit($jit, $state, $reason));
             let hir_block_id = asm.current_block().hir_block_id;
-            let block_id = asm.new_block(hir_block_id, false).id;
+            let block_id = asm.new_block(hir_block_id, false, false).id;
             $asm.jmp(Target::Block(block_id));
             $asm.set_current_block(block_id);
         };
@@ -2212,7 +2206,7 @@ pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, C
     let (mut asm, scratch_reg) = Assembler::new_with_scratch_reg();
     asm_comment!(asm, "function_stub_hit trampoline");
 
-    asm.new_block(hir::BlockId(usize::MAX), true);
+    asm.new_block(hir::BlockId(usize::MAX), true, true);
 
     // Maintain alignment for x86_64, and set up a frame for arm64 properly
     asm.frame_setup(&[]);
@@ -2253,7 +2247,7 @@ pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, C
 pub fn gen_exit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
     let mut asm = Assembler::new();
 
-    asm.new_block(hir::BlockId(usize::MAX), true);
+    asm.new_block(hir::BlockId(usize::MAX), true, true);
 
     asm_comment!(asm, "side-exit trampoline");
     asm.frame_teardown(&[]); // matching the setup in gen_entry_point()
