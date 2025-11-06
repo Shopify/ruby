@@ -1991,7 +1991,7 @@ impl fmt::Display for Assembler {
                         if let Some(target) = insn.target() {
                             match target {
                                 Target::CodePtr(code_ptr) => write!(f, " {code_ptr:?}")?,
-                                Target::Block(block_id) => write!(f, " {block_id:?}")?,
+                                Target::Block(block_id) => write!(f, " {block_id}")?,
                                 Target::Label(Label(label_idx)) => write!(f, " {}", label_name(self, *label_idx, &label_counts))?,
                                 Target::SideExit { reason, .. } => write!(f, " Exit({reason})")?,
                             }

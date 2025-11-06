@@ -277,8 +277,6 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
     }
 
     for &block_id in reverse_post_order.iter() {
-        println!("processing block id {:?}", block_id);
-
         // Set the current block to the LIR block that corresponds to this
         // HIR block.
         let lir_block_id = hir_to_lir[&block_id];
@@ -319,7 +317,6 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
                 Insn::Jump(target) => {
                     let lir_target = hir_to_lir[&target.target];
                     gen_jump(&mut jit, &mut asm, lir_target);
-                    asm.new_block(block_id, false, true);
                 },
                 _ => {
                     if let Err(last_snapshot) = gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn) {
@@ -2204,9 +2201,10 @@ fn gen_function_stub(cb: &mut CodeBlock, iseq_call: IseqCallRef) -> Result<CodeP
 /// Generate a trampoline that is used when a
 pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
     let (mut asm, scratch_reg) = Assembler::new_with_scratch_reg();
-    asm_comment!(asm, "function_stub_hit trampoline");
 
     asm.new_block(hir::BlockId(usize::MAX), true, true);
+
+    asm_comment!(asm, "function_stub_hit trampoline");
 
     // Maintain alignment for x86_64, and set up a frame for arm64 properly
     asm.frame_setup(&[]);
