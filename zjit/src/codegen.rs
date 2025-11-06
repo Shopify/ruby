@@ -20,7 +20,7 @@ use crate::stats::{send_fallback_counter, exit_counter_for_compile_error, incr_c
 use crate::stats::{counter_ptr, with_time_stat, Counter, Counter::{compile_time_ns, exit_compile_error}};
 use crate::{asm::CodeBlock, cruby::*, options::debug, virtualmem::CodePtr};
 use crate::backend::lir::{self, asm_comment, asm_ccall, Assembler, Opnd, Target, CFP, C_ARG_OPNDS, C_RET_OPND, EC, NATIVE_STACK_PTR, NATIVE_BASE_PTR, SP};
-use crate::hir::{iseq_to_hir, BlockId, BranchEdge, Invariant, RangeType, SideExitReason::{self, *}, SpecialBackrefSymbol, SpecialObjectType};
+use crate::hir::{self, iseq_to_hir, BranchEdge, Invariant, RangeType, SideExitReason::{self, *}, SpecialBackrefSymbol, SpecialObjectType};
 use crate::hir::{Const, FrameState, Function, Insn, InsnId, SendFallbackReason};
 use crate::hir_type::{types, Type};
 use crate::options::get_option;
@@ -82,7 +82,7 @@ impl JITState {
     }
 
     /// Find or create a label for a given BlockId
-    fn get_label(&mut self, asm: &mut Assembler, block_id: BlockId) -> Target {
+    fn get_label(&mut self, asm: &mut Assembler, block_id: hir::BlockId) -> Target {
         match &self.labels[block_id.0] {
             Some(label) => label.clone(),
             None => {
@@ -184,7 +184,7 @@ fn register_with_perf(iseq_name: String, start_ptr: usize, code_size: usize) {
 pub fn gen_entry_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
     // Set up registers for CFP, EC, SP, and basic block arguments
     let mut asm = Assembler::new();
-    asm.new_block(true);
+    asm.new_block(hir::BlockId(usize::MAX), true);
     gen_entry_prologue(&mut asm);
 
     // Jump to the first block using a call instruction. This trampoline is used
@@ -267,11 +267,11 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
     let reverse_post_order = function.rpo();
 
     // Create a hash table mapping HIR block IDs to LIR block IDs
-    let mut hir_to_lir: HashMap<BlockId, lir::BlockId> = HashMap::new();
+    let mut hir_to_lir: HashMap<hir::BlockId, lir::BlockId> = HashMap::new();
 
     // Create all LIR basic blocks corresponding to HIR basic blocks
     for &block_id in reverse_post_order.iter() {
-        let lir_block = asm.new_block(false);
+        let lir_block = asm.new_block(block_id, false);
         let lir_block_id = lir_block.id;
         hir_to_lir.insert(block_id, lir_block_id);
     }
@@ -318,16 +318,14 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
                 Insn::IfFalse { val, target } => {
                     let val_opnd = jit.get_opnd(val);
                     let lir_target = hir_to_lir[&target.target];
-                    let fall_through_target = asm.new_block(false).id;
+                    let fall_through_target = asm.new_block(block_id, false).id;
                     gen_if_false(&mut jit, &mut asm, val_opnd, lir_target, fall_through_target);
-                    println!("{:#?}", asm.current_block());
                     asm.set_current_block(fall_through_target);
                 },
                 Insn::Jump(target) => {
                     let lir_target = hir_to_lir[&target.target];
                     gen_jump(&mut jit, &mut asm, lir_target);
-                    println!("{:#?}", asm.current_block());
-                    asm.new_block(true);
+                    asm.new_block(block_id, true);
                 },
                 _ => {
                     if let Err(last_snapshot) = gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn) {
@@ -343,10 +341,10 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, function: &Function) -> Resul
             // It's fine; we generated the instruction
         }
 
-        println!("{:#?}", asm.current_block());
         // Make sure the last patch point has enough space to insert a jump
         asm.pad_patch_point();
     }
+    println!("ASSEMBLER {}", asm);
     std::process::exit(0);
 
     // Generate code if everything can be compiled
@@ -983,6 +981,16 @@ fn gen_getspecial_number(asm: &mut Assembler, nth: u64, state: &FrameState) -> O
 }
 
 fn gen_check_interrupts(jit: &mut JITState, asm: &mut Assembler, state: &FrameState) {
+    macro_rules! side_exit_if {
+        ($condition:ident, $asm:ident, $jit:ident, $state:ident, $reason:expr) => {
+            $asm.$condition(side_exit($jit, $state, $reason));
+            let hir_block_id = asm.current_block().hir_block_id;
+            let block_id = asm.new_block(hir_block_id, false).id;
+            $asm.jmp(Target::Block(block_id));
+            $asm.set_current_block(block_id);
+        };
+    }
+
     // Check for interrupts
     // see RUBY_VM_CHECK_INTS(ec) macro
     asm_comment!(asm, "RUBY_VM_CHECK_INTS(ec)");
@@ -990,7 +998,13 @@ fn gen_check_interrupts(jit: &mut JITState, asm: &mut Assembler, state: &FrameSt
     // signal_exec, or rb_postponed_job_flush.
     let interrupt_flag = asm.load(Opnd::mem(32, EC, RUBY_OFFSET_EC_INTERRUPT_FLAG));
     asm.test(interrupt_flag, interrupt_flag);
-    asm.jnz(side_exit(jit, state, SideExitReason::Interrupt));
+    // asm.jnz(side_exit(jit, state, SideExitReason::Interrupt));
+    side_exit_if!(jnz, asm, jit, state, SideExitReason::Interrupt);
+    /*
+     * jnz(side_exit);
+     * jmp(block);
+     * asm.current_block = block;
+     * */
 }
 
 fn gen_hash_dup(asm: &mut Assembler, val: Opnd, state: &FrameState) -> lir::Opnd {
@@ -2198,7 +2212,7 @@ pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, C
     let (mut asm, scratch_reg) = Assembler::new_with_scratch_reg();
     asm_comment!(asm, "function_stub_hit trampoline");
 
-    asm.new_block(true);
+    asm.new_block(hir::BlockId(usize::MAX), true);
 
     // Maintain alignment for x86_64, and set up a frame for arm64 properly
     asm.frame_setup(&[]);
@@ -2239,7 +2253,7 @@ pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, C
 pub fn gen_exit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
     let mut asm = Assembler::new();
 
-    asm.new_block(true);
+    asm.new_block(hir::BlockId(usize::MAX), true);
 
     asm_comment!(asm, "side-exit trampoline");
     asm.frame_teardown(&[]); // matching the setup in gen_entry_point()

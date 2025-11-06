@@ -12,6 +12,7 @@ use crate::cruby::VALUE;
 use crate::stats::{exit_counter_ptr, exit_counter_ptr_for_opcode, side_exit_counter, CompileError};
 use crate::virtualmem::CodePtr;
 use crate::asm::{CodeBlock, Label};
+use crate::hir;
 use crate::state::rb_zjit_record_exit_stack;
 
 /// The index of a [`Block`], which effectively acts like a pointer.
@@ -55,19 +56,18 @@ pub struct BasicBlock {
     // Unique id for this block
     pub id: BlockId,
 
+    pub hir_block_id: hir::BlockId,
+
     // Instructions in this basic block
     pub instructions: Vec<Insn>,
-
-    // pub predecessors: Vec<i32>,
-    // pub successors: Vec<i32>,
 
     // Input parameters for this block
     pub parameters: Vec<Opnd>
 }
 
 impl BasicBlock {
-    fn new(id: BlockId) -> Self {
-        Self { id, instructions: vec![], parameters: vec![] }
+    fn new(id: BlockId, hir_block_id: hir::BlockId) -> Self {
+        Self { id, hir_block_id, instructions: vec![], parameters: vec![] }
     }
 
     pub fn add_parameter(&mut self, param: Opnd) {
@@ -1410,9 +1410,9 @@ pub struct Assembler {
 impl Assembler
 {
     // Create a new LIR basic block.  Returns the newly created block
-    pub fn new_block(&mut self, set_current: bool) -> &BasicBlock {
+    pub fn new_block(&mut self, hir_block_id: hir::BlockId, set_current: bool) -> &BasicBlock {
         let bb_id = BlockId(self.basic_blocks.len());
-        let lir_bb = BasicBlock::new(bb_id);
+        let lir_bb = BasicBlock::new(bb_id, hir_block_id);
         self.basic_blocks.push(lir_bb);
         if set_current {
             self.set_current_block(bb_id);
@@ -1948,69 +1948,73 @@ impl fmt::Display for Assembler {
             }
         }
 
-        for insn in self.insns.iter() {
-            match insn {
-                Insn::Comment(comment) => {
-                    writeln!(f, "    {BOLD_BEGIN}# {comment}{BOLD_END}")?;
-                }
-                Insn::Label(target) => {
-                    let &Target::Label(Label(label_idx)) = target else {
-                        panic!("unexpected target for Insn::Label: {target:?}");
-                    };
-                    writeln!(f, "  {}:", label_name(self, label_idx, &label_counts))?;
-                }
-                _ => {
-                    write!(f, "    ")?;
-
-                    // Print output operand if any
-                    if let Some(out) = insn.out_opnd() {
-                        write!(f, "{out} = ")?;
+        for block in self.basic_blocks.iter() {
+            writeln!(f, "  BLOCK ID (hir source block: {}): {}", block.hir_block_id.0, block.id.0)?;
+            for insn in block.instructions.iter() {
+                match insn {
+                    Insn::Comment(comment) => {
+                        writeln!(f, "    {BOLD_BEGIN}# {comment}{BOLD_END}")?;
                     }
+                    Insn::Label(target) => {
+                        let &Target::Label(Label(label_idx)) = target else {
+                            panic!("unexpected target for Insn::Label: {target:?}");
+                        };
+                        writeln!(f, "  {}:", label_name(self, label_idx, &label_counts))?;
+                    }
+                    _ => {
+                        write!(f, "    ")?;
 
-                    // Print the instruction name
-                    write!(f, "{}", insn.op())?;
-
-                    // Show slot_count for FrameSetup
-                    if let Insn::FrameSetup { slot_count, preserved } = insn {
-                        write!(f, " {slot_count}")?;
-                        if !preserved.is_empty() {
-                            write!(f, ",")?;
+                        // Print output operand if any
+                        if let Some(out) = insn.out_opnd() {
+                            write!(f, "{out} = ")?;
                         }
-                    }
 
-                    // Print target
-                    if let Some(target) = insn.target() {
-                        match target {
-                            Target::CodePtr(code_ptr) => write!(f, " {code_ptr:?}")?,
-                            Target::Block(block_id) => write!(f, " {block_id:?}")?,
-                            Target::Label(Label(label_idx)) => write!(f, " {}", label_name(self, *label_idx, &label_counts))?,
-                            Target::SideExit { reason, .. } => write!(f, " Exit({reason})")?,
-                        }
-                    }
+                        // Print the instruction name
+                        write!(f, "{}", insn.op())?;
 
-                    // Print list of operands
-                    if let Some(Target::SideExit { .. }) = insn.target() {
-                        // If the instruction has a SideExit, avoid using opnd_iter(), which has stack/locals.
-                        // Here, only handle instructions that have both Opnd and Target.
-                        match insn {
-                            Insn::Joz(opnd, _) |
-                            Insn::Jonz(opnd, _) |
-                            Insn::LeaJumpTarget { out: opnd, target: _ } => {
-                                write!(f, ", {opnd}")?;
+                        // Show slot_count for FrameSetup
+                        if let Insn::FrameSetup { slot_count, preserved } = insn {
+                            write!(f, " {slot_count}")?;
+                            if !preserved.is_empty() {
+                                write!(f, ",")?;
                             }
-                            _ => {}
                         }
-                    } else if let Insn::ParallelMov { moves } = insn {
-                        // Print operands with a special syntax for ParallelMov
-                        moves.iter().try_fold(" ", |prefix, (dst, src)| write!(f, "{prefix}{dst} <- {src}").and(Ok(", ")))?;
-                    } else if insn.opnd_iter().count() > 0 {
-                        insn.opnd_iter().try_fold(" ", |prefix, opnd| write!(f, "{prefix}{opnd}").and(Ok(", ")))?;
-                    }
 
-                    write!(f, "\n")?;
+                        // Print target
+                        if let Some(target) = insn.target() {
+                            match target {
+                                Target::CodePtr(code_ptr) => write!(f, " {code_ptr:?}")?,
+                                Target::Block(block_id) => write!(f, " {block_id:?}")?,
+                                Target::Label(Label(label_idx)) => write!(f, " {}", label_name(self, *label_idx, &label_counts))?,
+                                Target::SideExit { reason, .. } => write!(f, " Exit({reason})")?,
+                            }
+                        }
+
+                        // Print list of operands
+                        if let Some(Target::SideExit { .. }) = insn.target() {
+                            // If the instruction has a SideExit, avoid using opnd_iter(), which has stack/locals.
+                            // Here, only handle instructions that have both Opnd and Target.
+                            match insn {
+                                Insn::Joz(opnd, _) |
+                                    Insn::Jonz(opnd, _) |
+                                    Insn::LeaJumpTarget { out: opnd, target: _ } => {
+                                        write!(f, ", {opnd}")?;
+                                    }
+                                _ => {}
+                            }
+                        } else if let Insn::ParallelMov { moves } = insn {
+                            // Print operands with a special syntax for ParallelMov
+                            moves.iter().try_fold(" ", |prefix, (dst, src)| write!(f, "{prefix}{dst} <- {src}").and(Ok(", ")))?;
+                        } else if insn.opnd_iter().count() > 0 {
+                            insn.opnd_iter().try_fold(" ", |prefix, opnd| write!(f, "{prefix}{opnd}").and(Ok(", ")))?;
+                        }
+
+                        write!(f, "\n")?;
+                    }
                 }
             }
         }
+
         Ok(())
     }
 }
