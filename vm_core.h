@@ -1035,6 +1035,7 @@ struct rb_execution_context_struct {
 
     rb_fiber_t *fiber_ptr;
     struct rb_thread_struct *thread_ptr;
+    rb_serial_t ractor_id;
 
     /* storage (ec (fiber) local) */
     struct rb_id_table *local_storage;
@@ -1078,6 +1079,7 @@ struct rb_execution_context_struct {
         void *asan_fake_stack_handle;
 #endif
     } machine;
+
 };
 
 #ifndef rb_execution_context_t
