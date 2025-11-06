@@ -872,6 +872,7 @@ vm_stat(int argc, VALUE *argv, VALUE self)
         rb_hash_aset(hash, ID2SYM(rb_intern("negative_cme_table_size")), ULL2NUM(rb_id_table_memsize(vm->negative_cme_table)));
         rb_hash_aset(hash, ID2SYM(rb_intern("overloaded_cme_table_size")), ULL2NUM(rb_st_memsize(vm->overloaded_cme_table)));
         rb_hash_aset(hash, ID2SYM(rb_intern("cc_refinement_table_size")), ULL2NUM(rb_set_memsize(vm->cc_refinement_table)));
+        rb_hash_aset(hash, ID2SYM(rb_intern("unused_block_warning_table_size")), ULL2NUM(rb_set_memsize(vm->unused_block_warning_table)));
         rb_hash_aset(hash, ID2SYM(rb_intern("constant_cache_size")), ULL2NUM(vm_memsize_constant_cache()));
     }
 
@@ -3516,6 +3517,7 @@ vm_memsize(const void *ptr)
         rb_id_table_memsize(vm->negative_cme_table) +
         rb_st_memsize(vm->overloaded_cme_table) +
         rb_set_memsize(vm->cc_refinement_table) +
+        rb_set_memsize(vm->unused_block_warning_table) +
         vm_memsize_constant_cache()
     );
 
