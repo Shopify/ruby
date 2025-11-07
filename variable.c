@@ -3355,8 +3355,10 @@ rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
     VALUE c = rb_const_search(klass, id, exclude, recurse, visibility);
     if (!UNDEF_P(c)) {
         if (UNLIKELY(!rb_ractor_main_p())) {
-            if (!rb_ractor_shareable_p(c)) {
-                rb_raise(rb_eRactorIsolationError, "can not access non-shareable objects in constant %"PRIsVALUE"::%s by non-main Ractor.", rb_class_path(klass), rb_id2name(id));
+            VALUE chain = rb_ary_new();
+            if (!rb_ractor_shareable_p_continue(c, chain)) {
+                rb_raise(rb_eRactorIsolationError, "can not access non-shareable objects in constant %"PRIsVALUE"::%s by non-main Ractor.\n"\
+                        "Reference chain: %"PRIsVALUE, rb_class_path(klass), rb_id2name(id), chain);
             }
         }
         return c;

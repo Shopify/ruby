@@ -1143,9 +1143,11 @@ vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_
                         }
                         else {
                             if (UNLIKELY(!rb_ractor_main_p())) {
-                                if (!rb_ractor_shareable_p(val)) {
+                                VALUE chain = rb_ary_new();
+                                if (!rb_ractor_shareable_p_continue(val, chain)) {
                                     rb_raise(rb_eRactorIsolationError,
-                                             "can not access non-shareable objects in constant %"PRIsVALUE"::%s by non-main ractor.", rb_class_path(klass), rb_id2name(id));
+                                             "can not access non-shareable objects in constant %"PRIsVALUE"::%s by non-main ractor.\n"\
+                                             "Reference chain: %"PRIsVALUE, rb_class_path(klass), rb_id2name(id), chain);
                                 }
                             }
                             return val;
