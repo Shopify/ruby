@@ -2890,6 +2890,7 @@ void
 rb_fiber_close(rb_fiber_t *fiber)
 {
     fiber_status_set(fiber, FIBER_TERMINATED);
+    fiber->cont.saved_ec.storage = Qnil; // allow release, even if fiber is kept around
 }
 
 static void
