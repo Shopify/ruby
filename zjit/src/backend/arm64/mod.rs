@@ -391,7 +391,7 @@ impl Assembler {
 
         let mut asm_local = Assembler::new_with_asm(&self);
         let live_ranges: Vec<LiveRange> = take(&mut self.live_ranges);
-        let mut iterator = self.insns.into_iter().enumerate().peekable();
+        let mut iterator = self.instruction_iterator();
         let asm = &mut asm_local;
 
         while let Some((index, mut insn)) = iterator.next() {
@@ -694,7 +694,7 @@ impl Assembler {
     /// VRegs, most splits should happen in [`Self::arm64_split`]. However, some instructions
     /// need to be split with registers after `alloc_regs`, e.g. for `compile_exits`, so this
     /// splits them and uses scratch registers for it.
-    fn arm64_scratch_split(self) -> Assembler {
+    fn arm64_scratch_split(mut self) -> Assembler {
         /// If opnd is Opnd::Mem with a too large disp, make the disp smaller using lea.
         fn split_large_disp(asm: &mut Assembler, opnd: Opnd, scratch_opnd: Opnd) -> Opnd {
             match opnd {
@@ -753,7 +753,7 @@ impl Assembler {
         let mut asm_local = Assembler::new_with_asm(&self);
         let asm = &mut asm_local;
         asm.accept_scratch_reg = true;
-        let mut iterator = self.insns.into_iter().enumerate().peekable();
+        let mut iterator = self.instruction_iterator();
 
         while let Some((_, mut insn)) = iterator.next() {
             match &mut insn {
@@ -1660,7 +1660,7 @@ impl Assembler {
 /// If a, b, and c are all registers.
 fn merge_three_reg_mov(
     live_ranges: &[LiveRange],
-    iterator: &mut std::iter::Peekable<impl Iterator<Item = (usize, Insn)>>,
+    iterator: &mut InsnIter,
     left: &Opnd,
     right: &Opnd,
     out: &mut Opnd,

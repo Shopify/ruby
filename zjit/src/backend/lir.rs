@@ -1399,6 +1399,15 @@ impl Assembler
         }
     }
 
+    pub fn instruction_iterator(&mut self) -> InsnIter {
+        let insns = take(&mut self.insns);
+        InsnIter {
+            old_insns_iter: insns.into_iter(),
+            peeked: None,
+            index: 0,
+        }
+    }
+
     pub fn expect_leaf_ccall(&mut self, stack_size: usize) {
         self.leaf_ccall_stack_size = Some(stack_size);
     }
@@ -1998,6 +2007,41 @@ impl fmt::Debug for Assembler {
     }
 }
 
+pub struct InsnIter {
+    old_insns_iter: std::vec::IntoIter<Insn>,
+    peeked: Option<(usize, Insn)>,
+    index: usize,
+}
+
+impl Iterator for InsnIter {
+    type Item = (usize, Insn);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // If we have a peeked value, return it
+        if let Some(item) = self.peeked.take() {
+            return Some(item);
+        }
+        // Otherwise get the next from underlying iterator
+        let insn = self.old_insns_iter.next()?;
+        let idx = self.index;
+        self.index += 1;
+        Some((idx, insn))
+    }
+}
+
+impl InsnIter {
+    pub fn peek(&mut self) -> Option<&(usize, Insn)> {
+        // If we don't have a peeked value, get one
+        if self.peeked.is_none() {
+            let insn = self.old_insns_iter.next()?;
+            let idx = self.index;
+            self.index += 1;
+            self.peeked = Some((idx, insn));
+        }
+        // Return a reference to the peeked value
+        self.peeked.as_ref()
+    }
+}
 impl Assembler {
     #[must_use]
     pub fn add(&mut self, left: Opnd, right: Opnd) -> Opnd {
