@@ -390,11 +390,11 @@ impl Assembler {
         }
 
         let mut asm_local = Assembler::new_with_asm(&self);
+        let asm = &mut asm_local;
         let live_ranges: Vec<LiveRange> = take(&mut self.live_ranges);
         let mut iterator = self.instruction_iterator();
-        let asm = &mut asm_local;
 
-        while let Some((index, mut insn)) = iterator.next() {
+        while let Some((index, mut insn)) = iterator.next(asm) {
             // Here we're going to map the operands of the instruction to load
             // any Opnd::Value operands into registers if they are heap objects
             // such that only the Op::Load instruction needs to handle that
@@ -428,13 +428,13 @@ impl Assembler {
                             *right = split_shifted_immediate(asm, other_opnd);
                             // Now `right` is either a register or an immediate, both can try to
                             // merge with a subsequent mov.
-                            merge_three_reg_mov(&live_ranges, &mut iterator, left, left, out);
+                            merge_three_reg_mov(&live_ranges, &mut iterator, asm, left, left, out);
                             asm.push_insn(insn);
                         }
                         _ => {
                             *left = split_load_operand(asm, *left);
                             *right = split_shifted_immediate(asm, *right);
-                            merge_three_reg_mov(&live_ranges, &mut iterator, left, right, out);
+                            merge_three_reg_mov(&live_ranges, &mut iterator, asm, left, right, out);
                             asm.push_insn(insn);
                         }
                     }
@@ -444,7 +444,7 @@ impl Assembler {
                     *right = split_shifted_immediate(asm, *right);
                     // Now `right` is either a register or an immediate,
                     // both can try to merge with a subsequent mov.
-                    merge_three_reg_mov(&live_ranges, &mut iterator, left, left, out);
+                    merge_three_reg_mov(&live_ranges, &mut iterator, asm, left, left, out);
                     asm.push_insn(insn);
                 }
                 Insn::And { left, right, out } |
@@ -454,7 +454,7 @@ impl Assembler {
                     *left = opnd0;
                     *right = opnd1;
 
-                    merge_three_reg_mov(&live_ranges, &mut iterator, left, right, out);
+                    merge_three_reg_mov(&live_ranges, &mut iterator, asm, left, right, out);
 
                     asm.push_insn(insn);
                 }
@@ -567,7 +567,7 @@ impl Assembler {
                         if matches!(out, Opnd::VReg { .. }) && *out == *src && live_ranges[out.vreg_idx()].end() == index + 1 => {
                             *out = Opnd::Reg(*reg);
                             asm.push_insn(insn);
-                            iterator.next(); // Pop merged Insn::Mov
+                            iterator.next(asm); // Pop merged Insn::Mov
                         }
                         _ => {
                             asm.push_insn(insn);
@@ -753,9 +753,9 @@ impl Assembler {
         let mut asm_local = Assembler::new_with_asm(&self);
         let asm = &mut asm_local;
         asm.accept_scratch_reg = true;
-        let mut iterator = self.instruction_iterator();
+        let iterator = &mut self.instruction_iterator();
 
-        while let Some((_, mut insn)) = iterator.next() {
+        while let Some((_, mut insn)) = iterator.next(asm) {
             match &mut insn {
                 Insn::Add { left, right, out } |
                 Insn::Sub { left, right, out } |
@@ -1661,6 +1661,7 @@ impl Assembler {
 fn merge_three_reg_mov(
     live_ranges: &[LiveRange],
     iterator: &mut InsnIter,
+    asm: &mut Assembler,
     left: &Opnd,
     right: &Opnd,
     out: &mut Opnd,
@@ -1671,7 +1672,7 @@ fn merge_three_reg_mov(
             = (left, right, iterator.peek()) {
         if out == src && live_ranges[out.vreg_idx()].end() == *mov_idx && matches!(*dest, Opnd::Reg(_) | Opnd::VReg{..}) {
             *out = *dest;
-            iterator.next(); // Pop merged Insn::Mov
+            iterator.next(asm); // Pop merged Insn::Mov
         }
     }
 }

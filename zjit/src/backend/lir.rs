@@ -2013,10 +2013,22 @@ pub struct InsnIter {
     index: usize,
 }
 
-impl Iterator for InsnIter {
-    type Item = (usize, Insn);
+impl InsnIter {
+    // We're implementing our own peek() because we don't want peek to
+    // cross basic blocks as we're iterating.
+    pub fn peek(&mut self) -> Option<&(usize, Insn)> {
+        // If we don't have a peeked value, get one
+        if self.peeked.is_none() {
+            let insn = self.old_insns_iter.next()?;
+            let idx = self.index;
+            self.index += 1;
+            self.peeked = Some((idx, insn));
+        }
+        // Return a reference to the peeked value
+        self.peeked.as_ref()
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn next(&mut self, _new_asm: &mut Assembler) -> Option<(usize, Insn)> {
         // If we have a peeked value, return it
         if let Some(item) = self.peeked.take() {
             return Some(item);
@@ -2029,19 +2041,6 @@ impl Iterator for InsnIter {
     }
 }
 
-impl InsnIter {
-    pub fn peek(&mut self) -> Option<&(usize, Insn)> {
-        // If we don't have a peeked value, get one
-        if self.peeked.is_none() {
-            let insn = self.old_insns_iter.next()?;
-            let idx = self.index;
-            self.index += 1;
-            self.peeked = Some((idx, insn));
-        }
-        // Return a reference to the peeked value
-        self.peeked.as_ref()
-    }
-}
 impl Assembler {
     #[must_use]
     pub fn add(&mut self, left: Opnd, right: Opnd) -> Opnd {
