@@ -161,3 +161,63 @@ Q: Why have `cfp->ep` when it seems that everything is below `cfp->sp`?
 
 A: In the example, `cfp->ep` points to the stack, but it can also point to the
    GC heap. Blocks can capture and evacuate their environment to the heap.
+
+## Base Pointer (BP) and Stack Consistency
+
+The **base pointer (BP)** marks the boundary between the environment and
+temporary values. It represents where SP should be when a frame returns—right
+above the environment triple.
+
+Here's the earlier diagram with BP annotated:
+
+```text
+                           0x8 ┌────────────┐◄── cfp->sp (current top)
+                               │    :one    │    temporary value
+                           0x7 ├────────────┤◄── BP (base of temporaries)
+                               │ < flags  > │
+                           0x6 ├────────────┤◄── cfp->ep
+                               │ <no block> │
+                           0x5 ├────────────┤
+                               │ <CME: foo> │
+                           0x4 ├────────────┤
+                               │   z (nil)  │    locals
+                           0x3 ├────────────┤
+                               │    :two    │
+                           0x2 ├────────────┤
+                               │    :one    │
+                           0x1 ├────────────┤
+                               │    self    │
+                           0x0 └────────────┘
+```
+
+`vm_base_ptr()` in `vm_insnhelper.c` computes BP as:
+
+```c
+VALUE *bp = prev_cfp->sp + local_table_size + VM_ENV_DATA_SIZE;
+```
+
+Starting from the previous frame's SP, add space for locals and the environment
+triple (3 slots for flags, block, CME).
+
+### Stack Consistency Checking
+
+The `leave` instruction verifies that SP has returned to BP:
+
+```c
+// From insns.def:
+if (OPT_CHECKED_RUN) {
+    const VALUE *const bp = vm_base_ptr(GET_CFP());
+    if (GET_SP() != bp) {
+        vm_stack_consistency_error(ec, GET_CFP(), bp);
+    }
+}
+```
+
+A mismatch triggers:
+
+```text
+Stack consistency error (sp: 106, bp: 105)
+```
+
+Here SP is 106 but BP is 105—one extra value on the stack. This typically
+indicates a bug in the VM, JIT compiler, or C extension.
