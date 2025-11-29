@@ -350,7 +350,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         &Insn::Const { val: Const::CPtr(val) } => gen_const_cptr(val),
         &Insn::Const { val: Const::CInt64(val) } => gen_const_long(val),
         Insn::Const { .. } => panic!("Unexpected Const in gen_insn: {insn}"),
-        Insn::NewArray { elements, state } => gen_new_array(asm, opnds!(elements), &function.frame_state(*state)),
+        Insn::NewArray { elements, state } => gen_new_array(jit, asm, opnds!(elements), &function.frame_state(*state)),
         Insn::NewHash { elements, state } => gen_new_hash(jit, asm, opnds!(elements), &function.frame_state(*state)),
         Insn::NewRange { low, high, flag, state } => gen_new_range(jit, asm, opnd!(low), opnd!(high), *flag, &function.frame_state(*state)),
         Insn::NewRangeFixnum { low, high, flag, state } => gen_new_range_fixnum(asm, opnd!(low), opnd!(high), *flag, &function.frame_state(*state)),
@@ -1405,21 +1405,23 @@ fn gen_array_dup(
 
 /// Compile a new array instruction
 fn gen_new_array(
+    jit: &JITState,
     asm: &mut Assembler,
     elements: Vec<Opnd>,
     state: &FrameState,
 ) -> lir::Opnd {
-    gen_prepare_leaf_call_with_gc(asm, state);
+    gen_prepare_non_leaf_call(jit, asm, state);
 
-    let length: c_long = elements.len().try_into().expect("Unable to fit length of elements into c_long");
+    let num: c_long = elements.len().try_into().expect("Unable to fit length of elements into c_long");
 
-    let new_array = asm_ccall!(asm, rb_ary_new_capa, length.into());
-
-    for val in elements {
-        asm_ccall!(asm, rb_ary_push, new_array, val);
+    if elements.is_empty() {
+        asm_ccall!(asm, rb_ec_ary_new_from_values, EC, 0i64.into(), Opnd::UImm(0))
+    } else {
+        let argv = gen_push_opnds(asm, &elements);
+        let new_array = asm_ccall!(asm, rb_ec_ary_new_from_values, EC, num.into(), argv);
+        gen_pop_opnds(asm, &elements);
+        new_array
     }
-
-    new_array
 }
 
 /// Compile array access (`array[index]`)
