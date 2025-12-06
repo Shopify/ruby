@@ -38,6 +38,10 @@
 # include <process.h>
 #endif
 
+#ifdef HAVE_POSIX_SPAWN
+#include <spawn.h>
+#endif
+
 #ifndef EXIT_SUCCESS
 # define EXIT_SUCCESS 0
 #endif
@@ -367,6 +371,8 @@ static rb_pid_t cached_pid;
 #if defined(__sun) && !defined(_XPG7) /* Solaris 10, 9, ... */
 #define execv(path, argv) (rb_async_bug_errno("unreachable: async-signal-unsafe execv() is called", 0))
 #define execl(path, arg0, arg1, arg2, term) do { extern char **environ; execle((path), (arg0), (arg1), (arg2), (term), (environ)); } while (0)
+#define ALWAYS_NEED_ENVP 1
+#elif defined(HAVE_POSIX_SPAWN)
 #define ALWAYS_NEED_ENVP 1
 #else
 #define ALWAYS_NEED_ENVP 0
@@ -3458,6 +3464,18 @@ rb_execarg_run_options(const struct rb_execarg *eargp, struct rb_execarg *sargp,
 {
     VALUE obj;
 
+    if (eargp->fd_dup2 != Qfalse) {
+        fprintf(stderr, "eargp->fd_dup2 set\n");
+    }
+
+    if (eargp->fd_dup2_child != Qfalse) {
+        fprintf(stderr, "eargp->fd_dup2_child set\n");
+    }
+
+    if (eargp->fd_close != Qfalse) {
+        fprintf(stderr, "eargp->fd_close set\n");
+    }
+
     if (sargp) {
         /* assume that sargp is always NULL on fork-able environments */
         MEMZERO(sargp, struct rb_execarg, 1);
@@ -4520,6 +4538,151 @@ rb_execarg_commandline(const struct rb_execarg *eargp, VALUE *prog)
 }
 #endif
 
+#if HAVE_POSIX_SPAWN
+static rb_pid_t
+rb_posix_spawn(struct rb_execarg *eargp)
+{
+    pid_t pid;
+    char *abspath = NULL;
+    char **argv = NULL;
+
+    if (eargp->use_shell) {
+        char *s = RSTRING_PTR(eargp->invoke.sh.shell_script);
+        while (*s == ' ' || *s == '\t' || *s == '\n') {
+            s++;
+        }
+
+        if (!*s) {
+            errno = ENOENT;
+            return -1;
+        }
+
+        // TODO: do we need dln_find_exe_r for __CYGWIN32__? Does __CYGWIN32__ even have posix_spawn?
+        abspath = (char *)"/bin/sh";
+        argv = ALLOCA_N(char *, 4);
+        argv[0] = (char *)"sh";
+        argv[1] = (char *)"-c";
+        argv[2] = s;
+        argv[3] = NULL;
+    }
+    else { // no-shell
+        if (RTEST(eargp->invoke.cmd.command_abspath)) {
+            abspath = RSTRING_PTR(eargp->invoke.cmd.command_abspath);
+        }
+        else {
+            errno = ENOENT;
+            return -1;
+        }
+        argv = ARGVSTR2ARGV(eargp->invoke.cmd.argv_str);
+    }
+
+    VALUE envp_str = eargp->envp_str;
+    char **envp = RTEST(envp_str) ? RB_IMEMO_TMPBUF_PTR(envp_str) : NULL;
+
+    int err;
+
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+
+    if (eargp->pgroup_given && eargp->pgroup_pgid != -1) {
+        if ((err = posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETPGROUP))) {
+            rb_syserr_fail(err, "posix_spawnattr_setflags");
+        }
+
+        if ((err = posix_spawnattr_setpgroup(&attr, eargp->pgroup_pgid))) {
+            rb_syserr_fail(err, "posix_spawnattr_setpgroup");
+        }
+    }
+
+    posix_spawn_file_actions_t file_actions;
+    posix_spawn_file_actions_init(&file_actions);
+
+    // TODO: do we need it? Currently the `open` seem to be done in the parent.
+    // if (RTEST(eargp->fd_open)) {
+    //     for (long index = 0; index < RARRAY_LEN(eargp->fd_open); index++) {
+    //         VALUE pair = RARRAY_AREF(eargp->fd_open, index);
+    //         VALUE fd = RARRAY_AREF(pair, 0);
+    //         VALUE params = RARRAY_AREF(pair, 1);
+    //
+    //         VALUE path = RARRAY_AREF(param, 0);
+    //         VALUE flags = RARRAY_AREF(param, 1);
+    //         // param = rb_ary_new3(4, path, flags, perm, Qnil);
+    //
+    //
+    //         int new_fd = NUM2INT(params); // TODO: params may not be a FD, may need more massaging.
+    //         fprintf(stderr, "posix_spawn_file_actions_addopen(fops, %d, %d)\n", new_fd, NUM2INT(fd));
+    //         if ((err = posix_spawn_file_actions_addopen(&file_actions, fd, RSTRING_PTR(path), NUM2INT(flags)))) {
+    //             rb_syserr_fail(err, "posix_spawn_file_actions_addopen");
+    //         }
+    //     }
+    // }
+
+    if (RTEST(eargp->fd_dup2)) {
+        for (long index = 0; index < RARRAY_LEN(eargp->fd_dup2); index++) {
+            VALUE pair = RARRAY_AREF(eargp->fd_dup2, index);
+            VALUE fd = RARRAY_AREF(pair, 0);
+            VALUE params = RARRAY_AREF(pair, 1);
+
+            int new_fd = NUM2INT(params); // TODO: params may not be a FD, may need more massaging.
+            fprintf(stderr, "posix_spawn_file_actions_adddup2(fops, %d, %d)\n", new_fd, NUM2INT(fd));
+            if ((err = posix_spawn_file_actions_adddup2(&file_actions, new_fd, NUM2INT(fd)))) {
+                rb_syserr_fail(err, "posix_spawn_file_actions_adddup2");
+            }
+        }
+    }
+
+    if (RTEST(eargp->fd_dup2_child)) {
+        for (long index = 0; index < RARRAY_LEN(eargp->fd_dup2_child); index++) {
+            VALUE pair = RARRAY_AREF(eargp->fd_dup2_child, index);
+            VALUE fd = RARRAY_AREF(pair, 0);
+            VALUE params = RARRAY_AREF(pair, 1);
+
+            int new_fd = NUM2INT(params); // TODO: params may not be a FD, may need more massaging.
+            fprintf(stderr, "posix_spawn_file_actions_adddup2(fops, %d, %d)\n", new_fd, NUM2INT(fd));
+            if ((err = posix_spawn_file_actions_adddup2(&file_actions, new_fd, NUM2INT(fd)))) {
+                rb_syserr_fail(err, "posix_spawn_file_actions_adddup2");
+            }
+        }
+    }
+
+    if (RTEST(eargp->fd_close)) {
+        for (long index = 0; index < RARRAY_LEN(eargp->fd_close); index++) {
+            VALUE pair = RARRAY_AREF(eargp->fd_close, index);
+            VALUE fd = RARRAY_AREF(pair, 0);
+
+            fprintf(stderr, "posix_spawn_file_actions_addclose(fops, %d)\n", NUM2INT(fd));
+            if ((err = posix_spawn_file_actions_addclose(&file_actions, NUM2INT(fd)))) {
+                rb_syserr_fail(err, "posix_spawn_file_actions_addclose");
+            }
+        }
+    }
+
+    err = posix_spawn(&pid, abspath, &file_actions, &attr, argv, envp);
+    posix_spawnattr_destroy(&attr);
+    posix_spawn_file_actions_destroy(&file_actions);
+
+    if (err) {
+        // posix_spawn only returns fork/vfork/clone failures.
+        // If it failed but errno == 0, then it must be an "exec" failure.
+        if (errno == 0) {
+            if (!eaccess(abspath, X_OK)) {
+                // abspath is executable
+                struct stat file_stat;
+                if (stat(abspath, &file_stat)) {
+                    rb_sys_fail(abspath);
+                }
+                if (S_ISDIR(file_stat.st_mode)) {
+                    errno = EISDIR;
+                }
+            }
+        }
+        rb_sys_fail(abspath);
+    }
+
+    return (rb_pid_t)pid;
+}
+#endif
+
 static rb_pid_t
 rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 {
@@ -4532,6 +4695,21 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 # endif
 #endif
 
+#if HAVE_POSIX_SPAWN
+    // fprintf(stderr, "eargp->close_others_maxhint = %d\n", eargp->close_others_maxhint);
+    if (//!eargp->use_shell &&
+            // !eargp->pgroup_given &&
+            // eargp->close_others_maxhint == -1 &&
+            !eargp->umask_given &&
+            !eargp->unsetenv_others_given &&
+            !eargp->close_others_given &&
+            !eargp->chdir_given &&
+            !eargp->uid_given &&
+            !eargp->gid_given &&
+            !eargp->exception_given) {
+        return rb_posix_spawn(eargp);
+    }
+#endif
 #if defined HAVE_WORKING_FORK && !USE_SPAWNV
     pid = fork_check_err(eargp->status, rb_exec_atfork, eargp, eargp->redirect_fds, errmsg, errmsg_buflen, eargp);
 #else
