@@ -1517,7 +1517,8 @@ make_shareable_check_shareable(VALUE obj, struct obj_traverse_data *data)
 
         if (type->flags & RUBY_TYPED_FROZEN_SHAREABLE_NO_REC) {
             if (obj_refer_only_shareables_p(obj)) {
-                make_shareable_check_shareable_freeze(obj, traverse_skip, data);
+                enum obj_traverse_iterator_result result = make_shareable_check_shareable_freeze(obj, traverse_skip, data);
+                if (result == traverse_stop) return traverse_stop;
                 RB_OBJ_SET_SHAREABLE(obj);
                 return traverse_skip;
             }
