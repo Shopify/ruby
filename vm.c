@@ -1612,9 +1612,8 @@ rb_proc_ractor_make_shareable_continue(VALUE self, VALUE replace_self, VALUE cha
     else {
         VALUE proc_self = vm_block_self(vm_proc_block(self));
         if (!rb_ractor_shareable_p(proc_self)) {
-            rb_raise(rb_eRactorIsolationError,
-                     "Proc's self is not shareable: %" PRIsVALUE,
-                     self);
+            rb_ary_push(chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("proc_self")), proc_self));
+            return false;
         }
     }
 
