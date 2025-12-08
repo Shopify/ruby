@@ -1529,6 +1529,11 @@ make_shareable_check_shareable(VALUE obj, struct obj_traverse_data *data)
         }
         else if (rb_obj_is_proc(obj)) {
             if (!rb_proc_ractor_make_shareable_continue(obj, Qundef, data->chain)) {
+                rb_proc_t *proc = (rb_proc_t *)RTYPEDDATA_DATA(obj);
+                if (proc->block.type != block_type_iseq) rb_raise(rb_eRuntimeError, "not supported yet");
+
+                VALUE block_self = vm_block_self(&proc->block);
+                data->exception = rb_exc_new3(rb_eRactorIsolationError, rb_sprintf("Proc's self is not shareable: %" PRIsVALUE, block_self));
                 return traverse_stop;
             }
             return traverse_cont;
