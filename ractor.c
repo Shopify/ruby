@@ -1222,7 +1222,7 @@ obj_hash_traverse_i(VALUE key, VALUE val, VALUE ptr)
     }
 
     if (obj_traverse_i(val, d->data)) {
-        if (d->data->chain) rb_ary_push(d->data->chain, rb_ary_new_from_args(4, rb_id2sym(rb_intern("hash_at")), key, val));
+        if (d->data->chain) rb_ary_push(d->data->chain, rb_ary_new_from_args(3, rb_id2sym(rb_intern("hash_at")), key, val));
         d->stop = true;
         return ST_STOP;
     }
