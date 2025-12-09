@@ -1312,7 +1312,7 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
             for (int i = 0; i < RARRAY_LENINT(obj); i++) {
                 VALUE e = rb_ary_entry(obj, i);
                 if (obj_traverse_i(e, data)) {
-                    if (data->chain) rb_ary_push(data->chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("array_index")), INT2FIX(i)));
+                    if (data->chain) rb_ary_push(data->chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("array_at")), INT2FIX(i)));
                     return 1;
                 }
             }
