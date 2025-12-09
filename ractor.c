@@ -1256,7 +1256,7 @@ obj_traverse_ivar_foreach_i(ID key, VALUE val, st_data_t ptr)
     struct obj_traverse_callback_data *d = (struct obj_traverse_callback_data *)ptr;
 
     if (obj_traverse_i(val, d->data)) {
-        if (d->data->chain) rb_ary_push(d->data->chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("ivar")), rb_id2str(key)));
+        if (d->data->chain) rb_ary_push(d->data->chain, rb_ary_new_from_args(2, rb_id2sym(rb_intern("ivar")), rb_id2sym(key)));
         d->stop = true;
         return ST_STOP;
     }
