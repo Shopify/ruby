@@ -8633,4 +8633,138 @@ mod hir_opt_tests {
          Return v60
        ");
     }
+
+    #[test]
+    fn test_eliminate_guard_type_on_frozen_object() {
+        // When a frozen constant object matches the guard type, eliminate the GuardType
+        eval(r#"
+            class C
+              def foo = 42
+            end
+            FROZEN = C.new.freeze
+            def test = FROZEN.foo
+            test; test
+        "#);
+        // The GuardType should be eliminated because FROZEN is a frozen C object
+        // and the guard is for HeapObject[class_exact:C]
+        assert_snapshot!(hir_string("test"), @r"
+        fn test@<compiled>:6:
+        bb0():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          Jump bb2(v1)
+        bb1(v4:BasicObject):
+          EntryPoint JIT(0)
+          Jump bb2(v4)
+        bb2(v6:BasicObject):
+          PatchPoint SingleRactorMode
+          PatchPoint StableConstantNames(0x1000, FROZEN)
+          v20:HeapObject[VALUE(0x1008)] = Const Value(VALUE(0x1008))
+          PatchPoint MethodRedefined(C@0x1010, foo@0x1018, cme:0x1020)
+          PatchPoint NoSingletonClass(C@0x1010)
+          IncrCounter inline_iseq_optimized_send_count
+          v25:Fixnum[42] = Const Value(42)
+          CheckInterrupts
+          Return v25
+        ");
+    }
+
+    #[test]
+    fn test_eliminate_guard_type_on_unfrozen_constant_object() {
+        // Even unfrozen constant objects have their GuardType eliminated because
+        // the type system already knows the exact class from the constant VALUE.
+        // The frozen object optimization is defense-in-depth for edge cases.
+        eval(r#"
+            class C
+              def foo = 42
+            end
+            UNFROZEN = C.new  # Not frozen, but class is still known
+            def test = UNFROZEN.foo
+            test; test
+        "#);
+        // The GuardType is eliminated because the constant's type is fully known
+        assert_snapshot!(hir_string("test"), @r"
+        fn test@<compiled>:6:
+        bb0():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          Jump bb2(v1)
+        bb1(v4:BasicObject):
+          EntryPoint JIT(0)
+          Jump bb2(v4)
+        bb2(v6:BasicObject):
+          PatchPoint SingleRactorMode
+          PatchPoint StableConstantNames(0x1000, UNFROZEN)
+          v20:HeapObject[VALUE(0x1008)] = Const Value(VALUE(0x1008))
+          PatchPoint MethodRedefined(C@0x1010, foo@0x1018, cme:0x1020)
+          PatchPoint NoSingletonClass(C@0x1010)
+          IncrCounter inline_iseq_optimized_send_count
+          v25:Fixnum[42] = Const Value(42)
+          CheckInterrupts
+          Return v25
+        ");
+    }
+
+    #[test]
+    fn test_eliminate_guard_type_on_frozen_string_constant() {
+        // Frozen string literals should also benefit from this optimization
+        eval(r#"
+            # frozen_string_literal: true
+            STR = "hello"
+            def test = STR.size
+            test; test
+        "#);
+        // The GuardType for StringExact should be eliminated
+        assert_snapshot!(hir_string("test"), @r"
+        fn test@<compiled>:4:
+        bb0():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          Jump bb2(v1)
+        bb1(v4:BasicObject):
+          EntryPoint JIT(0)
+          Jump bb2(v4)
+        bb2(v6:BasicObject):
+          PatchPoint SingleRactorMode
+          PatchPoint StableConstantNames(0x1000, STR)
+          v21:StringExact[VALUE(0x1008)] = Const Value(VALUE(0x1008))
+          PatchPoint MethodRedefined(String@0x1010, size@0x1018, cme:0x1020)
+          PatchPoint NoSingletonClass(String@0x1010)
+          IncrCounter inline_cfunc_optimized_send_count
+          v26:Fixnum = CCall String#size@0x1048, v21
+          CheckInterrupts
+          Return v26
+        ");
+    }
+
+    #[test]
+    fn test_eliminate_guard_type_on_frozen_array_constant() {
+        // Frozen arrays should also benefit from this optimization
+        eval(r#"
+            ARR = [1, 2, 3].freeze
+            def test = ARR.size
+            test; test
+        "#);
+        // The GuardType for ArrayExact should be eliminated
+        assert_snapshot!(hir_string("test"), @r"
+        fn test@<compiled>:3:
+        bb0():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          Jump bb2(v1)
+        bb1(v4:BasicObject):
+          EntryPoint JIT(0)
+          Jump bb2(v4)
+        bb2(v6:BasicObject):
+          PatchPoint SingleRactorMode
+          PatchPoint StableConstantNames(0x1000, ARR)
+          v21:ArrayExact[VALUE(0x1008)] = Const Value(VALUE(0x1008))
+          PatchPoint MethodRedefined(Array@0x1010, size@0x1018, cme:0x1020)
+          PatchPoint NoSingletonClass(Array@0x1010)
+          IncrCounter inline_cfunc_optimized_send_count
+          v26:Fixnum = CCall Array#size@0x1048, v21
+          CheckInterrupts
+          Return v26
+        ");
+    }
 }

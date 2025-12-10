@@ -3362,10 +3362,22 @@ impl Function {
             let mut new_insns = vec![];
             for insn_id in old_insns {
                 let replacement_id = match self.find(insn_id) {
-                    Insn::GuardType { val, guard_type, .. } if self.is_a(val, guard_type) => {
-                        self.make_equal_to(insn_id, val);
-                        // Don't bother re-inferring the type of val; we already know it.
-                        continue;
+                    Insn::GuardType { val, guard_type, .. } => {
+                        // If we already know the type matches, eliminate the guard
+                        if self.is_a(val, guard_type) {
+                            self.make_equal_to(insn_id, val);
+                            continue;
+                        }
+                        // If GuardType is on a frozen object, we can check at compile time if the
+                        // object's type matches the guard. Frozen objects can't change class.
+                        let val_type = self.type_of(val);
+                        if let Some(obj) = val_type.ruby_object() {
+                            if obj.is_frozen() && Type::from_value(obj).is_subtype(guard_type) {
+                                self.make_equal_to(insn_id, val);
+                                continue;
+                            }
+                        }
+                        insn_id
                     }
                     Insn::FixnumAdd { left, right, .. } => {
                         self.fold_fixnum_bop(insn_id, left, right, |l, r| match (l, r) {
