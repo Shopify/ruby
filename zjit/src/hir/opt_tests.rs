@@ -10177,8 +10177,8 @@ mod hir_opt_tests {
 
         // A Ruby method as the target of `super` should optimize provided no block is given.
         let hir = hir_string_proc("B.new.method(:foo)");
-        assert!(!hir.contains("InvokeSuper "), "InvokeSuper should optimize to InvokeSuperDirect but got:\n{hir}");
-        assert!(hir.contains("InvokeSuperDirect"), "Should optimize to InvokeSuperDirect for call without args or block:\n{hir}");
+        assert!(!hir.contains("InvokeSuper "), "InvokeSuper should optimize to SendWithoutBlockDirect but got:\n{hir}");
+        assert!(hir.contains("SendWithoutBlockDirect"), "Should optimize to SendWithoutBlockDirect for call without args or block:\n{hir}");
 
         assert_snapshot!(hir, @r"
         fn foo@<compiled>:10:
@@ -10191,9 +10191,12 @@ mod hir_opt_tests {
           Jump bb2(v4)
         bb2(v6:BasicObject):
           PatchPoint MethodRedefined(A@0x1000, foo@0x1008, cme:0x1010)
-          v17:BasicObject = InvokeSuperDirect v6
+          GuardSuperMethodEntry 0x1038
+          v18:RubyValue = GetBlockHandler
+          v19:FalseClass = GuardBitEquals v18, Value(false)
+          v20:BasicObject = SendWithoutBlockDirect v6, :foo (0x1040)
           CheckInterrupts
-          Return v17
+          Return v20
         ");
     }
 
@@ -10216,8 +10219,8 @@ mod hir_opt_tests {
         ");
 
         let hir = hir_string_proc("B.new.method(:foo)");
-        assert!(!hir.contains("InvokeSuper "), "InvokeSuper should optimize to InvokeSuperDirect but got:\n{hir}");
-        assert!(hir.contains("InvokeSuperDirect"), "Should optimize to InvokeSuperDirect for args without block:\n{hir}");
+        assert!(!hir.contains("InvokeSuper "), "InvokeSuper should optimize to SendWithoutBlockDirect but got:\n{hir}");
+        assert!(hir.contains("SendWithoutBlockDirect"), "Should optimize to SendWithoutBlockDirect for args without block:\n{hir}");
 
         assert_snapshot!(hir, @r"
         fn foo@<compiled>:10:
@@ -10231,14 +10234,17 @@ mod hir_opt_tests {
           Jump bb2(v5, v6)
         bb2(v8:BasicObject, v9:BasicObject):
           PatchPoint MethodRedefined(A@0x1000, foo@0x1008, cme:0x1010)
-          v26:BasicObject = InvokeSuperDirect v8, v9
+          GuardSuperMethodEntry 0x1038
+          v27:RubyValue = GetBlockHandler
+          v28:FalseClass = GuardBitEquals v27, Value(false)
+          v29:BasicObject = SendWithoutBlockDirect v8, :foo (0x1040), v9
           v17:Fixnum[1] = Const Value(1)
-          PatchPoint MethodRedefined(Integer@0x1038, +@0x1040, cme:0x1048)
-          v29:Fixnum = GuardType v26, Fixnum
-          v30:Fixnum = FixnumAdd v29, v17
+          PatchPoint MethodRedefined(Integer@0x1048, +@0x1050, cme:0x1058)
+          v32:Fixnum = GuardType v29, Fixnum
+          v33:Fixnum = FixnumAdd v32, v17
           IncrCounter inline_cfunc_optimized_send_count
           CheckInterrupts
-          Return v30
+          Return v33
         ");
     }
 
@@ -10262,9 +10268,9 @@ mod hir_opt_tests {
 
         let hir = hir_string_proc("B.new.method(:foo)");
         assert!(hir.contains("InvokeSuper "), "Expected unoptimized InvokeSuper but got:\n{hir}");
-        assert!(!hir.contains("InvokeSuperDirect"), "Should not optimize to InvokeSuperDirect for block literal:\n{hir}");
+        assert!(!hir.contains("SendWithoutBlockDirect"), "Should not optimize to SendWithoutBlockDirect for block literal:\n{hir}");
 
-        // With a block, we don't optimize to InvokeSuperDirect
+        // With a block, we don't optimize to SendWithoutBlockDirect
         assert_snapshot!(hir, @r"
         fn foo@<compiled>:10:
         bb0():
@@ -10295,7 +10301,7 @@ mod hir_opt_tests {
 
         let hir = hir_string_proc("MyArray.new.method(:length)");
         assert!(hir.contains("InvokeSuper "), "Expected unoptimized InvokeSuper but got:\n{hir}");
-        assert!(!hir.contains("InvokeSuperDirect"), "Should not optimize to InvokeSuperDirect for CFUNC:\n{hir}");
+        assert!(!hir.contains("SendWithoutBlockDirect"), "Should not optimize to SendWithoutBlockDirect for CFUNC:\n{hir}");
 
         assert_snapshot!(hir, @r"
         fn length@<compiled>:4:
@@ -10334,7 +10340,7 @@ mod hir_opt_tests {
 
         let hir = hir_string_proc("B.new.method(:foo)");
         assert!(hir.contains("InvokeSuper "), "Expected unoptimized InvokeSuper but got:\n{hir}");
-        assert!(!hir.contains("InvokeSuperDirect"), "Should not optimize to InvokeSuperDirect for explicit blockarg:\n{hir}");
+        assert!(!hir.contains("SendWithoutBlockDirect"), "Should not optimize to SendWithoutBlockDirect for explicit blockarg:\n{hir}");
 
         assert_snapshot!(hir, @r"
         fn foo@<compiled>:10:
@@ -10382,7 +10388,7 @@ mod hir_opt_tests {
 
         let hir = hir_string_proc("B.new.method(:foo)");
         assert!(hir.contains("InvokeSuper "), "Expected unoptimized InvokeSuper but got:\n{hir}");
-        assert!(!hir.contains("InvokeSuperDirect"), "Should not optimize to InvokeSuperDirect for symbol-to-proc:\n{hir}");
+        assert!(!hir.contains("SendWithoutBlockDirect"), "Should not optimize to SendWithoutBlockDirect for symbol-to-proc:\n{hir}");
 
         assert_snapshot!(hir, @r"
         fn foo@<compiled>:10:
