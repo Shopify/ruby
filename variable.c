@@ -1457,11 +1457,13 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
             VALUE val = rb_ivar_lookup(RCLASS_WRITABLE_FIELDS_OBJ(obj), id, undef);
             if (val != undef &&
                     rb_is_instance_id(id) &&
-                    UNLIKELY(rb_ractor_isolation_check_active()) &&
-                    !rb_ractor_shareable_p(val)) {
-                rb_ractor_isolation_violation(
-                        "can not get unshareable values from instance variables of classes/modules from non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")",
-                        rb_id2str(id), obj);
+                    UNLIKELY(rb_ractor_isolation_check_active())) {
+                VALUE chain = Qnil;
+                if (!rb_ractor_shareable_p_continue(val, &chain)) {
+                    rb_ractor_isolation_violation(
+                            "can not get unshareable values from instance variables of classes/modules from non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")%"PRIsVALUE,
+                            rb_id2str(id), obj, chain);
+                }
             }
             return val;
         }
@@ -3369,8 +3371,11 @@ rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
     VALUE c = rb_const_search(klass, id, exclude, recurse, visibility, &found_in);
     if (!UNDEF_P(c)) {
         if (UNLIKELY(rb_ractor_isolation_check_active())) {
-            if (!rb_ractor_shareable_p(c)) {
-                rb_ractor_isolation_violation("can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" by non-main Ractor.", rb_class_path(found_in), rb_id2str(id));
+            VALUE chain = Qnil;
+            if (!rb_ractor_shareable_p_continue(c, &chain)) {
+                rb_ractor_isolation_violation(
+                        "can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" by non-main Ractor.%"PRIsVALUE,
+                        rb_class_path(found_in), rb_id2str(id), chain);
             }
         }
         return c;
