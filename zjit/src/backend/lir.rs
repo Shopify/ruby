@@ -1330,7 +1330,7 @@ const ASSEMBLER_INSNS_CAPACITY: usize = 256;
 /// optimized and lowered
 #[derive(Clone)]
 pub struct Assembler {
-    pub(super) insns: Vec<Insn>,
+    pub insns: Vec<Insn>,
 
     /// Live range for each VReg indexed by its `idx``
     pub(super) live_ranges: Vec<LiveRange>,
