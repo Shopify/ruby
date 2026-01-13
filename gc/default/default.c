@@ -8025,9 +8025,9 @@ atomic_sub_nounderflow(size_t *var, size_t sub)
     if (sub == 0) return;
 
     while (1) {
-        size_t val = *var;
+        size_t val = rbimpl_atomic_size_load(var, RBIMPL_ATOMIC_RELAXED);
         if (val < sub) sub = val;
-        if (RUBY_ATOMIC_SIZE_CAS(*var, val, val-sub) == val) break;
+        if (rbimpl_atomic_size_cas(var, val, val-sub, RBIMPL_ATOMIC_RELAXED, RBIMPL_ATOMIC_RELAXED) == val) break;
     }
 }
 
