@@ -1108,11 +1108,16 @@ rb_bug_without_die(const char *fmt, ...)
     va_end(args);
 }
 
+bool is_sweep_thread_p(void);
+
 void
 rb_bug(const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
+    if (is_sweep_thread_p()) {
+        fprintf(stderr, "rb_bug() called from sweep_thread!\n");
+    }
     rb_bug_without_die_internal(fmt, args);
     va_end(args);
     die();
