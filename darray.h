@@ -48,6 +48,10 @@
 #define rb_darray_append_without_gc(ptr_to_ary, element) \
     rb_darray_append_impl(ptr_to_ary, element, rb_darray_realloc_mul_add_without_gc)
 
+//#define rb_darray_clear_and_free_without_gc(ptr_to_ary) \
+    //rb_darray_size(ptr_to_ary) ? (rb_darray_free_without_gc(ptr_to_ary)) : (void)0
+
+
 #define rb_darray_append_impl(ptr_to_ary, element, realloc_func) do {  \
     rb_darray_ensure_space((ptr_to_ary), \
                            sizeof(**(ptr_to_ary)), \
@@ -138,6 +142,21 @@ rb_darray_size(const void *ary)
  * Useful for TypedData objects. */
 #define rb_darray_memsize(ary) (sizeof(*(ary)) + (rb_darray_size(ary) * sizeof((ary)->data[0])))
 
+/* Remove n items from the beginning of the array */
+#define rb_darray_shift_n(ary, n) rb_darray_shift_n_impl(ary, ary->data, n, sizeof((ary)->data[0]))
+
+static inline void
+rb_darray_shift_n_impl(void *ary, void *data, size_t n, size_t type_sz)
+{
+    rb_darray_meta_t *meta = ary;
+    RUBY_ASSERT(meta->size >= n);
+    char *dst = (char*)data;
+    if (n > 0) {
+        memmove(dst, dst + n * type_sz, (meta->size - n) * type_sz);
+        meta->size -= n;
+    }
+}
+
 static inline void
 rb_darray_pop(void *ary, size_t count)
 {
@@ -218,6 +237,8 @@ rb_darray_realloc_mul_add(void *orig_ptr, size_t capa, size_t element_size, size
     return ptr;
 }
 
+bool is_sweep_thread_p(void);
+
 /* Internal function. Like rb_xrealloc_mul_add but does not trigger GC. */
 static inline void *
 rb_darray_realloc_mul_add_without_gc(void *orig_ptr, size_t x, size_t y, size_t z)
@@ -225,7 +246,14 @@ rb_darray_realloc_mul_add_without_gc(void *orig_ptr, size_t x, size_t y, size_t 
     size_t size = rbimpl_size_add_or_raise(rbimpl_size_mul_or_raise(x, y), z);
 
     void *ptr = realloc(orig_ptr, size);
-    if (ptr == NULL) rb_bug("rb_darray_realloc_mul_add_without_gc: failed");
+    if (ptr == NULL) {
+        if (!is_sweep_thread_p()) {
+            rb_bug("rb_darray_realloc_mul_add_without_gc: failed");
+        }
+        else {
+            fprintf(stderr, "darray: realloc failed (from sweep thread)\n");
+        }
+    }
 
     return ptr;
 }

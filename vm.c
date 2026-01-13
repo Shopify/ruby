@@ -3415,6 +3415,8 @@ ruby_vm_destruct(rb_vm_t *vm)
 
     if (vm) {
         rb_thread_t *th = vm->ractor.main_thread;
+        void wait_for_background_sweeping_to_finish(void *, bool, bool, const char*);
+        wait_for_background_sweeping_to_finish(vm->gc.objspace, true, false, "vm_destruct");
 
         if (rb_free_at_exit) {
             rb_free_encoded_insn_data();
