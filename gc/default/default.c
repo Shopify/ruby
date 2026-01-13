@@ -8053,9 +8053,9 @@ malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size
 {
     if (new_size > old_size) {
         size_t delta = new_size - old_size;
-        size_t old_val = RUBY_ATOMIC_SIZE_FETCH_ADD(malloc_increase, delta);
+        size_t old_val = rbimpl_atomic_size_fetch_add(&malloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
 #if RGENGC_ESTIMATE_OLDMALLOC
-        RUBY_ATOMIC_SIZE_ADD(objspace->malloc_counters.oldmalloc_increase, delta);
+        rbimpl_atomic_size_add(&objspace->malloc_counters.oldmalloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
 #endif
         return old_val + delta;
     }
@@ -8131,7 +8131,7 @@ objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_siz
         if (current_malloc_increase > malloc_limit && ruby_native_thread_p() && !dont_gc_val()) {
             if (ruby_thread_has_gvl_p() && is_lazy_sweeping(objspace)) {
                 gc_rest(objspace); /* gc_rest can reduce malloc_increase */
-                current_malloc_increase = RUBY_ATOMIC_SIZE_FETCH_ADD(malloc_increase, 0);
+                current_malloc_increase = rbimpl_atomic_size_load(&malloc_increase, RBIMPL_ATOMIC_RELAXED);
                 goto retry;
             }
             garbage_collect_with_gvl(objspace, GPR_FLAG_MALLOC);
