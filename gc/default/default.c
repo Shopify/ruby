@@ -7549,7 +7549,7 @@ ns_to_ms(uint64_t ns)
     return ns / (1000 * 1000);
 }
 
-static void malloc_increase_local_flush(rb_objspace_t *objspace);
+static size_t malloc_increase_local_flush(rb_objspace_t *objspace);
 
 VALUE
 rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
@@ -8048,42 +8048,46 @@ objspace_malloc_gc_stress(rb_objspace_t *objspace)
     }
 }
 
-static void
+static size_t
 malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size)
 {
     if (new_size > old_size) {
-        RUBY_ATOMIC_SIZE_ADD(malloc_increase, new_size - old_size);
+        size_t delta = new_size - old_size;
+        size_t old_val = RUBY_ATOMIC_SIZE_FETCH_ADD(malloc_increase, delta);
 #if RGENGC_ESTIMATE_OLDMALLOC
-        RUBY_ATOMIC_SIZE_ADD(objspace->malloc_counters.oldmalloc_increase, new_size - old_size);
+        RUBY_ATOMIC_SIZE_ADD(objspace->malloc_counters.oldmalloc_increase, delta);
 #endif
+        return old_val + delta;
     }
     else {
         atomic_sub_nounderflow(&malloc_increase, old_size - new_size);
 #if RGENGC_ESTIMATE_OLDMALLOC
         atomic_sub_nounderflow(&objspace->malloc_counters.oldmalloc_increase, old_size - new_size);
 #endif
+        return 0;
     }
 }
 
 #if USE_MALLOC_INCREASE_LOCAL
-static void
+static size_t
 malloc_increase_local_flush(rb_objspace_t *objspace)
 {
     int delta = malloc_increase_local;
-    if (delta == 0) return;
+    if (delta == 0) return 0;
 
     malloc_increase_local = 0;
     if (delta > 0) {
-        malloc_increase_commit(objspace, (size_t)delta, 0);
+        return malloc_increase_commit(objspace, (size_t)delta, 0);
     }
     else {
-        malloc_increase_commit(objspace, 0, (size_t)(-delta));
+        return malloc_increase_commit(objspace, 0, (size_t)(-delta));
     }
 }
 #else
-static void
+static size_t
 malloc_increase_local_flush(rb_objspace_t *objspace)
 {
+    return 0;
 }
 #endif
 
@@ -8102,6 +8106,8 @@ objspace_malloc_increase_report(rb_objspace_t *objspace, void *mem, size_t new_s
 static bool
 objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_size, size_t old_size, enum memop_type type, bool gc_allowed)
 {
+    size_t current_malloc_increase = 0;
+
 #if USE_MALLOC_INCREASE_LOCAL
     if (new_size < GC_MALLOC_INCREASE_LOCAL_THRESHOLD &&
         old_size < GC_MALLOC_INCREASE_LOCAL_THRESHOLD) {
@@ -8109,22 +8115,23 @@ objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_siz
 
         if (malloc_increase_local >= GC_MALLOC_INCREASE_LOCAL_THRESHOLD ||
             malloc_increase_local <= -GC_MALLOC_INCREASE_LOCAL_THRESHOLD) {
-            malloc_increase_local_flush(objspace);
+            current_malloc_increase = malloc_increase_local_flush(objspace);
         }
     }
     else {
         malloc_increase_local_flush(objspace);
-        malloc_increase_commit(objspace, new_size, old_size);
+        current_malloc_increase = malloc_increase_commit(objspace, new_size, old_size);
     }
 #else
-    malloc_increase_commit(objspace, new_size, old_size);
+    current_malloc_increase = malloc_increase_commit(objspace, new_size, old_size);
 #endif
 
     if (type == MEMOP_TYPE_MALLOC && gc_allowed) {
       retry:
-        if (malloc_increase > malloc_limit && ruby_native_thread_p() && !dont_gc_val()) {
+        if (current_malloc_increase > malloc_limit && ruby_native_thread_p() && !dont_gc_val()) {
             if (ruby_thread_has_gvl_p() && is_lazy_sweeping(objspace)) {
                 gc_rest(objspace); /* gc_rest can reduce malloc_increase */
+                current_malloc_increase = RUBY_ATOMIC_SIZE_FETCH_ADD(malloc_increase, 0);
                 goto retry;
             }
             garbage_collect_with_gvl(objspace, GPR_FLAG_MALLOC);
