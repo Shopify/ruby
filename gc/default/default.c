@@ -2631,7 +2631,7 @@ rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), voi
 
     struct heap_page *page = GET_HEAP_PAGE(obj);
     page->final_slots++;
-    page->heap->final_slots_count++;
+    RUBY_ATOMIC_SIZE_INC(page->heap->final_slots_count);
 }
 
 typedef int each_obj_callback(void *, void *, size_t, void *);
@@ -2920,7 +2920,7 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
             GC_ASSERT(page->heap->final_slots_count > 0);
             GC_ASSERT(page->final_slots > 0);
 
-            page->heap->final_slots_count--;
+            RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
             page->final_slots--;
             page->free_slots++;
             RVALUE_AGE_SET_BITMAP(zombie, 0);
