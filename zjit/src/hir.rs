@@ -4640,12 +4640,12 @@ impl Function {
                 worklist.push_back(recv);
                 worklist.push_back(val);
             }
-            &Insn::GuardBlockParamProxy { state, .. } |
-            &Insn::GetGlobal { state, .. } |
-            &Insn::GetSpecialSymbol { state, .. } |
-            &Insn::GetSpecialNumber { state, .. } |
-            &Insn::ObjectAllocClass { state, .. } |
-            &Insn::SideExit { state, .. } => worklist.push_back(state),
+            &Insn::GuardBlockParamProxy { state, .. }
+            | &Insn::GetGlobal { state, .. }
+            | &Insn::GetSpecialSymbol { state, .. }
+            | &Insn::GetSpecialNumber { state, .. }
+            | &Insn::ObjectAllocClass { state, .. }
+            | &Insn::SideExit { state, .. } => worklist.push_back(state),
             &Insn::GuardSuperMethodEntry { lep, state, .. } => {
                 worklist.push_back(lep);
                 worklist.push_back(state);
