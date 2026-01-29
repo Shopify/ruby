@@ -5238,7 +5238,7 @@ mod hir_opt_tests {
           v26:TrueClass = GuardBitEquals v25, Value(true) recompile
           Jump bb6(v24, v10)
         bb6(v16:BasicObject, v17:BasicObject):
-          v29:BasicObject = Send v14, &block, :then, v16 # SendFallbackReason: Complex argument passing
+          v29:BasicObject = Send v14, &block, :then, v16 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v29
         ");
@@ -5294,7 +5294,7 @@ mod hir_opt_tests {
           v37:NilClass = Const Value(nil)
           Jump bb8(v37, v13)
         bb8(v27:BasicObject, v28:BasicObject):
-          v40:BasicObject = Send v25, &block, :then, v27 # SendFallbackReason: Complex argument passing
+          v40:BasicObject = Send v25, &block, :then, v27 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v40
         bb4(v45:BasicObject, v46:Falsy, v47:BasicObject):
@@ -5459,7 +5459,7 @@ mod hir_opt_tests {
           v34:NilClass = Const Value(nil)
           Jump bb6(v34, v10)
         bb6(v16:BasicObject, v17:BasicObject):
-          v38:BasicObject = Send v14, &block, :then, v16 # SendFallbackReason: Complex argument passing
+          v38:BasicObject = Send v14, &block, :then, v16 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v38
         bb10():
@@ -5527,7 +5527,7 @@ mod hir_opt_tests {
           v41:ObjectSubclass[BlockParamProxy] = Const Value(VALUE(0x1010))
           Jump bb6(v41, v10)
         bb6(v16:BasicObject, v17:BasicObject):
-          v45:BasicObject = Send v14, &block, :then, v16 # SendFallbackReason: Complex argument passing
+          v45:BasicObject = Send v14, &block, :then, v16 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v45
         bb13():
@@ -9550,7 +9550,7 @@ mod hir_opt_tests {
           v26:ObjectSubclass[BlockParamProxy] = Const Value(VALUE(0x1008))
           Jump bb6(v26, v10)
         bb6(v16:BasicObject, v17:BasicObject):
-          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Complex argument passing
+          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v29
         ");
@@ -9590,7 +9590,7 @@ mod hir_opt_tests {
           v26:NilClass = Const Value(nil)
           Jump bb6(v26, v10)
         bb6(v16:BasicObject, v17:BasicObject):
-          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Complex argument passing
+          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v29
         ");
@@ -9631,7 +9631,7 @@ mod hir_opt_tests {
           v21:ObjectSubclass[BlockParamProxy] = Const Value(VALUE(0x1008))
           Jump bb6(v21)
         bb6(v12:BasicObject):
-          v24:BasicObject = Send v10, &block, :map, v12 # SendFallbackReason: Complex argument passing
+          v24:BasicObject = Send v10, &block, :map, v12 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v24
         ");
@@ -9799,7 +9799,7 @@ mod hir_opt_tests {
           Jump bb3(v5, v6)
         bb3(v8:BasicObject, v9:NilClass):
           v13:StaticSymbol[:to_s] = Const Value(VALUE(0x1000))
-          v19:BasicObject = Send v8, &block, :foo, v13 # SendFallbackReason: Complex argument passing
+          v19:BasicObject = Send v8, &block, :foo, v13 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v19
         ");
@@ -9830,9 +9830,11 @@ mod hir_opt_tests {
           Jump bb3(v5, v6)
         bb3(v8:BasicObject, v9:NilClass):
           v13:NilClass = Const Value(nil)
-          v19:BasicObject = Send v8, &block, :foo, v13 # SendFallbackReason: Complex argument passing
+          PatchPoint MethodRedefined(Object@0x1000, foo@0x1008, cme:0x1010)
+          v26:ObjectSubclass[class_exact*:Object@VALUE(0x1000)] = GuardType v8, ObjectSubclass[class_exact*:Object@VALUE(0x1000)] recompile
+          v27:Fixnum[42] = Const Value(42)
           CheckInterrupts
-          Return v19
+          Return v27
         ");
     }
 
@@ -13193,7 +13195,7 @@ mod hir_opt_tests {
           Jump bb3(v4)
         bb3(v6:BasicObject):
           v11:StaticSymbol[:the_block] = Const Value(VALUE(0x1000))
-          v13:BasicObject = Send v6, &block, :callee, v11 # SendFallbackReason: Complex argument passing
+          v13:BasicObject = Send v6, &block, :callee, v11 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v13
         ");
@@ -13238,7 +13240,7 @@ mod hir_opt_tests {
           v26:ObjectSubclass[BlockParamProxy] = Const Value(VALUE(0x1008))
           Jump bb6(v26, v10)
         bb6(v16:BasicObject, v17:BasicObject):
-          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Complex argument passing
+          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v29
         ");
@@ -17085,7 +17087,7 @@ mod hir_opt_tests {
             test(true, block)
         ");
 
-        assert_snapshot!(hir_string("test"), @r"
+        assert_snapshot!(hir_string("test"), @"
         fn test@<compiled>:7:
         bb1():
           EntryPoint interpreter
@@ -17108,7 +17110,7 @@ mod hir_opt_tests {
         bb5():
           v22:Truthy = RefineType v12, Truthy
           v26:Fixnum[42] = Const Value(42)
-          v29:BasicObject = Send v11, &block, :passthrough_recompile_blockarg, v26, v13 # SendFallbackReason: Complex argument passing
+          v29:BasicObject = Send v11, &block, :passthrough_recompile_blockarg, v26, v13 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v29
         bb4(v34:BasicObject, v35:Falsy, v36:BasicObject):
@@ -19316,7 +19318,7 @@ mod hir_opt_tests {
           v47:ObjectSubclass[BlockParamProxy] = Const Value(VALUE(0x1050))
           Jump bb8(v47, v55)
         bb8(v37:BasicObject, v38:BasicObject):
-          v50:BasicObject = Send v27, &block, :inner, v10, v37 # SendFallbackReason: Complex argument passing
+          v50:BasicObject = Send v27, &block, :inner, v10, v37 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           PopInlineFrame
           PatchPoint NoEPEscape(test)

@@ -531,6 +531,7 @@ pub enum SideExitReason {
     UnhandledYARVInsn(u32),
     UnhandledCallType(CallType),
     UnhandledBlockArg,
+    BlockArgNotNil,
     TooManyKeywordParameters,
     TooManyArgsForLir,
     FixnumAddOverflow,
@@ -694,6 +695,8 @@ pub enum SendFallbackReason {
     SendCfuncArrayVariadic,
     SendNotOptimizedMethodType(MethodType),
     SendNotOptimizedNeedPermission,
+    /// The block argument is not nil, so we can't optimize to SendWithoutBlockDirect
+    SendBlockArgNotNil,
     CCallWithFrameTooManyArgs,
     ObjToStringNotString,
     TooManyArgsForLir,
@@ -768,6 +771,7 @@ impl Display for SendFallbackReason {
             SendCfuncVariadic => write!(f, "Send: C function is variadic"),
             SendCfuncArrayVariadic => write!(f, "Send: C function expects array variadic"),
             SendNotOptimizedMethodType(method_type) => write!(f, "Send: unsupported method type {:?}", method_type),
+            SendBlockArgNotNil => write!(f, "Send: block argument is not nil"),
             CCallWithFrameTooManyArgs => write!(f, "CCallWithFrame: too many arguments"),
             ObjToStringNotString => write!(f, "ObjToString: result is not a string"),
             TooManyArgsForLir => write!(f, "Too many arguments for LIR"),
@@ -2479,7 +2483,7 @@ pub enum ValidationError {
 }
 
 /// Check if we can do a direct send to the given iseq with the given args.
-fn can_direct_send(function: &mut Function, block: BlockId, iseq: *const rb_iseq_t, ci: *const rb_callinfo, send_insn: InsnId, args: &[InsnId], has_block: bool) -> bool {
+fn can_direct_send(function: &mut Function, block: BlockId, iseq: *const rb_iseq_t, ci: *const rb_callinfo, send_insn: InsnId, args: &[InsnId], has_block: bool, caller_passes_block_arg: bool) -> bool {
     let mut can_send = true;
     let mut count_failure = |counter| {
         can_send = false;
@@ -2488,8 +2492,6 @@ fn can_direct_send(function: &mut Function, block: BlockId, iseq: *const rb_iseq
     let params = unsafe { iseq.params() };
 
     let callee_has_block_param = 0 != params.flags.has_block();
-    let caller_passes_block_arg = (unsafe { rb_vm_ci_flag(ci) } & VM_CALL_ARGS_BLOCKARG) != 0;
-
     use Counter::*;
     if 0 != params.flags.has_rest()    { count_failure(complex_arg_pass_param_rest) }
     if 0 != params.flags.forwardable() { count_failure(complex_arg_pass_param_forwardable) }
@@ -3703,14 +3705,17 @@ impl Function {
     /// Try trivially inlining the method. If we can't, emit a SendDirect instruction instead and
     /// leave it to the general-purpose inliner to handle.
     fn try_inline_send_direct(&mut self, block: BlockId, insn: Insn) -> InsnId {
-        let Insn::SendDirect { recv, iseq, cd, ref args, state, .. } = insn else {
+        let Insn::SendDirect { recv, iseq, cd, ref args, state, block: send_block, .. } = insn else {
             panic!("try_inline_send_direct called with non-SendDirect instruction");
         };
         // The trivial inliner runs first to handle simple cases (constant returns,
         // parameter returns, etc.) without frame push/pop overhead. The general
         // inliner then handles more complex methods that require full inlining.
         let call_info = unsafe { (*cd).ci };
-        let ci_flags = unsafe { vm_ci_flag(call_info) };
+        let mut ci_flags = unsafe { vm_ci_flag(call_info) };
+        if send_block.is_none() {
+            ci_flags &= !VM_CALL_ARGS_BLOCKARG;
+        }
         // .send call is not currently supported for builtins
         if ci_flags & VM_CALL_OPT_SEND != 0 {
             return self.push_insn(block, insn);
@@ -3822,9 +3827,32 @@ impl Function {
                             def_type = unsafe { get_cme_def_type(cme) };
                         }
 
+                        // Check if we can optimize `foo(&block)` where block is nil to a send without block
+                        let mut send_block = send_block;
+                        let mut args = args;
+                        let mut stripped_nil_block = false;
+                        if send_block == Some(BlockHandler::BlockArg) && def_type == VM_METHOD_TYPE_ISEQ {
+                            // The block arg is the last element in args
+                            if let Some(&block_arg) = args.last() {
+                                let block_arg_type = self.type_of(block_arg);
+                                if block_arg_type.is_subtype(types::NilClass) {
+                                    // Block arg is known to be nil - strip it and treat as no block
+                                    args = args[..args.len() - 1].to_vec();
+                                    send_block = None;
+                                    stripped_nil_block = true;
+                                } else {
+                                    // Can't prove block arg is nil
+                                    self.set_dynamic_send_reason(insn_id, SendBlockArgNotNil);
+                                    self.push_insn_id(block, insn_id); continue;
+                                }
+                            }
+                        }
+
                         // If the call site info indicates that the `Function` has overly complex arguments, then do not optimize into a `SendDirect`.
                         // Optimized methods(`VM_METHOD_TYPE_OPTIMIZED`) handle their own argument constraints (e.g., kw_splat for Proc call).
-                        if def_type != VM_METHOD_TYPE_OPTIMIZED && unspecializable_call_type(flags) {
+                        // Mask out ARGS_BLOCKARG only if we've already handled the nil block arg case above.
+                        let flags_for_check = if stripped_nil_block { flags & !VM_CALL_ARGS_BLOCKARG } else { flags };
+                        if def_type != VM_METHOD_TYPE_OPTIMIZED && unspecializable_call_type(flags_for_check) {
                             self.count_complex_call_features(block, flags);
                             self.set_dynamic_send_reason(insn_id, ComplexArgPass);
                             self.push_insn_id(block, insn_id); continue;
@@ -3835,7 +3863,7 @@ impl Function {
                             // Only specialize positional-positional calls
                             // TODO(max): Handle other kinds of parameter passing
                             let iseq = unsafe { get_def_iseq_ptr((*cme).def) };
-                            if !can_direct_send(self, block, iseq, ci, insn_id, args.as_slice(), has_block) {
+                            if !can_direct_send(self, block, iseq, ci, insn_id, args.as_slice(), send_block.is_some(), send_block == Some(BlockHandler::BlockArg)) {
                                 self.push_insn_id(block, insn_id); continue;
                             }
 
@@ -3874,7 +3902,7 @@ impl Function {
                             let capture = unsafe { proc_block.as_.captured.as_ref() };
                             let iseq = unsafe { *capture.code.iseq.as_ref() };
 
-                            if !can_direct_send(self, block, iseq, ci, insn_id, args.as_slice(), has_block) {
+                            if !can_direct_send(self, block, iseq, ci, insn_id, args.as_slice(), has_block, false) {
                                 self.push_insn_id(block, insn_id); continue;
                             }
 
@@ -4216,7 +4244,7 @@ impl Function {
                             // If not, we can't do direct dispatch.
                             let super_iseq = unsafe { get_def_iseq_ptr((*super_cme).def) };
                             // TODO: pass Option<blockiseq> to can_direct_send when we start specializing `super { ... }`.
-                            if !can_direct_send(self, block, super_iseq, ci, insn_id, args.as_slice(), false) {
+                            if !can_direct_send(self, block, super_iseq, ci, insn_id, args.as_slice(), false, false) {
                                 self.push_insn_id(block, insn_id);
                                 self.set_dynamic_send_reason(insn_id, SuperTargetComplexArgsPass);
                                 continue;
