@@ -8019,7 +8019,7 @@ mod hir_opt_tests {
           v22:BasicObject = LoadField v18, :block@0x1010
           Jump bb6(v22, v22)
         bb6(v16:BasicObject, v17:BasicObject):
-          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Complex argument passing
+          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v29
         ");
@@ -8057,7 +8057,7 @@ mod hir_opt_tests {
           v22:BasicObject = LoadField v18, :block@0x1002
           Jump bb6(v22, v22)
         bb6(v16:BasicObject, v17:BasicObject):
-          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Complex argument passing
+          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v29
         ");
@@ -8096,7 +8096,7 @@ mod hir_opt_tests {
           v17:BasicObject = LoadField v13, :block@0x1010
           Jump bb6(v17)
         bb6(v12:BasicObject):
-          v24:BasicObject = Send v10, &block, :map, v12 # SendFallbackReason: Complex argument passing
+          v24:BasicObject = Send v10, &block, :map, v12 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v24
         ");
@@ -8218,7 +8218,7 @@ mod hir_opt_tests {
           Jump bb3(v5, v6)
         bb3(v8:BasicObject, v9:NilClass):
           v13:StaticSymbol[:to_s] = Const Value(VALUE(0x1000))
-          v19:BasicObject = Send v8, &block, :foo, v13 # SendFallbackReason: Complex argument passing
+          v19:BasicObject = Send v8, &block, :foo, v13 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v19
         ");
@@ -8249,9 +8249,12 @@ mod hir_opt_tests {
           Jump bb3(v5, v6)
         bb3(v8:BasicObject, v9:NilClass):
           v13:NilClass = Const Value(nil)
-          v19:BasicObject = Send v8, &block, :foo, v13 # SendFallbackReason: Complex argument passing
+          v25:NilClass = GuardBitEquals v13, Value(nil)
+          PatchPoint MethodRedefined(NilClass@0x1000, foo@0x1008, cme:0x1010)
+          v27:NilClass = GuardType v8, NilClass
+          v29:Fixnum[42] = Const Value(42)
           CheckInterrupts
-          Return v19
+          Return v29
         ");
     }
 
@@ -11602,7 +11605,7 @@ mod hir_opt_tests {
           Jump bb3(v4)
         bb3(v6:BasicObject):
           v11:StaticSymbol[:the_block] = Const Value(VALUE(0x1000))
-          v13:BasicObject = Send v6, &block, :callee, v11 # SendFallbackReason: Complex argument passing
+          v13:BasicObject = Send v6, &block, :callee, v11 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v13
         ");
@@ -11645,7 +11648,7 @@ mod hir_opt_tests {
           v22:BasicObject = LoadField v18, :block@0x1010
           Jump bb6(v22, v22)
         bb6(v16:BasicObject, v17:BasicObject):
-          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Complex argument passing
+          v29:BasicObject = Send v14, &block, :map, v16 # SendFallbackReason: Send: block argument is not nil
           CheckInterrupts
           Return v29
         ");

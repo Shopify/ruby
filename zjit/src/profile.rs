@@ -97,6 +97,8 @@ fn profile_insn(bare_opcode: ruby_vminsn_type, ec: EcPtr) {
             let cd: *const rb_call_data = profiler.insn_opnd(0).as_ptr();
             let argc = unsafe { vm_ci_argc((*cd).ci) };
             // Profile all the arguments and self (+1).
+            // Note: For sends with ARGS_BLOCKARG, the block arg is NOT profiled here.
+            // The block arg type is determined from HIR static type inference.
             profile_operands(profiler, profile, (argc + 1) as usize);
         }
         YARVINSN_splatkw => profile_operands(profiler, profile, 2),

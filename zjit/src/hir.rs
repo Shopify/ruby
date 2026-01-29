@@ -506,6 +506,7 @@ pub enum SideExitReason {
     UnhandledYARVInsn(u32),
     UnhandledCallType(CallType),
     UnhandledBlockArg,
+    BlockArgNotNil,
     TooManyKeywordParameters,
     FixnumAddOverflow,
     FixnumSubOverflow,
@@ -664,6 +665,8 @@ pub enum SendFallbackReason {
     SendCfuncArrayVariadic,
     SendNotOptimizedMethodType(MethodType),
     SendNotOptimizedNeedPermission,
+    /// The block argument is not nil, so we can't optimize to SendWithoutBlockDirect
+    SendBlockArgNotNil,
     CCallWithFrameTooManyArgs,
     ObjToStringNotString,
     TooManyArgsForLir,
@@ -738,6 +741,7 @@ impl Display for SendFallbackReason {
             SendCfuncVariadic => write!(f, "Send: C function is variadic"),
             SendCfuncArrayVariadic => write!(f, "Send: C function expects array variadic"),
             SendNotOptimizedMethodType(method_type) => write!(f, "Send: unsupported method type {:?}", method_type),
+            SendBlockArgNotNil => write!(f, "Send: block argument is not nil"),
             CCallWithFrameTooManyArgs => write!(f, "CCallWithFrame: too many arguments"),
             ObjToStringNotString => write!(f, "ObjToString: result is not a string"),
             TooManyArgsForLir => write!(f, "Too many arguments for LIR"),
@@ -3704,9 +3708,38 @@ impl Function {
                             def_type = unsafe { get_cme_def_type(cme) };
                         }
 
+                        // Check if we can optimize `foo(&block)` where block is nil to a send without block
+                        let mut send_block = send_block;
+                        let mut args = args;
+                        let mut stripped_nil_block = false;
+                        if send_block == Some(BlockHandler::BlockArg) && def_type == VM_METHOD_TYPE_ISEQ {
+                            // The block arg is the last element in args
+                            if let Some(&block_arg) = args.last() {
+                                let block_arg_type = self.type_of(block_arg);
+                                if block_arg_type.is_subtype(types::NilClass) {
+                                    // Block arg is known to be nil - strip it and treat as no block
+                                    self.push_insn(block, Insn::GuardBitEquals {
+                                        val: block_arg,
+                                        expected: Const::Value(Qnil),
+                                        reason: SideExitReason::BlockArgNotNil,
+                                        state,
+                                    });
+                                    args = args[..args.len() - 1].to_vec();
+                                    send_block = None;
+                                    stripped_nil_block = true;
+                                } else {
+                                    // Can't prove block arg is nil
+                                    self.set_dynamic_send_reason(insn_id, SendBlockArgNotNil);
+                                    self.push_insn_id(block, insn_id); continue;
+                                }
+                            }
+                        }
+
                         // If the call site info indicates that the `Function` has overly complex arguments, then do not optimize into a `SendDirect`.
                         // Optimized methods(`VM_METHOD_TYPE_OPTIMIZED`) handle their own argument constraints (e.g., kw_splat for Proc call).
-                        if def_type != VM_METHOD_TYPE_OPTIMIZED && unspecializable_call_type(flags) {
+                        // Mask out ARGS_BLOCKARG only if we've already handled the nil block arg case above.
+                        let flags_for_check = if stripped_nil_block { flags & !VM_CALL_ARGS_BLOCKARG } else { flags };
+                        if def_type != VM_METHOD_TYPE_OPTIMIZED && unspecializable_call_type(flags_for_check) {
                             self.count_complex_call_features(block, flags);
                             self.set_dynamic_send_reason(insn_id, ComplexArgPass);
                             self.push_insn_id(block, insn_id); continue;
