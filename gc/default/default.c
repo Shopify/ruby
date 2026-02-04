@@ -3787,6 +3787,14 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             break;
         }
         heap->sweeping_page = next;
+
+        rb_native_mutex_unlock(&objspace->sweep_lock);
+
+        // TODO: pre-sweep
+        usleep(1000);
+
+        rb_native_mutex_lock(&objspace->sweep_lock);
+
         sweep_page->free_next = heap->swept_pages;
         heap->swept_pages = sweep_page;
         rb_native_mutex_unlock(&objspace->sweep_lock);
