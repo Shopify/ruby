@@ -971,15 +971,40 @@ gc_mode_verify(enum gc_mode mode)
     return mode;
 }
 
-static inline bool
+static bool
+heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
+{
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    while (1) {
+        if (heap->sweeping_page || heap->swept_pages) {
+            rb_native_mutex_unlock(&objspace->sweep_lock);
+            return false;
+        }
+        if (!objspace->sweep_thread_sweeping) {
+            rb_native_mutex_unlock(&objspace->sweep_lock);
+            return true;
+        }
+        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
+    }
+}
+
+static bool
 has_sweeping_pages(rb_objspace_t *objspace)
 {
-    for (int i = 0; i < HEAP_COUNT; i++) {
-        if ((&heaps[i])->sweeping_page) {
-            return TRUE;
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    while (1) {
+        for (int i = 0; i < HEAP_COUNT; i++) {
+            if (heaps[i].sweeping_page || heaps[i].swept_pages) {
+                rb_native_mutex_unlock(&objspace->sweep_lock);
+                return TRUE;
+            }
         }
+        if (!objspace->sweep_thread_sweeping) {
+            rb_native_mutex_unlock(&objspace->sweep_lock);
+            return FALSE;
+        }
+        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
     }
-    return FALSE;
 }
 
 static inline size_t
@@ -3973,12 +3998,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
     int swept_slots = 0;
     int pooled_slots = 0;
 
-    {
-        rb_native_mutex_lock(&objspace->sweep_lock);
-        bool has_work = heap->sweeping_page || heap->swept_pages;
-        rb_native_mutex_unlock(&objspace->sweep_lock);
-        if (!has_work) return FALSE;
-    }
+    if (heap_is_sweep_done(objspace, heap)) return FALSE;
 
 #if GC_ENABLE_LAZY_SWEEP
     gc_prof_sweep_timer_start(objspace);
@@ -4053,22 +4073,12 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         }
     }
 
-    rb_native_mutex_lock(&objspace->sweep_lock);
-    if (!heap->sweeping_page && !heap->swept_pages) {
-        /* Wait for the background sweep thread to finish before calling finish */
-        while (objspace->sweep_thread_sweeping) {
-            rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
-        }
-        rb_native_mutex_unlock(&objspace->sweep_lock);
-
+    if (heap_is_sweep_done(objspace, heap)) {
         gc_sweep_finish_heap(objspace, heap);
 
         if (!has_sweeping_pages(objspace)) {
             gc_sweep_finish(objspace);
         }
-    }
-    else {
-        rb_native_mutex_unlock(&objspace->sweep_lock);
     }
 
 #if GC_ENABLE_LAZY_SWEEP
@@ -4084,11 +4094,7 @@ gc_sweep_rest(rb_objspace_t *objspace)
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
-        while (1) {
-            rb_native_mutex_lock(&objspace->sweep_lock);
-            bool has_work = heap->sweeping_page || heap->swept_pages;
-            rb_native_mutex_unlock(&objspace->sweep_lock);
-            if (!has_work) break;
+        while (!heap_is_sweep_done(objspace, heap)) {
             gc_sweep_step(objspace, heap);
         }
     }
