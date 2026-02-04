@@ -982,15 +982,6 @@ has_sweeping_pages(rb_objspace_t *objspace)
     return FALSE;
 }
 
-static inline bool
-has_swept_pages(rb_objspace_t *objspace)
-{
-    for (int i = 0; i < HEAP_COUNT; i++) {
-        if (heaps[i].swept_pages) return true;
-    }
-    return false;
-}
-
 static inline size_t
 heap_eden_total_pages(rb_objspace_t *objspace)
 {
@@ -3008,6 +2999,7 @@ gc_abort(void *objspace_ptr)
             rb_heap_t *heap = &heaps[i];
 
             heap->sweeping_page = NULL;
+            heap->swept_pages = NULL;
             struct heap_page *page = NULL;
 
             ccan_list_for_each(&heap->pages, page, page_node) {
@@ -4071,7 +4063,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 
         gc_sweep_finish_heap(objspace, heap);
 
-        if (!has_sweeping_pages(objspace) && !has_swept_pages(objspace)) {
+        if (!has_sweeping_pages(objspace)) {
             gc_sweep_finish(objspace);
         }
     }
