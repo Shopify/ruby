@@ -3992,6 +3992,36 @@ gc_sweep_finish(rb_objspace_t *objspace)
 #endif
 }
 
+static struct heap_page *
+gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap)
+{
+    struct heap_page *page = NULL;
+
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    while (1) {
+        if (heap->swept_pages) {
+            page = heap->swept_pages;
+            heap->swept_pages = page->free_next;
+            break;
+        }
+
+        if (heap->sweeping_page) {
+            page = heap->sweeping_page;
+            heap->sweeping_page = ccan_list_next(&heap->pages, page, page_node);
+            break;
+        }
+
+        if (!objspace->sweep_thread_sweeping) {
+            break;
+        }
+
+        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
+    }
+    rb_native_mutex_unlock(&objspace->sweep_lock);
+
+    return page;
+}
+
 static int
 gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 {
@@ -4005,21 +4035,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 #endif
 
     while (1) {
-        struct heap_page *sweep_page;
-
-        rb_native_mutex_lock(&objspace->sweep_lock);
-        sweep_page = heap->swept_pages;
-        if (sweep_page) {
-            heap->swept_pages = sweep_page->free_next;
-        }
-        else {
-            sweep_page = heap->sweeping_page;
-            if (sweep_page) {
-                heap->sweeping_page = ccan_list_next(&heap->pages, sweep_page, page_node);
-            }
-        }
-        rb_native_mutex_unlock(&objspace->sweep_lock);
-
+        struct heap_page *sweep_page = gc_sweep_dequeue_page(objspace, heap);
         if (!sweep_page) break;
 
         RUBY_DEBUG_LOG("sweep_page:%p", (void *)sweep_page);
