@@ -3770,6 +3770,72 @@ heap_page_freelist_append(struct heap_page *page, struct free_slot *freelist)
     }
 }
 
+static inline void
+gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p, bits_t bitset, short slot_size, short slot_bits)
+{
+    do {
+        VALUE vp = (VALUE)p;
+
+        rb_asan_unpoison_object(vp, false);
+        if (bitset & 1) {
+            if (BUILTIN_TYPE(vp) == T_OBJECT && !rb_gc_obj_needs_cleanup_p(vp)) {
+                heap_page_add_freeobj(objspace, page, vp);
+            }
+        }
+
+        p += slot_size;
+        bitset >>= slot_bits;
+    } while (bitset);
+}
+
+static void
+gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
+{
+    uintptr_t p = (uintptr_t)page->start;
+    bits_t *bits = page->mark_bits;
+    short slot_size = page->slot_size;
+    short slot_bits = slot_size / BASE_SLOT_SIZE;
+
+    int page_rvalue_count = page->total_slots * slot_bits;
+    int out_of_range_bits = (NUM_IN_PAGE(p) + page_rvalue_count) % BITS_BITLENGTH;
+    if (out_of_range_bits != 0) {
+        bits[BITMAP_INDEX(p) + page_rvalue_count / BITS_BITLENGTH] |= ~(((bits_t)1 << out_of_range_bits) - 1);
+    }
+
+    int bitmap_plane_count = CEILDIV(NUM_IN_PAGE(p) + page_rvalue_count, BITS_BITLENGTH);
+    bits_t slot_mask = heap->slot_bits_mask;
+
+    // Clear wb_unprotected and age bits for all unmarked slots
+    {
+        bits_t *wb_unprotected_bits = page->wb_unprotected_bits;
+        bits_t *age_bits = page->age_bits;
+        for (int i = 0; i < bitmap_plane_count; i++) {
+            bits_t unmarked = ~bits[i] & slot_mask;
+            wb_unprotected_bits[i] &= ~unmarked;
+            age_bits[i * 2] &= ~unmarked;
+            age_bits[i * 2 + 1] &= ~unmarked;
+        }
+    }
+
+    // First plane: skip out of range slots at the head of the page
+    bits_t bitset = ~bits[0];
+    bitset >>= NUM_IN_PAGE(p);
+    bitset &= slot_mask;
+    if (bitset) {
+        gc_pre_sweep_plane(objspace, page, p, bitset, slot_size, slot_bits);
+    }
+    p += (BITS_BITLENGTH - NUM_IN_PAGE(p)) * BASE_SLOT_SIZE;
+
+    for (int i = 1; i < bitmap_plane_count; i++) {
+        bitset = ~bits[i];
+        bitset &= slot_mask;
+        if (bitset) {
+            gc_pre_sweep_plane(objspace, page, p, bitset, slot_size, slot_bits);
+        }
+        p += BITS_BITLENGTH * BASE_SLOT_SIZE;
+    }
+}
+
 static void
 gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 {
@@ -3790,8 +3856,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 
         rb_native_mutex_unlock(&objspace->sweep_lock);
 
-        // TODO: pre-sweep
-        usleep(1000);
+        gc_pre_sweep_page(objspace, heap, sweep_page);
 
         rb_native_mutex_lock(&objspace->sweep_lock);
 
