@@ -183,10 +183,18 @@ bool rb_thread_ractor_isolation_check_p(void);
 PRINTF_ARGS(void rb_ractor_isolation_violation(const char *fmt, ...), 1, 2);
 void rb_ractor_isolation_violation_str(VALUE message);
 
+/* Like rb_ractor_isolation_violation, but also carries the reference chain
+ * built by rb_ractor_shareable_p_continue. In check_isolation mode the chain
+ * is appended to the warning message; otherwise it is attached to the raised
+ * Ractor::IsolationError as @reference_chain (so Exception#detailed_message
+ * surfaces it). */
+PRINTF_ARGS(void rb_ractor_isolation_violation_with_chain(VALUE chain, const char *fmt, ...), 2, 3);
+
 RUBY_SYMBOL_EXPORT_BEGIN
 void rb_ractor_finish_marking(void);
 
 bool rb_ractor_shareable_p_continue(VALUE obj, VALUE *chain);
+NORETURN(void rb_ractor_raise_isolation_error_with_chain(VALUE klass, VALUE chain, const char *fmt, ...));
 
 // THIS FUNCTION SHOULD NOT CALL WHILE INCREMENTAL MARKING!!
 // This function is for T_DATA::free_func
