@@ -1581,9 +1581,9 @@ rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
 {
     VALUE chain = Qnil;
     if (!rb_proc_ractor_make_shareable_continue(self, replace_self, &chain)) {
-        rb_ractor_isolation_violation(
-                    "Proc's self is not shareable: %" PRIsVALUE "%"PRIsVALUE,
-                    self, chain);
+        rb_ractor_isolation_violation_with_chain(chain,
+                    "Proc's self is not shareable: %" PRIsVALUE,
+                    self);
     }
     return self;
 }
