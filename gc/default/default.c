@@ -3020,7 +3020,14 @@ gc_abort(void *objspace_ptr)
         objspace->flags.during_incremental_marking = FALSE;
     }
 
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    while (objspace->sweep_thread_sweeping) {
+        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
+    }
+    rb_native_mutex_unlock(&objspace->sweep_lock);
+
     if (is_lazy_sweeping(objspace)) {
+
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
 
@@ -4367,9 +4374,7 @@ gc_compact_start(rb_objspace_t *objspace)
     gc_mode_transition(objspace, gc_mode_compacting);
 
     rb_native_mutex_lock(&objspace->sweep_lock);
-    while (objspace->sweep_thread_sweeping) {
-        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
-    }
+    GC_ASSERT(!objspace->sweep_thread_sweeping);
     rb_native_mutex_unlock(&objspace->sweep_lock);
 
     for (int i = 0; i < HEAP_COUNT; i++) {

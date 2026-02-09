@@ -1300,7 +1300,7 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
     }
 
     shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
-    if (id2ref_tbl && rb_shape_has_object_id(shape_id)) return true;
+    if (RUBY_ATOMIC_PTR_LOAD(id2ref_tbl) && rb_shape_has_object_id(shape_id)) return true;
 
     switch (flags & RUBY_T_MASK) {
       case T_OBJECT:
@@ -1624,6 +1624,7 @@ rb_gc_obj_free(void *objspace, VALUE obj)
     }
 
     if (FL_TEST_RAW(obj, FL_FINALIZE)) {
+        GC_ASSERT(rb_current_execution_context(true));
         rb_gc_impl_make_zombie(objspace, obj, 0, 0);
         return FALSE;
     }
