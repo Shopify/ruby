@@ -3781,9 +3781,16 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
 
         rb_asan_unpoison_object(vp, false);
         if (bitset & 1) {
-            if (BUILTIN_TYPE(vp) == T_OBJECT && !rb_gc_obj_needs_cleanup_p(vp)) {
-                heap_page_add_freeobj(objspace, page, vp);
-                freed++;
+            switch (BUILTIN_TYPE(vp)) {
+              case T_NONE:
+              case T_ZOMBIE:
+                break;
+              default:
+                if (!rb_gc_obj_needs_cleanup_p(vp)) {
+                    heap_page_add_freeobj(objspace, page, vp);
+                    freed++;
+                }
+                break;
             }
         }
 
