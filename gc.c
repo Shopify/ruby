@@ -2200,8 +2200,8 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
     }
 }
 
-static inline void
-obj_free_object_id(VALUE obj)
+static VALUE
+obj_get_object_id(VALUE obj)
 {
     VALUE obj_id = 0;
     if (RB_UNLIKELY(id2ref_tbl)) {
@@ -2212,11 +2212,11 @@ obj_free_object_id(VALUE obj)
             break;
           case T_IMEMO:
             if (!IMEMO_TYPE_P(obj, imemo_fields)) {
-                return;
+                break;
             }
             // fallthrough
           case T_OBJECT:
-            {
+          {
             shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
             if (rb_shape_has_object_id(shape_id)) {
                 obj_id = object_id_get(obj, shape_id);
@@ -2224,9 +2224,18 @@ obj_free_object_id(VALUE obj)
             break;
           }
           default:
+            break;
             // For generic_fields, the T_IMEMO/fields is responsible for freeing the id.
-            return;
         }
+    }
+    return obj_id;
+}
+
+static inline void
+obj_free_object_id(VALUE obj)
+{
+    if (RB_UNLIKELY(id2ref_tbl)) {
+        VALUE obj_id = obj_get_object_id(obj);
 
         if (RB_UNLIKELY(obj_id)) {
             RUBY_ASSERT(FIXNUM_P(obj_id) || RB_TYPE_P(obj_id, T_BIGNUM));
@@ -2239,6 +2248,35 @@ obj_free_object_id(VALUE obj)
                 }
             }
         }
+    }
+}
+
+bool
+rb_gc_obj_has_vm_weak_references(VALUE obj)
+{
+    if (obj_get_object_id(obj) || rb_obj_gen_fields_p(obj)) {
+        return true;
+    }
+    switch (BUILTIN_TYPE(obj)) {
+      case T_STRING:
+        return FL_TEST_RAW(obj, RSTRING_FSTR);
+      case T_SYMBOL:
+        return true;
+      case T_IMEMO:
+        switch (imemo_type(obj)) {
+          case imemo_callcache: {
+              const struct rb_callcache *cc = (const struct rb_callcache *)obj;
+              return vm_cc_refinement_p(cc);
+          }
+          case imemo_callinfo:
+          case imemo_ment:
+            return true;
+          default:
+            break;
+        }
+        return false;
+      default:
+        return false;
     }
 }
 
