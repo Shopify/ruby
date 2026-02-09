@@ -781,6 +781,7 @@ struct heap_page {
     unsigned short free_slots;
     unsigned short final_slots;
     unsigned short pinned_slots;
+    unsigned short pre_freed_slots;
     struct {
         unsigned int before_sweep : 1;
         unsigned int has_remembered_objects : 1;
@@ -3692,7 +3693,8 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
                    ctx->freed_slots, ctx->empty_slots, ctx->final_slots);
 
     sweep_page->free_slots += ctx->freed_slots + ctx->empty_slots;
-    sweep_page->heap->total_freed_objects += ctx->freed_slots;
+    sweep_page->heap->total_freed_objects += ctx->freed_slots + sweep_page->pre_freed_slots;
+    sweep_page->pre_freed_slots = 0;
 
     if (RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final) && !finalizing) {
         gc_finalize_deferred_register(objspace);
@@ -3770,9 +3772,10 @@ heap_page_freelist_append(struct heap_page *page, struct free_slot *freelist)
     }
 }
 
-static inline void
+static inline int
 gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p, bits_t bitset, short slot_size, short slot_bits)
 {
+    int freed = 0;
     do {
         VALUE vp = (VALUE)p;
 
@@ -3780,17 +3783,20 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
         if (bitset & 1) {
             if (BUILTIN_TYPE(vp) == T_OBJECT && !rb_gc_obj_needs_cleanup_p(vp)) {
                 heap_page_add_freeobj(objspace, page, vp);
+                freed++;
             }
         }
 
         p += slot_size;
         bitset >>= slot_bits;
     } while (bitset);
+    return freed;
 }
 
 static void
 gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
 {
+    int freed_slots = 0;
     uintptr_t p = (uintptr_t)page->start;
     bits_t *bits = page->mark_bits;
     short slot_size = page->slot_size;
@@ -3822,7 +3828,7 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     bitset >>= NUM_IN_PAGE(p);
     bitset &= slot_mask;
     if (bitset) {
-        gc_pre_sweep_plane(objspace, page, p, bitset, slot_size, slot_bits);
+        freed_slots += gc_pre_sweep_plane(objspace, page, p, bitset, slot_size, slot_bits);
     }
     p += (BITS_BITLENGTH - NUM_IN_PAGE(p)) * BASE_SLOT_SIZE;
 
@@ -3830,10 +3836,12 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
         bitset = ~bits[i];
         bitset &= slot_mask;
         if (bitset) {
-            gc_pre_sweep_plane(objspace, page, p, bitset, slot_size, slot_bits);
+            freed_slots += gc_pre_sweep_plane(objspace, page, p, bitset, slot_size, slot_bits);
         }
         p += BITS_BITLENGTH * BASE_SLOT_SIZE;
     }
+
+    page->pre_freed_slots = freed_slots;
 }
 
 static void
