@@ -3786,6 +3786,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
               case T_ZOMBIE:
                 break;
               default:
+                // TODO: handle more types of objects (must be thread safe)
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
                     heap_page_add_freeobj(objspace, page, vp);
                     freed++;
