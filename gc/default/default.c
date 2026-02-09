@@ -4366,6 +4366,12 @@ gc_compact_start(rb_objspace_t *objspace)
     struct heap_page *page = NULL;
     gc_mode_transition(objspace, gc_mode_compacting);
 
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    while (objspace->sweep_thread_sweeping) {
+        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
+    }
+    rb_native_mutex_unlock(&objspace->sweep_lock);
+
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
         ccan_list_for_each(&heap->pages, page, page_node) {
