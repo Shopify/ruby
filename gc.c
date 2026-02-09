@@ -2010,12 +2010,19 @@ id2ref_tbl_memsize(const void *data)
     return rb_st_memsize(data);
 }
 
+// TODO: platforms other than pthread
+rb_nativethread_lock_t weakref_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static void
 id2ref_tbl_free(void *data)
 {
-    id2ref_tbl = NULL; // clear global ref
-    st_table *table = (st_table *)data;
-    st_free_table(table);
+    rb_native_mutex_lock(&weakref_lock);
+    {
+        RUBY_ATOMIC_PTR_SET(id2ref_tbl, NULL); // clear global ref
+        st_table *table = (st_table *)data;
+        st_free_table(table);
+    }
+    rb_native_mutex_unlock(&weakref_lock);
 }
 
 static const rb_data_type_t id2ref_tbl_type = {
@@ -2041,8 +2048,14 @@ class_object_id(VALUE klass)
         if (existing_id) {
             id = existing_id;
         }
-        else if (RB_UNLIKELY(id2ref_tbl)) {
-            st_insert(id2ref_tbl, id, klass);
+        else {
+            rb_native_mutex_lock(&weakref_lock);
+            {
+                if (RB_UNLIKELY(id2ref_tbl)) {
+                    st_insert(id2ref_tbl, id, klass);
+                }
+            }
+            rb_native_mutex_unlock(&weakref_lock);
         }
         RB_GC_VM_UNLOCK(lock_lev);
     }
@@ -2088,9 +2101,13 @@ object_id0(VALUE obj)
     RUBY_ASSERT(RBASIC_SHAPE_ID(obj) == object_id_shape_id);
     RUBY_ASSERT(rb_shape_obj_has_id(obj));
 
-    if (RB_UNLIKELY(id2ref_tbl)) {
+    if (RB_UNLIKELY(RUBY_ATOMIC_PTR_LOAD(id2ref_tbl))) {
         RB_VM_LOCKING() {
-            st_insert(id2ref_tbl, (st_data_t)id, (st_data_t)obj);
+            rb_native_mutex_lock(&weakref_lock);
+            {
+                st_insert(id2ref_tbl, (st_data_t)id, (st_data_t)obj);
+            }
+            rb_native_mutex_unlock(&weakref_lock);
         }
     }
     return id;
@@ -2127,6 +2144,7 @@ static void
 build_id2ref_i(VALUE obj, void *data)
 {
     st_table *id2ref_tbl = (st_table *)data;
+    rb_native_mutex_lock(&weakref_lock);
 
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
@@ -2152,6 +2170,7 @@ build_id2ref_i(VALUE obj, void *data)
         // For generic_fields, the T_IMEMO/fields is responsible for populating the entry.
         break;
     }
+    rb_native_mutex_unlock(&weakref_lock);
 }
 
 static VALUE
@@ -2161,7 +2180,7 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
 
     unsigned int lev = RB_GC_VM_LOCK();
 
-    if (!id2ref_tbl) {
+    if (!RUBY_ATOMIC_PTR_LOAD(id2ref_tbl)) {
         rb_gc_vm_barrier(); // stop other ractors
 
         // GC Must not trigger while we build the table, otherwise if we end
@@ -2175,7 +2194,7 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
         // By calling rb_gc_disable() we also save having to handle potentially garbage objects.
         bool gc_disabled = RTEST(rb_gc_disable());
         {
-            id2ref_tbl = tmp_id2ref_tbl;
+            RUBY_ATOMIC_PTR_SET(id2ref_tbl, tmp_id2ref_tbl);
             id2ref_value = tmp_id2ref_value;
 
             rb_gc_impl_each_object(objspace, build_id2ref_i, (void *)id2ref_tbl);
@@ -2184,7 +2203,12 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
     }
 
     VALUE obj;
-    bool found = st_lookup(id2ref_tbl, object_id, &obj) && !rb_gc_impl_garbage_object_p(objspace, obj);
+    bool found;
+    rb_native_mutex_lock(&weakref_lock);
+    {
+        found = st_lookup(id2ref_tbl, object_id, &obj) && !rb_gc_impl_garbage_object_p(objspace, obj);
+    }
+    rb_native_mutex_unlock(&weakref_lock);
 
     RB_GC_VM_UNLOCK(lev);
 
@@ -2204,7 +2228,7 @@ static VALUE
 obj_get_object_id(VALUE obj)
 {
     VALUE obj_id = 0;
-    if (RB_UNLIKELY(id2ref_tbl)) {
+    if (RB_UNLIKELY(RUBY_ATOMIC_PTR_LOAD(id2ref_tbl))) {
         switch (BUILTIN_TYPE(obj)) {
           case T_CLASS:
           case T_MODULE:
@@ -2234,19 +2258,23 @@ obj_get_object_id(VALUE obj)
 static inline void
 obj_free_object_id(VALUE obj)
 {
-    if (RB_UNLIKELY(id2ref_tbl)) {
+    if (RB_UNLIKELY(RUBY_ATOMIC_PTR_LOAD(id2ref_tbl))) {
         VALUE obj_id = obj_get_object_id(obj);
 
         if (RB_UNLIKELY(obj_id)) {
             RUBY_ASSERT(FIXNUM_P(obj_id) || RB_TYPE_P(obj_id, T_BIGNUM));
 
-            if (!st_delete(id2ref_tbl, (st_data_t *)&obj_id, NULL)) {
-                // The the object is a T_IMEMO/fields, then it's possible the actual object
-                // has been garbage collected already.
-                if (!RB_TYPE_P(obj, T_IMEMO)) {
-                    rb_bug("Object ID seen, but not in _id2ref table: object_id=%llu object=%s", NUM2ULL(obj_id), rb_obj_info(obj));
+            rb_native_mutex_lock(&weakref_lock);
+            {
+                if (!st_delete(id2ref_tbl, (st_data_t *)&obj_id, NULL)) {
+                    // The the object is a T_IMEMO/fields, then it's possible the actual object
+                    // has been garbage collected already.
+                    if (!RB_TYPE_P(obj, T_IMEMO)) {
+                        rb_bug("Object ID seen, but not in _id2ref table: object_id=%llu object=%s", NUM2ULL(obj_id), rb_obj_info(obj));
+                    }
                 }
             }
+            rb_native_mutex_unlock(&weakref_lock);
         }
     }
 }

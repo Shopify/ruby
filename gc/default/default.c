@@ -3786,14 +3786,17 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
               case T_ZOMBIE:
                 break;
               case T_OBJECT:
+              case T_STRING:
+              case T_ARRAY:
+              case T_HASH:
+              case T_STRUCT:
+              case T_MATCH:
+              case T_REGEXP:
                 if (rb_gc_obj_has_vm_weak_references(vp) || FL_TEST_RAW(vp, FL_FINALIZE)) {
                     // fallthrough
                 }
                 else {
-                    rb_gc_obj_free(objspace, vp);
-                    heap_page_add_freeobj(objspace, page, vp);
-                    freed++;
-                    break;
+                    goto free;
                 }
               default:
                 // TODO: handle more types of objects (must be thread safe)
@@ -3802,6 +3805,13 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                     freed++;
                 }
                 break;
+              free: {
+                  bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
+                  GC_ASSERT(can_put_back_on_freelist);
+                  heap_page_add_freeobj(objspace, page, vp);
+                  freed++;
+                  break;
+              }
             }
         }
 
@@ -3887,7 +3897,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         rb_native_mutex_lock(&objspace->sweep_lock);
 
         sweep_page->free_next = heap->swept_pages;
-        heap->swept_pages = sweep_page;
+        heap->swept_pages = sweep_page; // pre-swept
         rb_native_mutex_unlock(&objspace->sweep_lock);
     }
 }
