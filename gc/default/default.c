@@ -795,6 +795,7 @@ struct heap_page {
     uintptr_t start;
     struct free_slot *freelist;
     struct ccan_list_node page_node;
+    rb_nativethread_lock_t page_lock;
 
     bits_t wb_unprotected_bits[HEAP_PAGE_BITMAP_LIMIT];
     /* the following three bitmaps are cleared at the beginning of full GC */
@@ -1988,6 +1989,7 @@ heap_page_allocate(rb_objspace_t *objspace)
 
     page->body = page_body;
     page_body->header.page = page;
+    rb_native_mutex_initialize(&page->page_lock);
 
     objspace->heap_pages.allocated_pages++;
 
@@ -2962,7 +2964,11 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
             page->final_slots--;
             page->free_slots++;
             RVALUE_AGE_SET_BITMAP(zombie, 0);
-            heap_page_add_freeobj(objspace, page, zombie);
+            rb_native_mutex_lock(&page->page_lock);
+            {
+                heap_page_add_freeobj(objspace, page, zombie);
+            }
+            rb_native_mutex_unlock(&page->page_lock);
             page->heap->total_freed_objects++;
         }
         RB_GC_VM_UNLOCK(lev);
@@ -3808,14 +3814,22 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
               default:
                 // TODO: handle more types of objects (must be thread safe)
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
-                    heap_page_add_freeobj(objspace, page, vp);
+                    rb_native_mutex_lock(&page->page_lock);
+                    {
+                        heap_page_add_freeobj(objspace, page, vp);
+                    }
+                    rb_native_mutex_unlock(&page->page_lock);
                     freed++;
                 }
                 break;
               free: {
                   bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
                   GC_ASSERT(can_put_back_on_freelist);
-                  heap_page_add_freeobj(objspace, page, vp);
+                  rb_native_mutex_lock(&page->page_lock);
+                  {
+                      heap_page_add_freeobj(objspace, page, vp);
+                  }
+                  rb_native_mutex_unlock(&page->page_lock);
                   freed++;
                   break;
               }
