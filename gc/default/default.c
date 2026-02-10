@@ -2963,9 +2963,9 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
             RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
             page->final_slots--;
             page->free_slots++;
-            RVALUE_AGE_SET_BITMAP(zombie, 0);
             rb_native_mutex_lock(&page->page_lock);
             {
+                RVALUE_AGE_SET_BITMAP(zombie, 0);
                 heap_page_add_freeobj(objspace, page, zombie);
             }
             rb_native_mutex_unlock(&page->page_lock);
@@ -3789,8 +3789,10 @@ static inline int
 gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p, bits_t bitset, short slot_size, short slot_bits)
 {
     int freed = 0;
+    bool free_with_vm_lock;
     do {
         VALUE vp = (VALUE)p;
+        free_with_vm_lock = false;
 
         rb_asan_unpoison_object(vp, false);
         if (bitset & 1) {
@@ -3798,6 +3800,32 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
               case T_NONE:
               case T_ZOMBIE:
                 break;
+              case T_DATA: {
+                void *data = RTYPEDDATA_P(vp) ? RTYPEDDATA_GET_DATA(vp) : DATA_PTR(vp);
+                if (!data) break;
+                // NOTE: this repeats code found in `rb_data_free`. This is just for testing purposes.
+                bool free_immediately = false;
+                void (*dfree)(void *);
+                if (RTYPEDDATA_P(vp)) {
+                    free_immediately = (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_FREE_IMMEDIATELY) != 0;
+                    dfree = RTYPEDDATA_TYPE(vp)->function.dfree;
+                }
+                else {
+                    dfree = RDATA(vp)->dfree;
+                }
+                if (!dfree || dfree == RUBY_DEFAULT_FREE) {
+                    if (rb_gc_obj_has_vm_weak_references(vp) || FL_TEST_RAW(vp, FL_FINALIZE)) {
+                        break;
+                    }
+                    else {
+                        free_with_vm_lock = false;
+                        goto free;
+                    }
+                }
+                else {
+                    break;
+                }
+              }
               case T_OBJECT:
               case T_STRING:
               case T_ARRAY:
@@ -3823,7 +3851,10 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                 }
                 break;
               free: {
+                  unsigned int lev;
+                  if (free_with_vm_lock) RB_VM_LOCK_ENTER_LEV_NB(&lev);
                   bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
+                  if (free_with_vm_lock) RB_VM_LOCK_LEAVE_LEV_NB(&lev);
                   GC_ASSERT(can_put_back_on_freelist);
                   rb_native_mutex_lock(&page->page_lock);
                   {
@@ -3861,6 +3892,7 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     bits_t slot_mask = heap->slot_bits_mask;
 
     // Clear wb_unprotected and age bits for all unmarked slots
+    rb_native_mutex_lock(&page->page_lock);
     {
         bits_t *wb_unprotected_bits = page->wb_unprotected_bits;
         bits_t *age_bits = page->age_bits;
@@ -3871,6 +3903,7 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
             age_bits[i * 2 + 1] &= ~unmarked;
         }
     }
+    rb_native_mutex_unlock(&page->page_lock);
 
     // First plane: skip out of range slots at the head of the page
     bits_t bitset = ~bits[0];
@@ -7124,6 +7157,25 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
 }
 
 void
+rb_gc_stop_background_threads(rb_objspace_t *objspace)
+{
+
+    bool sweep_thread_was_running = false;
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    if (objspace->sweep_thread_running) {
+        sweep_thread_was_running = true;
+        objspace->sweep_thread_running = false;
+        rb_native_cond_broadcast(&objspace->sweep_cond);
+    }
+    rb_native_mutex_unlock(&objspace->sweep_lock);
+    if (sweep_thread_was_running) {
+        pthread_join(objspace->sweep_thread, NULL);
+        GET_VM()->gc.sweep_thread = 0;
+        objspace->sweep_thread = 0;
+    }
+}
+
+void
 rb_gc_impl_prepare_heap(void *objspace_ptr)
 {
     rb_objspace_t *objspace = objspace_ptr;
@@ -9639,11 +9691,7 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
 //    if (is_lazy_sweeping(objspace))
 //        rb_bug("lazy sweeping underway when freeing object space");
 
-    rb_native_mutex_lock(&objspace->sweep_lock);
-    objspace->sweep_thread_running = false;
-    rb_native_cond_broadcast(&objspace->sweep_cond);
-    rb_native_mutex_unlock(&objspace->sweep_lock);
-    pthread_join(objspace->sweep_thread, NULL);
+    rb_gc_stop_background_threads(objspace);
     rb_native_cond_destroy(&objspace->sweep_cond);
     rb_native_mutex_destroy(&objspace->sweep_lock);
 
@@ -9740,6 +9788,7 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
     objspace->sweep_thread_sweep_requested = false;
     objspace->sweep_thread_sweeping = false;
     pthread_create(&objspace->sweep_thread, NULL, gc_sweep_thread_func, objspace);
+    GC_ASSERT(GET_VM());
     GET_VM()->gc.sweep_thread = objspace->sweep_thread;
 }
 
@@ -9868,6 +9917,7 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
     rb_native_cond_initialize(&objspace->sweep_cond);
     objspace->sweep_thread_running = true;
     pthread_create(&objspace->sweep_thread, NULL, gc_sweep_thread_func, objspace);
+    GC_ASSERT(GET_VM());
     GET_VM()->gc.sweep_thread = objspace->sweep_thread;
 }
 

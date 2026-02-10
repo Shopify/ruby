@@ -3371,6 +3371,8 @@ ruby_vm_destruct(rb_vm_t *vm)
 
     if (vm) {
         rb_thread_t *th = vm->ractor.main_thread;
+        void rb_gc_stop_background_threads(void *arg);
+        rb_gc_stop_background_threads(vm->gc.objspace);
 
         if (rb_free_at_exit) {
             rb_free_encoded_insn_data();
