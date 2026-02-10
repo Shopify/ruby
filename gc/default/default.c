@@ -7135,6 +7135,12 @@ rb_gc_impl_prepare_heap(void *objspace_ptr)
     size_t orig_total_slots = objspace_available_slots(objspace);
     size_t orig_allocatable_slots = objspace->heap_pages.allocatable_slots;
 
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    while (objspace->sweep_thread_sweeping) {
+        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
+    }
+    rb_native_mutex_unlock(&objspace->sweep_lock);
+
     rb_gc_impl_each_objects(objspace, gc_set_candidate_object_i, objspace_ptr);
 
     double orig_max_free_slots = gc_params.heap_free_slots_max_ratio;
