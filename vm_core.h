@@ -2151,11 +2151,6 @@ rb_current_ractor_raw(bool expect)
     }
 }
 
-static inline rb_ractor_t *
-rb_current_ractor(void)
-{
-    return rb_current_ractor_raw(true);
-}
 
 static inline rb_vm_t *
 rb_current_vm(void)
@@ -2169,6 +2164,16 @@ rb_current_vm(void)
 #endif
 
     return ruby_current_vm_ptr;
+}
+
+static inline rb_ractor_t *
+rb_current_ractor(void)
+{
+    rb_vm_t *vm = GET_VM();
+    if (vm) {
+        VM_ASSERT(vm->gc.sweep_thread != pthread_self());
+    }
+    return rb_current_ractor_raw(true);
 }
 
 void rb_ec_vm_lock_rec_release(const rb_execution_context_t *ec,

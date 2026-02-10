@@ -12,12 +12,15 @@ void rb_ractor_sched_barrier_end(rb_vm_t *vm, rb_ractor_t *cr);
 static bool
 is_sweep_thread_p(void)
 {
-    return GET_VM()->gc.sweep_thread == pthread_self();
+    rb_vm_t *vm = GET_VM();
+    if (!vm) return false;
+    return vm->gc.sweep_thread == pthread_self();
 }
 
 static bool
 vm_locked(rb_vm_t *vm)
 {
+    if (!vm) return false;
     if (is_sweep_thread_p()) {
         return vm->ractor.sync.lock_owner == (void*)-1;
     }
@@ -79,6 +82,7 @@ vm_need_barrier_waiting(const rb_vm_t *vm)
 static bool
 vm_need_barrier(bool no_barrier, const rb_ractor_t *cr, const rb_vm_t *vm)
 {
+    VM_ASSERT(cr);
 #ifdef RUBY_THREAD_PTHREAD_H
     return !no_barrier && cr->threads.sched.running != NULL && vm_need_barrier_waiting(vm); // ractor has running threads.
 #else
@@ -96,11 +100,12 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, bool i
     }
     else {
 #if RACTOR_CHECK_MODE
-        // locking ractor and acquire VM lock will cause deadlock
         if (is_sweep_thread) {
-            VM_ASSERT(cr->sync.locked_by != (void*)-1);
+            VM_ASSERT(cr == 0);
+            VM_ASSERT(vm->ractor.sync.lock_owner != (void*)-1);
         }
         else {
+            // locking ractor and acquire VM lock will cause deadlock
             VM_ASSERT(cr->sync.locked_by != rb_ractor_self(cr));
         }
 #endif
@@ -129,8 +134,10 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, bool i
     vm->ractor.sync.lock_rec++;
     *lev = vm->ractor.sync.lock_rec;
 
-    RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%u", vm->ractor.sync.lock_rec,
-                    (unsigned int)rb_ractor_id(vm->ractor.sync.lock_owner));
+    if (!is_sweep_thread) {
+        RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%u", vm->ractor.sync.lock_rec,
+                        (unsigned int)rb_ractor_id(vm->ractor.sync.lock_owner));
+    }
 }
 
 static void
@@ -153,7 +160,7 @@ vm_lock_leave(rb_vm_t *vm, bool no_barrier, bool is_sweep_thread, unsigned int *
     }
 
 #ifdef RUBY_THREAD_PTHREAD_H
-    if (vm->ractor.sched.barrier_ractor == cr &&
+    if (!is_sweep_thread && vm->ractor.sched.barrier_ractor == cr &&
         vm->ractor.sched.barrier_lock_rec == vm->ractor.sync.lock_rec) {
         VM_ASSERT(!no_barrier);
         rb_ractor_sched_barrier_end(vm, cr);
@@ -173,6 +180,7 @@ void
 rb_vm_lock_enter_body(unsigned int *lev APPEND_LOCATION_ARGS)
 {
     rb_vm_t *vm = GET_VM();
+    VM_ASSERT(vm);
     if (vm_locked(vm)) {
         vm_lock_enter(NULL, vm, true, false, is_sweep_thread_p(), lev APPEND_LOCATION_PARAMS);
     }
@@ -186,6 +194,7 @@ void
 rb_vm_lock_enter_body_nb(unsigned int *lev APPEND_LOCATION_ARGS)
 {
     rb_vm_t *vm = GET_VM();
+    VM_ASSERT(vm);
     if (vm_locked(vm)) {
         vm_lock_enter(NULL, vm, true, true, is_sweep_thread_p(), lev APPEND_LOCATION_PARAMS);
     }
@@ -199,6 +208,7 @@ void
 rb_vm_lock_enter_body_cr(rb_ractor_t *cr, unsigned int *lev APPEND_LOCATION_ARGS)
 {
     rb_vm_t *vm = GET_VM();
+    VM_ASSERT(vm);
     vm_lock_enter(cr, vm, vm_locked(vm), false, false, lev APPEND_LOCATION_PARAMS);
 }
 
@@ -218,6 +228,7 @@ void
 rb_vm_lock_body(LOCATION_ARGS)
 {
     rb_vm_t *vm = GET_VM();
+    VM_ASSERT(vm);
     ASSERT_vm_unlocking();
 
     bool is_sweep_th = is_sweep_thread_p();
@@ -278,6 +289,7 @@ void
 rb_vm_barrier(void)
 {
     RB_DEBUG_COUNTER_INC(vm_sync_barrier);
+    VM_ASSERT(!is_sweep_thread_p());
 
     if (!rb_multi_ractor_p()) {
         // no other ractors

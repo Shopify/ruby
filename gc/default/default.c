@@ -3813,12 +3813,12 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                 else {
                     dfree = RDATA(vp)->dfree;
                 }
-                if (!dfree || dfree == RUBY_DEFAULT_FREE) {
+                if (!dfree || dfree == RUBY_DEFAULT_FREE || free_immediately) {
                     if (rb_gc_obj_has_vm_weak_references(vp) || FL_TEST_RAW(vp, FL_FINALIZE)) {
                         break;
                     }
                     else {
-                        free_with_vm_lock = false;
+                        free_with_vm_lock = free_immediately;
                         goto free;
                     }
                 }

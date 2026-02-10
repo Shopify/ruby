@@ -151,9 +151,18 @@ rb_gc_vm_unlock(unsigned int lev, const char *file, int line)
     rb_vm_lock_leave(&lev, file, line);
 }
 
+static bool
+is_sweep_thread_p(void)
+{
+    rb_vm_t *vm = GET_VM();
+    if (!vm) return false;
+    return vm->gc.sweep_thread == pthread_self();
+}
+
 unsigned int
 rb_gc_cr_lock(const char *file, int line)
 {
+    GC_ASSERT(!is_sweep_thread_p());
     unsigned int lev;
     rb_vm_lock_enter_cr(GET_RACTOR(), &lev, file, line);
     return lev;
@@ -162,6 +171,7 @@ rb_gc_cr_lock(const char *file, int line)
 void
 rb_gc_cr_unlock(unsigned int lev, const char *file, int line)
 {
+    GC_ASSERT(!is_sweep_thread_p());
     rb_vm_lock_leave_cr(GET_RACTOR(), &lev, file, line);
 }
 
@@ -1624,7 +1634,6 @@ rb_gc_obj_free(void *objspace, VALUE obj)
     }
 
     if (FL_TEST_RAW(obj, FL_FINALIZE)) {
-        GC_ASSERT(rb_current_execution_context(true));
         rb_gc_impl_make_zombie(objspace, obj, 0, 0);
         return FALSE;
     }
