@@ -3896,17 +3896,15 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
 static void
 gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 {
+    rb_native_mutex_lock(&objspace->sweep_lock);
     while (1) {
-        rb_native_mutex_lock(&objspace->sweep_lock);
         struct heap_page *sweep_page = heap->sweeping_page;
         if (!sweep_page) {
-            rb_native_mutex_unlock(&objspace->sweep_lock);
             break;
         }
         struct heap_page *next = ccan_list_next(&heap->pages, sweep_page, page_node);
         if (!next) {
             /* Never take the last page; leave it for the main thread to trigger finish. */
-            rb_native_mutex_unlock(&objspace->sweep_lock);
             break;
         }
         heap->sweeping_page = next;
@@ -3919,8 +3917,8 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 
         sweep_page->free_next = heap->swept_pages;
         heap->swept_pages = sweep_page; // pre-swept
-        rb_native_mutex_unlock(&objspace->sweep_lock);
     }
+    rb_native_mutex_unlock(&objspace->sweep_lock);
 }
 
 static void *
