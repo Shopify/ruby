@@ -803,6 +803,7 @@ typedef struct rb_vm_struct {
             void *data;
             void (*mark_func)(VALUE v, void *data);
         } *mark_func_data;
+        pthread_t sweep_thread;
     } gc;
 
     rb_at_exit_list *at_exit;

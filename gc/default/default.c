@@ -9740,6 +9740,7 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
     objspace->sweep_thread_sweep_requested = false;
     objspace->sweep_thread_sweeping = false;
     pthread_create(&objspace->sweep_thread, NULL, gc_sweep_thread_func, objspace);
+    GET_VM()->gc.sweep_thread = objspace->sweep_thread;
 }
 
 VALUE rb_ident_hash_new_with_size(st_index_t size);
@@ -9867,6 +9868,7 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
     rb_native_cond_initialize(&objspace->sweep_cond);
     objspace->sweep_thread_running = true;
     pthread_create(&objspace->sweep_thread, NULL, gc_sweep_thread_func, objspace);
+    GET_VM()->gc.sweep_thread = objspace->sweep_thread;
 }
 
 void
