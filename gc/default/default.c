@@ -3896,7 +3896,7 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
 static void
 gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 {
-    rb_native_mutex_lock(&objspace->sweep_lock);
+    // sweep_lock is acquired
     while (1) {
         struct heap_page *sweep_page = heap->sweeping_page;
         if (!sweep_page) {
@@ -3918,7 +3918,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         sweep_page->free_next = heap->swept_pages;
         heap->swept_pages = sweep_page; // pre-swept
     }
-    rb_native_mutex_unlock(&objspace->sweep_lock);
+    // sweep_lock is acquired
 }
 
 static void *
@@ -3935,13 +3935,11 @@ gc_sweep_thread_func(void *ptr)
 
         objspace->sweep_thread_sweep_requested = false;
         objspace->sweep_thread_sweeping = true;
-        rb_native_mutex_unlock(&objspace->sweep_lock);
 
         for (int i = 0; i < HEAP_COUNT; i++) {
             gc_sweep_step_worker(objspace, &heaps[i]);
         }
 
-        rb_native_mutex_lock(&objspace->sweep_lock);
         objspace->sweep_thread_sweeping = false;
         rb_native_cond_broadcast(&objspace->sweep_cond);
     }
