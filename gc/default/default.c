@@ -9730,6 +9730,8 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
     objspace->fork_vm_lock_lev = 0;
 
     if (pid == 0) { /* child process */
+        rb_native_mutex_initialize(&objspace->sweep_lock);
+        rb_native_cond_initialize(&objspace->sweep_cond);
         rb_gc_ractor_newobj_cache_foreach(gc_ractor_newobj_cache_clear, NULL);
     }
 
