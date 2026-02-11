@@ -2366,9 +2366,6 @@ obj_free_object_id(VALUE obj, bool in_user_gc_thread)
 bool
 rb_gc_obj_has_blacklisted_vm_weak_references(VALUE obj)
 {
-    if (rb_obj_gen_fields_p(obj)) {
-        return true;
-    }
     switch (BUILTIN_TYPE(obj)) {
       case T_STRING:
         return FL_TEST_RAW(obj, RSTRING_FSTR);
@@ -2396,8 +2393,12 @@ static bool
 rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(VALUE obj)
 {
     VM_ASSERT(pthread_self() == GET_VM()->gc.sweep_thread);
-    bool freed_it = obj_free_object_id(obj, false);
-    return freed_it;
+    bool result = obj_free_object_id(obj, false);
+    if (rb_obj_gen_fields_p(obj)) {
+        bool freed_generic = rb_free_generic_ivar(obj);
+        if (!freed_generic) result = false;
+    }
+    return result;
 }
 
 bool
@@ -4331,6 +4332,7 @@ vm_weak_table_gen_fields_foreach(st_data_t key, st_data_t value, st_data_t data)
     if (key != new_key || value != new_value) {
         DURING_GC_COULD_MALLOC_REGION_START();
         {
+            // We're STW, no need for gen_fields_tbl_lock
             st_insert(rb_generic_fields_tbl_get(), (st_data_t)new_key, new_value);
         }
         DURING_GC_COULD_MALLOC_REGION_END();
@@ -4405,7 +4407,7 @@ rb_gc_vm_weak_table_foreach(vm_table_foreach_callback_func callback,
         break;
       }
       case RB_GC_VM_ID2REF_TABLE: {
-        if (id2ref_tbl) {
+        if (id2ref_tbl) { // we're STW, no need for lock
             st_foreach_with_replace(
                 id2ref_tbl,
                 vm_weak_table_id2ref_foreach,
@@ -4417,7 +4419,7 @@ rb_gc_vm_weak_table_foreach(vm_table_foreach_callback_func callback,
       }
       case RB_GC_VM_GENERIC_FIELDS_TABLE: {
         st_table *generic_fields_tbl = rb_generic_fields_tbl_get();
-        if (generic_fields_tbl) {
+        if (generic_fields_tbl) { // we're STW, no need for lock
             st_foreach(
                 generic_fields_tbl,
                 vm_weak_table_gen_fields_foreach,
