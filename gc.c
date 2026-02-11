@@ -2055,6 +2055,21 @@ id2ref_tbl_lock(bool allow_reentry)
     id2ref_tbl_lock_lvl++;
 }
 
+static inline bool
+id2ref_tbl_trylock(bool allow_reentry)
+{
+    if (allow_reentry && pthread_self() == id2ref_tbl_lock_owner) {
+    } else {
+        ASSERT_id2ref_tbl_unlocked();
+        if (rb_native_mutex_trylock(&id2ref_tbl_lock_) == EBUSY) {
+            return false;
+        }
+        id2ref_tbl_lock_owner = pthread_self();
+    }
+    id2ref_tbl_lock_lvl++;
+    return true;
+}
+
 static inline void
 id2ref_tbl_unlock(void)
 {
@@ -2319,8 +2334,8 @@ obj_get_object_id(VALUE obj)
     return obj_id;
 }
 
-static inline void
-obj_free_object_id(VALUE obj)
+static inline bool
+obj_free_object_id(VALUE obj, bool in_user_gc_thread)
 {
     if (RB_UNLIKELY(RUBY_ATOMIC_PTR_LOAD(id2ref_tbl))) {
         VALUE obj_id = obj_get_object_id(obj);
@@ -2328,25 +2343,30 @@ obj_free_object_id(VALUE obj)
         if (RB_UNLIKELY(obj_id)) {
             RUBY_ASSERT(FIXNUM_P(obj_id) || RB_TYPE_P(obj_id, T_BIGNUM));
 
-            id2ref_tbl_lock(true);
-            {
-                if (!st_delete(id2ref_tbl, (st_data_t *)&obj_id, NULL)) {
-                    // The the object is a T_IMEMO/fields, then it's possible the actual object
-                    // has been garbage collected already.
-                    if (!RB_TYPE_P(obj, T_IMEMO)) {
-                        rb_bug("Object ID seen, but not in _id2ref table: object_id=%llu object=%s", NUM2ULL(obj_id), rb_obj_info(obj));
-                    }
+            bool needs_id2ref_tbl_trylock = !in_user_gc_thread;
+            if (needs_id2ref_tbl_trylock) {
+                bool did_lock = id2ref_tbl_trylock(false);
+                if (!did_lock) return false;
+            } else {
+                id2ref_tbl_lock(true);
+            }
+            if (!st_delete(id2ref_tbl, (st_data_t *)&obj_id, NULL)) {
+                // The the object is a T_IMEMO/fields, then it's possible the actual object
+                // has been garbage collected already.
+                if (!RB_TYPE_P(obj, T_IMEMO)) {
+                    rb_bug("Object ID seen, but not in _id2ref table: object_id=%llu object=%s", NUM2ULL(obj_id), rb_obj_info(obj));
                 }
             }
             id2ref_tbl_unlock();
         }
     }
+    return true;
 }
 
 bool
-rb_gc_obj_has_vm_weak_references(VALUE obj)
+rb_gc_obj_has_blacklisted_vm_weak_references(VALUE obj)
 {
-    if (obj_get_object_id(obj) || rb_obj_gen_fields_p(obj)) {
+    if (rb_obj_gen_fields_p(obj)) {
         return true;
     }
     switch (BUILTIN_TYPE(obj)) {
@@ -2372,11 +2392,25 @@ rb_gc_obj_has_vm_weak_references(VALUE obj)
     }
 }
 
-void
+static bool
+rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(VALUE obj)
+{
+    VM_ASSERT(pthread_self() == GET_VM()->gc.sweep_thread);
+    bool freed_it = obj_free_object_id(obj, false);
+    return freed_it;
+}
+
+bool
 rb_gc_obj_free_vm_weak_references(VALUE obj)
 {
     ASSUME(!RB_SPECIAL_CONST_P(obj));
-    obj_free_object_id(obj);
+
+    rb_execution_context_t *ec = rb_current_execution_context(false);
+    if (!ec) {
+        return rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(obj);
+    }
+
+    obj_free_object_id(obj, true);
 
     if (rb_obj_gen_fields_p(obj)) {
         rb_free_generic_ivar(obj);
@@ -2415,6 +2449,7 @@ rb_gc_obj_free_vm_weak_references(VALUE obj)
       default:
         break;
     }
+    return true;
 }
 
 /*

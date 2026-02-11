@@ -3812,7 +3812,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                     dfree = RDATA(vp)->dfree;
                 }
                 if (!dfree || dfree == RUBY_DEFAULT_FREE || free_immediately) {
-                    if (rb_gc_obj_has_vm_weak_references(vp) || FL_TEST_RAW(vp, FL_FINALIZE)) {
+                    if (rb_gc_obj_has_blacklisted_vm_weak_references(vp) || FL_TEST_RAW(vp, FL_FINALIZE)) {
                         break;
                     }
                     else {
@@ -3830,7 +3830,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
               case T_STRUCT:
               case T_MATCH:
               case T_REGEXP:
-                if (rb_gc_obj_has_vm_weak_references(vp) || FL_TEST_RAW(vp, FL_FINALIZE)) {
+                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp) || FL_TEST_RAW(vp, FL_FINALIZE)) {
                     // fallthrough
                 }
                 else {
@@ -3848,14 +3848,16 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                 }
                 break;
               free: {
-                  bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
-                  GC_ASSERT(can_put_back_on_freelist);
-                  rb_native_mutex_lock(&page->page_lock);
-                  {
-                      heap_page_add_freeobj(objspace, page, vp);
+                  if (rb_gc_obj_free_vm_weak_references(vp)) {
+                      bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
+                      GC_ASSERT(can_put_back_on_freelist);
+                      rb_native_mutex_lock(&page->page_lock);
+                      {
+                          heap_page_add_freeobj(objspace, page, vp);
+                      }
+                      rb_native_mutex_unlock(&page->page_lock);
+                      freed++;
                   }
-                  rb_native_mutex_unlock(&page->page_lock);
-                  freed++;
                   break;
               }
             }
@@ -6064,6 +6066,13 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
     /* start marking */
     gc_report(1, objspace, "gc_marks_start: (%s)\n", full_mark ? "full" : "minor");
     gc_mode_transition(objspace, gc_mode_marking);
+
+    // TODO: remove this check, although I'm not convinced it's always true
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    {
+        VM_ASSERT(!objspace->sweep_thread_sweeping);
+    }
+    rb_native_mutex_unlock(&objspace->sweep_lock);
 
     if (full_mark) {
         size_t incremental_marking_steps = (objspace->rincgc.pooled_slots / INCREMENTAL_MARK_STEP_ALLOCATIONS) + 1;
