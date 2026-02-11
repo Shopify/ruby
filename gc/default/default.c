@@ -1650,6 +1650,7 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
 
     struct free_slot *slot = (struct free_slot *)obj;
     slot->flags = 0;
+    // no need to acquire `page_lock` here, only 1 thread can access/modify at a time
     slot->next = page->freelist;
     page->freelist = slot;
     asan_lock_freelist(page);
@@ -2663,15 +2664,18 @@ rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), voi
     zombie->flags = T_ZOMBIE | (zombie->flags & ZOMBIE_OBJ_KEPT_FLAGS);
     zombie->dfree = dfree;
     zombie->data = data;
-    VALUE prev, next = (VALUE)RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final);
-    do {
-        zombie->next = prev = next;
-        next = RUBY_ATOMIC_VALUE_CAS(heap_pages_deferred_final, prev, obj);
-    } while (next != prev);
-
     struct heap_page *page = GET_HEAP_PAGE(obj);
-    page->final_slots++;
-    RUBY_ATOMIC_SIZE_INC(page->heap->final_slots_count);
+    rb_native_mutex_lock(&page->page_lock);
+    {
+        VALUE prev, next = (VALUE)RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final);
+        do {
+            zombie->next = prev = next;
+            next = RUBY_ATOMIC_VALUE_CAS(heap_pages_deferred_final, prev, obj);
+        } while (next != prev);
+        page->final_slots++;
+        RUBY_ATOMIC_SIZE_INC(page->heap->final_slots_count);
+    }
+    rb_native_mutex_unlock(&page->page_lock);
 }
 
 typedef int each_obj_callback(void *, void *, size_t, void *);
@@ -2957,14 +2961,14 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
         lev = run_final(objspace, zombie, lev);
         {
             GC_ASSERT(BUILTIN_TYPE(zombie) == T_ZOMBIE);
-            GC_ASSERT(page->heap->final_slots_count > 0);
-            GC_ASSERT(page->final_slots > 0);
-
-            RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
-            page->final_slots--;
-            page->free_slots++;
             rb_native_mutex_lock(&page->page_lock);
             {
+                GC_ASSERT(page->heap->final_slots_count > 0);
+                GC_ASSERT(page->final_slots > 0);
+
+                RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
+                page->final_slots--;
+                page->free_slots++;
                 RVALUE_AGE_SET_BITMAP(zombie, 0);
                 heap_page_add_freeobj(objspace, page, zombie);
             }
@@ -3812,7 +3816,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                     dfree = RDATA(vp)->dfree;
                 }
                 if (!dfree || dfree == RUBY_DEFAULT_FREE || free_immediately) {
-                    if (rb_gc_obj_has_blacklisted_vm_weak_references(vp) || FL_TEST_RAW(vp, FL_FINALIZE)) {
+                    if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
                         break;
                     }
                     else {
@@ -3830,7 +3834,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
               case T_STRUCT:
               case T_MATCH:
               case T_REGEXP:
-                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp) || FL_TEST_RAW(vp, FL_FINALIZE)) {
+                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
                     // fallthrough
                 }
                 else {
@@ -3850,13 +3854,15 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
               free: {
                   if (rb_gc_obj_free_vm_weak_references(vp)) {
                       bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
-                      GC_ASSERT(can_put_back_on_freelist);
-                      rb_native_mutex_lock(&page->page_lock);
-                      {
-                          heap_page_add_freeobj(objspace, page, vp);
+                      /*GC_ASSERT(can_put_back_on_freelist);*/
+                      if (can_put_back_on_freelist) {
+                          rb_native_mutex_lock(&page->page_lock);
+                          {
+                            heap_page_add_freeobj(objspace, page, vp);
+                          }
+                          rb_native_mutex_unlock(&page->page_lock);
+                          freed++;
                       }
-                      rb_native_mutex_unlock(&page->page_lock);
-                      freed++;
                   }
                   break;
               }
