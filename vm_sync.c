@@ -101,6 +101,7 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, bool i
     else {
 #if RACTOR_CHECK_MODE
         if (is_sweep_thread) {
+            VM_ASSERT(0);
             VM_ASSERT(cr == 0);
             VM_ASSERT(vm->ractor.sync.lock_owner != (void*)-1);
         }

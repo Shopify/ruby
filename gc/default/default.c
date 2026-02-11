@@ -3789,10 +3789,8 @@ static inline int
 gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p, bits_t bitset, short slot_size, short slot_bits)
 {
     int freed = 0;
-    bool free_with_vm_lock;
     do {
         VALUE vp = (VALUE)p;
-        free_with_vm_lock = false;
 
         rb_asan_unpoison_object(vp, false);
         if (bitset & 1) {
@@ -3818,7 +3816,6 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                         break;
                     }
                     else {
-                        free_with_vm_lock = free_immediately;
                         goto free;
                     }
                 }
@@ -3851,10 +3848,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                 }
                 break;
               free: {
-                  unsigned int lev;
-                  if (free_with_vm_lock) RB_VM_LOCK_ENTER_LEV_NB(&lev);
                   bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
-                  if (free_with_vm_lock) RB_VM_LOCK_LEAVE_LEV_NB(&lev);
                   GC_ASSERT(can_put_back_on_freelist);
                   rb_native_mutex_lock(&page->page_lock);
                   {
