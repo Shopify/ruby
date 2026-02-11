@@ -289,6 +289,45 @@ rb_free_shared_fiber_pool(void)
 
 static ID fiber_initialize_keywords[3] = {0};
 
+rb_nativethread_lock_t fiber_lock;
+#ifdef RUBY_THREAD_PTHREAD_H
+pthread_t fiber_pool_lock_owner;
+#endif
+
+static inline void
+ASSERT_fiber_pool_locked(void)
+{
+#ifdef RUBY_THREAD_PTHREAD_H
+    VM_ASSERT(pthread_self() == fiber_pool_lock_owner);
+#endif
+}
+
+static inline void
+ASSERT_fiber_pool_unlocked(void)
+{
+#ifdef RUBY_THREAD_PTHREAD_H
+    VM_ASSERT(pthread_self() != fiber_pool_lock_owner);
+#endif
+}
+
+static inline void
+fiber_pool_lock(void) {
+    ASSERT_fiber_pool_unlocked();
+    rb_native_mutex_lock(&fiber_lock);
+#ifdef RUBY_THREAD_PTHREAD_H
+    fiber_pool_lock_owner = pthread_self();
+#endif
+}
+
+static inline void
+fiber_pool_unlock(void) {
+    ASSERT_fiber_pool_locked();
+#ifdef RUBY_THREAD_PTHREAD_H
+    fiber_pool_lock_owner = 0;
+#endif
+    rb_native_mutex_unlock(&fiber_lock);
+}
+
 /*
  * FreeBSD require a first (i.e. addr) argument of mmap(2) is not NULL
  * if MAP_STACK is passed.
@@ -510,10 +549,12 @@ fiber_pool_allocate_memory(size_t * count, size_t stride)
 // @return the allocated fiber pool.
 // @sa fiber_pool_allocation_free
 static struct fiber_pool_allocation *
-fiber_pool_expand(struct fiber_pool * fiber_pool, size_t count)
+fiber_pool_expand(struct fiber_pool * fiber_pool, size_t count, bool needs_lock, bool unlock_before_raise)
 {
     struct fiber_pool_allocation * allocation;
-    RB_VM_LOCK_ENTER();
+    allocation = RB_ALLOC(struct fiber_pool_allocation); // needs to be outside of fiber lock
+
+    if (needs_lock) fiber_pool_lock();
     {
         STACK_GROW_DIR_DETECTION;
 
@@ -524,11 +565,12 @@ fiber_pool_expand(struct fiber_pool * fiber_pool, size_t count)
         void * base = fiber_pool_allocate_memory(&count, stride);
 
         if (base == NULL) {
+            ruby_sized_xfree(allocation, sizeof(struct fiber_pool_allocation));
+            if (unlock_before_raise) fiber_pool_unlock();
             rb_raise(rb_eFiberError, "can't alloc machine stack to fiber (%"PRIuSIZE" x %"PRIuSIZE" bytes): %s", count, size, ERRNOMSG);
         }
 
         struct fiber_pool_vacancy * vacancies = fiber_pool->vacancies;
-        allocation = RB_ALLOC(struct fiber_pool_allocation);
 
         // Initialize fiber pool allocation:
         allocation->base = base;
@@ -554,6 +596,8 @@ fiber_pool_expand(struct fiber_pool * fiber_pool, size_t count)
 
             if (!VirtualProtect(page, RB_PAGE_SIZE, PAGE_READWRITE | PAGE_GUARD, &old_protect)) {
                 VirtualFree(allocation->base, 0, MEM_RELEASE);
+                ruby_sized_xfree(allocation, sizeof(struct fiber_pool_allocation));
+                if (unlock_before_raise) fiber_pool_unlock();
                 rb_raise(rb_eFiberError, "can't set a guard page: %s", ERRNOMSG);
             }
 #elif defined(__wasi__)
@@ -562,6 +606,8 @@ fiber_pool_expand(struct fiber_pool * fiber_pool, size_t count)
 #else
             if (mprotect(page, RB_PAGE_SIZE, PROT_NONE) < 0) {
                 munmap(allocation->base, count*stride);
+                ruby_sized_xfree(allocation, sizeof(struct fiber_pool_allocation));
+                if (unlock_before_raise) fiber_pool_unlock();
                 rb_raise(rb_eFiberError, "can't set a guard page: %s", ERRNOMSG);
             }
 #endif
@@ -592,7 +638,7 @@ fiber_pool_expand(struct fiber_pool * fiber_pool, size_t count)
         fiber_pool->vacancies = vacancies;
         fiber_pool->count += count;
     }
-    RB_VM_LOCK_LEAVE();
+    if (needs_lock) fiber_pool_unlock();
 
     return allocation;
 }
@@ -614,7 +660,7 @@ fiber_pool_initialize(struct fiber_pool * fiber_pool, size_t size, size_t count,
 
     fiber_pool->vm_stack_size = vm_stack_size;
 
-    fiber_pool_expand(fiber_pool, count);
+    fiber_pool_expand(fiber_pool, count, false, false);
 }
 
 #ifdef FIBER_POOL_ALLOCATION_FREE
@@ -667,7 +713,7 @@ static struct fiber_pool_stack
 fiber_pool_stack_acquire(struct fiber_pool * fiber_pool)
 {
     struct fiber_pool_vacancy * vacancy ;
-    RB_VM_LOCK_ENTER();
+    fiber_pool_lock();
     {
         vacancy = fiber_pool_vacancy_pop(fiber_pool);
 
@@ -681,7 +727,7 @@ fiber_pool_stack_acquire(struct fiber_pool * fiber_pool)
             if (count > maximum) count = maximum;
             if (count < minimum) count = minimum;
 
-            fiber_pool_expand(fiber_pool, count);
+            fiber_pool_expand(fiber_pool, count, false, true);
 
             // The free list should now contain some stacks:
             VM_ASSERT(fiber_pool->vacancies);
@@ -702,10 +748,9 @@ fiber_pool_stack_acquire(struct fiber_pool * fiber_pool)
 #ifdef FIBER_POOL_ALLOCATION_FREE
         vacancy->stack.allocation->used += 1;
 #endif
-
         fiber_pool_stack_reset(&vacancy->stack);
     }
-    RB_VM_LOCK_LEAVE();
+    fiber_pool_unlock();
 
     return vacancy->stack;
 }
@@ -771,7 +816,7 @@ fiber_pool_stack_free(struct fiber_pool_stack * stack)
 #endif
 }
 
-// Release and return a stack to the vacancy list.
+// Release and return a stack to the vacancy list. fiber_lock is acquired upon entry.
 static void
 fiber_pool_stack_release(struct fiber_pool_stack * stack)
 {
@@ -920,17 +965,6 @@ fiber_stack_release(rb_fiber_t * fiber)
 
     // The stack is no longer associated with this execution context:
     rb_ec_clear_vm_stack(ec);
-}
-
-static void
-fiber_stack_release_locked(rb_fiber_t *fiber)
-{
-    if (!ruby_vm_during_cleanup) {
-        // We can't try to acquire the VM lock here because MMTK calls free in its own native thread which has no ec.
-        // This assertion will fail on MMTK but we currently don't have CI for debug releases of MMTK, so we can assert for now.
-        ASSERT_vm_locking_with_barrier();
-    }
-    fiber_stack_release(fiber);
 }
 
 static const char *
@@ -1095,7 +1129,11 @@ cont_free(void *ptr)
     else {
         rb_fiber_t *fiber = (rb_fiber_t*)cont;
         coroutine_destroy(&fiber->context);
-        fiber_stack_release_locked(fiber);
+        fiber_pool_lock();
+        {
+            fiber_stack_release(fiber);
+        }
+        fiber_pool_unlock();
     }
 
     SIZED_FREE_N(cont->saved_vm_stack.ptr, cont->saved_vm_stack.size);
@@ -2780,9 +2818,11 @@ fiber_switch(rb_fiber_t *fiber, int argc, const VALUE *argv, int kw_splat, rb_fi
     // We cannot free the stack until the pthread is joined:
 #ifndef COROUTINE_PTHREAD_CONTEXT
     if (resuming_fiber && FIBER_TERMINATED_P(fiber)) {
-        RB_VM_LOCKING() {
+        fiber_pool_lock();
+        {
             fiber_stack_release(fiber);
         }
+        fiber_pool_unlock();
     }
 #endif
 
@@ -3499,6 +3539,7 @@ Init_Cont(void)
 #endif
     SET_MACHINE_STACK_END(&th->ec->machine.stack_end);
 
+    rb_native_mutex_initialize(&fiber_lock);
     fiber_pool_initialize(&shared_fiber_pool, stack_size, FIBER_POOL_INITIAL_SIZE, vm_stack_size);
 
     fiber_initialize_keywords[0] = rb_intern_const("blocking");
