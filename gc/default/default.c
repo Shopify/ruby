@@ -7164,6 +7164,19 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
     }
 
     garbage_collect(objspace, reason);
+    if (immediate_sweep) {
+        rb_native_mutex_lock(&objspace->sweep_lock);
+        {
+            GC_ASSERT(!objspace->sweep_thread_sweeping);
+            for (int j = 0; j < HEAP_COUNT; j++) {
+                rb_heap_t *heap = &heaps[j];
+                GC_ASSERT(!heap->swept_pages);
+                GC_ASSERT(!heap->sweeping_page);
+            }
+        }
+        rb_native_mutex_unlock(&objspace->sweep_lock);
+    }
+    // NOTE: background sweeping can still be active here. We also may enter a new GC cycle from finalizers below.
     gc_finalize_deferred(objspace);
 
     gc_config_full_mark_set(full_marking_p);
