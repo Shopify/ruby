@@ -1294,7 +1294,7 @@ void
 rb_mark_generic_ivar(VALUE obj)
 {
     VALUE data;
-    gen_fields_tbl_lock(false);
+    gen_fields_tbl_lock(true);
     {
         // Bypass ASSERT_vm_locking() check because marking may happen concurrently with mmtk
         if (st_lookup(generic_fields_tbl_, (st_data_t)obj, (st_data_t *)&data)) {
@@ -2659,6 +2659,45 @@ rb_mod_const_missing(VALUE klass, VALUE name)
     UNREACHABLE_RETURN(Qnil);
 }
 
+rb_nativethread_lock_t autoload_free_lock = PTHREAD_MUTEX_INITIALIZER;
+#ifdef RUBY_THREAD_PTHREAD_H
+pthread_t autoload_free_lock_owner;
+#endif
+
+static inline void
+ASSERT_autoload_free_lock_locked(void)
+{
+#ifdef RUBY_THREAD_PTHREAD_H
+    VM_ASSERT(pthread_self() == autoload_free_lock_owner);
+#endif
+}
+
+static inline void
+ASSERT_autoload_free_lock_unlocked(void)
+{
+#ifdef RUBY_THREAD_PTHREAD_H
+    VM_ASSERT(pthread_self() != autoload_free_lock_owner);
+#endif
+}
+
+static inline void
+autoload_free_lock_lock(void) {
+    ASSERT_autoload_free_lock_unlocked();
+    rb_native_mutex_lock(&autoload_free_lock);
+#ifdef RUBY_THREAD_PTHREAD_H
+    autoload_free_lock_owner = pthread_self();
+#endif
+}
+
+static inline void
+autoload_free_lock_unlock(void) {
+    ASSERT_autoload_free_lock_locked();
+#ifdef RUBY_THREAD_PTHREAD_H
+    autoload_free_lock_owner = 0;
+#endif
+    rb_native_mutex_unlock(&autoload_free_lock);
+}
+
 static void
 autoload_table_mark(void *ptr)
 {
@@ -2780,10 +2819,14 @@ autoload_data_free(void *ptr)
 {
     struct autoload_data *p = ptr;
 
-    struct autoload_const *autoload_const, *next;
-    ccan_list_for_each_safe(&p->constants, autoload_const, next, cnode) {
-        ccan_list_del_init(&autoload_const->cnode);
+    autoload_free_lock_lock();
+    {
+        struct autoload_const *autoload_const, *next;
+        ccan_list_for_each_safe(&p->constants, autoload_const, next, cnode) {
+            ccan_list_del_init(&autoload_const->cnode);
+        }
     }
+    autoload_free_lock_unlock();
 
     SIZED_FREE(p);
 }
@@ -2823,7 +2866,12 @@ autoload_const_free(void *ptr)
 {
     struct autoload_const *autoload_const = ptr;
 
-    ccan_list_del(&autoload_const->cnode);
+    autoload_free_lock_lock();
+    {
+        ccan_list_del(&autoload_const->cnode);
+    }
+    autoload_free_lock_unlock();
+
     SIZED_FREE(autoload_const);
 }
 
