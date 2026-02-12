@@ -1294,7 +1294,7 @@ void
 rb_mark_generic_ivar(VALUE obj)
 {
     VALUE data;
-    gen_fields_tbl_lock(false);
+    gen_fields_tbl_lock(true);
     {
         // Bypass ASSERT_vm_locking() check because marking may happen concurrently with mmtk
         if (st_lookup(generic_fields_tbl_, (st_data_t)obj, (st_data_t *)&data)) {
