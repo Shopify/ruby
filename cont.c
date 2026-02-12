@@ -328,6 +328,12 @@ fiber_pool_unlock(void) {
     rb_native_mutex_unlock(&fiber_lock);
 }
 
+void
+fiber_pool_lock_reset(void)
+{
+    rb_native_mutex_initialize(&fiber_lock);
+}
+
 /*
  * FreeBSD require a first (i.e. addr) argument of mmap(2) is not NULL
  * if MAP_STACK is passed.

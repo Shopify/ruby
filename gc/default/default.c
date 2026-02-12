@@ -3100,6 +3100,8 @@ rb_gc_impl_shutdown_call_finalizer_i(st_data_t key, st_data_t val, st_data_t _da
     return ST_DELETE;
 }
 
+void rb_gc_stop_background_threads(rb_objspace_t *objspace);
+
 void
 rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
 {
@@ -3108,6 +3110,8 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
 #if RGENGC_CHECK_MODE >= 2
     gc_verify_internal_consistency(objspace);
 #endif
+
+    rb_gc_stop_background_threads(objspace);
 
     /* prohibit incremental GC */
     objspace->flags.dont_incremental = 1;
@@ -3123,7 +3127,6 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
         st_foreach(finalizer_table, rb_gc_impl_shutdown_call_finalizer_i, 0);
     }
 
-    /* run finalizers */
     finalize_deferred(objspace);
     GC_ASSERT(heap_pages_deferred_final == 0);
 
@@ -3816,7 +3819,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                     dfree = RDATA(vp)->dfree;
                 }
                 if (!dfree || dfree == RUBY_DEFAULT_FREE || free_immediately) {
-                    if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
+                    if (rb_gc_obj_has_blacklisted_vm_weak_references(vp) || FL_TEST(vp, FL_FINALIZE)) {
                         break;
                     }
                     else {
@@ -3834,8 +3837,9 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
               case T_STRUCT:
               case T_MATCH:
               case T_REGEXP:
-                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
-                    // fallthrough
+              case T_FILE:
+                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp) || FL_TEST(vp, FL_FINALIZE)) {
+                    break;
                 }
                 else {
                     goto free;
@@ -3937,7 +3941,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         if (!sweep_page) {
             break;
         }
-        struct heap_page *next = ccan_list_next(&heap->pages, sweep_page, page_node);
+        struct heap_page *next = ccan_list_next(&heap->pages, sweep_page, page_node); // FIXME: is this safe?
         if (!next) {
             /* Never take the last page; leave it for the main thread to trigger finish. */
             break;
@@ -9767,12 +9771,7 @@ rb_gc_impl_before_fork(void *objspace_ptr)
 {
     rb_objspace_t *objspace = objspace_ptr;
 
-    /* Stop the sweep thread before forking */
-    rb_native_mutex_lock(&objspace->sweep_lock);
-    objspace->sweep_thread_running = false;
-    rb_native_cond_broadcast(&objspace->sweep_cond);
-    rb_native_mutex_unlock(&objspace->sweep_lock);
-    pthread_join(objspace->sweep_thread, NULL);
+    rb_gc_stop_background_threads(objspace);
 
     objspace->fork_vm_lock_lev = RB_GC_VM_LOCK();
     rb_gc_vm_barrier();
@@ -9790,14 +9789,23 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
         rb_native_mutex_initialize(&objspace->sweep_lock);
         rb_native_cond_initialize(&objspace->sweep_cond);
         rb_gc_ractor_newobj_cache_foreach(gc_ractor_newobj_cache_clear, NULL);
+        // TODO: is this necessary? Can page_lock be locked during call to fork?
+        for (int i = 0; i < HEAP_COUNT; i++) {
+            rb_heap_t *heap = &heaps[i];
+            struct heap_page *page;
+            ccan_list_for_each(&heap->pages, page, page_node) {
+                rb_native_mutex_initialize(&page->page_lock);
+            }
+        }
     }
+    void fiber_pool_lock_reset(void);
+    fiber_pool_lock_reset();
 
     /* Restart the sweep thread after fork */
     objspace->sweep_thread_running = true;
     objspace->sweep_thread_sweep_requested = false;
     objspace->sweep_thread_sweeping = false;
     pthread_create(&objspace->sweep_thread, NULL, gc_sweep_thread_func, objspace);
-    GC_ASSERT(GET_VM());
     GET_VM()->gc.sweep_thread = objspace->sweep_thread;
 }
 
