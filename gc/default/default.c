@@ -4476,8 +4476,8 @@ gc_sweep(rb_objspace_t *objspace)
 #endif
     }
     else {
-
         /* Sweep every size pool. */
+        // TODO: we should sweep the size pool that needs it (if request is lazy), then let the background do the rest.
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
             gc_sweep_step(objspace, heap);
@@ -6080,7 +6080,12 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
     // TODO: remove this check, although I'm not convinced it's always true
     rb_native_mutex_lock(&objspace->sweep_lock);
     {
-        VM_ASSERT(!objspace->sweep_thread_sweeping);
+        GC_ASSERT(!objspace->sweep_thread_sweeping);
+        for (int j = 0; j < HEAP_COUNT; j++) {
+            rb_heap_t *heap = &heaps[j];
+            GC_ASSERT(!heap->swept_pages);
+            GC_ASSERT(!heap->sweeping_page);
+        }
     }
     rb_native_mutex_unlock(&objspace->sweep_lock);
 
@@ -7034,7 +7039,7 @@ gc_exit(rb_objspace_t *objspace, enum gc_enter_event event, unsigned int *lock_l
     gc_record(objspace, 1, gc_enter_event_cstr(event));
     RUBY_DEBUG_LOG("%s (%s)", gc_enter_event_cstr(event), gc_current_status(objspace));
     gc_report(1, objspace, "gc_exit: %s [%s]\n", gc_enter_event_cstr(event), gc_current_status(objspace));
-    during_gc = FALSE;
+    during_gc = FALSE; // NOTE: background thread could still be sweeping even if !during_gc
 
     RB_GC_VM_UNLOCK(*lock_lev);
 }
