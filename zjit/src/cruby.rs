@@ -163,6 +163,51 @@ unsafe extern "C" {
     pub fn rb_vm_push_cfunc_frame(cme: *const rb_callable_method_entry_t, recv_idx: c_int);
     pub fn rb_obj_class(klass: VALUE) -> VALUE;
     pub fn rb_vm_objtostring(iseq: IseqPtr, recv: VALUE, cd: *const rb_call_data) -> VALUE;
+
+    pub fn rb_str_new_cstr(ptr: *const u8) -> VALUE;
+    pub fn rb_jit_find_native_call_hint(klass: VALUE, mid: ID) -> *const RbJitNativeCallHint;
+
+    // Typed trampolines for native calls involving float/double.
+    // These bridge integer-register JIT calling convention to FP registers.
+    pub fn rb_jit_trampoline_d_d(fptr: *const u8, a0: VALUE) -> VALUE;
+    pub fn rb_jit_trampoline_dd_d(fptr: *const u8, a0: VALUE, a1: VALUE) -> VALUE;
+    pub fn rb_jit_trampoline_i_d(fptr: *const u8, a0: VALUE) -> VALUE;
+    pub fn rb_jit_trampoline_id_d(fptr: *const u8, a0: VALUE, a1: VALUE) -> VALUE;
+    pub fn rb_jit_trampoline_di_d(fptr: *const u8, a0: VALUE, a1: VALUE) -> VALUE;
+    pub fn rb_jit_trampoline_d_v(fptr: *const u8, a0: VALUE) -> VALUE;
+    pub fn rb_jit_trampoline_v_d(fptr: *const u8) -> VALUE;
+
+    // Generic variadic trampoline: func(int argc, VALUE *argv, VALUE recv).
+    // Looks up the native call hint from the CME and dispatches directly.
+    pub fn rb_jit_trampoline_generic(argc: c_int, argv: *const VALUE, recv: VALUE) -> VALUE;
+}
+
+// Offset of the `data` field in struct RTypedData.
+// Must match offsetof(struct RTypedData, data) from jit.c's jit_bindgen_constants.
+pub const RUBY_OFFSET_RTYPEDDATA_DATA: i32 = 32; // RBasic(16) + type(8) + typed_flag(8) = 32
+
+// Native call hint types — must match enum rb_jit_native_type in include/ruby/jit_native.h
+pub const RB_JIT_NATIVE_VOID: i32    = 0;
+pub const RB_JIT_NATIVE_BOOL: i32    = 1;
+pub const RB_JIT_NATIVE_INT: i32     = 2;
+pub const RB_JIT_NATIVE_UINT: i32    = 3;
+pub const RB_JIT_NATIVE_LONG: i32    = 4;
+pub const RB_JIT_NATIVE_ULONG: i32   = 5;
+pub const RB_JIT_NATIVE_INT64: i32   = 6;
+pub const RB_JIT_NATIVE_UINT64: i32  = 7;
+pub const RB_JIT_NATIVE_FLOAT: i32   = 8;
+pub const RB_JIT_NATIVE_DOUBLE: i32  = 9;
+pub const RB_JIT_NATIVE_POINTER: i32 = 10;
+pub const RB_JIT_NATIVE_STRING: i32  = 11;
+
+pub const RB_JIT_NATIVE_MAX_ARGS: usize = 6;
+
+#[repr(C)]
+pub struct RbJitNativeCallHint {
+    pub func_ptr: *const u8,
+    pub argc: c_int,
+    pub arg_types: [c_int; RB_JIT_NATIVE_MAX_ARGS],
+    pub ret_type: c_int,
 }
 
 // Renames

@@ -16,6 +16,7 @@
 #include "vm_sync.h"
 #include "internal/fixnum.h"
 #include "internal/string.h"
+#include "ruby/jit_native.h"
 
 enum jit_bindgen_constants {
     // Field offsets for the RObject struct
@@ -31,6 +32,9 @@ enum jit_bindgen_constants {
     RUBY_OFFSET_EC_INTERRUPT_MASK = offsetof(rb_execution_context_t, interrupt_mask),
     RUBY_OFFSET_EC_THREAD_PTR = offsetof(rb_execution_context_t, thread_ptr),
     RUBY_OFFSET_EC_RACTOR_ID = offsetof(rb_execution_context_t, ractor_id),
+
+    // Field offset for RTypedData.data (used for FFI::Pointer address extraction)
+    RUBY_OFFSET_RTYPEDDATA_DATA = offsetof(struct RTypedData, data),
 };
 
 // Manually bound in rust since this is out-of-range of `int`,
@@ -796,4 +800,251 @@ attr_index_t
 rb_jit_shape_capacity(shape_id_t shape_id)
 {
     return RSHAPE_CAPACITY(shape_id);
+}
+
+// --- Native call hints for JIT optimization of FFI-style calls ---
+//
+// Two-level st_table: klass (VALUE) -> st_table(mid (ID) -> hint ptr).
+// Populated at runtime by C extensions via rb_jit_hint_native_call().
+// Queried by the JIT compiler via rb_jit_find_native_call_hint().
+
+static st_table *jit_native_hints = NULL;
+
+void
+rb_jit_hint_native_call(VALUE klass, ID mid, void *func_ptr,
+                         int argc, const int *arg_types, int ret_type)
+{
+    if (argc < 0 || argc > RB_JIT_NATIVE_MAX_ARGS) {
+        rb_raise(rb_eArgError,
+                 "rb_jit_hint_native_call: argc %d out of range (0..%d)",
+                 argc, RB_JIT_NATIVE_MAX_ARGS);
+    }
+
+    if (!jit_native_hints) {
+        jit_native_hints = st_init_numtable();
+    }
+
+    // Find or create the inner table for this class
+    st_data_t inner_val;
+    st_table *inner;
+    if (st_lookup(jit_native_hints, (st_data_t)klass, &inner_val)) {
+        inner = (st_table *)inner_val;
+    }
+    else {
+        inner = st_init_numtable();
+        st_insert(jit_native_hints, (st_data_t)klass, (st_data_t)inner);
+    }
+
+    rb_jit_native_call_hint_t *hint = xcalloc(1, sizeof(rb_jit_native_call_hint_t));
+    hint->func_ptr = func_ptr;
+    hint->argc = argc;
+    hint->ret_type = ret_type;
+    for (int i = 0; i < argc; i++) {
+        hint->arg_types[i] = arg_types[i];
+    }
+
+    // Replace any existing hint for the same method
+    st_data_t old_val;
+    if (st_lookup(inner, (st_data_t)mid, &old_val)) {
+        xfree((void *)old_val);
+    }
+    st_insert(inner, (st_data_t)mid, (st_data_t)hint);
+}
+
+const rb_jit_native_call_hint_t *
+rb_jit_find_native_call_hint(VALUE klass, ID mid)
+{
+    if (!jit_native_hints) return NULL;
+
+    st_data_t inner_val;
+    if (!st_lookup(jit_native_hints, (st_data_t)klass, &inner_val)) return NULL;
+
+    st_table *inner = (st_table *)inner_val;
+    st_data_t hint_val;
+    if (!st_lookup(inner, (st_data_t)mid, &hint_val)) return NULL;
+
+    return (const rb_jit_native_call_hint_t *)hint_val;
+}
+
+// --- Typed trampolines for native calls involving floating-point ---
+//
+// The JIT backend passes all arguments in integer registers, but C functions
+// with float/double parameters expect them in FP registers.  These trampolines
+// bridge the gap: they accept Ruby VALUEs in integer registers, convert to
+// native types, call the target function, and box the result back to Ruby.
+//
+// Each trampoline is named: rb_jit_trampoline_<arg_types>_<ret_type>
+// where d = double, f = float, i = int, l = long, v = void.
+
+// double f(double)
+VALUE
+rb_jit_trampoline_d_d(void *fptr, VALUE a0)
+{
+    double arg0 = rb_float_value(a0);
+    double result = ((double (*)(double))fptr)(arg0);
+    return rb_float_new(result);
+}
+
+// double f(double, double)
+VALUE
+rb_jit_trampoline_dd_d(void *fptr, VALUE a0, VALUE a1)
+{
+    double arg0 = rb_float_value(a0);
+    double arg1 = rb_float_value(a1);
+    double result = ((double (*)(double, double))fptr)(arg0, arg1);
+    return rb_float_new(result);
+}
+
+// double f(int)
+VALUE
+rb_jit_trampoline_i_d(void *fptr, VALUE a0)
+{
+    int arg0 = FIX2INT(a0);
+    double result = ((double (*)(int))fptr)(arg0);
+    return rb_float_new(result);
+}
+
+// double f(int, double)
+VALUE
+rb_jit_trampoline_id_d(void *fptr, VALUE a0, VALUE a1)
+{
+    int arg0 = FIX2INT(a0);
+    double arg1 = rb_float_value(a1);
+    double result = ((double (*)(int, double))fptr)(arg0, arg1);
+    return rb_float_new(result);
+}
+
+// double f(double, int)
+VALUE
+rb_jit_trampoline_di_d(void *fptr, VALUE a0, VALUE a1)
+{
+    double arg0 = rb_float_value(a0);
+    int arg1 = FIX2INT(a1);
+    double result = ((double (*)(double, int))fptr)(arg0, arg1);
+    return rb_float_new(result);
+}
+
+// void f(double)
+VALUE
+rb_jit_trampoline_d_v(void *fptr, VALUE a0)
+{
+    double arg0 = rb_float_value(a0);
+    ((void (*)(double))fptr)(arg0);
+    return Qnil;
+}
+
+// double f(void)
+VALUE
+rb_jit_trampoline_v_d(void *fptr)
+{
+    double result = ((double (*)(void))fptr)();
+    return rb_float_new(result);
+}
+
+// --- Generic trampoline for signatures with pointer/string/int args ---
+//
+// Handles all args that fit in integer registers (no FP).  Extracts native
+// values from Ruby objects: Fixnum → int/long, String → RSTRING_PTR,
+// FFI::Pointer → DATA_PTR address, bool → 0/1.
+//
+// The hint struct is passed as the first arg so the trampoline knows the
+// types.  Remaining args are Ruby VALUEs passed through from JIT code.
+
+static uintptr_t
+jit_convert_arg(int native_type, VALUE val)
+{
+    switch (native_type) {
+    case RB_JIT_NATIVE_INT:
+    case RB_JIT_NATIVE_UINT:
+        return (uintptr_t)(unsigned int)FIX2INT(val);
+    case RB_JIT_NATIVE_LONG:
+    case RB_JIT_NATIVE_ULONG:
+    case RB_JIT_NATIVE_INT64:
+    case RB_JIT_NATIVE_UINT64:
+        return (uintptr_t)FIX2LONG(val);
+    case RB_JIT_NATIVE_POINTER:
+        if (FIXNUM_P(val))
+            return (uintptr_t)FIX2LONG(val);
+        if (NIL_P(val))
+            return (uintptr_t)0;
+        // T_DATA with address at offset 0 (FFI::Pointer, Fiddle::Pointer)
+        if (RB_TYPE_P(val, T_DATA))
+            return *(uintptr_t *)RTYPEDDATA_DATA(val);
+        return (uintptr_t)NUM2LONG(rb_funcall(val, rb_intern("to_i"), 0));
+    case RB_JIT_NATIVE_STRING:
+        return (uintptr_t)RSTRING_PTR(val);
+    case RB_JIT_NATIVE_BOOL:
+        return RTEST(val) ? 1 : 0;
+    default:
+        return 0;
+    }
+}
+
+typedef uintptr_t (*generic_fn0_t)(void);
+typedef uintptr_t (*generic_fn1_t)(uintptr_t);
+typedef uintptr_t (*generic_fn2_t)(uintptr_t, uintptr_t);
+typedef uintptr_t (*generic_fn3_t)(uintptr_t, uintptr_t, uintptr_t);
+typedef uintptr_t (*generic_fn4_t)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+typedef uintptr_t (*generic_fn5_t)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+typedef uintptr_t (*generic_fn6_t)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+
+static VALUE
+jit_box_result(int ret_type, uintptr_t result)
+{
+    switch (ret_type) {
+    case RB_JIT_NATIVE_INT:
+        return INT2FIX((int)(intptr_t)result);
+    case RB_JIT_NATIVE_UINT:
+        return UINT2NUM((unsigned int)result);
+    case RB_JIT_NATIVE_LONG:
+    case RB_JIT_NATIVE_INT64:
+        return LONG2FIX((long)result);
+    case RB_JIT_NATIVE_ULONG:
+    case RB_JIT_NATIVE_UINT64:
+        return ULONG2NUM((unsigned long)result);
+    case RB_JIT_NATIVE_BOOL:
+        return result ? Qtrue : Qfalse;
+    case RB_JIT_NATIVE_VOID:
+    default:
+        return Qnil;
+    }
+}
+
+// Variadic-cfunc-compatible trampoline.
+// Signature matches CCallVariadic convention: func(int argc, VALUE *argv, VALUE recv).
+// Looks up the hint from the current method's CME using the cfp.
+VALUE
+rb_jit_trampoline_generic(int argc, const VALUE *argv, VALUE recv)
+{
+    rb_execution_context_t *ec = GET_EC();
+    const rb_callable_method_entry_t *cme = rb_vm_frame_method_entry(ec->cfp);
+    VALUE klass = cme->defined_class;
+    ID mid = cme->called_id;
+
+    const rb_jit_native_call_hint_t *hint =
+        rb_jit_find_native_call_hint(klass, mid);
+    if (!hint) {
+        rb_raise(rb_eRuntimeError, "rb_jit_trampoline_generic: no hint found");
+    }
+
+    uintptr_t a[RB_JIT_NATIVE_MAX_ARGS];
+    void *fp = hint->func_ptr;
+
+    for (int i = 0; i < hint->argc && i < argc; i++) {
+        a[i] = jit_convert_arg(hint->arg_types[i], argv[i]);
+    }
+
+    uintptr_t result;
+    switch (hint->argc) {
+    case 0: result = ((generic_fn0_t)fp)(); break;
+    case 1: result = ((generic_fn1_t)fp)(a[0]); break;
+    case 2: result = ((generic_fn2_t)fp)(a[0], a[1]); break;
+    case 3: result = ((generic_fn3_t)fp)(a[0], a[1], a[2]); break;
+    case 4: result = ((generic_fn4_t)fp)(a[0], a[1], a[2], a[3]); break;
+    case 5: result = ((generic_fn5_t)fp)(a[0], a[1], a[2], a[3], a[4]); break;
+    case 6: result = ((generic_fn6_t)fp)(a[0], a[1], a[2], a[3], a[4], a[5]); break;
+    default: result = 0; break;
+    }
+
+    return jit_box_result(hint->ret_type, result);
 }

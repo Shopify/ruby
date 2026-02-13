@@ -886,6 +886,21 @@ pub enum Insn {
     /// `name` is for printing purposes only
     CCall { cfunc: *const u8, recv: InsnId, args: Vec<InsnId>, name: ID, return_type: Type, elidable: bool },
 
+    /// Direct call to a native (non-Ruby) function pointer, with no recv.
+    /// Used for JIT-optimized FFI calls where arguments have already been
+    /// converted from Ruby values to native types.
+    /// `native_ret_type` is the raw rb_jit_native_type for codegen sign-extension.
+    /// When `state` is Some, PC/SP are saved before the call for GC safety
+    /// (needed when args include pointers to Ruby object data).
+    NativeCall { func_ptr: *const u8, args: Vec<InsnId>, name: ID, return_type: Type, native_ret_type: c_int, state: Option<InsnId> },
+
+    /// Extract the C char pointer from a Ruby String (handles embedded and heap).
+    StringGetPtr { val: InsnId },
+
+    /// Extract the data pointer from a T_DATA object (e.g. FFI::Pointer).
+    /// Returns the first field of the TypedData's data struct (the address).
+    PtrGetAddress { val: InsnId },
+
     /// Call a C function that pushes a frame
     CCallWithFrame {
         cd: *const rb_call_data, // cd for falling back to Send
@@ -1175,6 +1190,8 @@ impl Insn {
                     effects::Any
                 }
             },
+            Insn::NativeCall { .. } => effects::Any,
+            Insn::StringGetPtr { .. } | Insn::PtrGetAddress { .. } => effects::Empty,
             Insn::CCallWithFrame { elidable, .. } => {
                 if *elidable {
                     Effect::write(abstract_heaps::Allocator)
@@ -1569,6 +1586,15 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
                 }
                 Ok(())
             },
+            Insn::NativeCall { func_ptr, args, name, .. } => {
+                write!(f, "NativeCall :{}@{:p}", name.contents_lossy(), self.ptr_map.map_ptr(func_ptr))?;
+                for arg in args {
+                    write!(f, ", {arg}")?;
+                }
+                Ok(())
+            },
+            Insn::StringGetPtr { val } => write!(f, "StringGetPtr {val}"),
+            Insn::PtrGetAddress { val } => write!(f, "PtrGetAddress {val}"),
             Insn::CCallWithFrame { cfunc, recv, args, name, blockiseq, .. } => {
                 write!(f, "CCallWithFrame {recv}, :{}@{:p}", name.contents_lossy(), self.ptr_map.map_ptr(cfunc))?;
                 for arg in args {
@@ -2329,6 +2355,9 @@ impl Function {
             &ObjectAlloc { val, state } => ObjectAlloc { val: find!(val), state },
             &ObjectAllocClass { class, state } => ObjectAllocClass { class, state: find!(state) },
             &CCall { cfunc, recv, ref args, name, return_type, elidable } => CCall { cfunc, recv: find!(recv), args: find_vec!(args), name, return_type, elidable },
+            &NativeCall { func_ptr, ref args, name, return_type, native_ret_type, state } => NativeCall { func_ptr, args: find_vec!(args), name, return_type, native_ret_type, state: state.map(|s| find!(s)) },
+            &StringGetPtr { val } => StringGetPtr { val: find!(val) },
+            &PtrGetAddress { val } => PtrGetAddress { val: find!(val) },
             &CCallWithFrame { cd, cfunc, recv, ref args, cme, name, state, return_type, elidable, blockiseq } => CCallWithFrame {
                 cd,
                 cfunc,
@@ -2479,6 +2508,8 @@ impl Function {
             Insn::ObjectAllocClass { class, .. } => Type::from_class(*class),
             &Insn::CCallWithFrame { return_type, .. } => return_type,
             Insn::CCall { return_type, .. } => *return_type,
+            Insn::NativeCall { return_type, .. } => *return_type,
+            Insn::StringGetPtr { .. } | Insn::PtrGetAddress { .. } => types::CPtr,
             &Insn::CCallVariadic { return_type, .. } => return_type,
             Insn::GuardType { val, guard_type, .. } => self.type_of(*val).intersection(*guard_type),
             Insn::RefineType { val, new_type, .. } => self.type_of(*val).intersection(*new_type),
@@ -4183,6 +4214,201 @@ impl Function {
                 }
             }
 
+            // Check for a native call hint (registered by FFI-style extensions).
+            // If found, emit a direct call to the native function, bypassing
+            // the extension's dispatch layer and libffi entirely.
+            let native_hint = unsafe { rb_jit_find_native_call_hint(recv_class, method_id) };
+            if !native_hint.is_null() {
+                let hint = unsafe { &*native_hint };
+                let hint_argc = hint.argc as usize;
+
+                // Only optimize simple calls where arg count matches the hint
+                if args.len() == hint_argc
+                    && ci_flags & VM_CALL_ARGS_SIMPLE != 0
+                    && hint_argc <= RB_JIT_NATIVE_MAX_ARGS
+                {
+                    let has_fp = (0..hint_argc).any(|i|
+                        hint.arg_types[i] == RB_JIT_NATIVE_FLOAT || hint.arg_types[i] == RB_JIT_NATIVE_DOUBLE)
+                        || hint.ret_type == RB_JIT_NATIVE_FLOAT || hint.ret_type == RB_JIT_NATIVE_DOUBLE;
+
+                    // Classify each arg for dispatch strategy:
+                    //   'i' = integer/bool (Fixnum → unbox)
+                    //   'd' = double/float (needs FP trampoline)
+                    //   'p' = pointer (FFI::Pointer → extract address)
+                    //   's' = string (Ruby String → RSTRING_PTR)
+                    let arg_class = |t: c_int| -> Option<u8> {
+                        match t {
+                            RB_JIT_NATIVE_INT | RB_JIT_NATIVE_UINT | RB_JIT_NATIVE_LONG
+                            | RB_JIT_NATIVE_ULONG | RB_JIT_NATIVE_INT64 | RB_JIT_NATIVE_UINT64
+                            | RB_JIT_NATIVE_BOOL => Some(b'i'),
+                            RB_JIT_NATIVE_DOUBLE | RB_JIT_NATIVE_FLOAT => Some(b'd'),
+                            RB_JIT_NATIVE_POINTER => Some(b'p'),
+                            RB_JIT_NATIVE_STRING => Some(b's'),
+                            _ => None,
+                        }
+                    };
+                    let ret_is_double = hint.ret_type == RB_JIT_NATIVE_DOUBLE || hint.ret_type == RB_JIT_NATIVE_FLOAT;
+                    let ret_is_void = hint.ret_type == RB_JIT_NATIVE_VOID;
+                    let ret_is_string = hint.ret_type == RB_JIT_NATIVE_STRING;
+                    let ret_is_pointer = hint.ret_type == RB_JIT_NATIVE_POINTER;
+
+                    // Build a signature key like "dd" or "id" for trampoline selection
+                    let mut sig: Vec<u8> = Vec::with_capacity(hint_argc);
+                    let mut all_classified = true;
+                    for i in 0..hint_argc {
+                        if let Some(c) = arg_class(hint.arg_types[i]) {
+                            sig.push(c);
+                        } else {
+                            all_classified = false;
+                            break;
+                        }
+                    }
+
+                    // Skip the native hint optimization for string and pointer
+                    // return types.  String returns need GC-safe allocation
+                    // (rb_str_new_cstr).  Pointer returns must stay as
+                    // FFI::Pointer objects for the FFI gem's type checking;
+                    // boxing them as plain Integers breaks subsequent FFI calls.
+                    if all_classified && !ret_is_string && !ret_is_pointer
+                        && (!has_fp || ret_is_double || ret_is_void)
+                    {
+                        if !fun.assume_no_singleton_classes(block, recv_class, state) {
+                            fun.set_dynamic_send_reason(send_insn_id, SingletonClassSeen);
+                            return Err(());
+                        }
+
+                        fun.gen_patch_points_for_optimized_ccall(block, recv_class, method_id, cme, state);
+
+                        if let Some(profiled_type) = profiled_type {
+                            recv = fun.push_insn(block, Insn::GuardType {
+                                val: recv, guard_type: Type::from_profiled_type(profiled_type), state
+                            });
+                            fun.insn_types[recv.0] = fun.infer_type(recv);
+                        }
+
+                        let name = rust_str_to_id(&qualified_method_name(
+                            unsafe { (*cme).owner }, unsafe { (*cme).called_id }));
+
+                        if has_fp {
+                            // Float path: use a typed C trampoline that handles FP registers.
+                            // The trampoline takes (func_ptr, VALUE args...) and returns VALUE.
+                            let trampoline: *const u8 = match (sig.as_slice(), ret_is_double, ret_is_void) {
+                                (b"d",  true,  _) => rb_jit_trampoline_d_d as _,
+                                (b"dd", true,  _) => rb_jit_trampoline_dd_d as _,
+                                (b"i",  true,  _) => rb_jit_trampoline_i_d as _,
+                                (b"id", true,  _) => rb_jit_trampoline_id_d as _,
+                                (b"di", true,  _) => rb_jit_trampoline_di_d as _,
+                                (b"d",  false, true) => rb_jit_trampoline_d_v as _,
+                                (b"",   true,  _) => rb_jit_trampoline_v_d as _,
+                                _ => {
+                                    // Unsupported float signature, fall through
+                                    ptr::null()
+                                }
+                            };
+
+                            if !trampoline.is_null() {
+                                // Guard arg types (Flonum for double, Fixnum for int).
+                                // We guard Flonum (not Float) because the codegen
+                                // only has a fast path for immediate flonums.
+                                // HeapFloats (values outside ~1e-77..2e+77) will side-exit.
+                                for i in 0..hint_argc {
+                                    let guard_type = if sig[i] == b'd' { types::Flonum } else { types::Fixnum };
+                                    let guarded = fun.push_insn(block, Insn::GuardType {
+                                        val: args[i], guard_type, state,
+                                    });
+                                    fun.insn_types[guarded.0] = fun.infer_type(guarded);
+                                }
+
+                                // Build trampoline args: func_ptr, then Ruby VALUE args
+                                let fptr_const = fun.push_insn(block, Insn::Const {
+                                    val: Const::CPtr(hint.func_ptr)
+                                });
+                                let mut tramp_args = vec![fptr_const];
+                                tramp_args.extend_from_slice(&args);
+
+                                // Call the trampoline — it returns a Ruby VALUE directly
+                                let result = fun.push_insn(block, Insn::NativeCall {
+                                    func_ptr: trampoline,
+                                    args: tramp_args,
+                                    name,
+                                    return_type: types::BasicObject,
+                                    native_ret_type: RB_JIT_NATIVE_VOID,
+                                    state: Some(state), // rb_float_new may allocate
+                                });
+
+                                fun.make_equal_to(send_insn_id, result);
+                                return Ok(());
+                            }
+                        } else {
+                            // Direct NativeCall path — FJIT-style inline conversion.
+                            // Each arg is converted to its native type in HIR:
+                            //   'i' → GuardType(Fixnum) + UnboxFixnum
+                            //   'p' → GuardType(HeapBasicObject) + PtrGetAddress
+                            //   's' → GuardType(StringExact) + StringGetPtr
+                            // When pointers or strings are present, we save PC/SP
+                            // for GC safety (the address loads touch Ruby objects).
+                            let needs_gc = sig.iter().any(|&c| c == b'p' || c == b's');
+
+                            let mut native_args = Vec::with_capacity(hint_argc);
+                            for i in 0..hint_argc {
+                                let arg = args[i];
+                                let converted = match sig[i] {
+                                    b'p' => {
+                                        let guarded = fun.push_insn(block, Insn::GuardType {
+                                            val: arg, guard_type: types::HeapBasicObject, state,
+                                        });
+                                        fun.push_insn(block, Insn::PtrGetAddress { val: guarded })
+                                    }
+                                    b's' => {
+                                        let guarded = fun.push_insn(block, Insn::GuardType {
+                                            val: arg, guard_type: types::StringExact, state,
+                                        });
+                                        fun.push_insn(block, Insn::StringGetPtr { val: guarded })
+                                    }
+                                    _ => {
+                                        let guarded = fun.push_insn(block, Insn::GuardType {
+                                            val: arg, guard_type: types::Fixnum, state,
+                                        });
+                                        fun.push_insn(block, Insn::UnboxFixnum { val: guarded })
+                                    }
+                                };
+                                native_args.push(converted);
+                            }
+
+                            let return_type = match hint.ret_type {
+                                RB_JIT_NATIVE_BOOL => types::CBool,
+                                _ => types::CInt64,
+                            };
+
+                            let ncall = fun.push_insn(block, Insn::NativeCall {
+                                func_ptr: hint.func_ptr,
+                                args: native_args,
+                                name,
+                                return_type,
+                                native_ret_type: hint.ret_type,
+                                state: if needs_gc { Some(state) } else { None },
+                            });
+
+                            let result = match hint.ret_type {
+                                RB_JIT_NATIVE_VOID => {
+                                    fun.push_insn(block, Insn::Const { val: Const::Value(Qnil) })
+                                }
+                                RB_JIT_NATIVE_BOOL => {
+                                    fun.push_insn(block, Insn::BoxBool { val: ncall })
+                                }
+                                _ => {
+                                    fun.push_insn(block, Insn::BoxFixnum { val: ncall, state })
+                                }
+                            };
+
+                            fun.make_equal_to(send_insn_id, result);
+                            return Ok(());
+                        }
+                    }
+                    // Unsupported signature, fall through to normal cfunc path
+                }
+            }
+
             // Find the `argc` (arity) of the C method, which describes the parameters it expects
             let cfunc = unsafe { get_cme_def_body_cfunc(cme) };
             let cfunc_argc = unsafe { get_mct_argc(cfunc) };
@@ -4798,6 +5024,13 @@ impl Function {
             &Insn::CCall { recv, ref args, .. } => {
                 worklist.push_back(recv);
                 worklist.extend(args);
+            }
+            &Insn::NativeCall { ref args, state, .. } => {
+                worklist.extend(args);
+                if let Some(s) = state { worklist.push_back(s); }
+            }
+            &Insn::StringGetPtr { val } | &Insn::PtrGetAddress { val } => {
+                worklist.push_back(val);
             }
             &Insn::GetIvar { self_val, state, .. } | &Insn::DefinedIvar { self_val, state, .. } => {
                 worklist.push_back(self_val);
@@ -5640,6 +5873,10 @@ impl Function {
                 self.assert_subtype(insn_id, class, types::Class)
             }
             Insn::RefineType { .. } => Ok(()),
+            // NativeCall args are already-converted native types, not Ruby objects
+            Insn::NativeCall { .. } => Ok(()),
+            Insn::StringGetPtr { val } => self.assert_subtype(insn_id, val, types::String),
+            Insn::PtrGetAddress { val } => self.assert_subtype(insn_id, val, types::HeapBasicObject),
             Insn::HasType { val, .. } => self.assert_subtype(insn_id, val, types::BasicObject),
         }
     }

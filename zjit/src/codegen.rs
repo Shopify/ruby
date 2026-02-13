@@ -542,6 +542,14 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         &Insn::GuardGreaterEq { left, right, state, .. } => gen_guard_greater_eq(jit, asm, opnd!(left), opnd!(right), &function.frame_state(state)),
         Insn::PatchPoint { invariant, state } => no_output!(gen_patch_point(jit, asm, invariant, &function.frame_state(*state))),
         Insn::CCall { cfunc, recv, args, name, return_type: _, elidable: _ } => gen_ccall(asm, *cfunc, *name, opnd!(recv), opnds!(args)),
+        Insn::NativeCall { func_ptr, args, name, native_ret_type, state, .. } => {
+            if let Some(st) = state {
+                gen_prepare_leaf_call_with_gc(asm, &function.frame_state(*st));
+            }
+            gen_native_call(asm, *func_ptr, *name, *native_ret_type, opnds!(args))
+        }
+        Insn::StringGetPtr { val } => get_string_ptr(asm, opnd!(val)),
+        Insn::PtrGetAddress { val } => gen_ptr_get_address(asm, opnd!(val)),
         // Give up CCallWithFrame for 7+ args since asm.ccall() supports at most 6 args (recv + args).
         // There's no test case for this because no core cfuncs have this many parameters. But C extensions could have such methods.
         Insn::CCallWithFrame { cd, state, args, .. } if args.len() + 1 > C_ARG_OPNDS.len() =>
@@ -975,6 +983,40 @@ fn gen_ccall(asm: &mut Assembler, cfunc: *const u8, name: ID, recv: Opnd, args: 
     cfunc_args.extend(args);
     asm.count_call_to(&name.contents_lossy());
     asm.ccall(cfunc, cfunc_args)
+}
+
+/// Lowering for [`Insn::PtrGetAddress`].  Extract the native pointer from a
+/// T_DATA object (e.g. FFI::Pointer).  Loads RTYPEDDATA(obj)->data, then
+/// dereferences offset 0 (the address field in FFI's AbstractMemory struct).
+fn gen_ptr_get_address(asm: &mut Assembler, val: Opnd) -> lir::Opnd {
+    asm_comment!(asm, "extract address from T_DATA (FFI::Pointer)");
+    let val = asm.load(val);
+    let data_ptr = asm.load(Opnd::mem(64, val, RUBY_OFFSET_RTYPEDDATA_DATA as i32));
+    asm.load(Opnd::mem(64, data_ptr, 0))
+}
+
+/// Lowering for [`Insn::NativeCall`]. Direct call to a foreign function pointer
+/// with no Ruby receiver. Arguments are already converted to native types.
+fn gen_native_call(asm: &mut Assembler, func_ptr: *const u8, name: ID, native_ret_type: c_int, args: Vec<Opnd>) -> lir::Opnd {
+    use crate::cruby::*;
+
+    asm.count_call_to(&name.contents_lossy());
+    let raw = asm.ccall(func_ptr, args);
+
+    // 32-bit return types need sign/zero-extension to 64 bits because
+    // the C ABI does not guarantee the upper 32 bits of the return register.
+    match native_ret_type {
+        RB_JIT_NATIVE_INT => {
+            // Sign-extend 32-bit to 64-bit: (val << 32) >> 32 (arithmetic)
+            let shifted = asm.lshift(raw, Opnd::UImm(32));
+            asm.rshift(shifted, Opnd::UImm(32))
+        }
+        RB_JIT_NATIVE_UINT | RB_JIT_NATIVE_BOOL => {
+            // Zero-extend 32-bit to 64-bit
+            asm.and(raw, Opnd::UImm(0xFFFFFFFF))
+        }
+        _ => raw,
+    }
 }
 
 // Change cfp->block_code in the current frame. See vm_caller_setup_arg_block().
