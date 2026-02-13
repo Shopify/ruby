@@ -3830,6 +3830,31 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                     break;
                 }
               }
+              case T_IMEMO: {
+                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
+                    break;
+                }
+                switch (imemo_type(vp)) {
+                    case imemo_constcache:
+                    case imemo_cref:
+                    case imemo_env:
+                    case imemo_ifunc:
+                    case imemo_memo:
+                    case imemo_ment:
+                    case imemo_svar:
+                    case imemo_throw_data:
+                    case imemo_tmpbuf:
+                    case imemo_fields:
+                        goto free;
+                    default:
+                        break;
+                }
+                break; // useless
+              }
+              case T_COMPLEX:
+              case T_RATIONAL:
+              case T_FLOAT:
+              case T_BIGNUM:
               case T_OBJECT:
               case T_STRING:
               case T_ARRAY:
