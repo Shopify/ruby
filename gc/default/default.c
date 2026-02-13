@@ -3819,7 +3819,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
                     dfree = RDATA(vp)->dfree;
                 }
                 if (!dfree || dfree == RUBY_DEFAULT_FREE || free_immediately) {
-                    if (rb_gc_obj_has_blacklisted_vm_weak_references(vp) || FL_TEST(vp, FL_FINALIZE)) {
+                    if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
                         break;
                     }
                     else {
@@ -3838,7 +3838,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_t p,
               case T_MATCH:
               case T_REGEXP:
               case T_FILE:
-                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp) || FL_TEST(vp, FL_FINALIZE)) {
+                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
                     break;
                 }
                 else {
