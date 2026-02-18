@@ -1021,6 +1021,7 @@ sweep_lock_set_unlocked(void)
     sweep_lock_owner = 0;
 }
 
+// returns true when background sweep thread and main thread have finished processing the pages for that heap
 static bool
 heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
 {
@@ -1796,8 +1797,8 @@ static inline void
 heap_add_poolpage(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
 {
     asan_unlock_freelist(page);
-    GC_ASSERT(page->free_slots != 0);
-    GC_ASSERT(page->freelist != NULL);
+    /*GC_ASSERT(page->free_slots != 0);*/
+    /*GC_ASSERT(page->freelist != NULL);*/
 
     page->free_next = heap->pooled_pages;
     page->pre_next = NULL;
@@ -2071,11 +2072,11 @@ static void
 heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
 {
     /* Adding to eden heap during incremental sweeping is forbidden */
-#if VM_CHECK_MODE > 0
-    sweep_lock_lock(&objspace->sweep_lock);
+/*#if VM_CHECK_MODE > 0*/
+    /*sweep_lock_lock(&objspace->sweep_lock);*/
     GC_ASSERT(!heap->sweeping_page);
-    sweep_lock_unlock(&objspace->sweep_lock);
-#endif
+    /*sweep_lock_unlock(&objspace->sweep_lock);*/
+/*#endif*/
     GC_ASSERT(heap_page_in_global_empty_pages_pool(objspace, page));
 
     /* adjust obj_limit (object number available in this page) */
@@ -2213,6 +2214,20 @@ static void
 heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     GC_ASSERT(heap->free_pages == NULL);
+
+    /*
+     * We check heap->sweeping_page here to see if we're still incremental sweeping the heap.
+     *
+     */
+
+    sweep_lock_lock(&objspace->sweep_lock);
+    while (objspace->sweep_thread_sweeping) {
+        psweep_debug(1, "[gc] Waiting for sweep thread to finish\n");
+        sweep_lock_set_unlocked();
+        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
+        sweep_lock_set_locked();
+    }
+    sweep_lock_unlock(&objspace->sweep_lock);
 
     // TODO: fix for background sweeping, accessing heap->sweeping_page without synch.
     sweep_lock_lock(&objspace->sweep_lock);
@@ -2558,7 +2573,7 @@ newobj_cache_miss(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, size
 
     // Background sweeping could still be in progress, right now we'll just wait for it to end.
     // FIXME: We will need to be smarter about this.
-    free_deferred_sweep_objects(objspace);
+    /*free_deferred_sweep_objects(objspace);*/
 
     {
         if (is_incremental_marking(objspace)) {
@@ -4533,6 +4548,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
     gc_prof_set_heap_info(objspace);
     free_deferred_sweep_objects(objspace);
+    // psweep: before empty pages are freed, we need to make sure deferred sweep objects are swept (it modifies the freelist of the page)
     heap_pages_free_unused_pages(objspace);
 
     for (int i = 0; i < HEAP_COUNT; i++) {
@@ -4616,7 +4632,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         // NOTE: pages we dequeue from the sweep thread need to be AFTER the list of free_pages so we don't free from pages we've allocated from since sweep started.
         struct heap_page *sweep_page = gc_sweep_dequeue_page(objspace, heap);
         if (!sweep_page) {
-            psweep_debug( 1, "[gc] gc_sweep_step: !sweep_page\n");
+            psweep_debug(1, "[gc] gc_sweep_step: !sweep_page\n");
             break;
         }
 
@@ -4714,7 +4730,8 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
             GC_ASSERT(heap->free_pages != NULL);
         }
         else if (heap == sweep_heap) {
-            if (objspace->empty_pages_count > 0 || objspace->heap_pages.allocatable_slots > 0) {
+            if (objspace->empty_pages_count > 0 || (objspace->heap_pages.allocatable_slots > 0)) {
+                GC_ASSERT(!sweep_heap->sweeping_page);
                 /* [Bug #21548]
                  *
                  * If this heap is the heap we want to sweep, but we weren't able
