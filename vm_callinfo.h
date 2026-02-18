@@ -399,6 +399,9 @@ vm_cc_refinement_p(const struct rb_callcache *cc)
 static inline bool
 vm_cc_class_check(const struct rb_callcache *cc, VALUE klass)
 {
+    if (!IMEMO_TYPE_P(cc, imemo_callcache)) {
+        fprintf(stderr, "Error: vm_cc_class_check called on %s (%p)\n", rb_obj_info((VALUE)cc), (void*)cc);
+    }
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc_check_class(cc->klass));
     return cc->klass == klass;

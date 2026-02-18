@@ -630,6 +630,7 @@ class_get_subclasses_for_ns(struct st_table *tbl, VALUE box_id)
 static int
 remove_class_from_subclasses_replace_first_entry(st_data_t *key, st_data_t *value, st_data_t arg, int existing)
 {
+    RUBY_ASSERT(existing);
     *value = arg;
     return ST_CONTINUE;
 }
@@ -652,6 +653,7 @@ remove_class_from_subclasses(struct st_table *tbl, VALUE box_id, VALUE klass)
 
             if (first_entry) {
                 if (next) {
+                    // NOTE: doesn't allocate, just replaces existing value
                     st_update(tbl, box_id, remove_class_from_subclasses_replace_first_entry, (st_data_t)next);
                 }
                 else {

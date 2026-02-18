@@ -44,8 +44,7 @@ rb_multi_ractor_p(void)
 {
     if (LIKELY(ruby_single_main_ractor)) {
         // 0 on boot time.
-        rb_vm_t *vm = GET_VM();
-        RUBY_ASSERT(!vm || vm->ractor.cnt <= 1);
+        RUBY_ASSERT(!GET_VM() || GET_VM()->ractor.cnt <= 1);
         return false;
     }
     else {
