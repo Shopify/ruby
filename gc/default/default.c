@@ -2244,7 +2244,6 @@ gc_continue(rb_objspace_t *objspace, rb_heap_t *heap)
     gc_exit(objspace, gc_enter_event_continue, &lock_lev);
 }
 
-static unsigned int free_deferred_sweep_objects(rb_objspace_t *objspace);
 static void wait_for_background_sweeping_to_finish(rb_objspace_t *objspace);
 
 static void
@@ -2345,7 +2344,7 @@ static inline VALUE
 newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace, VALUE obj)
 {
     if (BUILTIN_TYPE(obj) != T_NONE) {
-        fprintf(stderr, "BUILTIN_TYPE(newobj) = %s for obj:%p\n", rb_obj_info(obj), obj);
+        fprintf(stderr, "BUILTIN_TYPE(newobj) = %s for obj:%p\n", rb_obj_info(obj), (void*)obj);
     }
     GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE);
     GC_ASSERT((flags & FL_WB_PROTECTED) == 0);
@@ -3831,7 +3830,7 @@ deq_deferred_sweep_objects(rb_objspace_t *objspace, rb_heap_t *heap, VALUE obj_b
     if (left_to_deq < 10) to_deq = left_to_deq;
     rb_native_mutex_lock(&heap->deferred_sweep_data.lock);
     {
-        GC_ASSERT(to_deq <= rb_darray_size(heap->deferred_sweep_data.object_list));
+        GC_ASSERT((size_t)to_deq <= rb_darray_size(heap->deferred_sweep_data.object_list));
         for (short i = 0; i < to_deq; i++) {
             obj_buf[i] = rb_darray_get(heap->deferred_sweep_data.object_list, i);
         }
@@ -4655,8 +4654,8 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap)
     return page;
 }
 
-static int
-freelist_size(struct free_slot *slot)
+MAYBE_UNUSED(static int
+freelist_size(struct free_slot *slot))
 {
     if (!slot) return 0;
     int size = 0;
@@ -4672,7 +4671,6 @@ static void
 merge_freelists(struct free_slot *a, struct free_slot *b)
 {
     if (a && b) {
-        struct free_slot *end_a = a;
         while (a->next) {
             a = a->next;
         }
@@ -4756,10 +4754,12 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         GC_ASSERT(!sweep_page->heap_cache);
 
         // merge freelists
+        asan_unlock_freelist(sweep_page);
+        asan_unlock_deferred_freelist(sweep_page);
         struct free_slot *deferred_freelist = sweep_page->deferred_freelist;
         psweep_debug(1, "[gc] gc_sweep_step deferred freelist size:%d\n", freelist_size(deferred_freelist));
         if (deferred_freelist) {
-            cur_list = sweep_page->freelist;
+            struct free_slot *cur_list = sweep_page->freelist;
             psweep_debug(1, "[gc] gc_sweep_step no heap_cache, sweep_page->freelist size:%d\n", freelist_size(cur_list));
             if (cur_list) {
                 merge_freelists(cur_list, deferred_freelist);
@@ -4772,6 +4772,8 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         else {
             GC_ASSERT(sweep_page->pre_freed_slots == 0);
         }
+        asan_lock_deferred_freelist(sweep_page);
+        asan_lock_freelist(sweep_page);
 
         sweep_page->free_slots = free_slots;
 #if RGENGC_CHECK_MODE
