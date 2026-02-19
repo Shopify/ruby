@@ -1307,6 +1307,8 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
       case T_REGEXP:
       case T_MATCH:
         return true;
+      case T_ZOMBIE:
+        return FL_TEST(obj, FL_FREEZE);
     }
 
     shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
@@ -1626,6 +1628,13 @@ rb_gc_obj_free(void *objspace, VALUE obj)
 
       case T_IMEMO:
         rb_imemo_free((VALUE)obj);
+        break;
+
+      case T_ZOMBIE:
+        if (FL_TEST(obj, FL_FREEZE)) {
+            GC_ASSERT(!FL_TEST(obj, FL_FINALIZE));
+            void rb_gc_impl_free_zombie(rb_objspace_t *, VALUE);
+        }
         break;
 
       default:

@@ -138,6 +138,21 @@ rb_darray_size(const void *ary)
  * Useful for TypedData objects. */
 #define rb_darray_memsize(ary) (sizeof(*(ary)) + (rb_darray_size(ary) * sizeof((ary)->data[0])))
 
+/* Remove n items from the beginning of the array */
+#define rb_darray_shift_n(ary, n) rb_darray_shift_n_impl(ary, ary->data, n, sizeof((ary)->data[0]))
+
+static inline void
+rb_darray_shift_n_impl(void *ary, void *data, size_t n, size_t type_sz)
+{
+    rb_darray_meta_t *meta = ary;
+    RUBY_ASSERT(meta->size >= n);
+    char *dst = (char*)data;
+    if (n > 0) {
+        memmove(dst, dst + n * type_sz, (meta->size - n) * type_sz);
+        meta->size -= n;
+    }
+}
+
 static inline void
 rb_darray_pop(void *ary, size_t count)
 {
