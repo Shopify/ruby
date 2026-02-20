@@ -1137,7 +1137,7 @@ total_final_slots_count(rb_objspace_t *objspace)
     size_t count = 0;
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
-        count += heap->final_slots_count;
+        count += (size_t)RUBY_ATOMIC_VALUE_LOAD(heap->final_slots_count);
     }
     return count;
 }
@@ -3122,7 +3122,7 @@ rb_gc_impl_free_zombie(rb_objspace_t *objspace, VALUE obj)
 {
     GC_ASSERT(!is_sweep_thread_p());
     struct heap_page *page = GET_HEAP_PAGE(obj);
-    GC_ASSERT(page->heap->final_slots_count > 0);
+    GC_ASSERT(RUBY_ATOMIC_VALUE_LOAD(page->heap->final_slots_count) > 0);
     GC_ASSERT(page->final_slots > 0);
     RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
     GC_ASSERT(page->final_slots > 0);
@@ -3464,10 +3464,8 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
 
     struct heap_page *src_page = GET_HEAP_PAGE(src);
     if (!free_page) {
-        fprintf(stderr, "try_move: no free page\n");
         return false;
     }
-    fprintf(stderr, "try_move: has free page\n");
 
     /* We should return true if either src is successfully moved, or src is
      * unmoveable. A false return will cause the sweeping cursor to be
@@ -4036,6 +4034,7 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
                    ctx->freed_slots, ctx->empty_slots, ctx->final_slots);
 
     sweep_page->heap->total_freed_objects += ctx->freed_slots;
+    sweep_page->free_slots = ctx->freed_slots + ctx->empty_slots;
 
     if (RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final) && !finalizing) {
         gc_finalize_deferred_register(objspace);
@@ -4478,7 +4477,6 @@ gc_sweep_start(rb_objspace_t *objspace)
 
 #if GC_CAN_COMPILE_COMPACTION
     if (objspace->flags.during_compacting) {
-        fprintf(stderr, "gc_sweep_start: during compaction\n");
         gc_sort_heap_by_compare_func(
             objspace,
             objspace->rcompactor.compare_func ? objspace->rcompactor.compare_func : compare_pinned_slots
@@ -4492,9 +4490,6 @@ gc_sweep_start(rb_objspace_t *objspace)
 
         /* We should call gc_sweep_finish_heap for size pools with no pages. */
         if (heap->sweeping_page == NULL) {
-            if (heap->total_pages != 0) {
-                fprintf(stderr, "heap->total_pages:%lu heap:%p\n", heap->total_pages, heap);
-            }
             GC_ASSERT(heap->total_pages == 0);
             GC_ASSERT(heap->total_slots == 0);
             gc_sweep_finish_heap(objspace, heap);
@@ -4516,7 +4511,7 @@ gc_sweep_start(rb_objspace_t *objspace)
     }
     else {
         objspace->flags.use_background_sweep_thread = false;
-        fprintf(stderr, "gc_sweep_start: not using background sweep thread\n");
+        psweep_debug(1, "[gc] gc_sweep_start: not using background sweep thread\n");
     }
 }
 
@@ -4747,7 +4742,13 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             ctx.empty_slots = sweep_page->pre_empty_slots;
         }
         int free_slots = ctx.freed_slots + ctx.empty_slots;
-        sweep_page->heap->total_freed_objects += ctx.freed_slots;
+        if (free_in_user_thread_p) {
+            GC_ASSERT(sweep_page->free_slots == free_slots); // gc_sweep_page() set the free slots
+            GC_ASSERT(sweep_page->heap->total_freed_objects >= (unsigned long)ctx.freed_slots);
+        } else {
+            sweep_page->free_slots = free_slots;
+            sweep_page->heap->total_freed_objects += ctx.freed_slots;
+        }
 
         if (0) fprintf(stderr, "gc_sweep_page(%"PRIdSIZE"): total_slots: %d, freed_slots: %d, empty_slots: %d, final_slots: %d\n",
                        rb_gc_count(),
@@ -6507,7 +6508,6 @@ gc_compact_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t b
     short slot_size = page->slot_size;
     short slot_bits = slot_size / BASE_SLOT_SIZE;
     GC_ASSERT(slot_bits > 0);
-    fprintf(stderr, "gc_compact_plane\n");
 
     do {
         VALUE vp = (VALUE)p;
