@@ -2969,6 +2969,7 @@ objspace_each_exec(bool protected, struct each_obj_data *each_obj_data)
 static void
 objspace_each_objects(rb_objspace_t *objspace, each_obj_callback *callback, void *data, bool protected)
 {
+    wait_for_background_sweeping_to_finish(objspace); // doesn't need VM barrier
     struct each_obj_data each_obj_data = {
         .objspace = objspace,
         .each_obj_callback = callback,
@@ -2981,8 +2982,6 @@ objspace_each_objects(rb_objspace_t *objspace, each_obj_callback *callback, void
 void
 rb_gc_impl_each_objects(void *objspace_ptr, each_obj_callback *callback, void *data)
 {
-    rb_objspace_t *objspace = objspace_ptr;
-    wait_for_background_sweeping_to_finish(objspace); // doesn't need barrier
     objspace_each_objects(objspace_ptr, callback, data, TRUE);
 }
 
@@ -3465,8 +3464,10 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
 
     struct heap_page *src_page = GET_HEAP_PAGE(src);
     if (!free_page) {
+        fprintf(stderr, "try_move: no free page\n");
         return false;
     }
+    fprintf(stderr, "try_move: has free page\n");
 
     /* We should return true if either src is successfully moved, or src is
      * unmoveable. A false return will cause the sweeping cursor to be
@@ -4472,11 +4473,12 @@ gc_sweep_start(rb_objspace_t *objspace)
     objspace->rincgc.pooled_slots = 0;
 
     sweep_lock_lock(&objspace->sweep_lock);
-    GC_ASSERT(!objspace->sweep_thread_sweeping);
+    GC_ASSERT(!objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested);
     sweep_lock_unlock(&objspace->sweep_lock);
 
 #if GC_CAN_COMPILE_COMPACTION
     if (objspace->flags.during_compacting) {
+        fprintf(stderr, "gc_sweep_start: during compaction\n");
         gc_sort_heap_by_compare_func(
             objspace,
             objspace->rcompactor.compare_func ? objspace->rcompactor.compare_func : compare_pinned_slots
@@ -4503,7 +4505,8 @@ gc_sweep_start(rb_objspace_t *objspace)
 
     psweep_debug(1, "[gc] gc_sweep_start\n");
     if (!objspace->flags.during_compacting &&
-        !(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
+        !(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ) &&
+        ((objspace->profile.latest_gc_info & GPR_FLAG_METHOD) == 0)) {
         objspace->flags.use_background_sweep_thread = true;
         psweep_debug(1, "[gc] gc_sweep_start: requesting sweep thread\n");
         sweep_lock_lock(&objspace->sweep_lock);
@@ -4513,6 +4516,7 @@ gc_sweep_start(rb_objspace_t *objspace)
     }
     else {
         objspace->flags.use_background_sweep_thread = false;
+        fprintf(stderr, "gc_sweep_start: not using background sweep thread\n");
     }
 }
 
@@ -5022,7 +5026,7 @@ gc_compact_start(rb_objspace_t *objspace)
     gc_mode_transition(objspace, gc_mode_compacting);
 
     sweep_lock_lock(&objspace->sweep_lock);
-    GC_ASSERT(!objspace->sweep_thread_sweeping);
+    GC_ASSERT(!objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested);
     sweep_lock_unlock(&objspace->sweep_lock);
 
     for (int i = 0; i < HEAP_COUNT; i++) {
@@ -6503,6 +6507,7 @@ gc_compact_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t b
     short slot_size = page->slot_size;
     short slot_bits = slot_size / BASE_SLOT_SIZE;
     GC_ASSERT(slot_bits > 0);
+    fprintf(stderr, "gc_compact_plane\n");
 
     do {
         VALUE vp = (VALUE)p;
