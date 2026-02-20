@@ -1764,16 +1764,12 @@ heap_page_add_deferred_freeobj(rb_objspace_t *objspace, struct heap_page *page, 
 {
     rb_asan_unpoison_object(obj, false);
 
-    rb_native_mutex_lock(&page->page_lock);
-    {
-        struct free_slot *slot = (struct free_slot *)obj;
-        slot->flags = 0;
-        asan_unlock_deferred_freelist(page);
-        slot->next = page->deferred_freelist;
-        page->deferred_freelist = slot;
-        asan_lock_deferred_freelist(page);
-    }
-    rb_native_mutex_unlock(&page->page_lock);
+    struct free_slot *slot = (struct free_slot *)obj;
+    slot->flags = 0;
+    asan_unlock_deferred_freelist(page);
+    slot->next = page->deferred_freelist;
+    page->deferred_freelist = slot;
+    asan_lock_deferred_freelist(page);
 
     rb_asan_poison_object(obj);
     gc_report(3, objspace, "heap_page_add_deferred_freeobj: add %p to deferred_freelist\n", (void *)obj);
@@ -2834,18 +2830,14 @@ rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), voi
     zombie->flags = T_ZOMBIE | (zombie->flags & ZOMBIE_OBJ_KEPT_FLAGS);
     zombie->dfree = dfree;
     zombie->data = data;
+    VALUE prev, next = (VALUE)RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final);
     struct heap_page *page = GET_HEAP_PAGE(obj);
-    rb_native_mutex_lock(&page->page_lock);
-    {
-        VALUE prev, next = (VALUE)RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final);
-        do {
-            zombie->next = prev = next;
-            next = RUBY_ATOMIC_VALUE_CAS(heap_pages_deferred_final, prev, obj);
-        } while (next != prev);
-        page->final_slots++;
-        RUBY_ATOMIC_SIZE_INC(page->heap->final_slots_count);
-    }
-    rb_native_mutex_unlock(&page->page_lock);
+    do {
+        zombie->next = prev = next;
+        next = RUBY_ATOMIC_VALUE_CAS(heap_pages_deferred_final, prev, obj);
+    } while (next != prev);
+    page->final_slots++; // NOTE: not synchronized, but either background thread or user thread owns page during free
+    RUBY_ATOMIC_SIZE_INC(page->heap->final_slots_count);
 }
 
 typedef int each_obj_callback(void *, void *, size_t, void *);
@@ -3145,21 +3137,6 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
         {
             GC_ASSERT(BUILTIN_TYPE(zombie) == T_ZOMBIE);
             ZOMBIE_SET_NEEDS_FREE_FLAG(zombie);
-
-            // TODO: turn to T_FREED
-            /*rb_native_mutex_lock(&page->page_lock);*/
-            /*{*/
-                /*GC_ASSERT(page->heap->final_slots_count > 0);*/
-                /*GC_ASSERT(page->final_slots > 0);*/
-
-                /*RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);*/
-                /*page->final_slots--;*/
-                /*page->free_slots++;*/
-                /*RVALUE_AGE_SET_BITMAP(zombie, 0);*/
-                /*heap_page_add_freeobj(objspace, page, zombie);*/
-            /*}*/
-            /*rb_native_mutex_unlock(&page->page_lock);*/
-            /*page->heap->total_freed_objects++;*/
         }
         RB_GC_VM_UNLOCK(lev);
 
@@ -3859,11 +3836,7 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
     if (rb_gc_obj_free(objspace, obj)) {
         struct heap_page *page = GET_HEAP_PAGE(obj);
         psweep_debug(1, "[gc] deferred free: page(%p) obj(%p) %s (success)\n", page, (void*)obj, obj_info);
-        rb_native_mutex_lock(&page->page_lock);
-        {
-            heap_page_add_freeobj(objspace, page, obj);
-        }
-        rb_native_mutex_unlock(&page->page_lock);
+        heap_page_add_freeobj(objspace, page, obj);
         result = true;
     }
     else {
