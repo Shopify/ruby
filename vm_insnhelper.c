@@ -781,18 +781,23 @@ env_method_entry_unchecked(VALUE obj, int can_be_svar)
 }
 
 const rb_callable_method_entry_t *
-rb_vm_frame_method_entry(const rb_control_frame_t *cfp)
-{
-    const VALUE *ep = cfp->ep;
-    rb_callable_method_entry_t *me;
+  rb_vm_frame_method_entry(const rb_control_frame_t *cfp)
+  {
+      const VALUE *ep = cfp->ep;
+      rb_callable_method_entry_t *me;
 
-    while (!VM_ENV_LOCAL_P(ep)) {
-        if ((me = check_method_entry(ep[VM_ENV_DATA_INDEX_ME_CREF], FALSE)) != NULL) return me;
-        ep = VM_ENV_PREV_EP(ep);
-    }
+      while (1) {
+          if (!FIXNUM_P(ep[VM_ENV_DATA_INDEX_FLAGS])) {
+              ep = ((rb_env_t *)ep[VM_ENV_DATA_INDEX_FLAGS])->ep;
+              continue;
+          }
+          if (VM_ENV_LOCAL_P(ep)) break;  /* ep[0] is Fixnum here — assert is valid */
+          if ((me = check_method_entry(ep[VM_ENV_DATA_INDEX_ME_CREF], FALSE)) != NULL) return me;
+          ep = VM_ENV_PREV_EP(ep);
+      }
 
-    return check_method_entry(ep[VM_ENV_DATA_INDEX_ME_CREF], TRUE);
-}
+      return check_method_entry(ep[VM_ENV_DATA_INDEX_ME_CREF], TRUE);
+  }
 
 const rb_callable_method_entry_t *
 rb_vm_frame_method_entry_unchecked(const rb_control_frame_t *cfp)
@@ -800,7 +805,12 @@ rb_vm_frame_method_entry_unchecked(const rb_control_frame_t *cfp)
     const VALUE *ep = cfp->ep;
     rb_callable_method_entry_t *me;
 
-    while (!VM_ENV_LOCAL_P_UNCHECKED(ep)) {
+    while (1) {
+        if (!FIXNUM_P(ep[VM_ENV_DATA_INDEX_FLAGS])) {
+            ep = ((rb_env_t *)ep[VM_ENV_DATA_INDEX_FLAGS])->ep;
+            continue;
+        }
+        if (VM_ENV_LOCAL_P_UNCHECKED(ep)) break;
         if ((me = env_method_entry_unchecked(ep[VM_ENV_DATA_INDEX_ME_CREF], FALSE)) != NULL) return me;
         ep = VM_ENV_PREV_EP_UNCHECKED(ep);
     }
