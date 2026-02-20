@@ -4657,7 +4657,8 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 #endif
 
     while (1) {
-        // NOTE: pages we dequeue from the sweep thread need to be AFTER the list of free_pages so we don't free from pages we've allocated from since sweep started.
+        // NOTE: pages we dequeue from the sweep thread need to be AFTER the list of heap->free_pages so we don't free from pages
+        // we've allocated from since sweep started.
         struct heap_page *sweep_page = gc_sweep_dequeue_page(objspace, heap, free_in_user_thread_p);
         if (!sweep_page) {
             psweep_debug(0, "[gc] gc_sweep_step heap:%p: deq() = nil, break\n", heap);
@@ -4690,9 +4691,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             psweep_debug(1, "[gc] gc_sweep_step(heap:%p page:%p) deq:%d\n", heap, sweep_page, buf_sz);
             for (short i = 0; i < buf_sz; i++) {
                 VALUE obj = obj_buf[i];
-                /*if (GET_HEAP_PAGE(obj) != sweep_page) {*/
-                    /*psweep_debug(1, "[gc] gc_sweep_step(heap:%p page:%p) bad page (obj:%p page:%p)\n", heap, sweep_page, obj, GET_HEAP_PAGE(obj));*/
-                /*}*/
                 GC_ASSERT(GET_HEAP_PAGE(obj) == sweep_page);
                 if (deferred_free(objspace, obj)) {
                     deferred_free_freed++;
@@ -4714,7 +4712,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         }
         int free_slots = ctx.freed_slots + ctx.empty_slots;
         if (free_in_user_thread_p) {
-            GC_ASSERT(sweep_page->free_slots == free_slots); // gc_sweep_page() set the free slots
+            GC_ASSERT(sweep_page->free_slots == free_slots); // gc_sweep_page() set sweep_page->free slots
             GC_ASSERT(sweep_page->heap->total_freed_objects >= (unsigned long)ctx.freed_slots);
         } else {
             sweep_page->free_slots = free_slots;
@@ -4759,7 +4757,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         asan_lock_deferred_freelist(sweep_page);
         asan_lock_freelist(sweep_page);
 
-        sweep_page->free_slots = free_slots;
 #if RGENGC_CHECK_MODE
         short freelist_len = 0;
         asan_unlock_freelist(sweep_page);
