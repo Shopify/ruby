@@ -3300,7 +3300,7 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
     gc_verify_internal_consistency(objspace);
 #endif
 
-    rb_gc_stop_background_threads(objspace);
+    wait_for_background_sweeping_to_finish(objspace);
 
     /* prohibit incremental GC */
     objspace->flags.dont_incremental = 1;
