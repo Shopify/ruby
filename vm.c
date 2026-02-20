@@ -39,6 +39,7 @@
 #include "zjit.h"
 #include "ruby/st.h"
 #include "ruby/vm.h"
+#include "ruby/debug.h"
 #include "vm_core.h"
 #include "vm_callinfo.h"
 #include "vm_debug.h"
@@ -1073,6 +1074,33 @@ vm_block_handler_escape(const rb_execution_context_t *ec, VALUE block_handler)
     return Qnil;
 }
 
+/*
+ * Simulate rb_profile_frames arriving via signal at an arbitrary point
+ * during env escape, to reproduce bugs where a profiler interrupts
+ * vm_make_env_each mid-mutation.
+ *
+ * Gated behind RUBY_DEBUG_PROFILE_DURING_ESCAPE=1 so that miniruby
+ * and normal builds are unaffected. Run your reproducer with:
+ *
+ *   RUBY_DEBUG_PROFILE_DURING_ESCAPE=1 ./miniruby bug_example.rb
+ */
+// Simulate rb_profile_frames arriving via signal at an arbitrary point
+// during env escape, to reproduce bugs where a profiler interrupts
+// vm_make_env_each mid-mutation.
+static void
+vm_escape_debug_profile_frames(void)
+{
+    static int enabled = -1;
+    if (UNLIKELY(enabled == -1)) {
+        enabled = (getenv("RUBY_DEBUG_PROFILE_DURING_ESCAPE") != NULL);
+    }
+    if (LIKELY(!enabled)) return;
+
+    VALUE debug_buff[128];
+    int debug_lines[128];
+    rb_profile_frames(0, 128, debug_buff, debug_lines);
+}
+
 static VALUE
 vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *const cfp)
 {
@@ -1083,6 +1111,8 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
     if (VM_ENV_ESCAPED_P(ep)) {
         return VM_ENV_ENVVAL(ep);
     }
+
+    vm_escape_debug_profile_frames();
 
     if (!VM_ENV_LOCAL_P(ep)) {
         const VALUE *prev_ep = VM_ENV_PREV_EP(ep);
@@ -1095,7 +1125,9 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
             }
 
             vm_make_env_each(ec, prev_cfp);
+            vm_escape_debug_profile_frames();
             VM_FORCE_WRITE_SPECIAL_CONST(&ep[VM_ENV_DATA_INDEX_SPECVAL], VM_GUARDED_PREV_EP(prev_cfp->ep));
+            vm_escape_debug_profile_frames();
         }
     }
     else {
@@ -1103,8 +1135,11 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
         VALUE block_handler = VM_ENV_BLOCK_HANDLER(ep);
 
         if (block_handler != VM_BLOCK_HANDLER_NONE) {
+            vm_escape_debug_profile_frames();
             VALUE blockprocval = vm_block_handler_escape(ec, block_handler);
+            vm_escape_debug_profile_frames();
             VM_STACK_ENV_WRITE(ep, VM_ENV_DATA_INDEX_SPECVAL, blockprocval);
+            vm_escape_debug_profile_frames();
         }
     }
 
@@ -1147,7 +1182,9 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
 
     // Careful with order in the following sequence. Each allocation can move objects.
     env_body = ALLOC_N(VALUE, env_size);
+    vm_escape_debug_profile_frames();
     rb_env_t *env = IMEMO_NEW(rb_env_t, imemo_env, 0);
+    vm_escape_debug_profile_frames();
 
     // Set up env without WB since it's brand new (similar to newobj_init(), newobj_fill())
     MEMCPY(env_body, ep - (local_size - 1 /* specval */), VALUE, local_size);
@@ -1159,10 +1196,16 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
     env->ep = env_ep;
     env->env = env_body;
     env->env_size = env_size;
+    vm_escape_debug_profile_frames();
 
     cfp->ep = env_ep;
+    vm_escape_debug_profile_frames();
+
     VM_ENV_FLAGS_SET(env_ep, VM_ENV_FLAG_ESCAPED | VM_ENV_FLAG_WB_REQUIRED);
+    vm_escape_debug_profile_frames();
+
     VM_STACK_ENV_WRITE(ep, 0, (VALUE)env);		/* GC mark */
+    vm_escape_debug_profile_frames();
 
 #if 0
     for (i = 0; i < local_size; i++) {
