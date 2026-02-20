@@ -816,7 +816,6 @@ struct heap_page {
     struct free_slot *freelist;
     struct free_slot *deferred_freelist;
     struct ccan_list_node page_node;
-    rb_nativethread_lock_t page_lock;
     rb_ractor_newobj_heap_cache_t *heap_cache;
 
     bits_t wb_unprotected_bits[HEAP_PAGE_BITMAP_LIMIT];
@@ -2107,7 +2106,6 @@ heap_page_allocate(rb_objspace_t *objspace)
 
     page->body = page_body;
     page_body->header.page = page;
-    rb_native_mutex_initialize(&page->page_lock);
 
     objspace->heap_pages.allocated_pages++;
 
@@ -10387,13 +10385,6 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
         rb_native_mutex_initialize(&objspace->sweep_lock);
         rb_native_cond_initialize(&objspace->sweep_cond);
         rb_gc_ractor_newobj_cache_foreach(gc_ractor_newobj_cache_clear, NULL);
-        for (int i = 0; i < HEAP_COUNT; i++) {
-            rb_heap_t *heap = &heaps[i];
-            struct heap_page *page;
-            ccan_list_for_each(&heap->pages, page, page_node) {
-                rb_native_mutex_initialize(&page->page_lock);
-            }
-        }
     }
     void fiber_pool_lock_reset(void);
     fiber_pool_lock_reset();
