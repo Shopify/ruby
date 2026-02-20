@@ -3805,6 +3805,7 @@ wait_for_background_sweeping_to_finish(rb_objspace_t *objspace)
     sweep_lock_unlock(&objspace->sweep_lock);
 }
 
+// dequeue MIN(left_to_deq, 10) objects from the deferred object list into `obj_buf`, returning the amount dequeued.
 static short
 deq_deferred_sweep_objects(rb_objspace_t *objspace, rb_heap_t *heap, VALUE obj_buf[10], short left_to_deq)
 {
@@ -3823,7 +3824,7 @@ deq_deferred_sweep_objects(rb_objspace_t *objspace, rb_heap_t *heap, VALUE obj_b
     return to_deq;
 }
 
-// Returns whether or not we put the slot back on the freelist
+// Free the object in a Ruby thread. Return whether or not we put the slot back on the page's freelist.
 static bool
 deferred_free(rb_objspace_t *objspace, VALUE obj)
 {
@@ -3845,13 +3846,14 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
     return result;
 }
 
+// Clear bits for the page that was swept by the background thread.
 static inline void
 gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page)
 {
     GC_ASSERT(sweep_page->heap == heap);
 
     uintptr_t p;
-    bits_t *bits, bitset;
+    bits_t *bits;
 
     gc_report(2, objspace, "post_page_sweep: start.\n");
 
@@ -3892,24 +3894,6 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
         }
     }
 
-    // Skip out of range slots at the head of the page
-    bitset = ~bits[0];
-    bitset >>= NUM_IN_PAGE(p);
-    bitset &= slot_mask;
-    if (bitset) {
-        /*gc_sweep_plane(objspace, heap, p, bitset, ctx);*/
-    }
-    p += (BITS_BITLENGTH - NUM_IN_PAGE(p)) * BASE_SLOT_SIZE;
-
-    for (int i = 1; i < bitmap_plane_count; i++) {
-        bitset = ~bits[i];
-        bitset &= slot_mask;
-        if (bitset) {
-            /*gc_sweep_plane(objspace, heap, p, bitset, ctx);*/
-        }
-        p += BITS_BITLENGTH * BASE_SLOT_SIZE;
-    }
-
     if (!heap->compact_cursor) {
         gc_setup_mark_bits(sweep_page);
     }
@@ -3918,9 +3902,10 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
         gc_finalize_deferred_register(objspace);
     }
 
-    gc_report(2, objspace, "page_sweep: end.\n");
+    gc_report(2, objspace, "post_page_sweep: end.\n");
 }
 
+// Sweep a page by the Ruby thread (synchronous freeing).
 static inline void
 gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context *ctx)
 {
@@ -4669,7 +4654,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         RUBY_DEBUG_LOG("sweep_page:%p", (void *)sweep_page);
 
         struct gc_sweep_context ctx = {
-            .page = sweep_page,
+            .page = sweep_page
         };
 
         if (free_in_user_thread_p) {
@@ -4712,7 +4697,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         }
         int free_slots = ctx.freed_slots + ctx.empty_slots;
         if (free_in_user_thread_p) {
-            GC_ASSERT(sweep_page->free_slots == free_slots); // gc_sweep_page() set sweep_page->free slots
+            GC_ASSERT(sweep_page->free_slots == free_slots); // gc_sweep_page() sets sweep_page->free slots
             GC_ASSERT(sweep_page->heap->total_freed_objects >= (unsigned long)ctx.freed_slots);
         } else {
             sweep_page->free_slots = free_slots;
