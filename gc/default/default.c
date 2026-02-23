@@ -493,6 +493,7 @@ typedef struct rb_heap_struct {
     size_t total_slots;      /* total slot count (about total_pages * HEAP_PAGE_OBJ_LIMIT) */
 
     deferred_sweep_data_t deferred_sweep_data;
+    bool done_incremental_sweep_step;
 } rb_heap_t;
 
 enum {
@@ -542,6 +543,7 @@ typedef struct rb_objspace {
         unsigned int during_incremental_marking : 1;
         unsigned int during_lazy_sweeping : 1;
         unsigned int use_background_sweep_thread: 1;
+        unsigned int sweep_rest: 1;
         unsigned int measure_gc : 1;
     } flags;
 
@@ -1039,7 +1041,7 @@ sweep_lock_set_unlocked(void)
     sweep_lock_owner = 0;
 }
 
-// Returns true when background sweep thread and main thread have finished processing
+// Returns true when the background sweep thread and Ruby thread have finished processing
 // (background sweeping + main thread post-processing) all pages for that heap.
 static bool
 heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
@@ -1066,6 +1068,7 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
     UNREACHABLE_RETURN(false);
 }
 
+// Is the GC still sweeping some pages?
 static bool
 has_sweeping_pages(rb_objspace_t *objspace)
 {
@@ -3134,6 +3137,7 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
         lev = run_final(objspace, zombie, lev);
         {
             GC_ASSERT(BUILTIN_TYPE(zombie) == T_ZOMBIE);
+            GC_ASSERT(!FL_TEST(zombie, FL_FINALIZE));
             ZOMBIE_SET_NEEDS_FREE_FLAG(zombie);
         }
         RB_GC_VM_UNLOCK(lev);
@@ -3735,6 +3739,9 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 heap_page_add_freeobj(objspace, sweep_page, vp);
                 break;
               case T_ZOMBIE:
+                if (ZOMBIE_NEEDS_FREE_P(vp)) {
+                    goto free_object;
+                }
                 /* already counted */
                 break;
               case T_NONE:
@@ -3742,6 +3749,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 break;
 
               default:
+              free_object:
 #if RGENGC_CHECK_MODE
                 if (!is_full_marking(objspace)) {
                     if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)p);
@@ -3773,7 +3781,9 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
                     rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
 
-                    rb_gc_obj_free_vm_weak_references(vp);
+                    if (BUILTIN_TYPE(vp) != T_ZOMBIE) {
+                        rb_gc_obj_free_vm_weak_references(vp);
+                    }
                     if (rb_gc_obj_free(objspace, vp)) {
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
                         heap_page_add_freeobj(objspace, sweep_page, vp);
@@ -4115,7 +4125,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     sweep_in_user_thread(objspace, page, vp, false);
                 }
                 else {
-                    // already counted
+                    // already counted as final_slot
                 }
                 break;
               case T_DATA: {
@@ -4238,19 +4248,6 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
     page->pre_final_slots += finals;
 }
 
-/*static void*/
-/*copy_deferred_swept_objects(void)*/
-/*{*/
-    /*rb_native_mutex_lock(&deferred_sweep_data.lock);*/
-    /*rb_darray_clear(&deferred_sweep_data.deferred_sweep_objects1);*/
-    /*VALUE *obj;*/
-    /*rb_darray_foreach(deferred_sweep_data.deferred_sweep_objects, i, obj) {*/
-        /*rb_darray_append_without_gc(&deferred_sweep_data.deferred_sweep_objects1, *obj);*/
-    /*}*/
-    /*rb_darray_clear(&deferred_sweep_data.deferred_sweep_objects);*/
-    /*rb_native_mutex_unlock(&deferred_sweep_data.lock);*/
-/*}*/
-
 static void
 gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
 {
@@ -4290,6 +4287,7 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     psweep_debug(1, "[sweep] gc_pre_sweep_page(heap:%p page:%p) done, deferred free:%d\n", heap, page, page->pre_deferred_free_slots);
 }
 
+// Perform incremental (lazy) sweep on a heap by the background sweep thread.
 static void
 gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 {
@@ -4311,6 +4309,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         sweep_lock_lock(&objspace->sweep_lock);
         sweep_page->pre_next = NULL;
         heap->pre_sweeping_page = NULL;
+
         // NOTE: heap->swept_pages needs to be in swept order for gc_sweep_step to work properly
         if (heap->swept_pages) {
             struct heap_page *last = heap->swept_pages;
@@ -4323,8 +4322,14 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             heap->swept_pages = sweep_page;
         }
         sweep_page->free_next = NULL;
-        // TODO: break out of this loop when combined with the user thread, we swept the right number of objects, then
-        // continue background sweeping at sweep exit
+
+        // TODO: what about `sweep_immediate`, should we just do the whole heap in that case?
+        if (!objspace->flags.sweep_rest && heap->done_incremental_sweep_step) {
+            psweep_debug(0, "gc_sweep_step_worker: broke out early for heap:%p\n", heap);
+            break;
+        }
+        // notify of newly swept page in case Ruby thread is waiting on us
+        rb_native_cond_broadcast(&objspace->sweep_cond);
     }
     // sweep_lock is acquired
 }
@@ -4351,8 +4356,11 @@ gc_sweep_thread_func(void *ptr)
         objspace->sweep_thread_sweeping = true;
 
         for (int i = 0; i < HEAP_COUNT; i++) {
-            psweep_debug(1, "[sweep] sweep heap %p\n", &heaps[i]);
-            gc_sweep_step_worker(objspace, &heaps[i]);
+            rb_heap_t *heap = &heaps[i];
+            heap->done_incremental_sweep_step = false;
+            psweep_debug(1, "[sweep] sweep heap %p\n", heap);
+            gc_sweep_step_worker(objspace, heap);
+            GC_ASSERT(heap->done_incremental_sweep_step || !heap->sweeping_page);
         }
         psweep_debug(1, "[sweep] /sweep_heaps\n");
 
@@ -4553,6 +4561,8 @@ gc_sweep_finish(rb_objspace_t *objspace)
 #endif
 }
 
+// Dequeue a page swept by the background thread. If `free_in_user_thread` is true, then
+// dequeue an unswept page to be swept by the Ruby thread.
 static struct heap_page *
 gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_user_thread)
 {
@@ -4573,6 +4583,8 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
     }
 
     sweep_lock_lock(&objspace->sweep_lock);
+    GC_ASSERT(objspace->flags.sweep_rest || !heap->done_incremental_sweep_step); // ruby thread sets `done_incremental_sweep_step`, not background thread
+    bool waited = false;
     while (1) {
         if (heap->swept_pages) { // grab the earliest page that the sweep thread swept (ie: it dequeues in swept order)
             page = heap->swept_pages;
@@ -4587,19 +4599,25 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
         }
 
         if ((!objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested) || !objspace->sweep_thread_running) {
-            psweep_debug(0, "[gc] dequeued nil page from heap(%p), end 2\n", heap);
+            psweep_debug(0, "[gc] dequeued nil page from heap(%p), end 2, sweeping:%d, requested:%d\n", heap,
+                         objspace->sweep_thread_sweeping, objspace->sweep_thread_sweep_requested);
             GC_ASSERT(!heap->pre_sweeping_page);
             break;
         }
 
         sweep_lock_set_unlocked();
         psweep_debug(0, "[gc] dequeue page from heap(%p) wait\n", heap);
-        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock); // wait until all heaps are pre-swept
+        // wait until we can grab a pre-swept page
+        rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
+        waited = true;
         psweep_debug(0, "[gc] dequeue page from heap(%p) wake\n", heap);
         sweep_lock_set_locked();
     }
     sweep_lock_unlock(&objspace->sweep_lock);
 
+    if (waited) {
+        GC_ASSERT(page);
+    }
     return page;
 }
 
@@ -4627,6 +4645,7 @@ merge_freelists(struct free_slot *a, struct free_slot *b)
     }
 }
 
+// Perform incremental (lazy) sweep on a heap.
 static int
 gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 {
@@ -4797,6 +4816,11 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
                 heap_add_freepage(heap, sweep_page, "gc_sweep_step");
                 swept_slots += free_slots;
                 if (swept_slots > GC_INCREMENTAL_SWEEP_SLOT_COUNT) {
+                    sweep_lock_lock(&objspace->sweep_lock);
+                    {
+                        heap->done_incremental_sweep_step = true;
+                    }
+                    sweep_lock_unlock(&objspace->sweep_lock);
                     psweep_debug(0, "[gc] gc_sweep_step got to SWEEP_SLOT_COUNT, break\n");
                     break;
                 }
@@ -4808,7 +4832,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
     }
 
     if (heap_is_sweep_done(objspace, heap)) {
-        psweep_debug(0, "[gc] gc_sweep_step heap:%p sweep done for heap\n", heap);
+        psweep_debug(0, "[gc] gc_sweep_step heap:%p sweep done\n", heap);
         gc_sweep_finish_heap(objspace, heap);
 
         if (!has_sweeping_pages(objspace)) {
@@ -4827,6 +4851,15 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 static void
 gc_sweep_rest(rb_objspace_t *objspace)
 {
+    // TODO: I think sweep background thread can still be running here?
+    sweep_lock_lock(&objspace->sweep_lock);
+    objspace->flags.sweep_rest = TRUE;
+    if (objspace->flags.use_background_sweep_thread && !objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested) {
+        objspace->sweep_thread_sweep_requested = true;
+        rb_native_cond_broadcast(&objspace->sweep_cond);
+    }
+    sweep_lock_unlock(&objspace->sweep_lock);
+
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
@@ -4834,6 +4867,7 @@ gc_sweep_rest(rb_objspace_t *objspace)
             gc_sweep_step(objspace, heap);
         }
     }
+    objspace->flags.sweep_rest = FALSE;
 }
 
 static void
@@ -4844,8 +4878,28 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
 
     gc_sweeping_enter(objspace, "gc_sweep_continue");
 
+    // TODO: Can previous background sweeping be still running? Check!
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
+        sweep_lock_lock(&objspace->sweep_lock);
+        if (objspace->flags.use_background_sweep_thread) {
+            GC_ASSERT(!objspace->sweep_thread_sweep_requested && !objspace->sweep_thread_sweeping);
+        }
+        heap->done_incremental_sweep_step = false;
+        sweep_lock_unlock(&objspace->sweep_lock);
+    }
+
+    if (objspace->flags.use_background_sweep_thread) {
+        psweep_debug(1, "[gc] gc_sweep_continue: requesting sweep thread\n");
+        sweep_lock_lock(&objspace->sweep_lock);
+        objspace->sweep_thread_sweep_requested = true;
+        rb_native_cond_broadcast(&objspace->sweep_cond);
+        sweep_lock_unlock(&objspace->sweep_lock);
+    }
+
+    for (int i = 0; i < HEAP_COUNT; i++) {
+        rb_heap_t *heap = &heaps[i];
+
         if (gc_sweep_step(objspace, heap)) {
             GC_ASSERT(heap->free_pages != NULL);
         }
@@ -5037,6 +5091,7 @@ gc_sweep(rb_objspace_t *objspace)
         /* Sweep every size pool. */
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
+            heap->done_incremental_sweep_step = false;
             gc_sweep_step(objspace, heap);
         }
     }
@@ -10474,6 +10529,7 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
         ccan_list_head_init(&heap->pages);
         rb_native_mutex_initialize(&heap->deferred_sweep_data.lock);
         rb_darray_make_without_gc(&heap->deferred_sweep_data.object_list, 0);
+        heap->done_incremental_sweep_step = false;
     }
 
     rb_darray_make_without_gc(&objspace->heap_pages.sorted, 0);

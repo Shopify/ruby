@@ -1308,7 +1308,8 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
       case T_MATCH:
         return true;
       case T_ZOMBIE:
-        return FL_TEST(obj, FL_FREEZE);
+        GC_ASSERT(FL_TEST(obj, FL_FREEZE));
+        return true;
     }
 
     shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
@@ -1375,6 +1376,7 @@ make_io_zombie(void *objspace, VALUE obj)
     rb_gc_impl_make_zombie(objspace, obj, io_fptr_finalize, fptr);
 }
 
+// Returns whether or not we can add `obj` back to the page's freelist.
 static bool
 rb_data_free(void *objspace, VALUE obj)
 {
@@ -1441,6 +1443,7 @@ classext_iclass_free(rb_classext_t *ext, bool is_prime, VALUE box_value, void *a
     rb_iclass_classext_free(args->klass, ext, is_prime);
 }
 
+// Returns whether or not we can add `obj` back to the page's freelist.
 bool
 rb_gc_obj_free(void *objspace, VALUE obj)
 {
@@ -1631,18 +1634,18 @@ rb_gc_obj_free(void *objspace, VALUE obj)
         break;
 
       case T_ZOMBIE:
-        if (FL_TEST(obj, FL_FREEZE)) {
-            GC_ASSERT(!FL_TEST(obj, FL_FINALIZE));
-            void rb_gc_impl_free_zombie(rb_objspace_t *, VALUE);
-        }
+        GC_ASSERT(FL_TEST(obj, FL_FREEZE));
+        GC_ASSERT(!FL_TEST(obj, FL_FINALIZE));
+        void rb_gc_impl_free_zombie(rb_objspace_t *, VALUE);
+        rb_gc_impl_free_zombie(objspace, obj);
         break;
-
       default:
         rb_bug("gc_sweep(): unknown data type 0x%x(%p) 0x%"PRIxVALUE,
                BUILTIN_TYPE(obj), (void*)obj, RBASIC(obj)->flags);
     }
 
     if (FL_TEST_RAW(obj, FL_FINALIZE)) {
+        GC_ASSERT(BUILTIN_TYPE(obj) !=  T_ZOMBIE);
         rb_gc_impl_make_zombie(objspace, obj, 0, 0);
         return FALSE;
     }
@@ -2786,7 +2789,14 @@ count_objects_i(VALUE obj, void *d)
     struct count_objects_data *data = (struct count_objects_data *)d;
 
     if (RBASIC(obj)->flags) {
-        data->counts[BUILTIN_TYPE(obj)]++;
+        // This will make sure the count is like the old behavior when we used to turn a zombie into
+        // T_NONE right after the finalizer and/or free function ran.
+        if (BUILTIN_TYPE(obj) == T_ZOMBIE && FL_TEST(obj, FL_FREEZE)) {
+            data->freed++;
+        }
+        else {
+            data->counts[BUILTIN_TYPE(obj)]++;
+        }
     }
     else {
         data->freed++;
