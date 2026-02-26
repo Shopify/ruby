@@ -151,7 +151,7 @@ rb_gc_vm_unlock(unsigned int lev, const char *file, int line)
     rb_vm_lock_leave(&lev, file, line);
 }
 
-static bool
+bool
 is_sweep_thread_p(void)
 {
     rb_vm_t *vm = GET_VM();
