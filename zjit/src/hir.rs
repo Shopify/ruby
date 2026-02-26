@@ -7,7 +7,7 @@
 #![allow(clippy::match_like_matches_macro)]
 use crate::{
     backend::lir::C_ARG_OPNDS,
-    cast::IntoUsize, codegen::local_idx_to_ep_offset, cruby::*, invariants::has_singleton_class_of, payload::{get_or_create_iseq_payload, IseqPayload}, options::{debug, get_option, DumpHIR}, state::ZJITState, json::Json
+    cast::IntoUsize, codegen::local_idx_to_ep_offset, cruby::*, invariants::has_singleton_class_method_shadowing, payload::{get_or_create_iseq_payload, IseqPayload}, options::{debug, get_option, DumpHIR}, state::ZJITState, json::Json
 };
 use std::{
     cell::RefCell, collections::{BTreeSet, HashMap, HashSet, VecDeque}, ffi::{c_void, c_uint, c_int, CStr}, fmt::Display, mem::{align_of, size_of}, ptr, slice::Iter
@@ -146,9 +146,9 @@ pub enum Invariant {
     NoEPEscape(IseqPtr),
     /// There is one ractor running. If a non-root ractor gets spawned, this is invalidated.
     SingleRactorMode,
-    /// Objects of this class have no singleton class.
-    /// When a singleton class is created for an object of this class, this is invalidated.
-    NoSingletonClass {
+    /// No singleton class of an instance of this class has a method that shadows a method
+    /// on this class. When such a shadowing method is defined, this is invalidated.
+    NoSingletonClassWithShadowingMethod {
         klass: VALUE,
     },
 }
@@ -284,9 +284,9 @@ impl<'a> std::fmt::Display for InvariantPrinter<'a> {
             Invariant::NoTracePoint => write!(f, "NoTracePoint"),
             Invariant::NoEPEscape(iseq) => write!(f, "NoEPEscape({})", &iseq_name(iseq)),
             Invariant::SingleRactorMode => write!(f, "SingleRactorMode"),
-            Invariant::NoSingletonClass { klass } => {
+            Invariant::NoSingletonClassWithShadowingMethod { klass } => {
                 let class_name = get_class_name(klass);
-                write!(f, "NoSingletonClass({}@{:p})",
+                write!(f, "NoSingletonClassWithShadowingMethod({}@{:p})",
                     class_name,
                     self.ptr_map.map_ptr(klass.as_ptr::<VALUE>()))
             }
@@ -660,9 +660,9 @@ pub enum SendFallbackReason {
     ComplexArgPass,
     /// Caller has keyword arguments but callee doesn't expect them; need to convert to hash.
     UnexpectedKeywordArgs,
-    /// A singleton class has been seen for the receiver class, so we skip the optimization
-    /// to avoid an invalidation loop.
-    SingletonClassSeen,
+    /// A singleton class with a shadowing method has been seen for the receiver class,
+    /// so we skip the optimization to avoid an invalidation loop.
+    SingletonClassWithShadowingMethodSeen,
     /// The super call is passed a block that the optimizer does not support.
     SuperCallWithBlock,
     /// When the `super` is in a block, finding the running CME for guarding requires a loop. Not
@@ -719,7 +719,7 @@ impl Display for SendFallbackReason {
             ArgcParamMismatch => write!(f, "Argument count does not match parameter count"),
             ComplexArgPass => write!(f, "Complex argument passing"),
             UnexpectedKeywordArgs => write!(f, "Unexpected Keyword Args"),
-            SingletonClassSeen => write!(f, "Singleton class previously created for receiver class"),
+            SingletonClassWithShadowingMethodSeen => write!(f, "Singleton class with shadowing method previously seen for receiver class"),
             SuperFromBlock => write!(f, "super: call from within a block"),
             SuperCallWithBlock => write!(f, "super: call made with a block"),
             SuperClassNotFound => write!(f, "super: profiled class cannot be found"),
@@ -2169,21 +2169,21 @@ impl Function {
         }
     }
 
-    /// Assume that objects of a given class will have no singleton class.
-    /// Returns true if safe to assume so and emits a PatchPoint.
-    /// Returns false if we've already seen a singleton class for this class,
-    /// to avoid an invalidation loop.
-    pub fn assume_no_singleton_classes(&mut self, block: BlockId, klass: VALUE, state: InsnId) -> bool {
+    /// Assume that no singleton class of an instance of a given class will have a method
+    /// that shadows a method on the class. Returns true if safe to assume so and emits a
+    /// PatchPoint. Returns false if we've already seen such shadowing, to avoid an
+    /// invalidation loop.
+    pub fn assume_no_singleton_class_method_shadowing(&mut self, block: BlockId, klass: VALUE, state: InsnId) -> bool {
         if !klass.instance_can_have_singleton_class() {
             // This class can never have a singleton class, so no patchpoint needed.
             return true;
         }
-        if has_singleton_class_of(klass) {
-            // We've seen a singleton class for this klass. Disable the optimization
-            // to avoid an invalidation loop.
+        if has_singleton_class_method_shadowing(klass) {
+            // We've seen a singleton class with a shadowing method for this klass.
+            // Disable the optimization to avoid an invalidation loop.
             return false;
         }
-        self.push_insn(block, Insn::PatchPoint { invariant: Invariant::NoSingletonClass { klass }, state });
+        self.push_insn(block, Insn::PatchPoint { invariant: Invariant::NoSingletonClassWithShadowingMethod { klass }, state });
         true
     }
 
@@ -2980,7 +2980,7 @@ impl Function {
             return false;
         }
         self.gen_patch_points_for_optimized_ccall(block, class, method_id, cme, state);
-        if !self.assume_no_singleton_classes(block, class, state) {
+        if !self.assume_no_singleton_class_method_shadowing(block, class, state) {
             return false;
         }
         true
@@ -3199,8 +3199,8 @@ impl Function {
                             }
 
                             // Check singleton class assumption first, before emitting other patchpoints
-                            if !self.assume_no_singleton_classes(block, klass, state) {
-                                self.set_dynamic_send_reason(insn_id, SingletonClassSeen);
+                            if !self.assume_no_singleton_class_method_shadowing(block, klass, state) {
+                                self.set_dynamic_send_reason(insn_id, SingletonClassWithShadowingMethodSeen);
                                 self.push_insn_id(block, insn_id); continue;
                             }
 
@@ -3243,8 +3243,8 @@ impl Function {
                                 self.push_insn_id(block, insn_id); continue;
                             }
                             // Check singleton class assumption first, before emitting other patchpoints
-                            if !self.assume_no_singleton_classes(block, klass, state) {
-                                self.set_dynamic_send_reason(insn_id, SingletonClassSeen);
+                            if !self.assume_no_singleton_class_method_shadowing(block, klass, state) {
+                                self.set_dynamic_send_reason(insn_id, SingletonClassWithShadowingMethodSeen);
                                 self.push_insn_id(block, insn_id); continue;
                             }
                             self.push_insn(block, Insn::PatchPoint { invariant: Invariant::MethodRedefined { klass, method: mid, cme }, state });
@@ -3267,8 +3267,8 @@ impl Function {
                                 self.push_insn_id(block, insn_id); continue;
                             }
                             // Check singleton class assumption first, before emitting other patchpoints
-                            if !self.assume_no_singleton_classes(block, klass, state) {
-                                self.set_dynamic_send_reason(insn_id, SingletonClassSeen);
+                            if !self.assume_no_singleton_class_method_shadowing(block, klass, state) {
+                                self.set_dynamic_send_reason(insn_id, SingletonClassWithShadowingMethodSeen);
                                 self.push_insn_id(block, insn_id); continue;
                             }
 
@@ -3305,8 +3305,8 @@ impl Function {
                                         self.push_insn_id(block, insn_id); continue;
                                     }
                                     // Check singleton class assumption first, before emitting other patchpoints
-                                    if !self.assume_no_singleton_classes(block, klass, state) {
-                                        self.set_dynamic_send_reason(insn_id, SingletonClassSeen);
+                                    if !self.assume_no_singleton_class_method_shadowing(block, klass, state) {
+                                        self.set_dynamic_send_reason(insn_id, SingletonClassWithShadowingMethodSeen);
                                         self.push_insn_id(block, insn_id); continue;
                                     }
                                     self.push_insn(block, Insn::PatchPoint { invariant: Invariant::MethodRedefined { klass, method: mid, cme }, state });
@@ -3340,8 +3340,8 @@ impl Function {
                                         self.push_insn_id(block, insn_id); continue;
                                     };
                                     // Check singleton class assumption first, before emitting other patchpoints
-                                    if !self.assume_no_singleton_classes(block, klass, state) {
-                                        self.set_dynamic_send_reason(insn_id, SingletonClassSeen);
+                                    if !self.assume_no_singleton_class_method_shadowing(block, klass, state) {
+                                        self.set_dynamic_send_reason(insn_id, SingletonClassWithShadowingMethodSeen);
                                         self.push_insn_id(block, insn_id); continue;
                                     }
                                     self.push_insn(block, Insn::PatchPoint { invariant: Invariant::MethodRedefined { klass, method: mid, cme }, state });
@@ -3416,7 +3416,7 @@ impl Function {
                         };
 
                         if recv_type.is_string() {
-                            self.push_insn(block, Insn::PatchPoint { invariant: Invariant::NoSingletonClass { klass: recv_type.class() }, state });
+                            self.push_insn(block, Insn::PatchPoint { invariant: Invariant::NoSingletonClassWithShadowingMethod { klass: recv_type.class() }, state });
                             let guard = self.push_insn(block, Insn::GuardType { val, guard_type: types::String, state });
                             // Infer type so AnyToString can fold off this
                             self.insn_types[guard.0] = self.infer_type(guard);
@@ -4133,8 +4133,8 @@ impl Function {
                     }
 
                     // Check singleton class assumption first, before emitting other patchpoints
-                    if !fun.assume_no_singleton_classes(block, recv_class, state) {
-                        fun.set_dynamic_send_reason(send_insn_id, SingletonClassSeen);
+                    if !fun.assume_no_singleton_class_method_shadowing(block, recv_class, state) {
+                        fun.set_dynamic_send_reason(send_insn_id, SingletonClassWithShadowingMethodSeen);
                         return Err(());
                     }
 
@@ -4172,8 +4172,8 @@ impl Function {
                     // func(int argc, VALUE *argv, VALUE recv)
 
                     // Check singleton class assumption first, before emitting other patchpoints
-                    if !fun.assume_no_singleton_classes(block, recv_class, state) {
-                        fun.set_dynamic_send_reason(send_insn_id, SingletonClassSeen);
+                    if !fun.assume_no_singleton_class_method_shadowing(block, recv_class, state) {
+                        fun.set_dynamic_send_reason(send_insn_id, SingletonClassWithShadowingMethodSeen);
                         return Err(());
                     }
 
@@ -4290,8 +4290,8 @@ impl Function {
                     }
 
                     // Check singleton class assumption first, before emitting other patchpoints
-                    if !fun.assume_no_singleton_classes(block, recv_class, state) {
-                        fun.set_dynamic_send_reason(send_insn_id, SingletonClassSeen);
+                    if !fun.assume_no_singleton_class_method_shadowing(block, recv_class, state) {
+                        fun.set_dynamic_send_reason(send_insn_id, SingletonClassWithShadowingMethodSeen);
                         return Err(());
                     }
 
@@ -4372,8 +4372,8 @@ impl Function {
                         return Err(());
                     } else {
                         // Check singleton class assumption first, before emitting other patchpoints
-                        if !fun.assume_no_singleton_classes(block, recv_class, state) {
-                            fun.set_dynamic_send_reason(send_insn_id, SingletonClassSeen);
+                        if !fun.assume_no_singleton_class_method_shadowing(block, recv_class, state) {
+                            fun.set_dynamic_send_reason(send_insn_id, SingletonClassWithShadowingMethodSeen);
                             return Err(());
                         }
 

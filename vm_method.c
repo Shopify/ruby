@@ -1500,6 +1500,15 @@ rb_method_entry_make(VALUE klass, ID mid, VALUE defined_class, rb_method_visibil
         check_override_opt_method(klass, (VALUE)mid);
     }
 
+    // If a method was added to a singleton class that shadows a method on
+    // the original class, invalidate JIT code that assumes no shadowing.
+    if (RCLASS_SINGLETON_P(orig_klass)) {
+        VALUE super_klass = RCLASS_SUPER(orig_klass);
+        if (rb_method_entry(super_klass, mid)) {
+            rb_zjit_invalidate_singleton_class_has_shadowing_method(super_klass);
+        }
+    }
+
     return me;
 }
 

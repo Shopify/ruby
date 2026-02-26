@@ -10,7 +10,7 @@ use std::slice;
 use crate::backend::current::ALLOC_REGS;
 use crate::invariants::{
     track_bop_assumption, track_cme_assumption, track_no_ep_escape_assumption, track_no_trace_point_assumption,
-    track_single_ractor_assumption, track_stable_constant_names_assumption, track_no_singleton_class_assumption
+    track_single_ractor_assumption, track_stable_constant_names_assumption, track_no_singleton_class_shadowing_assumption
 };
 use crate::gc::append_gc_offsets;
 use crate::payload::{get_or_create_iseq_payload, IseqCodePtrs, IseqVersion, IseqVersionRef, IseqStatus};
@@ -904,8 +904,8 @@ pub fn split_patch_point(asm: &mut Assembler, target: &Target, invariant: Invari
             Invariant::SingleRactorMode => {
                 track_single_ractor_assumption(code_ptr, side_exit_ptr, version);
             }
-            Invariant::NoSingletonClass { klass } => {
-                track_no_singleton_class_assumption(klass, code_ptr, side_exit_ptr, version);
+            Invariant::NoSingletonClassWithShadowingMethod { klass } => {
+                track_no_singleton_class_shadowing_assumption(klass, code_ptr, side_exit_ptr, version);
             }
         }
     });

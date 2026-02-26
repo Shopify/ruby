@@ -215,7 +215,7 @@ make_counters! {
         exit_patchpoint_no_tracepoint,
         exit_patchpoint_no_ep_escape,
         exit_patchpoint_single_ractor_mode,
-        exit_patchpoint_no_singleton_class,
+        exit_patchpoint_no_singleton_class_shadowing,
         exit_callee_side_exit,
         exit_obj_to_string_fallback,
         exit_interrupt,
@@ -259,7 +259,7 @@ make_counters! {
         // Caller has keyword arguments but callee doesn't expect them.
         send_fallback_unexpected_keyword_args,
         // Singleton class previously created for receiver class.
-        send_fallback_singleton_class_seen,
+        send_fallback_singleton_class_shadowing_seen,
         send_fallback_bmethod_non_iseq_proc,
         send_fallback_obj_to_string_not_string,
         send_fallback_send_cfunc_variadic,
@@ -597,8 +597,8 @@ pub fn side_exit_counter(reason: crate::hir::SideExitReason) -> Counter {
                                       => exit_patchpoint_no_ep_escape,
         PatchPoint(Invariant::SingleRactorMode)
                                       => exit_patchpoint_single_ractor_mode,
-        PatchPoint(Invariant::NoSingletonClass { .. })
-                                      => exit_patchpoint_no_singleton_class,
+        PatchPoint(Invariant::NoSingletonClassWithShadowingMethod { .. })
+                                      => exit_patchpoint_no_singleton_class_shadowing,
     }
 }
 
@@ -636,7 +636,7 @@ pub fn send_fallback_counter(reason: crate::hir::SendFallbackReason) -> Counter 
         SendCfuncArrayVariadic                    => send_fallback_send_cfunc_array_variadic,
         ComplexArgPass                            => send_fallback_one_or_more_complex_arg_pass,
         UnexpectedKeywordArgs                     => send_fallback_unexpected_keyword_args,
-        SingletonClassSeen                        => send_fallback_singleton_class_seen,
+        SingletonClassWithShadowingMethodSeen                        => send_fallback_singleton_class_shadowing_seen,
         ArgcParamMismatch                         => send_fallback_argc_param_mismatch,
         BmethodNonIseqProc                        => send_fallback_bmethod_non_iseq_proc,
         SendNotOptimizedMethodType(_)             => send_fallback_send_not_optimized_method_type,
