@@ -4543,6 +4543,27 @@ fn test_singleton_class_invalidation_optimized_variadic_ccall() {
 }
 
 #[test]
+fn test_singleton_class_shadowing_method_invalidation() {
+    // Profile String#length so it gets JIT-compiled, then define a singleton
+    // method that shadows it, then call and verify the singleton method is used.
+    assert_snapshot!(inspect("
+        def test(s)
+          s.length
+        end
+
+        results = []
+        results << test('asdf')
+
+        special = 'world'
+        def special.length = 99
+
+        results << test(special)
+        results << test('hello')
+        results
+    "), @"[4, 99, 5]");
+}
+
+#[test]
 fn test_is_a_string_special_case() {
     assert_snapshot!(inspect(r#"
         def test(x)

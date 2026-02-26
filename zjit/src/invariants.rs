@@ -93,9 +93,9 @@ pub struct Invariants {
     /// Set of patch points that assume that the interpreter is running with only one ractor
     single_ractor_patch_points: HashSet<PatchPoint>,
 
-    /// Map from a class to a set of patch points that assume objects of the class
-    /// will have no singleton class.
-    no_singleton_class_patch_points: HashMap<VALUE, HashSet<PatchPoint>>,
+    /// Map from a class to a set of patch points that assume no singleton class of an
+    /// instance of the class has a method that shadows a method on the class.
+    no_singleton_class_shadowing_patch_points: HashMap<VALUE, HashSet<PatchPoint>>,
 }
 
 impl Invariants {
@@ -104,7 +104,7 @@ impl Invariants {
         self.update_ep_escape_iseqs();
         self.update_no_ep_escape_iseq_patch_points();
         self.update_cme_patch_points();
-        self.update_no_singleton_class_patch_points();
+        self.update_no_singleton_class_shadowing_patch_points();
     }
 
     /// Forget an ISEQ when freeing it. We need to because a) if the address is reused, we'd be
@@ -125,7 +125,7 @@ impl Invariants {
 
     /// Forget a class when freeing it. See [Self::forget_iseq] for reasoning.
     pub fn forget_klass(&mut self, klass: VALUE) {
-        self.no_singleton_class_patch_points.remove(&klass);
+        self.no_singleton_class_shadowing_patch_points.remove(&klass);
     }
 
     /// Update ISEQ references in Invariants::ep_escape_iseqs
@@ -160,15 +160,15 @@ impl Invariants {
         self.cme_patch_points = updated_cme_patch_points;
     }
 
-    fn update_no_singleton_class_patch_points(&mut self) {
-        let updated_no_singleton_class_patch_points = std::mem::take(&mut self.no_singleton_class_patch_points)
+    fn update_no_singleton_class_shadowing_patch_points(&mut self) {
+        let updated_no_singleton_class_shadowing_patch_points = std::mem::take(&mut self.no_singleton_class_shadowing_patch_points)
             .into_iter()
             .map(|(klass, patch_points)| {
                 let new_klass = unsafe { rb_gc_location(klass) };
                 (new_klass, patch_points)
             })
             .collect();
-        self.no_singleton_class_patch_points = updated_no_singleton_class_patch_points;
+        self.no_singleton_class_shadowing_patch_points = updated_no_singleton_class_shadowing_patch_points;
     }
 }
 
@@ -301,15 +301,16 @@ pub fn track_stable_constant_names_assumption(
     }
 }
 
-/// Track a patch point for objects of a given class will have no singleton class.
-pub fn track_no_singleton_class_assumption(
+/// Track a patch point assuming no singleton class of an instance of a given class
+/// has a method that shadows a method on the class.
+pub fn track_no_singleton_class_shadowing_assumption(
     klass: VALUE,
     patch_point_ptr: CodePtr,
     side_exit_ptr: CodePtr,
     version: IseqVersionRef,
 ) {
     let invariants = ZJITState::get_invariants();
-    invariants.no_singleton_class_patch_points.entry(klass).or_default().insert(PatchPoint::new(
+    invariants.no_singleton_class_shadowing_patch_points.entry(klass).or_default().insert(PatchPoint::new(
         patch_point_ptr,
         side_exit_ptr,
         version,
@@ -439,39 +440,39 @@ pub extern "C" fn rb_zjit_tracing_invalidate_all() {
     });
 }
 
-/// Returns true if we've seen a singleton class of a given class since boot.
-/// This is used to avoid an invalidation loop where we repeatedly compile code
-/// that assumes no singleton class, only to have it invalidated.
-pub fn has_singleton_class_of(klass: VALUE) -> bool {
+/// Returns true if we've seen a singleton class with a shadowing method for a given class
+/// since boot. This is used to avoid an invalidation loop where we repeatedly compile code
+/// that assumes no shadowing, only to have it invalidated.
+pub fn has_singleton_class_method_shadowing(klass: VALUE) -> bool {
     ZJITState::get_invariants()
-        .no_singleton_class_patch_points
+        .no_singleton_class_shadowing_patch_points
         .get(&klass)
         .map_or(false, |patch_points| patch_points.is_empty())
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rb_zjit_invalidate_no_singleton_class(klass: VALUE) {
+pub extern "C" fn rb_zjit_invalidate_singleton_class_has_shadowing_method(klass: VALUE) {
     if !zjit_enabled_p() {
         return;
     }
 
     with_vm_lock(src_loc!(), || {
         let invariants = ZJITState::get_invariants();
-        match invariants.no_singleton_class_patch_points.get_mut(&klass) {
+        match invariants.no_singleton_class_shadowing_patch_points.get_mut(&klass) {
             Some(patch_points) => {
-                // Invalidate existing patch points and let has_singleton_class_of()
+                // Invalidate existing patch points and let has_singleton_class_method_shadowing()
                 // return true when they are compiled again
                 let patch_points = mem::take(patch_points);
                 if !patch_points.is_empty() {
                     let cb = ZJITState::get_code_block();
-                    debug!("Singleton class created for {:?}", klass);
-                    compile_patch_points!(cb, patch_points, "Singleton class created for {:?}", klass);
+                    debug!("Singleton class with shadowing method for {:?}", klass);
+                    compile_patch_points!(cb, patch_points, "Singleton class with shadowing method for {:?}", klass);
                     cb.mark_all_executable();
                 }
             }
             None => {
-                // Let has_singleton_class_of() return true for this class
-                invariants.no_singleton_class_patch_points.insert(klass, HashSet::new());
+                // Let has_singleton_class_method_shadowing() return true for this class
+                invariants.no_singleton_class_shadowing_patch_points.insert(klass, HashSet::new());
             }
         }
     });
