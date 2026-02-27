@@ -8664,6 +8664,71 @@ mod hir_opt_tests {
     }
 
     #[test]
+    fn test_optimize_array_rotate_bang_no_arg() {
+        eval("
+            def test = [1,2,3].rotate!
+            test
+        ");
+        assert_snapshot!(hir_string("test"), @r"
+        fn test@<compiled>:2:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          Jump bb3(v1)
+        bb2():
+          EntryPoint JIT(0)
+          v4:BasicObject = LoadArg :self@0
+          Jump bb3(v4)
+        bb3(v6:BasicObject):
+          PatchPoint MethodRedefined(Array@0x1000, rotate!@0x1008, cme:0x1010)
+          v11:ArrayExact = NewArray 1, 2, 3
+          v13:CUInt64 = LoadField v11, :_rbasic_flags@0x1018
+          v14:CUInt64 = GuardNoBitsSet v13, RUBY_FL_FREEZE=CUInt64(4)
+          v15:CUInt64 = LoadField v11, :_rbasic_flags@0x1018
+          v16:CUInt64 = GuardNoBitsSet v15, RUBY_ELTS_SHARED=CUInt64(4096)
+          v17:CInt64 = Const CInt64(1)
+          ArrayRotate v11, v17
+          IncrCounter inline_cfunc_optimized_send_count
+          CheckInterrupts
+          Return v11
+        ");
+    }
+
+    #[test]
+    fn test_optimize_array_rotate_bang_with_fixnum_arg() {
+        eval("
+            def test(n) = [1,2,3].rotate!(n)
+            test(2)
+        ");
+        assert_snapshot!(hir_string("test"), @r"
+        fn test@<compiled>:2:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          v2:BasicObject[VALUE(0x1000)] = LoadArg :n@0
+          Jump bb3(v1, v2)
+        bb2():
+          EntryPoint JIT(0)
+          v5:BasicObject = LoadArg :self@0
+          v6:BasicObject = LoadArg :n@0
+          Jump bb3(v5, v6)
+        bb3(v8:BasicObject, v9:BasicObject):
+          PatchPoint MethodRedefined(Array@0x1008, rotate!@0x1010, cme:0x1018)
+          v14:ArrayExact = NewArray 1, 2, 3
+          v16:Fixnum = GuardType v9, Fixnum
+          v17:CInt64 = UnboxFixnum v16
+          v18:CUInt64 = LoadField v14, :_rbasic_flags@0x1020
+          v19:CUInt64 = GuardNoBitsSet v18, RUBY_FL_FREEZE=CUInt64(4)
+          v20:CUInt64 = LoadField v14, :_rbasic_flags@0x1020
+          v21:CUInt64 = GuardNoBitsSet v20, RUBY_ELTS_SHARED=CUInt64(4096)
+          ArrayRotate v14, v17
+          IncrCounter inline_cfunc_optimized_send_count
+          CheckInterrupts
+          Return v14
+        ");
+    }
+
+    #[test]
     fn test_optimize_array_aref_with_array_subclass_and_fixnum() {
         eval("
             class ArefSubArray < Array

@@ -235,6 +235,7 @@ pub fn init() -> Annotations {
     annotate!(rb_cArray, "<<", inline_array_push);
     annotate!(rb_cArray, "push", inline_array_push);
     annotate!(rb_cArray, "pop", inline_array_pop);
+    annotate!(rb_cArray, "rotate!", inline_array_rotate_bang);
     annotate!(rb_cHash, "[]", inline_hash_aref);
     annotate!(rb_cHash, "[]=", inline_hash_aset);
     annotate!(rb_cHash, "size", types::Fixnum, no_gc, leaf, elidable);
@@ -404,6 +405,28 @@ fn inline_array_pop(fun: &mut hir::Function, block: hir::BlockId, recv: hir::Ins
     let recv = fun.coerce_to(block, recv, types::Array, state);
     fun.guard_not_shared(block, recv, state);
     Some(fun.push_insn(block, hir::Insn::ArrayPop { array: recv, state }))
+}
+
+fn inline_array_rotate_bang(fun: &mut hir::Function, block: hir::BlockId, recv: hir::InsnId, args: &[hir::InsnId], state: hir::InsnId) -> Option<hir::InsnId> {
+    let cnt = match args {
+        &[] => {
+            // Default rotation count is 1
+            fun.push_insn(block, hir::Insn::Const { val: hir::Const::CInt64(1) })
+        }
+        &[arg] => {
+            // Only inline if the argument is a Fixnum
+            if !fun.likely_a(arg, types::Fixnum, state) { return None; }
+            let arg = fun.coerce_to(block, arg, types::Fixnum, state);
+            fun.push_insn(block, hir::Insn::UnboxFixnum { val: arg })
+        }
+        _ => return None,
+    };
+    if !fun.likely_a(recv, types::Array, state) { return None; }
+    let recv = fun.coerce_to(block, recv, types::Array, state);
+    fun.guard_not_frozen(block, recv, state);
+    fun.guard_not_shared(block, recv, state);
+    fun.push_insn(block, hir::Insn::ArrayRotate { array: recv, cnt, state });
+    Some(recv)
 }
 
 fn inline_hash_aref(fun: &mut hir::Function, block: hir::BlockId, recv: hir::InsnId, args: &[hir::InsnId], state: hir::InsnId) -> Option<hir::InsnId> {

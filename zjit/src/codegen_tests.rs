@@ -2825,6 +2825,51 @@ fn test_array_pop_arg() {
 }
 
 #[test]
+fn test_array_rotate_bang_no_arg() {
+    assert_snapshot!(inspect("
+        def test(arr) = arr.rotate!
+        test([1, 2, 3])
+        test([1, 2, 3])
+    "), @"[2, 3, 1]");
+}
+
+#[test]
+fn test_array_rotate_bang_with_arg() {
+    assert_snapshot!(inspect("
+        def test(arr) = arr.rotate!(2)
+        test([1, 2, 3])
+        test([1, 2, 3])
+    "), @"[3, 1, 2]");
+}
+
+#[test]
+fn test_array_rotate_bang_negative() {
+    assert_snapshot!(inspect("
+        def test(arr) = arr.rotate!(-1)
+        test([1, 2, 3])
+        test([1, 2, 3])
+    "), @"[3, 1, 2]");
+}
+
+#[test]
+fn test_array_rotate_bang_frozen_raises() {
+    assert_snapshot!(inspect("
+        def test(arr) = arr.rotate!
+        test([1, 2, 3].freeze) rescue 'FrozenError'
+        test([1, 2, 3].freeze) rescue 'FrozenError'
+    "), @"\"FrozenError\"");
+}
+
+#[test]
+fn test_array_rotate_bang_empty() {
+    assert_snapshot!(inspect("
+        def test(arr) = arr.rotate!
+        test([])
+        test([])
+    "), @"[]");
+}
+
+#[test]
 fn test_new_range_inclusive() {
     assert_snapshot!(inspect("
         def test(a, b) = a..b

@@ -778,6 +778,8 @@ pub enum Insn {
     ArrayAref { array: InsnId, index: InsnId },
     ArrayAset { array: InsnId, index: InsnId, val: InsnId },
     ArrayPop { array: InsnId, state: InsnId },
+    /// Rotate `array` in place by `cnt` positions. `cnt` is a C `long` ([`types::CInt64`]).
+    ArrayRotate { array: InsnId, cnt: InsnId, state: InsnId },
     /// Return the length of the array as a C `long` ([`types::CInt64`])
     ArrayLength { array: InsnId },
 
@@ -1067,7 +1069,7 @@ impl Insn {
             | Insn::Entries { .. }
             | Insn::IfTrue { .. } | Insn::IfFalse { .. } | Insn::EntryPoint { .. } | Insn::Return { .. }
             | Insn::PatchPoint { .. } | Insn::SetIvar { .. } | Insn::SetClassVar { .. } | Insn::ArrayExtend { .. }
-            | Insn::ArrayPush { .. } | Insn::SideExit { .. } | Insn::SetGlobal { .. }
+            | Insn::ArrayPush { .. } | Insn::ArrayRotate { .. } | Insn::SideExit { .. } | Insn::SetGlobal { .. }
             | Insn::SetLocal { .. } | Insn::Throw { .. } | Insn::IncrCounter(_) | Insn::IncrCounterPtr { .. }
             | Insn::CheckInterrupts { .. }
             | Insn::StoreField { .. } | Insn::WriteBarrier { .. } | Insn::HashAset { .. }
@@ -1139,6 +1141,7 @@ impl Insn {
             Insn::ArrayAref { ..  } => effects::Any,
             Insn::ArrayAset { .. } => effects::Any,
             Insn::ArrayPop { ..  } => effects::Any,
+            Insn::ArrayRotate { .. } => effects::Any,
             Insn::ArrayLength { .. } => Effect::write(abstract_heaps::Empty),
             Insn::HashAref { .. } => effects::Any,
             Insn::HashAset { .. } => effects::Any,
@@ -1354,6 +1357,9 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
             }
             Insn::ArrayPop { array, .. } => {
                 write!(f, "ArrayPop {array}")
+            }
+            Insn::ArrayRotate { array, cnt, .. } => {
+                write!(f, "ArrayRotate {array}, {cnt}")
             }
             Insn::ArrayLength { array } => {
                 write!(f, "ArrayLength {array}")
@@ -2392,6 +2398,7 @@ impl Function {
             &ArrayAref { array, index } => ArrayAref { array: find!(array), index: find!(index) },
             &ArrayAset { array, index, val } => ArrayAset { array: find!(array), index: find!(index), val: find!(val) },
             &ArrayPop { array, state } => ArrayPop { array: find!(array), state: find!(state) },
+            &ArrayRotate { array, cnt, state } => ArrayRotate { array: find!(array), cnt: find!(cnt), state: find!(state) },
             &ArrayLength { array } => ArrayLength { array: find!(array) },
             &ArrayMax { ref elements, state } => ArrayMax { elements: find_vec!(elements), state: find!(state) },
             &ArrayInclude { ref elements, target, state } => ArrayInclude { elements: find_vec!(elements), target: find!(target), state: find!(state) },
@@ -2462,7 +2469,7 @@ impl Function {
             Insn::SetGlobal { .. } | Insn::Jump(_) | Insn::Entries { .. } | Insn::EntryPoint { .. }
             | Insn::IfTrue { .. } | Insn::IfFalse { .. } | Insn::Return { .. } | Insn::Throw { .. }
             | Insn::PatchPoint { .. } | Insn::SetIvar { .. } | Insn::SetClassVar { .. } | Insn::ArrayExtend { .. }
-            | Insn::ArrayPush { .. } | Insn::SideExit { .. } | Insn::SetLocal { .. }
+            | Insn::ArrayPush { .. } | Insn::ArrayRotate { .. } | Insn::SideExit { .. } | Insn::SetLocal { .. }
             | Insn::IncrCounter(_) | Insn::IncrCounterPtr { .. }
             | Insn::CheckInterrupts { .. }
             | Insn::StoreField { .. } | Insn::WriteBarrier { .. } | Insn::HashAset { .. } | Insn::ArrayAset { .. } =>
@@ -4846,6 +4853,11 @@ impl Function {
                 worklist.push_back(array);
                 worklist.push_back(state);
             }
+            &Insn::ArrayRotate { array, cnt, state } => {
+                worklist.push_back(array);
+                worklist.push_back(cnt);
+                worklist.push_back(state);
+            }
             &Insn::ArrayLength { array } => {
                 worklist.push_back(array);
             }
@@ -5676,6 +5688,10 @@ impl Function {
             | Insn::ArrayPop { array, .. }
             | Insn::ArrayLength { array, .. } => {
                 self.assert_subtype(insn_id, array, types::Array)
+            }
+            Insn::ArrayRotate { array, cnt, .. } => {
+                self.assert_subtype(insn_id, array, types::Array)?;
+                self.assert_subtype(insn_id, cnt, types::CInt64)
             }
             Insn::ArrayAref { array, index } => {
                 self.assert_subtype(insn_id, array, types::Array)?;
