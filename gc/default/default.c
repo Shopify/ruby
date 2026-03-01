@@ -112,7 +112,7 @@
 # define RUBY_DEBUG_LOG(...)
 #endif
 
-/*#define PSWEEP_DEBUG -2*/
+/*#define PSWEEP_DEBUG -6*/
 #if defined(PSWEEP_DEBUG)
 #define psweep_debug(lvl, ...) if (lvl <= PSWEEP_DEBUG) fprintf(stderr, __VA_ARGS__)
 #else
@@ -495,6 +495,7 @@ typedef struct rb_heap_struct {
 
     rb_serial_t foreground_sweep_steps;
     rb_serial_t background_sweep_steps;
+    size_t pre_swept_slots;
     rb_nativethread_cond_t sweep_page_cond;
     deferred_sweep_data_t deferred_sweep_data;
     bool is_finished_sweeping;
@@ -4419,6 +4420,18 @@ clear_pre_sweep_fields(struct heap_page *page)
     page->pre_final_slots = 0;
 }
 
+// add beginning of b to end of a
+static void
+merge_freelists(struct free_slot *a, struct free_slot *b)
+{
+    if (a && b) {
+        while (a->next) {
+            a = a->next;
+        }
+        a->next = b;
+    }
+}
+
 // Perform incremental (lazy) sweep on a heap by the background sweep thread.
 static void
 gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
@@ -4466,37 +4479,62 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         heap->pre_sweeping_page = NULL;
 
         if (objspace->background_sweep_mode && sweep_page->pre_deferred_free_slots == 0) {
-            int free_slots = sweep_page->pre_freed_slots + sweep_page->pre_empty_slots;
+            int pre_freed_slots = sweep_page->pre_freed_slots;
+            int pre_empty_slots = sweep_page->pre_empty_slots;
+            int free_slots = pre_freed_slots + pre_empty_slots;
             if (free_slots == sweep_page->total_slots) {
                 GC_ASSERT(sweep_page->total_slots > 0);
-                psweep_debug(-1, "[sweep] gc_sweep_step_worker: heap %ld adding to empty_pages:%p (empty:%d, freed:%d)\n",
-                    heap - heaps, sweep_page, sweep_page->pre_freed_slots, sweep_page->pre_empty_slots);
+                psweep_debug(-6, "[sweep] (bg) gc_sweep_step_worker: heap %ld adding to empty_pages:%p (pre_empty:%d, pre_freed:%d)\n",
+                    heap - heaps, sweep_page, sweep_page->pre_empty_slots, sweep_page->pre_freed_slots);
                 // We're guaranteed to stay in background mode during this (starting GC requires taking the
                 // sweep_lock to change sweep background mode to false)
                 GC_ASSERT(sweep_page->pre_final_slots == 0);
                 clear_pre_sweep_fields(sweep_page);
-                gc_post_sweep_page(objspace, heap, sweep_page); // clear metadata
+                gc_post_sweep_page(objspace, heap, sweep_page);
                 move_to_empty_pages(objspace, heap, sweep_page);
                 continue;
             }
-            // TODO: process pooled and free pages
-            /*else if (free_slots > 0) {*/
-                /*sweep_page->free_slots = free_slots;*/
-                /*sweep_page->final_slots = sweep_page->pre_final_slots;*/
-                /*sweep_page->heap->total_freed_objects += sweep_page->pre_freed_slots;*/
-                /*[>if (free_slots % 2 == 0) { // 1/2 the time we make a pooled page<]*/
-                    /*[>clear_pre_sweep_fields(sweep_page);<]*/
-                    /*[>gc_post_sweep_page(objspace, heap, sweep_page); // clear metadata<]*/
-                    /*[>heap_add_poolpage(objspace, heap, sweep_page);<]*/
-                    /*[>continue;<]*/
-                /*[>}<]*/
-                /*[>else {<]*/
-                    /*clear_pre_sweep_fields(sweep_page);*/
-                    /*gc_post_sweep_page(objspace, heap, sweep_page); // clear metadata*/
-                    /*heap_add_freepage(heap, sweep_page, "gc_sweep_step_worker");*/
-                    /*continue;*/
-                /*[>}<]*/
-            /*}*/
+            else if (free_slots > 0) {
+                // These are just for statistics, not used in calculations
+                heap->freed_slots += sweep_page->pre_freed_slots;
+                heap->empty_slots += sweep_page->pre_empty_slots;
+
+                sweep_page->free_slots = free_slots;
+                sweep_page->heap->total_freed_objects += sweep_page->pre_freed_slots;
+                clear_pre_sweep_fields(sweep_page);
+                gc_post_sweep_page(objspace, heap, sweep_page); // clear metadata (FIXME: not safe alongside gc write barriers)
+                if (sweep_page->deferred_freelist) {
+                    merge_freelists(sweep_page->deferred_freelist, sweep_page->freelist);
+                    sweep_page->freelist = sweep_page->deferred_freelist;
+                }
+                sweep_page->deferred_freelist = NULL;
+                if (heap->pre_swept_slots < GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT) {
+                    psweep_debug(-6, "[sweep] (bg) gc_sweep_step_worker: heap %ld adding to pooled pages:%p (pre_empty:%d, pre_freed:%d, pre_swept:%lu->%lu)\n",
+                                 heap - heaps, sweep_page, pre_empty_slots, pre_freed_slots, heap->pre_swept_slots,
+                                 heap->pre_swept_slots + free_slots);
+                    heap->pre_swept_slots += free_slots;
+                    heap_add_poolpage(objspace, heap, sweep_page);
+                    continue;
+                }
+                else {
+                    clear_pre_sweep_fields(sweep_page);
+                    gc_post_sweep_page(objspace, heap, sweep_page); // clear metadata (FIXME)
+                    psweep_debug(-6, "[sweep] (bg) gc_sweep_step_worker: heap %ld adding to free pages:%p (pre_empty:%d, pre_freed:%d, pre_swept:%lu->%lu)\n",
+                                 heap - heaps, sweep_page, pre_empty_slots, pre_freed_slots, heap->pre_swept_slots,
+                                 heap->pre_swept_slots + free_slots);
+                    heap_add_freepage(heap, sweep_page, "gc_sweep_step_worker");
+                    heap->pre_swept_slots += free_slots;
+                    if (heap->pre_swept_slots > (GC_INCREMENTAL_SWEEP_SLOT_COUNT + GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT)) {
+                        heap->pre_swept_slots = 0;
+                        break; // TODO: should we just do 1 incremental step's worth in background mode?
+                    }
+                    continue;
+                }
+            }
+            else {
+                // Don't even add to `swept_pages`, no further processing needed by ruby thread (no free slots)
+                continue;
+            }
         }
 
         // NOTE: heap->swept_pages needs to be in swept order for gc_sweep_step to work properly.
@@ -4601,6 +4639,7 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->swept_pages = NULL;
     heap->pooled_pages = NULL;
     heap->latest_swept_page = NULL;
+    heap->pre_swept_slots = 0;
 
     heap->pre_sweeping_page = NULL;
     heap->background_sweep_steps = heap->foreground_sweep_steps;
@@ -4873,18 +4912,6 @@ freelist_size(struct free_slot *slot))
     return size;
 }
 
-// add beginning of b to end of a
-static void
-merge_freelists(struct free_slot *a, struct free_slot *b)
-{
-    if (a && b) {
-        while (a->next) {
-            a = a->next;
-        }
-        a->next = b;
-    }
-}
-
 static inline bool
 is_last_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 {
@@ -4897,6 +4924,13 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap, bool check_initial_heap_
 {
     int swept_slots = 0;
     int pooled_slots = 0;
+    if (heap->pre_swept_slots >= GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT) {
+        swept_slots = heap->pre_swept_slots - GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT;
+    }
+    else if (heap->pre_swept_slots > 0) {
+        pooled_slots = heap->pre_swept_slots;
+    }
+    heap->pre_swept_slots = 0;
 
 #if VM_CHECK_MODE > 0
     sweep_lock_lock(&objspace->sweep_lock);
