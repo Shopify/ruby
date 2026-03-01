@@ -4517,8 +4517,6 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
                     continue;
                 }
                 else {
-                    clear_pre_sweep_fields(sweep_page);
-                    gc_post_sweep_page(objspace, heap, sweep_page); // clear metadata (FIXME)
                     psweep_debug(-6, "[sweep] (bg) gc_sweep_step_worker: heap %ld adding to free pages:%p (pre_empty:%d, pre_freed:%d, pre_swept:%lu->%lu)\n",
                                  heap - heaps, sweep_page, pre_empty_slots, pre_freed_slots, heap->pre_swept_slots,
                                  heap->pre_swept_slots + free_slots);
@@ -4526,7 +4524,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
                     heap->pre_swept_slots += free_slots;
                     if (heap->pre_swept_slots > (GC_INCREMENTAL_SWEEP_SLOT_COUNT + GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT)) {
                         heap->pre_swept_slots = 0;
-                        break; // TODO: should we just do 1 incremental step's worth in background mode?
+                        /*break;*/
                     }
                     continue;
                 }
