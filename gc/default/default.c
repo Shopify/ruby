@@ -119,6 +119,11 @@
 #define psweep_debug(...) (void)0
 #endif
 
+/* Define PSWEEP_LOCK_STATS to > 0 to enable lock contention statistics */
+#ifndef PSWEEP_LOCK_STATS
+#define PSWEEP_LOCK_STATS 0
+#endif
+
 #ifndef GC_HEAP_INIT_SLOTS
 #define GC_HEAP_INIT_SLOTS 10000
 #endif
@@ -1024,13 +1029,72 @@ gc_mode_verify(enum gc_mode mode)
     return mode;
 }
 
+#if PSWEEP_LOCK_STATS > 0
+/* Lock contention statistics */
+typedef struct lock_stats {
+    const char *name;
+    size_t acquired_without_contention;
+    size_t contended;
+} lock_stats_t;
+
+static lock_stats_t sweep_lock_stats = {"objspace->sweep_lock", 0, 0};
+static lock_stats_t swept_pages_lock_stats = {"heap->swept_pages_lock", 0, 0};
+static lock_stats_t deferred_sweep_data_lock_stats = {"heap->deferred_sweep_data.lock", 0, 0};
+
+static void
+instrumented_lock_acquire(rb_nativethread_lock_t *lock, lock_stats_t *stats)
+{
+    if (rb_native_mutex_trylock(lock) == 0) {
+        stats->acquired_without_contention++;
+    }
+    else {
+        stats->contended++;
+        rb_native_mutex_lock(lock);
+    }
+}
+
+static void
+print_lock_stats(void)
+{
+    fprintf(stderr, "\n=== Lock Contention Statistics ===\n");
+    fprintf(stderr, "%-35s %15s %15s %10s\n", "Lock Name", "Uncontended", "Contended", "Ratio");
+    fprintf(stderr, "%-35s %15s %15s %10s\n", "---------", "-----------", "---------", "-----");
+
+    lock_stats_t *stats[] = {&sweep_lock_stats, &swept_pages_lock_stats, &deferred_sweep_data_lock_stats};
+
+    for (int i = 0; i < 3; i++) {
+        size_t total = stats[i]->acquired_without_contention + stats[i]->contended;
+        if (total > 0) {
+            double ratio = (double)stats[i]->contended / total * 100.0;
+            fprintf(stderr, "%-35s %15zu %15zu %9.2f%%\n",
+                    stats[i]->name,
+                    stats[i]->acquired_without_contention,
+                    stats[i]->contended,
+                    ratio);
+        }
+        else {
+            fprintf(stderr, "%-35s %15zu %15zu %9s\n",
+                    stats[i]->name,
+                    stats[i]->acquired_without_contention,
+                    stats[i]->contended,
+                    "N/A");
+        }
+    }
+    fprintf(stderr, "==================================\n\n");
+}
+#endif /* PSWEEP_LOCK_STATS > 0 */
+
 static pthread_t sweep_lock_owner = 0;
 
 static inline void
 sweep_lock_lock(rb_nativethread_lock_t *sweep_lock)
 {
     GC_ASSERT(sweep_lock_owner != pthread_self());
+#if PSWEEP_LOCK_STATS > 0
+    instrumented_lock_acquire(sweep_lock, &sweep_lock_stats);
+#else
     rb_native_mutex_lock(sweep_lock);
+#endif
     GC_ASSERT(sweep_lock_owner == 0);
 #if VM_CHECK_MODE > 0
     sweep_lock_owner = pthread_self();
@@ -3912,7 +3976,11 @@ deq_deferred_sweep_objects(rb_objspace_t *objspace, rb_heap_t *heap, VALUE obj_b
     GC_ASSERT(left_to_deq > 0);
     short to_deq = 10;
     if (left_to_deq < 10) to_deq = left_to_deq;
+#if PSWEEP_LOCK_STATS > 0
+    instrumented_lock_acquire(&heap->deferred_sweep_data.lock, &deferred_sweep_data_lock_stats);
+#else
     rb_native_mutex_lock(&heap->deferred_sweep_data.lock);
+#endif
     {
         if ((size_t)to_deq > rb_darray_size(heap->deferred_sweep_data.object_list)) {
             psweep_debug(0, "Error: trying to deq %hi from object_list of size %lu\n", to_deq, rb_darray_size(heap->deferred_sweep_data.object_list));
@@ -4177,7 +4245,11 @@ static void
 sweep_in_ruby_thread(rb_objspace_t *objspace, struct heap_page *page, VALUE obj, bool nozombie)
 {
     rb_heap_t *heap = page->heap;
+#if PSWEEP_LOCK_STATS > 0
+    instrumented_lock_acquire(&heap->deferred_sweep_data.lock, &deferred_sweep_data_lock_stats);
+#else
     rb_native_mutex_lock(&heap->deferred_sweep_data.lock);
+#endif
     {
         page->pre_deferred_free_slots += 1;
         psweep_debug(1, "[sweep] register sweep later: page(%p), obj(%p) %s\n", (void*)page, (void*)obj, rb_obj_info(obj));
@@ -4550,7 +4622,11 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         }
 
 
+#if PSWEEP_LOCK_STATS > 0
+        instrumented_lock_acquire(&heap->swept_pages_lock, &swept_pages_lock_stats);
+#else
         rb_native_mutex_lock(&heap->swept_pages_lock);
+#endif
         {
             if (heap->swept_pages) {
                 // NOTE: heap->swept_pages needs to be in swept order for gc_sweep_step to work properly.
@@ -4625,7 +4701,7 @@ gc_sweep_thread_func(void *ptr)
                 psweep_debug(-2, "[sweep] abort: break before sweeping heap:%p (%d)\n", heap, i);
                 break;
             }
-            if (objspace->background_sweep_mode && objspace->background_sweep_restart_heaps && i > 0) {
+            if (objspace->background_sweep_mode && objspace->background_sweep_restart_heaps) {
                 objspace->background_sweep_restart_heaps = false;
                 psweep_debug(-2, "[sweep] restart heaps from 0 (at %d)\n", i);
                 goto restart_heaps;
@@ -4896,7 +4972,11 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
     struct heap_page *page = NULL;
 
     // Avoid taking the global sweep_lock if we can
+#if PSWEEP_LOCK_STATS > 0
+    instrumented_lock_acquire(&heap->swept_pages_lock, &swept_pages_lock_stats);
+#else
     rb_native_mutex_lock(&heap->swept_pages_lock);
+#endif
     {
         if (heap->swept_pages) {
             page = heap->swept_pages;
@@ -5206,10 +5286,10 @@ gc_sweep_rest(rb_objspace_t *objspace)
     }
     sweep_lock_unlock(&objspace->sweep_lock);
 
-    for (int i = 0; i < HEAP_COUNT; i++) {
+    // We go backwards because the sweep thread goes forwards, and we want to avoid lock contention
+    for (int i = HEAP_COUNT-1; i >= 0; i--) {
         rb_heap_t *heap = &heaps[i];
 
-        // NOTE: dangerous if heap_is_sweep_done isn't perfect!
         while (!heap_is_sweep_done(objspace, heap)) {
             psweep_debug(0, "[gc] gc_sweep_rest: gc_sweep_step heap:%p (heap %ld)\n", heap, heap - heaps);
             gc_sweep_step(objspace, heap, false);
@@ -5217,6 +5297,17 @@ gc_sweep_rest(rb_objspace_t *objspace)
         GC_ASSERT(heap->is_finished_sweeping);
         heap->background_sweep_steps = heap->foreground_sweep_steps;
     }
+
+    /*for (int i = 0; i < HEAP_COUNT; i++) {*/
+        /*rb_heap_t *heap = &heaps[i];*/
+
+        /*while (!heap_is_sweep_done(objspace, heap)) {*/
+            /*psweep_debug(0, "[gc] gc_sweep_rest: gc_sweep_step heap:%p (heap %ld)\n", heap, heap - heaps);*/
+            /*gc_sweep_step(objspace, heap, false);*/
+        /*}*/
+        /*GC_ASSERT(heap->is_finished_sweeping);*/
+        /*heap->background_sweep_steps = heap->foreground_sweep_steps;*/
+    /*}*/
     GC_ASSERT(!has_sweeping_pages(objspace));
     GC_ASSERT(gc_mode(objspace) == gc_mode_none);
 }
@@ -5244,8 +5335,10 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
                     if (heap->pre_swept_slots_deferred >= (GC_INCREMENTAL_SWEEP_SLOT_COUNT + GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT)) {
                         heap->skip_sweep_continue = true;
                     }
-                    else if (!heap->is_finished_sweeping && !heap->done_background_sweep) {
-                        num_heaps_need_continue++;
+                    else {
+                        if (!heap->is_finished_sweeping && !heap->done_background_sweep) {
+                            num_heaps_need_continue++;
+                        }
                         heap->skip_sweep_continue = false;
                     }
                     heap->pre_swept_slots_deferred = 0;
@@ -5300,7 +5393,6 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
             }
         }
     }
-
 
     gc_sweeping_exit(objspace);
 }
@@ -10745,6 +10837,11 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
 //        rb_bug("lazy sweeping underway when freeing object space");
 
     rb_gc_stop_background_threads(objspace, "objspace_free");
+
+#if PSWEEP_LOCK_STATS > 0
+    /* Print lock contention statistics before freeing */
+    print_lock_stats();
+#endif
 
     free(objspace->profile.records);
     objspace->profile.records = NULL;
