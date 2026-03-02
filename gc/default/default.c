@@ -5267,9 +5267,12 @@ background_sweep_done_p(rb_objspace_t *objspace)
     return objspace->heaps_done_background_sweep == HEAP_COUNT;
 }
 
+unsigned long long sweep_rest_count = 0;
+
 static void
 gc_sweep_rest(rb_objspace_t *objspace)
 {
+    sweep_rest_count++;
     sweep_lock_lock(&objspace->sweep_lock);
     {
         if (background_sweep_done_p(objspace)) {
@@ -5291,7 +5294,7 @@ gc_sweep_rest(rb_objspace_t *objspace)
     sweep_lock_unlock(&objspace->sweep_lock);
 
     // We go backwards because the sweep thread goes forwards, and we want to avoid lock contention
-    for (int i = HEAP_COUNT-1; i >= 0; i--) {
+    for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
         while (!heap_is_sweep_done(objspace, heap)) {
@@ -5316,6 +5319,8 @@ gc_sweep_rest(rb_objspace_t *objspace)
     GC_ASSERT(gc_mode(objspace) == gc_mode_none);
 }
 
+unsigned long long sweep_continue_count = 0;
+
 static void
 gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
 {
@@ -5323,6 +5328,8 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
     if (!GC_ENABLE_LAZY_SWEEP) return;
 
     psweep_debug(-2, "[gc] gc_sweep_continue\n");
+
+    sweep_continue_count++;
 
     gc_sweeping_enter(objspace, "gc_sweep_continue");
     sweep_lock_lock(&objspace->sweep_lock);
@@ -8144,6 +8151,8 @@ gc_marking_exit(rb_objspace_t *objspace)
     }
 }
 
+unsigned long long sweeping_enter_count = 0;
+
 static void
 gc_sweeping_enter(rb_objspace_t *objspace, const char *from_fn)
 {
@@ -8161,6 +8170,7 @@ gc_sweeping_enter(rb_objspace_t *objspace, const char *from_fn)
         gc_clock_start(&objspace->profile.sweeping_start_time);
     }
 
+    sweeping_enter_count++;
     /* Always track Ruby thread sweep time */
     gc_clock_start(&objspace->profile.ruby_thread_sweep_start_time);
 }
@@ -10858,6 +10868,9 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
         double ruby_thread_sweep_time_ms = (double)objspace->profile.ruby_thread_sweep_time_ns / 1000000.0;
         fprintf(stdout, "\nRuby Thread Sweep Time: %.3f ms (%.6f seconds)\n",
                 ruby_thread_sweep_time_ms, ruby_thread_sweep_time_ms / 1000.0);
+        fprintf(stdout, "\nSweeping enter count: %llu\n", sweeping_enter_count);
+        fprintf(stdout, "\nSweep continue count: %llu\n", sweep_continue_count);
+        fprintf(stdout, "\nSweep rest count: %llu\n", sweep_rest_count);
         fflush(stdout);
     }
 
