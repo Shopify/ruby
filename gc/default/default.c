@@ -652,6 +652,10 @@ typedef struct rb_objspace {
         unsigned long long sweeping_time_ns;
         struct timespec sweeping_start_time;
 
+        /* Ruby thread sweep time tracking (always collected) */
+        unsigned long long ruby_thread_sweep_time_ns;
+        struct timespec ruby_thread_sweep_start_time;
+
         /* Weak references */
         size_t weak_references_count;
     } profile;
@@ -8156,6 +8160,9 @@ gc_sweeping_enter(rb_objspace_t *objspace, const char *from_fn)
     if (MEASURE_GC) {
         gc_clock_start(&objspace->profile.sweeping_start_time);
     }
+
+    /* Always track Ruby thread sweep time */
+    gc_clock_start(&objspace->profile.ruby_thread_sweep_start_time);
 }
 
 static void
@@ -8199,6 +8206,9 @@ gc_sweeping_exit(rb_objspace_t *objspace)
     if (MEASURE_GC) {
         objspace->profile.sweeping_time_ns += gc_clock_end(&objspace->profile.sweeping_start_time);
     }
+
+    /* Always track Ruby thread sweep time */
+    objspace->profile.ruby_thread_sweep_time_ns += gc_clock_end(&objspace->profile.ruby_thread_sweep_start_time);
 }
 
 static void *
@@ -10842,6 +10852,14 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
     /* Print lock contention statistics before freeing */
     print_lock_stats();
 #endif
+
+    /* Print Ruby thread sweep time to stdout */
+    {
+        double ruby_thread_sweep_time_ms = (double)objspace->profile.ruby_thread_sweep_time_ns / 1000000.0;
+        fprintf(stdout, "\nRuby Thread Sweep Time: %.3f ms (%.6f seconds)\n",
+                ruby_thread_sweep_time_ms, ruby_thread_sweep_time_ms / 1000.0);
+        fflush(stdout);
+    }
 
     free(objspace->profile.records);
     objspace->profile.records = NULL;
