@@ -120,6 +120,7 @@
 #endif
 
 /* Define PSWEEP_LOCK_STATS to > 0 to enable lock contention statistics */
+#define PSWEEP_LOCK_STATS 1
 #ifndef PSWEEP_LOCK_STATS
 #define PSWEEP_LOCK_STATS 0
 #endif
@@ -5042,7 +5043,7 @@ is_last_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 
 // Perform incremental (lazy) sweep on a heap.
 static int
-gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap, bool check_initial_heap_done)
+gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     int swept_slots = 0;
     int pooled_slots = 0;
@@ -5060,7 +5061,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap, bool check_initial_heap_
     sweep_lock_unlock(&objspace->sweep_lock);
 #endif
 
-    if (check_initial_heap_done && heap_is_sweep_done(objspace, heap)) {
+    if (heap_is_sweep_done(objspace, heap)) {
         psweep_debug(0, "[gc] gc_sweep_step: heap %p (%ld) is heap_is_sweep_done() early!\n", heap, heap - heaps);
         GC_ASSERT(heap->sweeping_page == NULL);
         GC_ASSERT(heap->is_finished_sweeping);
@@ -5079,14 +5080,13 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap, bool check_initial_heap_
         bool dequeued_unswept_page = false;
         // NOTE: pages we dequeue from the sweep thread need to be AFTER the list of heap->free_pages so we don't free from pages
         // we've allocated from since sweep started.
-        struct heap_page *sweep_page = gc_sweep_dequeue_page(objspace, heap, free_in_user_thread_p, &dequeued_unswept_page);
-        if (!sweep_page) {
+        struct heap_page *sweep_page = gc_sweep_dequeue_page(objspace, heap, free_in_user_thread_p, &free_in_user_thread_p);
+        if (RB_UNLIKELY(!sweep_page)) {
             psweep_debug(-2, "[gc] gc_sweep_step heap:%p (%ld) deq() = nil, break\n", heap, heap - heaps);
             break;
         }
         if (dequeued_unswept_page) {
             psweep_debug(-2, "[gc] gc_sweep_step heap:%p (%ld) deq unswept page\n", heap, heap - heaps);
-            free_in_user_thread_p = true;
         }
         else {
             psweep_debug(-2, "[gc] gc_sweep_step heap:%p (%ld) deq preswept page\n", heap, heap - heaps);
@@ -5299,7 +5299,7 @@ gc_sweep_rest(rb_objspace_t *objspace)
 
         while (!heap_is_sweep_done(objspace, heap)) {
             psweep_debug(0, "[gc] gc_sweep_rest: gc_sweep_step heap:%p (heap %ld)\n", heap, heap - heaps);
-            gc_sweep_step(objspace, heap, false);
+            gc_sweep_step(objspace, heap);
         }
         GC_ASSERT(heap->is_finished_sweeping);
         heap->background_sweep_steps = heap->foreground_sweep_steps;
@@ -5376,7 +5376,7 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
-        if (gc_sweep_step(objspace, heap, true)) {
+        if (gc_sweep_step(objspace, heap)) {
             GC_ASSERT(heap->free_pages != NULL);
         }
         else if (heap == sweep_heap) {
@@ -5568,7 +5568,7 @@ gc_sweep(rb_objspace_t *objspace)
         /* Sweep every size pool. */
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
-            gc_sweep_step(objspace, heap, true);
+            gc_sweep_step(objspace, heap);
         }
     }
 
