@@ -1035,68 +1035,121 @@ gc_mode_verify(enum gc_mode mode)
 }
 
 #if PSWEEP_LOCK_STATS > 0
-/* Lock contention statistics */
-typedef struct lock_stats {
-    const char *name;
+/* Lock contention statistics per callsite */
+#define MAX_LOCK_CALLSITES 100
+
+typedef struct lock_callsite_stats {
+    const char *function;
+    int line;
     size_t acquired_without_contention;
     size_t contended;
+} lock_callsite_stats_t;
+
+typedef struct lock_stats {
+    const char *name;
+    lock_callsite_stats_t callsites[MAX_LOCK_CALLSITES];
+    int num_callsites;
 } lock_stats_t;
 
-static lock_stats_t sweep_lock_stats = {"objspace->sweep_lock", 0, 0};
-static lock_stats_t swept_pages_lock_stats = {"heap->swept_pages_lock", 0, 0};
-static lock_stats_t deferred_sweep_data_lock_stats = {"heap->deferred_sweep_data.lock", 0, 0};
+static lock_stats_t sweep_lock_stats = {"objspace->sweep_lock", {{0}}, 0};
+static lock_stats_t swept_pages_lock_stats = {"heap->swept_pages_lock", {{0}}, 0};
+static lock_stats_t deferred_sweep_data_lock_stats = {"heap->deferred_sweep_data.lock", {{0}}, 0};
+
+static lock_callsite_stats_t*
+find_or_create_callsite(lock_stats_t *stats, const char *function, int line)
+{
+    /* Find existing callsite */
+    for (int i = 0; i < stats->num_callsites; i++) {
+        if (stats->callsites[i].function == function && stats->callsites[i].line == line) {
+            return &stats->callsites[i];
+        }
+    }
+
+    /* Create new callsite if space available */
+    if (stats->num_callsites < MAX_LOCK_CALLSITES) {
+        lock_callsite_stats_t *callsite = &stats->callsites[stats->num_callsites++];
+        callsite->function = function;
+        callsite->line = line;
+        callsite->acquired_without_contention = 0;
+        callsite->contended = 0;
+        return callsite;
+    }
+
+    /* No space - return last callsite as overflow */
+    return &stats->callsites[MAX_LOCK_CALLSITES - 1];
+}
 
 static void
-instrumented_lock_acquire(rb_nativethread_lock_t *lock, lock_stats_t *stats)
+instrumented_lock_acquire_impl(rb_nativethread_lock_t *lock, lock_stats_t *stats, const char *function, int line)
 {
+    lock_callsite_stats_t *callsite = find_or_create_callsite(stats, function, line);
+
     if (rb_native_mutex_trylock(lock) == 0) {
-        stats->acquired_without_contention++;
+        callsite->acquired_without_contention++;
     }
     else {
-        stats->contended++;
+        callsite->contended++;
         rb_native_mutex_lock(lock);
     }
 }
 
+/* Macro to automatically pass function and line */
+#define instrumented_lock_acquire(lock, stats) \
+    instrumented_lock_acquire_impl(lock, stats, __FUNCTION__, __LINE__)
+
 static void
 print_lock_stats(void)
 {
-    fprintf(stderr, "\n=== Lock Contention Statistics ===\n");
-    fprintf(stderr, "%-35s %15s %15s %10s\n", "Lock Name", "Uncontended", "Contended", "Ratio");
-    fprintf(stderr, "%-35s %15s %15s %10s\n", "---------", "-----------", "---------", "-----");
+    fprintf(stderr, "\n=== Lock Contention Statistics by Callsite ===\n");
+    fprintf(stderr, "%-40s %-30s %12s %12s %10s\n", "Lock Name", "Callsite", "Uncontended", "Contended", "Ratio");
+    fprintf(stderr, "%-40s %-30s %12s %12s %10s\n", "---------", "--------", "-----------", "---------", "-----");
 
-    lock_stats_t *stats[] = {&sweep_lock_stats, &swept_pages_lock_stats, &deferred_sweep_data_lock_stats};
+    lock_stats_t *all_stats[] = {&sweep_lock_stats, &swept_pages_lock_stats, &deferred_sweep_data_lock_stats};
 
     for (int i = 0; i < 3; i++) {
-        size_t total = stats[i]->acquired_without_contention + stats[i]->contended;
-        if (total > 0) {
-            double ratio = (double)stats[i]->contended / total * 100.0;
-            fprintf(stderr, "%-35s %15zu %15zu %9.2f%%\n",
-                    stats[i]->name,
-                    stats[i]->acquired_without_contention,
-                    stats[i]->contended,
-                    ratio);
+        lock_stats_t *stats = all_stats[i];
+
+        /* Sort callsites by total contentions (descending) */
+        for (int j = 0; j < stats->num_callsites - 1; j++) {
+            for (int k = j + 1; k < stats->num_callsites; k++) {
+                if (stats->callsites[k].contended > stats->callsites[j].contended) {
+                    lock_callsite_stats_t temp = stats->callsites[j];
+                    stats->callsites[j] = stats->callsites[k];
+                    stats->callsites[k] = temp;
+                }
+            }
         }
-        else {
-            fprintf(stderr, "%-35s %15zu %15zu %9s\n",
-                    stats[i]->name,
-                    stats[i]->acquired_without_contention,
-                    stats[i]->contended,
-                    "N/A");
+
+        /* Print callsites for this lock */
+        for (int j = 0; j < stats->num_callsites; j++) {
+            lock_callsite_stats_t *cs = &stats->callsites[j];
+            size_t total = cs->acquired_without_contention + cs->contended;
+            if (total > 0) {
+                char callsite_buf[32];
+                snprintf(callsite_buf, sizeof(callsite_buf), "%s:%d", cs->function, cs->line);
+
+                double ratio = (double)cs->contended / total * 100.0;
+                fprintf(stderr, "%-40s %-30s %12zu %12zu %9.2f%%\n",
+                        j == 0 ? stats->name : "",
+                        callsite_buf,
+                        cs->acquired_without_contention,
+                        cs->contended,
+                        ratio);
+            }
         }
     }
-    fprintf(stderr, "==================================\n\n");
+    fprintf(stderr, "================================================\n\n");
 }
 #endif /* PSWEEP_LOCK_STATS > 0 */
 
 static pthread_t sweep_lock_owner = 0;
 
 static inline void
-sweep_lock_lock(rb_nativethread_lock_t *sweep_lock)
+sweep_lock_lock_impl(rb_nativethread_lock_t *sweep_lock, const char *function, int line)
 {
     GC_ASSERT(sweep_lock_owner != pthread_self());
 #if PSWEEP_LOCK_STATS > 0
-    instrumented_lock_acquire(sweep_lock, &sweep_lock_stats);
+    instrumented_lock_acquire_impl(sweep_lock, &sweep_lock_stats, function, line);
 #else
     rb_native_mutex_lock(sweep_lock);
 #endif
@@ -1105,6 +1158,9 @@ sweep_lock_lock(rb_nativethread_lock_t *sweep_lock)
     sweep_lock_owner = pthread_self();
 #endif
 }
+
+#define sweep_lock_lock(sweep_lock) \
+    sweep_lock_lock_impl(sweep_lock, __FUNCTION__, __LINE__)
 
 static inline void
 sweep_lock_unlock(rb_nativethread_lock_t *sweep_lock)
