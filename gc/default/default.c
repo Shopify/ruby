@@ -125,6 +125,8 @@
 #define PSWEEP_LOCK_STATS 0
 #endif
 
+#define PSWEEP_COLLECT_TIMINGS 1
+
 #ifndef GC_HEAP_INIT_SLOTS
 #define GC_HEAP_INIT_SLOTS 10000
 #endif
@@ -653,9 +655,13 @@ typedef struct rb_objspace {
         unsigned long long sweeping_time_ns;
         struct timespec sweeping_start_time;
 
+#if PSWEEP_COLLECT_TIMINGS > 0
         /* Ruby thread sweep time tracking (always collected) */
-        unsigned long long ruby_thread_sweep_time_ns;
-        struct timespec ruby_thread_sweep_start_time;
+        unsigned long long ruby_thread_sweep_cpu_time_ns;
+        unsigned long long ruby_thread_sweep_wall_time_ns;
+        struct timespec ruby_thread_sweep_cpu_start_time;
+        struct timespec ruby_thread_sweep_wall_start_time;
+#endif
 
         /* Weak references */
         size_t weak_references_count;
@@ -8138,6 +8144,30 @@ gc_clock_end(struct timespec *ts)
     return 0;
 }
 
+#if PSWEEP_COLLECT_TIMINGS > 0
+/* Wall time clock functions using CLOCK_MONOTONIC */
+static void
+gc_wall_clock_start(struct timespec *ts)
+{
+    if (clock_gettime(CLOCK_MONOTONIC, ts) != 0) {
+        ts->tv_sec = 0;
+        ts->tv_nsec = 0;
+    }
+}
+
+static unsigned long long
+gc_wall_clock_end(struct timespec *ts)
+{
+    struct timespec end_time;
+
+    if ((ts->tv_sec > 0 || ts->tv_nsec > 0) &&
+            clock_gettime(CLOCK_MONOTONIC, &end_time) == 0) {
+        return (unsigned long long)(end_time.tv_sec - ts->tv_sec) * (1000 * 1000 * 1000) + (end_time.tv_nsec - ts->tv_nsec);
+    }
+    return 0;
+}
+#endif
+
 static inline void
 gc_enter(rb_objspace_t *objspace, enum gc_enter_event event, unsigned int *lock_lev)
 {
@@ -8228,7 +8258,10 @@ gc_sweeping_enter(rb_objspace_t *objspace, const char *from_fn)
 
     sweeping_enter_count++;
     /* Always track Ruby thread sweep time */
-    gc_clock_start(&objspace->profile.ruby_thread_sweep_start_time);
+#if PSWEEP_COLLECT_TIMINGS > 0
+    gc_clock_start(&objspace->profile.ruby_thread_sweep_cpu_start_time);
+    gc_wall_clock_start(&objspace->profile.ruby_thread_sweep_wall_start_time);
+#endif
 }
 
 static void
@@ -8274,7 +8307,10 @@ gc_sweeping_exit(rb_objspace_t *objspace)
     }
 
     /* Always track Ruby thread sweep time */
-    objspace->profile.ruby_thread_sweep_time_ns += gc_clock_end(&objspace->profile.ruby_thread_sweep_start_time);
+#if PSWEEP_COLLECT_TIMINGS > 0
+    objspace->profile.ruby_thread_sweep_cpu_time_ns += gc_clock_end(&objspace->profile.ruby_thread_sweep_cpu_start_time);
+    objspace->profile.ruby_thread_sweep_wall_time_ns += gc_wall_clock_end(&objspace->profile.ruby_thread_sweep_wall_start_time);
+#endif
 }
 
 static void *
@@ -10919,16 +10955,16 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
     print_lock_stats();
 #endif
 
+#if PSWEEP_COLLECT_TIMINGS > 0
     /* Print Ruby thread sweep time to stdout */
-    {
-        double ruby_thread_sweep_time_ms = (double)objspace->profile.ruby_thread_sweep_time_ns / 1000000.0;
-        fprintf(stdout, "\nRuby Thread Sweep Time: %.3f ms (%.6f seconds)\n",
-                ruby_thread_sweep_time_ms, ruby_thread_sweep_time_ms / 1000.0);
-        fprintf(stdout, "\nSweeping enter count: %llu\n", sweeping_enter_count);
-        fprintf(stdout, "\nSweep continue count: %llu\n", sweep_continue_count);
-        fprintf(stdout, "\nSweep rest count: %llu\n", sweep_rest_count);
-        fflush(stdout);
-    }
+    double ruby_thread_sweep_cpu_time_ms = (double)(objspace->profile.ruby_thread_sweep_cpu_time_ns) / 1000000.0;
+    double ruby_thread_sweep_wall_time_ms = ((double)objspace->profile.ruby_thread_sweep_wall_time_ns) / 1000000.0;
+    fprintf(stderr, "\nSweep Time (CPU): %.3f ms (%.6f seconds)\n", ruby_thread_sweep_cpu_time_ms, ruby_thread_sweep_cpu_time_ms / 1000.0);
+    fprintf(stderr, "\nSweep Time (Wall): %.3f ms (%.6f seconds)\n", ruby_thread_sweep_wall_time_ms, ruby_thread_sweep_wall_time_ms / 1000.0);
+    fprintf(stderr, "\nSweeping enter count: %llu\n", sweeping_enter_count);
+    fprintf(stderr, "\nSweep continue count: %llu\n", sweep_continue_count);
+    fprintf(stderr, "\nSweep rest count: %llu\n", sweep_rest_count);
+#endif
 
     free(objspace->profile.records);
     objspace->profile.records = NULL;
