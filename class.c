@@ -363,6 +363,9 @@ duplicate_classext_subclasses(rb_classext_t *orig, rb_classext_t *copy)
                 first = cdr;
                 st_insert(tbl, box_id, (st_data_t)first);
             }
+            if (box_subclasses->klass_to_entry) {
+                st_insert(box_subclasses->klass_to_entry, (st_data_t)cdr->klass, (st_data_t)cdr);
+            }
             cur = cdr;
             entry = entry->next;
         }
@@ -591,6 +594,10 @@ push_subclass_entry_to_list(VALUE super, VALUE klass, bool is_module)
         head->next = entry;
         entry->prev = head;
         st_insert(tbl, box_subclasses_tbl_key(box), (st_data_t)entry);
+        if (!box_subclasses->klass_to_entry) {
+            box_subclasses->klass_to_entry = st_init_numtable();
+        }
+        st_insert(box_subclasses->klass_to_entry, (st_data_t)klass, (st_data_t)entry);
     }
 
     if (is_module) {
@@ -635,6 +642,31 @@ remove_class_from_subclasses_replace_first_entry(st_data_t *key, st_data_t *valu
 }
 
 static void
+remove_subclass_entry_direct(struct st_table *tbl, VALUE box_id, rb_subclass_entry_t *entry)
+{
+    rb_subclass_entry_t *prev = entry->prev, *next = entry->next;
+
+    if (prev) {
+        prev->next = next;
+    }
+    if (next) {
+        next->prev = prev;
+    }
+
+    st_data_t value;
+    if (st_lookup(tbl, box_id, &value) && (rb_subclass_entry_t *)value == entry) {
+        if (next) {
+            st_update(tbl, box_id, remove_class_from_subclasses_replace_first_entry, (st_data_t)next);
+        }
+        else {
+            st_delete(tbl, &box_id, NULL);
+        }
+    }
+
+    SIZED_FREE(entry);
+}
+
+static void
 remove_class_from_subclasses(struct st_table *tbl, VALUE box_id, VALUE klass)
 {
     rb_subclass_entry_t *entry = class_get_subclasses_for_ns(tbl, box_id);
@@ -671,6 +703,19 @@ remove_class_from_subclasses(struct st_table *tbl, VALUE box_id, VALUE klass)
     }
 }
 
+static void
+remove_class_from_box_subclasses(rb_box_subclasses_t *box_subclasses, VALUE box_id, VALUE klass)
+{
+    st_data_t entry_data;
+    if (box_subclasses->klass_to_entry &&
+        st_delete(box_subclasses->klass_to_entry, &(st_data_t){(st_data_t)klass}, &entry_data)) {
+        remove_subclass_entry_direct(box_subclasses->tbl, box_id, (rb_subclass_entry_t *)entry_data);
+    }
+    else {
+        remove_class_from_subclasses(box_subclasses->tbl, box_id, klass);
+    }
+}
+
 void
 rb_class_remove_from_super_subclasses(VALUE klass)
 {
@@ -678,7 +723,7 @@ rb_class_remove_from_super_subclasses(VALUE klass)
     rb_box_subclasses_t *box_subclasses = RCLASSEXT_BOX_SUPER_SUBCLASSES(ext);
 
     if (!box_subclasses) return;
-    remove_class_from_subclasses(box_subclasses->tbl, box_subclasses_tbl_key(RCLASSEXT_BOX(ext)), klass);
+    remove_class_from_box_subclasses(box_subclasses, box_subclasses_tbl_key(RCLASSEXT_BOX(ext)), klass);
     rb_box_subclasses_ref_dec(box_subclasses);
     RCLASSEXT_BOX_SUPER_SUBCLASSES(ext) = 0;
 }
@@ -700,17 +745,20 @@ rb_class_classext_free_subclasses(rb_classext_t *ext, VALUE klass, bool replacin
         rb_box_subclasses_ref_count(anchor->box_subclasses) > 0,
         "box_subclasses refcount (%p) %ld", anchor->box_subclasses, rb_box_subclasses_ref_count(anchor->box_subclasses));
     st_delete(tbl, &box_id, NULL);
+    if (anchor->box_subclasses->klass_to_entry) {
+        st_clear(anchor->box_subclasses->klass_to_entry);
+    }
     rb_box_subclasses_ref_dec(anchor->box_subclasses);
     SIZED_FREE(anchor);
 
     if (RCLASSEXT_BOX_SUPER_SUBCLASSES(ext)) {
         rb_box_subclasses_t *box_sub = RCLASSEXT_BOX_SUPER_SUBCLASSES(ext);
-        if (!replacing) remove_class_from_subclasses(box_sub->tbl, box_id, klass);
+        if (!replacing) remove_class_from_box_subclasses(box_sub, box_id, klass);
         rb_box_subclasses_ref_dec(box_sub);
     }
     if (RCLASSEXT_BOX_MODULE_SUBCLASSES(ext)) {
         rb_box_subclasses_t *box_sub = RCLASSEXT_BOX_MODULE_SUBCLASSES(ext);
-        if (!replacing) remove_class_from_subclasses(box_sub->tbl, box_id, klass);
+        if (!replacing) remove_class_from_box_subclasses(box_sub, box_id, klass);
         rb_box_subclasses_ref_dec(box_sub);
     }
 }

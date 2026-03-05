@@ -30,6 +30,7 @@
 struct rb_box_subclasses {
     long refcount;
     struct st_table *tbl;
+    struct st_table *klass_to_entry;
 };
 typedef struct rb_box_subclasses rb_box_subclasses_t;
 
@@ -52,6 +53,7 @@ rb_box_subclasses_ref_dec(rb_box_subclasses_t *box_sub)
     box_sub->refcount--;
     if (box_sub->refcount == 0) {
         st_free_table(box_sub->tbl);
+        if (box_sub->klass_to_entry) st_free_table(box_sub->klass_to_entry);
         xfree(box_sub);
     }
 }
