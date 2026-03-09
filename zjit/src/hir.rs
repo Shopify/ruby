@@ -5211,36 +5211,39 @@ impl Function {
             // Middle column: After (incrementally built with resolved operands)
             frames.push_str("<td valign=\"top\"><b>After</b>\n<table>\n");
             for (j, line) in orig_lines.iter().enumerate() {
-                match line {
-                    OrigLine::Block(_, _) => {
-                        match &step.after_texts[j] {
-                            Some(header) => frames.push_str(&format!(
-                                "<tr><td><b>{}</b></td></tr>\n", html_escape(header))),
-                            None => frames.push_str("<tr><td>&nbsp;</td></tr>\n"),
+                let (orig_text, is_block) = match line {
+                    OrigLine::Block(_, h) => (h.as_str(), true),
+                    OrigLine::Insn(_, t) => (t.as_str(), false),
+                };
+                match &step.after_texts[j] {
+                    None => {
+                        // Not yet processed: render original text invisibly to reserve width
+                        if is_block {
+                            frames.push_str(&format!(
+                                "<tr><td style=\"visibility:hidden\"><b>{}</b></td></tr>\n", html_escape(orig_text)));
+                        } else {
+                            frames.push_str(&format!(
+                                "<tr><td style=\"visibility:hidden\">{}</td></tr>\n", html_escape(orig_text)));
                         }
                     }
-                    OrigLine::Insn(_, _) => {
-                        match &step.after_texts[j] {
-                            Some(text) if text.is_empty() => {
-                                // Deleted instruction: empty line
-                                frames.push_str("<tr><td>&nbsp;</td></tr>\n");
-                            }
-                            Some(text) if text.starts_with("  \u{2192}") => {
-                                // Forwarded load: show in gray
-                                frames.push_str(&format!(
-                                    "<tr><td><i style=\"color:gray\">{}</i></td></tr>\n",
-                                    html_escape(text)));
-                            }
-                            Some(text) => {
-                                // Kept instruction with resolved operands
-                                frames.push_str(&format!(
-                                    "<tr><td>{}</td></tr>\n", html_escape(text)));
-                            }
-                            None => {
-                                // Not yet processed
-                                frames.push_str("<tr><td>&nbsp;</td></tr>\n");
-                            }
-                        }
+                    Some(text) if is_block => {
+                        frames.push_str(&format!(
+                            "<tr><td><b>{}</b></td></tr>\n", html_escape(text)));
+                    }
+                    Some(text) if text.is_empty() => {
+                        // Deleted instruction: empty line
+                        frames.push_str("<tr><td>&nbsp;</td></tr>\n");
+                    }
+                    Some(text) if text.starts_with("  \u{2192}") => {
+                        // Forwarded load: show in gray
+                        frames.push_str(&format!(
+                            "<tr><td><i style=\"color:gray\">{}</i></td></tr>\n",
+                            html_escape(text)));
+                    }
+                    Some(text) => {
+                        // Kept instruction with resolved operands
+                        frames.push_str(&format!(
+                            "<tr><td>{}</td></tr>\n", html_escape(text)));
                     }
                 }
             }
