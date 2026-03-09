@@ -4918,32 +4918,177 @@ impl Function {
     }
 
     fn optimize_load_store(&mut self) {
+        let ptr_map = PtrPrintMap::identity();
+
+        // Capture original IR lines before the pass mutates anything
+        enum OrigLine { Block(BlockId, String), Insn(InsnId, String) }
+        let mut orig_lines: Vec<OrigLine> = vec![];
+        let mut block_header_idx: HashMap<BlockId, usize> = HashMap::new();
+        for &block_id in &self.rpo() {
+            if block_id == self.entries_block { continue; }
+            let mut header = format!("{block_id}(");
+            for (i, param) in self.blocks[block_id.0].params.iter().enumerate() {
+                if i > 0 { header.push_str(", "); }
+                header.push_str(&format!("{param}"));
+                if self.insns[param.0].has_output() {
+                    let ty = self.type_of(*param);
+                    if !ty.is_subtype(types::Empty) {
+                        header.push_str(&format!(":{}", ty.print(&ptr_map)));
+                    }
+                }
+            }
+            header.push_str("):");
+            block_header_idx.insert(block_id, orig_lines.len());
+            orig_lines.push(OrigLine::Block(block_id, header));
+            for &insn_id in &self.blocks[block_id.0].insns {
+                let insn = &self.insns[insn_id.0];
+                if matches!(insn, Insn::Snapshot {..} | Insn::PatchPoint { invariant: Invariant::NoTracePoint, .. }) {
+                    continue;
+                }
+                let mut text = String::from("  ");
+                if insn.has_output() {
+                    let ty = self.insn_types[insn_id.0];
+                    if ty.is_subtype(types::Empty) {
+                        text.push_str(&format!("{insn_id} = "));
+                    } else {
+                        text.push_str(&format!("{insn_id}:{} = ", ty.print(&ptr_map)));
+                    }
+                }
+                text.push_str(&format!("{}", insn.print(&ptr_map, Some(self.iseq))));
+                orig_lines.push(OrigLine::Insn(insn_id, text));
+            }
+        }
+
+        // Trace step data
+        struct Step {
+            cursor: InsnId,
+            action: String,
+            after_texts: Vec<Option<String>>, // parallel to orig_lines: None=not yet, Some=processed
+            heap: Vec<((InsnId, i32), InsnId)>,
+        }
+        let mut steps: Vec<Step> = vec![];
+        let mut offset_names: HashMap<i32, String> = HashMap::new();
+
+        // Build index from InsnId -> position in orig_lines
+        let mut insn_to_orig_idx: HashMap<InsnId, usize> = HashMap::new();
+        for (i, line) in orig_lines.iter().enumerate() {
+            if let OrigLine::Insn(id, _) = line {
+                insn_to_orig_idx.insert(*id, i);
+            }
+        }
+
+        // Parallel to orig_lines: None = not yet processed, Some(text) = processed
+        // Block headers are set to Some when their first instruction is reached
+        let mut after_texts: Vec<Option<String>> = vec![None; orig_lines.len()];
+
+        // Track which block headers have been revealed
+        let mut revealed_block_headers: HashSet<BlockId> = HashSet::new();
+
+        fn fmt_offset(offset: i32) -> String {
+            if offset < 0 { format!("-{:#x}", -offset) } else { format!("{:#x}", offset) }
+        }
+
+        fn sorted_heap(heap: &HashMap<(InsnId, i32), InsnId>) -> Vec<((InsnId, i32), InsnId)> {
+            let mut entries: Vec<_> = heap.iter().map(|(&k, &v)| (k, v)).collect();
+            entries.sort_by_key(|&((recv, offset), _)| (offset, recv.0));
+            entries
+        }
+
+        // Helper: format an instruction with union-find resolved operands
+        fn format_resolved(fun: &Function, insn_id: InsnId, ptr_map: &PtrPrintMap) -> String {
+            let insn = fun.find(insn_id);
+            let mut text = String::from("  ");
+            if insn.has_output() {
+                let ty = fun.insn_types[insn_id.0];
+                if ty.is_subtype(types::Empty) {
+                    text.push_str(&format!("{insn_id} = "));
+                } else {
+                    text.push_str(&format!("{insn_id}:{} = ", ty.print(ptr_map)));
+                }
+            }
+            text.push_str(&format!("{}", insn.print(ptr_map, Some(fun.iseq))));
+            text
+        }
+
+        // Helper: reveal a block header in the after column if not yet revealed
+        macro_rules! reveal_block {
+            ($block:expr) => {
+                if !revealed_block_headers.contains(&$block) {
+                    revealed_block_headers.insert($block);
+                    if let Some(&idx) = block_header_idx.get(&$block) {
+                        if let OrigLine::Block(_, ref header) = orig_lines[idx] {
+                            after_texts[idx] = Some(header.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Helper: record a step snapshot
+        macro_rules! record_step {
+            ($cursor:expr, $action:expr, $heap:expr) => {
+                steps.push(Step {
+                    cursor: $cursor,
+                    action: $action,
+                    after_texts: after_texts.clone(),
+                    heap: sorted_heap($heap),
+                });
+            }
+        }
+
         let mut compile_time_heap: HashMap<(InsnId, i32), InsnId>  = HashMap::new();
         for block in self.rpo() {
             let old_insns = std::mem::take(&mut self.blocks[block.0].insns);
             let mut new_insns = vec![];
             for insn_id in old_insns {
+                // Skip non-visible instructions for tracing
+                let is_visible = !matches!(self.insns[insn_id.0], Insn::Snapshot {..} | Insn::PatchPoint { invariant: Invariant::NoTracePoint, .. });
+
                 let replacement_insn: InsnId = match self.find(insn_id) {
-                    Insn::StoreField { recv, offset, val, .. } => {
+                    Insn::StoreField { recv, offset, val, id, .. } => {
+                        offset_names.entry(offset).or_insert_with(|| id.contents_lossy().to_string());
                         let key = (self.chase_insn(recv), offset);
                         let heap_entry = compile_time_heap.get(&key).copied();
                         // TODO(Jacob): Switch from actual to partial equality
                         if Some(val) == heap_entry {
                             // If the value is already stored, short circuit and don't add an instruction to the block
+                            reveal_block!(block);
+                            if let Some(&idx) = insn_to_orig_idx.get(&insn_id) {
+                                after_texts[idx] = Some(String::new()); // empty line for deleted
+                            }
+                            record_step!(insn_id,
+                                format!("StoreField {insn_id} \u{2014} eliminated (value {val} already at ({}, {}))", key.0, fmt_offset(offset)),
+                                &compile_time_heap);
                             continue
                         }
                         // TODO(Jacob): Add TBAA to avoid removing so many entries
                         compile_time_heap.retain(|(_, off), _| *off != offset);
                         compile_time_heap.insert(key, val);
+                        reveal_block!(block);
+                        if let Some(&idx) = insn_to_orig_idx.get(&insn_id) {
+                            after_texts[idx] = Some(format_resolved(self, insn_id, &ptr_map));
+                        }
+                        record_step!(insn_id,
+                            format!("StoreField {insn_id} \u{2014} recorded ({}, {}) \u{2192} {val}", key.0, fmt_offset(offset)),
+                            &compile_time_heap);
                         insn_id
                     },
-                    Insn::LoadField { recv, offset, .. } => {
+                    Insn::LoadField { recv, offset, id, .. } => {
+                        offset_names.entry(offset).or_insert_with(|| id.contents_lossy().to_string());
                         let key = (self.chase_insn(recv), offset);
                         match compile_time_heap.entry(key) {
                             std::collections::hash_map::Entry::Occupied(entry) => {
                                 // If the value is stored already, we should short circuit.
                                 // However, we need to replace insn_id with its representative in the SSA union.
-                                self.make_equal_to(insn_id, *entry.get());
+                                let target = *entry.get();
+                                self.make_equal_to(insn_id, target);
+                                reveal_block!(block);
+                                if let Some(&idx) = insn_to_orig_idx.get(&insn_id) {
+                                    after_texts[idx] = Some(format!("  \u{2192} {target}"));
+                                }
+                                record_step!(insn_id,
+                                    format!("LoadField {insn_id} \u{2014} forwarded to {target}"),
+                                    &compile_time_heap);
                                 continue
                             }
                             std::collections::hash_map::Entry::Vacant(_) => {
@@ -4951,6 +5096,13 @@ impl Function {
                                 compile_time_heap.insert(key, insn_id);
                             }
                         }
+                        reveal_block!(block);
+                        if let Some(&idx) = insn_to_orig_idx.get(&insn_id) {
+                            after_texts[idx] = Some(format_resolved(self, insn_id, &ptr_map));
+                        }
+                        record_step!(insn_id,
+                            format!("LoadField {insn_id} \u{2014} cached ({}, {}) \u{2192} {insn_id}", key.0, fmt_offset(offset)),
+                            &compile_time_heap);
                         insn_id
                     }
                     Insn::WriteBarrier { .. } => {
@@ -4961,12 +5113,31 @@ impl Function {
                         // TODO: use TBAA
                         let offset = RUBY_OFFSET_RBASIC_FLAGS;
                         compile_time_heap.retain(|(_, off), _| *off != offset);
+                        reveal_block!(block);
+                        if let Some(&idx) = insn_to_orig_idx.get(&insn_id) {
+                            after_texts[idx] = Some(format_resolved(self, insn_id, &ptr_map));
+                        }
+                        record_step!(insn_id,
+                            format!("WriteBarrier {insn_id} \u{2014} invalidated offset {}", fmt_offset(offset)),
+                            &compile_time_heap);
                         insn_id
                     },
                     insn => {
                         // If an instruction affects memory and we haven't modeled it, the compile_time_heap is invalidated
-                        if insn.effects_of().includes(Effect::write(abstract_heaps::Memory)) {
+                        let action = if insn.effects_of().includes(Effect::write(abstract_heaps::Memory)) {
                             compile_time_heap.clear();
+                            Some(format!("{insn_id} \u{2014} cleared heap (writes Memory)"))
+                        } else if is_visible {
+                            Some(format!("{insn_id} \u{2014} no heap effect"))
+                        } else {
+                            None
+                        };
+                        if let Some(action) = action {
+                            reveal_block!(block);
+                            if let Some(&idx) = insn_to_orig_idx.get(&insn_id) {
+                                after_texts[idx] = Some(format_resolved(self, insn_id, &ptr_map));
+                            }
+                            record_step!(insn_id, action, &compile_time_heap);
                         }
                         insn_id
                     }
@@ -4974,6 +5145,185 @@ impl Function {
                 new_insns.push(replacement_insn);
             }
             self.blocks[block.0].insns = new_insns;
+        }
+
+        // Generate HTML slideshow
+        if steps.is_empty() { return; }
+
+        fn html_escape(s: &str) -> String {
+            let mut out = String::with_capacity(s.len());
+            for ch in s.chars() {
+                match ch {
+                    '<' => out.push_str("&lt;"),
+                    '>' => out.push_str("&gt;"),
+                    '&' => out.push_str("&amp;"),
+                    '"' => out.push_str("&quot;"),
+                    _ => out.push(ch),
+                }
+            }
+            out
+        }
+
+        let iseq_name = if self.iseq.is_null() {
+            String::from("unknown")
+        } else {
+            iseq_get_location(self.iseq, 0)
+        };
+        let sanitized_name: String = iseq_name.chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+            .collect();
+
+        let total = steps.len();
+        let mut frames = String::new();
+
+        for (i, step) in steps.iter().enumerate() {
+            let display = if i == 0 { "inherit" } else { "none" };
+
+            frames.push_str(&format!(
+                "<div id=\"frame{i}\" style=\"display: {display};\">\n"));
+
+            // Action line
+            frames.push_str(&format!(
+                "<p><b>action:</b> {}</p>\n", html_escape(&step.action)));
+
+            // Three-column layout: Before | After | Heap
+            frames.push_str("<table><tr>\n");
+
+            // Left column: Before (original IR with cursor)
+            frames.push_str("<td valign=\"top\"><b>Before</b>\n<table>\n");
+            for line in &orig_lines {
+                match line {
+                    OrigLine::Block(_, header) => {
+                        frames.push_str(&format!(
+                            "<tr><td></td><td><b>{}</b></td></tr>\n",
+                            html_escape(header)));
+                    }
+                    OrigLine::Insn(id, text) => {
+                        let arrow = if *id == step.cursor { "&rarr;" } else { "" };
+                        frames.push_str(&format!(
+                            "<tr><td>{arrow}</td><td>{}</td></tr>\n",
+                            html_escape(text)));
+                    }
+                }
+            }
+            frames.push_str("</table></td>\n");
+
+            // Middle column: After (incrementally built with resolved operands)
+            frames.push_str("<td valign=\"top\"><b>After</b>\n<table>\n");
+            for (j, line) in orig_lines.iter().enumerate() {
+                match line {
+                    OrigLine::Block(_, _) => {
+                        match &step.after_texts[j] {
+                            Some(header) => frames.push_str(&format!(
+                                "<tr><td><b>{}</b></td></tr>\n", html_escape(header))),
+                            None => frames.push_str("<tr><td>&nbsp;</td></tr>\n"),
+                        }
+                    }
+                    OrigLine::Insn(_, _) => {
+                        match &step.after_texts[j] {
+                            Some(text) if text.is_empty() => {
+                                // Deleted instruction: empty line
+                                frames.push_str("<tr><td>&nbsp;</td></tr>\n");
+                            }
+                            Some(text) if text.starts_with("  \u{2192}") => {
+                                // Forwarded load: show in gray
+                                frames.push_str(&format!(
+                                    "<tr><td><i style=\"color:gray\">{}</i></td></tr>\n",
+                                    html_escape(text)));
+                            }
+                            Some(text) => {
+                                // Kept instruction with resolved operands
+                                frames.push_str(&format!(
+                                    "<tr><td>{}</td></tr>\n", html_escape(text)));
+                            }
+                            None => {
+                                // Not yet processed
+                                frames.push_str("<tr><td>&nbsp;</td></tr>\n");
+                            }
+                        }
+                    }
+                }
+            }
+            frames.push_str("</table></td>\n");
+
+            // Right column: Heap model
+            frames.push_str("<td valign=\"top\"><b>Heap</b>\n");
+            if step.heap.is_empty() {
+                frames.push_str("<br>(empty)\n");
+            } else {
+                frames.push_str("<table>\n");
+                let mut current_offset: Option<i32> = None;
+                for &((recv, offset), val) in &step.heap {
+                    if current_offset != Some(offset) {
+                        let name = offset_names.get(&offset).cloned().unwrap_or_default();
+                        let label = if name.is_empty() {
+                            fmt_offset(offset)
+                        } else {
+                            format!("{} ({})", fmt_offset(offset), name)
+                        };
+                        frames.push_str(&format!(
+                            "<tr><td colspan=\"2\"><b>{}</b></td></tr>\n",
+                            html_escape(&label)));
+                        current_offset = Some(offset);
+                    }
+                    frames.push_str(&format!(
+                        "<tr><td>&nbsp;&nbsp;{recv}</td><td>\u{2192} {val}</td></tr>\n"));
+                }
+                frames.push_str("</table>\n");
+            }
+            frames.push_str("</td>\n");
+
+            frames.push_str("</tr></table>\n");
+            frames.push_str("</div>\n");
+        }
+
+        let html = format!(r#"<html>
+<head>
+<style>
+body {{ font-family: monospace; }}
+td {{ height: 20px; }}
+th {{ text-align: left; }}
+@media (prefers-color-scheme: dark) {{
+  body {{ color: #dfdfdf; background: #101010; }}
+  a[href] {{ color: #9e9eff; }}
+  a[href]:visited {{ color: #bebedf; }}
+}}
+</style>
+<script>
+var idx = 0;
+function slide(idx) {{ return document.getElementById("frame"+idx); }}
+function show_next() {{
+  if (slide(idx+1) === null) return;
+  slide(idx).style.display = "none";
+  idx += 1;
+  slide(idx).style.display = "inherit";
+  document.getElementById("counter").textContent = (idx+1) + " / {total}";
+}}
+function show_prev() {{
+  if (slide(idx-1) === null) return;
+  slide(idx).style.display = "none";
+  idx -= 1;
+  slide(idx).style.display = "inherit";
+  document.getElementById("counter").textContent = (idx+1) + " / {total}";
+}}
+document.addEventListener('keydown', function(e) {{
+  if (e.key === 'ArrowRight') show_next();
+  else if (e.key === 'ArrowLeft') show_prev();
+}});
+</script>
+</head>
+<body>
+<h3>Load-Store Elimination: {iseq_name}</h3>
+<button onclick="show_prev()">&larr;</button>
+<button onclick="show_next()">&rarr;</button>
+<span id="counter">1 / {total}</span>
+{frames}
+</body>
+</html>"#, iseq_name = html_escape(&iseq_name), total = total, frames = frames);
+
+        let path = format!("{sanitized_name}_load_store.html");
+        if let Err(e) = std::fs::write(&path, &html) {
+            eprintln!("Failed to write load-store slideshow to {path}: {e}");
         }
     }
 
