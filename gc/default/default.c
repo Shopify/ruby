@@ -120,12 +120,12 @@
 #endif
 
 /* Define PSWEEP_LOCK_STATS to > 0 to enable lock contention statistics */
-#define PSWEEP_LOCK_STATS 1
+#define PSWEEP_LOCK_STATS 0
 #ifndef PSWEEP_LOCK_STATS
 #define PSWEEP_LOCK_STATS 0
 #endif
 
-#define PSWEEP_COLLECT_TIMINGS 1
+#define PSWEEP_COLLECT_TIMINGS 0
 
 #ifndef GC_HEAP_INIT_SLOTS
 #define GC_HEAP_INIT_SLOTS 10000
@@ -836,11 +836,10 @@ struct heap_page {
     unsigned short pre_deferred_free_slots;
     unsigned short pre_final_slots;
     struct {
-        unsigned int before_sweep : 1;
-        /*unsigned int skip_sweep : 1;*/
         unsigned int has_remembered_objects : 1;
         unsigned int has_uncollectible_wb_unprotected_objects : 1;
     } flags;
+    rb_atomic_t before_sweep; // bool
 
     rb_heap_t *heap;
 
@@ -1900,21 +1899,43 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
 
     bool dead = false;
 
-    asan_unpoisoning_object(ptr) {
-        switch (BUILTIN_TYPE(ptr)) {
-          case T_NONE:
-          case T_MOVED:
-          case T_ZOMBIE:
-            dead = true;
-            break;
-          default:
-            break;
+    if (!objspace->background_sweep_mode) {
+        // psweep: not safe to read flags on object if during background sweeping
+        asan_unpoisoning_object(ptr) {
+            switch (BUILTIN_TYPE(ptr)) {
+            case T_NONE:
+            case T_MOVED:
+            case T_ZOMBIE:
+                dead = true;
+                break;
+            default:
+                break;
+            }
         }
     }
 
     if (dead) return true;
-    return is_lazy_sweeping(objspace) && GET_HEAP_PAGE(ptr)->flags.before_sweep &&
-        !RVALUE_MARKED(objspace, ptr);
+
+    struct heap_page *page = GET_HEAP_PAGE(ptr);
+    bool during_lazy_sweep = is_lazy_sweeping(objspace);
+
+    if (!objspace->background_sweep_mode) {
+        return during_lazy_sweep && !RVALUE_MARKED(objspace, ptr) && page->before_sweep;
+    }
+    // we're currently lazy sweeping with the sweep thread in background mode
+    else if (during_lazy_sweep) {
+        bool is_before1, is_before2;
+        // This is technically UB because reading of mark bits is not synchronized, but I think it's fine.
+        bool is_garbage = ((is_before1 = RUBY_ATOMIC_LOAD(page->before_sweep)) &&
+            !RVALUE_MARKED(objspace, ptr) && (is_before2 = RUBY_ATOMIC_LOAD(page->before_sweep)));
+        if (is_garbage) return true;
+        if (is_before1 && is_before2) return false; // must be marked (before_sweep and marked)
+        // already swept page, just check flags
+        return BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || BUILTIN_TYPE(ptr) == T_ZOMBIE;
+    }
+    else {
+        return false;
+    }
 }
 
 static void free_stack_chunks(mark_stack_t *);
@@ -3405,7 +3426,7 @@ gc_abort(void *objspace_ptr)
             struct heap_page *page = NULL;
 
             ccan_list_for_each(&heap->pages, page, page_node) {
-                page->flags.before_sweep = FALSE;
+                page->before_sweep = 0;
             }
         }
     }
@@ -4097,10 +4118,10 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
 
 #if RGENGC_CHECK_MODE
     if (!objspace->flags.immediate_sweep) {
-        GC_ASSERT(sweep_page->flags.before_sweep == TRUE);
+        GC_ASSERT(RUBY_ATOMIC_LOAD(sweep_page->before_sweep));
     }
 #endif
-    sweep_page->flags.before_sweep = FALSE;
+    RUBY_ATOMIC_SET(sweep_page->before_sweep, 0);
 
     p = (uintptr_t)sweep_page->start;
     bits = sweep_page->mark_bits;
@@ -4159,10 +4180,10 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
 
 #if RGENGC_CHECK_MODE
     if (!objspace->flags.immediate_sweep) {
-        GC_ASSERT(sweep_page->flags.before_sweep == TRUE);
+        GC_ASSERT(RUBY_ATOMIC_LOAD(sweep_page->before_sweep));
     }
 #endif
-    sweep_page->flags.before_sweep = FALSE;
+    RUBY_ATOMIC_SET(sweep_page->before_sweep, 0);
     sweep_page->free_slots = 0;
 
     p = (uintptr_t)sweep_page->start;
@@ -4818,7 +4839,7 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 
     if (!objspace->flags.immediate_sweep) {
         ccan_list_for_each(&heap->pages, page, page_node) {
-            page->flags.before_sweep = TRUE;
+            page->before_sweep = 1;
             GC_ASSERT(page->pre_deferred_free_slots == 0);
         }
     }
@@ -5579,7 +5600,7 @@ gc_compact_start(rb_objspace_t *objspace)
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
         ccan_list_for_each(&heap->pages, page, page_node) {
-            page->flags.before_sweep = TRUE;
+            page->before_sweep = 1;
         }
 
         heap->compact_cursor = ccan_list_tail(&heap->pages, struct heap_page, page_node);
@@ -8689,7 +8710,7 @@ gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t *objspace, 
                 if (RVALUE_REMEMBERED(objspace, v)) {
                     page->flags.has_remembered_objects = TRUE;
                 }
-                if (page->flags.before_sweep) {
+                if (page->before_sweep) {
                     if (RVALUE_MARKED(objspace, v)) {
                         rb_gc_update_object_references(objspace, v);
                     }
