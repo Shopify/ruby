@@ -838,6 +838,7 @@ struct heap_page {
     struct {
         unsigned int has_remembered_objects : 1;
         unsigned int has_uncollectible_wb_unprotected_objects : 1;
+        unsigned int needs_setup_mark_bits : 1;
     } flags;
     rb_atomic_t before_sweep; // bool
 
@@ -931,6 +932,12 @@ heap_page_in_global_empty_pages_pool(rb_objspace_t *objspace, struct heap_page *
 #define MARK_IN_BITMAP(bits, p)      ((bits)[BITMAP_INDEX(p)] = (bits)[BITMAP_INDEX(p)] | BITMAP_BIT(p))
 #define CLEAR_IN_BITMAP(bits, p)     ((bits)[BITMAP_INDEX(p)] = (bits)[BITMAP_INDEX(p)] & ~BITMAP_BIT(p))
 
+/* Atomic bitmap operations for use during parallel sweep, where the sweep
+ * thread and mutator write barriers may modify different bits in the same
+ * bitmap word concurrently. */
+#define ATOMIC_MARK_IN_BITMAP(bits, p)   RUBY_ATOMIC_VALUE_OR((bits)[BITMAP_INDEX(p)], BITMAP_BIT(p))
+#define ATOMIC_CLEAR_IN_BITMAP(bits, p)  RUBY_ATOMIC_VALUE_AND((bits)[BITMAP_INDEX(p)], ~BITMAP_BIT(p))
+
 /* getting bitmap */
 #define GET_HEAP_MARK_BITS(x)           (&GET_HEAP_PAGE(x)->mark_bits[0])
 #define GET_HEAP_PINNED_BITS(x)         (&GET_HEAP_PAGE(x)->pinned_bits[0])
@@ -958,8 +965,20 @@ RVALUE_AGE_SET_BITMAP(VALUE obj, int age)
     int shift = BITMAP_OFFSET(obj);
     bits_t mask = (bits_t)1 << shift;
 
-    age_bits[idx]     = (age_bits[idx]     & ~mask) | ((bits_t)(age & 1) << shift);
-    age_bits[idx + 1] = (age_bits[idx + 1] & ~mask) | ((bits_t)((age >> 1) & 1) << shift);
+    /* Use atomic operations because the sweep thread may concurrently clear
+     * age bits for dead objects in the same bitmap word. */
+    if (age & 1) {
+        RUBY_ATOMIC_VALUE_OR(age_bits[idx], mask);
+    }
+    else {
+        RUBY_ATOMIC_VALUE_AND(age_bits[idx], ~mask);
+    }
+    if (age & 2) {
+        RUBY_ATOMIC_VALUE_OR(age_bits[idx + 1], mask);
+    }
+    else {
+        RUBY_ATOMIC_VALUE_AND(age_bits[idx + 1], ~mask);
+    }
 }
 
 static void
@@ -2571,7 +2590,6 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
 
     int t = flags & RUBY_T_MASK;
     if (t == T_CLASS || t == T_MODULE || t == T_ICLASS) {
-        // TODO: need page lock?
         RVALUE_AGE_SET_CANDIDATE(objspace, obj);
     }
 
@@ -2596,8 +2614,7 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
 #endif
 
     if (RB_UNLIKELY(wb_protected == FALSE)) {
-        // TODO: need page lock?
-        MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
+        ATOMIC_MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
     }
 
 #if RGENGC_PROFILE
@@ -4141,20 +4158,30 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
 
     bits_t slot_mask = heap->slot_bits_mask;
 
-    // Clear wb_unprotected and age bits for all unmarked slots
+    // Clear wb_unprotected and age bits for all unmarked slots.
+    // Use atomic operations because mutator write barriers may concurrently
+    // modify bits for live objects in the same bitmap word.
     {
         bits_t *wb_unprotected_bits = sweep_page->wb_unprotected_bits;
         bits_t *age_bits = sweep_page->age_bits;
         for (int i = 0; i < bitmap_plane_count; i++) {
             bits_t unmarked = ~bits[i] & slot_mask;
-            wb_unprotected_bits[i] &= ~unmarked;
-            age_bits[i * 2] &= ~unmarked;
-            age_bits[i * 2 + 1] &= ~unmarked;
+            RUBY_ATOMIC_VALUE_AND(wb_unprotected_bits[i], ~unmarked);
+            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2], ~unmarked);
+            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2 + 1], ~unmarked);
         }
     }
 
     if (!heap->compact_cursor) {
-        gc_setup_mark_bits(sweep_page);
+        if (objspace->background_sweep_mode) {
+            /* Defer gc_setup_mark_bits to gc_sweep_finish on the GC thread,
+             * because it overwrites mark_bits which would race with mutator
+             * write barriers concurrently calling gc_mark_set. */
+            sweep_page->flags.needs_setup_mark_bits = TRUE;
+        }
+        else {
+            gc_setup_mark_bits(sweep_page);
+        }
     }
 
     if (RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final) && !finalizing) {
@@ -4204,15 +4231,17 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
 
     bits_t slot_mask = heap->slot_bits_mask;
 
-    // Clear wb_unprotected and age bits for all unmarked slots
+    // Clear wb_unprotected and age bits for all unmarked slots.
+    // Use atomic operations because mutator write barriers may concurrently
+    // modify bits for live objects in the same bitmap word.
     {
         bits_t *wb_unprotected_bits = sweep_page->wb_unprotected_bits;
         bits_t *age_bits = sweep_page->age_bits;
         for (int i = 0; i < bitmap_plane_count; i++) {
             bits_t unmarked = ~bits[i] & slot_mask;
-            wb_unprotected_bits[i] &= ~unmarked;
-            age_bits[i * 2] &= ~unmarked;
-            age_bits[i * 2 + 1] &= ~unmarked;
+            RUBY_ATOMIC_VALUE_AND(wb_unprotected_bits[i], ~unmarked);
+            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2], ~unmarked);
+            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2 + 1], ~unmarked);
         }
     }
 
@@ -4996,6 +5025,19 @@ gc_sweep_finish(rb_objspace_t *objspace)
     psweep_debug(-1, "[gc] gc_sweep_finish\n");
 
     objspace->use_background_sweep_thread = false;
+
+    /* Run deferred gc_setup_mark_bits for pages swept by the background thread.
+     * This must run on the GC thread to avoid racing with mutator write barriers
+     * that modify mark_bits and uncollectible_bits. */
+    for (int i = 0; i < HEAP_COUNT; i++) {
+        struct heap_page *page;
+        ccan_list_for_each(&heaps[i].pages, page, page_node) {
+            if (page->flags.needs_setup_mark_bits) {
+                gc_setup_mark_bits(page);
+                page->flags.needs_setup_mark_bits = FALSE;
+            }
+        }
+    }
 
     gc_prof_set_heap_info(objspace);
     heap_pages_free_unused_pages(objspace);
@@ -7648,7 +7690,7 @@ rb_gc_impl_writebarrier_unprotect(void *objspace_ptr, VALUE obj)
             }
 
             RB_DEBUG_COUNTER_INC(obj_wb_unprotect);
-            MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
+            ATOMIC_MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
         }
         RB_GC_VM_UNLOCK_NO_BARRIER(lev);
     }

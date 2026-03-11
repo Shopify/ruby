@@ -36,6 +36,7 @@
 
 #if RBIMPL_COMPILER_IS(MSVC)
 # pragma intrinsic(_InterlockedOr)
+# pragma intrinsic(_InterlockedAnd)
 #elif defined(__sun) && defined(HAVE_ATOMIC_H)
 # include <atomic.h>
 #endif
@@ -139,6 +140,48 @@ typedef unsigned int rb_atomic_t;
  * @note    For portability, this macro can return void.
  */
 #define RUBY_ATOMIC_OR(var, val) rbimpl_atomic_or(&(var), (val), RBIMPL_ATOMIC_SEQ_CST)
+
+/**
+ * Atomically  replaces  the  value  pointed   by  `var`  with  the  result  of
+ * bitwise AND between `val` and the old value of `var`.
+ *
+ * @param   var   A variable of ::rb_atomic_t.
+ * @param   val   Value to mask.
+ * @return  void
+ * @post    `var` holds `var & val`.
+ */
+#define RUBY_ATOMIC_AND(var, val) rbimpl_atomic_and(&(var), (val), RBIMPL_ATOMIC_SEQ_CST)
+
+/**
+ * Atomically  replaces  the  value  pointed   by  `var`  with  the  result  of
+ * bitwise AND between `val` and the old value of `var`.
+ *
+ * @param   var   A variable of ::rb_atomic_t.
+ * @param   val   Value to mask.
+ * @return  What was stored in `var` before the operation.
+ * @post    `var` holds `var & val`.
+ */
+#define RUBY_ATOMIC_FETCH_AND(var, val) rbimpl_atomic_fetch_and(&(var), (val), RBIMPL_ATOMIC_SEQ_CST)
+
+/**
+ * Identical to #RUBY_ATOMIC_OR, except it expects its arguments are ::VALUE.
+ *
+ * @param   var   A variable of ::VALUE.
+ * @param   val   Value to mix.
+ * @return  void
+ * @post    `var` holds `var | val`.
+ */
+#define RUBY_ATOMIC_VALUE_OR(var, val) rbimpl_atomic_size_or((volatile size_t *)&(var), (size_t)(val), RBIMPL_ATOMIC_SEQ_CST)
+
+/**
+ * Identical to #RUBY_ATOMIC_AND, except it expects its arguments are ::VALUE.
+ *
+ * @param   var   A variable of ::VALUE.
+ * @param   val   Value to mask.
+ * @return  void
+ * @post    `var` holds `var & val`.
+ */
+#define RUBY_ATOMIC_VALUE_AND(var, val) rbimpl_atomic_size_and((volatile size_t *)&(var), (size_t)(val), RBIMPL_ATOMIC_SEQ_CST)
 
 /**
  * Atomically replaces the value pointed by  `var` with `val`.  This is just an
@@ -563,6 +606,76 @@ RBIMPL_ATTR_ARTIFICIAL()
 RBIMPL_ATTR_NOALIAS()
 RBIMPL_ATTR_NONNULL((1))
 static inline void
+rbimpl_atomic_size_or(volatile size_t *ptr, size_t val, int memory_order)
+{
+    (void)memory_order;
+#if 0
+
+#elif defined(HAVE_GCC_ATOMIC_BUILTINS)
+    __atomic_or_fetch(ptr, val, memory_order);
+
+#elif defined(HAVE_GCC_SYNC_BUILTINS)
+    __sync_or_and_fetch(ptr, val);
+
+#elif defined(_WIN64)
+    InterlockedOr64(ptr, val);
+
+#elif defined(__sun) && defined(HAVE_ATOMIC_H) && (defined(_LP64) || defined(_I32LPx))
+    atomic_or_ulong(ptr, val);
+
+#elif defined(_WIN32) || (defined(__sun) && defined(HAVE_ATOMIC_H))
+    RBIMPL_STATIC_ASSERT(size_of_size_t, sizeof *ptr == sizeof(rb_atomic_t));
+
+    volatile rb_atomic_t *const tmp = RBIMPL_CAST((volatile rb_atomic_t *)ptr);
+    rbimpl_atomic_or(tmp, val, memory_order);
+
+#elif defined(HAVE_STDATOMIC_H)
+    atomic_fetch_or_explicit((_Atomic volatile size_t *)ptr, val, memory_order);
+
+#else
+# error Unsupported platform.
+#endif
+}
+
+RBIMPL_ATTR_ARTIFICIAL()
+RBIMPL_ATTR_NOALIAS()
+RBIMPL_ATTR_NONNULL((1))
+static inline void
+rbimpl_atomic_size_and(volatile size_t *ptr, size_t val, int memory_order)
+{
+    (void)memory_order;
+#if 0
+
+#elif defined(HAVE_GCC_ATOMIC_BUILTINS)
+    __atomic_and_fetch(ptr, val, memory_order);
+
+#elif defined(HAVE_GCC_SYNC_BUILTINS)
+    __sync_and_and_fetch(ptr, val);
+
+#elif defined(_WIN64)
+    InterlockedAnd64(ptr, val);
+
+#elif defined(__sun) && defined(HAVE_ATOMIC_H) && (defined(_LP64) || defined(_I32LPx))
+    atomic_and_ulong(ptr, val);
+
+#elif defined(_WIN32) || (defined(__sun) && defined(HAVE_ATOMIC_H))
+    RBIMPL_STATIC_ASSERT(size_of_size_t, sizeof *ptr == sizeof(rb_atomic_t));
+
+    volatile rb_atomic_t *const tmp = RBIMPL_CAST((volatile rb_atomic_t *)ptr);
+    rbimpl_atomic_and(tmp, val, memory_order);
+
+#elif defined(HAVE_STDATOMIC_H)
+    atomic_fetch_and_explicit((_Atomic volatile size_t *)ptr, val, memory_order);
+
+#else
+# error Unsupported platform.
+#endif
+}
+
+RBIMPL_ATTR_ARTIFICIAL()
+RBIMPL_ATTR_NOALIAS()
+RBIMPL_ATTR_NONNULL((1))
+static inline void
 rbimpl_atomic_inc(volatile rb_atomic_t *ptr, int memory_order)
 {
     (void)memory_order;
@@ -798,6 +911,70 @@ rbimpl_atomic_or(volatile rb_atomic_t *ptr, rb_atomic_t val, int memory_order)
 
 #elif !defined(_WIN32) && defined(HAVE_STDATOMIC_H)
     atomic_fetch_or_explicit((_Atomic volatile rb_atomic_t *)ptr, val, memory_order);
+
+#else
+# error Unsupported platform.
+#endif
+}
+
+RBIMPL_ATTR_ARTIFICIAL()
+RBIMPL_ATTR_NOALIAS()
+RBIMPL_ATTR_NONNULL((1))
+static inline rb_atomic_t
+rbimpl_atomic_fetch_and(volatile rb_atomic_t *ptr, rb_atomic_t val, int memory_order)
+{
+    (void)memory_order;
+#if 0
+
+#elif defined(HAVE_GCC_ATOMIC_BUILTINS)
+    return __atomic_fetch_and(ptr, val, memory_order);
+
+#elif defined(HAVE_GCC_SYNC_BUILTINS)
+    return __sync_fetch_and_and(ptr, val);
+
+#elif RBIMPL_COMPILER_IS(MSVC)
+    return _InterlockedAnd(ptr, val);
+
+#elif defined(__sun) && defined(HAVE_ATOMIC_H)
+    /* TODO: Solaris atomic_and_uint does not return the old value.
+     * Using CAS loop as fallback. */
+    rb_atomic_t old = *ptr;
+    while (atomic_cas_uint(ptr, old, old & val) != old) {
+        old = *ptr;
+    }
+    return old;
+
+#elif !defined(_WIN32) && defined(HAVE_STDATOMIC_H)
+    return atomic_fetch_and_explicit((_Atomic volatile rb_atomic_t *)ptr, val, memory_order);
+
+#else
+# error Unsupported platform.
+#endif
+}
+
+RBIMPL_ATTR_ARTIFICIAL()
+RBIMPL_ATTR_NOALIAS()
+RBIMPL_ATTR_NONNULL((1))
+static inline void
+rbimpl_atomic_and(volatile rb_atomic_t *ptr, rb_atomic_t val, int memory_order)
+{
+    (void)memory_order;
+#if 0
+
+#elif defined(HAVE_GCC_ATOMIC_BUILTINS)
+    __atomic_and_fetch(ptr, val, memory_order);
+
+#elif defined(HAVE_GCC_SYNC_BUILTINS)
+    __sync_and_and_fetch(ptr, val);
+
+#elif RBIMPL_COMPILER_IS(MSVC)
+    _InterlockedAnd(ptr, val);
+
+#elif defined(__sun) && defined(HAVE_ATOMIC_H)
+    atomic_and_uint(ptr, val);
+
+#elif !defined(_WIN32) && defined(HAVE_STDATOMIC_H)
+    atomic_fetch_and_explicit((_Atomic volatile rb_atomic_t *)ptr, val, memory_order);
 
 #else
 # error Unsupported platform.
