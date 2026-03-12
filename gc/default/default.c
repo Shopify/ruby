@@ -1918,7 +1918,7 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
 
     bool dead = false;
 
-    if (!objspace->background_sweep_mode) {
+    if (!objspace->background_sweep_mode) { // set to false/true by ruby GC thread when entering/exiting GC
         // psweep: not safe to read flags on object if during background sweeping
         asan_unpoisoning_object(ptr) {
             switch (BUILTIN_TYPE(ptr)) {
@@ -1939,7 +1939,7 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
     bool during_lazy_sweep = is_lazy_sweeping(objspace);
 
     if (!objspace->background_sweep_mode) {
-        return during_lazy_sweep && !RVALUE_MARKED(objspace, ptr) && page->before_sweep;
+        return during_lazy_sweep && !RVALUE_MARKED(objspace, ptr) && RUBY_ATOMIC_LOAD(page->before_sweep);
     }
     // we're currently lazy sweeping with the sweep thread in background mode
     else if (during_lazy_sweep) {
@@ -1953,7 +1953,7 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
         return BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || BUILTIN_TYPE(ptr) == T_ZOMBIE;
     }
     else {
-        return false;
+        return BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || BUILTIN_TYPE(ptr) == T_ZOMBIE;
     }
 }
 
@@ -4124,7 +4124,7 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
 
 // Clear bits for the page that was swept by the background thread.
 static inline void
-gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page)
+gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, bool force_setup_mark_bits)
 {
     GC_ASSERT(sweep_page->heap == heap);
 
@@ -4173,10 +4173,10 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
     }
 
     if (!heap->compact_cursor) {
-        if (objspace->background_sweep_mode) {
+        if (objspace->background_sweep_mode && !force_setup_mark_bits) {
             /* Defer gc_setup_mark_bits to gc_sweep_finish on the GC thread,
              * because it overwrites mark_bits which would race with mutator
-             * write barriers concurrently calling gc_mark_set. */
+             * write barriers for objects on the same page. */
             sweep_page->needs_setup_mark_bits = true;
         }
         else {
@@ -4587,9 +4587,25 @@ done_worker_incremental_sweep_steps_p(rb_objspace_t *objspace, rb_heap_t *heap)
     return false;
 }
 
+static bool
+bitmap_is_all_zero(bits_t *bits, size_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (bits[i] != 0) return false;
+    }
+    return true;
+}
+
 static void
 move_to_empty_pages(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
 {
+    GC_ASSERT(bitmap_is_all_zero(page->mark_bits, HEAP_PAGE_BITMAP_LIMIT));
+    GC_ASSERT(bitmap_is_all_zero(page->uncollectible_bits, HEAP_PAGE_BITMAP_LIMIT));
+    GC_ASSERT(bitmap_is_all_zero(page->wb_unprotected_bits, HEAP_PAGE_BITMAP_LIMIT));
+    GC_ASSERT(bitmap_is_all_zero(page->marking_bits, HEAP_PAGE_BITMAP_LIMIT));
+    GC_ASSERT(bitmap_is_all_zero(page->remembered_bits, HEAP_PAGE_BITMAP_LIMIT));
+    GC_ASSERT(bitmap_is_all_zero(page->age_bits, HEAP_PAGE_BITMAP_LIMIT * RVALUE_AGE_BIT_COUNT));
+
     heap_unlink_page(objspace, heap, page);
 
     page->start = 0;
@@ -4695,7 +4711,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
                 // sweep_lock to change sweep background mode to false)
                 GC_ASSERT(sweep_page->pre_final_slots == 0);
                 clear_pre_sweep_fields(sweep_page);
-                gc_post_sweep_page(objspace, heap, sweep_page);
+                gc_post_sweep_page(objspace, heap, sweep_page, true);
                 move_to_empty_pages(objspace, heap, sweep_page);
                 continue;
             }
@@ -4707,7 +4723,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
                 sweep_page->free_slots = free_slots;
                 sweep_page->heap->total_freed_objects += sweep_page->pre_freed_slots;
                 clear_pre_sweep_fields(sweep_page);
-                gc_post_sweep_page(objspace, heap, sweep_page); // clear metadata (FIXME: not safe alongside gc write barriers)
+                gc_post_sweep_page(objspace, heap, sweep_page, false);
                 if (sweep_page->deferred_freelist) {
                     merge_freelists(sweep_page->deferred_freelist, sweep_page->freelist);
                     sweep_page->freelist = sweep_page->deferred_freelist;
@@ -5232,7 +5248,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(sweep_page->pre_deferred_free_slots == 0);
         }
         else {
-            gc_post_sweep_page(objspace, heap, sweep_page); // clear bits
+            gc_post_sweep_page(objspace, heap, sweep_page, false); // clear bits
             // Process deferred free objects
             unsigned short deferred_free_freed = 0;
             unsigned short deferred_to_free = sweep_page->pre_deferred_free_slots;
