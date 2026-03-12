@@ -838,8 +838,8 @@ struct heap_page {
     struct {
         unsigned int has_remembered_objects : 1;
         unsigned int has_uncollectible_wb_unprotected_objects : 1;
-        unsigned int needs_setup_mark_bits : 1;
     } flags;
+    bool needs_setup_mark_bits;
     rb_atomic_t before_sweep; // bool
 
     rb_heap_t *heap;
@@ -4177,10 +4177,11 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
             /* Defer gc_setup_mark_bits to gc_sweep_finish on the GC thread,
              * because it overwrites mark_bits which would race with mutator
              * write barriers concurrently calling gc_mark_set. */
-            sweep_page->flags.needs_setup_mark_bits = TRUE;
+            sweep_page->needs_setup_mark_bits = true;
         }
         else {
             gc_setup_mark_bits(sweep_page);
+            sweep_page->needs_setup_mark_bits = false;
         }
     }
 
@@ -4491,6 +4492,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 else {
                     goto free;
                 }
+                break;
               }
               default: // ex: T_CLASS/T_MODULE/T_ICLASS/T_SYMBOL
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
@@ -5032,9 +5034,9 @@ gc_sweep_finish(rb_objspace_t *objspace)
     for (int i = 0; i < HEAP_COUNT; i++) {
         struct heap_page *page;
         ccan_list_for_each(&heaps[i].pages, page, page_node) {
-            if (page->flags.needs_setup_mark_bits) {
+            if (page->needs_setup_mark_bits) {
                 gc_setup_mark_bits(page);
-                page->flags.needs_setup_mark_bits = FALSE;
+                page->needs_setup_mark_bits = false;
             }
         }
     }
