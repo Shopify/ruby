@@ -4752,6 +4752,8 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             }
             else {
                 // Don't even add to `swept_pages`, no further processing needed by ruby thread (no free slots)
+                clear_pre_sweep_fields(sweep_page);
+                gc_post_sweep_page(objspace, heap, sweep_page, false);
                 continue;
             }
         }
