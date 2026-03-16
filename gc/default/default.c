@@ -932,14 +932,19 @@ heap_page_in_global_empty_pages_pool(rb_objspace_t *objspace, struct heap_page *
 #define GET_HEAP_WB_UNPROTECTED_BITS(x) (&GET_HEAP_PAGE(x)->wb_unprotected_bits[0])
 #define GET_HEAP_MARKING_BITS(x)        (&GET_HEAP_PAGE(x)->marking_bits[0])
 
-#define RVALUE_AGE_BITMAP_INDEX(n)  (NUM_IN_PAGE(n) / (BITS_BITLENGTH / RVALUE_AGE_BIT_COUNT))
-#define RVALUE_AGE_BITMAP_OFFSET(n) ((NUM_IN_PAGE(n) % (BITS_BITLENGTH / RVALUE_AGE_BIT_COUNT)) * RVALUE_AGE_BIT_COUNT)
+/* Planar age_bits layout: two bit-planes, each with the same 1-bit-per-slot
+ * layout as mark_bits.  age_bits[i*2] holds bit 0, age_bits[i*2+1] holds
+ * bit 1 of the age for the slots covered by mark_bits[i]. */
 
 static int
 RVALUE_AGE_GET(VALUE obj)
 {
     bits_t *age_bits = GET_HEAP_PAGE(obj)->age_bits;
-    return (int)(age_bits[RVALUE_AGE_BITMAP_INDEX(obj)] >> RVALUE_AGE_BITMAP_OFFSET(obj)) & RVALUE_AGE_BIT_MASK;
+    int idx = BITMAP_INDEX(obj) * 2;
+    int shift = BITMAP_OFFSET(obj);
+    int bit0 = (age_bits[idx]     >> shift) & 1;
+    int bit1 = (age_bits[idx + 1] >> shift) & 1;
+    return bit0 | (bit1 << 1);
 }
 
 static void
@@ -947,16 +952,16 @@ RVALUE_AGE_SET_BITMAP(VALUE obj, int age)
 {
     RUBY_ASSERT(age <= RVALUE_OLD_AGE);
     bits_t *age_bits = GET_HEAP_PAGE(obj)->age_bits;
-    // clear the bits
-    /*age_bits[RVALUE_AGE_BITMAP_INDEX(obj)] &= ~(RVALUE_AGE_BIT_MASK << (RVALUE_AGE_BITMAP_OFFSET(obj)));*/
-    /*// shift the correct value in*/
-    /*age_bits[RVALUE_AGE_BITMAP_INDEX(obj)] |= ((bits_t)age << RVALUE_AGE_BITMAP_OFFSET(obj));*/
-    bits_t clear_mask = RVALUE_AGE_BIT_MASK << RVALUE_AGE_BITMAP_OFFSET(obj);
-    bits_t set_mask   = (bits_t)age << RVALUE_AGE_BITMAP_OFFSET(obj);
-    // clear the bits
-    RUBY_ATOMIC_VALUE_AND(age_bits[RVALUE_AGE_BITMAP_INDEX(obj)], ~clear_mask);
-    // shift the correct value in
-    RUBY_ATOMIC_VALUE_OR(age_bits[RVALUE_AGE_BITMAP_INDEX(obj)], set_mask);
+    int idx = BITMAP_INDEX(obj) * 2;
+    int shift = BITMAP_OFFSET(obj);
+    bits_t mask = (bits_t)1 << shift;
+
+    /* Use atomic operations because the sweep thread may concurrently clear
+     * age bits for dead objects in the same bitmap word. */
+    if (age & 1) { RUBY_ATOMIC_VALUE_OR(age_bits[idx], mask); }
+    else         { RUBY_ATOMIC_VALUE_AND(age_bits[idx], ~mask); }
+    if (age & 2) { RUBY_ATOMIC_VALUE_OR(age_bits[idx + 1], mask); }
+    else         { RUBY_ATOMIC_VALUE_AND(age_bits[idx + 1], ~mask); }
 }
 
 static void
@@ -4104,20 +4109,6 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
     return result;
 }
 
-// Spread N bits into 2N bits: bit k → bits 2k and 2k+1.
-// e.g. 0b1010 → 0b11001100
-static inline bits_t
-spread_bits(bits_t x)
-{
-    bits_t result = 0;
-    for (int b = 0; b < BITS_BITLENGTH / 2; b++) {
-        if (x & ((bits_t)1 << b)) {
-            result |= (bits_t)RVALUE_AGE_BIT_MASK << (b * RVALUE_AGE_BIT_COUNT);
-        }
-    }
-    return result;
-}
-
 // Clear bits for the page that was swept by the background thread.
 static inline void
 gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, bool force_setup_mark_bits)
@@ -4163,16 +4154,8 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
         for (int i = 0; i < bitmap_plane_count; i++) {
             bits_t unmarked = ~bits[i] & slot_mask;
             RUBY_ATOMIC_VALUE_AND(wb_unprotected_bits[i], ~unmarked);
-            // Expand 1-bit-per-slot unmarked mask to 2-bit-per-slot age mask.
-            // age_bits[i*2] covers the lower half of slots in mark_bits[i],
-            // age_bits[i*2+1] covers the upper half.
-            bits_t unmarked_lo = unmarked & (((bits_t)1 << (BITS_BITLENGTH / 2)) - 1);
-            bits_t unmarked_hi = unmarked >> (BITS_BITLENGTH / 2);
-            // Spread each bit into 2 adjacent bits: bit N -> bits 2N and 2N+1
-            bits_t age_mask_lo = spread_bits(unmarked_lo);
-            bits_t age_mask_hi = spread_bits(unmarked_hi);
-            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2],     ~age_mask_lo);
-            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2 + 1], ~age_mask_hi);
+            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2],     ~unmarked);
+            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2 + 1], ~unmarked);
         }
     }
 
@@ -4245,16 +4228,8 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
         for (int i = 0; i < bitmap_plane_count; i++) {
             bits_t unmarked = ~bits[i] & slot_mask;
             RUBY_ATOMIC_VALUE_AND(wb_unprotected_bits[i], ~unmarked);
-            // Expand 1-bit-per-slot unmarked mask to 2-bit-per-slot age mask.
-            // age_bits[i*2] covers the lower half of slots in mark_bits[i],
-            // age_bits[i*2+1] covers the upper half.
-            bits_t unmarked_lo = unmarked & (((bits_t)1 << (BITS_BITLENGTH / 2)) - 1);
-            bits_t unmarked_hi = unmarked >> (BITS_BITLENGTH / 2);
-            // Spread each bit into 2 adjacent bits: bit N -> bits 2N and 2N+1
-            bits_t age_mask_lo = spread_bits(unmarked_lo);
-            bits_t age_mask_hi = spread_bits(unmarked_hi);
-            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2],     ~age_mask_lo);
-            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2 + 1], ~age_mask_hi);
+            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2],     ~unmarked);
+            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2 + 1], ~unmarked);
         }
     }
 
