@@ -1295,7 +1295,7 @@ addrinfo_memsize(const void *ptr)
 static const rb_data_type_t addrinfo_type = {
     "socket/addrinfo",
     {addrinfo_mark, addrinfo_free, addrinfo_memsize,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_FROZEN_SHAREABLE | RUBY_TYPED_WB_PROTECTED,
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE | RUBY_TYPED_FROZEN_SHAREABLE | RUBY_TYPED_WB_PROTECTED,
 };
 
 static VALUE
