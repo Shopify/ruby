@@ -2736,7 +2736,7 @@ autoload_table_compact(void *ptr)
 static const rb_data_type_t autoload_table_type = {
     "autoload_table",
     {autoload_table_mark, autoload_table_free, autoload_table_memsize, autoload_table_compact,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 #define check_autoload_table(av) \
@@ -2850,7 +2850,7 @@ autoload_data_memsize(const void *ptr)
 static const rb_data_type_t autoload_data_type = {
     "autoload_data",
     {autoload_data_mark_and_move, autoload_data_free, autoload_data_memsize, autoload_data_mark_and_move},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static void
@@ -2888,7 +2888,7 @@ autoload_const_free(void *ptr)
 static const rb_data_type_t autoload_const_type = {
     "autoload_const",
     {autoload_const_mark_and_move, autoload_const_free, autoload_const_memsize, autoload_const_mark_and_move,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static struct autoload_data *
