@@ -320,7 +320,7 @@ static const rb_data_type_t ractor_data_type = {
         ractor_memsize,
         NULL, // update
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY /* | RUBY_TYPED_WB_PROTECTED */
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE /* | RUBY_TYPED_WB_PROTECTED */
 };
 
 bool
@@ -2448,7 +2448,7 @@ static const rb_data_type_t cross_ractor_require_data_type = {
         NULL, // memsize
         NULL, // compact
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_DECL_MARKING | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_DECL_MARKING | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE

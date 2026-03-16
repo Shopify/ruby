@@ -1308,7 +1308,7 @@ cont_handle_weak_references(void *ptr)
 static const rb_data_type_t rb_cont_data_type = {
     "continuation",
     {cont_mark, cont_free, cont_memsize, cont_compact, cont_handle_weak_references},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static inline void
@@ -2066,7 +2066,7 @@ fiber_handle_weak_references(void *ptr)
 static const rb_data_type_t rb_fiber_data_type = {
     "fiber",
     {fiber_mark, fiber_free, fiber_memsize, fiber_compact, fiber_handle_weak_references},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE
@@ -3474,7 +3474,7 @@ fiber_pool_memsize(const void *ptr)
 static const rb_data_type_t FiberPoolDataType = {
     "fiber_pool",
     {NULL, fiber_pool_free, fiber_pool_memsize,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE

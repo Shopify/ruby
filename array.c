@@ -6860,7 +6860,7 @@ static const rb_data_type_t ary_sample_memo_type = {
     .function = {
         .dfree = (RUBY_DATA_FUNC)st_free_table,
     },
-    .flags = RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY
+    .flags = RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE

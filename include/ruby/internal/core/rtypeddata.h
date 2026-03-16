@@ -120,6 +120,7 @@
 #define RUBY_TYPED_FROZEN_SHAREABLE  RUBY_TYPED_FROZEN_SHAREABLE
 #define RUBY_TYPED_WB_PROTECTED      RUBY_TYPED_WB_PROTECTED
 #define RUBY_TYPED_PROMOTED1         RUBY_TYPED_PROMOTED1
+#define RUBY_TYPED_CONCURRENT_FREE_SAFE RUBY_TYPED_CONCURRENT_FREE_SAFE
 
 /**
  * @private
@@ -145,6 +146,14 @@ rbimpl_typeddata_flags {
     RUBY_TYPED_FREE_IMMEDIATELY = 1,
 
     RUBY_TYPED_EMBEDDABLE = 2,
+
+    /**
+     * This flag indicates that the dfree function for this type is safe to
+     * call concurrently from a background sweep thread. When set, the GC
+     * may free objects of this type without holding the GVL. Only set this
+     * flag if the dfree function does not access shared mutable state.
+     */
+    RUBY_TYPED_CONCURRENT_FREE_SAFE = 4,
 
     /**
      * This flag has something to do with Ractor.  Multiple Ractors run without
