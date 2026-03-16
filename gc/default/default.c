@@ -4412,7 +4412,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 bool free_immediately = false;
                 void (*dfree)(void *);
                 if (RTYPEDDATA_P(vp)) {
-                    free_immediately = (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_FREE_IMMEDIATELY) != 0;
+                    free_immediately = (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_FREE_IMMEDIATELY) != 0 && (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_CONCURRENT_FREE_SAFE) != 0;
                     dfree = RTYPEDDATA_TYPE(vp)->function.dfree;
                 }
                 else {
@@ -4428,13 +4428,8 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     }
                 }
                 else {
-                    if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
-                        sweep_in_ruby_thread(objspace, page, vp, false);
-                        break;
-                    }
-                    else {
-                        goto free;
-                    }
+                    sweep_in_ruby_thread(objspace, page, vp, false);
+                    break;
                 }
                 break;
               }
@@ -5294,7 +5289,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(!sweep_page->deferred_freelist);
         } else {
             sweep_page->free_slots = free_slots;
-            sweep_page->final_slots += deferred_free_final_slots;
+            // NOTE: sweep_page->final slots have already been updated by make_zombie
             GC_ASSERT(sweep_page->free_slots <= sweep_page->total_slots);
             GC_ASSERT(sweep_page->final_slots <= sweep_page->total_slots);
             sweep_page->heap->total_freed_objects += ctx.freed_slots;
