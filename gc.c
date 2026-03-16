@@ -2034,7 +2034,7 @@ static const rb_data_type_t id2ref_tbl_type = {
         // dcompact function not required because the table is reference updated
         // in rb_gc_vm_weak_table_foreach
     },
-    .flags = RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY
+    .flags = RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE

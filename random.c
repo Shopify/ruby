@@ -272,7 +272,7 @@ const rb_data_type_t rb_random_data_type = {
         random_free,
         random_memsize,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 #define random_mt_mark rb_random_mark
@@ -293,7 +293,7 @@ static const rb_data_type_t random_mt_type = {
     },
     &rb_random_data_type,
     (void *)&random_mt_if,
-    RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static rb_random_t *
@@ -577,7 +577,7 @@ release_crypt(void *p)
 static const rb_data_type_t crypt_prov_type = {
     "HCRYPTPROV",
     {0, release_crypt,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static int

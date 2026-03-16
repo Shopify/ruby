@@ -3530,7 +3530,7 @@ vm_memsize(const void *ptr)
 static const rb_data_type_t vm_data_type = {
     "VM",
     {0, 0, vm_memsize,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 
@@ -3856,7 +3856,7 @@ const rb_data_type_t ruby_threadptr_data_type = {
         thread_memsize,
         thread_compact,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 VALUE
@@ -4679,7 +4679,7 @@ static const rb_data_type_t pin_array_list_type = {
         .dsize = pin_array_list_memsize,
         .dcompact = pin_array_list_update_references,
     },
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE,
 };
 
 static VALUE

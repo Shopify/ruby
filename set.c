@@ -193,7 +193,7 @@ static const rb_data_type_t set_data_type = {
         .dsize = set_size,
         .dcompact = set_update_references,
     },
-    .flags = RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FROZEN_SHAREABLE
+    .flags = RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FROZEN_SHAREABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static inline set_table *

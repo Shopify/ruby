@@ -554,7 +554,7 @@ static const rb_data_type_t getcwd_buffer_guard_type = {
     .function = {
         .dfree = free // not xfree.
     },
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 char *

@@ -1289,7 +1289,7 @@ cont_save_machine_stack(rb_thread_t *th, rb_context_t *cont)
 static const rb_data_type_t cont_data_type = {
     "continuation",
     {cont_mark, cont_free, cont_memsize, cont_compact},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static inline void
@@ -2029,8 +2029,8 @@ rb_cont_call(int argc, VALUE *argv, VALUE contval)
 
 static const rb_data_type_t fiber_data_type = {
     "fiber",
-    {fiber_mark, fiber_free, fiber_memsize, fiber_compact,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    {fiber_mark, fiber_free, fiber_memsize, fiber_compact},
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE
@@ -3450,7 +3450,7 @@ fiber_pool_memsize(const void *ptr)
 static const rb_data_type_t FiberPoolDataType = {
     "fiber_pool",
     {NULL, fiber_pool_free, fiber_pool_memsize,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE

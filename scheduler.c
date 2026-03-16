@@ -103,7 +103,7 @@ static const rb_data_type_t blocking_operation_data_type = {
         blocking_operation_free,
         blocking_operation_memsize,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE | RUBY_TYPED_WB_PROTECTED
 };
 
 /*

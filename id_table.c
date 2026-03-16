@@ -356,7 +356,7 @@ const rb_data_type_t rb_managed_id_table_type = {
         .dfree = managed_id_table_free,
         .dsize = managed_id_table_memsize,
     },
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE,
 };
 
 static inline struct rb_id_table *
