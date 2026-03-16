@@ -4110,20 +4110,6 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
     return result;
 }
 
-// Spread N bits into 2N bits: bit k → bits 2k and 2k+1.
-// e.g. 0b1010 → 0b11001100
-static inline bits_t
-spread_bits(bits_t x)
-{
-    bits_t result = 0;
-    for (int b = 0; b < BITS_BITLENGTH / 2; b++) {
-        if (x & ((bits_t)1 << b)) {
-            result |= (bits_t)RVALUE_AGE_BIT_MASK << (b * RVALUE_AGE_BIT_COUNT);
-        }
-    }
-    return result;
-}
-
 // Clear bits for the page that was swept by the background thread.
 static inline void
 gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, bool force_setup_mark_bits)
