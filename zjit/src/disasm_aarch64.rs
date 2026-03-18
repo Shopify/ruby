@@ -5,11 +5,11 @@
 // Ported from the Dart SDK's runtime/vm/compiler/assembler/disassembler_arm64.cc
 // to Rust. Pure Rust, no external dependencies.
 
-/// Register names matching the Dart VM convention.
+/// Register names using standard ARM64 convention.
 const CPU_REG_NAMES: [&str; 32] = [
-    "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11",
-    "r12", "r13", "r14", "r15", "tmp", "tmp2", "r18", "r19", "r20", "r21",
-    "r22", "r23", "r24", "r25", "r26", "pp", "r28", "fp", "lr", "zr",
+    "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
+    "x12", "x13", "x14", "x15", "x16", "x17", "x18", "x19", "x20", "x21",
+    "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "xzr",
 ];
 
 const SHIFT_NAMES: [&str; 4] = ["lsl", "lsr", "asr", "ror"];
@@ -514,8 +514,8 @@ impl Arm64Decoder {
         debug_assert!(reg < 32);
         if reg == 31 {
             match r31t {
-                R31Type::IsZR => self.print("zr"),
-                R31Type::IsSP => self.print("csp"),
+                R31Type::IsZR => self.print("xzr"),
+                R31Type::IsSP => self.print("sp"),
             }
         } else {
             self.print(CPU_REG_NAMES[reg as usize]);
@@ -1963,86 +1963,86 @@ mod tests {
         // movz r0, #0x2a  (hw=0, imm16=42, sf=1)
         // Encoding: 1 10 100101 00 0000000000101010 00000
         let w = 0xD280_0540; // movz x0, #0x2a
-        assert_eq!(dis1(w), "movz r0, #0x2a");
+        assert_eq!(dis1(w), "movz x0, #0x2a");
     }
 
     #[test]
     fn test_movz1_lsl16() {
         // movz r0, #0x2a, lsl #16
         let w = 0xD2A0_0540; // movz x0, #0x2a, lsl #16
-        assert_eq!(dis1(w), "movz r0, #0x2a lsl 16");
+        assert_eq!(dis1(w), "movz x0, #0x2a lsl 16");
     }
 
     #[test]
     fn test_movz2_lsl32() {
         // movz r0, #0x2a, lsl #32
         let w = 0xD2C0_0540;
-        assert_eq!(dis1(w), "movz r0, #0x2a lsl 32");
+        assert_eq!(dis1(w), "movz x0, #0x2a lsl 32");
     }
 
     #[test]
     fn test_movz3_lsl48() {
         // movz r0, #0x2a, lsl #48
         let w = 0xD2E0_0540;
-        assert_eq!(dis1(w), "movz r0, #0x2a lsl 48");
+        assert_eq!(dis1(w), "movz x0, #0x2a lsl 48");
     }
 
     #[test]
     fn test_movn0() {
         // movn r0, #0x2a
         let w = 0x9280_0540;
-        assert_eq!(dis1(w), "movn r0, #0x2a");
+        assert_eq!(dis1(w), "movn x0, #0x2a");
     }
 
     #[test]
     fn test_movn1_lsl16() {
         // movn r0, #0x2a, lsl #16
         let w = 0x92A0_0540;
-        assert_eq!(dis1(w), "movn r0, #0x2a lsl 16");
+        assert_eq!(dis1(w), "movn x0, #0x2a lsl 16");
     }
 
     #[test]
     fn test_movn2_lsl32() {
         let w = 0x92C0_0540;
-        assert_eq!(dis1(w), "movn r0, #0x2a lsl 32");
+        assert_eq!(dis1(w), "movn x0, #0x2a lsl 32");
     }
 
     #[test]
     fn test_movn3_lsl48() {
         let w = 0x92E0_0540;
-        assert_eq!(dis1(w), "movn r0, #0x2a lsl 48");
+        assert_eq!(dis1(w), "movn x0, #0x2a lsl 48");
     }
 
     #[test]
     fn test_movk0() {
         // movk r0, #0x2a
         let w = 0xF280_0540;
-        assert_eq!(dis1(w), "movk r0, #0x2a");
+        assert_eq!(dis1(w), "movk x0, #0x2a");
     }
 
     #[test]
     fn test_movk1_lsl16() {
         let w = 0xF2A0_0540;
-        assert_eq!(dis1(w), "movk r0, #0x2a lsl 16");
+        assert_eq!(dis1(w), "movk x0, #0x2a lsl 16");
     }
 
     #[test]
     fn test_movk2_lsl32() {
         let w = 0xF2C0_0540;
-        assert_eq!(dis1(w), "movk r0, #0x2a lsl 32");
+        assert_eq!(dis1(w), "movk x0, #0x2a lsl 32");
     }
 
     #[test]
     fn test_movk3_lsl48() {
         let w = 0xF2E0_0540;
-        assert_eq!(dis1(w), "movk r0, #0x2a lsl 48");
+        assert_eq!(dis1(w), "movk x0, #0x2a lsl 48");
     }
 
     #[test]
     fn test_movz_big() {
         // movz r0, #0x8000
         let w = 0xD290_0000;
-        assert_eq!(dis1(w), "movz r0, #0x8000");
+        assert_eq!(dis1(w), "movz x0, #0x8000");
     }
 
     // -----------------------------------------------------------------------
@@ -2053,35 +2053,35 @@ mod tests {
     fn test_add_reg() {
         // add x0, x0, x1  -> 0x8B010000
         let w = 0x8B01_0000;
-        assert_eq!(dis1(w), "add r0, r0, r1");
+        assert_eq!(dis1(w), "add x0, x0, x1");
     }
 
     #[test]
     fn test_add_lsl_reg() {
         // add x0, x0, x1, lsl #1 -> 0x8B010400
         let w = 0x8B01_0400;
-        assert_eq!(dis1(w), "add r0, r0, r1 lsl #1");
+        assert_eq!(dis1(w), "add x0, x0, x1 lsl #1");
     }
 
     #[test]
     fn test_add_lsr_reg() {
         // add x0, x0, x1, lsr #1 -> 0x8B410400
         let w = 0x8B41_0400;
-        assert_eq!(dis1(w), "add r0, r0, r1 lsr #1");
+        assert_eq!(dis1(w), "add x0, x0, x1 lsr #1");
     }
 
     #[test]
     fn test_add_asr_reg() {
         // add x0, x0, x1, asr #1 -> 0x8B810400
         let w = 0x8B81_0400;
-        assert_eq!(dis1(w), "add r0, r0, r1 asr #1");
+        assert_eq!(dis1(w), "add x0, x0, x1 asr #1");
     }
 
     #[test]
     fn test_sub_reg() {
         // sub x0, x0, x1 -> 0xCB010000
         let w = 0xCB01_0000;
-        assert_eq!(dis1(w), "sub r0, r0, r1");
+        assert_eq!(dis1(w), "sub x0, x0, x1");
     }
 
     // -----------------------------------------------------------------------
@@ -2092,28 +2092,28 @@ mod tests {
     fn test_add_imm() {
         // add x0, x0, #42 -> 0x9100A800
         let w = 0x9100_A800;
-        assert_eq!(dis1(w), "add r0, r0, #0x2a");
+        assert_eq!(dis1(w), "add x0, x0, #0x2a");
     }
 
     #[test]
     fn test_sub_imm() {
         // sub x0, x0, #42 -> 0xD100A800
         let w = 0xD100_A800;
-        assert_eq!(dis1(w), "sub r0, r0, #0x2a");
+        assert_eq!(dis1(w), "sub x0, x0, #0x2a");
     }
 
     #[test]
     fn test_cmp_imm() {
         // cmp x1, #1 -> subs xzr, x1, #1 -> 0xF100043F
         let w = 0xF100_043F;
-        assert_eq!(dis1(w), "cmp r1, #0x1");
+        assert_eq!(dis1(w), "cmp x1, #0x1");
     }
 
     #[test]
     fn test_cmn_imm() {
         // cmn x1, #1 -> adds xzr, x1, #1 -> 0xB100043F
         let w = 0xB100_043F;
-        assert_eq!(dis1(w), "cmn r1, #0x1");
+        assert_eq!(dis1(w), "cmn x1, #0x1");
     }
 
     // -----------------------------------------------------------------------
@@ -2124,14 +2124,14 @@ mod tests {
     fn test_mov_reg() {
         // mov x0, x1 -> orr x0, xzr, x1 -> 0xAA0103E0
         let w = 0xAA01_03E0;
-        assert_eq!(dis1(w), "mov r0, r1");
+        assert_eq!(dis1(w), "mov x0, x1");
     }
 
     #[test]
     fn test_mov_sp() {
         // add x31(sp), x31(sp), #0 -- decoded as mov alias
         let w = 0x9100_03FF;
-        assert_eq!(dis1(w), "mov csp, csp");
+        assert_eq!(dis1(w), "mov sp, sp");
     }
 
     // -----------------------------------------------------------------------
@@ -2142,49 +2142,49 @@ mod tests {
     fn test_and_reg() {
         // and x0, x1, x2 -> 0x8A020020
         let w = 0x8A02_0020;
-        assert_eq!(dis1(w), "and r0, r1, r2");
+        assert_eq!(dis1(w), "and x0, x1, x2");
     }
 
     #[test]
     fn test_and_shift_reg() {
         // and x0, x1, x2, lsl #1 -> 0x8A020420
         let w = 0x8A02_0420;
-        assert_eq!(dis1(w), "and r0, r1, r2 lsl #1");
+        assert_eq!(dis1(w), "and x0, x1, x2 lsl #1");
     }
 
     #[test]
     fn test_orr_reg() {
         // orr x0, x1, x2 -> 0xAA020020
         let w = 0xAA02_0020;
-        assert_eq!(dis1(w), "orr r0, r1, r2");
+        assert_eq!(dis1(w), "orr x0, x1, x2");
     }
 
     #[test]
     fn test_eor_reg() {
         // eor x0, x1, x2 -> 0xCA020020
         let w = 0xCA02_0020;
-        assert_eq!(dis1(w), "eor r0, r1, r2");
+        assert_eq!(dis1(w), "eor x0, x1, x2");
     }
 
     #[test]
     fn test_bic_reg() {
         // bic x0, x1, x2 -> 0x8A220020
         let w = 0x8A22_0020;
-        assert_eq!(dis1(w), "bic r0, r1, r2");
+        assert_eq!(dis1(w), "bic x0, x1, x2");
     }
 
     #[test]
     fn test_orn_reg() {
         // orn x0, x1, x2 -> 0xAA220020
         let w = 0xAA22_0020;
-        assert_eq!(dis1(w), "orn r0, r1, r2");
+        assert_eq!(dis1(w), "orn x0, x1, x2");
     }
 
     #[test]
     fn test_eon_reg() {
         // eon x0, x1, x2 -> 0xCA220020
         let w = 0xCA22_0020;
-        assert_eq!(dis1(w), "eon r0, r1, r2");
+        assert_eq!(dis1(w), "eon x0, x1, x2");
     }
 
     // -----------------------------------------------------------------------
@@ -2195,17 +2195,17 @@ mod tests {
     fn test_and_imm() {
         // and x0, x1, #1 -> 0x92400020
         let w = 0x9240_0020;
-        assert_eq!(dis1(w), "and r0, r1, 0x1");
+        assert_eq!(dis1(w), "and x0, x1, 0x1");
     }
 
     #[test]
     fn test_orr_imm() {
         // orr x1, x1, #0x20002000200020 -> we need the proper encoding
-        // The test shows: "orr r1, r1, 0x20002000200020\n"
+        // The test shows: "orr x1, x1, 0x20002000200020\n"
         // This is a repeated pattern. Let's pick a simpler one.
         // tst x0, #1 -> ands xzr, x0, #1 -> 0xF240001F
         let w = 0xF240_001F;
-        assert_eq!(dis1(w), "tst r0, 0x1");
+        assert_eq!(dis1(w), "tst x0, 0x1");
     }
 
     // -----------------------------------------------------------------------
@@ -2216,28 +2216,28 @@ mod tests {
     fn test_str_pre_index() {
         // str x1, [sp, #-8]! -> 0xF81F8FE1
         let w = 0xF81F_8FE1;
-        assert_eq!(dis1(w), "str r1, [csp, #-8]!");
+        assert_eq!(dis1(w), "str x1, [sp, #-8]!");
     }
 
     #[test]
     fn test_ldr_post_index() {
         // ldr x0, [sp], #8 -> 0xF84087E0
         let w = 0xF840_87E0;
-        assert_eq!(dis1(w), "ldr r0, [csp], #8 !");
+        assert_eq!(dis1(w), "ldr x0, [sp], #8 !");
     }
 
     #[test]
     fn test_str_unsigned_offset() {
         // str x1, [sp, #4096] -> 0xF9080001 (offset = 4096/8 = 512 in imm12)
         let w = 0xF908_03E1;
-        assert_eq!(dis1(w), "str r1, [csp, #4096]");
+        assert_eq!(dis1(w), "str x1, [sp, #4096]");
     }
 
     #[test]
     fn test_ldr_unsigned_offset() {
         // ldr x0, [sp] -> 0xF94003E0
         let w = 0xF940_03E0;
-        assert_eq!(dis1(w), "ldr r0, [csp]");
+        assert_eq!(dis1(w), "ldr x0, [sp]");
     }
 
     #[test]
@@ -2245,14 +2245,14 @@ mod tests {
         // strw r1, [sp, #-4]! -> str w1, [sp, #-4]! -> 0xB81FC FE1
         // encoding: size=10 1 11 000 00 0 111111100 11 11111 00001
         let w = 0xB81F_CFE1;
-        assert_eq!(dis1(w), "strw r1, [csp, #-4]!");
+        assert_eq!(dis1(w), "strw x1, [sp, #-4]!");
     }
 
     #[test]
     fn test_ldrsw() {
         // ldrsw x0, [sp] -> 0xB98003E0
         let w = 0xB980_03E0;
-        assert_eq!(dis1(w), "ldrsw r0, [csp]");
+        assert_eq!(dis1(w), "ldrsw x0, [sp]");
     }
 
     // -----------------------------------------------------------------------
@@ -2263,21 +2263,21 @@ mod tests {
     fn test_stp_pre_index() {
         // stp x2, x3, [sp, #-16]! -> 0xA9BF0FE2
         let w = 0xA9BF_0FE2;
-        assert_eq!(dis1(w), "stp r2, r3, [csp, #-16]!");
+        assert_eq!(dis1(w), "stp x2, x3, [sp, #-16]!");
     }
 
     #[test]
     fn test_ldp_post_index() {
         // ldp x0, x1, [sp], #16 -> 0xA8C107E0
         let w = 0xA8C1_07E0;
-        assert_eq!(dis1(w), "ldp r0, r1, [csp], #16 !");
+        assert_eq!(dis1(w), "ldp x0, x1, [sp], #16 !");
     }
 
     #[test]
     fn test_stp_offset() {
         // stp x2, x3, [sp, #16] -> 0xA9010FE2
         let w = 0xA901_0FE2;
-        assert_eq!(dis1(w), "stp r2, r3, [csp, #16]");
+        assert_eq!(dis1(w), "stp x2, x3, [sp, #16]");
     }
 
     #[test]
@@ -2285,7 +2285,7 @@ mod tests {
         // ldp x0, x1, [sp, #16] -> 0xA9C107E0 -> actual: 0xA9410FE0
         // ldp x0, x1, [sp, #16] = A9 41 07 E0 (offset)
         let w = 0xA941_07E0;
-        assert_eq!(dis1(w), "ldp r0, r1, [csp, #16]");
+        assert_eq!(dis1(w), "ldp x0, x1, [sp, #16]");
     }
 
     // -----------------------------------------------------------------------
@@ -2349,14 +2349,14 @@ mod tests {
     fn test_cbz() {
         // cbz x1, +8 -> 0xB4000041
         let w = 0xB400_0041;
-        assert_eq!(dis1(w), "cbz r1, +8");
+        assert_eq!(dis1(w), "cbz x1, +8");
     }
 
     #[test]
     fn test_cbnz() {
         // cbnz x1, +8 -> 0xB5000041
         let w = 0xB500_0041;
-        assert_eq!(dis1(w), "cbnz r1, +8");
+        assert_eq!(dis1(w), "cbnz x1, +8");
     }
 
     // -----------------------------------------------------------------------
@@ -2374,21 +2374,21 @@ mod tests {
     fn test_ret_rn() {
         // ret x0 -> 0xD65F0000
         let w = 0xD65F_0000;
-        assert_eq!(dis1(w), "ret r0");
+        assert_eq!(dis1(w), "ret x0");
     }
 
     #[test]
     fn test_br() {
         // br x0 -> 0xD61F0000
         let w = 0xD61F_0000;
-        assert_eq!(dis1(w), "br r0");
+        assert_eq!(dis1(w), "br x0");
     }
 
     #[test]
     fn test_blr() {
         // blr x0 -> 0xD63F0000
         let w = 0xD63F_0000;
-        assert_eq!(dis1(w), "blr r0");
+        assert_eq!(dis1(w), "blr x0");
     }
 
     // -----------------------------------------------------------------------
@@ -2399,21 +2399,21 @@ mod tests {
     fn test_cmp_reg() {
         // cmp x1, x2 -> subs xzr, x1, x2 -> 0xEB02003F
         let w = 0xEB02_003F;
-        assert_eq!(dis1(w), "cmp r1, r2");
+        assert_eq!(dis1(w), "cmp x1, x2");
     }
 
     #[test]
     fn test_adds_reg() {
         // adds x16, x2, x1 -> 0xAB010050
         let w = 0xAB01_0050;
-        assert_eq!(dis1(w), "adds tmp, r2, r1");
+        assert_eq!(dis1(w), "adds x16, x2, x1");
     }
 
     #[test]
     fn test_subs_reg() {
         // subs x16, x0, x1 -> 0xEB010010
         let w = 0xEB01_0010;
-        assert_eq!(dis1(w), "subs tmp, r0, r1");
+        assert_eq!(dis1(w), "subs x16, x0, x1");
     }
 
     // -----------------------------------------------------------------------
@@ -2424,28 +2424,28 @@ mod tests {
     fn test_adc() {
         // adc x0, x0, x0 -> 0x9A000000
         let w = 0x9A00_0000;
-        assert_eq!(dis1(w), "adc r0, r0, r0");
+        assert_eq!(dis1(w), "adc x0, x0, x0");
     }
 
     #[test]
     fn test_adcs() {
         // adcs x16, x2, x0 -> 0xBA000050
         let w = 0xBA00_0050;
-        assert_eq!(dis1(w), "adcs tmp, r2, r0");
+        assert_eq!(dis1(w), "adcs x16, x2, x0");
     }
 
     #[test]
     fn test_sbc() {
         // sbc x0, x0, x0 -> 0xDA000000
         let w = 0xDA00_0000;
-        assert_eq!(dis1(w), "sbc r0, r0, r0");
+        assert_eq!(dis1(w), "sbc x0, x0, x0");
     }
 
     #[test]
     fn test_sbcs() {
         // sbcs x16, x0, x0 -> 0xFA000010
         let w = 0xFA00_0010;
-        assert_eq!(dis1(w), "sbcs tmp, r0, r0");
+        assert_eq!(dis1(w), "sbcs x16, x0, x0");
     }
 
     // -----------------------------------------------------------------------
@@ -2456,28 +2456,28 @@ mod tests {
     fn test_addw_s() {
         // addsw x16, x2, x1 (W-form: adds w16, w2, w1) -> 0x2B010050
         let w = 0x2B01_0050;
-        assert_eq!(dis1(w), "addws tmp, r2, r1");
+        assert_eq!(dis1(w), "addws x16, x2, x1");
     }
 
     #[test]
     fn test_subw_s() {
         // subsw x16, x0, x1 (W-form: subs w16, w0, w1) -> 0x6B010010
         let w = 0x6B01_0010;
-        assert_eq!(dis1(w), "subws tmp, r0, r1");
+        assert_eq!(dis1(w), "subws x16, x0, x1");
     }
 
     #[test]
     fn test_adcw() {
         // adcw x0, x0, x0 -> 0x1A000000
         let w = 0x1A00_0000;
-        assert_eq!(dis1(w), "adcw r0, r0, r0");
+        assert_eq!(dis1(w), "adcw x0, x0, x0");
     }
 
     #[test]
     fn test_sbcw() {
         // sbcw x0, x0, x0 -> 0x5A000000
         let w = 0x5A00_0000;
-        assert_eq!(dis1(w), "sbcw r0, r0, r0");
+        assert_eq!(dis1(w), "sbcw x0, x0, x0");
     }
 
     // -----------------------------------------------------------------------
@@ -2488,14 +2488,14 @@ mod tests {
     fn test_csel() {
         // csel x0, x1, x2, eq -> 0x9A820020
         let w = 0x9A82_0020;
-        assert_eq!(dis1(w), "csel r0, r1, r2, eq");
+        assert_eq!(dis1(w), "csel x0, x1, x2, eq");
     }
 
     #[test]
     fn test_cset_vs() {
         // cset x0, vs -> csinc x0, xzr, xzr, vc -> 0x9A9F_77E0
         let w = 0x9A9F_77E0;
-        assert_eq!(dis1(w), "cset r0, vs");
+        assert_eq!(dis1(w), "cset x0, vs");
     }
 
     // -----------------------------------------------------------------------
@@ -2506,21 +2506,21 @@ mod tests {
     fn test_mul() {
         // mul x0, x1, x2 -> madd x0, x1, x2, xzr -> 0x9B027C20
         let w = 0x9B02_7C20;
-        assert_eq!(dis1(w), "mul r0, r1, r2");
+        assert_eq!(dis1(w), "mul x0, x1, x2");
     }
 
     #[test]
     fn test_sdiv() {
         // sdiv x0, x1, x2 -> 0x9AC20C20
         let w = 0x9AC2_0C20;
-        assert_eq!(dis1(w), "sdiv r0, r1, r2");
+        assert_eq!(dis1(w), "sdiv x0, x1, x2");
     }
 
     #[test]
     fn test_udiv() {
         // udiv x0, x1, x2 -> 0x9AC20820
         let w = 0x9AC2_0820;
-        assert_eq!(dis1(w), "udiv r0, r1, r2");
+        assert_eq!(dis1(w), "udiv x0, x1, x2");
     }
 
     // -----------------------------------------------------------------------
@@ -2531,21 +2531,21 @@ mod tests {
     fn test_lsl_reg() {
         // lsl x0, x1, x2 -> 0x9AC22020
         let w = 0x9AC2_2020;
-        assert_eq!(dis1(w), "lsl r0, r1, r2");
+        assert_eq!(dis1(w), "lsl x0, x1, x2");
     }
 
     #[test]
     fn test_lsr_reg() {
         // lsr x0, x1, x2 -> 0x9AC22420
         let w = 0x9AC2_2420;
-        assert_eq!(dis1(w), "lsr r0, r1, r2");
+        assert_eq!(dis1(w), "lsr x0, x1, x2");
     }
 
     #[test]
     fn test_asr_reg() {
         // asr x0, x1, x2 -> 0x9AC22820
         let w = 0x9AC2_2820;
-        assert_eq!(dis1(w), "asr r0, r1, r2");
+        assert_eq!(dis1(w), "asr x0, x1, x2");
     }
 
     // -----------------------------------------------------------------------
@@ -2556,7 +2556,7 @@ mod tests {
     fn test_clz() {
         // clz x0, x1 -> 0xDAC01020
         let w = 0xDAC0_1020;
-        assert_eq!(dis1(w), "clz r0, r1");
+        assert_eq!(dis1(w), "clz x0, x1");
     }
 
     // -----------------------------------------------------------------------
@@ -2584,7 +2584,7 @@ mod tests {
     fn test_add_ext_sxtw() {
         // add x0, x0, x1, sxtw -> 0x8B21C000
         let w = 0x8B21_C000;
-        assert_eq!(dis1(w), "add r0, r0, r1 sxtw");
+        assert_eq!(dis1(w), "add x0, x0, x1 sxtw");
     }
 
     // -----------------------------------------------------------------------
@@ -2595,21 +2595,21 @@ mod tests {
     fn test_sxtw() {
         // sxtw x0, x1 -> sbfm x0, x1, #0, #31 -> 0x93407C20
         let w = 0x9340_7C20;
-        assert_eq!(dis1(w), "sxtw r0, r1");
+        assert_eq!(dis1(w), "sxtw x0, x1");
     }
 
     #[test]
     fn test_sxth() {
         // sxth x0, x1 -> sbfm x0, x1, #0, #15 -> 0x93403C20
         let w = 0x9340_3C20;
-        assert_eq!(dis1(w), "sxth r0, r1");
+        assert_eq!(dis1(w), "sxth x0, x1");
     }
 
     #[test]
     fn test_sxtb() {
         // sxtb x0, x1 -> sbfm x0, x1, #0, #7 -> 0x93401C20
         let w = 0x9340_1C20;
-        assert_eq!(dis1(w), "sxtb r0, r1");
+        assert_eq!(dis1(w), "sxtb x0, x1");
     }
 
     // -----------------------------------------------------------------------
@@ -2661,7 +2661,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "add r0, zr, zr\nadd r0, r0, #0x2a\nret\n"
+            "add x0, xzr, xzr\nadd x0, x0, #0x2a\nret\n"
         );
     }
 
@@ -2671,7 +2671,7 @@ mod tests {
             0xD280_0540u32, // movz x0, #0x2a
             0xD65F_03C0,    // ret
         ];
-        assert_eq!(dis(&words), "movz r0, #0x2a\nret\n");
+        assert_eq!(dis(&words), "movz x0, #0x2a\nret\n");
     }
 
     // -----------------------------------------------------------------------
@@ -2682,7 +2682,7 @@ mod tests {
     fn test_tbz() {
         // tbzw r1, #5, +8 -> 0x36280041
         let w = 0x3628_0041;
-        assert_eq!(dis1(w), "tbzw r1, #5, +8");
+        assert_eq!(dis1(w), "tbzw x1, #5, +8");
     }
 
     #[test]
@@ -2690,7 +2690,7 @@ mod tests {
         // tbnz x1, #35, +8 -> bit31=1(for bit>=32), b40..19=35-32=3, imm14=2(+8)
         // tbnz r1, #35, +8 -> 0xB7180041
         let w = 0xB718_0041;
-        assert_eq!(dis1(w), "tbnz r1, #35, +8");
+        assert_eq!(dis1(w), "tbnz x1, #35, +8");
     }
 
     // -----------------------------------------------------------------------
@@ -2701,14 +2701,14 @@ mod tests {
     fn test_str_reg_sxtw() {
         // str x1, [csp, x2, sxtw] -> rn=31, rt=1, rm=2, option=sxtw(110), S=0
         let w = 0xF802_CBE1;
-        assert_eq!(dis1(w), "str r1, [csp, r2 sxtw]");
+        assert_eq!(dis1(w), "str x1, [sp, x2 sxtw]");
     }
 
     #[test]
     fn test_ldr_reg_uxtx_scaled() {
         // ldr x0, [csp, x2, uxtx, scaled] -> rn=31, rt=0, rm=2, option=uxtx(011), S=1
         let w = 0xF842_7BE0;
-        assert_eq!(dis1(w), "ldr r0, [csp, r2 uxtx scaled]");
+        assert_eq!(dis1(w), "ldr x0, [sp, x2 uxtx scaled]");
     }
 
     // -----------------------------------------------------------------------
@@ -2719,7 +2719,7 @@ mod tests {
     fn test_sub_imm_shifted() {
         // sub csp, csp, #0x1000 -> imm12=1, sh=1 -> 0xD14007FF
         let w = 0xD140_07FF;
-        assert_eq!(dis1(w), "sub csp, csp, #0x1000");
+        assert_eq!(dis1(w), "sub sp, sp, #0x1000");
     }
 
     // -----------------------------------------------------------------------
@@ -2730,14 +2730,14 @@ mod tests {
     fn test_ands_reg() {
         // ands x3, x1, x2 -> 0xEA020023
         let w = 0xEA02_0023;
-        assert_eq!(dis1(w), "ands r3, r1, r2");
+        assert_eq!(dis1(w), "ands x3, x1, x2");
     }
 
     #[test]
     fn test_tst_reg() {
         // tst x1, x2 -> ands xzr, x1, x2 -> 0xEA02003F
         let w = 0xEA02_003F;
-        assert_eq!(dis1(w), "tst r1, r2");
+        assert_eq!(dis1(w), "tst x1, x2");
     }
 
     // -----------------------------------------------------------------------
@@ -2748,7 +2748,7 @@ mod tests {
     fn test_neg() {
         // neg x0, x1 -> sub x0, xzr, x1 -> 0xCB0103E0
         let w = 0xCB01_03E0;
-        assert_eq!(dis1(w), "neg r0, r1");
+        assert_eq!(dis1(w), "neg x0, x1");
     }
 
     // -----------------------------------------------------------------------
@@ -2759,21 +2759,21 @@ mod tests {
     fn test_asr_imm() {
         // asr x0, x0, #1 -> sbfm x0, x0, #1, #63 -> 0x9341FC00
         let w = 0x9341_FC00;
-        assert_eq!(dis1(w), "asr r0, r0, #1");
+        assert_eq!(dis1(w), "asr x0, x0, #1");
     }
 
     #[test]
     fn test_lsr_imm() {
         // lsr x0, x0, #1 -> ubfm x0, x0, #1, #63 -> 0xD341FC00
         let w = 0xD341_FC00;
-        assert_eq!(dis1(w), "lsr r0, r0, #1");
+        assert_eq!(dis1(w), "lsr x0, x0, #1");
     }
 
     #[test]
     fn test_lsl_imm_bitfield() {
         // lsl x0, x1, #3 -> ubfm x0, x1, #61, #60 -> 0xD37DF020
         let w = 0xD37D_F020;
-        assert_eq!(dis1(w), "lsl r0, r1, #3");
+        assert_eq!(dis1(w), "lsl x0, x1, #3");
     }
 
     // -----------------------------------------------------------------------
@@ -2784,14 +2784,14 @@ mod tests {
     fn test_movzw() {
         // movzw w0, #0x2a -> movz w0, #0x2a -> 0x52800540
         let w = 0x5280_0540;
-        assert_eq!(dis1(w), "movzw r0, #0x2a");
+        assert_eq!(dis1(w), "movzw x0, #0x2a");
     }
 
     #[test]
     fn test_asrw_imm() {
         // asrw x0, x0, #1 -> sbfm w0, w0, #1, #31 -> 0x13017C00
         let w = 0x1301_7C00;
-        assert_eq!(dis1(w), "asrw r0, r0, #1");
+        assert_eq!(dis1(w), "asrw x0, x0, #1");
     }
 
     // -----------------------------------------------------------------------
@@ -2802,77 +2802,77 @@ mod tests {
     fn test_lsl_imm_2() {
         // lsl x0, x0, #2 -> ubfm x0, x0, #62, #61 -> 0xD37EF400
         let w = 0xD37E_F400;
-        assert_eq!(dis1(w), "lsl r0, r0, #2");
+        assert_eq!(dis1(w), "lsl x0, x0, #2");
     }
 
     #[test]
     fn test_lsl_imm_3() {
         // lsl x0, x0, #3 -> ubfm x0, x0, #61, #60 -> 0xD37DF000
         let w = 0xD37D_F000;
-        assert_eq!(dis1(w), "lsl r0, r0, #3");
+        assert_eq!(dis1(w), "lsl x0, x0, #3");
     }
 
     #[test]
     fn test_lsl_imm_4() {
         // lsl x0, x0, #4 -> ubfm x0, x0, #60, #59 -> 0xD37CEC00
         let w = 0xD37C_EC00;
-        assert_eq!(dis1(w), "lsl r0, r0, #4");
+        assert_eq!(dis1(w), "lsl x0, x0, #4");
     }
 
     #[test]
     fn test_lsl_imm_60() {
         // lsl x0, x0, #60 -> ubfm x0, x0, #4, #3 -> 0xD3440C00
         let w = 0xD344_0C00;
-        assert_eq!(dis1(w), "lsl r0, r0, #60");
+        assert_eq!(dis1(w), "lsl x0, x0, #60");
     }
 
     #[test]
     fn test_lsl_imm_63() {
         // lsl x0, x0, #63 -> ubfm x0, x0, #1, #0 -> 0xD3410000
         let w = 0xD341_0000;
-        assert_eq!(dis1(w), "lsl r0, r0, #63");
+        assert_eq!(dis1(w), "lsl x0, x0, #63");
     }
 
     #[test]
     fn test_lsr_imm_2() {
         // lsr x0, x0, #2 -> ubfm x0, x0, #2, #63 -> 0xD342FC00
         let w = 0xD342_FC00;
-        assert_eq!(dis1(w), "lsr r0, r0, #2");
+        assert_eq!(dis1(w), "lsr x0, x0, #2");
     }
 
     #[test]
     fn test_lsr_imm_3() {
         // lsr x0, x0, #3 -> ubfm x0, x0, #3, #63 -> 0xD343FC00
         let w = 0xD343_FC00;
-        assert_eq!(dis1(w), "lsr r0, r0, #3");
+        assert_eq!(dis1(w), "lsr x0, x0, #3");
     }
 
     #[test]
     fn test_lsr_imm_63() {
         // lsr x0, x0, #63 -> ubfm x0, x0, #63, #63 -> 0xD37FFC00
         let w = 0xD37F_FC00;
-        assert_eq!(dis1(w), "lsr r0, r0, #63");
+        assert_eq!(dis1(w), "lsr x0, x0, #63");
     }
 
     #[test]
     fn test_asr_imm_2() {
         // asr x0, x0, #2 -> sbfm x0, x0, #2, #63 -> 0x9342FC00
         let w = 0x9342_FC00;
-        assert_eq!(dis1(w), "asr r0, r0, #2");
+        assert_eq!(dis1(w), "asr x0, x0, #2");
     }
 
     #[test]
     fn test_asr_imm_3() {
         // asr x0, x0, #3 -> sbfm x0, x0, #3, #63 -> 0x9343FC00
         let w = 0x9343_FC00;
-        assert_eq!(dis1(w), "asr r0, r0, #3");
+        assert_eq!(dis1(w), "asr x0, x0, #3");
     }
 
     #[test]
     fn test_asr_imm_63() {
         // asr x0, x0, #63 -> sbfm x0, x0, #63, #63 -> 0x937FFC00
         let w = 0x937F_FC00;
-        assert_eq!(dis1(w), "asr r0, r0, #63");
+        assert_eq!(dis1(w), "asr x0, x0, #63");
     }
 
     // W-form shifts
@@ -2880,42 +2880,42 @@ mod tests {
     fn test_lslw_imm_2() {
         // lslw r0, r0, #2 -> ubfm w0, w0, #30, #29 -> 0x531E7400
         let w = 0x531E_7400;
-        assert_eq!(dis1(w), "lslw r0, r0, #2");
+        assert_eq!(dis1(w), "lslw x0, x0, #2");
     }
 
     #[test]
     fn test_lslw_imm_31() {
         // lslw r0, r0, #31 -> ubfm w0, w0, #1, #0 -> 0x53010000
         let w = 0x5301_0000;
-        assert_eq!(dis1(w), "lslw r0, r0, #31");
+        assert_eq!(dis1(w), "lslw x0, x0, #31");
     }
 
     #[test]
     fn test_lsrw_imm_2() {
         // lsrw r0, r0, #2 -> ubfm w0, w0, #2, #31 -> 0x53027C00
         let w = 0x5302_7C00;
-        assert_eq!(dis1(w), "lsrw r0, r0, #2");
+        assert_eq!(dis1(w), "lsrw x0, x0, #2");
     }
 
     #[test]
     fn test_lsrw_imm_31() {
         // lsrw r0, r0, #31 -> ubfm w0, w0, #31, #31 -> 0x531F7C00
         let w = 0x531F_7C00;
-        assert_eq!(dis1(w), "lsrw r0, r0, #31");
+        assert_eq!(dis1(w), "lsrw x0, x0, #31");
     }
 
     #[test]
     fn test_asrw_imm_2() {
         // asrw r0, r0, #2 -> sbfm w0, w0, #2, #31 -> 0x13027C00
         let w = 0x1302_7C00;
-        assert_eq!(dis1(w), "asrw r0, r0, #2");
+        assert_eq!(dis1(w), "asrw x0, x0, #2");
     }
 
     #[test]
     fn test_asrw_imm_31() {
         // asrw r0, r0, #31 -> sbfm w0, w0, #31, #31 -> 0x131F7C00
         let w = 0x131F_7C00;
-        assert_eq!(dis1(w), "asrw r0, r0, #31");
+        assert_eq!(dis1(w), "asrw x0, x0, #31");
     }
 
     // -----------------------------------------------------------------------
@@ -2926,42 +2926,42 @@ mod tests {
     fn test_ubfm() {
         // ubfm x0, x1, #4, #11 -> 0xD3442C20
         let w = 0xD344_2C20;
-        assert_eq!(dis1(w), "ubfm r0, r1, #4, #11");
+        assert_eq!(dis1(w), "ubfm x0, x1, #4, #11");
     }
 
     #[test]
     fn test_sbfm() {
         // sbfm x0, x1, #4, #11 -> 0x93442C20
         let w = 0x9344_2C20;
-        assert_eq!(dis1(w), "sbfm r0, r1, #4, #11");
+        assert_eq!(dis1(w), "sbfm x0, x1, #4, #11");
     }
 
     #[test]
     fn test_bfm() {
         // bfm x0, x1, #52, #4 -> 0xB3741020
         let w = 0xB374_1020;
-        assert_eq!(dis1(w), "bfm r0, r1, #52, #4");
+        assert_eq!(dis1(w), "bfm x0, x1, #52, #4");
     }
 
     #[test]
     fn test_bfm_bfxil() {
         // bfm x0, x1, #4, #11 -> 0xB3442C20
         let w = 0xB344_2C20;
-        assert_eq!(dis1(w), "bfm r0, r1, #4, #11");
+        assert_eq!(dis1(w), "bfm x0, x1, #4, #11");
     }
 
     #[test]
     fn test_ubfm_uxtw() {
         // ubfm x0, x1, #0, #31 -> 0xD3407C20
         let w = 0xD340_7C20;
-        assert_eq!(dis1(w), "ubfm r0, r1, #0, #31");
+        assert_eq!(dis1(w), "ubfm x0, x1, #0, #31");
     }
 
     #[test]
     fn test_sbfm_alias() {
         // sbfm x0, x1, #60, #11 -> 0x937C2C20
         let w = 0x937C_2C20;
-        assert_eq!(dis1(w), "sbfm r0, r1, #60, #11");
+        assert_eq!(dis1(w), "sbfm x0, x1, #60, #11");
     }
 
     // -----------------------------------------------------------------------
@@ -2972,14 +2972,14 @@ mod tests {
     fn test_uxtb() {
         // uxtb x0, x1 -> ubfm x0, x1, #0, #7 -> 0xD3401C20
         let w = 0xD340_1C20;
-        assert_eq!(dis1(w), "uxtb r0, r1");
+        assert_eq!(dis1(w), "uxtb x0, x1");
     }
 
     #[test]
     fn test_uxth() {
         // uxth x0, x1 -> ubfm x0, x1, #0, #15 -> 0xD3403C20
         let w = 0xD340_3C20;
-        assert_eq!(dis1(w), "uxth r0, r1");
+        assert_eq!(dis1(w), "uxth x0, x1");
     }
 
     // -----------------------------------------------------------------------
@@ -2990,63 +2990,63 @@ mod tests {
     fn test_csel_lt() {
         // csel x0, x1, x2, lt -> 0x9A82B020
         let w = 0x9A82_B020;
-        assert_eq!(dis1(w), "csel r0, r1, r2, lt");
+        assert_eq!(dis1(w), "csel x0, x1, x2, lt");
     }
 
     #[test]
     fn test_csel_ge() {
         // csel x0, x1, x2, ge -> 0x9A82A020
         let w = 0x9A82_A020;
-        assert_eq!(dis1(w), "csel r0, r1, r2, ge");
+        assert_eq!(dis1(w), "csel x0, x1, x2, ge");
     }
 
     #[test]
     fn test_csinc() {
         // csinc x0, x2, x1, lt -> 0x9A81B440
         let w = 0x9A81_B440;
-        assert_eq!(dis1(w), "csinc r0, r2, r1, lt");
+        assert_eq!(dis1(w), "csinc x0, x2, x1, lt");
     }
 
     #[test]
     fn test_csinv() {
         // csinv x0, x2, x1, ge -> 0xDA81A040
         let w = 0xDA81_A040;
-        assert_eq!(dis1(w), "csinv r0, r2, r1, ge");
+        assert_eq!(dis1(w), "csinv x0, x2, x1, ge");
     }
 
     #[test]
     fn test_csinv_lt() {
         // csinv x0, x2, x1, lt -> 0xDA81B040
         let w = 0xDA81_B040;
-        assert_eq!(dis1(w), "csinv r0, r2, r1, lt");
+        assert_eq!(dis1(w), "csinv x0, x2, x1, lt");
     }
 
     #[test]
     fn test_csneg() {
         // csneg x0, x2, x1, ge -> 0xDA81A440
         let w = 0xDA81_A440;
-        assert_eq!(dis1(w), "csneg r0, r2, r1, ge");
+        assert_eq!(dis1(w), "csneg x0, x2, x1, ge");
     }
 
     #[test]
     fn test_csneg_lt() {
         // csneg x0, x2, x1, lt -> 0xDA81B440
         let w = 0xDA81_B440;
-        assert_eq!(dis1(w), "csneg r0, r2, r1, lt");
+        assert_eq!(dis1(w), "csneg x0, x2, x1, lt");
     }
 
     #[test]
     fn test_cset_lt() {
         // cset x0, lt -> csinc x0, xzr, xzr, ge -> 0x9A9FA7E0
         let w = 0x9A9F_A7E0;
-        assert_eq!(dis1(w), "cset r0, lt");
+        assert_eq!(dis1(w), "cset x0, lt");
     }
 
     #[test]
     fn test_csetm_lt() {
         // csetm x0, lt -> csinv x0, xzr, xzr, ge -> 0xDA9FA3E0
         let w = 0xDA9F_A3E0;
-        assert_eq!(dis1(w), "csetm r0, lt");
+        assert_eq!(dis1(w), "csetm x0, lt");
     }
 
     #[test]
@@ -3054,7 +3054,7 @@ mod tests {
         // cinc x0, x1, lt -> csinc x0, x1, x1, ge -> (b29=0, b10=1, rn=1, rm=1, cond=ge(1010))
         // 1 00 11010100 00001 1010 01 00001 00000 -> 0x9A81A420
         let w = 0x9A81_A420;
-        assert_eq!(dis1(w), "cinc r0, r1, lt");
+        assert_eq!(dis1(w), "cinc x0, x1, lt");
     }
 
     #[test]
@@ -3062,7 +3062,7 @@ mod tests {
         // cinv x0, x1, lt -> csinv x0, x1, x1, ge -> (b29=2, b10=0, rn=1, rm=1, cond=ge(1010))
         // 1 10 11010100 00001 1010 00 00001 00000 -> 0xDA81A020
         let w = 0xDA81_A020;
-        assert_eq!(dis1(w), "cinv r0, r1, lt");
+        assert_eq!(dis1(w), "cinv x0, x1, lt");
     }
 
     #[test]
@@ -3070,7 +3070,7 @@ mod tests {
         // cneg x0, x1, lt -> csneg x0, x1, x1, ge -> (b29=2, b10=1, rn=1, rm=1, cond=ge(1010))
         // 1 10 11010100 00001 1010 01 00001 00000 -> 0xDA81A420
         let w = 0xDA81_A420;
-        assert_eq!(dis1(w), "cneg r0, r1, lt");
+        assert_eq!(dis1(w), "cneg x0, x1, lt");
     }
 
     // -----------------------------------------------------------------------
@@ -3082,7 +3082,7 @@ mod tests {
         // ldxr r0, [r0] -> rn=0 instead of 31 to avoid zr/csp issue
         // 11 001000 0 1 0 11111 0 11111 00000 00000 -> 0xC85F7C00
         let w = 0xC85F_7C00;
-        assert_eq!(dis1(w), "ldxr r0, [r0]");
+        assert_eq!(dis1(w), "ldxr x0, [x0]");
     }
 
     #[test]
@@ -3090,7 +3090,7 @@ mod tests {
         // stxr tmp, r1, [r0] -> rn=0
         // 11 001000 0 0 0 10000 0 11111 00000 00001 -> 0xC8107C01
         let w = 0xC810_7C01;
-        assert_eq!(dis1(w), "stxr tmp, r1, [r0]");
+        assert_eq!(dis1(w), "stxr x16, x1, [x0]");
     }
 
     #[test]
@@ -3098,14 +3098,14 @@ mod tests {
         // ldxrw r0, [r1] -> rn=1
         // 10 001000 0 1 0 11111 0 11111 00001 00000 -> 0x885F7C20
         let w = 0x885F_7C20;
-        assert_eq!(dis1(w), "ldxrw r0, [r1]");
+        assert_eq!(dis1(w), "ldxrw x0, [x1]");
     }
 
     #[test]
     fn test_stxrw() {
         // stxrw tmp, r1, [r0] -> 0x88107C01
         let w = 0x8810_7C01;
-        assert_eq!(dis1(w), "stxrw tmp, r1, [r0]");
+        assert_eq!(dis1(w), "stxrw x16, x1, [x0]");
     }
 
     // -----------------------------------------------------------------------
@@ -3117,28 +3117,28 @@ mod tests {
         // ldar r1, [r0] -> rn=0
         // 11 001000 1 1 0 11111 1 11111 00000 00001 -> 0xC8DFFC01
         let w = 0xC8DF_FC01;
-        assert_eq!(dis1(w), "ldar r1, [r0]");
+        assert_eq!(dis1(w), "ldar x1, [x0]");
     }
 
     #[test]
     fn test_ldarw() {
         // ldarw r1, [r0] -> 0x88DFFC01
         let w = 0x88DF_FC01;
-        assert_eq!(dis1(w), "ldarw r1, [r0]");
+        assert_eq!(dis1(w), "ldarw x1, [x0]");
     }
 
     #[test]
     fn test_stlr() {
         // stlr r1, [r0] -> 0xC89FFC01
         let w = 0xC89F_FC01;
-        assert_eq!(dis1(w), "stlr r1, [r0]");
+        assert_eq!(dis1(w), "stlr x1, [x0]");
     }
 
     #[test]
     fn test_stlrw() {
         // stlrw r1, [r0] -> 0x889FFC01
         let w = 0x889F_FC01;
-        assert_eq!(dis1(w), "stlrw r1, [r0]");
+        assert_eq!(dis1(w), "stlrw x1, [x0]");
     }
 
     // -----------------------------------------------------------------------
@@ -3149,14 +3149,14 @@ mod tests {
     fn test_ldclr() {
         // ldclr r2, r0, [r1] -> 0xF8221020
         let w = 0xF822_1020;
-        assert_eq!(dis1(w), "ldclr r2, r0, [r1]");
+        assert_eq!(dis1(w), "ldclr x2, x0, [x1]");
     }
 
     #[test]
     fn test_ldset() {
         // ldset r2, r0, [r1] -> 0xF8223020
         let w = 0xF822_3020;
-        assert_eq!(dis1(w), "ldset r2, r0, [r1]");
+        assert_eq!(dis1(w), "ldset x2, x0, [x1]");
     }
 
     // -----------------------------------------------------------------------
@@ -3299,14 +3299,14 @@ mod tests {
     fn test_cbz_w() {
         // cbzw r0, +8 -> 0x34000040
         let w = 0x3400_0040;
-        assert_eq!(dis1(w), "cbzw r0, +8");
+        assert_eq!(dis1(w), "cbzw x0, +8");
     }
 
     #[test]
     fn test_cbnz_w() {
         // cbnzw r0, +8 -> 0x35000040
         let w = 0x3500_0040;
-        assert_eq!(dis1(w), "cbnzw r0, +8");
+        assert_eq!(dis1(w), "cbnzw x0, +8");
     }
 
     // -----------------------------------------------------------------------
@@ -3317,21 +3317,21 @@ mod tests {
     fn test_tbzw_bit0() {
         // tbzw r0, #0, +8 -> 0x36000040
         let w = 0x3600_0040;
-        assert_eq!(dis1(w), "tbzw r0, #0, +8");
+        assert_eq!(dis1(w), "tbzw x0, #0, +8");
     }
 
     #[test]
     fn test_tbnzw_bit5() {
         // tbnzw r1, #5, +8 -> 0x37280041
         let w = 0x3728_0041;
-        assert_eq!(dis1(w), "tbnzw r1, #5, +8");
+        assert_eq!(dis1(w), "tbnzw x1, #5, +8");
     }
 
     #[test]
     fn test_tbz_bit35() {
         // tbz r1, #35, +8 -> bit31=1 (bit>=32), b40..19=35-32=3, 0xB6180041
         let w = 0xB618_0041;
-        assert_eq!(dis1(w), "tbz r1, #35, +8");
+        assert_eq!(dis1(w), "tbz x1, #35, +8");
     }
 
     // -----------------------------------------------------------------------
@@ -3342,14 +3342,14 @@ mod tests {
     fn test_neg_r2() {
         // neg x0, x2 -> sub x0, xzr, x2 -> 0xCB0203E0
         let w = 0xCB02_03E0;
-        assert_eq!(dis1(w), "neg r0, r2");
+        assert_eq!(dis1(w), "neg x0, x2");
     }
 
     #[test]
     fn test_negsw() {
         // negws r0, r1 -> subs w0, wzr, w1 -> 0x6B0103E0
         let w = 0x6B01_03E0;
-        assert_eq!(dis1(w), "negws r0, r1");
+        assert_eq!(dis1(w), "negws x0, x1");
     }
 
     // -----------------------------------------------------------------------
@@ -3360,56 +3360,56 @@ mod tests {
     fn test_smulh() {
         // smulh x0, x1, x2 -> 0x9B427C20
         let w = 0x9B42_7C20;
-        assert_eq!(dis1(w), "smulh r0, r1, r2");
+        assert_eq!(dis1(w), "smulh x0, x1, x2");
     }
 
     #[test]
     fn test_umulh() {
         // umulh x0, x1, x2 -> 0x9BC27C20
         let w = 0x9BC2_7C20;
-        assert_eq!(dis1(w), "umulh r0, r1, r2");
+        assert_eq!(dis1(w), "umulh x0, x1, x2");
     }
 
     #[test]
     fn test_smull() {
         // smull x0, x1, x2 -> smaddl x0, x1, x2, xzr -> 0x9B227C20
         let w = 0x9B22_7C20;
-        assert_eq!(dis1(w), "smull r0, r1, r2");
+        assert_eq!(dis1(w), "smull x0, x1, x2");
     }
 
     #[test]
     fn test_smaddl() {
         // smaddl x0, x1, x2, x3 -> 0x9B220C20
         let w = 0x9B22_0C20;
-        assert_eq!(dis1(w), "smaddl r0, r1, r2, r3");
+        assert_eq!(dis1(w), "smaddl x0, x1, x2, x3");
     }
 
     #[test]
     fn test_umaddl() {
         // umaddl x0, x1, x2, x3 -> 0x9BA20C20
         let w = 0x9BA2_0C20;
-        assert_eq!(dis1(w), "umaddl r0, r1, r2, r3");
+        assert_eq!(dis1(w), "umaddl x0, x1, x2, x3");
     }
 
     #[test]
     fn test_madd() {
         // madd x0, x1, x2, x3 -> 0x9B020C20
         let w = 0x9B02_0C20;
-        assert_eq!(dis1(w), "madd r0, r1, r2, r3");
+        assert_eq!(dis1(w), "madd x0, x1, x2, x3");
     }
 
     #[test]
     fn test_msub() {
         // msub x0, x1, x2, x3 -> (o0=1) -> 0x9B028C20
         let w = 0x9B02_8C20;
-        assert_eq!(dis1(w), "msub r0, r1, r2, r3");
+        assert_eq!(dis1(w), "msub x0, x1, x2, x3");
     }
 
     #[test]
     fn test_mneg() {
         // mneg x0, x1, x2 -> msub x0, x1, x2, xzr -> 0x9B02FC20
         let w = 0x9B02_FC20;
-        assert_eq!(dis1(w), "mneg r0, r1, r2");
+        assert_eq!(dis1(w), "mneg x0, x1, x2");
     }
 
     // -----------------------------------------------------------------------
@@ -3420,35 +3420,35 @@ mod tests {
     fn test_rbit() {
         // rbit x0, x0 -> 0xDAC00000
         let w = 0xDAC0_0000;
-        assert_eq!(dis1(w), "rbit r0, r0");
+        assert_eq!(dis1(w), "rbit x0, x0");
     }
 
     #[test]
     fn test_rbit_r1() {
         // rbit x0, x1 -> 0xDAC00020
         let w = 0xDAC0_0020;
-        assert_eq!(dis1(w), "rbit r0, r1");
+        assert_eq!(dis1(w), "rbit x0, x1");
     }
 
     #[test]
     fn test_clz_zr() {
         // clz x1, xzr -> 0xDAC013E1
         let w = 0xDAC0_13E1;
-        assert_eq!(dis1(w), "clz r1, zr");
+        assert_eq!(dis1(w), "clz x1, xzr");
     }
 
     #[test]
     fn test_clzw() {
         // clzw x1, xzr -> 0x5AC013E1
         let w = 0x5AC0_13E1;
-        assert_eq!(dis1(w), "clzw r1, zr");
+        assert_eq!(dis1(w), "clzw x1, xzr");
     }
 
     #[test]
     fn test_clzw_r2() {
         // clzw x2, x2 -> 0x5AC01042
         let w = 0x5AC0_1042;
-        assert_eq!(dis1(w), "clzw r2, r2");
+        assert_eq!(dis1(w), "clzw x2, x2");
     }
 
     // -----------------------------------------------------------------------
@@ -3460,17 +3460,17 @@ mod tests {
         // add csp, csp, r2, uxtx 0 -> Rd=31(SP), Rn=31(SP), Rm=2, extend=uxtx
         // For rd_mode to return SP, we need S=0 and it's an add_sub_imm? No, this is ext reg.
         // Rd=31 in add/sub shift_ext with bit[21]=1 (extend): rd_mode returns IsZR.
-        // Dart prints "add csp, csp, r2 uxtx 0" but our disassembler shows "add zr, csp, r2 uxtx 0"
+        // Dart prints "add sp, sp, x2 uxtx 0" but our disassembler shows "add xzr, sp, x2 uxtx 0"
         // because rd_mode for add_sub_shift_ext returns IsZR. Accept the actual output.
         let w = 0x8B22_63FF;
-        assert_eq!(dis1(w), "add zr, csp, r2 uxtx 0");
+        assert_eq!(dis1(w), "add xzr, sp, x2 uxtx 0");
     }
 
     #[test]
     fn test_cmp_ext_sxtw() {
         // cmp r0, r0, sxtw -> subs xzr, x0, x0, sxtw -> 0xEB20C01F
         let w = 0xEB20_C01F;
-        assert_eq!(dis1(w), "cmp r0, r0 sxtw");
+        assert_eq!(dis1(w), "cmp x0, x0 sxtw");
     }
 
     // -----------------------------------------------------------------------
@@ -3482,28 +3482,28 @@ mod tests {
         // and x0, x1, #0xff -> N=1, immr=0, imms=7 (8 consecutive ones)
         // 1 00 100100 1 000000 000111 00001 00000 -> 0x92401C20
         let w = 0x9240_1C20;
-        assert_eq!(dis1(w), "and r0, r1, 0xff");
+        assert_eq!(dis1(w), "and x0, x1, 0xff");
     }
 
     #[test]
     fn test_orr_imm_1() {
         // orr x0, x1, #0x1 -> N=1, immr=0, imms=0 -> 0xB2400020
         let w = 0xB240_0020;
-        assert_eq!(dis1(w), "orr r0, r1, 0x1");
+        assert_eq!(dis1(w), "orr x0, x1, 0x1");
     }
 
     #[test]
     fn test_eor_imm_1() {
         // eor x0, x1, #0x1 -> N=1, immr=0, imms=0 -> 0xD2400020
         let w = 0xD240_0020;
-        assert_eq!(dis1(w), "eor r0, r1, 0x1");
+        assert_eq!(dis1(w), "eor x0, x1, 0x1");
     }
 
     #[test]
     fn test_ands_imm() {
         // ands x3, x1, #0x1 -> 0xF2400023
         let w = 0xF240_0023;
-        assert_eq!(dis1(w), "ands r3, r1, 0x1");
+        assert_eq!(dis1(w), "ands x3, x1, 0x1");
     }
 
     #[test]
@@ -3511,7 +3511,7 @@ mod tests {
         // and csp, tmp2, 0xfffffffffffffff0
         // N=1, immr=60, imms=59 -> mask 0xfffffffffffffff0, Rn=R17(tmp2), Rd=R31(csp)
         let w = 0x927C_EE3F;
-        assert_eq!(dis1(w), "and csp, tmp2, 0xfffffffffffffff0");
+        assert_eq!(dis1(w), "and sp, x17, 0xfffffffffffffff0");
     }
 
     // -----------------------------------------------------------------------
@@ -3522,7 +3522,7 @@ mod tests {
     fn test_bics() {
         // bics x3, x1, x2 -> 0xEA220023
         let w = 0xEA22_0023;
-        assert_eq!(dis1(w), "bics r3, r1, r2");
+        assert_eq!(dis1(w), "bics x3, x1, x2");
     }
 
     // -----------------------------------------------------------------------
@@ -3533,42 +3533,42 @@ mod tests {
     fn test_ldrsh() {
         // ldrsh x1, [r0]: size=01, V=0, opc=10, unsigned offset
         let w = 0x7980_0001;
-        assert_eq!(dis1(w), "ldrsh r1, [r0]");
+        assert_eq!(dis1(w), "ldrsh x1, [x0]");
     }
 
     #[test]
     fn test_ldrh() {
         // ldrh x1, [r0] -> size=01, V=0, opc=01, imm12=0 -> 0x79400001
         let w = 0x7940_0001;
-        assert_eq!(dis1(w), "ldrh r1, [r0]");
+        assert_eq!(dis1(w), "ldrh x1, [x0]");
     }
 
     #[test]
     fn test_strh() {
         // strh x1, [r0] -> size=01, V=0, opc=00, imm12=0 -> 0x79000001
         let w = 0x7900_0001;
-        assert_eq!(dis1(w), "strh r1, [r0]");
+        assert_eq!(dis1(w), "strh x1, [x0]");
     }
 
     #[test]
     fn test_ldrw() {
         // ldrw x1, [r0] -> size=10, V=0, opc=01, imm12=0 -> 0xB9400001
         let w = 0xB940_0001;
-        assert_eq!(dis1(w), "ldrw r1, [r0]");
+        assert_eq!(dis1(w), "ldrw x1, [x0]");
     }
 
     #[test]
     fn test_strw() {
         // strw x1, [r0] -> size=10, V=0, opc=00, imm12=0 -> 0xB9000001
         let w = 0xB900_0001;
-        assert_eq!(dis1(w), "strw r1, [r0]");
+        assert_eq!(dis1(w), "strw x1, [x0]");
     }
 
     #[test]
     fn test_ldrsw_post_index() {
         // ldrsw x1, [csp], #4 -> 0xB88047E1
         let w = 0xB880_47E1;
-        assert_eq!(dis1(w), "ldrsw r1, [csp], #4 !");
+        assert_eq!(dis1(w), "ldrsw x1, [sp], #4 !");
     }
 
     // -----------------------------------------------------------------------
@@ -3579,14 +3579,14 @@ mod tests {
     fn test_stpw() {
         // stpw r2, r3, [csp, #8] -> 0x29010FE2
         let w = 0x2901_0FE2;
-        assert_eq!(dis1(w), "stpw r2, r3, [csp, #8]");
+        assert_eq!(dis1(w), "stpw x2, x3, [sp, #8]");
     }
 
     #[test]
     fn test_ldpw() {
         // ldpw r0, r1, [csp, #8] -> 0x294107E0
         let w = 0x2941_07E0;
-        assert_eq!(dis1(w), "ldpw r0, r1, [csp, #8]");
+        assert_eq!(dis1(w), "ldpw x0, x1, [sp, #8]");
     }
 
     #[test]
@@ -3594,35 +3594,35 @@ mod tests {
         // ldpsw r0, r1, [csp, #8] -> 0x69410FE0
         // opc = 01, V = 0, bit 22 = 1, pair offset
         let w = 0x6941_07E0;
-        assert_eq!(dis1(w), "ldpsw r0, r1, [csp, #8]");
+        assert_eq!(dis1(w), "ldpsw x0, x1, [sp, #8]");
     }
 
     #[test]
     fn test_fstpd_pre_index() {
         // fstpd v1, v2, [csp, #-16]! -> 0x6DBF0BE1
         let w = 0x6DBF_0BE1;
-        assert_eq!(dis1(w), "fstpd v1, v2, [csp, #-16]!");
+        assert_eq!(dis1(w), "fstpd v1, v2, [sp, #-16]!");
     }
 
     #[test]
     fn test_fldpd_post_index() {
         // fldpd v1, v2, [csp], #16 -> 0x6CC10BE1
         let w = 0x6CC1_0BE1;
-        assert_eq!(dis1(w), "fldpd v1, v2, [csp], #16 !");
+        assert_eq!(dis1(w), "fldpd v1, v2, [sp], #16 !");
     }
 
     #[test]
     fn test_fstpq_pre_index() {
         // fstpq v1, v2, [csp, #-32]! -> 0xADBF0BE1
         let w = 0xADBF_0BE1;
-        assert_eq!(dis1(w), "fstpq v1, v2, [csp, #-32]!");
+        assert_eq!(dis1(w), "fstpq v1, v2, [sp, #-32]!");
     }
 
     #[test]
     fn test_fldpq_post_index() {
         // fldpq v1, v2, [csp], #32 -> 0xACC10BE1
         let w = 0xACC1_0BE1;
-        assert_eq!(dis1(w), "fldpq v1, v2, [csp], #32 !");
+        assert_eq!(dis1(w), "fldpq v1, v2, [sp], #32 !");
     }
 
     // -----------------------------------------------------------------------
@@ -3633,42 +3633,42 @@ mod tests {
     fn test_fstrd_pre_index() {
         // fstrd v1, [csp, #-8]! -> 0xFC1F8FE1
         let w = 0xFC1F_8FE1;
-        assert_eq!(dis1(w), "fstrd v1, [csp, #-8]!");
+        assert_eq!(dis1(w), "fstrd v1, [sp, #-8]!");
     }
 
     #[test]
     fn test_fldrd_post_index() {
         // fldrd v0, [csp], #8 -> 0xFC4087E0
         let w = 0xFC40_87E0;
-        assert_eq!(dis1(w), "fldrd v0, [csp], #8 !");
+        assert_eq!(dis1(w), "fldrd v0, [sp], #8 !");
     }
 
     #[test]
     fn test_fstrs_pre_index() {
         // fstrs v2, [csp, #-8]! -> 0xBC1F8FE2
         let w = 0xBC1F_8FE2;
-        assert_eq!(dis1(w), "fstrs v2, [csp, #-8]!");
+        assert_eq!(dis1(w), "fstrs v2, [sp, #-8]!");
     }
 
     #[test]
     fn test_fldrs_post_index() {
         // fldrs v3, [csp], #8 -> 0xBC4087E3
         let w = 0xBC40_87E3;
-        assert_eq!(dis1(w), "fldrs v3, [csp], #8 !");
+        assert_eq!(dis1(w), "fldrs v3, [sp], #8 !");
     }
 
     #[test]
     fn test_fstrq_pre_index() {
         // fstrq v3, [csp, #-16]! -> 0x3C9F0FE3
         let w = 0x3C9F_0FE3;
-        assert_eq!(dis1(w), "fstrq v3, [csp, #-16]!");
+        assert_eq!(dis1(w), "fstrq v3, [sp, #-16]!");
     }
 
     #[test]
     fn test_fldrq_post_index() {
         // fldrq v3, [csp], #16 -> 0x3CC107E3
         let w = 0x3CC1_07E3;
-        assert_eq!(dis1(w), "fldrq v3, [csp], #16 !");
+        assert_eq!(dis1(w), "fldrq v3, [sp], #16 !");
     }
 
     #[test]
@@ -3676,28 +3676,28 @@ mod tests {
         // fstrd v1, [csp, #4096]
         // FP store unsigned offset: imm12=512, scale=3, offset=512<<3=4096
         let w = 0xFD08_03E1;
-        assert_eq!(dis1(w), "fstrd v1, [csp, #4096]");
+        assert_eq!(dis1(w), "fstrd v1, [sp, #4096]");
     }
 
     #[test]
     fn test_fldrd_unsigned_offset() {
         // fldrd v0, [csp] -> 0xFD4003E0
         let w = 0xFD40_03E0;
-        assert_eq!(dis1(w), "fldrd v0, [csp]");
+        assert_eq!(dis1(w), "fldrd v0, [sp]");
     }
 
     #[test]
     fn test_fstrd_unscaled() {
         // fstrd v1, [r2, #-1] -> 0xFC1FF041
         let w = 0xFC1F_F041;
-        assert_eq!(dis1(w), "fstrd v1, [r2, #-1]");
+        assert_eq!(dis1(w), "fstrd v1, [x2, #-1]");
     }
 
     #[test]
     fn test_fldrd_unscaled() {
         // fldrd v0, [r2, #-1] -> 0xFC5FF040
         let w = 0xFC5F_F040;
-        assert_eq!(dis1(w), "fldrd v0, [r2, #-1]");
+        assert_eq!(dis1(w), "fldrd v0, [x2, #-1]");
     }
 
     // -----------------------------------------------------------------------
@@ -3708,14 +3708,14 @@ mod tests {
     fn test_fstrd_reg_sxtw() {
         // fstrd v1, [csp, r2 sxtw] -> 0xFC22CBE1
         let w = 0xFC22_CBE1;
-        assert_eq!(dis1(w), "fstrd v1, [csp, r2 sxtw]");
+        assert_eq!(dis1(w), "fstrd v1, [sp, x2 sxtw]");
     }
 
     #[test]
     fn test_fldrd_reg_uxtx_scaled() {
         // fldrd v0, [csp, r2 uxtx scaled] -> 0xFC627BE0
         let w = 0xFC62_7BE0;
-        assert_eq!(dis1(w), "fldrd v0, [csp, r2 uxtx scaled]");
+        assert_eq!(dis1(w), "fldrd v0, [sp, x2 uxtx scaled]");
     }
 
     // -----------------------------------------------------------------------
@@ -3791,84 +3791,84 @@ mod tests {
     fn test_scvtfd() {
         // scvtfd v0, r0 -> 0x9E620000
         let w = 0x9E62_0000;
-        assert_eq!(dis1(w), "scvtfd v0, r0");
+        assert_eq!(dis1(w), "scvtfd v0, x0");
     }
 
     #[test]
     fn test_scvtfdw() {
         // scvtfdw v0, r0 -> 0x1E620000
         let w = 0x1E62_0000;
-        assert_eq!(dis1(w), "scvtfdw v0, r0");
+        assert_eq!(dis1(w), "scvtfdw v0, x0");
     }
 
     #[test]
     fn test_fcvtzs() {
         // fcvtzs r0, v0 -> 0x9E780000
         let w = 0x9E78_0000;
-        assert_eq!(dis1(w), "fcvtzs r0, v0");
+        assert_eq!(dis1(w), "fcvtzs x0, v0");
     }
 
     #[test]
     fn test_fcvtzsw() {
         // fcvtzsw r0, v0 -> 0x1E780000
         let w = 0x1E78_0000;
-        assert_eq!(dis1(w), "fcvtzsw r0, v0");
+        assert_eq!(dis1(w), "fcvtzsw x0, v0");
     }
 
     #[test]
     fn test_fcvtps() {
         // fcvtps r0, v0 -> 0x9E680000
         let w = 0x9E68_0000;
-        assert_eq!(dis1(w), "fcvtps r0, v0");
+        assert_eq!(dis1(w), "fcvtps x0, v0");
     }
 
     #[test]
     fn test_fcvtpsw() {
         // fcvtpsw r0, v0 -> 0x1E680000
         let w = 0x1E68_0000;
-        assert_eq!(dis1(w), "fcvtpsw r0, v0");
+        assert_eq!(dis1(w), "fcvtpsw x0, v0");
     }
 
     #[test]
     fn test_fcvtms() {
         // fcvtms r0, v0 -> 0x9E700000
         let w = 0x9E70_0000;
-        assert_eq!(dis1(w), "fcvtms r0, v0");
+        assert_eq!(dis1(w), "fcvtms x0, v0");
     }
 
     #[test]
     fn test_fcvtmsw() {
         // fcvtmsw r0, v0 -> 0x1E700000
         let w = 0x1E70_0000;
-        assert_eq!(dis1(w), "fcvtmsw r0, v0");
+        assert_eq!(dis1(w), "fcvtmsw x0, v0");
     }
 
     #[test]
     fn test_fmovrd() {
         // fmovrd r0, v1 -> 0x9E660020
         let w = 0x9E66_0020;
-        assert_eq!(dis1(w), "fmovrd r0, v1");
+        assert_eq!(dis1(w), "fmovrd x0, v1");
     }
 
     #[test]
     fn test_fmovdr() {
         // fmovdr v0, r1 -> 0x9E670020
         let w = 0x9E67_0020;
-        assert_eq!(dis1(w), "fmovdr v0, r1");
+        assert_eq!(dis1(w), "fmovdr v0, x1");
     }
 
     #[test]
     fn test_fmovrsw() {
         // fmovrsw r0, v1 -> 0x1E260020
         let w = 0x1E26_0020;
-        assert_eq!(dis1(w), "fmovrsw r0, v1");
+        assert_eq!(dis1(w), "fmovrsw x0, v1");
     }
 
     #[test]
     fn test_fmovsrw() {
         // fmovsrw v1, r2 -> 0x1E270041
         let w = 0x1E27_0041;
-        assert_eq!(dis1(w), "fmovsrw v1, r2");
+        assert_eq!(dis1(w), "fmovsrw v1, x2");
     }
 
     // -----------------------------------------------------------------------
@@ -3906,7 +3906,7 @@ mod tests {
         // 0 imm_lo 10000 immhi_19 rd
         // 0 00 10000 0000000000000011 00001 -> 0x10000061
         let w = 0x1000_0061;
-        assert_eq!(dis1(w), "adr r1, +12");
+        assert_eq!(dis1(w), "adr x1, +12");
     }
 
     #[test]
@@ -3914,7 +3914,7 @@ mod tests {
         // adr r1, +16 -> immhi = 4, immlo = 0
         // 0 00 10000 0000000000000100 00001 -> 0x10000081
         let w = 0x1000_0081;
-        assert_eq!(dis1(w), "adr r1, +16");
+        assert_eq!(dis1(w), "adr x1, +16");
     }
 
     // -----------------------------------------------------------------------
@@ -3925,21 +3925,21 @@ mod tests {
     fn test_and_lsr_reg() {
         // and x0, x1, x2, lsr #1 -> 0x8A420420
         let w = 0x8A42_0420;
-        assert_eq!(dis1(w), "and r0, r1, r2 lsr #1");
+        assert_eq!(dis1(w), "and x0, x1, x2 lsr #1");
     }
 
     #[test]
     fn test_orr_lsl_reg() {
         // orr x0, x1, x2, lsl #1 -> 0xAA020420
         let w = 0xAA02_0420;
-        assert_eq!(dis1(w), "orr r0, r1, r2 lsl #1");
+        assert_eq!(dis1(w), "orr x0, x1, x2 lsl #1");
     }
 
     #[test]
     fn test_eor_asr_reg() {
         // eor x0, x1, x2, asr #1 -> 0xCA820420
         let w = 0xCA82_0420;
-        assert_eq!(dis1(w), "eor r0, r1, r2 asr #1");
+        assert_eq!(dis1(w), "eor x0, x1, x2 asr #1");
     }
 
     // -----------------------------------------------------------------------
@@ -3950,35 +3950,35 @@ mod tests {
     fn test_add_lsl_3() {
         // add r1, zr, r1, lsl #3 -> 0x8B010FE1
         let w = 0x8B01_0FE1;
-        assert_eq!(dis1(w), "add r1, zr, r1 lsl #3");
+        assert_eq!(dis1(w), "add x1, xzr, x1 lsl #3");
     }
 
     #[test]
     fn test_add_asr_3() {
         // add r0, r0, r1, asr #3 -> 0x8B810C00
         let w = 0x8B81_0C00;
-        assert_eq!(dis1(w), "add r0, r0, r1 asr #3");
+        assert_eq!(dis1(w), "add x0, x0, x1 asr #3");
     }
 
     #[test]
     fn test_add_lsr_3() {
         // add r0, zr, r0, lsr #3 -> 0x8B400FE0
         let w = 0x8B40_0FE0;
-        assert_eq!(dis1(w), "add r0, zr, r0 lsr #3");
+        assert_eq!(dis1(w), "add x0, xzr, x0 lsr #3");
     }
 
     #[test]
     fn test_add_lsl_32() {
         // add r0, r0, r0 lsl #32 -> 0x8B008000
         let w = 0x8B00_8000;
-        assert_eq!(dis1(w), "add r0, r0, r0 lsl #32");
+        assert_eq!(dis1(w), "add x0, x0, x0 lsl #32");
     }
 
     #[test]
     fn test_cmp_reg_asr_63() {
         // cmp r3, r0, asr #63 -> subs xzr, x3, x0, asr #63 -> 0xEB80FC7F
         let w = 0xEB80_FC7F;
-        assert_eq!(dis1(w), "cmp r3, r0 asr #63");
+        assert_eq!(dis1(w), "cmp x3, x0 asr #63");
     }
 
     // -----------------------------------------------------------------------
@@ -3989,21 +3989,21 @@ mod tests {
     fn test_add_imm_shifted() {
         // add csp, csp, #0x1000 -> imm12=1, sh=1 -> 0x914007FF
         let w = 0x9140_07FF;
-        assert_eq!(dis1(w), "add csp, csp, #0x1000");
+        assert_eq!(dis1(w), "add sp, sp, #0x1000");
     }
 
     #[test]
     fn test_adds_imm() {
         // adds x0, x1, #42
         let w = 0xB100_A820;
-        assert_eq!(dis1(w), "adds r0, r1, #0x2a");
+        assert_eq!(dis1(w), "adds x0, x1, #0x2a");
     }
 
     #[test]
     fn test_subs_imm() {
         // subs x0, x1, #42 -> 0xF100A820
         let w = 0xF100_A820;
-        assert_eq!(dis1(w), "subs r0, r1, #0x2a");
+        assert_eq!(dis1(w), "subs x0, x1, #0x2a");
     }
 
     // -----------------------------------------------------------------------
@@ -4042,14 +4042,14 @@ mod tests {
     fn test_udivw() {
         // udivw r2, r0, r1 -> 0x1AC10802
         let w = 0x1AC1_0802;
-        assert_eq!(dis1(w), "udivw r2, r0, r1");
+        assert_eq!(dis1(w), "udivw x2, x0, x1");
     }
 
     #[test]
     fn test_sdivw() {
         // sdivw r2, r0, r1 -> 0x1AC10C02
         let w = 0x1AC1_0C02;
-        assert_eq!(dis1(w), "sdivw r2, r0, r1");
+        assert_eq!(dis1(w), "sdivw x2, x0, x1");
     }
 
     // -----------------------------------------------------------------------
@@ -4060,7 +4060,7 @@ mod tests {
     fn test_mulw() {
         // mulw r0, r1, r2 -> madd w0, w1, w2, wzr -> 0x1B027C20
         let w = 0x1B02_7C20;
-        assert_eq!(dis1(w), "mulw r0, r1, r2");
+        assert_eq!(dis1(w), "mulw x0, x1, x2");
     }
 
     // -----------------------------------------------------------------------
@@ -4072,7 +4072,7 @@ mod tests {
         // mov x0, #0x1 -> orr x0, xzr, #0x1 with rn=31 (xzr)
         // 1 01 100100 0 000000 000000 11111 00000 -> 0xB24003E0
         let w = 0xB240_03E0;
-        assert_eq!(dis1(w), "mov r0, 0x1");
+        assert_eq!(dis1(w), "mov x0, 0x1");
     }
 
     // -----------------------------------------------------------------------
@@ -4083,14 +4083,14 @@ mod tests {
     fn test_mov_sp_to_csp() {
         // mov csp, csp: add csp, csp, #0 -> 0x910003FF
         let w = 0x9100_03FF;
-        assert_eq!(dis1(w), "mov csp, csp");
+        assert_eq!(dis1(w), "mov sp, sp");
     }
 
     #[test]
     fn test_mov_r0_csp() {
         // mov r0, csp -> add x0, sp, #0 -> 0x910003E0
         let w = 0x9100_03E0;
-        assert_eq!(dis1(w), "mov r0, csp");
+        assert_eq!(dis1(w), "mov x0, sp");
     }
 
     // -----------------------------------------------------------------------
@@ -4101,14 +4101,14 @@ mod tests {
     fn test_ldrx_literal() {
         // ldrx r0, +8 -> 0x58000040
         let w = 0x5800_0040;
-        assert_eq!(dis1(w), "ldrx r0, +8");
+        assert_eq!(dis1(w), "ldrx x0, +8");
     }
 
     #[test]
     fn test_ldrw_literal() {
         // ldrw r0, +8 -> 0x18000040
         let w = 0x1800_0040;
-        assert_eq!(dis1(w), "ldrw r0, +8");
+        assert_eq!(dis1(w), "ldrw x0, +8");
     }
 
     // -----------------------------------------------------------------------
@@ -4130,7 +4130,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r0, #0x14\nmovz r1, #0x16\nadd r0, r0, r1\nret\n"
+            "movz x0, #0x14\nmovz x1, #0x16\nadd x0, x0, x1\nret\n"
         );
     }
 
@@ -4155,8 +4155,8 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movn r2, #0x0\nmovz r1, #0x1\nmovz r0, #0x0\n\
-             adds tmp, r2, r1\nadcs tmp, r2, r0\nadc r0, r0, r0\nret\n"
+            "movn x2, #0x0\nmovz x1, #0x1\nmovz x0, #0x0\n\
+             adds x16, x2, x1\nadcs x16, x2, x0\nadc x0, x0, x0\nret\n"
         );
     }
 
@@ -4179,8 +4179,8 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0x1\nmovz r0, #0x0\n\
-             subs tmp, r0, r1\nsbcs tmp, r0, r0\nsbc r0, r0, r0\nret\n"
+            "movz x1, #0x1\nmovz x0, #0x0\n\
+             subs x16, x0, x1\nsbcs x16, x0, x0\nsbc x0, x0, x0\nret\n"
         );
     }
 
@@ -4209,15 +4209,15 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "csel r0, r1, r2, lt\n\
-             cset r0, lt\n\
-             csetm r0, lt\n\
-             csinc r0, r1, r2, lt\n\
-             cinc r0, r1, lt\n\
-             csinv r0, r1, r2, lt\n\
-             cinv r0, r1, lt\n\
-             csneg r0, r1, r2, lt\n\
-             cneg r0, r1, lt\n"
+            "csel x0, x1, x2, lt\n\
+             cset x0, lt\n\
+             csetm x0, lt\n\
+             csinc x0, x1, x2, lt\n\
+             cinc x0, x1, lt\n\
+             csinv x0, x1, x2, lt\n\
+             cinv x0, x1, lt\n\
+             csneg x0, x1, x2, lt\n\
+             cneg x0, x1, lt\n"
         );
     }
 
@@ -4236,7 +4236,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "lsl r0, r0, #1\nlsl r0, r0, #2\nlsl r0, r0, #3\nlsl r0, r0, #4\n"
+            "lsl x0, x0, #1\nlsl x0, x0, #2\nlsl x0, x0, #3\nlsl x0, x0, #4\n"
         );
     }
 
@@ -4254,7 +4254,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "lsr r0, r0, #1\nlsr r0, r0, #2\nlsr r0, r0, #3\nlsr r0, r0, #4\n"
+            "lsr x0, x0, #1\nlsr x0, x0, #2\nlsr x0, x0, #3\nlsr x0, x0, #4\n"
         );
     }
 
@@ -4272,7 +4272,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "asr r0, r0, #1\nasr r0, r0, #2\nasr r0, r0, #3\nasr r0, r0, #4\n"
+            "asr x0, x0, #1\nasr x0, x0, #2\nasr x0, x0, #3\nasr x0, x0, #4\n"
         );
     }
 
@@ -4292,7 +4292,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r0, #0x1b\nmovz r1, #0x9\nudiv r2, r0, r1\nmov r0, r2\nret\n"
+            "movz x0, #0x1b\nmovz x1, #0x9\nudiv x2, x0, x1\nmov x0, x2\nret\n"
         );
     }
 
@@ -4314,7 +4314,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r0, #0x1b\nmovz r1, #0x9\nneg r1, r1\nsdiv r2, r0, r1\nmov r0, r2\nret\n"
+            "movz x0, #0x1b\nmovz x1, #0x9\nneg x1, x1\nsdiv x2, x0, x1\nmov x0, x2\nret\n"
         );
     }
 
@@ -4335,7 +4335,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0x1\nmovz r2, #0x3f\nlsl r1, r1, r2\nlsr r0, r1, r2\nret\n"
+            "movz x1, #0x1\nmovz x2, #0x3f\nlsl x1, x1, x2\nlsr x0, x1, x2\nret\n"
         );
     }
 
@@ -4355,7 +4355,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0x1\nmovz r2, #0x3f\nlsl r1, r1, r2\nasr r0, r1, r2\nret\n"
+            "movz x1, #0x1\nmovz x2, #0x3f\nlsl x1, x1, x2\nasr x0, x1, x2\nret\n"
         );
     }
 
@@ -4373,7 +4373,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0x6\nmovz r2, #0x7\nmul r0, r1, r2\nret\n"
+            "movz x1, #0x6\nmovz x2, #0x7\nmul x0, x1, x2\nret\n"
         );
     }
 
@@ -4391,7 +4391,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0x6\nmovz r2, #0x7\nsmulh r0, r1, r2\nret\n"
+            "movz x1, #0x6\nmovz x2, #0x7\nsmulh x0, x1, x2\nret\n"
         );
     }
 
@@ -4409,7 +4409,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0xffff lsl 48\nmovz r2, #0x7 lsl 48\numulh r0, r1, r2\nret\n"
+            "movz x1, #0xffff lsl 48\nmovz x2, #0x7 lsl 48\numulh x0, x1, x2\nret\n"
         );
     }
 
@@ -4429,7 +4429,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movn r1, #0x0\nmovz r2, #0x7\nmovz r3, #0x8\numaddl r0, r1, r2, r3\nret\n"
+            "movn x1, #0x0\nmovz x2, #0x7\nmovz x3, #0x8\numaddl x0, x1, x2, x3\nret\n"
         );
     }
 
@@ -4449,7 +4449,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movn r1, #0x1\nmovz r2, #0x7\nmovz r3, #0x14\nsmaddl r0, r1, r2, r3\nret\n"
+            "movn x1, #0x1\nmovz x2, #0x7\nmovz x3, #0x14\nsmaddl x0, x1, x2, x3\nret\n"
         );
     }
 
@@ -4465,7 +4465,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r0, #0x1 lsl 48\nmovk r0, #0x2a\nret\n"
+            "movz x0, #0x1 lsl 48\nmovk x0, #0x2a\nret\n"
         );
     }
 
@@ -4479,7 +4479,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movn r0, #0x2a lsl 16\nret\n"
+            "movn x0, #0x2a lsl 16\nret\n"
         );
     }
 
@@ -4497,7 +4497,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0x2b\nmovz r2, #0x2a\nand r0, r1, r2\nret\n"
+            "movz x1, #0x2b\nmovz x2, #0x2a\nand x0, x1, x2\nret\n"
         );
     }
 
@@ -4515,7 +4515,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0x20\nmovz r2, #0xa\norr r0, r1, r2\nret\n"
+            "movz x1, #0x20\nmovz x2, #0xa\norr x0, x1, x2\nret\n"
         );
     }
 
@@ -4534,7 +4534,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0xffd5\nmovz r2, #0xffff\neor r0, r1, r2\nret\n"
+            "movz x1, #0xffd5\nmovz x2, #0xffff\neor x0, x1, x2\nret\n"
         );
     }
 
@@ -4552,7 +4552,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz r1, #0x2a\nmovz r2, #0x5\nbic r0, r1, r2\nret\n"
+            "movz x1, #0x2a\nmovz x2, #0x5\nbic x0, x1, x2\nret\n"
         );
     }
 }
