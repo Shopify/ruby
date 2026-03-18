@@ -5,6 +5,8 @@
 // Ported from the Dart SDK's runtime/vm/compiler/assembler/disassembler_arm64.cc
 // to Rust. Pure Rust, no external dependencies.
 
+#![allow(clippy::manual_range_contains, clippy::needless_late_init)]
+
 /// Register names using standard ARM64 convention.
 const CPU_REG_NAMES: [&str; 32] = [
     "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",

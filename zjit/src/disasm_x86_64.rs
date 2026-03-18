@@ -5,6 +5,10 @@
 // Ported from the Dart SDK's disassembler_x86.cc to Rust.
 // X64 (long mode, 64-bit) only.
 
+#![allow(clippy::manual_range_contains, clippy::identity_op,
+         clippy::unnecessary_cast, clippy::question_mark,
+         clippy::manual_range_patterns, clippy::erasing_op)]
+
 use core::fmt::Write;
 
 // ---------------------------------------------------------------------------

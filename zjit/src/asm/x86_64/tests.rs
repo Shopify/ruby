@@ -943,24 +943,9 @@ fn test_xor() {
 
 #[test]
 #[cfg(feature = "disasm")]
-fn basic_capstone_usage() -> std::result::Result<(), capstone::Error> {
-    // Test drive Capstone with simple input
-    use capstone::prelude::*;
-    let cs = Capstone::new()
-        .x86()
-        .mode(arch::x86::ArchMode::Mode64)
-        .syntax(arch::x86::ArchSyntax::Intel)
-        .build()?;
-
-    let insns = cs.disasm_all(&[0xCC], 0x1000)?;
-
-    match insns.as_ref() {
-        [insn] => {
-            assert_eq!(Some("int3"), insn.mnemonic());
-            Ok(())
-        }
-        _ => Err(capstone::Error::CustomError(
-            "expected to disassemble to int3",
-        )),
-    }
+fn basic_disasm_usage() {
+    // Test drive built-in disassembler with simple input
+    let (text, len) = crate::disasm_x86_64::disassemble_one(&[0xCC], 0);
+    assert_eq!(text, "int3");
+    assert_eq!(len, 1);
 }
