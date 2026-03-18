@@ -631,8 +631,16 @@ impl<'a> DisassemblerX64<'a> {
     }
 
     fn print_jump(&mut self, disp: i32) {
-        // Print as signed relative displacement
-        let _ = write!(self.out, "{:+}", disp);
+        // Print as absolute target address, matching capstone convention.
+        // disp already includes the instruction length, so target = base + instr_start + disp.
+        let target = (self.base_addr + self.instr_start) as i64 + disp as i64;
+        if target < 0 {
+            let _ = write!(self.out, "-{:#x}", -target);
+        } else if target < 10 {
+            let _ = write!(self.out, "{}", target);
+        } else {
+            let _ = write!(self.out, "{:#x}", target);
+        }
     }
 
     // -- Right operand helpers --
@@ -762,7 +770,7 @@ impl<'a> DisassemblerX64<'a> {
         };
         match op_order {
             OperandType::RegOperOpOrder => {
-                let _ = write!(self.out, "{}{} {},", mnem, self.operand_size_code(), register_name);
+                let _ = write!(self.out, "{}{} {}, ", mnem, self.operand_size_code(), register_name);
                 if self.byte_size_operand {
                     self.print_right_byte_operand()
                 } else {
@@ -777,7 +785,7 @@ impl<'a> DisassemblerX64<'a> {
                 } else {
                     self.print_right_operand()
                 };
-                let _ = write!(self.out, ",{}", register_name);
+                let _ = write!(self.out, ", {}", register_name);
                 advance
             }
             _ => 0,
@@ -804,7 +812,7 @@ impl<'a> DisassemblerX64<'a> {
         let sc = self.operand_size_code();
         let _ = write!(self.out, "{}{} ", mnem, sc);
         let count = self.print_right_operand();
-        self.print(",");
+        self.print(", ");
         let immediate_size = if byte_size_immediate {
             OperandSize::ByteSize
         } else {
@@ -828,7 +836,7 @@ impl<'a> DisassemblerX64<'a> {
             let mnem = mnem.unwrap_or("???");
             if (regop & 7) > 3 {
                 let _ = write!(
-                    self.out, "{}{} ({},{}),{}",
+                    self.out, "{}{} ({}, {}), {}",
                     mnem, self.operand_size_code(),
                     name_of_cpu_register(0), name_of_cpu_register(2),
                     name_of_cpu_register(rm)
@@ -846,14 +854,14 @@ impl<'a> DisassemblerX64<'a> {
         } else if (regop & 7) == 0 {
             let _ = write!(self.out, "test{} ", self.operand_size_code());
             let count = self.print_right_operand();
-            self.print(",");
+            self.print(", ");
             let os = self.operand_size();
             let imm_count = self.print_immediate(os, false);
             1 + count + imm_count
         } else if (regop & 7) >= 4 {
             let mnem = mnem.unwrap_or("???");
             let _ = write!(
-                self.out, "{}{} ({},{}),",
+                self.out, "{}{} ({}, {}), ",
                 mnem, self.operand_size_code(),
                 name_of_cpu_register(0), name_of_cpu_register(2)
             );
@@ -895,13 +903,13 @@ impl<'a> DisassemblerX64<'a> {
             self.print_right_operand();
         }
         if op == 0xD0 {
-            self.print(",1");
+            self.print(", 1");
         } else if op == 0xC0 {
             let imm8 = self.read_u8();
-            let _ = write!(self.out, ",{}", imm8);
+            let _ = write!(self.out, ", {}", imm8);
         } else {
             // op == 0xD2
-            self.print(",cl");
+            self.print(", cl");
         }
         self.pos - start
     }
@@ -1127,12 +1135,12 @@ impl<'a> DisassemblerX64<'a> {
         if b == 0x25 {
             let modrm = self.peek();
             let (_modd, regop, _rm) = self.get_modrm(modrm);
-            let _ = write!(self.out, "pmovsxdq {},", name_of_xmm_register(regop));
+            let _ = write!(self.out, "pmovsxdq {}, ", name_of_xmm_register(regop));
             1 + self.print_right_xmm_operand()
         } else if b == 0x29 {
             let modrm = self.peek();
             let (_modd, regop, _rm) = self.get_modrm(modrm);
-            let _ = write!(self.out, "pcmpeqq {},", name_of_xmm_register(regop));
+            let _ = write!(self.out, "pcmpeqq {}, ", name_of_xmm_register(regop));
             1 + self.print_right_xmm_operand()
         } else {
             self.print("unknown");
@@ -1202,29 +1210,29 @@ impl<'a> DisassemblerX64<'a> {
                     self.print_660f38_instruction();
                 } else if opcode == 0x6E {
                     let c = if self.rex_w() { 'q' } else { 'd' };
-                    let _ = write!(self.out, "mov{} {},", c, name_of_xmm_register(regop));
+                    let _ = write!(self.out, "mov{} {}, ", c, name_of_xmm_register(regop));
                     self.print_right_operand();
                 } else if opcode == 0x6F {
-                    let _ = write!(self.out, "movdqa {},", name_of_xmm_register(regop));
+                    let _ = write!(self.out, "movdqa {}, ", name_of_xmm_register(regop));
                     self.print_right_xmm_operand();
                 } else if opcode == 0x7E {
                     let c = if self.rex_w() { 'q' } else { 'd' };
                     let _ = write!(self.out, "mov{} ", c);
                     self.print_right_operand();
-                    let _ = write!(self.out, ",{}", name_of_xmm_register(regop));
+                    let _ = write!(self.out, ", {}", name_of_xmm_register(regop));
                 } else if opcode == 0x7F {
                     self.print("movdqa ");
                     self.print_right_xmm_operand();
-                    let _ = write!(self.out, ",{}", name_of_xmm_register(regop));
+                    let _ = write!(self.out, ", {}", name_of_xmm_register(regop));
                 } else if opcode == 0xD6 {
                     self.print("movq ");
                     self.print_right_xmm_operand();
-                    let _ = write!(self.out, ",{}", name_of_xmm_register(regop));
+                    let _ = write!(self.out, ", {}", name_of_xmm_register(regop));
                 } else if opcode == 0x50 {
-                    let _ = write!(self.out, "movmskpd {},", name_of_cpu_register(regop));
+                    let _ = write!(self.out, "movmskpd {}, ", name_of_cpu_register(regop));
                     self.print_right_xmm_operand();
                 } else if opcode == 0xD7 {
-                    let _ = write!(self.out, "pmovmskb {},", name_of_cpu_register(regop));
+                    let _ = write!(self.out, "pmovmskb {}, ", name_of_cpu_register(regop));
                     self.print_right_xmm_operand();
                 } else {
                     let m = if opcode == 0x5A {
@@ -1249,7 +1257,7 @@ impl<'a> DisassemblerX64<'a> {
                         self.print("unknown");
                         return self.pos - start;
                     };
-                    let _ = write!(self.out, "{} {},", m, name_of_xmm_register(regop));
+                    let _ = write!(self.out, "{} {}, ", m, name_of_xmm_register(regop));
                     self.print_right_xmm_operand();
                 }
             }
@@ -1260,26 +1268,26 @@ impl<'a> DisassemblerX64<'a> {
                 let (_modd, regop, _rm) = self.get_modrm(modrm);
                 if opcode == 0x11 {
                     self.print_right_xmm_operand();
-                    let _ = write!(self.out, ",{}", name_of_xmm_register(regop));
+                    let _ = write!(self.out, ", {}", name_of_xmm_register(regop));
                 } else {
-                    let _ = write!(self.out, "{},", name_of_xmm_register(regop));
+                    let _ = write!(self.out, "{}, ", name_of_xmm_register(regop));
                     self.print_right_xmm_operand();
                 }
             } else if opcode == 0x2A {
                 let modrm = self.peek();
                 let (_modd, regop, _rm) = self.get_modrm(modrm);
                 let m = mnemonic.unwrap_or("cvtsi2s");
-                let _ = write!(self.out, "{}d {},", m, name_of_xmm_register(regop));
+                let _ = write!(self.out, "{}d {}, ", m, name_of_xmm_register(regop));
                 self.print_right_operand();
             } else if opcode == 0x2C {
                 let modrm = self.peek();
                 let (_modd, regop, _rm) = self.get_modrm(modrm);
-                let _ = write!(self.out, "cvttsd2si{} {},", self.operand_size_code(), name_of_cpu_register(regop));
+                let _ = write!(self.out, "cvttsd2si{} {}, ", self.operand_size_code(), name_of_cpu_register(regop));
                 self.print_right_xmm_operand();
             } else if opcode == 0x2D {
                 let modrm = self.peek();
                 let (_modd, regop, _rm) = self.get_modrm(modrm);
-                let _ = write!(self.out, "cvtsd2si{} {},", self.operand_size_code(), name_of_cpu_register(regop));
+                let _ = write!(self.out, "cvtsd2si{} {}, ", self.operand_size_code(), name_of_cpu_register(regop));
                 self.print_right_xmm_operand();
             } else if (0x51..=0x5F).contains(&opcode) {
                 let modrm = self.peek();
@@ -1289,7 +1297,7 @@ impl<'a> DisassemblerX64<'a> {
                 } else {
                     XMM_INSTRUCTIONS[(opcode & 0xF) as usize].sd_name
                 };
-                let _ = write!(self.out, "{} {},", m, name_of_xmm_register(regop));
+                let _ = write!(self.out, "{} {}, ", m, name_of_xmm_register(regop));
                 self.print_right_xmm_operand();
             } else {
                 self.print("unknown");
@@ -1301,23 +1309,23 @@ impl<'a> DisassemblerX64<'a> {
                 let (_modd, regop, _rm) = self.get_modrm(modrm);
                 if opcode == 0x11 {
                     self.print_right_operand();
-                    let _ = write!(self.out, ",{}", name_of_xmm_register(regop));
+                    let _ = write!(self.out, ", {}", name_of_xmm_register(regop));
                 } else {
-                    let _ = write!(self.out, "{},", name_of_xmm_register(regop));
+                    let _ = write!(self.out, "{}, ", name_of_xmm_register(regop));
                     self.print_right_operand();
                 }
             } else if opcode == 0x2A {
                 let modrm = self.peek();
                 let (_modd, regop, _rm) = self.get_modrm(modrm);
                 let m = mnemonic.unwrap_or("cvtsi2s");
-                let _ = write!(self.out, "{}s {},", m, name_of_xmm_register(regop));
+                let _ = write!(self.out, "{}s {}, ", m, name_of_xmm_register(regop));
                 self.print_right_operand();
             } else if opcode == 0x2C || opcode == 0x2D {
                 let truncating = (opcode & 1) == 0;
                 let modrm = self.peek();
                 let (_modd, regop, _rm) = self.get_modrm(modrm);
                 let _ = write!(
-                    self.out, "cvt{}ss2si{} {},",
+                    self.out, "cvt{}ss2si{} {}, ",
                     if truncating { "t" } else { "" },
                     self.operand_size_code(),
                     name_of_cpu_register(regop)
@@ -1331,7 +1339,7 @@ impl<'a> DisassemblerX64<'a> {
                 } else {
                     XMM_INSTRUCTIONS[(opcode & 0xF) as usize].ss_name
                 };
-                let _ = write!(self.out, "{} {},", m, name_of_xmm_register(regop));
+                let _ = write!(self.out, "{} {}, ", m, name_of_xmm_register(regop));
                 self.print_right_xmm_operand();
             } else if opcode == 0x7E {
                 let modrm = self.peek();
@@ -1341,7 +1349,7 @@ impl<'a> DisassemblerX64<'a> {
             } else if opcode == 0xE6 {
                 let modrm = self.peek();
                 let (_modd, regop, _rm) = self.get_modrm(modrm);
-                let _ = write!(self.out, "cvtdq2pd {},", name_of_xmm_register(regop));
+                let _ = write!(self.out, "cvtdq2pd {}, ", name_of_xmm_register(regop));
                 self.print_right_xmm_operand();
             } else if opcode == 0xB8 {
                 let m = mnemonic.unwrap_or("popcnt");
@@ -1364,24 +1372,24 @@ impl<'a> DisassemblerX64<'a> {
             let modrm = self.peek();
             let (_modd, regop, _rm) = self.get_modrm(modrm);
             let m = if opcode == 0x28 { "movaps" } else { "comiss" };
-            let _ = write!(self.out, "{} {},", m, name_of_xmm_register(regop));
+            let _ = write!(self.out, "{} {}, ", m, name_of_xmm_register(regop));
             self.print_right_xmm_operand();
         } else if opcode == 0x29 {
             let modrm = self.peek();
             let (_modd, regop, _rm) = self.get_modrm(modrm);
             self.print("movaps ");
             self.print_right_xmm_operand();
-            let _ = write!(self.out, ",{}", name_of_xmm_register(regop));
+            let _ = write!(self.out, ", {}", name_of_xmm_register(regop));
         } else if opcode == 0x11 {
             let modrm = self.peek();
             let (_modd, regop, _rm) = self.get_modrm(modrm);
             self.print("movups ");
             self.print_right_xmm_operand();
-            let _ = write!(self.out, ",{}", name_of_xmm_register(regop));
+            let _ = write!(self.out, ", {}", name_of_xmm_register(regop));
         } else if opcode == 0x50 {
             let modrm = self.peek();
             let (_modd, regop, _rm) = self.get_modrm(modrm);
-            let _ = write!(self.out, "movmskps {},", name_of_cpu_register(regop));
+            let _ = write!(self.out, "movmskps {}, ", name_of_cpu_register(regop));
             self.print_right_xmm_operand();
         } else if opcode == 0xA2 || opcode == 0x31 {
             let m = mnemonic.unwrap_or("?");
@@ -1401,7 +1409,7 @@ impl<'a> DisassemblerX64<'a> {
             if let Some(m) = m {
                 let modrm = self.peek();
                 let (_modd, regop, _rm) = self.get_modrm(modrm);
-                let _ = write!(self.out, "{} {},", m, name_of_xmm_register(regop));
+                let _ = write!(self.out, "{} {}, ", m, name_of_xmm_register(regop));
                 self.print_right_xmm_operand();
             } else {
                 self.print("unknown");
@@ -1414,18 +1422,18 @@ impl<'a> DisassemblerX64<'a> {
             } else {
                 XMM_INSTRUCTIONS[(opcode & 0xF) as usize].ps_name
             };
-            let _ = write!(self.out, "{} {},", m, name_of_xmm_register(regop));
+            let _ = write!(self.out, "{} {}, ", m, name_of_xmm_register(regop));
             self.print_right_xmm_operand();
         } else if opcode == 0xC2 || opcode == 0xC6 {
             let modrm = self.peek();
             let (_modd, regop, _rm) = self.get_modrm(modrm);
             if opcode == 0xC2 {
-                let _ = write!(self.out, "cmpps {},", name_of_xmm_register(regop));
+                let _ = write!(self.out, "cmpps {}, ", name_of_xmm_register(regop));
                 self.print_right_xmm_operand();
                 let imm = self.read_u8();
                 let _ = write!(self.out, " [{}]", XMM_CONDITIONAL_CODE_SUFFIX[imm as usize]);
             } else {
-                let _ = write!(self.out, "shufps {},", name_of_xmm_register(regop));
+                let _ = write!(self.out, "shufps {}, ", name_of_xmm_register(regop));
                 self.print_right_xmm_operand();
                 let imm = self.read_u8();
                 let _ = write!(self.out, " [{:x}]", imm);
@@ -1452,13 +1460,13 @@ impl<'a> DisassemblerX64<'a> {
             let modrm = self.peek();
             let (_modd, regop, _rm) = self.get_modrm(modrm);
             self.print_right_operand();
-            let _ = write!(self.out, ",{}", name_of_cpu_register(regop));
+            let _ = write!(self.out, ", {}", name_of_cpu_register(regop));
             if opcode == 0xAB || opcode == 0xA3 || opcode == 0xBD {
                 // done
             } else if opcode == 0xA5 || opcode == 0xAD {
-                self.print(",cl");
+                self.print(", cl");
             } else {
-                self.print(",");
+                self.print(", ");
                 self.print_immediate(OperandSize::ByteSize, false);
             }
         } else if opcode == 0xBA {
@@ -1470,7 +1478,7 @@ impl<'a> DisassemblerX64<'a> {
                 let _ = write!(self.out, "{}{} ", BT_NAMES[r - 4], sc);
                 self.print_right_operand();
                 let bit = self.read_u8();
-                let _ = write!(self.out, ",{}", bit);
+                let _ = write!(self.out, ", {}", bit);
             } else {
                 self.print("unknown");
             }
@@ -1569,7 +1577,7 @@ impl<'a> DisassemblerX64<'a> {
                     _ => (0, 0),
                 };
                 let _ = write!(
-                    self.out, "mov{} {},",
+                    self.out, "mov{} {}, ",
                     self.operand_size_code(),
                     name_of_cpu_register(reg)
                 );
@@ -1586,7 +1594,7 @@ impl<'a> DisassemblerX64<'a> {
             InstructionType::ShortImmediateInstr => {
                 let sc = self.operand_size_code();
                 let rax = name_of_cpu_register(0);
-                let _ = write!(self.out, "{}{} {},", idesc.mnem, sc, rax);
+                let _ = write!(self.out, "{}{} {}, ", idesc.mnem, sc, rax);
                 self.pos += 1;
                 self.print_immediate(OperandSize::DoublewordSize, false);
                 true
@@ -1627,7 +1635,7 @@ impl<'a> DisassemblerX64<'a> {
                         self.read_i32_le()
                     };
                     let _ = write!(
-                        self.out, "imul{} {},{},",
+                        self.out, "imul{} {}, {}, ",
                         self.operand_size_code(),
                         name_of_cpu_register(regop),
                         name_of_cpu_register(rm)
@@ -1679,13 +1687,13 @@ impl<'a> DisassemblerX64<'a> {
                     if is_byte {
                         self.print("movb ");
                         self.print_right_byte_operand();
-                        self.print(",");
+                        self.print(", ");
                         self.print_immediate(OperandSize::ByteSize, false);
                     } else {
                         let sc = self.operand_size_code();
                         let _ = write!(self.out, "mov{} ", sc);
                         self.print_right_operand();
-                        self.print(",");
+                        self.print(", ");
                         let os = self.operand_size();
                         self.print_immediate(os, true);
                     }
@@ -1718,12 +1726,12 @@ impl<'a> DisassemblerX64<'a> {
                     if is_byte {
                         self.print("movb ");
                         self.print_right_byte_operand();
-                        let _ = write!(self.out, ",{}", name_of_byte_cpu_register(regop));
+                        let _ = write!(self.out, ", {}", name_of_byte_cpu_register(regop));
                     } else {
                         let sc = self.operand_size_code();
                         let _ = write!(self.out, "mov{} ", sc);
                         self.print_right_operand();
-                        let _ = write!(self.out, ",{}", name_of_cpu_register(regop));
+                        let _ = write!(self.out, ", {}", name_of_cpu_register(regop));
                     }
                 }
                 0x90..=0x97 => {
@@ -1746,11 +1754,11 @@ impl<'a> DisassemblerX64<'a> {
                     let reg = ((opcode & 0x7) as usize) | if self.rex_b() { 8 } else { 0 };
                     if is_not_8bit {
                         let sc = self.operand_size_code();
-                        let _ = write!(self.out, "mov{} {},", sc, name_of_cpu_register(reg));
+                        let _ = write!(self.out, "mov{} {}, ", sc, name_of_cpu_register(reg));
                         let os = self.operand_size();
                         self.print_immediate(os, false);
                     } else {
-                        let _ = write!(self.out, "movb {},", name_of_byte_cpu_register(reg));
+                        let _ = write!(self.out, "movb {}, ", name_of_byte_cpu_register(reg));
                         self.print_immediate(OperandSize::ByteSize, false);
                     }
                 }
@@ -1779,7 +1787,7 @@ impl<'a> DisassemblerX64<'a> {
                 }
                 0xA8 => {
                     self.pos += 1;
-                    self.print("test al,");
+                    self.print("test al, ");
                     let imm = self.read_u8();
                     self.print_immediate_value(imm as i64, false, -1);
                 }
@@ -1787,7 +1795,7 @@ impl<'a> DisassemblerX64<'a> {
                     self.pos += 1;
                     let sc = self.operand_size_code();
                     let rax = name_of_cpu_register(0);
-                    let _ = write!(self.out, "test{} {},", sc, rax);
+                    let _ = write!(self.out, "test{} {}, ", sc, rax);
                     let os = self.operand_size();
                     self.print_immediate(os, false);
                 }
@@ -1919,13 +1927,13 @@ mod tests {
     #[test]
     fn test_movq_rax_rcx() {
         // 48 89 C8: REX.W mov r/m64, r64  -- mod=11, reg=rcx(1), rm=rax(0)
-        assert_eq!(dis(&[0x48, 0x89, 0xC8]), "movq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x89, 0xC8]), "movq rax, rcx");
     }
 
     #[test]
     fn test_movq_rcx_rax() {
         // 48 8B C8: REX.W mov r64, r/m64 -- mod=11, reg=rcx(1), rm=rax(0)
-        assert_eq!(dis(&[0x48, 0x8B, 0xC8]), "movq rcx,rax");
+        assert_eq!(dis(&[0x48, 0x8B, 0xC8]), "movq rcx, rax");
     }
 
     // -----------------------------------------------------------------------
@@ -1934,7 +1942,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movl_rax_rcx() {
-        assert_eq!(dis(&[0x89, 0xC8]), "movl rax,rcx");
+        assert_eq!(dis(&[0x89, 0xC8]), "movl rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -1944,17 +1952,17 @@ mod tests {
     #[test]
     fn test_movl_rax_imm() {
         // B8 2A 00 00 00 = movl rax, 0x2a
-        assert_eq!(dis(&[0xB8, 0x2A, 0x00, 0x00, 0x00]), "movl rax,0x2a");
+        assert_eq!(dis(&[0xB8, 0x2A, 0x00, 0x00, 0x00]), "movl rax, 0x2a");
     }
 
     #[test]
     fn test_movl_rax_0() {
-        assert_eq!(dis(&[0xB8, 0x00, 0x00, 0x00, 0x00]), "movl rax,0");
+        assert_eq!(dis(&[0xB8, 0x00, 0x00, 0x00, 0x00]), "movl rax, 0");
     }
 
     #[test]
     fn test_movl_rcx_0() {
-        assert_eq!(dis(&[0xB9, 0x00, 0x00, 0x00, 0x00]), "movl rcx,0");
+        assert_eq!(dis(&[0xB9, 0x00, 0x00, 0x00, 0x00]), "movl rcx, 0");
     }
 
     // -----------------------------------------------------------------------
@@ -1965,7 +1973,7 @@ mod tests {
         // 48 B8 21 43 65 87 78 56 34 12 = movq rax, 0x1234567887654321
         assert_eq!(
             dis(&[0x48, 0xB8, 0x21, 0x43, 0x65, 0x87, 0x78, 0x56, 0x34, 0x12]),
-            "movq rax,0x1234567887654321"
+            "movq rax, 0x1234567887654321"
         );
     }
 
@@ -1974,7 +1982,7 @@ mod tests {
         // 48 C7 C1 FF FF FF FF = movq rcx,-1 (mov r/m64, imm32 sign-ext)
         assert_eq!(
             dis(&[0x48, 0xC7, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF]),
-            "movq rcx,-1"
+            "movq rcx, -1"
         );
     }
 
@@ -1984,7 +1992,7 @@ mod tests {
         // Large value that doesn't fit in i32 sign-ext form
         assert_eq!(
             dis(&[0x48, 0xB9, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
-            "movq rcx,0xffffffffffffffff"
+            "movq rcx, 0xffffffffffffffff"
         );
     }
 
@@ -1994,7 +2002,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_rax_mem_rsp() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x24]), "movq rax,[rsp]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x24]), "movq rax, [rsp]");
     }
 
     // -----------------------------------------------------------------------
@@ -2003,13 +2011,13 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_rax_mem_rbp_disp8() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x45, 0x08]), "movq rax,[rbp+0x8]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x45, 0x08]), "movq rax, [rbp+0x8]");
     }
 
     #[test]
     fn test_movq_rax_mem_rbp_neg_disp8() {
         // 48 8B 45 F8 = movq rax,[rbp-0x8]
-        assert_eq!(dis(&[0x48, 0x8B, 0x45, 0xF8]), "movq rax,[rbp-0x8]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x45, 0xF8]), "movq rax, [rbp-0x8]");
     }
 
     // -----------------------------------------------------------------------
@@ -2020,7 +2028,7 @@ mod tests {
     fn test_movq_rax_mem_rbp_disp32() {
         assert_eq!(
             dis(&[0x48, 0x8B, 0x85, 0x00, 0x08, 0x00, 0x00]),
-            "movq rax,[rbp+0x800]"
+            "movq rax, [rbp+0x800]"
         );
     }
 
@@ -2028,7 +2036,7 @@ mod tests {
     fn test_movq_rax_mem_rbp_neg_disp32() {
         assert_eq!(
             dis(&[0x48, 0x8B, 0x85, 0x00, 0xF8, 0xFF, 0xFF]),
-            "movq rax,[rbp-0x800]"
+            "movq rax, [rbp-0x800]"
         );
     }
 
@@ -2038,12 +2046,12 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_rax_mem_rsp_disp8() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x24, 0x08]), "movq rax,[rsp+0x8]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x24, 0x08]), "movq rax, [rsp+0x8]");
     }
 
     #[test]
     fn test_movq_rax_mem_rsp_neg_disp8() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x24, 0xF8]), "movq rax,[rsp-0x8]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x24, 0xF8]), "movq rax, [rsp-0x8]");
     }
 
     // -----------------------------------------------------------------------
@@ -2052,7 +2060,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_mem_rsp_rax() {
-        assert_eq!(dis(&[0x48, 0x89, 0x04, 0x24]), "movq [rsp],rax");
+        assert_eq!(dis(&[0x48, 0x89, 0x04, 0x24]), "movq [rsp], rax");
     }
 
     // -----------------------------------------------------------------------
@@ -2061,7 +2069,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_rax_mem_rax() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x00]), "movq rax,[rax]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x00]), "movq rax, [rax]");
     }
 
     // -----------------------------------------------------------------------
@@ -2070,19 +2078,19 @@ mod tests {
     #[test]
     fn test_movq_rax_mem_r10() {
         // 49 8B 02 = movq rax,[r10]
-        assert_eq!(dis(&[0x49, 0x8B, 0x02]), "movq rax,[r10]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x02]), "movq rax, [r10]");
     }
 
     #[test]
     fn test_movq_rax_mem_r12() {
         // 49 8B 04 24 = movq rax,[r12]  (SIB for r12)
-        assert_eq!(dis(&[0x49, 0x8B, 0x04, 0x24]), "movq rax,[r12]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x04, 0x24]), "movq rax, [r12]");
     }
 
     #[test]
     fn test_movq_rax_mem_r13_disp0() {
         // 49 8B 45 00 = movq rax,[r13+0]  (r13 requires disp8=0 for mod=01)
-        assert_eq!(dis(&[0x49, 0x8B, 0x45, 0x00]), "movq rax,[r13+0]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x45, 0x00]), "movq rax, [r13+0]");
     }
 
     // -----------------------------------------------------------------------
@@ -2091,12 +2099,12 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_addq_rax_rcx() {
-        assert_eq!(dis(&[0x48, 0x01, 0xC8]), "addq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x01, 0xC8]), "addq rax, rcx");
     }
 
     #[test]
     fn test_addl_rax_rcx() {
-        assert_eq!(dis(&[0x01, 0xC8]), "addl rax,rcx");
+        assert_eq!(dis(&[0x01, 0xC8]), "addl rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -2105,7 +2113,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_subq_rax_rcx() {
-        assert_eq!(dis(&[0x48, 0x29, 0xC8]), "subq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x29, 0xC8]), "subq rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -2114,19 +2122,19 @@ mod tests {
     #[test]
     fn test_andq_rax_rcx() {
         // 48 21 C8
-        assert_eq!(dis(&[0x48, 0x21, 0xC8]), "andq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x21, 0xC8]), "andq rax, rcx");
     }
 
     #[test]
     fn test_orq_rax_rcx() {
         // 48 09 C8
-        assert_eq!(dis(&[0x48, 0x09, 0xC8]), "orq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x09, 0xC8]), "orq rax, rcx");
     }
 
     #[test]
     fn test_xorq_rax_rax() {
         // 48 31 C0
-        assert_eq!(dis(&[0x48, 0x31, 0xC0]), "xorq rax,rax");
+        assert_eq!(dis(&[0x48, 0x31, 0xC0]), "xorq rax, rax");
     }
 
     // -----------------------------------------------------------------------
@@ -2135,7 +2143,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_cmpq_rax_rcx() {
-        assert_eq!(dis(&[0x48, 0x39, 0xC8]), "cmpq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x39, 0xC8]), "cmpq rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -2144,7 +2152,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_addq_rax_imm8() {
-        assert_eq!(dis(&[0x48, 0x83, 0xC0, 0x02]), "addq rax,2");
+        assert_eq!(dis(&[0x48, 0x83, 0xC0, 0x02]), "addq rax, 2");
     }
 
     // -----------------------------------------------------------------------
@@ -2153,7 +2161,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_subq_rax_imm8() {
-        assert_eq!(dis(&[0x48, 0x83, 0xE8, 0x02]), "subq rax,2");
+        assert_eq!(dis(&[0x48, 0x83, 0xE8, 0x02]), "subq rax, 2");
     }
 
     // -----------------------------------------------------------------------
@@ -2162,7 +2170,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_cmpq_rcx_imm8() {
-        assert_eq!(dis(&[0x48, 0x83, 0xF9, 0x57]), "cmpq rcx,0x57");
+        assert_eq!(dis(&[0x48, 0x83, 0xF9, 0x57]), "cmpq rcx, 0x57");
     }
 
     // -----------------------------------------------------------------------
@@ -2173,7 +2181,7 @@ mod tests {
     fn test_cmpq_rax_imm32() {
         assert_eq!(
             dis(&[0x48, 0x81, 0xF8, 0xFF, 0xFF, 0xFF, 0x7F]),
-            "cmpq rax,0x7fffffff"
+            "cmpq rax, 0x7fffffff"
         );
     }
 
@@ -2183,7 +2191,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_testq_rax_rax() {
-        assert_eq!(dis(&[0x48, 0x85, 0xC0]), "testq rax,rax");
+        assert_eq!(dis(&[0x48, 0x85, 0xC0]), "testq rax, rax");
     }
 
     // -----------------------------------------------------------------------
@@ -2233,7 +2241,7 @@ mod tests {
     fn test_leaq_rax_rip() {
         assert_eq!(
             dis(&[0x48, 0x8D, 0x05, 0x10, 0x00, 0x00, 0x00]),
-            "leaq rax,[rip+0x10]"
+            "leaq rax, [rip+0x10]"
         );
     }
 
@@ -2245,24 +2253,24 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_shlq_rax_imm() {
-        assert_eq!(dis(&[0x48, 0xC1, 0xE0, 0x04]), "shlq rax,4");
+        assert_eq!(dis(&[0x48, 0xC1, 0xE0, 0x04]), "shlq rax, 4");
     }
 
     #[test]
     fn test_shrq_rax_imm() {
-        assert_eq!(dis(&[0x48, 0xC1, 0xE8, 0x04]), "shrq rax,4");
+        assert_eq!(dis(&[0x48, 0xC1, 0xE8, 0x04]), "shrq rax, 4");
     }
 
     #[test]
     fn test_sarq_rax_1() {
         // 48 D1 F8 = sarq rax,1
-        assert_eq!(dis(&[0x48, 0xD1, 0xF8]), "sarq rax,1");
+        assert_eq!(dis(&[0x48, 0xD1, 0xF8]), "sarq rax, 1");
     }
 
     #[test]
     fn test_shlq_rax_cl() {
         // 48 D3 E0 = shlq rax,cl
-        assert_eq!(dis(&[0x48, 0xD3, 0xE0]), "shlq rax,cl");
+        assert_eq!(dis(&[0x48, 0xD3, 0xE0]), "shlq rax, cl");
     }
 
     // -----------------------------------------------------------------------
@@ -2271,7 +2279,7 @@ mod tests {
     #[test]
     fn test_jmp_short() {
         // EB 0B = jmp +13 (disp=0x0B, total=0x0B+2=13)
-        assert_eq!(dis(&[0xEB, 0x0B]), "jmp +13");
+        assert_eq!(dis(&[0xEB, 0x0B]), "jmp 0xd");
     }
 
     // -----------------------------------------------------------------------
@@ -2280,13 +2288,13 @@ mod tests {
     #[test]
     fn test_jz_short() {
         // 74 05 = jz +7 (disp=5, +2=7)
-        assert_eq!(dis(&[0x74, 0x05]), "jz +7");
+        assert_eq!(dis(&[0x74, 0x05]), "jz 7");
     }
 
     #[test]
     fn test_jl_short_neg() {
         // 7C F5 = jl -9 (disp=0xF5=-11, +2=-9)
-        assert_eq!(dis(&[0x7C, 0xF5]), "jl -9");
+        assert_eq!(dis(&[0x7C, 0xF5]), "jl -0x9");
     }
 
     // -----------------------------------------------------------------------
@@ -2296,7 +2304,7 @@ mod tests {
     #[test]
     fn test_call_rel32() {
         // E8 0A 00 00 00 = call +15 (disp=10, +5=15)
-        assert_eq!(dis(&[0xE8, 0x0A, 0x00, 0x00, 0x00]), "call +15");
+        assert_eq!(dis(&[0xE8, 0x0A, 0x00, 0x00, 0x00]), "call 0xf");
     }
 
     // -----------------------------------------------------------------------
@@ -2305,7 +2313,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_jmp_rel32() {
-        assert_eq!(dis(&[0xE9, 0x0A, 0x00, 0x00, 0x00]), "jmp +15");
+        assert_eq!(dis(&[0xE9, 0x0A, 0x00, 0x00, 0x00]), "jmp 0xf");
     }
 
     // -----------------------------------------------------------------------
@@ -2333,25 +2341,25 @@ mod tests {
     #[test]
     fn test_movzxbq() {
         // 48 0F B6 04 24 = movzxbq rax,[rsp]
-        assert_eq!(dis(&[0x48, 0x0F, 0xB6, 0x04, 0x24]), "movzxbq rax,[rsp]");
+        assert_eq!(dis(&[0x48, 0x0F, 0xB6, 0x04, 0x24]), "movzxbq rax, [rsp]");
     }
 
     #[test]
     fn test_movzxwq() {
         // 48 0F B7 00 = movzxwq rax,[rax]
-        assert_eq!(dis(&[0x48, 0x0F, 0xB7, 0x00]), "movzxwq rax,[rax]");
+        assert_eq!(dis(&[0x48, 0x0F, 0xB7, 0x00]), "movzxwq rax, [rax]");
     }
 
     #[test]
     fn test_movsxbq() {
         // 48 0F BE C1 = movsxbq rax,rcx
-        assert_eq!(dis(&[0x48, 0x0F, 0xBE, 0xC1]), "movsxbq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0xBE, 0xC1]), "movsxbq rax, rcx");
     }
 
     #[test]
     fn test_movsxwq() {
         // 4C 0F BF 04 24 = movsxwq r8,[rsp]
-        assert_eq!(dis(&[0x4C, 0x0F, 0xBF, 0x04, 0x24]), "movsxwq r8,[rsp]");
+        assert_eq!(dis(&[0x4C, 0x0F, 0xBF, 0x04, 0x24]), "movsxwq r8, [rsp]");
     }
 
     // -----------------------------------------------------------------------
@@ -2360,7 +2368,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movsxdq() {
-        assert_eq!(dis(&[0x48, 0x63, 0xC1]), "movsxdq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x63, 0xC1]), "movsxdq rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -2369,7 +2377,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_imulq_rax_rcx() {
-        assert_eq!(dis(&[0x48, 0x0F, 0xAF, 0xC1]), "imulq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0xAF, 0xC1]), "imulq rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -2378,13 +2386,13 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_imulq_rax_rcx_imm8() {
-        assert_eq!(dis(&[0x48, 0x6B, 0xC1, 0x04]), "imulq rax,rcx,4");
+        assert_eq!(dis(&[0x48, 0x6B, 0xC1, 0x04]), "imulq rax, rcx, 4");
     }
 
     #[test]
     fn test_imull_rax_rax_imm32() {
         // 69 C0 E8 03 00 00 = imull rax,rax,0x3e8
-        assert_eq!(dis(&[0x69, 0xC0, 0xE8, 0x03, 0x00, 0x00]), "imull rax,rax,0x3e8");
+        assert_eq!(dis(&[0x69, 0xC0, 0xE8, 0x03, 0x00, 0x00]), "imull rax, rax, 0x3e8");
     }
 
     // -----------------------------------------------------------------------
@@ -2421,7 +2429,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_cmovzq() {
-        assert_eq!(dis(&[0x48, 0x0F, 0x44, 0xC1]), "cmovzq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0x44, 0xC1]), "cmovzq rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -2459,7 +2467,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_rax_sib_base_index_scale() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x48]), "movq rax,[rax+rcx*2]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x48]), "movq rax, [rax+rcx*2]");
     }
 
     // -----------------------------------------------------------------------
@@ -2468,7 +2476,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_sib_disp8() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x48, 0x08]), "movq rax,[rax+rcx*2+0x8]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x48, 0x08]), "movq rax, [rax+rcx*2+0x8]");
     }
 
     // -----------------------------------------------------------------------
@@ -2477,7 +2485,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_rax_r12_disp8() {
-        assert_eq!(dis(&[0x49, 0x8B, 0x44, 0x24, 0x08]), "movq rax,[r12+0x8]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x44, 0x24, 0x08]), "movq rax, [r12+0x8]");
     }
 
     // -----------------------------------------------------------------------
@@ -2486,7 +2494,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_rax_r13_disp8() {
-        assert_eq!(dis(&[0x49, 0x8B, 0x45, 0x08]), "movq rax,[r13+0x8]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x45, 0x08]), "movq rax, [r13+0x8]");
     }
 
     // -----------------------------------------------------------------------
@@ -2514,7 +2522,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_rax_rbp_disp0() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x45, 0x00]), "movq rax,[rbp+0]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x45, 0x00]), "movq rax, [rbp+0]");
     }
 
     // -----------------------------------------------------------------------
@@ -2523,7 +2531,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_sib_base_index_no_disp() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x68]), "movq rax,[rax+rbp*2]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x68]), "movq rax, [rax+rbp*2]");
     }
 
     // -----------------------------------------------------------------------
@@ -2550,7 +2558,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_idivq_rcx() {
-        assert_eq!(dis(&[0x48, 0xF7, 0xF9]), "idivq (rax,rdx),rcx");
+        assert_eq!(dis(&[0x48, 0xF7, 0xF9]), "idivq (rax, rdx), rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -2561,7 +2569,7 @@ mod tests {
     fn test_testq_rcx_imm() {
         assert_eq!(
             dis(&[0x48, 0xF7, 0xC1, 0x01, 0x00, 0x00, 0x00]),
-            "testq rcx,1"
+            "testq rcx, 1"
         );
     }
 
@@ -2589,12 +2597,12 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_bsfq() {
-        assert_eq!(dis(&[0x48, 0x0F, 0xBC, 0xC8]), "bsfq rcx,rax");
+        assert_eq!(dis(&[0x48, 0x0F, 0xBC, 0xC8]), "bsfq rcx, rax");
     }
 
     #[test]
     fn test_bsrq() {
-        assert_eq!(dis(&[0x48, 0x0F, 0xBD, 0xC8]), "bsrq rcx,rax");
+        assert_eq!(dis(&[0x48, 0x0F, 0xBD, 0xC8]), "bsrq rcx, rax");
     }
 
     // -----------------------------------------------------------------------
@@ -2618,7 +2626,7 @@ mod tests {
     fn test_movq_mem_imm() {
         assert_eq!(
             dis(&[0x48, 0xC7, 0x04, 0x24, 0x00, 0x00, 0x00, 0x00]),
-            "movq [rsp],0"
+            "movq [rsp], 0"
         );
     }
 
@@ -2631,7 +2639,7 @@ mod tests {
     fn test_movq_sib_index_only() {
         assert_eq!(
             dis(&[0x48, 0x8B, 0x04, 0x4D, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[rcx*2+0]"
+            "movq rax, [rcx*2+0]"
         );
     }
 
@@ -2641,7 +2649,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_addq_rsp_imm8() {
-        assert_eq!(dis(&[0x48, 0x83, 0xC4, 0x08]), "addq rsp,8");
+        assert_eq!(dis(&[0x48, 0x83, 0xC4, 0x08]), "addq rsp, 8");
     }
 
     // -----------------------------------------------------------------------
@@ -2650,7 +2658,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movl_rax_neg1() {
-        assert_eq!(dis(&[0xB8, 0xFF, 0xFF, 0xFF, 0xFF]), "movl rax,0xffffffff");
+        assert_eq!(dis(&[0xB8, 0xFF, 0xFF, 0xFF, 0xFF]), "movl rax, 0xffffffff");
     }
 
     // -----------------------------------------------------------------------
@@ -2659,7 +2667,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_jz_long() {
-        assert_eq!(dis(&[0x0F, 0x84, 0x05, 0x00, 0x00, 0x00]), "jz +11");
+        assert_eq!(dis(&[0x0F, 0x84, 0x05, 0x00, 0x00, 0x00]), "jz 0xb");
     }
 
     // -----------------------------------------------------------------------
@@ -2690,7 +2698,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_movq_r10_mem_rax() {
-        assert_eq!(dis(&[0x4C, 0x8B, 0x10]), "movq r10,[rax]");
+        assert_eq!(dis(&[0x4C, 0x8B, 0x10]), "movq r10, [rax]");
     }
 
     // -----------------------------------------------------------------------
@@ -2699,7 +2707,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_sib_rsp_rbp_times2() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x6C]), "movq rax,[rsp+rbp*2]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x6C]), "movq rax, [rsp+rbp*2]");
     }
 
     // -----------------------------------------------------------------------
@@ -2708,7 +2716,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_sib_rbp_rax_times2_disp0() {
-        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x45, 0x00]), "movq rax,[rbp+rax*2+0]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x45, 0x00]), "movq rax, [rbp+rax*2+0]");
     }
 
     // -----------------------------------------------------------------------
@@ -2717,7 +2725,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_sib_r13_rax_times2_disp0() {
-        assert_eq!(dis(&[0x49, 0x8B, 0x44, 0x45, 0x00]), "movq rax,[r13+rax*2+0]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x44, 0x45, 0x00]), "movq rax, [r13+rax*2+0]");
     }
 
     // -----------------------------------------------------------------------
@@ -2727,7 +2735,7 @@ mod tests {
     fn test_disassemble_one_length() {
         let code = [0x48, 0x83, 0xC0, 0x02, 0xC3]; // addq rax,2; ret
         let (text, len) = disassemble_one(&code, 0);
-        assert_eq!(text, "addq rax,2");
+        assert_eq!(text, "addq rax, 2");
         assert_eq!(len, 4);
     }
 
@@ -2749,12 +2757,12 @@ mod tests {
         let result = dis_all(&code);
         assert_eq!(
             result,
-            "movl rax,0\n\
-             movl rcx,0\n\
-             addq rax,2\n\
+            "movl rax, 0\n\
+             movl rcx, 0\n\
+             addq rax, 2\n\
              incq rcx\n\
-             cmpq rcx,0x57\n\
-             jl -11\n\
+             cmpq rcx, 0x57\n\
+             jl 0xa\n\
              ret\n"
         );
     }
@@ -2765,7 +2773,7 @@ mod tests {
     #[test]
     fn test_movq_rax_mem_rsp_0() {
         // 48 8B 04 24 = movq rax,[rsp]
-        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x24]), "movq rax,[rsp]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x24]), "movq rax, [rsp]");
     }
 
     // Additional SIB modes with R12 base and index
@@ -2774,7 +2782,7 @@ mod tests {
         // 4A 8B 04 6C -> needs REX.B for r12
         // REX: 0x49 (W=1, B=1), modrm=0x04 (mod=0, reg=rax, rm=100->SIB)
         // SIB: 0x6C (scale=1, index=rbp(5), base=4(rsp) -> but REX.B makes base=r12)
-        assert_eq!(dis(&[0x49, 0x8B, 0x04, 0x6C]), "movq rax,[r12+rbp*2]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x04, 0x6C]), "movq rax, [r12+rbp*2]");
     }
 
     // -----------------------------------------------------------------------
@@ -2790,7 +2798,7 @@ mod tests {
         // For -87: 0xFFFFFF_A9, which as u32 > 0xFFFF so prints 0xffffffa9
         assert_eq!(
             dis(&[0xB8, 0xA9, 0xFF, 0xFF, 0xFF]),
-            "movl rax,0xffffffa9"
+            "movl rax, 0xffffffa9"
         );
     }
 
@@ -2802,7 +2810,7 @@ mod tests {
     fn test_andl_rax_imm32_short() {
         assert_eq!(
             dis(&[0x25, 0xFF, 0xFF, 0xFF, 0xFF]),
-            "andl rax,0xffffffff"
+            "andl rax, 0xffffffff"
         );
     }
 
@@ -2814,7 +2822,7 @@ mod tests {
     fn test_movq_rax_rsp_disp32() {
         assert_eq!(
             dis(&[0x48, 0x8B, 0x84, 0x24, 0x00, 0x08, 0x00, 0x00]),
-            "movq rax,[rsp+0x800]"
+            "movq rax, [rsp+0x800]"
         );
     }
 
@@ -2822,7 +2830,7 @@ mod tests {
     fn test_movq_rax_rsp_neg_disp32() {
         assert_eq!(
             dis(&[0x48, 0x8B, 0x84, 0x24, 0x00, 0xF8, 0xFF, 0xFF]),
-            "movq rax,[rsp-0x800]"
+            "movq rax, [rsp-0x800]"
         );
     }
 
@@ -2837,43 +2845,43 @@ mod tests {
     fn test_addr_movq_rax_mem_rbp_0() {
         // movq rax,[rbp+0]  -- rbp base always needs explicit disp
         // 48 8B 45 00
-        assert_eq!(dis(&[0x48, 0x8B, 0x45, 0x00]), "movq rax,[rbp+0]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x45, 0x00]), "movq rax, [rbp+0]");
     }
 
     #[test]
     fn test_addr_movq_rax_mem_rax() {
         // movq rax,[rax]  -- 48 8B 00
-        assert_eq!(dis(&[0x48, 0x8B, 0x00]), "movq rax,[rax]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x00]), "movq rax, [rax]");
     }
 
     #[test]
     fn test_addr_movq_r10_mem_rax() {
         // movq r10,[rax] -- 4C 8B 10
-        assert_eq!(dis(&[0x4C, 0x8B, 0x10]), "movq r10,[rax]");
+        assert_eq!(dis(&[0x4C, 0x8B, 0x10]), "movq r10, [rax]");
     }
 
     #[test]
     fn test_addr_movq_rax_mem_r10_disp8() {
         // movq rax,[r10+0x8] -- 49 8B 42 08
-        assert_eq!(dis(&[0x49, 0x8B, 0x42, 0x08]), "movq rax,[r10+0x8]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x42, 0x08]), "movq rax, [r10+0x8]");
     }
 
     #[test]
     fn test_addr_movq_rax_mem_r12_disp8() {
         // movq rax,[r12+0x8] -- 49 8B 44 24 08  (r12 base needs SIB)
-        assert_eq!(dis(&[0x49, 0x8B, 0x44, 0x24, 0x08]), "movq rax,[r12+0x8]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x44, 0x24, 0x08]), "movq rax, [r12+0x8]");
     }
 
     #[test]
     fn test_addr_movq_rax_mem_r13_disp8() {
         // movq rax,[r13+0x8] -- 49 8B 45 08
-        assert_eq!(dis(&[0x49, 0x8B, 0x45, 0x08]), "movq rax,[r13+0x8]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x45, 0x08]), "movq rax, [r13+0x8]");
     }
 
     #[test]
     fn test_addr_movq_rax_mem_r10_neg_disp8() {
         // movq rax,[r10-0x8] -- 49 8B 42 F8
-        assert_eq!(dis(&[0x49, 0x8B, 0x42, 0xF8]), "movq rax,[r10-0x8]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x42, 0xF8]), "movq rax, [r10-0x8]");
     }
 
     #[test]
@@ -2881,7 +2889,7 @@ mod tests {
         // movq rax,[r10+0x800] -- 49 8B 82 00 08 00 00
         assert_eq!(
             dis(&[0x49, 0x8B, 0x82, 0x00, 0x08, 0x00, 0x00]),
-            "movq rax,[r10+0x800]"
+            "movq rax, [r10+0x800]"
         );
     }
 
@@ -2890,7 +2898,7 @@ mod tests {
         // movq rax,[r12+0x800] -- 49 8B 84 24 00 08 00 00
         assert_eq!(
             dis(&[0x49, 0x8B, 0x84, 0x24, 0x00, 0x08, 0x00, 0x00]),
-            "movq rax,[r12+0x800]"
+            "movq rax, [r12+0x800]"
         );
     }
 
@@ -2899,7 +2907,7 @@ mod tests {
         // movq rax,[r13+0x800] -- 49 8B 85 00 08 00 00
         assert_eq!(
             dis(&[0x49, 0x8B, 0x85, 0x00, 0x08, 0x00, 0x00]),
-            "movq rax,[r13+0x800]"
+            "movq rax, [r13+0x800]"
         );
     }
 
@@ -2909,74 +2917,74 @@ mod tests {
     #[test]
     fn test_addr_sib_rax_rbp_times2() {
         // movq rax,[rax+rbp*2] -- 48 8B 04 68
-        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x68]), "movq rax,[rax+rbp*2]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x68]), "movq rax, [rax+rbp*2]");
     }
 
     #[test]
     fn test_addr_sib_rax_rax_times2() {
         // movq rax,[rax+rax*2] -- 48 8B 04 40
-        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x40]), "movq rax,[rax+rax*2]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x40]), "movq rax, [rax+rax*2]");
     }
 
     #[test]
     fn test_addr_sib_rax_r10_times2() {
         // movq rax,[rax+r10*2] -- 4A 8B 04 50
-        assert_eq!(dis(&[0x4A, 0x8B, 0x04, 0x50]), "movq rax,[rax+r10*2]");
+        assert_eq!(dis(&[0x4A, 0x8B, 0x04, 0x50]), "movq rax, [rax+r10*2]");
     }
 
     #[test]
     fn test_addr_sib_rax_r12_times2() {
         // movq rax,[rax+r12*2] -- 4A 8B 04 60
-        assert_eq!(dis(&[0x4A, 0x8B, 0x04, 0x60]), "movq rax,[rax+r12*2]");
+        assert_eq!(dis(&[0x4A, 0x8B, 0x04, 0x60]), "movq rax, [rax+r12*2]");
     }
 
     #[test]
     fn test_addr_sib_rax_r13_times2() {
         // movq rax,[rax+r13*2] -- 4A 8B 04 68
-        assert_eq!(dis(&[0x4A, 0x8B, 0x04, 0x68]), "movq rax,[rax+r13*2]");
+        assert_eq!(dis(&[0x4A, 0x8B, 0x04, 0x68]), "movq rax, [rax+r13*2]");
     }
 
     #[test]
     fn test_addr_sib_rsp_rbp_times2() {
         // movq rax,[rsp+rbp*2] -- 48 8B 04 6C
-        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x6C]), "movq rax,[rsp+rbp*2]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x6C]), "movq rax, [rsp+rbp*2]");
     }
 
     #[test]
     fn test_addr_sib_rsp_rax_times2() {
         // movq rax,[rsp+rax*2] -- 48 8B 04 44
-        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x44]), "movq rax,[rsp+rax*2]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x04, 0x44]), "movq rax, [rsp+rax*2]");
     }
 
     #[test]
     fn test_addr_sib_r10_rbp_times2() {
         // movq rax,[r10+rbp*2] -- 49 8B 04 6A
-        assert_eq!(dis(&[0x49, 0x8B, 0x04, 0x6A]), "movq rax,[r10+rbp*2]");
+        assert_eq!(dis(&[0x49, 0x8B, 0x04, 0x6A]), "movq rax, [r10+rbp*2]");
     }
 
     #[test]
     fn test_addr_sib_r10_r10_times2() {
         // movq rax,[r10+r10*2] -- 4B 8B 04 52
-        assert_eq!(dis(&[0x4B, 0x8B, 0x04, 0x52]), "movq rax,[r10+r10*2]");
+        assert_eq!(dis(&[0x4B, 0x8B, 0x04, 0x52]), "movq rax, [r10+r10*2]");
     }
 
     // SIB with base+index*scale+disp8
     #[test]
     fn test_addr_sib_rax_rbp_times2_disp8() {
         // movq rax,[rax+rbp*2+0x8] -- 48 8B 44 68 08
-        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x68, 0x08]), "movq rax,[rax+rbp*2+0x8]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x68, 0x08]), "movq rax, [rax+rbp*2+0x8]");
     }
 
     #[test]
     fn test_addr_sib_rbp_rbp_times2_disp8() {
         // movq rax,[rbp+rbp*2+0x8] -- 48 8B 44 6D 08
-        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x6D, 0x08]), "movq rax,[rbp+rbp*2+0x8]");
+        assert_eq!(dis(&[0x48, 0x8B, 0x44, 0x6D, 0x08]), "movq rax, [rbp+rbp*2+0x8]");
     }
 
     #[test]
     fn test_addr_sib_rsp_r10_times2_disp8() {
         // movq rax,[rsp+r10*2+0x8] -- 4A 8B 44 54 08
-        assert_eq!(dis(&[0x4A, 0x8B, 0x44, 0x54, 0x08]), "movq rax,[rsp+r10*2+0x8]");
+        assert_eq!(dis(&[0x4A, 0x8B, 0x44, 0x54, 0x08]), "movq rax, [rsp+r10*2+0x8]");
     }
 
     // SIB with base+index*scale+disp32
@@ -2985,7 +2993,7 @@ mod tests {
         // movq rax,[rax+rbp*2+0x800] -- 48 8B 84 68 00 08 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x84, 0x68, 0x00, 0x08, 0x00, 0x00]),
-            "movq rax,[rax+rbp*2+0x800]"
+            "movq rax, [rax+rbp*2+0x800]"
         );
     }
 
@@ -2997,7 +3005,7 @@ mod tests {
         // movq rax,[rax*1+0] -- 48 8B 04 05 00 00 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x04, 0x05, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[rax*1+0]"
+            "movq rax, [rax*1+0]"
         );
     }
 
@@ -3006,7 +3014,7 @@ mod tests {
         // movq rax,[rax*2+0] -- 48 8B 04 45 00 00 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x04, 0x45, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[rax*2+0]"
+            "movq rax, [rax*2+0]"
         );
     }
 
@@ -3015,7 +3023,7 @@ mod tests {
         // movq rax,[rax*4+0] -- 48 8B 04 85 00 00 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x04, 0x85, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[rax*4+0]"
+            "movq rax, [rax*4+0]"
         );
     }
 
@@ -3024,7 +3032,7 @@ mod tests {
         // movq rax,[rax*8+0] -- 48 8B 04 C5 00 00 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x04, 0xC5, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[rax*8+0]"
+            "movq rax, [rax*8+0]"
         );
     }
 
@@ -3033,7 +3041,7 @@ mod tests {
         // movq rax,[rbp*2+0x8] -- 48 8B 04 6D 08 00 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x04, 0x6D, 0x08, 0x00, 0x00, 0x00]),
-            "movq rax,[rbp*2+0x8]"
+            "movq rax, [rbp*2+0x8]"
         );
     }
 
@@ -3042,7 +3050,7 @@ mod tests {
         // movq rax,[r10*2+0] -- 4A 8B 04 55 00 00 00 00
         assert_eq!(
             dis(&[0x4A, 0x8B, 0x04, 0x55, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[r10*2+0]"
+            "movq rax, [r10*2+0]"
         );
     }
 
@@ -3051,7 +3059,7 @@ mod tests {
         // movq rax,[r13*2+0] -- 4A 8B 04 6D 00 00 00 00
         assert_eq!(
             dis(&[0x4A, 0x8B, 0x04, 0x6D, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[r13*2+0]"
+            "movq rax, [r13*2+0]"
         );
     }
 
@@ -3063,7 +3071,7 @@ mod tests {
         // movq rax,[rip+0x100] -- 48 8B 05 00 01 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x05, 0x00, 0x01, 0x00, 0x00]),
-            "movq rax,[rip+0x100]"
+            "movq rax, [rip+0x100]"
         );
     }
 
@@ -3072,7 +3080,7 @@ mod tests {
         // movq rax,[rip-0x10] -- 48 8B 05 F0 FF FF FF
         assert_eq!(
             dis(&[0x48, 0x8B, 0x05, 0xF0, 0xFF, 0xFF, 0xFF]),
-            "movq rax,[rip-0x10]"
+            "movq rax, [rip-0x10]"
         );
     }
 
@@ -3082,118 +3090,118 @@ mod tests {
     #[test]
     fn test_movsd_xmm0_xmm1() {
         // F2 0F 10 C1 = movsd xmm0,xmm1
-        assert_eq!(dis(&[0xF2, 0x0F, 0x10, 0xC1]), "movsd xmm0,xmm1");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x10, 0xC1]), "movsd xmm0, xmm1");
     }
 
     #[test]
     fn test_movsd_xmm1_mem_rsp() {
         // F2 0F 10 0C 24 = movsd xmm1,[rsp]
-        assert_eq!(dis(&[0xF2, 0x0F, 0x10, 0x0C, 0x24]), "movsd xmm1,[rsp]");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x10, 0x0C, 0x24]), "movsd xmm1, [rsp]");
     }
 
     #[test]
     fn test_movsd_mem_rsp_xmm0() {
         // F2 0F 11 04 24 = movsd [rsp],xmm0
-        assert_eq!(dis(&[0xF2, 0x0F, 0x11, 0x04, 0x24]), "movsd [rsp],xmm0");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x11, 0x04, 0x24]), "movsd [rsp], xmm0");
     }
 
     #[test]
     fn test_addsd_xmm0_xmm1() {
         // F2 0F 58 C1 = addsd xmm0,xmm1
-        assert_eq!(dis(&[0xF2, 0x0F, 0x58, 0xC1]), "addsd xmm0,xmm1");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x58, 0xC1]), "addsd xmm0, xmm1");
     }
 
     #[test]
     fn test_mulsd_xmm0_xmm1() {
         // F2 0F 59 C1 = mulsd xmm0,xmm1
-        assert_eq!(dis(&[0xF2, 0x0F, 0x59, 0xC1]), "mulsd xmm0,xmm1");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x59, 0xC1]), "mulsd xmm0, xmm1");
     }
 
     #[test]
     fn test_subsd_xmm0_xmm1() {
         // F2 0F 5C C1 = subsd xmm0,xmm1
-        assert_eq!(dis(&[0xF2, 0x0F, 0x5C, 0xC1]), "subsd xmm0,xmm1");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x5C, 0xC1]), "subsd xmm0, xmm1");
     }
 
     #[test]
     fn test_divsd_xmm0_xmm1() {
         // F2 0F 5E C1 = divsd xmm0,xmm1
-        assert_eq!(dis(&[0xF2, 0x0F, 0x5E, 0xC1]), "divsd xmm0,xmm1");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x5E, 0xC1]), "divsd xmm0, xmm1");
     }
 
     #[test]
     fn test_sqrtsd_xmm0_xmm1() {
         // F2 0F 51 C1 = sqrtsd xmm0,xmm1
-        assert_eq!(dis(&[0xF2, 0x0F, 0x51, 0xC1]), "sqrtsd xmm0,xmm1");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x51, 0xC1]), "sqrtsd xmm0, xmm1");
     }
 
     #[test]
     fn test_minsd_xmm0_xmm1() {
         // F2 0F 5D C1 = minsd xmm0,xmm1
-        assert_eq!(dis(&[0xF2, 0x0F, 0x5D, 0xC1]), "minsd xmm0,xmm1");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x5D, 0xC1]), "minsd xmm0, xmm1");
     }
 
     #[test]
     fn test_maxsd_xmm0_xmm1() {
         // F2 0F 5F C1 = maxsd xmm0,xmm1
-        assert_eq!(dis(&[0xF2, 0x0F, 0x5F, 0xC1]), "maxsd xmm0,xmm1");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x5F, 0xC1]), "maxsd xmm0, xmm1");
     }
 
     // SSE: movss
     #[test]
     fn test_movss_xmm0_xmm1() {
         // F3 0F 10 C1 = movss xmm0,rcx (Dart-style: uses CPU reg name for reg-to-reg movss)
-        assert_eq!(dis(&[0xF3, 0x0F, 0x10, 0xC1]), "movss xmm0,rcx");
+        assert_eq!(dis(&[0xF3, 0x0F, 0x10, 0xC1]), "movss xmm0, rcx");
     }
 
     #[test]
     fn test_movss_xmm1_mem_rsp() {
         // F3 0F 10 0C 24 = movss xmm1,[rsp]
-        assert_eq!(dis(&[0xF3, 0x0F, 0x10, 0x0C, 0x24]), "movss xmm1,[rsp]");
+        assert_eq!(dis(&[0xF3, 0x0F, 0x10, 0x0C, 0x24]), "movss xmm1, [rsp]");
     }
 
     #[test]
     fn test_movss_mem_rsp_xmm0() {
         // F3 0F 11 04 24 = movss [rsp],xmm0
-        assert_eq!(dis(&[0xF3, 0x0F, 0x11, 0x04, 0x24]), "movss [rsp],xmm0");
+        assert_eq!(dis(&[0xF3, 0x0F, 0x11, 0x04, 0x24]), "movss [rsp], xmm0");
     }
 
     // SSE: addss, mulss, subss, divss
     #[test]
     fn test_addss_xmm0_xmm1() {
         // F3 0F 58 C1
-        assert_eq!(dis(&[0xF3, 0x0F, 0x58, 0xC1]), "addss xmm0,xmm1");
+        assert_eq!(dis(&[0xF3, 0x0F, 0x58, 0xC1]), "addss xmm0, xmm1");
     }
 
     #[test]
     fn test_mulss_xmm0_xmm1() {
         // F3 0F 59 C1
-        assert_eq!(dis(&[0xF3, 0x0F, 0x59, 0xC1]), "mulss xmm0,xmm1");
+        assert_eq!(dis(&[0xF3, 0x0F, 0x59, 0xC1]), "mulss xmm0, xmm1");
     }
 
     #[test]
     fn test_subss_xmm0_xmm1() {
         // F3 0F 5C C1
-        assert_eq!(dis(&[0xF3, 0x0F, 0x5C, 0xC1]), "subss xmm0,xmm1");
+        assert_eq!(dis(&[0xF3, 0x0F, 0x5C, 0xC1]), "subss xmm0, xmm1");
     }
 
     #[test]
     fn test_divss_xmm0_xmm1() {
         // F3 0F 5E C1
-        assert_eq!(dis(&[0xF3, 0x0F, 0x5E, 0xC1]), "divss xmm0,xmm1");
+        assert_eq!(dis(&[0xF3, 0x0F, 0x5E, 0xC1]), "divss xmm0, xmm1");
     }
 
     // SSE with high XMM registers
     #[test]
     fn test_addss_xmm8_xmm9() {
         // F3 45 0F 58 C1 = addss xmm8,xmm9
-        assert_eq!(dis(&[0xF3, 0x45, 0x0F, 0x58, 0xC1]), "addss xmm8,xmm9");
+        assert_eq!(dis(&[0xF3, 0x45, 0x0F, 0x58, 0xC1]), "addss xmm8, xmm9");
     }
 
     #[test]
     fn test_addsd_xmm10_xmm11() {
         // F2 45 0F 58 D3 = addsd xmm10,xmm11
-        assert_eq!(dis(&[0xF2, 0x45, 0x0F, 0x58, 0xD3]), "addsd xmm10,xmm11");
+        assert_eq!(dis(&[0xF2, 0x45, 0x0F, 0x58, 0xD3]), "addsd xmm10, xmm11");
     }
 
     // -----------------------------------------------------------------------
@@ -3202,49 +3210,49 @@ mod tests {
     #[test]
     fn test_cvtss2sd_xmm0_xmm0() {
         // F3 0F 5A C0
-        assert_eq!(dis(&[0xF3, 0x0F, 0x5A, 0xC0]), "cvtss2sd xmm0,xmm0");
+        assert_eq!(dis(&[0xF3, 0x0F, 0x5A, 0xC0]), "cvtss2sd xmm0, xmm0");
     }
 
     #[test]
     fn test_cvtsd2ss_xmm0_xmm0() {
         // F2 0F 5A C0
-        assert_eq!(dis(&[0xF2, 0x0F, 0x5A, 0xC0]), "cvtsd2ss xmm0,xmm0");
+        assert_eq!(dis(&[0xF2, 0x0F, 0x5A, 0xC0]), "cvtsd2ss xmm0, xmm0");
     }
 
     #[test]
     fn test_cvtps2pd_xmm0_xmm0() {
         // 0F 5A C0
-        assert_eq!(dis(&[0x0F, 0x5A, 0xC0]), "cvtps2pd xmm0,xmm0");
+        assert_eq!(dis(&[0x0F, 0x5A, 0xC0]), "cvtps2pd xmm0, xmm0");
     }
 
     #[test]
     fn test_cvtpd2ps_xmm0_xmm0() {
         // 66 0F 5A C0
-        assert_eq!(dis(&[0x66, 0x0F, 0x5A, 0xC0]), "cvtpd2ps xmm0,xmm0");
+        assert_eq!(dis(&[0x66, 0x0F, 0x5A, 0xC0]), "cvtpd2ps xmm0, xmm0");
     }
 
     #[test]
     fn test_cvtsi2sd_xmm0_rax() {
         // F2 48 0F 2A C0 = cvtsi2sd xmm0,rax (REX.W for 64-bit source)
-        assert_eq!(dis(&[0xF2, 0x48, 0x0F, 0x2A, 0xC0]), "cvtsi2sd xmm0,rax");
+        assert_eq!(dis(&[0xF2, 0x48, 0x0F, 0x2A, 0xC0]), "cvtsi2sd xmm0, rax");
     }
 
     #[test]
     fn test_cvtsi2ss_xmm0_rax() {
         // F3 48 0F 2A C0 = cvtsi2ss xmm0,rax
-        assert_eq!(dis(&[0xF3, 0x48, 0x0F, 0x2A, 0xC0]), "cvtsi2ss xmm0,rax");
+        assert_eq!(dis(&[0xF3, 0x48, 0x0F, 0x2A, 0xC0]), "cvtsi2ss xmm0, rax");
     }
 
     #[test]
     fn test_cvttsd2siq_rax_xmm0() {
         // F2 48 0F 2C C0 = cvttsd2siq rax,xmm0
-        assert_eq!(dis(&[0xF2, 0x48, 0x0F, 0x2C, 0xC0]), "cvttsd2siq rax,xmm0");
+        assert_eq!(dis(&[0xF2, 0x48, 0x0F, 0x2C, 0xC0]), "cvttsd2siq rax, xmm0");
     }
 
     #[test]
     fn test_cvttss2siq_rax_xmm0() {
         // F3 48 0F 2C C0 = cvttss2siq rax,xmm0
-        assert_eq!(dis(&[0xF3, 0x48, 0x0F, 0x2C, 0xC0]), "cvttss2siq rax,xmm0");
+        assert_eq!(dis(&[0xF3, 0x48, 0x0F, 0x2C, 0xC0]), "cvttss2siq rax, xmm0");
     }
 
     // -----------------------------------------------------------------------
@@ -3253,49 +3261,49 @@ mod tests {
     #[test]
     fn test_addps_xmm0_xmm0() {
         // 0F 58 C0
-        assert_eq!(dis(&[0x0F, 0x58, 0xC0]), "addps xmm0,xmm0");
+        assert_eq!(dis(&[0x0F, 0x58, 0xC0]), "addps xmm0, xmm0");
     }
 
     #[test]
     fn test_addpd_xmm0_xmm0() {
         // 66 0F 58 C0
-        assert_eq!(dis(&[0x66, 0x0F, 0x58, 0xC0]), "addpd xmm0,xmm0");
+        assert_eq!(dis(&[0x66, 0x0F, 0x58, 0xC0]), "addpd xmm0, xmm0");
     }
 
     #[test]
     fn test_subpd_xmm10_xmm11() {
         // 66 45 0F 5C D3
-        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x5C, 0xD3]), "subpd xmm10,xmm11");
+        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x5C, 0xD3]), "subpd xmm10, xmm11");
     }
 
     #[test]
     fn test_mulpd_xmm10_xmm11() {
         // 66 45 0F 59 D3
-        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x59, 0xD3]), "mulpd xmm10,xmm11");
+        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x59, 0xD3]), "mulpd xmm10, xmm11");
     }
 
     #[test]
     fn test_divpd_xmm10_xmm11() {
         // 66 45 0F 5E D3
-        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x5E, 0xD3]), "divpd xmm10,xmm11");
+        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x5E, 0xD3]), "divpd xmm10, xmm11");
     }
 
     #[test]
     fn test_sqrtpd_xmm10_xmm10() {
         // 66 45 0F 51 D2
-        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x51, 0xD2]), "sqrtpd xmm10,xmm10");
+        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x51, 0xD2]), "sqrtpd xmm10, xmm10");
     }
 
     #[test]
     fn test_minpd_xmm10_xmm11() {
         // 66 45 0F 5D D3
-        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x5D, 0xD3]), "minpd xmm10,xmm11");
+        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x5D, 0xD3]), "minpd xmm10, xmm11");
     }
 
     #[test]
     fn test_maxpd_xmm10_xmm11() {
         // 66 45 0F 5F D3
-        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x5F, 0xD3]), "maxpd xmm10,xmm11");
+        assert_eq!(dis(&[0x66, 0x45, 0x0F, 0x5F, 0xD3]), "maxpd xmm10, xmm11");
     }
 
     // -----------------------------------------------------------------------
@@ -3304,49 +3312,49 @@ mod tests {
     #[test]
     fn test_movaps_xmm0_xmm10() {
         // 41 0F 28 C2 = movaps xmm0,xmm10
-        assert_eq!(dis(&[0x41, 0x0F, 0x28, 0xC2]), "movaps xmm0,xmm10");
+        assert_eq!(dis(&[0x41, 0x0F, 0x28, 0xC2]), "movaps xmm0, xmm10");
     }
 
     #[test]
     fn test_movaps_xmm11_xmm0() {
         // movaps store form (0F 29): xmm0,xmm11
-        assert_eq!(dis(&[0x44, 0x0F, 0x29, 0xD8]), "movaps xmm0,xmm11");
+        assert_eq!(dis(&[0x44, 0x0F, 0x29, 0xD8]), "movaps xmm0, xmm11");
     }
 
     #[test]
     fn test_movups_xmm10_mem_rax() {
         // 44 0F 10 10 = movups xmm10,[rax]
-        assert_eq!(dis(&[0x44, 0x0F, 0x10, 0x10]), "movups xmm10,[rax]");
+        assert_eq!(dis(&[0x44, 0x0F, 0x10, 0x10]), "movups xmm10, [rax]");
     }
 
     #[test]
     fn test_movups_mem_rsp_xmm10() {
         // 44 0F 11 14 24 = movups [rsp],xmm10
-        assert_eq!(dis(&[0x44, 0x0F, 0x11, 0x14, 0x24]), "movups [rsp],xmm10");
+        assert_eq!(dis(&[0x44, 0x0F, 0x11, 0x14, 0x24]), "movups [rsp], xmm10");
     }
 
     #[test]
     fn test_movhlps_xmm9_xmm1() {
         // 44 0F 12 C9 = movhlps xmm9,xmm1
-        assert_eq!(dis(&[0x44, 0x0F, 0x12, 0xC9]), "movhlps xmm9,xmm1");
+        assert_eq!(dis(&[0x44, 0x0F, 0x12, 0xC9]), "movhlps xmm9, xmm1");
     }
 
     #[test]
     fn test_movlhps_xmm9_xmm1() {
         // 44 0F 16 C9 = movlhps xmm9,xmm1
-        assert_eq!(dis(&[0x44, 0x0F, 0x16, 0xC9]), "movlhps xmm9,xmm1");
+        assert_eq!(dis(&[0x44, 0x0F, 0x16, 0xC9]), "movlhps xmm9, xmm1");
     }
 
     #[test]
     fn test_unpcklps_xmm9_xmm1() {
         // 44 0F 14 C9 = unpcklps xmm9,xmm1
-        assert_eq!(dis(&[0x44, 0x0F, 0x14, 0xC9]), "unpcklps xmm9,xmm1");
+        assert_eq!(dis(&[0x44, 0x0F, 0x14, 0xC9]), "unpcklps xmm9, xmm1");
     }
 
     #[test]
     fn test_unpckhps_xmm9_xmm1() {
         // 44 0F 15 C9 = unpckhps xmm9,xmm1
-        assert_eq!(dis(&[0x44, 0x0F, 0x15, 0xC9]), "unpckhps xmm9,xmm1");
+        assert_eq!(dis(&[0x44, 0x0F, 0x15, 0xC9]), "unpckhps xmm9, xmm1");
     }
 
     // -----------------------------------------------------------------------
@@ -3355,25 +3363,25 @@ mod tests {
     #[test]
     fn test_movd_xmm0_rax() {
         // 66 0F 6E C0 = movd xmm0,rax (without REX.W)
-        assert_eq!(dis(&[0x66, 0x0F, 0x6E, 0xC0]), "movd xmm0,rax");
+        assert_eq!(dis(&[0x66, 0x0F, 0x6E, 0xC0]), "movd xmm0, rax");
     }
 
     #[test]
     fn test_movq_xmm0_rax() {
         // 66 48 0F 6E C0 = movq xmm0,rax (with REX.W)
-        assert_eq!(dis(&[0x66, 0x48, 0x0F, 0x6E, 0xC0]), "movq xmm0,rax");
+        assert_eq!(dis(&[0x66, 0x48, 0x0F, 0x6E, 0xC0]), "movq xmm0, rax");
     }
 
     #[test]
     fn test_movd_rax_xmm0() {
         // 66 0F 7E C0 = movd rax,xmm0 (without REX.W)
-        assert_eq!(dis(&[0x66, 0x0F, 0x7E, 0xC0]), "movd rax,xmm0");
+        assert_eq!(dis(&[0x66, 0x0F, 0x7E, 0xC0]), "movd rax, xmm0");
     }
 
     #[test]
     fn test_movq_rax_xmm0() {
         // 66 48 0F 7E C0 = movq rax,xmm0 (with REX.W)
-        assert_eq!(dis(&[0x66, 0x48, 0x0F, 0x7E, 0xC0]), "movq rax,xmm0");
+        assert_eq!(dis(&[0x66, 0x48, 0x0F, 0x7E, 0xC0]), "movq rax, xmm0");
     }
 
     // -----------------------------------------------------------------------
@@ -3382,31 +3390,31 @@ mod tests {
     #[test]
     fn test_shufps_xmm0_xmm0_imm() {
         // 0F C6 C0 00 = shufps xmm0,xmm0 [0]
-        assert_eq!(dis(&[0x0F, 0xC6, 0xC0, 0x00]), "shufps xmm0,xmm0 [0]");
+        assert_eq!(dis(&[0x0F, 0xC6, 0xC0, 0x00]), "shufps xmm0, xmm0 [0]");
     }
 
     #[test]
     fn test_shufps_xmm0_xmm0_imm_55() {
         // 0F C6 C0 55 = shufps xmm0,xmm0 [55]
-        assert_eq!(dis(&[0x0F, 0xC6, 0xC0, 0x55]), "shufps xmm0,xmm0 [55]");
+        assert_eq!(dis(&[0x0F, 0xC6, 0xC0, 0x55]), "shufps xmm0, xmm0 [55]");
     }
 
     #[test]
     fn test_cmpps_eq() {
         // 0F C2 C1 00 = cmpps xmm0,xmm1 [eq]
-        assert_eq!(dis(&[0x0F, 0xC2, 0xC1, 0x00]), "cmpps xmm0,xmm1 [eq]");
+        assert_eq!(dis(&[0x0F, 0xC2, 0xC1, 0x00]), "cmpps xmm0, xmm1 [eq]");
     }
 
     #[test]
     fn test_cmpps_neq() {
         // 0F C2 C1 04 = cmpps xmm0,xmm1 [neq]
-        assert_eq!(dis(&[0x0F, 0xC2, 0xC1, 0x04]), "cmpps xmm0,xmm1 [neq]");
+        assert_eq!(dis(&[0x0F, 0xC2, 0xC1, 0x04]), "cmpps xmm0, xmm1 [neq]");
     }
 
     #[test]
     fn test_cmpps_lt() {
         // 0F C2 C1 01 = cmpps xmm0,xmm1 [lt]
-        assert_eq!(dis(&[0x0F, 0xC2, 0xC1, 0x01]), "cmpps xmm0,xmm1 [lt]");
+        assert_eq!(dis(&[0x0F, 0xC2, 0xC1, 0x01]), "cmpps xmm0, xmm1 [lt]");
     }
 
     // -----------------------------------------------------------------------
@@ -3415,31 +3423,31 @@ mod tests {
     #[test]
     fn test_xorps_xmm0_xmm0() {
         // 0F 57 C0 = xorps xmm0,xmm0
-        assert_eq!(dis(&[0x0F, 0x57, 0xC0]), "xorps xmm0,xmm0");
+        assert_eq!(dis(&[0x0F, 0x57, 0xC0]), "xorps xmm0, xmm0");
     }
 
     #[test]
     fn test_orps_xmm0_xmm1() {
         // 0F 56 C1 = orps xmm0,xmm1
-        assert_eq!(dis(&[0x0F, 0x56, 0xC1]), "orps xmm0,xmm1");
+        assert_eq!(dis(&[0x0F, 0x56, 0xC1]), "orps xmm0, xmm1");
     }
 
     #[test]
     fn test_andps_xmm0_xmm1() {
         // 0F 54 C1 = andps xmm0,xmm1
-        assert_eq!(dis(&[0x0F, 0x54, 0xC1]), "andps xmm0,xmm1");
+        assert_eq!(dis(&[0x0F, 0x54, 0xC1]), "andps xmm0, xmm1");
     }
 
     #[test]
     fn test_xorpd_xmm0_xmm1() {
         // 66 0F 57 C1 = xorpd xmm0,xmm1
-        assert_eq!(dis(&[0x66, 0x0F, 0x57, 0xC1]), "xorpd xmm0,xmm1");
+        assert_eq!(dis(&[0x66, 0x0F, 0x57, 0xC1]), "xorpd xmm0, xmm1");
     }
 
     #[test]
     fn test_andpd_xmm0_xmm1() {
         // 66 0F 54 C1 = andpd xmm0,xmm1
-        assert_eq!(dis(&[0x66, 0x0F, 0x54, 0xC1]), "andpd xmm0,xmm1");
+        assert_eq!(dis(&[0x66, 0x0F, 0x54, 0xC1]), "andpd xmm0, xmm1");
     }
 
     // -----------------------------------------------------------------------
@@ -3448,19 +3456,19 @@ mod tests {
     #[test]
     fn test_paddd_xmm0_xmm1() {
         // 66 0F FE C1 = paddd xmm0,xmm1
-        assert_eq!(dis(&[0x66, 0x0F, 0xFE, 0xC1]), "paddd xmm0,xmm1");
+        assert_eq!(dis(&[0x66, 0x0F, 0xFE, 0xC1]), "paddd xmm0, xmm1");
     }
 
     #[test]
     fn test_psubd_xmm0_xmm1() {
         // 66 0F FA C1 = psubd xmm0,xmm1
-        assert_eq!(dis(&[0x66, 0x0F, 0xFA, 0xC1]), "psubd xmm0,xmm1");
+        assert_eq!(dis(&[0x66, 0x0F, 0xFA, 0xC1]), "psubd xmm0, xmm1");
     }
 
     #[test]
     fn test_pxor_xmm0_xmm1() {
         // 66 0F EF C1 = pxor xmm0,xmm1
-        assert_eq!(dis(&[0x66, 0x0F, 0xEF, 0xC1]), "pxor xmm0,xmm1");
+        assert_eq!(dis(&[0x66, 0x0F, 0xEF, 0xC1]), "pxor xmm0, xmm1");
     }
 
     // -----------------------------------------------------------------------
@@ -3469,13 +3477,13 @@ mod tests {
     #[test]
     fn test_ucomisd_xmm0_xmm1() {
         // 66 0F 2E C1 = ucomisd xmm0,xmm1
-        assert_eq!(dis(&[0x66, 0x0F, 0x2E, 0xC1]), "ucomisd xmm0,xmm1");
+        assert_eq!(dis(&[0x66, 0x0F, 0x2E, 0xC1]), "ucomisd xmm0, xmm1");
     }
 
     #[test]
     fn test_comiss_xmm0_xmm1() {
         // 0F 2F C1 = comiss xmm0,xmm1
-        assert_eq!(dis(&[0x0F, 0x2F, 0xC1]), "comiss xmm0,xmm1");
+        assert_eq!(dis(&[0x0F, 0x2F, 0xC1]), "comiss xmm0, xmm1");
     }
 
     // -----------------------------------------------------------------------
@@ -3484,19 +3492,19 @@ mod tests {
     #[test]
     fn test_rcpps_xmm11_xmm11() {
         // 45 0F 53 DB = rcpps xmm11,xmm11
-        assert_eq!(dis(&[0x45, 0x0F, 0x53, 0xDB]), "rcpps xmm11,xmm11");
+        assert_eq!(dis(&[0x45, 0x0F, 0x53, 0xDB]), "rcpps xmm11, xmm11");
     }
 
     #[test]
     fn test_sqrtps_xmm11_xmm11() {
         // 45 0F 51 DB = sqrtps xmm11,xmm11
-        assert_eq!(dis(&[0x45, 0x0F, 0x51, 0xDB]), "sqrtps xmm11,xmm11");
+        assert_eq!(dis(&[0x45, 0x0F, 0x51, 0xDB]), "sqrtps xmm11, xmm11");
     }
 
     #[test]
     fn test_rsqrtps_xmm0_xmm0() {
         // 0F 52 C0 = rsqrtps xmm0,xmm0
-        assert_eq!(dis(&[0x0F, 0x52, 0xC0]), "rsqrtps xmm0,xmm0");
+        assert_eq!(dis(&[0x0F, 0x52, 0xC0]), "rsqrtps xmm0, xmm0");
     }
 
     // -----------------------------------------------------------------------
@@ -3505,13 +3513,13 @@ mod tests {
     #[test]
     fn test_minps_xmm0_xmm1() {
         // 0F 5D C1 = minps xmm0,xmm1
-        assert_eq!(dis(&[0x0F, 0x5D, 0xC1]), "minps xmm0,xmm1");
+        assert_eq!(dis(&[0x0F, 0x5D, 0xC1]), "minps xmm0, xmm1");
     }
 
     #[test]
     fn test_maxps_xmm0_xmm1() {
         // 0F 5F C1 = maxps xmm0,xmm1
-        assert_eq!(dis(&[0x0F, 0x5F, 0xC1]), "maxps xmm0,xmm1");
+        assert_eq!(dis(&[0x0F, 0x5F, 0xC1]), "maxps xmm0, xmm1");
     }
 
     // -----------------------------------------------------------------------
@@ -3520,56 +3528,56 @@ mod tests {
     #[test]
     fn test_cmovzq_rax_rcx() {
         // 48 0F 44 C1 = cmovzq rax,rcx
-        assert_eq!(dis(&[0x48, 0x0F, 0x44, 0xC1]), "cmovzq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0x44, 0xC1]), "cmovzq rax, rcx");
     }
 
     #[test]
     fn test_cmovnzq_rax_rcx() {
         // 48 0F 45 C1 = cmovnzq rax,rcx
-        assert_eq!(dis(&[0x48, 0x0F, 0x45, 0xC1]), "cmovnzq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0x45, 0xC1]), "cmovnzq rax, rcx");
     }
 
     #[test]
     fn test_cmovlq_rax_rcx() {
         // 48 0F 4C C1 = cmovlq rax,rcx
-        assert_eq!(dis(&[0x48, 0x0F, 0x4C, 0xC1]), "cmovlq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0x4C, 0xC1]), "cmovlq rax, rcx");
     }
 
     #[test]
     fn test_cmovgeq_rax_rcx() {
         // 48 0F 4D C1 = cmovgeq rax,rcx
-        assert_eq!(dis(&[0x48, 0x0F, 0x4D, 0xC1]), "cmovgeq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0x4D, 0xC1]), "cmovgeq rax, rcx");
     }
 
     #[test]
     fn test_cmovleq_rax_rcx() {
         // 48 0F 4E C1 = cmovleq rax,rcx
-        assert_eq!(dis(&[0x48, 0x0F, 0x4E, 0xC1]), "cmovleq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0x4E, 0xC1]), "cmovleq rax, rcx");
     }
 
     #[test]
     fn test_cmovgq_rax_rcx() {
         // 48 0F 4F C1 = cmovgq rax,rcx
-        assert_eq!(dis(&[0x48, 0x0F, 0x4F, 0xC1]), "cmovgq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0x4F, 0xC1]), "cmovgq rax, rcx");
     }
 
     #[test]
     fn test_cmovaq_rax_rcx() {
         // 48 0F 47 C1 = cmovaq rax,rcx
-        assert_eq!(dis(&[0x48, 0x0F, 0x47, 0xC1]), "cmovaq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0x47, 0xC1]), "cmovaq rax, rcx");
     }
 
     #[test]
     fn test_cmovnaq_rax_rcx() {
         // 48 0F 46 C1 = cmovnaq rax,rcx
-        assert_eq!(dis(&[0x48, 0x0F, 0x46, 0xC1]), "cmovnaq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0x46, 0xC1]), "cmovnaq rax, rcx");
     }
 
     // cmov without REX.W (32-bit)
     #[test]
     fn test_cmovzl_rax_rcx() {
         // 0F 44 C1 = cmovzl rax,rcx
-        assert_eq!(dis(&[0x0F, 0x44, 0xC1]), "cmovzl rax,rcx");
+        assert_eq!(dis(&[0x0F, 0x44, 0xC1]), "cmovzl rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -3578,31 +3586,31 @@ mod tests {
     #[test]
     fn test_btq_rax_imm() {
         // 48 0F BA E0 05 = btq rax,5
-        assert_eq!(dis(&[0x48, 0x0F, 0xBA, 0xE0, 0x05]), "btq rax,5");
+        assert_eq!(dis(&[0x48, 0x0F, 0xBA, 0xE0, 0x05]), "btq rax, 5");
     }
 
     #[test]
     fn test_btsq_rax_imm() {
         // 48 0F BA E8 05 = btsq rax,5
-        assert_eq!(dis(&[0x48, 0x0F, 0xBA, 0xE8, 0x05]), "btsq rax,5");
+        assert_eq!(dis(&[0x48, 0x0F, 0xBA, 0xE8, 0x05]), "btsq rax, 5");
     }
 
     #[test]
     fn test_btrq_rax_imm() {
         // 48 0F BA F0 05 = btrq rax,5
-        assert_eq!(dis(&[0x48, 0x0F, 0xBA, 0xF0, 0x05]), "btrq rax,5");
+        assert_eq!(dis(&[0x48, 0x0F, 0xBA, 0xF0, 0x05]), "btrq rax, 5");
     }
 
     #[test]
     fn test_btq_reg_reg() {
         // 48 0F A3 C8 = btq rax,rcx (0F A3 /r)
-        assert_eq!(dis(&[0x48, 0x0F, 0xA3, 0xC8]), "btq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0xA3, 0xC8]), "btq rax, rcx");
     }
 
     #[test]
     fn test_btsq_reg_reg() {
         // 48 0F AB C8 = btsq rax,rcx (0F AB /r)
-        assert_eq!(dis(&[0x48, 0x0F, 0xAB, 0xC8]), "btsq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0xAB, 0xC8]), "btsq rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -3632,7 +3640,7 @@ mod tests {
     #[test]
     fn test_xchgq_rax_rdx() {
         // 48 87 C2 = xchgq rax,rdx  (87 /r with REX.W)
-        assert_eq!(dis(&[0x48, 0x87, 0xC2]), "xchgq rax,rdx");
+        assert_eq!(dis(&[0x48, 0x87, 0xC2]), "xchgq rax, rdx");
     }
 
     #[test]
@@ -3646,7 +3654,7 @@ mod tests {
         // F0 48 0F B1 0C 24 = lock cmpxchgq rcx,[rsp]
         assert_eq!(
             dis(&[0xF0, 0x48, 0x0F, 0xB1, 0x0C, 0x24]),
-            "lock cmpxchgq rcx,[rsp]"
+            "lock cmpxchgq rcx, [rsp]"
         );
     }
 
@@ -3655,7 +3663,7 @@ mod tests {
         // F0 0F B1 0C 24 = lock cmpxchgl rcx,[rsp]
         assert_eq!(
             dis(&[0xF0, 0x0F, 0xB1, 0x0C, 0x24]),
-            "lock cmpxchgl rcx,[rsp]"
+            "lock cmpxchgl rcx, [rsp]"
         );
     }
 
@@ -3665,31 +3673,31 @@ mod tests {
     #[test]
     fn test_addl_rax_rcx_oper() {
         // 01 C8 = addl rax,rcx
-        assert_eq!(dis(&[0x01, 0xC8]), "addl rax,rcx");
+        assert_eq!(dis(&[0x01, 0xC8]), "addl rax, rcx");
     }
 
     #[test]
     fn test_subl_rax_rcx() {
         // 29 C8 = subl rax,rcx
-        assert_eq!(dis(&[0x29, 0xC8]), "subl rax,rcx");
+        assert_eq!(dis(&[0x29, 0xC8]), "subl rax, rcx");
     }
 
     #[test]
     fn test_adcl_rdx_r8() {
         // 44 11 C2 = adcl rdx,r8
-        assert_eq!(dis(&[0x44, 0x11, 0xC2]), "adcl rdx,r8");
+        assert_eq!(dis(&[0x44, 0x11, 0xC2]), "adcl rdx, r8");
     }
 
     #[test]
     fn test_sbbl_rdx_r8() {
         // 44 19 C2 = sbbl rdx,r8
-        assert_eq!(dis(&[0x44, 0x19, 0xC2]), "sbbl rdx,r8");
+        assert_eq!(dis(&[0x44, 0x19, 0xC2]), "sbbl rdx, r8");
     }
 
     #[test]
     fn test_xorl_rcx_rcx() {
         // 31 C9 = xorl rcx,rcx
-        assert_eq!(dis(&[0x31, 0xC9]), "xorl rcx,rcx");
+        assert_eq!(dis(&[0x31, 0xC9]), "xorl rcx, rcx");
     }
 
     #[test]
@@ -3697,20 +3705,20 @@ mod tests {
         // 81 C9 00 01 00 00 = orl rcx,0x100
         assert_eq!(
             dis(&[0x81, 0xC9, 0x00, 0x01, 0x00, 0x00]),
-            "orl rcx,0x100"
+            "orl rcx, 0x100"
         );
     }
 
     #[test]
     fn test_andl_rcx_rax() {
         // 21 C1 = andl rcx,rax
-        assert_eq!(dis(&[0x21, 0xC1]), "andl rcx,rax");
+        assert_eq!(dis(&[0x21, 0xC1]), "andl rcx, rax");
     }
 
     #[test]
     fn test_orl_rcx_rax() {
         // 09 C1 = orl rcx,rax
-        assert_eq!(dis(&[0x09, 0xC1]), "orl rcx,rax");
+        assert_eq!(dis(&[0x09, 0xC1]), "orl rcx, rax");
     }
 
     // -----------------------------------------------------------------------
@@ -3721,7 +3729,7 @@ mod tests {
         // 48 05 E8 03 00 00 = addq rax,0x3e8
         assert_eq!(
             dis(&[0x48, 0x05, 0xE8, 0x03, 0x00, 0x00]),
-            "addq rax,0x3e8"
+            "addq rax, 0x3e8"
         );
     }
 
@@ -3730,7 +3738,7 @@ mod tests {
         // 48 2D E8 03 00 00 = subq rax,0x3e8
         assert_eq!(
             dis(&[0x48, 0x2D, 0xE8, 0x03, 0x00, 0x00]),
-            "subq rax,0x3e8"
+            "subq rax, 0x3e8"
         );
     }
 
@@ -3739,7 +3747,7 @@ mod tests {
         // 48 3D E8 03 00 00 = cmpq rax,0x3e8
         assert_eq!(
             dis(&[0x48, 0x3D, 0xE8, 0x03, 0x00, 0x00]),
-            "cmpq rax,0x3e8"
+            "cmpq rax, 0x3e8"
         );
     }
 
@@ -3748,7 +3756,7 @@ mod tests {
         // 48 0D 00 01 00 00 = orq rax,0x100
         assert_eq!(
             dis(&[0x48, 0x0D, 0x00, 0x01, 0x00, 0x00]),
-            "orq rax,0x100"
+            "orq rax, 0x100"
         );
     }
 
@@ -3758,49 +3766,49 @@ mod tests {
     #[test]
     fn test_shll_rax_3() {
         // C1 E0 03 = shll rax,3
-        assert_eq!(dis(&[0xC1, 0xE0, 0x03]), "shll rax,3");
+        assert_eq!(dis(&[0xC1, 0xE0, 0x03]), "shll rax, 3");
     }
 
     #[test]
     fn test_shrl_rax_1() {
         // D1 E8 = shrl rax,1
-        assert_eq!(dis(&[0xD1, 0xE8]), "shrl rax,1");
+        assert_eq!(dis(&[0xD1, 0xE8]), "shrl rax, 1");
     }
 
     #[test]
     fn test_shrl_rax_3() {
         // C1 E8 03 = shrl rax,3
-        assert_eq!(dis(&[0xC1, 0xE8, 0x03]), "shrl rax,3");
+        assert_eq!(dis(&[0xC1, 0xE8, 0x03]), "shrl rax, 3");
     }
 
     #[test]
     fn test_shll_rax_cl() {
         // D3 E0 = shll rax,cl
-        assert_eq!(dis(&[0xD3, 0xE0]), "shll rax,cl");
+        assert_eq!(dis(&[0xD3, 0xE0]), "shll rax, cl");
     }
 
     #[test]
     fn test_shrl_rax_cl() {
         // D3 E8 = shrl rax,cl
-        assert_eq!(dis(&[0xD3, 0xE8]), "shrl rax,cl");
+        assert_eq!(dis(&[0xD3, 0xE8]), "shrl rax, cl");
     }
 
     #[test]
     fn test_sarl_rax_3() {
         // C1 F8 03 = sarl rax,3
-        assert_eq!(dis(&[0xC1, 0xF8, 0x03]), "sarl rax,3");
+        assert_eq!(dis(&[0xC1, 0xF8, 0x03]), "sarl rax, 3");
     }
 
     #[test]
     fn test_sarl_rax_cl() {
         // D3 F8 = sarl rax,cl
-        assert_eq!(dis(&[0xD3, 0xF8]), "sarl rax,cl");
+        assert_eq!(dis(&[0xD3, 0xF8]), "sarl rax, cl");
     }
 
     #[test]
     fn test_sarq_rax_3() {
         // 48 C1 F8 03 = sarq rax,3
-        assert_eq!(dis(&[0x48, 0xC1, 0xF8, 0x03]), "sarq rax,3");
+        assert_eq!(dis(&[0x48, 0xC1, 0xF8, 0x03]), "sarq rax, 3");
     }
 
     // -----------------------------------------------------------------------
@@ -3809,25 +3817,25 @@ mod tests {
     #[test]
     fn test_shldl_rdx_r8_imm() {
         // 44 0F A4 C2 02 = shldl rdx,r8,2
-        assert_eq!(dis(&[0x44, 0x0F, 0xA4, 0xC2, 0x02]), "shldl rdx,r8,2");
+        assert_eq!(dis(&[0x44, 0x0F, 0xA4, 0xC2, 0x02]), "shldl rdx, r8, 2");
     }
 
     #[test]
     fn test_shldq_rdx_r8_imm() {
         // 4C 0F A4 C2 02 = shldq rdx,r8,2
-        assert_eq!(dis(&[0x4C, 0x0F, 0xA4, 0xC2, 0x02]), "shldq rdx,r8,2");
+        assert_eq!(dis(&[0x4C, 0x0F, 0xA4, 0xC2, 0x02]), "shldq rdx, r8, 2");
     }
 
     #[test]
     fn test_shldq_rdx_r8_cl() {
         // 4C 0F A5 C2 = shldq rdx,r8,cl
-        assert_eq!(dis(&[0x4C, 0x0F, 0xA5, 0xC2]), "shldq rdx,r8,cl");
+        assert_eq!(dis(&[0x4C, 0x0F, 0xA5, 0xC2]), "shldq rdx, r8, cl");
     }
 
     #[test]
     fn test_shrdq_rdx_r8_cl() {
         // 4C 0F AD C2 = shrdq rdx,r8,cl
-        assert_eq!(dis(&[0x4C, 0x0F, 0xAD, 0xC2]), "shrdq rdx,r8,cl");
+        assert_eq!(dis(&[0x4C, 0x0F, 0xAD, 0xC2]), "shrdq rdx, r8, cl");
     }
 
     // -----------------------------------------------------------------------
@@ -3836,31 +3844,31 @@ mod tests {
     #[test]
     fn test_testl_rax_rcx() {
         // 85 C8 = testl rcx,rax (test is REG_OPER order: reg=rcx, rm=rax)
-        assert_eq!(dis(&[0x85, 0xC8]), "testl rcx,rax");
+        assert_eq!(dis(&[0x85, 0xC8]), "testl rcx, rax");
     }
 
     #[test]
     fn test_testl_rdx_rcx() {
         // 85 CA = testl rcx,rdx
-        assert_eq!(dis(&[0x85, 0xCA]), "testl rcx,rdx");
+        assert_eq!(dis(&[0x85, 0xCA]), "testl rcx, rdx");
     }
 
     #[test]
     fn test_test_al_0() {
         // A8 00 = test al,0
-        assert_eq!(dis(&[0xA8, 0x00]), "test al,0");
+        assert_eq!(dis(&[0xA8, 0x00]), "test al, 0");
     }
 
     #[test]
     fn test_test_al_0xff() {
         // A8 FF = test al,0xff
-        assert_eq!(dis(&[0xA8, 0xFF]), "test al,0xff");
+        assert_eq!(dis(&[0xA8, 0xFF]), "test al, 0xff");
     }
 
     #[test]
     fn test_testb_rcx_4() {
         // F6 C1 04 = testb rcx,4 (F6 /0 with modrm=C1: mod=11, reg=0, rm=rcx)
-        assert_eq!(dis(&[0xF6, 0xC1, 0x04]), "testb rcx,4");
+        assert_eq!(dis(&[0xF6, 0xC1, 0x04]), "testb rcx, 4");
     }
 
     // -----------------------------------------------------------------------
@@ -3869,13 +3877,13 @@ mod tests {
     #[test]
     fn test_imull_rax_rcx() {
         // 0F AF C1 = imull rax,rcx
-        assert_eq!(dis(&[0x0F, 0xAF, 0xC1]), "imull rax,rcx");
+        assert_eq!(dis(&[0x0F, 0xAF, 0xC1]), "imull rax, rcx");
     }
 
     #[test]
     fn test_imulq_rax_rcx_twobyte() {
         // 48 0F AF C1 = imulq rax,rcx (two-byte opcode form)
-        assert_eq!(dis(&[0x48, 0x0F, 0xAF, 0xC1]), "imulq rax,rcx");
+        assert_eq!(dis(&[0x48, 0x0F, 0xAF, 0xC1]), "imulq rax, rcx");
     }
 
     #[test]
@@ -3883,14 +3891,14 @@ mod tests {
         // 69 C0 E8 03 00 00 = imull rax,rax,0x3e8
         assert_eq!(
             dis(&[0x69, 0xC0, 0xE8, 0x03, 0x00, 0x00]),
-            "imull rax,rax,0x3e8"
+            "imull rax, rax, 0x3e8"
         );
     }
 
     #[test]
     fn test_imull_rdx_rcx() {
         // 0F AF D1 = imull rdx,rcx
-        assert_eq!(dis(&[0x0F, 0xAF, 0xD1]), "imull rdx,rcx");
+        assert_eq!(dis(&[0x0F, 0xAF, 0xD1]), "imull rdx, rcx");
     }
 
     #[test]
@@ -3898,7 +3906,7 @@ mod tests {
         // 69 D2 E8 03 00 00 = imull rdx,rdx,0x3e8
         assert_eq!(
             dis(&[0x69, 0xD2, 0xE8, 0x03, 0x00, 0x00]),
-            "imull rdx,rdx,0x3e8"
+            "imull rdx, rdx, 0x3e8"
         );
     }
 
@@ -3908,37 +3916,37 @@ mod tests {
     #[test]
     fn test_mull_rcx() {
         // F7 E1 = mull (rax,rdx),rcx
-        assert_eq!(dis(&[0xF7, 0xE1]), "mull (rax,rdx),rcx");
+        assert_eq!(dis(&[0xF7, 0xE1]), "mull (rax, rdx), rcx");
     }
 
     #[test]
     fn test_mulq_rcx() {
         // 48 F7 E1 = mulq (rax,rdx),rcx
-        assert_eq!(dis(&[0x48, 0xF7, 0xE1]), "mulq (rax,rdx),rcx");
+        assert_eq!(dis(&[0x48, 0xF7, 0xE1]), "mulq (rax, rdx), rcx");
     }
 
     #[test]
     fn test_idivl_rcx() {
         // F7 F9 = idivl (rax,rdx),rcx
-        assert_eq!(dis(&[0xF7, 0xF9]), "idivl (rax,rdx),rcx");
+        assert_eq!(dis(&[0xF7, 0xF9]), "idivl (rax, rdx), rcx");
     }
 
     #[test]
     fn test_divl_rcx() {
         // F7 F1 = divl (rax,rdx),rcx
-        assert_eq!(dis(&[0xF7, 0xF1]), "divl (rax,rdx),rcx");
+        assert_eq!(dis(&[0xF7, 0xF1]), "divl (rax, rdx), rcx");
     }
 
     #[test]
     fn test_divq_rcx() {
         // 48 F7 F1 = divq (rax,rdx),rcx
-        assert_eq!(dis(&[0x48, 0xF7, 0xF1]), "divq (rax,rdx),rcx");
+        assert_eq!(dis(&[0x48, 0xF7, 0xF1]), "divq (rax, rdx), rcx");
     }
 
     #[test]
     fn test_imulq_rdx_implicit() {
         // 48 F7 EA = imulq (rax,rdx),rdx
-        assert_eq!(dis(&[0x48, 0xF7, 0xEA]), "imulq (rax,rdx),rdx");
+        assert_eq!(dis(&[0x48, 0xF7, 0xEA]), "imulq (rax, rdx), rdx");
     }
 
     // -----------------------------------------------------------------------
@@ -3962,31 +3970,31 @@ mod tests {
     #[test]
     fn test_movzxbq_rax_rdx() {
         // 48 0F B6 C2 = movzxbq rax,rdx
-        assert_eq!(dis(&[0x48, 0x0F, 0xB6, 0xC2]), "movzxbq rax,rdx");
+        assert_eq!(dis(&[0x48, 0x0F, 0xB6, 0xC2]), "movzxbq rax, rdx");
     }
 
     #[test]
     fn test_movsxwq_r8_rdx() {
         // 4C 0F BF C2 = movsxwq r8,rdx
-        assert_eq!(dis(&[0x4C, 0x0F, 0xBF, 0xC2]), "movsxwq r8,rdx");
+        assert_eq!(dis(&[0x4C, 0x0F, 0xBF, 0xC2]), "movsxwq r8, rdx");
     }
 
     #[test]
     fn test_movzxwq_rcx_rdx() {
         // 48 0F B7 CA = movzxwq rcx,rdx
-        assert_eq!(dis(&[0x48, 0x0F, 0xB7, 0xCA]), "movzxwq rcx,rdx");
+        assert_eq!(dis(&[0x48, 0x0F, 0xB7, 0xCA]), "movzxwq rcx, rdx");
     }
 
     #[test]
     fn test_movzxbq_rax_mem_rsp() {
         // 48 0F B6 04 24 = movzxbq rax,[rsp]
-        assert_eq!(dis(&[0x48, 0x0F, 0xB6, 0x04, 0x24]), "movzxbq rax,[rsp]");
+        assert_eq!(dis(&[0x48, 0x0F, 0xB6, 0x04, 0x24]), "movzxbq rax, [rsp]");
     }
 
     #[test]
     fn test_movsxwq_r8_mem_rsp() {
         // 4C 0F BF 04 24 = movsxwq r8,[rsp]
-        assert_eq!(dis(&[0x4C, 0x0F, 0xBF, 0x04, 0x24]), "movsxwq r8,[rsp]");
+        assert_eq!(dis(&[0x4C, 0x0F, 0xBF, 0x04, 0x24]), "movsxwq r8, [rsp]");
     }
 
     // -----------------------------------------------------------------------
@@ -3995,7 +4003,7 @@ mod tests {
     #[test]
     fn test_movsxdq_rdx_rdx() {
         // 48 63 D2 = movsxdq rdx,rdx
-        assert_eq!(dis(&[0x48, 0x63, 0xD2]), "movsxdq rdx,rdx");
+        assert_eq!(dis(&[0x48, 0x63, 0xD2]), "movsxdq rdx, rdx");
     }
 
     #[test]
@@ -4003,7 +4011,7 @@ mod tests {
         // 48 63 54 24 08 = movsxdq rdx,[rsp+0x8]
         assert_eq!(
             dis(&[0x48, 0x63, 0x54, 0x24, 0x08]),
-            "movsxdq rdx,[rsp+0x8]"
+            "movsxdq rdx, [rsp+0x8]"
         );
     }
 
@@ -4013,13 +4021,13 @@ mod tests {
     #[test]
     fn test_popcntq_rax_rcx() {
         // F3 48 0F B8 C1 = popcntq rax,rcx
-        assert_eq!(dis(&[0xF3, 0x48, 0x0F, 0xB8, 0xC1]), "popcntq rax,rcx");
+        assert_eq!(dis(&[0xF3, 0x48, 0x0F, 0xB8, 0xC1]), "popcntq rax, rcx");
     }
 
     #[test]
     fn test_lzcntq_rax_rcx() {
         // F3 48 0F BD C1 = lzcntq rax,rcx
-        assert_eq!(dis(&[0xF3, 0x48, 0x0F, 0xBD, 0xC1]), "lzcntq rax,rcx");
+        assert_eq!(dis(&[0xF3, 0x48, 0x0F, 0xBD, 0xC1]), "lzcntq rax, rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -4028,13 +4036,13 @@ mod tests {
     #[test]
     fn test_movw_mem_rax_rcx() {
         // 66 89 08 = movw [rax],rcx
-        assert_eq!(dis(&[0x66, 0x89, 0x08]), "movw [rax],rcx");
+        assert_eq!(dis(&[0x66, 0x89, 0x08]), "movw [rax], rcx");
     }
 
     #[test]
     fn test_movzxwq_rax_mem_rax() {
         // 48 0F B7 00 = movzxwq rax,[rax]
-        assert_eq!(dis(&[0x48, 0x0F, 0xB7, 0x00]), "movzxwq rax,[rax]");
+        assert_eq!(dis(&[0x48, 0x0F, 0xB7, 0x00]), "movzxwq rax, [rax]");
     }
 
     #[test]
@@ -4042,7 +4050,7 @@ mod tests {
         // 66 81 04 24 FF FD = addw [rsp],0xfdff
         assert_eq!(
             dis(&[0x66, 0x81, 0x04, 0x24, 0xFF, 0xFD]),
-            "addw [rsp],0xfdff"
+            "addw [rsp], 0xfdff"
         );
     }
 
@@ -4051,20 +4059,20 @@ mod tests {
         // 66 81 6C 24 02 01 02 = subw [rsp+0x2],0x201
         assert_eq!(
             dis(&[0x66, 0x81, 0x6C, 0x24, 0x02, 0x01, 0x02]),
-            "subw [rsp+0x2],0x201"
+            "subw [rsp+0x2], 0x201"
         );
     }
 
     #[test]
     fn test_addb_mem_rsp_imm() {
         // 80 04 24 FF = addb [rsp],-1
-        assert_eq!(dis(&[0x80, 0x04, 0x24, 0xFF]), "addb [rsp],-1");
+        assert_eq!(dis(&[0x80, 0x04, 0x24, 0xFF]), "addb [rsp], -1");
     }
 
     #[test]
     fn test_subb_mem_rsp_disp_imm() {
         // 80 6C 24 02 01 = subb [rsp+0x2],1
-        assert_eq!(dis(&[0x80, 0x6C, 0x24, 0x02, 0x01]), "subb [rsp+0x2],1");
+        assert_eq!(dis(&[0x80, 0x6C, 0x24, 0x02, 0x01]), "subb [rsp+0x2], 1");
     }
 
     // -----------------------------------------------------------------------
@@ -4112,22 +4120,22 @@ mod tests {
         let result = dis_all(&code);
         assert_eq!(
             result,
-            "jo +109\n\
-             jno +103\n\
-             jc +97\n\
-             jnc +91\n\
-             jz +85\n\
-             jnz +79\n\
-             jna +73\n\
-             ja +67\n\
-             js +61\n\
-             jns +55\n\
-             jpe +49\n\
-             jpo +43\n\
-             jl +37\n\
-             jge +31\n\
-             jle +25\n\
-             jg +19\n"
+            "jo 0x6d\n\
+             jno 0x69\n\
+             jc 0x65\n\
+             jnc 0x61\n\
+             jz 0x5d\n\
+             jnz 0x59\n\
+             jna 0x55\n\
+             ja 0x51\n\
+             js 0x4d\n\
+             jns 0x49\n\
+             jpe 0x45\n\
+             jpo 0x41\n\
+             jl 0x3d\n\
+             jge 0x39\n\
+             jle 0x35\n\
+             jg 0x31\n"
         );
     }
 
@@ -4146,25 +4154,25 @@ mod tests {
     #[test]
     fn test_movl_rax_mem_rsp() {
         // 8B 04 24 = movl rax,[rsp]
-        assert_eq!(dis(&[0x8B, 0x04, 0x24]), "movl rax,[rsp]");
+        assert_eq!(dis(&[0x8B, 0x04, 0x24]), "movl rax, [rsp]");
     }
 
     #[test]
     fn test_movl_mem_rsp_rax() {
         // 89 04 24 = movl [rsp],rax
-        assert_eq!(dis(&[0x89, 0x04, 0x24]), "movl [rsp],rax");
+        assert_eq!(dis(&[0x89, 0x04, 0x24]), "movl [rsp], rax");
     }
 
     #[test]
     fn test_movl_rax_mem_rsp_disp8() {
         // 8B 44 24 04 = movl rax,[rsp+0x4]
-        assert_eq!(dis(&[0x8B, 0x44, 0x24, 0x04]), "movl rax,[rsp+0x4]");
+        assert_eq!(dis(&[0x8B, 0x44, 0x24, 0x04]), "movl rax, [rsp+0x4]");
     }
 
     #[test]
     fn test_movl_r8_mem_rsp_disp8() {
         // 44 8B 44 24 0C = movl r8,[rsp+0xc]
-        assert_eq!(dis(&[0x44, 0x8B, 0x44, 0x24, 0x0C]), "movl r8,[rsp+0xc]");
+        assert_eq!(dis(&[0x44, 0x8B, 0x44, 0x24, 0x0C]), "movl r8, [rsp+0xc]");
     }
 
     // -----------------------------------------------------------------------
@@ -4189,14 +4197,14 @@ mod tests {
         let result = dis_all(&code);
         assert_eq!(
             result,
-            "movl rax,0\n\
+            "movl rax, 0\n\
              push rax\n\
              incl [rsp]\n\
              incq [rsp]\n\
-             movq rcx,[rsp]\n\
+             movq rcx, [rsp]\n\
              incq rcx\n\
              pop rax\n\
-             movq rax,rcx\n\
+             movq rax, rcx\n\
              ret\n"
         );
     }
@@ -4220,14 +4228,14 @@ mod tests {
         let result = dis_all(&code);
         assert_eq!(
             result,
-            "movl rax,3\n\
+            "movl rax, 3\n\
              push rax\n\
              decl [rsp]\n\
              decq [rsp]\n\
-             movq rcx,[rsp]\n\
+             movq rcx, [rsp]\n\
              decq rcx\n\
              pop rax\n\
-             movq rax,rcx\n\
+             movq rax, rcx\n\
              ret\n"
         );
     }
@@ -4252,15 +4260,15 @@ mod tests {
         let result = dis_all(&code);
         assert_eq!(
             result,
-            "addss xmm0,xmm0\n\
-             addsd xmm0,xmm0\n\
-             addps xmm0,xmm0\n\
-             addpd xmm0,xmm0\n\
-             cvtss2sd xmm0,xmm0\n\
-             cvtsd2ss xmm0,xmm0\n\
-             cvtps2pd xmm0,xmm0\n\
-             cvtpd2ps xmm0,xmm0\n\
-             movl rax,0\n\
+            "addss xmm0, xmm0\n\
+             addsd xmm0, xmm0\n\
+             addps xmm0, xmm0\n\
+             addpd xmm0, xmm0\n\
+             cvtss2sd xmm0, xmm0\n\
+             cvtsd2ss xmm0, xmm0\n\
+             cvtps2pd xmm0, xmm0\n\
+             cvtpd2ps xmm0, xmm0\n\
+             movl rax, 0\n\
              ret\n"
         );
     }
@@ -4281,10 +4289,10 @@ mod tests {
         let result = dis_all(&code);
         assert_eq!(
             result,
-            "movl rax,2\n\
-             movl rcx,4\n\
-             imull rax,rcx\n\
-             imull rax,rax,0x3e8\n\
+            "movl rax, 2\n\
+             movl rcx, 4\n\
+             imull rax, rcx\n\
+             imull rax, rax, 0x3e8\n\
              ret\n"
         );
     }
@@ -4304,9 +4312,9 @@ mod tests {
         let result = dis_all(&code);
         assert_eq!(
             result,
-            "movl rcx,0x2a\n\
+            "movl rcx, 0x2a\n\
              negq rcx\n\
-             movq rax,rcx\n\
+             movq rax, rcx\n\
              ret\n"
         );
     }
@@ -4324,8 +4332,8 @@ mod tests {
         let result = dis_all(&code);
         assert_eq!(
             result,
-            "xchgq rax,rdx\n\
-             subq rax,rdx\n"
+            "xchgq rax, rdx\n\
+             subq rax, rdx\n"
         );
     }
 
@@ -4334,9 +4342,9 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_move_extend_sequence() {
-        assert_eq!(dis(&[0x48, 0x0F, 0xB6, 0xC2]), "movzxbq rax,rdx");
-        assert_eq!(dis(&[0x4C, 0x0F, 0xBF, 0xC2]), "movsxwq r8,rdx");
-        assert_eq!(dis(&[0x48, 0x0F, 0xB7, 0xCA]), "movzxwq rcx,rdx");
+        assert_eq!(dis(&[0x48, 0x0F, 0xB6, 0xC2]), "movzxbq rax, rdx");
+        assert_eq!(dis(&[0x4C, 0x0F, 0xBF, 0xC2]), "movsxwq r8, rdx");
+        assert_eq!(dis(&[0x48, 0x0F, 0xB7, 0xCA]), "movzxwq rcx, rdx");
     }
 
     // -----------------------------------------------------------------------
@@ -4345,7 +4353,7 @@ mod tests {
     #[test]
     fn test_movsxdq_rax_rax() {
         // 48 63 C0 = movsxdq rax,rax
-        assert_eq!(dis(&[0x48, 0x63, 0xC0]), "movsxdq rax,rax");
+        assert_eq!(dis(&[0x48, 0x63, 0xC0]), "movsxdq rax, rax");
     }
 
     // -----------------------------------------------------------------------
@@ -4354,7 +4362,7 @@ mod tests {
     #[test]
     fn test_cmpb_mem_rsp_imm() {
         // 80 3C 24 11 = cmpb [rsp],0x11
-        assert_eq!(dis(&[0x80, 0x3C, 0x24, 0x11]), "cmpb [rsp],0x11");
+        assert_eq!(dis(&[0x80, 0x3C, 0x24, 0x11]), "cmpb [rsp], 0x11");
     }
 
     // -----------------------------------------------------------------------
@@ -4364,7 +4372,7 @@ mod tests {
     fn test_testb_mem_rsp_imm() {
         // F6 04 24 10 = testb [rsp],0x10
         // This is F6 /0 with modrm 04 (mod=00, rm=100->SIB) SIB=24(rsp)
-        assert_eq!(dis(&[0xF6, 0x04, 0x24, 0x10]), "testb [rsp],0x10");
+        assert_eq!(dis(&[0xF6, 0x04, 0x24, 0x10]), "testb [rsp], 0x10");
     }
 
     // -----------------------------------------------------------------------
@@ -4382,7 +4390,7 @@ mod tests {
     #[test]
     fn test_movdqa_xmm0_xmm1() {
         // 66 0F 6F C1 = movdqa xmm0,xmm1
-        assert_eq!(dis(&[0x66, 0x0F, 0x6F, 0xC1]), "movdqa xmm0,xmm1");
+        assert_eq!(dis(&[0x66, 0x0F, 0x6F, 0xC1]), "movdqa xmm0, xmm1");
     }
 
     // -----------------------------------------------------------------------
@@ -4400,7 +4408,7 @@ mod tests {
     #[test]
     fn test_orl_mem_rdi_r10() {
         // 44 09 17 = orl [rdi],r10
-        assert_eq!(dis(&[0x44, 0x09, 0x17]), "orl [rdi],r10");
+        assert_eq!(dis(&[0x44, 0x09, 0x17]), "orl [rdi], r10");
     }
 
     // -----------------------------------------------------------------------
@@ -4409,13 +4417,13 @@ mod tests {
     #[test]
     fn test_leaq_rax_mem_rbp_disp8() {
         // 48 8D 45 08 = leaq rax,[rbp+0x8]
-        assert_eq!(dis(&[0x48, 0x8D, 0x45, 0x08]), "leaq rax,[rbp+0x8]");
+        assert_eq!(dis(&[0x48, 0x8D, 0x45, 0x08]), "leaq rax, [rbp+0x8]");
     }
 
     #[test]
     fn test_leaq_rax_mem_rsp_disp8() {
         // 48 8D 44 24 10 = leaq rax,[rsp+0x10]
-        assert_eq!(dis(&[0x48, 0x8D, 0x44, 0x24, 0x10]), "leaq rax,[rsp+0x10]");
+        assert_eq!(dis(&[0x48, 0x8D, 0x44, 0x24, 0x10]), "leaq rax, [rsp+0x10]");
     }
 
     // -----------------------------------------------------------------------
@@ -4435,7 +4443,7 @@ mod tests {
         // movq rax,[rsp+0] -- 48 8B 84 24 00 00 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x84, 0x24, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[rsp+0]"
+            "movq rax, [rsp+0]"
         );
     }
 
@@ -4444,7 +4452,7 @@ mod tests {
         // movq rax,[rbp+0] -- 48 8B 85 00 00 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x85, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[rbp+0]"
+            "movq rax, [rbp+0]"
         );
     }
 
@@ -4453,7 +4461,7 @@ mod tests {
         // movq rax,[rax+0] -- 48 8B 80 00 00 00 00
         assert_eq!(
             dis(&[0x48, 0x8B, 0x80, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[rax+0]"
+            "movq rax, [rax+0]"
         );
     }
 
@@ -4462,7 +4470,7 @@ mod tests {
         // movq rax,[r10+0] -- 49 8B 82 00 00 00 00
         assert_eq!(
             dis(&[0x49, 0x8B, 0x82, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[r10+0]"
+            "movq rax, [r10+0]"
         );
     }
 
@@ -4471,7 +4479,7 @@ mod tests {
         // movq rax,[r12+0] -- 49 8B 84 24 00 00 00 00
         assert_eq!(
             dis(&[0x49, 0x8B, 0x84, 0x24, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[r12+0]"
+            "movq rax, [r12+0]"
         );
     }
 
@@ -4480,7 +4488,7 @@ mod tests {
         // movq rax,[r13+0] -- 49 8B 85 00 00 00 00
         assert_eq!(
             dis(&[0x49, 0x8B, 0x85, 0x00, 0x00, 0x00, 0x00]),
-            "movq rax,[r13+0]"
+            "movq rax, [r13+0]"
         );
     }
 
@@ -4489,7 +4497,7 @@ mod tests {
         // movq rax,[rsp-0x8] -- 48 8B 84 24 F8 FF FF FF
         assert_eq!(
             dis(&[0x48, 0x8B, 0x84, 0x24, 0xF8, 0xFF, 0xFF, 0xFF]),
-            "movq rax,[rsp-0x8]"
+            "movq rax, [rsp-0x8]"
         );
     }
 
@@ -4501,7 +4509,7 @@ mod tests {
         // 48 C7 04 24 00 00 00 00 = movq [rsp],0
         assert_eq!(
             dis(&[0x48, 0xC7, 0x04, 0x24, 0x00, 0x00, 0x00, 0x00]),
-            "movq [rsp],0"
+            "movq [rsp], 0"
         );
     }
 
@@ -4511,13 +4519,13 @@ mod tests {
     #[test]
     fn test_addq_rsp_8() {
         // 48 83 C4 08 = addq rsp,8
-        assert_eq!(dis(&[0x48, 0x83, 0xC4, 0x08]), "addq rsp,8");
+        assert_eq!(dis(&[0x48, 0x83, 0xC4, 0x08]), "addq rsp, 8");
     }
 
     #[test]
     fn test_subq_rsp_8() {
         // 48 83 EC 08 = subq rsp,8
-        assert_eq!(dis(&[0x48, 0x83, 0xEC, 0x08]), "subq rsp,8");
+        assert_eq!(dis(&[0x48, 0x83, 0xEC, 0x08]), "subq rsp, 8");
     }
 
     #[test]
@@ -4525,7 +4533,7 @@ mod tests {
         // 48 81 C4 00 10 00 00 = addq rsp,0x1000
         assert_eq!(
             dis(&[0x48, 0x81, 0xC4, 0x00, 0x10, 0x00, 0x00]),
-            "addq rsp,0x1000"
+            "addq rsp, 0x1000"
         );
     }
 
@@ -4535,19 +4543,19 @@ mod tests {
     #[test]
     fn test_cmpl_rax_0() {
         // 83 F8 00 = cmpl rax,0
-        assert_eq!(dis(&[0x83, 0xF8, 0x00]), "cmpl rax,0");
+        assert_eq!(dis(&[0x83, 0xF8, 0x00]), "cmpl rax, 0");
     }
 
     #[test]
     fn test_cmpl_rax_8() {
         // 83 F8 08 = cmpl rax,8
-        assert_eq!(dis(&[0x83, 0xF8, 0x08]), "cmpl rax,8");
+        assert_eq!(dis(&[0x83, 0xF8, 0x08]), "cmpl rax, 8");
     }
 
     #[test]
     fn test_cmpl_rcx_0() {
         // 83 F9 00 = cmpl rcx,0
-        assert_eq!(dis(&[0x83, 0xF9, 0x00]), "cmpl rcx,0");
+        assert_eq!(dis(&[0x83, 0xF9, 0x00]), "cmpl rcx, 0");
     }
 
     #[test]
@@ -4555,7 +4563,7 @@ mod tests {
         // 81 3C 24 FF 00 00 00 = cmpl [rsp],0xff (imm32 form)
         assert_eq!(
             dis(&[0x81, 0x3C, 0x24, 0xFF, 0x00, 0x00, 0x00]),
-            "cmpl [rsp],0xff"
+            "cmpl [rsp], 0xff"
         );
     }
 
@@ -4573,13 +4581,13 @@ mod tests {
     #[test]
     fn test_movmskps_rax_xmm0() {
         // 0F 50 C0 = movmskps rax,xmm0
-        assert_eq!(dis(&[0x0F, 0x50, 0xC0]), "movmskps rax,xmm0");
+        assert_eq!(dis(&[0x0F, 0x50, 0xC0]), "movmskps rax, xmm0");
     }
 
     #[test]
     fn test_movmskpd_rax_xmm0() {
         // 66 0F 50 C0 = movmskpd rax,xmm0
-        assert_eq!(dis(&[0x66, 0x0F, 0x50, 0xC0]), "movmskpd rax,xmm0");
+        assert_eq!(dis(&[0x66, 0x0F, 0x50, 0xC0]), "movmskpd rax, xmm0");
     }
 
     // -----------------------------------------------------------------------
@@ -4603,13 +4611,13 @@ mod tests {
     #[test]
     fn test_movb_mem_rax_cl() {
         // 88 08 = movb [rax],cl
-        assert_eq!(dis(&[0x88, 0x08]), "movb [rax],cl");
+        assert_eq!(dis(&[0x88, 0x08]), "movb [rax], cl");
     }
 
     #[test]
     fn test_movb_imm_to_mem() {
         // C6 00 42 = movb [rax],0x42
-        assert_eq!(dis(&[0xC6, 0x00, 0x42]), "movb [rax],0x42");
+        assert_eq!(dis(&[0xC6, 0x00, 0x42]), "movb [rax], 0x42");
     }
 
     // -----------------------------------------------------------------------
@@ -4620,7 +4628,7 @@ mod tests {
         // cmpq [rsp],0xff using imm32 form (81 /7)
         assert_eq!(
             dis(&[0x48, 0x81, 0x3C, 0x24, 0xFF, 0x00, 0x00, 0x00]),
-            "cmpq [rsp],0xff"
+            "cmpq [rsp], 0xff"
         );
     }
 
@@ -4648,7 +4656,7 @@ mod tests {
     #[test]
     fn test_xorq_rax_mem_rsp() {
         // 48 33 04 24 = xorq rax,[rsp]
-        assert_eq!(dis(&[0x48, 0x33, 0x04, 0x24]), "xorq rax,[rsp]");
+        assert_eq!(dis(&[0x48, 0x33, 0x04, 0x24]), "xorq rax, [rsp]");
     }
 
     // -----------------------------------------------------------------------
@@ -4657,7 +4665,7 @@ mod tests {
     #[test]
     fn test_xorq_mem_rsp_rcx() {
         // 48 31 0C 24 = xorq [rsp],rcx
-        assert_eq!(dis(&[0x48, 0x31, 0x0C, 0x24]), "xorq [rsp],rcx");
+        assert_eq!(dis(&[0x48, 0x31, 0x0C, 0x24]), "xorq [rsp], rcx");
     }
 
     // -----------------------------------------------------------------------
@@ -4666,7 +4674,7 @@ mod tests {
     #[test]
     fn test_orq_rcx_mem_rsp() {
         // 48 0B 0C 24 = orq rcx,[rsp]
-        assert_eq!(dis(&[0x48, 0x0B, 0x0C, 0x24]), "orq rcx,[rsp]");
+        assert_eq!(dis(&[0x48, 0x0B, 0x0C, 0x24]), "orq rcx, [rsp]");
     }
 
     // -----------------------------------------------------------------------
@@ -4696,6 +4704,6 @@ mod tests {
     #[test]
     fn test_movq_66_store_xmm() {
         // 66 0F D6 C1 = movq xmm1,xmm0
-        assert_eq!(dis(&[0x66, 0x0F, 0xD6, 0xC1]), "movq xmm1,xmm0");
+        assert_eq!(dis(&[0x66, 0x0F, 0xD6, 0xC1]), "movq xmm1, xmm0");
     }
 }
