@@ -266,7 +266,6 @@ dependencies = [
 name = "zjit"
 version = "0.0.1"
 dependencies = [
- "capstone",
  "insta",
  "jit",
  "rand",
