@@ -639,7 +639,7 @@ impl<'a> DisassemblerX64<'a> {
         let (modd, _regop, rm) = self.get_modrm(modrm);
 
         // For mod==3, use the direct_register_name; otherwise use cpu reg for addresses
-        let reg_name_for = |me: &Self, r: usize, mod3: bool| -> &'static str {
+        let reg_name_for = |_me: &Self, r: usize, mod3: bool| -> &'static str {
             if mod3 {
                 match register_name_fn {
                     1 => name_of_byte_cpu_register(r),
@@ -812,7 +812,7 @@ impl<'a> DisassemblerX64<'a> {
 
     // -- F6/F7 instruction --
     fn f6f7_instruction(&mut self) -> usize {
-        let opcode = self.read_u8();
+        let _opcode = self.read_u8();
         let modrm = self.peek();
         let (modd, regop, rm) = self.get_modrm(modrm);
         static MNEMONICS: &[Option<&str>] = &[
