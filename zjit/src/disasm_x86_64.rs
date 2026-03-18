@@ -4706,4 +4706,5 @@ mod tests {
         // 66 0F D6 C1 = movq xmm1,xmm0
         assert_eq!(dis(&[0x66, 0x0F, 0xD6, 0xC1]), "movq xmm1, xmm0");
     }
+
 }
