@@ -1268,21 +1268,21 @@ mod tests {
     #[test]
     fn test_add_uimm() {
         let cb = compile(|cb| add(cb, X0, X1, A64Opnd::new_uimm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: add x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: add x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c0091");
     }
 
     #[test]
     fn test_add_imm_positive() {
         let cb = compile(|cb| add(cb, X0, X1, A64Opnd::new_imm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: add x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: add x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c0091");
     }
 
     #[test]
     fn test_add_imm_negative() {
         let cb = compile(|cb| add(cb, X0, X1, A64Opnd::new_imm(-7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: sub x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: sub x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c00d1");
     }
 
@@ -1296,28 +1296,28 @@ mod tests {
     #[test]
     fn test_adds_uimm() {
         let cb = compile(|cb| adds(cb, X0, X1, A64Opnd::new_uimm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: adds x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: adds x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c00b1");
     }
 
     #[test]
     fn test_adds_imm_positive() {
         let cb = compile(|cb| adds(cb, X0, X1, A64Opnd::new_imm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: adds x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: adds x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c00b1");
     }
 
     #[test]
     fn test_adds_imm_negative() {
         let cb = compile(|cb| adds(cb, X0, X1, A64Opnd::new_imm(-7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: subs x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: subs x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c00f1");
     }
 
     #[test]
     fn test_adr() {
         let cb = compile(|cb| adr(cb, X10, A64Opnd::new_imm(20)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: adr x10, +20");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: adr x10, 0x14");
         assert_snapshot!(cb.hexdump(), @"aa000010");
     }
 
@@ -1338,14 +1338,14 @@ mod tests {
     #[test]
     fn test_and_immediate() {
         let cb = compile(|cb| and(cb, X0, X1, A64Opnd::new_uimm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: and x0, x1, 0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: and x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"20084092");
     }
 
     #[test]
     fn test_and_32b_immediate() {
         let cb = compile(|cb| and(cb, W0, W2, A64Opnd::new_uimm(0xfffff)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: andw x0, x2, 0xfffff");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: andw x0, x2, #0xfffff");
         assert_snapshot!(cb.hexdump(), @"404c0012");
     }
 
@@ -1359,14 +1359,14 @@ mod tests {
     #[test]
     fn test_ands_immediate() {
         let cb = compile(|cb| ands(cb, X0, X1, A64Opnd::new_uimm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ands x0, x1, 0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ands x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"200840f2");
     }
 
     #[test]
     fn test_asr() {
         let cb = compile(|cb| asr(cb, X20, X21, A64Opnd::new_uimm(10)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: asr x20, x21, #10");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: asr x20, x21, #0xa");
         assert_snapshot!(cb.hexdump(), @"b4fe4a93");
     }
 
@@ -1374,7 +1374,7 @@ mod tests {
     fn test_bcond() {
         let offset = InstructionOffset::from_insns(0x100);
         let cb = compile(|cb| bcond(cb, Condition::NE, offset));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: bne +1024");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: b.ne #0x400");
         assert_snapshot!(cb.hexdump(), @"01200054");
     }
 
@@ -1382,7 +1382,7 @@ mod tests {
     fn test_b() {
         let offset = InstructionOffset::from_insns((1 << 25) - 1);
         let cb = compile(|cb| b(cb, offset));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: b +134217724");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: b #0x7fffffc");
         assert_snapshot!(cb.hexdump(), @"ffffff15");
     }
 
@@ -1406,7 +1406,7 @@ mod tests {
     fn test_bl() {
         let offset = InstructionOffset::from_insns(-(1 << 25));
         let cb = compile(|cb| bl(cb, offset));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: bl -134217728");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: bl #0xfffffffff8000000");
         assert_snapshot!(cb.hexdump(), @"00000096");
     }
 
@@ -1448,8 +1448,8 @@ mod tests {
             cbz(cb, W0, offset);
         });
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: cbz x0, -4
-        0x4: cbzw x0, -4
+        0x0: cbz x0, #0xfffffffffffffffc
+        0x4: cbzw x0, #0x0
         ");
         assert_snapshot!(cb.hexdump(), @"e0ffffb4e0ffff34");
     }
@@ -1462,8 +1462,8 @@ mod tests {
             cbnz(cb, W20, offset);
         });
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: cbnz x20, +8
-        0x4: cbnzw x20, +8
+        0x0: cbnz x20, #0x8
+        0x4: cbnzw x20, #0xc
         ");
         assert_snapshot!(cb.hexdump(), @"540000b554000035");
     }
@@ -1513,14 +1513,14 @@ mod tests {
     #[test]
     fn test_eor_immediate() {
         let cb = compile(|cb| eor(cb, X10, X11, A64Opnd::new_uimm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: eor x10, x11, 0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: eor x10, x11, #7");
         assert_snapshot!(cb.hexdump(), @"6a0940d2");
     }
 
     #[test]
     fn test_eor_32b_immediate() {
         let cb = compile(|cb| eor(cb, W9, W1, A64Opnd::new_uimm(0x80000001)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: eorw x9, x1, 0x8000000000000001");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: eorw x9, x1, #0x8000000000000001");
         assert_snapshot!(cb.hexdump(), @"29040152");
     }
 
@@ -1541,21 +1541,21 @@ mod tests {
     #[test]
     fn test_ldp() {
         let cb = compile(|cb| ldp(cb, X10, X11, A64Opnd::new_mem(64, X12, 208)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldp x10, x11, [x12, #208]");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldp x10, x11, [x12, #0xd0]");
         assert_snapshot!(cb.hexdump(), @"8a2d4da9");
     }
 
     #[test]
     fn test_ldp_pre() {
         let cb = compile(|cb| ldp_pre(cb, X10, X11, A64Opnd::new_mem(64, X12, 208)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldp x10, x11, [x12, #208]!");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldp x10, x11, [x12, #0xd0]!");
         assert_snapshot!(cb.hexdump(), @"8a2dcda9");
     }
 
     #[test]
     fn test_ldp_post() {
         let cb = compile(|cb| ldp_post(cb, X10, X11, A64Opnd::new_mem(64, X12, 208)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldp x10, x11, [x12], #208 !");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldp x10, x11, [x12], #0xd0");
         assert_snapshot!(cb.hexdump(), @"8a2dcda8");
     }
 
@@ -1569,42 +1569,42 @@ mod tests {
     #[test]
     fn test_ldr_literal() {
         let cb = compile(|cb| ldr_literal(cb, X0, 10.into()));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrx x0, +40");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrx x0, 0x28");
         assert_snapshot!(cb.hexdump(), @"40010058");
     }
 
     #[test]
     fn test_ldr_post() {
         let cb = compile(|cb| ldr_post(cb, X10, A64Opnd::new_mem(64, X11, 16)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldr x10, [x11], #16 !");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldr x10, [x11], #0x10");
         assert_snapshot!(cb.hexdump(), @"6a0541f8");
     }
 
     #[test]
     fn test_ldr_pre() {
         let cb = compile(|cb| ldr_pre(cb, X10, A64Opnd::new_mem(64, X11, 16)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldr x10, [x11, #16]!");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldr x10, [x11, #0x10]!");
         assert_snapshot!(cb.hexdump(), @"6a0d41f8");
     }
 
     #[test]
     fn test_ldrh() {
         let cb = compile(|cb| ldrh(cb, W10, A64Opnd::new_mem(64, X11, 12)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrh x10, [x11, #12]");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrh x10, [x11, #0xc]");
         assert_snapshot!(cb.hexdump(), @"6a194079");
     }
 
     #[test]
     fn test_ldrh_pre() {
         let cb = compile(|cb| ldrh_pre(cb, W10, A64Opnd::new_mem(64, X11, 12)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrh x10, [x11, #12]!");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrh x10, [x11, #0xc]!");
         assert_snapshot!(cb.hexdump(), @"6acd4078");
     }
 
     #[test]
     fn test_ldrh_post() {
         let cb = compile(|cb| ldrh_post(cb, W10, A64Opnd::new_mem(64, X11, 12)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrh x10, [x11], #12 !");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrh x10, [x11], #0xc");
         assert_snapshot!(cb.hexdump(), @"6ac54078");
     }
 
@@ -1616,7 +1616,7 @@ mod tests {
         });
         assert_disasm_snapshot!(cb.disasm(), @"
         0x0: ldrh x10, [x1, #0]
-        0x4: ldrh x10, [x1, #123]
+        0x4: ldrh x10, [x1, #0x7b]
         ");
         assert_snapshot!(cb.hexdump(), @"2a0040782ab04778");
     }
@@ -1624,7 +1624,7 @@ mod tests {
     #[test]
     fn test_ldur_memory() {
         let cb = compile(|cb| ldur(cb, X0, A64Opnd::new_mem(64, X1, 123)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldr x0, [x1, #123]");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldr x0, [x1, #0x7b]");
         assert_snapshot!(cb.hexdump(), @"20b047f8");
     }
 
@@ -1638,21 +1638,21 @@ mod tests {
     #[test]
     fn test_ldursw() {
         let cb = compile(|cb| ldursw(cb, X10, A64Opnd::new_mem(64, X11, 123)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrsw x10, [x11, #123]");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: ldrsw x10, [x11, #0x7b]");
         assert_snapshot!(cb.hexdump(), @"6ab187b8");
     }
 
     #[test]
     fn test_lsl() {
         let cb = compile(|cb| lsl(cb, X10, X11, A64Opnd::new_uimm(14)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: lsl x10, x11, #14");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: lsl x10, x11, #0xe");
         assert_snapshot!(cb.hexdump(), @"6ac572d3");
     }
 
     #[test]
     fn test_lsr() {
         let cb = compile(|cb| lsr(cb, X10, X11, A64Opnd::new_uimm(14)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: lsr x10, x11, #14");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: lsr x10, x11, #0xe");
         assert_snapshot!(cb.hexdump(), @"6afd4ed3");
     }
 
@@ -1666,14 +1666,14 @@ mod tests {
     #[test]
     fn test_mov_immediate() {
         let cb = compile(|cb| mov(cb, X10, A64Opnd::new_uimm(0x5555555555555555)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: mov x10, 0x1111111111111111");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: mov x10, #0x1111111111111111");
         assert_snapshot!(cb.hexdump(), @"eaf300b2");
     }
 
     #[test]
     fn test_mov_32b_immediate() {
         let cb = compile(|cb| mov(cb, W10, A64Opnd::new_uimm(0x80000001)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: movw x10, 0x8000000000000001");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: movw x10, #0x8000000000000001");
         assert_snapshot!(cb.hexdump(), @"ea070132");
     }
     #[test]
@@ -1693,21 +1693,21 @@ mod tests {
     #[test]
     fn test_movk() {
         let cb = compile(|cb| movk(cb, X0, A64Opnd::new_uimm(123), 16));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: movk x0, #0x7b lsl 16");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: movk x0, #0x7b, lsl #16");
         assert_snapshot!(cb.hexdump(), @"600fa0f2");
     }
 
     #[test]
     fn test_movn() {
         let cb = compile(|cb| movn(cb, X0, A64Opnd::new_uimm(123), 16));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: movn x0, #0x7b lsl 16");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: movn x0, #0x7b, lsl #16");
         assert_snapshot!(cb.hexdump(), @"600fa092");
     }
 
     #[test]
     fn test_movz() {
         let cb = compile(|cb| movz(cb, X0, A64Opnd::new_uimm(123), 16));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: movz x0, #0x7b lsl 16");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: movz x0, #0x7b, lsl #16");
         assert_snapshot!(cb.hexdump(), @"600fa0d2");
     }
 
@@ -1763,14 +1763,14 @@ mod tests {
     #[test]
     fn test_orr_immediate() {
         let cb = compile(|cb| orr(cb, X10, X11, A64Opnd::new_uimm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: orr x10, x11, 0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: orr x10, x11, #7");
         assert_snapshot!(cb.hexdump(), @"6a0940b2");
     }
 
     #[test]
     fn test_orr_32b_immediate() {
         let cb = compile(|cb| orr(cb, W10, W11, A64Opnd::new_uimm(1)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: orrw x10, x11, 0x1");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: orrw x10, x11, #1");
         assert_snapshot!(cb.hexdump(), @"6a010032");
     }
 
@@ -1798,70 +1798,70 @@ mod tests {
     #[test]
     fn test_stp() {
         let cb = compile(|cb| stp(cb, X10, X11, A64Opnd::new_mem(64, X12, 208)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: stp x10, x11, [x12, #208]");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: stp x10, x11, [x12, #0xd0]");
         assert_snapshot!(cb.hexdump(), @"8a2d0da9");
     }
 
     #[test]
     fn test_stp_pre() {
         let cb = compile(|cb| stp_pre(cb, X10, X11, A64Opnd::new_mem(64, X12, 208)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: stp x10, x11, [x12, #208]!");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: stp x10, x11, [x12, #0xd0]!");
         assert_snapshot!(cb.hexdump(), @"8a2d8da9");
     }
 
     #[test]
     fn test_stp_post() {
         let cb = compile(|cb| stp_post(cb, X10, X11, A64Opnd::new_mem(64, X12, 208)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: stp x10, x11, [x12], #208 !");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: stp x10, x11, [x12], #0xd0");
         assert_snapshot!(cb.hexdump(), @"8a2d8da8");
     }
 
     #[test]
     fn test_str_post() {
         let cb = compile(|cb| str_post(cb, X10, A64Opnd::new_mem(64, X11, -16)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: str x10, [x11], #-16 !");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: str x10, [x11], #-0x10");
         assert_snapshot!(cb.hexdump(), @"6a051ff8");
     }
 
     #[test]
     fn test_str_pre() {
         let cb = compile(|cb| str_pre(cb, X10, A64Opnd::new_mem(64, X11, -16)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: str x10, [x11, #-16]!");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: str x10, [x11, #-0x10]!");
         assert_snapshot!(cb.hexdump(), @"6a0d1ff8");
     }
 
     #[test]
     fn test_strh() {
         let cb = compile(|cb| strh(cb, W10, A64Opnd::new_mem(64, X11, 12)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: strh x10, [x11, #12]");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: strh x10, [x11, #0xc]");
         assert_snapshot!(cb.hexdump(), @"6a190079");
     }
 
     #[test]
     fn test_strh_pre() {
         let cb = compile(|cb| strh_pre(cb, W10, A64Opnd::new_mem(64, X11, 12)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: strh x10, [x11, #12]!");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: strh x10, [x11, #0xc]!");
         assert_snapshot!(cb.hexdump(), @"6acd0078");
     }
 
     #[test]
     fn test_strh_post() {
         let cb = compile(|cb| strh_post(cb, W10, A64Opnd::new_mem(64, X11, 12)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: strh x10, [x11], #12 !");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: strh x10, [x11], #0xc");
         assert_snapshot!(cb.hexdump(), @"6ac50078");
     }
 
     #[test]
     fn test_stur_64_bits() {
         let cb = compile(|cb| stur(cb, X10, A64Opnd::new_mem(64, X11, 128)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: str x10, [x11, #128]");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: str x10, [x11, #0x80]");
         assert_snapshot!(cb.hexdump(), @"6a0108f8");
     }
 
     #[test]
     fn test_stur_32_bits() {
         let cb = compile(|cb| stur(cb, X10, A64Opnd::new_mem(32, X11, 128)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: strw x10, [x11, #128]");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: strw x10, [x11, #0x80]");
         assert_snapshot!(cb.hexdump(), @"6a0108b8");
     }
 
@@ -1875,21 +1875,21 @@ mod tests {
     #[test]
     fn test_sub_uimm() {
         let cb = compile(|cb| sub(cb, X0, X1, A64Opnd::new_uimm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: sub x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: sub x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c00d1");
     }
 
     #[test]
     fn test_sub_imm_positive() {
         let cb = compile(|cb| sub(cb, X0, X1, A64Opnd::new_imm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: sub x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: sub x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c00d1");
     }
 
     #[test]
     fn test_sub_imm_negative() {
         let cb = compile(|cb| sub(cb, X0, X1, A64Opnd::new_imm(-7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: add x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: add x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c0091");
     }
 
@@ -1903,21 +1903,21 @@ mod tests {
     #[test]
     fn test_subs_imm_positive() {
         let cb = compile(|cb| subs(cb, X0, X1, A64Opnd::new_imm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: subs x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: subs x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c00f1");
     }
 
     #[test]
     fn test_subs_imm_negative() {
         let cb = compile(|cb| subs(cb, X0, X1, A64Opnd::new_imm(-7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: adds x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: adds x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c00b1");
     }
 
     #[test]
     fn test_subs_uimm() {
         let cb = compile(|cb| subs(cb, X0, X1, A64Opnd::new_uimm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: subs x0, x1, #0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: subs x0, x1, #7");
         assert_snapshot!(cb.hexdump(), @"201c00f1");
     }
 
@@ -1931,14 +1931,14 @@ mod tests {
     #[test]
     fn test_tbnz() {
         let cb = compile(|cb| tbnz(cb, X10, A64Opnd::UImm(10), A64Opnd::Imm(2)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tbnzw x10, #10, +8");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tbnzw x10, #10, #0x8");
         assert_snapshot!(cb.hexdump(), @"4a005037");
     }
 
     #[test]
     fn test_tbz() {
         let cb = compile(|cb| tbz(cb, X10, A64Opnd::UImm(10), A64Opnd::Imm(2)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tbzw x10, #10, +8");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tbzw x10, #10, #0x8");
         assert_snapshot!(cb.hexdump(), @"4a005036");
     }
 
@@ -1952,14 +1952,14 @@ mod tests {
     #[test]
     fn test_tst_immediate() {
         let cb = compile(|cb| tst(cb, X1, A64Opnd::new_uimm(7)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tst x1, 0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tst x1, #7");
         assert_snapshot!(cb.hexdump(), @"3f0840f2");
     }
 
     #[test]
     fn test_tst_32b_immediate() {
         let cb = compile(|cb| tst(cb, W0, A64Opnd::new_uimm(0xffff)));
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tstw x0, 0xffff");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tstw x0, #0xffff");
         assert_snapshot!(cb.hexdump(), @"1f3c0072");
     }
 

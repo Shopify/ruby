@@ -1789,7 +1789,7 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 2);
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x0, #0x3
+        0x0: movz x0, #3
         0x4: mul x1, x9, x0
         ");
         assert_snapshot!(cb.hexdump(), @"600080d2217d009b");
@@ -1811,9 +1811,9 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 1);
         assert_disasm_snapshot!(cb.disasm(), @"
         0x0: ldr x0, [sp, #0]
-        0x4: cmp x0, #0x0
-        0x8: bgt +8
-        0xc: blt -8
+        0x4: cmp x0, #0
+        0x8: b.gt #0x10
+        0xc: b.lt #0x4
         ");
         assert_snapshot!(cb.hexdump(), @"e00340f81f0000f14c000054cbffff54");
     }
@@ -1846,7 +1846,7 @@ mod tests {
 
         asm.compile_with_num_regs(&mut cb, 0);
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: add sp, sp, #0x8
+        0x0: add sp, sp, #8
         0x4: adds x20, x20, #0x20
         ");
         assert_snapshot!(cb.hexdump(), @"ff230091948200b1");
@@ -1861,7 +1861,7 @@ mod tests {
 
         asm.compile_with_num_regs(&mut cb, 1);
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x0, #0x8
+        0x0: movz x0, #8
         0x4: subs x0, x0, x5
         0x8: mov x1, x0
         ");
@@ -1926,10 +1926,10 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 0);
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: stp x29, x30, [sp, #-16]!
+        0x0: stp x29, x30, [sp, #-0x10]!
         0x4: mov x29, sp
         0x8: mov sp, x29
-        0xc: ldp x29, x30, [sp], #16 !
+        0xc: ldp x29, x30, [sp], #0x10
         ");
         assert_snapshot!(cb.hexdump(), @"fd7bbfa9fd030091bf030091fd7bc1a8");
     }
@@ -1969,35 +1969,35 @@ mod tests {
         };
 
         assert_disasm_snapshot!(disasms_with!("\n", cb1, cb2, cb3), @"
-        0x0: stp x29, x30, [sp, #-16]!
+        0x0: stp x29, x30, [sp, #-0x10]!
         0x4: mov x29, sp
-        0x8: stp x20, x19, [sp, #-16]!
+        0x8: stp x20, x19, [sp, #-0x10]!
         0xc: str x21, [sp, #-8]
         0x10: sub sp, sp, #0x20
-        0x14: ldp x20, x19, [x29, #-16]
-        0x18: ldr x21, [x29, #-24]
+        0x14: ldp x20, x19, [x29, #-0x10]
+        0x18: ldr x21, [x29, #-0x18]
         0x1c: mov sp, x29
-        0x20: ldp x29, x30, [sp], #16 !
+        0x20: ldp x29, x30, [sp], #0x10
 
-        0x0: stp x29, x30, [sp, #-16]!
+        0x0: stp x29, x30, [sp, #-0x10]!
         0x4: mov x29, sp
-        0x8: stp x20, x19, [sp, #-16]!
+        0x8: stp x20, x19, [sp, #-0x10]!
         0xc: str x21, [sp, #-8]
         0x10: sub sp, sp, #0x30
-        0x14: ldp x20, x19, [x29, #-16]
-        0x18: ldr x21, [x29, #-24]
+        0x14: ldp x20, x19, [x29, #-0x10]
+        0x18: ldr x21, [x29, #-0x18]
         0x1c: mov sp, x29
-        0x20: ldp x29, x30, [sp], #16 !
+        0x20: ldp x29, x30, [sp], #0x10
 
-        0x0: stp x29, x30, [sp, #-16]!
+        0x0: stp x29, x30, [sp, #-0x10]!
         0x4: mov x29, sp
-        0x8: stp x20, x19, [sp, #-16]!
-        0xc: stp x22, x21, [sp, #-16]!
+        0x8: stp x20, x19, [sp, #-0x10]!
+        0xc: stp x22, x21, [sp, #-0x10]!
         0x10: sub sp, sp, #0x20
-        0x14: ldp x20, x19, [x29, #-16]
-        0x18: ldp x22, x21, [x29, #-32]
+        0x14: ldp x20, x19, [x29, #-0x10]
+        0x18: ldp x22, x21, [x29, #-0x20]
         0x1c: mov sp, x29
-        0x20: ldp x29, x30, [sp], #16 !
+        0x20: ldp x29, x30, [sp], #0x10
         ");
         assert_snapshot!(hexdumps!(cb1, cb2, cb3), @"
         fd7bbfa9fd030091f44fbfa9f5831ff8ff8300d1b44f7fa9b5835ef8bf030091fd7bc1a8
@@ -2016,7 +2016,7 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 0);
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: beq +80
+        0x0: b.eq #0x50
         0x4: nop
         0x8: nop
         0xc: nop
@@ -2037,8 +2037,8 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 0);
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: bne +8
-        0x4: b +2097148
+        0x0: b.ne #0x8
+        0x4: b #0x200000
         0x8: nop
         0xc: nop
         0x10: nop
@@ -2063,10 +2063,10 @@ mod tests {
 
         asm.compile_with_num_regs(&mut cb, 0);
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: mov x0, 0x7fffffff
+        0x0: mov x0, #0x7fffffff
         0x4: add x0, sp, x0 uxtx 0
-        0x8: movz x0, #0x8
-        0xc: movk x0, #0x1 lsl 16
+        0x8: movz x0, #8
+        0xc: movk x0, #1, lsl #16
         0x10: add x0, sp, x0 uxtx 0
         0x14: movz x0, #0x1800
         0x18: add x0, sp, x0 uxtx 0
@@ -2075,11 +2075,11 @@ mod tests {
         0x24: movn x0, #0x17ff
         0x28: add x0, sp, x0 uxtx 0
         0x2c: movz x0, #0xfff8
-        0x30: movk x0, #0xfffe lsl 16
-        0x34: movk x0, #0xffff lsl 32
-        0x38: movk x0, #0xffff lsl 48
+        0x30: movk x0, #0xfffe, lsl #16
+        0x34: movk x0, #0xffff, lsl #32
+        0x38: movk x0, #0xffff, lsl #48
         0x3c: add x0, sp, x0 uxtx 0
-        0x40: mov x0, 0xffffffff80000000
+        0x40: mov x0, #0xffffffff80000000
         0x44: add x0, sp, x0 uxtx 0
         ");
         assert_snapshot!(cb.hexdump(), @"e07b40b2e063208b000180d22000a0f2e063208b000083d2e063208be0230891e02308d1e0ff8292e063208b00ff9fd2c0ffbff2e0ffdff2e0fffff2e063208be08361b2e063208b");
@@ -2148,8 +2148,8 @@ mod tests {
         assert_eq!(1, gc_offsets.len(), "VALUE source operand should be reported as gc offset");
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: ldrx x16, +8
-        0x4: b +12
+        0x0: ldrx x16, 0x8
+        0x4: b #0x10
         0x8: unknown
         0xc: unknown
         0x10: str x16, [x21, #0]
@@ -2167,7 +2167,7 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 0);
         assert_disasm_snapshot!(cb.disasm(), @"
         0x0: movz x16, #0x3902
-        0x4: movk x16, #0x8 lsl 16
+        0x4: movk x16, #8, lsl #16
         0x8: str x16, [x15, #0]
         ");
         assert_snapshot!(cb.hexdump(), @"502087d21001a0f2f00100f8");
@@ -2208,7 +2208,7 @@ mod tests {
 
         asm.compile_with_num_regs(&mut cb, 1);
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: adr x16, +8
+        0x0: adr x16, 0x8
         0x4: mov x0, x16
         0x8: fldpd v8, v25, [x10, ???]
         0xc: unknown
@@ -2281,7 +2281,7 @@ mod tests {
         // Assert that only two instructions were written since the value is an
         // immediate.
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x0, #0x4
+        0x0: movz x0, #4
         0x4: str x0, [x21, #0]
         ");
         assert_snapshot!(cb.hexdump(), @"800080d2a00200f8");
@@ -2298,8 +2298,8 @@ mod tests {
         // Assert that five instructions were written since the value is not an
         // immediate and needs to be loaded into a register.
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: ldrx x0, +8
-        0x4: b +12
+        0x0: ldrx x0, 0x8
+        0x4: b #0x10
         0x8: eon x0, x0, x30 RRX
         0xc: eon x30, x23, x30 ror #50
         0x10: str x0, [x21, #0]
@@ -2317,7 +2317,7 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 1);
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: mov x0, 0xffffffff
+        0x0: mov x0, #0xffffffff
         0x4: tstw x0, x0
         ");
         assert_snapshot!(cb.hexdump(), @"e07f40b21f00006a");
@@ -2330,7 +2330,7 @@ mod tests {
         asm.test(w0, Opnd::UImm(0x80000001));
         asm.compile_with_num_regs(&mut cb, 0);
 
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tstw x0, 0x8000000000000001");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tstw x0, #0x8000000000000001");
         assert_snapshot!(cb.hexdump(), @"1f040172");
     }
 
@@ -2414,7 +2414,7 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 0);
 
         // Assert that only one instruction was written.
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tst x0, 0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tst x0, #7");
         assert_snapshot!(cb.hexdump(), @"1f0840f2");
     }
 
@@ -2427,7 +2427,7 @@ mod tests {
 
         // Assert that a load and a test instruction were written.
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x0, #0x5
+        0x0: movz x0, #5
         0x4: tst x0, x0
         ");
         assert_snapshot!(cb.hexdump(), @"a00080d21f0000ea");
@@ -2441,7 +2441,7 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 0);
 
         // Assert that only one instruction was written.
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tst x0, 0x7");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tst x0, #7");
         assert_snapshot!(cb.hexdump(), @"1f0840f2");
     }
 
@@ -2454,7 +2454,7 @@ mod tests {
 
         // Assert that a load and a test instruction were written.
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x0, #0x5
+        0x0: movz x0, #5
         0x4: tst x0, x0
         ");
         assert_snapshot!(cb.hexdump(), @"a00080d21f0000ea");
@@ -2468,7 +2468,7 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 1);
 
         // Assert that a test instruction is written.
-        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tst x0, 0xfffffffffffffff9");
+        assert_disasm_snapshot!(cb.disasm(), @"  0x0: tst x0, #0xfffffffffffffff9");
         assert_snapshot!(cb.hexdump(), @"1ff47df2");
     }
 
@@ -2563,7 +2563,7 @@ mod tests {
 
         assert_disasm_snapshot!(cb.disasm(), @"
         0x0: movz x1, #0xffff
-        0x4: mov x1, 0x10000
+        0x4: mov x1, #0x10000
         ");
         assert_snapshot!(cb.hexdump(), @"e1ff9fd2e10370b2");
     }
@@ -2578,7 +2578,7 @@ mod tests {
 
         assert_disasm_snapshot!(cb.disasm(), @"
         0x0: movz x0, #0x14
-        0x4: movz x1, #0x0
+        0x4: movz x1, #0
         0x8: csel x1, x0, x1, lt
         ");
         assert_snapshot!(cb.hexdump(), @"800280d2010080d201b0819a");
@@ -2624,8 +2624,8 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 2);
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: adds x0, x9, #0x1
-        0x4: adds x1, x0, #0x1
+        0x0: adds x0, x9, #1
+        0x4: adds x1, x0, #1
         ");
         assert_snapshot!(cb.hexdump(), @"200500b1010400b1");
     }
@@ -2655,7 +2655,7 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, ALLOC_REGS.len());
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x16, #0x0
+        0x0: movz x16, #0
         0x4: blr x16
         ");
         assert_snapshot!(cb.hexdump(), @"100080d200023fd6");
@@ -2677,7 +2677,7 @@ mod tests {
         0x0: mov x15, x0
         0x4: mov x0, x1
         0x8: mov x1, x15
-        0xc: movz x16, #0x0
+        0xc: movz x16, #0
         0x10: blr x16
         ");
         assert_snapshot!(cb.hexdump(), @"ef0300aae00301aae1030faa100080d200023fd6");
@@ -2703,7 +2703,7 @@ mod tests {
         0xc: mov x15, x2
         0x10: mov x2, x3
         0x14: mov x3, x15
-        0x18: movz x16, #0x0
+        0x18: movz x16, #0
         0x1c: blr x16
         ");
         assert_snapshot!(cb.hexdump(), @"ef0300aae00301aae1030faaef0302aae20303aae3030faa100080d200023fd6");
@@ -2724,16 +2724,16 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, ALLOC_REGS.len());
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x0, #0x1
-        0x4: movz x1, #0x2
-        0x8: movz x2, #0x3
-        0xc: movz x3, #0x4
-        0x10: stp x1, x0, [sp, #-16]!
-        0x14: stp x3, x2, [sp, #-16]!
-        0x18: movz x16, #0x0
+        0x0: movz x0, #1
+        0x4: movz x1, #2
+        0x8: movz x2, #3
+        0xc: movz x3, #4
+        0x10: stp x1, x0, [sp, #-0x10]!
+        0x14: stp x3, x2, [sp, #-0x10]!
+        0x18: movz x16, #0
         0x1c: blr x16
-        0x20: ldp x3, x2, [sp], #16 !
-        0x24: ldp x1, x0, [sp], #16 !
+        0x20: ldp x3, x2, [sp], #0x10
+        0x24: ldp x1, x0, [sp], #0x10
         0x28: adds x0, x0, x1
         0x2c: adds x0, x2, x3
         ");
@@ -2757,19 +2757,19 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, ALLOC_REGS.len());
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x0, #0x1
-        0x4: movz x1, #0x2
-        0x8: movz x2, #0x3
-        0xc: movz x3, #0x4
-        0x10: movz x4, #0x5
-        0x14: stp x1, x0, [sp, #-16]!
-        0x18: stp x3, x2, [sp, #-16]!
-        0x1c: str x4, [sp, #-16]!
-        0x20: movz x16, #0x0
+        0x0: movz x0, #1
+        0x4: movz x1, #2
+        0x8: movz x2, #3
+        0xc: movz x3, #4
+        0x10: movz x4, #5
+        0x14: stp x1, x0, [sp, #-0x10]!
+        0x18: stp x3, x2, [sp, #-0x10]!
+        0x1c: str x4, [sp, #-0x10]!
+        0x20: movz x16, #0
         0x24: blr x16
-        0x28: ldr x4, [sp], #16 !
-        0x2c: ldp x3, x2, [sp], #16 !
-        0x30: ldp x1, x0, [sp], #16 !
+        0x28: ldr x4, [sp], #0x10
+        0x2c: ldp x3, x2, [sp], #0x10
+        0x30: ldp x1, x0, [sp], #0x10
         0x34: adds x0, x0, x1
         0x38: adds x0, x2, x3
         0x3c: adds x0, x2, x4
@@ -2794,7 +2794,7 @@ mod tests {
         0x4: mov x0, x1
         0x8: mov x1, x2
         0xc: mov x2, x15
-        0x10: movz x16, #0x0
+        0x10: movz x16, #0
         0x14: blr x16
         ");
         assert_snapshot!(cb.hexdump(), @"ef0300aae00301aae10302aae2030faa100080d200023fd6");
@@ -2809,9 +2809,9 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, ALLOC_REGS.len());
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x0, #0x1
-        0x4: movz x1, #0x2
-        0x8: stp x1, x0, [sp, #-16]!
+        0x0: movz x0, #1
+        0x4: movz x1, #2
+        0x8: stp x1, x0, [sp, #-0x10]!
         ");
         assert_snapshot!(cb.hexdump(), @"200080d2410080d2e103bfa9");
     }
@@ -2825,9 +2825,9 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, ALLOC_REGS.len());
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x0, #0x1
-        0x4: movz x1, #0x2
-        0x8: ldp x0, x1, [sp], #16 !
+        0x0: movz x0, #1
+        0x4: movz x1, #2
+        0x8: ldp x0, x1, [sp], #0x10
         ");
         assert_snapshot!(cb.hexdump(), @"200080d2410080d2e007c1a8");
     }
@@ -2842,7 +2842,7 @@ mod tests {
         asm.compile_with_num_regs(&mut cb, 0); // spill every VReg
 
         assert_disasm_snapshot!(cb.disasm(), @"
-        0x0: movz x16, #0x1
+        0x0: movz x16, #1
         0x4: str x16, [x29, #-8]
         0x8: ldr x15, [x29, #-8]
         0xc: lsl x0, x15, #1

@@ -510,6 +510,29 @@ impl Arm64Decoder {
         self.buffer.push_str(&format!("{}", value));
     }
 
+    /// Format an immediate value matching capstone convention:
+    /// decimal for |val| < 10, hex with 0x prefix otherwise.
+    fn format_imm(&mut self, val: i64) {
+        if val >= 0 && val < 10 {
+            self.buffer.push_str(&format!("#{}", val));
+        } else if val >= 0 {
+            self.buffer.push_str(&format!("#0x{:x}", val));
+        } else if val > -10 {
+            self.buffer.push_str(&format!("#{}", val));
+        } else {
+            self.buffer.push_str(&format!("#-0x{:x}", -val));
+        }
+    }
+
+    /// Format an unsigned immediate value matching capstone convention.
+    fn format_uimm(&mut self, val: u64) {
+        if val < 10 {
+            self.buffer.push_str(&format!("#{}", val));
+        } else {
+            self.buffer.push_str(&format!("#0x{:x}", val));
+        }
+    }
+
     fn print_register(&mut self, reg: u32, r31t: R31Type) {
         debug_assert!(reg < 32);
         if reg == 31 {
@@ -586,30 +609,32 @@ impl Arm64Decoder {
             // Unsigned offset
             let scale = self.sz_field();
             let imm12 = self.imm12_field();
-            let off = imm12 << scale;
+            let off = (imm12 << scale) as i64;
             self.print("[");
             self.print_register(rn, R31Type::IsSP);
             if off != 0 {
-                self.buffer.push_str(&format!(", #{}", off));
+                self.print(", ");
+                self.format_imm(off);
             }
             self.print("]");
         } else {
             match self.bits(10, 2) {
                 0 => {
                     // Unscaled immediate
-                    let imm9 = self.simm9_field();
+                    let imm9 = self.simm9_field() as i64;
                     self.print("[");
                     self.print_register(rn, R31Type::IsSP);
-                    self.buffer.push_str(&format!(", #{}", imm9));
+                    self.print(", ");
+                    self.format_imm(imm9);
                     self.print("]");
                 }
                 1 => {
                     // Post-index
-                    let imm9 = self.simm9_field();
+                    let imm9 = self.simm9_field() as i64;
                     self.print("[");
                     self.print_register(rn, R31Type::IsSP);
-                    self.print("]");
-                    self.buffer.push_str(&format!(", #{} !", imm9));
+                    self.print("], ");
+                    self.format_imm(imm9);
                 }
                 2 => {
                     // Register offset
@@ -629,10 +654,11 @@ impl Arm64Decoder {
                 }
                 3 => {
                     // Pre-index
-                    let imm9 = self.simm9_field();
+                    let imm9 = self.simm9_field() as i64;
                     self.print("[");
                     self.print_register(rn, R31Type::IsSP);
-                    self.buffer.push_str(&format!(", #{}", imm9));
+                    self.print(", ");
+                    self.format_imm(imm9);
                     self.print("]!");
                 }
                 _ => {
@@ -650,21 +676,26 @@ impl Arm64Decoder {
         } else {
             2 + self.sf_field()
         };
-        let offset = simm7 << shift;
+        let offset = (simm7 << shift) as i64;
         self.print("[");
         self.print_register(rn, R31Type::IsSP);
         match self.bits(23, 3) {
             1 => {
                 // Post-index
-                self.buffer.push_str(&format!("], #{} !", offset));
+                self.print("], ");
+                self.format_imm(offset);
             }
             2 => {
                 // Signed offset
-                self.buffer.push_str(&format!(", #{}]", offset));
+                self.print(", ");
+                self.format_imm(offset);
+                self.print("]");
             }
             3 => {
                 // Pre-index
-                self.buffer.push_str(&format!(", #{}]!", offset));
+                self.print(", ");
+                self.format_imm(offset);
+                self.print("]!");
             }
             _ => {
                 self.print(", ???]");
@@ -724,7 +755,7 @@ impl Arm64Decoder {
                     let imms = self.imms_field();
                     let immr = self.immr_field();
                     let imm = decode_logical_immediate(n, imms, immr);
-                    self.buffer.push_str(&format!("0x{:x}", imm));
+                    self.format_uimm(imm);
                     6
                 } else if option.len() >= 6 && &option[..6] == b"bitpos" {
                     let bitpos = self.bits(19, 5) | (self.bit(31) << 5);
@@ -771,16 +802,8 @@ impl Arm64Decoder {
                     // dest19
                     off = (self.simm19_field() as i64) << 2;
                 }
-                if self.relative {
-                    if off >= 0 {
-                        self.buffer.push_str(&format!("+{}", off));
-                    } else {
-                        self.buffer.push_str(&format!("{}", off));
-                    }
-                } else {
-                    let dest = (self.pc as i64).wrapping_add(off) as u64;
-                    self.buffer.push_str(&format!("{:#x}", dest));
-                }
+                let dest = (self.pc as i64).wrapping_add(off) as u64;
+                self.buffer.push_str(&format!("#0x{:x}", dest));
                 6
             }
             b'f' => {
@@ -806,7 +829,7 @@ impl Arm64Decoder {
                 // hw
                 let shift = self.hw_field() << 4;
                 if shift != 0 {
-                    self.buffer.push_str(&format!(" lsl {}", shift));
+                    self.buffer.push_str(&format!(", lsl #{}", shift));
                 }
                 2
             }
@@ -851,12 +874,12 @@ impl Arm64Decoder {
                             }
                             ret = 6;
                         }
-                        self.buffer.push_str(&format!("#0x{:x}", imm));
+                        self.format_uimm(imm);
                         ret
                     } else {
                         // imm16
                         let imm = self.imm16_field() as u64;
-                        self.buffer.push_str(&format!("#0x{:x}", imm));
+                        self.format_uimm(imm);
                         5
                     }
                 } else if option.len() >= 4 && option[3] == b'd' {
@@ -867,12 +890,12 @@ impl Arm64Decoder {
                 } else if option.len() >= 4 && option[3] == b'r' {
                     // immr
                     let immr = self.immr_field();
-                    self.buffer.push_str(&format!("#{}", immr));
+                    self.format_uimm(immr as u64);
                     4
                 } else if option.len() >= 4 && option[3] == b's' {
                     // imms
                     let imms = self.imms_field();
-                    self.buffer.push_str(&format!("#{}", imms));
+                    self.format_uimm(imms as u64);
                     4
                 } else {
                     1
@@ -1221,8 +1244,8 @@ impl Arm64Decoder {
                 }
                 if s_imm != reg_size - 1 && (s_imm + 1) == r_imm {
                     let shift = reg_size - s_imm - 1;
-                    self.format("lsl'sf 'rd, 'rn, #");
-                    self.print_int(shift as i32);
+                    self.format("lsl'sf 'rd, 'rn, ");
+                    self.format_uimm(shift as u64);
                     return;
                 } else if s_imm == reg_size - 1 {
                     self.format("lsr'sf 'rd, 'rn, 'immr");
@@ -1358,7 +1381,7 @@ impl Arm64Decoder {
             self.unknown();
             return;
         }
-        self.format("b'cond 'dest19");
+        self.format("b.'cond 'dest19");
     }
 
     fn decode_test_and_branch(&mut self) {
@@ -1900,9 +1923,15 @@ impl Arm64Decoder {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Disassemble a single 32-bit ARM64 instruction.
+/// Disassemble a single 32-bit ARM64 instruction (no PC context).
 pub fn disassemble_instruction(word: u32) -> String {
-    let mut decoder = Arm64Decoder::new(word, 0, true);
+    disassemble_instruction_at(word, 0)
+}
+
+/// Disassemble a single 32-bit ARM64 instruction at the given PC.
+/// Branch targets are shown as absolute addresses computed from `pc`.
+pub fn disassemble_instruction_at(word: u32, pc: usize) -> String {
+    let mut decoder = Arm64Decoder::new(word, pc, false);
     decoder.instruction_decode();
     decoder.buffer
 }
@@ -1970,21 +1999,21 @@ mod tests {
     fn test_movz1_lsl16() {
         // movz r0, #0x2a, lsl #16
         let w = 0xD2A0_0540; // movz x0, #0x2a, lsl #16
-        assert_eq!(dis1(w), "movz x0, #0x2a lsl 16");
+        assert_eq!(dis1(w), "movz x0, #0x2a, lsl #16");
     }
 
     #[test]
     fn test_movz2_lsl32() {
         // movz r0, #0x2a, lsl #32
         let w = 0xD2C0_0540;
-        assert_eq!(dis1(w), "movz x0, #0x2a lsl 32");
+        assert_eq!(dis1(w), "movz x0, #0x2a, lsl #32");
     }
 
     #[test]
     fn test_movz3_lsl48() {
         // movz r0, #0x2a, lsl #48
         let w = 0xD2E0_0540;
-        assert_eq!(dis1(w), "movz x0, #0x2a lsl 48");
+        assert_eq!(dis1(w), "movz x0, #0x2a, lsl #48");
     }
 
     #[test]
@@ -1998,19 +2027,19 @@ mod tests {
     fn test_movn1_lsl16() {
         // movn r0, #0x2a, lsl #16
         let w = 0x92A0_0540;
-        assert_eq!(dis1(w), "movn x0, #0x2a lsl 16");
+        assert_eq!(dis1(w), "movn x0, #0x2a, lsl #16");
     }
 
     #[test]
     fn test_movn2_lsl32() {
         let w = 0x92C0_0540;
-        assert_eq!(dis1(w), "movn x0, #0x2a lsl 32");
+        assert_eq!(dis1(w), "movn x0, #0x2a, lsl #32");
     }
 
     #[test]
     fn test_movn3_lsl48() {
         let w = 0x92E0_0540;
-        assert_eq!(dis1(w), "movn x0, #0x2a lsl 48");
+        assert_eq!(dis1(w), "movn x0, #0x2a, lsl #48");
     }
 
     #[test]
@@ -2023,19 +2052,19 @@ mod tests {
     #[test]
     fn test_movk1_lsl16() {
         let w = 0xF2A0_0540;
-        assert_eq!(dis1(w), "movk x0, #0x2a lsl 16");
+        assert_eq!(dis1(w), "movk x0, #0x2a, lsl #16");
     }
 
     #[test]
     fn test_movk2_lsl32() {
         let w = 0xF2C0_0540;
-        assert_eq!(dis1(w), "movk x0, #0x2a lsl 32");
+        assert_eq!(dis1(w), "movk x0, #0x2a, lsl #32");
     }
 
     #[test]
     fn test_movk3_lsl48() {
         let w = 0xF2E0_0540;
-        assert_eq!(dis1(w), "movk x0, #0x2a lsl 48");
+        assert_eq!(dis1(w), "movk x0, #0x2a, lsl #48");
     }
 
     #[test]
@@ -2106,14 +2135,14 @@ mod tests {
     fn test_cmp_imm() {
         // cmp x1, #1 -> subs xzr, x1, #1 -> 0xF100043F
         let w = 0xF100_043F;
-        assert_eq!(dis1(w), "cmp x1, #0x1");
+        assert_eq!(dis1(w), "cmp x1, #1");
     }
 
     #[test]
     fn test_cmn_imm() {
         // cmn x1, #1 -> adds xzr, x1, #1 -> 0xB100043F
         let w = 0xB100_043F;
-        assert_eq!(dis1(w), "cmn x1, #0x1");
+        assert_eq!(dis1(w), "cmn x1, #1");
     }
 
     // -----------------------------------------------------------------------
@@ -2195,7 +2224,7 @@ mod tests {
     fn test_and_imm() {
         // and x0, x1, #1 -> 0x92400020
         let w = 0x9240_0020;
-        assert_eq!(dis1(w), "and x0, x1, 0x1");
+        assert_eq!(dis1(w), "and x0, x1, #1");
     }
 
     #[test]
@@ -2205,7 +2234,7 @@ mod tests {
         // This is a repeated pattern. Let's pick a simpler one.
         // tst x0, #1 -> ands xzr, x0, #1 -> 0xF240001F
         let w = 0xF240_001F;
-        assert_eq!(dis1(w), "tst x0, 0x1");
+        assert_eq!(dis1(w), "tst x0, #1");
     }
 
     // -----------------------------------------------------------------------
@@ -2223,14 +2252,14 @@ mod tests {
     fn test_ldr_post_index() {
         // ldr x0, [sp], #8 -> 0xF84087E0
         let w = 0xF840_87E0;
-        assert_eq!(dis1(w), "ldr x0, [sp], #8 !");
+        assert_eq!(dis1(w), "ldr x0, [sp], #8");
     }
 
     #[test]
     fn test_str_unsigned_offset() {
         // str x1, [sp, #4096] -> 0xF9080001 (offset = 4096/8 = 512 in imm12)
         let w = 0xF908_03E1;
-        assert_eq!(dis1(w), "str x1, [sp, #4096]");
+        assert_eq!(dis1(w), "str x1, [sp, #0x1000]");
     }
 
     #[test]
@@ -2263,21 +2292,21 @@ mod tests {
     fn test_stp_pre_index() {
         // stp x2, x3, [sp, #-16]! -> 0xA9BF0FE2
         let w = 0xA9BF_0FE2;
-        assert_eq!(dis1(w), "stp x2, x3, [sp, #-16]!");
+        assert_eq!(dis1(w), "stp x2, x3, [sp, #-0x10]!");
     }
 
     #[test]
     fn test_ldp_post_index() {
         // ldp x0, x1, [sp], #16 -> 0xA8C107E0
         let w = 0xA8C1_07E0;
-        assert_eq!(dis1(w), "ldp x0, x1, [sp], #16 !");
+        assert_eq!(dis1(w), "ldp x0, x1, [sp], #0x10");
     }
 
     #[test]
     fn test_stp_offset() {
         // stp x2, x3, [sp, #16] -> 0xA9010FE2
         let w = 0xA901_0FE2;
-        assert_eq!(dis1(w), "stp x2, x3, [sp, #16]");
+        assert_eq!(dis1(w), "stp x2, x3, [sp, #0x10]");
     }
 
     #[test]
@@ -2285,7 +2314,7 @@ mod tests {
         // ldp x0, x1, [sp, #16] -> 0xA9C107E0 -> actual: 0xA9410FE0
         // ldp x0, x1, [sp, #16] = A9 41 07 E0 (offset)
         let w = 0xA941_07E0;
-        assert_eq!(dis1(w), "ldp x0, x1, [sp, #16]");
+        assert_eq!(dis1(w), "ldp x0, x1, [sp, #0x10]");
     }
 
     // -----------------------------------------------------------------------
@@ -2296,49 +2325,49 @@ mod tests {
     fn test_b_forward() {
         // b +8 -> 0x14000002
         let w = 0x1400_0002;
-        assert_eq!(dis1(w), "b +8");
+        assert_eq!(dis1(w), "b #0x8");
     }
 
     #[test]
     fn test_b_backward() {
         // b -8 -> 0x17FFFFFE
         let w = 0x17FF_FFFE;
-        assert_eq!(dis1(w), "b -8");
+        assert_eq!(dis1(w), "b #0xfffffffffffffff8");
     }
 
     #[test]
     fn test_bl() {
         // bl +8 -> 0x94000002
         let w = 0x9400_0002;
-        assert_eq!(dis1(w), "bl +8");
+        assert_eq!(dis1(w), "bl #0x8");
     }
 
     #[test]
     fn test_beq() {
         // b.eq +8 -> 0x54000040
         let w = 0x5400_0040;
-        assert_eq!(dis1(w), "beq +8");
+        assert_eq!(dis1(w), "b.eq #0x8");
     }
 
     #[test]
     fn test_bne() {
         // b.ne +12 -> 0x54000061
         let w = 0x5400_0061;
-        assert_eq!(dis1(w), "bne +12");
+        assert_eq!(dis1(w), "b.ne #0xc");
     }
 
     #[test]
     fn test_blt() {
         // b.lt +8 -> 0x5400004B
         let w = 0x5400_004B;
-        assert_eq!(dis1(w), "blt +8");
+        assert_eq!(dis1(w), "b.lt #0x8");
     }
 
     #[test]
     fn test_bgt() {
         // b.gt +8 -> 0x5400004C
         let w = 0x5400_004C;
-        assert_eq!(dis1(w), "bgt +8");
+        assert_eq!(dis1(w), "b.gt #0x8");
     }
 
     // -----------------------------------------------------------------------
@@ -2349,14 +2378,14 @@ mod tests {
     fn test_cbz() {
         // cbz x1, +8 -> 0xB4000041
         let w = 0xB400_0041;
-        assert_eq!(dis1(w), "cbz x1, +8");
+        assert_eq!(dis1(w), "cbz x1, #0x8");
     }
 
     #[test]
     fn test_cbnz() {
         // cbnz x1, +8 -> 0xB5000041
         let w = 0xB500_0041;
-        assert_eq!(dis1(w), "cbnz x1, +8");
+        assert_eq!(dis1(w), "cbnz x1, #0x8");
     }
 
     // -----------------------------------------------------------------------
@@ -2573,7 +2602,7 @@ mod tests {
     fn test_brk() {
         // brk #0x0 -> 0xD4200000
         let w = 0xD420_0000;
-        assert_eq!(dis1(w), "brk #0x0");
+        assert_eq!(dis1(w), "brk #0");
     }
 
     // -----------------------------------------------------------------------
@@ -2682,7 +2711,7 @@ mod tests {
     fn test_tbz() {
         // tbzw r1, #5, +8 -> 0x36280041
         let w = 0x3628_0041;
-        assert_eq!(dis1(w), "tbzw x1, #5, +8");
+        assert_eq!(dis1(w), "tbzw x1, #5, #0x8");
     }
 
     #[test]
@@ -2690,7 +2719,7 @@ mod tests {
         // tbnz x1, #35, +8 -> bit31=1(for bit>=32), b40..19=35-32=3, imm14=2(+8)
         // tbnz r1, #35, +8 -> 0xB7180041
         let w = 0xB718_0041;
-        assert_eq!(dis1(w), "tbnz x1, #35, +8");
+        assert_eq!(dis1(w), "tbnz x1, #35, #0x8");
     }
 
     // -----------------------------------------------------------------------
@@ -2823,14 +2852,14 @@ mod tests {
     fn test_lsl_imm_60() {
         // lsl x0, x0, #60 -> ubfm x0, x0, #4, #3 -> 0xD3440C00
         let w = 0xD344_0C00;
-        assert_eq!(dis1(w), "lsl x0, x0, #60");
+        assert_eq!(dis1(w), "lsl x0, x0, #0x3c");
     }
 
     #[test]
     fn test_lsl_imm_63() {
         // lsl x0, x0, #63 -> ubfm x0, x0, #1, #0 -> 0xD3410000
         let w = 0xD341_0000;
-        assert_eq!(dis1(w), "lsl x0, x0, #63");
+        assert_eq!(dis1(w), "lsl x0, x0, #0x3f");
     }
 
     #[test]
@@ -2851,7 +2880,7 @@ mod tests {
     fn test_lsr_imm_63() {
         // lsr x0, x0, #63 -> ubfm x0, x0, #63, #63 -> 0xD37FFC00
         let w = 0xD37F_FC00;
-        assert_eq!(dis1(w), "lsr x0, x0, #63");
+        assert_eq!(dis1(w), "lsr x0, x0, #0x3f");
     }
 
     #[test]
@@ -2872,7 +2901,7 @@ mod tests {
     fn test_asr_imm_63() {
         // asr x0, x0, #63 -> sbfm x0, x0, #63, #63 -> 0x937FFC00
         let w = 0x937F_FC00;
-        assert_eq!(dis1(w), "asr x0, x0, #63");
+        assert_eq!(dis1(w), "asr x0, x0, #0x3f");
     }
 
     // W-form shifts
@@ -2887,7 +2916,7 @@ mod tests {
     fn test_lslw_imm_31() {
         // lslw r0, r0, #31 -> ubfm w0, w0, #1, #0 -> 0x53010000
         let w = 0x5301_0000;
-        assert_eq!(dis1(w), "lslw x0, x0, #31");
+        assert_eq!(dis1(w), "lslw x0, x0, #0x1f");
     }
 
     #[test]
@@ -2901,7 +2930,7 @@ mod tests {
     fn test_lsrw_imm_31() {
         // lsrw r0, r0, #31 -> ubfm w0, w0, #31, #31 -> 0x531F7C00
         let w = 0x531F_7C00;
-        assert_eq!(dis1(w), "lsrw x0, x0, #31");
+        assert_eq!(dis1(w), "lsrw x0, x0, #0x1f");
     }
 
     #[test]
@@ -2915,7 +2944,7 @@ mod tests {
     fn test_asrw_imm_31() {
         // asrw r0, r0, #31 -> sbfm w0, w0, #31, #31 -> 0x131F7C00
         let w = 0x131F_7C00;
-        assert_eq!(dis1(w), "asrw x0, x0, #31");
+        assert_eq!(dis1(w), "asrw x0, x0, #0x1f");
     }
 
     // -----------------------------------------------------------------------
@@ -2926,42 +2955,42 @@ mod tests {
     fn test_ubfm() {
         // ubfm x0, x1, #4, #11 -> 0xD3442C20
         let w = 0xD344_2C20;
-        assert_eq!(dis1(w), "ubfm x0, x1, #4, #11");
+        assert_eq!(dis1(w), "ubfm x0, x1, #4, #0xb");
     }
 
     #[test]
     fn test_sbfm() {
         // sbfm x0, x1, #4, #11 -> 0x93442C20
         let w = 0x9344_2C20;
-        assert_eq!(dis1(w), "sbfm x0, x1, #4, #11");
+        assert_eq!(dis1(w), "sbfm x0, x1, #4, #0xb");
     }
 
     #[test]
     fn test_bfm() {
         // bfm x0, x1, #52, #4 -> 0xB3741020
         let w = 0xB374_1020;
-        assert_eq!(dis1(w), "bfm x0, x1, #52, #4");
+        assert_eq!(dis1(w), "bfm x0, x1, #0x34, #4");
     }
 
     #[test]
     fn test_bfm_bfxil() {
         // bfm x0, x1, #4, #11 -> 0xB3442C20
         let w = 0xB344_2C20;
-        assert_eq!(dis1(w), "bfm x0, x1, #4, #11");
+        assert_eq!(dis1(w), "bfm x0, x1, #4, #0xb");
     }
 
     #[test]
     fn test_ubfm_uxtw() {
         // ubfm x0, x1, #0, #31 -> 0xD3407C20
         let w = 0xD340_7C20;
-        assert_eq!(dis1(w), "ubfm x0, x1, #0, #31");
+        assert_eq!(dis1(w), "ubfm x0, x1, #0, #0x1f");
     }
 
     #[test]
     fn test_sbfm_alias() {
         // sbfm x0, x1, #60, #11 -> 0x937C2C20
         let w = 0x937C_2C20;
-        assert_eq!(dis1(w), "sbfm x0, x1, #60, #11");
+        assert_eq!(dis1(w), "sbfm x0, x1, #0x3c, #0xb");
     }
 
     // -----------------------------------------------------------------------
@@ -3192,21 +3221,21 @@ mod tests {
     fn test_svc() {
         // svc #0x0 -> 0xD4000001
         let w = 0xD400_0001;
-        assert_eq!(dis1(w), "svc #0x0");
+        assert_eq!(dis1(w), "svc #0");
     }
 
     #[test]
     fn test_hlt() {
         // hlt #0x0 -> 0xD4400000
         let w = 0xD440_0000;
-        assert_eq!(dis1(w), "hlt #0x0");
+        assert_eq!(dis1(w), "hlt #0");
     }
 
     #[test]
     fn test_brk_nonzero() {
         // brk #0x1 -> 0xD4200020
         let w = 0xD420_0020;
-        assert_eq!(dis1(w), "brk #0x1");
+        assert_eq!(dis1(w), "brk #1");
     }
 
     // -----------------------------------------------------------------------
@@ -3217,70 +3246,70 @@ mod tests {
     fn test_bvs() {
         // b.vs +8 -> 0x54000046
         let w = 0x5400_0046;
-        assert_eq!(dis1(w), "bvs +8");
+        assert_eq!(dis1(w), "b.vs #0x8");
     }
 
     #[test]
     fn test_bpl() {
         // b.pl +8 -> 0x54000045
         let w = 0x5400_0045;
-        assert_eq!(dis1(w), "bpl +8");
+        assert_eq!(dis1(w), "b.pl #0x8");
     }
 
     #[test]
     fn test_bhi() {
         // b.hi +8 -> 0x54000048
         let w = 0x5400_0048;
-        assert_eq!(dis1(w), "bhi +8");
+        assert_eq!(dis1(w), "b.hi #0x8");
     }
 
     #[test]
     fn test_bls() {
         // b.ls +8 -> 0x54000049
         let w = 0x5400_0049;
-        assert_eq!(dis1(w), "bls +8");
+        assert_eq!(dis1(w), "b.ls #0x8");
     }
 
     #[test]
     fn test_bge() {
         // b.ge +8 -> 0x5400004A
         let w = 0x5400_004A;
-        assert_eq!(dis1(w), "bge +8");
+        assert_eq!(dis1(w), "b.ge #0x8");
     }
 
     #[test]
     fn test_ble() {
         // b.le +8 -> 0x5400004D
         let w = 0x5400_004D;
-        assert_eq!(dis1(w), "ble +8");
+        assert_eq!(dis1(w), "b.le #0x8");
     }
 
     #[test]
     fn test_bcs() {
         // b.cs +8 -> 0x54000042
         let w = 0x5400_0042;
-        assert_eq!(dis1(w), "bcs +8");
+        assert_eq!(dis1(w), "b.cs #0x8");
     }
 
     #[test]
     fn test_bcc() {
         // b.cc +8 -> 0x54000043
         let w = 0x5400_0043;
-        assert_eq!(dis1(w), "bcc +8");
+        assert_eq!(dis1(w), "b.cc #0x8");
     }
 
     #[test]
     fn test_bmi() {
         // b.mi +8 -> 0x54000044
         let w = 0x5400_0044;
-        assert_eq!(dis1(w), "bmi +8");
+        assert_eq!(dis1(w), "b.mi #0x8");
     }
 
     #[test]
     fn test_b_backward_12() {
         // b -12 -> 0x17FFFFFD
         let w = 0x17FF_FFFD;
-        assert_eq!(dis1(w), "b -12");
+        assert_eq!(dis1(w), "b #0xfffffffffffffff4");
     }
 
     #[test]
@@ -3288,7 +3317,7 @@ mod tests {
         // b.ne -12 -> offset = -12/4 = -3, simm19 = -3, cond = 1 (ne)
         // 0101 0100 1111 1111 1111 1111 1010 0001 -> 0x54FFFFA1
         let w = 0x54FF_FFA1;
-        assert_eq!(dis1(w), "bne -12");
+        assert_eq!(dis1(w), "b.ne #0xfffffffffffffff4");
     }
 
     // -----------------------------------------------------------------------
@@ -3299,14 +3328,14 @@ mod tests {
     fn test_cbz_w() {
         // cbzw r0, +8 -> 0x34000040
         let w = 0x3400_0040;
-        assert_eq!(dis1(w), "cbzw x0, +8");
+        assert_eq!(dis1(w), "cbzw x0, #0x8");
     }
 
     #[test]
     fn test_cbnz_w() {
         // cbnzw r0, +8 -> 0x35000040
         let w = 0x3500_0040;
-        assert_eq!(dis1(w), "cbnzw x0, +8");
+        assert_eq!(dis1(w), "cbnzw x0, #0x8");
     }
 
     // -----------------------------------------------------------------------
@@ -3317,21 +3346,21 @@ mod tests {
     fn test_tbzw_bit0() {
         // tbzw r0, #0, +8 -> 0x36000040
         let w = 0x3600_0040;
-        assert_eq!(dis1(w), "tbzw x0, #0, +8");
+        assert_eq!(dis1(w), "tbzw x0, #0, #0x8");
     }
 
     #[test]
     fn test_tbnzw_bit5() {
         // tbnzw r1, #5, +8 -> 0x37280041
         let w = 0x3728_0041;
-        assert_eq!(dis1(w), "tbnzw x1, #5, +8");
+        assert_eq!(dis1(w), "tbnzw x1, #5, #0x8");
     }
 
     #[test]
     fn test_tbz_bit35() {
         // tbz r1, #35, +8 -> bit31=1 (bit>=32), b40..19=35-32=3, 0xB6180041
         let w = 0xB618_0041;
-        assert_eq!(dis1(w), "tbz x1, #35, +8");
+        assert_eq!(dis1(w), "tbz x1, #35, #0x8");
     }
 
     // -----------------------------------------------------------------------
@@ -3482,28 +3511,28 @@ mod tests {
         // and x0, x1, #0xff -> N=1, immr=0, imms=7 (8 consecutive ones)
         // 1 00 100100 1 000000 000111 00001 00000 -> 0x92401C20
         let w = 0x9240_1C20;
-        assert_eq!(dis1(w), "and x0, x1, 0xff");
+        assert_eq!(dis1(w), "and x0, x1, #0xff");
     }
 
     #[test]
     fn test_orr_imm_1() {
         // orr x0, x1, #0x1 -> N=1, immr=0, imms=0 -> 0xB2400020
         let w = 0xB240_0020;
-        assert_eq!(dis1(w), "orr x0, x1, 0x1");
+        assert_eq!(dis1(w), "orr x0, x1, #1");
     }
 
     #[test]
     fn test_eor_imm_1() {
         // eor x0, x1, #0x1 -> N=1, immr=0, imms=0 -> 0xD2400020
         let w = 0xD240_0020;
-        assert_eq!(dis1(w), "eor x0, x1, 0x1");
+        assert_eq!(dis1(w), "eor x0, x1, #1");
     }
 
     #[test]
     fn test_ands_imm() {
         // ands x3, x1, #0x1 -> 0xF2400023
         let w = 0xF240_0023;
-        assert_eq!(dis1(w), "ands x3, x1, 0x1");
+        assert_eq!(dis1(w), "ands x3, x1, #1");
     }
 
     #[test]
@@ -3511,7 +3540,7 @@ mod tests {
         // and csp, tmp2, 0xfffffffffffffff0
         // N=1, immr=60, imms=59 -> mask 0xfffffffffffffff0, Rn=R17(tmp2), Rd=R31(csp)
         let w = 0x927C_EE3F;
-        assert_eq!(dis1(w), "and sp, x17, 0xfffffffffffffff0");
+        assert_eq!(dis1(w), "and sp, x17, #0xfffffffffffffff0");
     }
 
     // -----------------------------------------------------------------------
@@ -3568,7 +3597,7 @@ mod tests {
     fn test_ldrsw_post_index() {
         // ldrsw x1, [csp], #4 -> 0xB88047E1
         let w = 0xB880_47E1;
-        assert_eq!(dis1(w), "ldrsw x1, [sp], #4 !");
+        assert_eq!(dis1(w), "ldrsw x1, [sp], #4");
     }
 
     // -----------------------------------------------------------------------
@@ -3601,28 +3630,28 @@ mod tests {
     fn test_fstpd_pre_index() {
         // fstpd v1, v2, [csp, #-16]! -> 0x6DBF0BE1
         let w = 0x6DBF_0BE1;
-        assert_eq!(dis1(w), "fstpd v1, v2, [sp, #-16]!");
+        assert_eq!(dis1(w), "fstpd v1, v2, [sp, #-0x10]!");
     }
 
     #[test]
     fn test_fldpd_post_index() {
         // fldpd v1, v2, [csp], #16 -> 0x6CC10BE1
         let w = 0x6CC1_0BE1;
-        assert_eq!(dis1(w), "fldpd v1, v2, [sp], #16 !");
+        assert_eq!(dis1(w), "fldpd v1, v2, [sp], #0x10");
     }
 
     #[test]
     fn test_fstpq_pre_index() {
         // fstpq v1, v2, [csp, #-32]! -> 0xADBF0BE1
         let w = 0xADBF_0BE1;
-        assert_eq!(dis1(w), "fstpq v1, v2, [sp, #-32]!");
+        assert_eq!(dis1(w), "fstpq v1, v2, [sp, #-0x20]!");
     }
 
     #[test]
     fn test_fldpq_post_index() {
         // fldpq v1, v2, [csp], #32 -> 0xACC10BE1
         let w = 0xACC1_0BE1;
-        assert_eq!(dis1(w), "fldpq v1, v2, [sp], #32 !");
+        assert_eq!(dis1(w), "fldpq v1, v2, [sp], #0x20");
     }
 
     // -----------------------------------------------------------------------
@@ -3640,7 +3669,7 @@ mod tests {
     fn test_fldrd_post_index() {
         // fldrd v0, [csp], #8 -> 0xFC4087E0
         let w = 0xFC40_87E0;
-        assert_eq!(dis1(w), "fldrd v0, [sp], #8 !");
+        assert_eq!(dis1(w), "fldrd v0, [sp], #8");
     }
 
     #[test]
@@ -3654,21 +3683,21 @@ mod tests {
     fn test_fldrs_post_index() {
         // fldrs v3, [csp], #8 -> 0xBC4087E3
         let w = 0xBC40_87E3;
-        assert_eq!(dis1(w), "fldrs v3, [sp], #8 !");
+        assert_eq!(dis1(w), "fldrs v3, [sp], #8");
     }
 
     #[test]
     fn test_fstrq_pre_index() {
         // fstrq v3, [csp, #-16]! -> 0x3C9F0FE3
         let w = 0x3C9F_0FE3;
-        assert_eq!(dis1(w), "fstrq v3, [sp, #-16]!");
+        assert_eq!(dis1(w), "fstrq v3, [sp, #-0x10]!");
     }
 
     #[test]
     fn test_fldrq_post_index() {
         // fldrq v3, [csp], #16 -> 0x3CC107E3
         let w = 0x3CC1_07E3;
-        assert_eq!(dis1(w), "fldrq v3, [sp], #16 !");
+        assert_eq!(dis1(w), "fldrq v3, [sp], #0x10");
     }
 
     #[test]
@@ -3676,7 +3705,7 @@ mod tests {
         // fstrd v1, [csp, #4096]
         // FP store unsigned offset: imm12=512, scale=3, offset=512<<3=4096
         let w = 0xFD08_03E1;
-        assert_eq!(dis1(w), "fstrd v1, [sp, #4096]");
+        assert_eq!(dis1(w), "fstrd v1, [sp, #0x1000]");
     }
 
     #[test]
@@ -3906,7 +3935,7 @@ mod tests {
         // 0 imm_lo 10000 immhi_19 rd
         // 0 00 10000 0000000000000011 00001 -> 0x10000061
         let w = 0x1000_0061;
-        assert_eq!(dis1(w), "adr x1, +12");
+        assert_eq!(dis1(w), "adr x1, 0xc");
     }
 
     #[test]
@@ -3914,7 +3943,7 @@ mod tests {
         // adr r1, +16 -> immhi = 4, immlo = 0
         // 0 00 10000 0000000000000100 00001 -> 0x10000081
         let w = 0x1000_0081;
-        assert_eq!(dis1(w), "adr x1, +16");
+        assert_eq!(dis1(w), "adr x1, 0x10");
     }
 
     // -----------------------------------------------------------------------
@@ -4072,7 +4101,7 @@ mod tests {
         // mov x0, #0x1 -> orr x0, xzr, #0x1 with rn=31 (xzr)
         // 1 01 100100 0 000000 000000 11111 00000 -> 0xB24003E0
         let w = 0xB240_03E0;
-        assert_eq!(dis1(w), "mov x0, 0x1");
+        assert_eq!(dis1(w), "mov x0, #1");
     }
 
     // -----------------------------------------------------------------------
@@ -4101,14 +4130,14 @@ mod tests {
     fn test_ldrx_literal() {
         // ldrx r0, +8 -> 0x58000040
         let w = 0x5800_0040;
-        assert_eq!(dis1(w), "ldrx x0, +8");
+        assert_eq!(dis1(w), "ldrx x0, 0x8");
     }
 
     #[test]
     fn test_ldrw_literal() {
         // ldrw r0, +8 -> 0x18000040
         let w = 0x1800_0040;
-        assert_eq!(dis1(w), "ldrw x0, +8");
+        assert_eq!(dis1(w), "ldrw x0, 0x8");
     }
 
     // -----------------------------------------------------------------------
@@ -4155,7 +4184,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movn x2, #0x0\nmovz x1, #0x1\nmovz x0, #0x0\n\
+            "movn x2, #0\nmovz x1, #1\nmovz x0, #0\n\
              adds x16, x2, x1\nadcs x16, x2, x0\nadc x0, x0, x0\nret\n"
         );
     }
@@ -4179,7 +4208,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x1, #0x1\nmovz x0, #0x0\n\
+            "movz x1, #1\nmovz x0, #0\n\
              subs x16, x0, x1\nsbcs x16, x0, x0\nsbc x0, x0, x0\nret\n"
         );
     }
@@ -4292,7 +4321,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x0, #0x1b\nmovz x1, #0x9\nudiv x2, x0, x1\nmov x0, x2\nret\n"
+            "movz x0, #0x1b\nmovz x1, #9\nudiv x2, x0, x1\nmov x0, x2\nret\n"
         );
     }
 
@@ -4314,7 +4343,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x0, #0x1b\nmovz x1, #0x9\nneg x1, x1\nsdiv x2, x0, x1\nmov x0, x2\nret\n"
+            "movz x0, #0x1b\nmovz x1, #9\nneg x1, x1\nsdiv x2, x0, x1\nmov x0, x2\nret\n"
         );
     }
 
@@ -4335,7 +4364,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x1, #0x1\nmovz x2, #0x3f\nlsl x1, x1, x2\nlsr x0, x1, x2\nret\n"
+            "movz x1, #1\nmovz x2, #0x3f\nlsl x1, x1, x2\nlsr x0, x1, x2\nret\n"
         );
     }
 
@@ -4355,7 +4384,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x1, #0x1\nmovz x2, #0x3f\nlsl x1, x1, x2\nasr x0, x1, x2\nret\n"
+            "movz x1, #1\nmovz x2, #0x3f\nlsl x1, x1, x2\nasr x0, x1, x2\nret\n"
         );
     }
 
@@ -4373,7 +4402,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x1, #0x6\nmovz x2, #0x7\nmul x0, x1, x2\nret\n"
+            "movz x1, #6\nmovz x2, #7\nmul x0, x1, x2\nret\n"
         );
     }
 
@@ -4391,7 +4420,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x1, #0x6\nmovz x2, #0x7\nsmulh x0, x1, x2\nret\n"
+            "movz x1, #6\nmovz x2, #7\nsmulh x0, x1, x2\nret\n"
         );
     }
 
@@ -4409,7 +4438,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x1, #0xffff lsl 48\nmovz x2, #0x7 lsl 48\numulh x0, x1, x2\nret\n"
+            "movz x1, #0xffff, lsl #48\nmovz x2, #7, lsl #48\numulh x0, x1, x2\nret\n"
         );
     }
 
@@ -4429,7 +4458,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movn x1, #0x0\nmovz x2, #0x7\nmovz x3, #0x8\numaddl x0, x1, x2, x3\nret\n"
+            "movn x1, #0\nmovz x2, #7\nmovz x3, #8\numaddl x0, x1, x2, x3\nret\n"
         );
     }
 
@@ -4449,7 +4478,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movn x1, #0x1\nmovz x2, #0x7\nmovz x3, #0x14\nsmaddl x0, x1, x2, x3\nret\n"
+            "movn x1, #1\nmovz x2, #7\nmovz x3, #0x14\nsmaddl x0, x1, x2, x3\nret\n"
         );
     }
 
@@ -4465,7 +4494,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x0, #0x1 lsl 48\nmovk x0, #0x2a\nret\n"
+            "movz x0, #1, lsl #48\nmovk x0, #0x2a\nret\n"
         );
     }
 
@@ -4479,7 +4508,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movn x0, #0x2a lsl 16\nret\n"
+            "movn x0, #0x2a, lsl #16\nret\n"
         );
     }
 
@@ -4552,7 +4581,7 @@ mod tests {
         ];
         assert_eq!(
             dis(&words),
-            "movz x1, #0x2a\nmovz x2, #0x5\nbic x0, x1, x2\nret\n"
+            "movz x1, #0x2a\nmovz x2, #5\nbic x0, x1, x2\nret\n"
         );
     }
 }

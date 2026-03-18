@@ -60,7 +60,7 @@ pub fn disasm_addr_range(cb: &CodeBlock, start_addr: usize, end_addr: usize) -> 
                     code_slice[offset + 2],
                     code_slice[offset + 3],
                 ]);
-                (crate::disasm_aarch64::disassemble_instruction(word), 4)
+                (crate::disasm_aarch64::disassemble_instruction_at(word, addr), 4)
             }
         };
 
