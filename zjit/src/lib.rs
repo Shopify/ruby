@@ -23,6 +23,10 @@ mod virtualmem;
 mod asm;
 mod backend;
 #[cfg(feature = "disasm")]
+mod disasm_x86_64;
+#[cfg(feature = "disasm")]
+mod disasm_aarch64;
+#[cfg(feature = "disasm")]
 mod disasm;
 mod options;
 mod profile;
