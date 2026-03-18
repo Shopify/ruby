@@ -5136,8 +5136,8 @@ is_last_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 static int
 gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 {
-    int swept_slots = 0;
-    int pooled_slots = 0;
+    size_t swept_slots = 0;
+    size_t pooled_slots = 0;
     if (heap->pre_swept_slots_nodeferred >= GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT) {
         swept_slots = heap->pre_swept_slots_nodeferred - GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT;
     }
