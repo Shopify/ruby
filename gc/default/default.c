@@ -402,7 +402,7 @@ typedef struct gc_profile_record {
     size_t heap_live_objects;
     size_t heap_free_objects;
 
-    size_t allocate_increase;
+    ssize_t allocate_increase;
     size_t allocate_limit;
 
     double prepare_time;
@@ -528,9 +528,9 @@ enum gc_mode {
 
 typedef struct rb_objspace {
     struct {
-        size_t increase;
+        ssize_t increase;
 #if RGENGC_ESTIMATE_OLDMALLOC
-        size_t oldmalloc_increase;
+        ssize_t oldmalloc_increase;
 #endif
     } malloc_counters;
 
@@ -4432,6 +4432,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               case T_BIGNUM:
               case T_OBJECT:
               case T_STRING:
+              case T_SYMBOL:
               case T_ARRAY:
               case T_HASH:
               case T_STRUCT:
@@ -4447,7 +4448,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 }
                 break;
               }
-              default: // ex: T_CLASS/T_MODULE/T_ICLASS/T_SYMBOL
+              default: // ex: T_CLASS/T_MODULE/T_ICLASS
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
                     heap_page_add_deferred_freeobj(objspace, page, vp);
                     psweep_debug(2, "[sweep] freed: page(%p), obj(%p)\n", (void*)page, (void*)vp);
@@ -4698,6 +4699,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         // notify of newly swept page in case Ruby thread is waiting on us
         rb_native_cond_broadcast(&heap->sweep_page_cond);
     }
+    // sweep lock still acquired
 }
 
 static void *
@@ -6310,9 +6312,9 @@ gc_check_after_marks_i(st_data_t k, st_data_t v, st_data_t ptr)
 static void
 gc_marks_check(rb_objspace_t *objspace, st_foreach_callback_func *checker_func, const char *checker_name)
 {
-    size_t saved_malloc_increase = objspace->malloc_params.increase;
+    ssize_t saved_malloc_increase = objspace->malloc_params.increase;
 #if RGENGC_ESTIMATE_OLDMALLOC
-    size_t saved_oldmalloc_increase = objspace->malloc_counters.oldmalloc_increase;
+    ssize_t saved_oldmalloc_increase = objspace->malloc_counters.oldmalloc_increase;
 #endif
     VALUE already_disabled = rb_objspace_gc_disable(objspace);
 
@@ -7729,10 +7731,10 @@ gc_reset_malloc_info(rb_objspace_t *objspace, bool full_mark)
 {
     gc_prof_set_malloc_info(objspace);
     {
-        size_t inc = RUBY_ATOMIC_SIZE_EXCHANGE(malloc_increase, 0);
+        ssize_t inc = (ssize_t)rbimpl_atomic_size_exchange((volatile size_t *)&malloc_increase, 0, RBIMPL_ATOMIC_SEQ_CST);
         size_t old_limit = malloc_limit;
 
-        if (inc > malloc_limit) {
+        if (inc > 0 && (size_t)inc > malloc_limit) {
             malloc_limit = (size_t)(inc * gc_params.malloc_limit_growth_factor);
             if (malloc_limit > gc_params.malloc_limit_max) {
                 malloc_limit = gc_params.malloc_limit_max;
@@ -7760,7 +7762,7 @@ gc_reset_malloc_info(rb_objspace_t *objspace, bool full_mark)
     /* reset oldmalloc info */
 #if RGENGC_ESTIMATE_OLDMALLOC
     if (!full_mark) {
-        if (objspace->malloc_counters.oldmalloc_increase > objspace->rgengc.oldmalloc_increase_limit) {
+        if (objspace->malloc_counters.oldmalloc_increase > 0 && (size_t)objspace->malloc_counters.oldmalloc_increase > objspace->rgengc.oldmalloc_increase_limit) {
             gc_needs_major_flags |= GPR_FLAG_MAJOR_BY_OLDMALLOC;
             objspace->rgengc.oldmalloc_increase_limit =
               (size_t)(objspace->rgengc.oldmalloc_increase_limit * gc_params.oldmalloc_limit_growth_factor);
@@ -7770,10 +7772,10 @@ gc_reset_malloc_info(rb_objspace_t *objspace, bool full_mark)
             }
         }
 
-        if (0) fprintf(stderr, "%"PRIdSIZE"\t%d\t%"PRIuSIZE"\t%"PRIuSIZE"\t%"PRIdSIZE"\n",
+        if (0) fprintf(stderr, "%"PRIdSIZE"\t%d\t%"PRIdSIZE"\t%"PRIuSIZE"\t%"PRIdSIZE"\n",
                        rb_gc_count(),
                        gc_needs_major_flags,
-                       objspace->malloc_counters.oldmalloc_increase,
+                       (ssize_t)objspace->malloc_counters.oldmalloc_increase,
                        objspace->rgengc.oldmalloc_increase_limit,
                        gc_params.oldmalloc_limit_max);
     }
@@ -9056,7 +9058,7 @@ ns_to_ms(uint64_t ns)
     return ns / (1000 * 1000);
 }
 
-static size_t malloc_increase_local_flush(rb_objspace_t *objspace);
+static ssize_t malloc_increase_local_flush(rb_objspace_t *objspace);
 
 VALUE
 rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
@@ -9104,7 +9106,7 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(total_freed_pages, objspace->heap_pages.freed_pages);
     SET(total_allocated_objects, total_allocated_objects(objspace));
     SET(total_freed_objects, total_freed_objects(objspace));
-    SET(malloc_increase_bytes, malloc_increase);
+    SET(malloc_increase_bytes, (size_t)(malloc_increase > 0 ? malloc_increase : 0));
     SET(malloc_increase_bytes_limit, malloc_limit);
     SET(minor_gc_count, objspace->profile.minor_gc_count);
     SET(major_gc_count, objspace->profile.major_gc_count);
@@ -9116,7 +9118,7 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(old_objects, objspace->rgengc.old_objects);
     SET(old_objects_limit, objspace->rgengc.old_objects_limit);
 #if RGENGC_ESTIMATE_OLDMALLOC
-    SET(oldmalloc_increase_bytes, objspace->malloc_counters.oldmalloc_increase);
+    SET(oldmalloc_increase_bytes, (size_t)(objspace->malloc_counters.oldmalloc_increase > 0 ? objspace->malloc_counters.oldmalloc_increase : 0));
     SET(oldmalloc_increase_bytes_limit, objspace->rgengc.oldmalloc_increase_limit);
 #endif
 
@@ -9555,28 +9557,29 @@ objspace_malloc_gc_stress(rb_objspace_t *objspace)
     }
 }
 
-static size_t
+static ssize_t
 malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size)
 {
     if (new_size > old_size) {
         size_t delta = new_size - old_size;
-        size_t old_val = rbimpl_atomic_size_fetch_add(&malloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
+        ssize_t old_val = (ssize_t)rbimpl_atomic_size_fetch_add((volatile size_t *)&malloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
 #if RGENGC_ESTIMATE_OLDMALLOC
-        rbimpl_atomic_size_add(&objspace->malloc_counters.oldmalloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
+        rbimpl_atomic_size_add((volatile size_t *)&objspace->malloc_counters.oldmalloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
 #endif
-        return old_val + delta;
+        return old_val + (ssize_t)delta;
     }
     else {
-        atomic_sub_nounderflow(&malloc_increase, old_size - new_size);
+        size_t delta = old_size - new_size;
+        rbimpl_atomic_size_sub((volatile size_t *)&malloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
 #if RGENGC_ESTIMATE_OLDMALLOC
-        atomic_sub_nounderflow(&objspace->malloc_counters.oldmalloc_increase, old_size - new_size);
+        rbimpl_atomic_size_sub((volatile size_t *)&objspace->malloc_counters.oldmalloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
 #endif
-        return 0;
+        return (ssize_t)rbimpl_atomic_size_load((volatile size_t *)&malloc_increase, RBIMPL_ATOMIC_RELAXED);
     }
 }
 
 #if USE_MALLOC_INCREASE_LOCAL
-static size_t
+static ssize_t
 malloc_increase_local_flush(rb_objspace_t *objspace)
 {
     int delta = malloc_increase_local;
@@ -9591,7 +9594,7 @@ malloc_increase_local_flush(rb_objspace_t *objspace)
     }
 }
 #else
-static size_t
+static ssize_t
 malloc_increase_local_flush(rb_objspace_t *objspace)
 {
     return 0;
@@ -9613,7 +9616,7 @@ objspace_malloc_increase_report(rb_objspace_t *objspace, void *mem, size_t new_s
 static bool
 objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_size, size_t old_size, enum memop_type type, bool gc_allowed)
 {
-    size_t current_malloc_increase = 0;
+    ssize_t current_malloc_increase = 0;
 
 #if USE_MALLOC_INCREASE_LOCAL
     if (new_size < GC_MALLOC_INCREASE_LOCAL_THRESHOLD &&
@@ -9635,10 +9638,10 @@ objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_siz
 
     if (type == MEMOP_TYPE_MALLOC && gc_allowed) {
       retry:
-        if (current_malloc_increase > malloc_limit && ruby_native_thread_p() && !dont_gc_val()) {
+        if (current_malloc_increase > 0 && (size_t)current_malloc_increase > malloc_limit && ruby_native_thread_p() && !dont_gc_val()) {
             if (ruby_thread_has_gvl_p() && is_lazy_sweeping(objspace)) {
                 gc_rest(objspace); /* gc_rest can reduce malloc_increase */
-                current_malloc_increase = rbimpl_atomic_size_load(&malloc_increase, RBIMPL_ATOMIC_RELAXED);
+                current_malloc_increase = (ssize_t)rbimpl_atomic_size_load((volatile size_t *)&malloc_increase, RBIMPL_ATOMIC_RELAXED);
                 goto retry;
             }
             garbage_collect_with_gvl(objspace, GPR_FLAG_MALLOC);
@@ -10313,7 +10316,7 @@ gc_profile_record_get(VALUE _)
 #if GC_PROFILE_MORE_DETAIL
         rb_hash_aset(prof, ID2SYM(rb_intern("GC_MARK_TIME")), DBL2NUM(record->gc_mark_time));
         rb_hash_aset(prof, ID2SYM(rb_intern("GC_SWEEP_TIME")), DBL2NUM(record->gc_sweep_time));
-        rb_hash_aset(prof, ID2SYM(rb_intern("ALLOCATE_INCREASE")), SIZET2NUM(record->allocate_increase));
+        rb_hash_aset(prof, ID2SYM(rb_intern("ALLOCATE_INCREASE")), SSIZET2NUM(record->allocate_increase));
         rb_hash_aset(prof, ID2SYM(rb_intern("ALLOCATE_LIMIT")), SIZET2NUM(record->allocate_limit));
         rb_hash_aset(prof, ID2SYM(rb_intern("HEAP_USE_PAGES")), SIZET2NUM(record->heap_use_pages));
         rb_hash_aset(prof, ID2SYM(rb_intern("HEAP_LIVE_OBJECTS")), SIZET2NUM(record->heap_live_objects));
@@ -10413,7 +10416,7 @@ gc_profile_dump_on(VALUE out, VALUE (*append)(VALUE, VALUE))
 
         for (i = 0; i < count; i++) {
             record = &objspace->profile.records[i];
-            append(out, rb_sprintf("%5"PRIuSIZE" %4s/%c/%6s%c %13"PRIuSIZE" %15"PRIuSIZE
+            append(out, rb_sprintf("%5"PRIuSIZE" %4s/%c/%6s%c %13"PRIdSIZE" %15"PRIuSIZE
 #if CALC_EXACT_MALLOC_SIZE
                                    " %15"PRIuSIZE
 #endif
