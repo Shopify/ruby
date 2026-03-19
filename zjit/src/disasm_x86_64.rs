@@ -456,13 +456,22 @@ impl<'a> DisassemblerX64<'a> {
 
     // -- Read helpers --
     fn peek(&self) -> u8 {
-        self.code[self.pos]
+        if self.pos < self.code.len() {
+            self.code[self.pos]
+        } else {
+            0
+        }
     }
 
     fn read_u8(&mut self) -> u8 {
-        let v = self.code[self.pos];
-        self.pos += 1;
-        v
+        if self.pos < self.code.len() {
+            let v = self.code[self.pos];
+            self.pos += 1;
+            v
+        } else {
+            self.pos += 1;
+            0
+        }
     }
 
     fn read_i8(&mut self) -> i8 {
@@ -470,9 +479,8 @@ impl<'a> DisassemblerX64<'a> {
     }
 
     fn read_u16_le(&mut self) -> u16 {
-        let lo = self.code[self.pos] as u16;
-        let hi = self.code[self.pos + 1] as u16;
-        self.pos += 2;
+        let lo = self.read_u8() as u16;
+        let hi = self.read_u8() as u16;
         lo | (hi << 8)
     }
 
@@ -481,9 +489,11 @@ impl<'a> DisassemblerX64<'a> {
     }
 
     fn read_u32_le(&mut self) -> u32 {
-        let b = &self.code[self.pos..self.pos + 4];
-        self.pos += 4;
-        u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        let b0 = self.read_u8() as u32;
+        let b1 = self.read_u8() as u32;
+        let b2 = self.read_u8() as u32;
+        let b3 = self.read_u8() as u32;
+        b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
 
     fn read_i32_le(&mut self) -> i32 {
@@ -491,9 +501,9 @@ impl<'a> DisassemblerX64<'a> {
     }
 
     fn read_i64_le(&mut self) -> i64 {
-        let b = &self.code[self.pos..self.pos + 8];
-        self.pos += 8;
-        i64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+        let lo = self.read_u32_le() as u64;
+        let hi = self.read_u32_le() as u64;
+        (lo | (hi << 32)) as i64
     }
 
     fn peek_i8_at(&self, offset: usize) -> i8 {
