@@ -1269,7 +1269,22 @@ mod tests {
         asm.cret(val64);
 
         asm.frame_teardown(JIT_PRESERVED_REGS);
-        assert_disasm_snapshot!(lir_string(&mut asm), @"");
+        assert_disasm_snapshot!(lir_string(&mut asm), @"
+        test():
+        bb0():
+          # bb0(): foo@/tmp/a.rb:1
+          FrameSetup 1, r13, rbx, r12
+          v0 = Add r13, 0x40
+          Store [rbx + 0x10], v0
+          Joz Exit(Interrupt), v0
+          Mov rdi, eax
+          Mov rsi, [rbx - 8]
+          v1 = Sub Value(0x14), Imm(1)
+          Store Mem32[r12 + 0x10], VReg32(v1)
+          Je bb0
+          CRet v0
+          FrameTeardown r13, rbx, r12
+        ");
     }
 
     #[test]

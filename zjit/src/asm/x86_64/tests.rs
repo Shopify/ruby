@@ -610,8 +610,11 @@ fn test_nop() {
     0x0: nop
     0x0: nop
     0x0: nop
+    0x9: nop
     0x0: nop
+    0x9: nop
     0x0: nop
+    0x9: nop
     ");
 
     assert_snapshot!(hexdumps!(cb01, cb02, cb03, cb04, cb05, cb06, cb07, cb08, cb09, cb10, cb11, cb12), @"
