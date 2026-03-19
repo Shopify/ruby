@@ -563,6 +563,7 @@ fn test_movsx() {
 
     assert_disasm_snapshot!(disasms!(cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8), @"
     0x0: unknown
+    0x3: rolb [rax], 0
     0x0: movsxbl rdx, rax
     0x0: movsxbq rax, rbx
     0x0: movsxwl rcx, rax
@@ -657,20 +658,47 @@ fn test_not() {
     0x0: notw rax
     0x0: notl rax
     0x0: unknown
+    0x2: unknown
+    0x3: unknown
     0x0: unknown
+    0x1: xchgl rax, rsp
+    0x2: unknown
+    0x3: subl rax, 1
     0x0: unknown
+    0x1: unknown
+    0x2: unknown
     0x0: unknown
+    0x1: push rsp
+    0x2: unknown
+    0x3: addl rax, [rax]
     0x0: unknown
+    0x1: push rbp
+    0x2: addb [rax], al
     0x0: unknown
+    0x1: push rbp
+    0x2: orl rax, 0
     0x0: notq rax
     0x0: notq r11
     0x0: unknown
+    0x1: adcb [rax], al
     0x0: unknown
+    0x1: unknown
     0x0: unknown
+    0x1: unknown
     0x0: unknown
+    0x1: push rdx
+    0x2: unknown
     0x0: unknown
+    0x1: xchgl rax, rdx
+    0x2: cmpl [rip+0], rax
     0x0: unknown
+    0x1: push rdx
+    0x2: leave
     0x0: unknown
+    0x1: xchgl rax, rdx
+    0x2: unknown
+    0x3: std
+    0x4: ??? rdi
     ");
 
     assert_snapshot!(hexdumps!(cb01, cb02, cb03, cb04, cb05, cb06, cb07, cb08, cb09, cb10, cb11, cb12, cb13, cb14, cb15, cb16, cb17), @"
