@@ -2641,12 +2641,6 @@ impl Assembler
 
             asm_comment!(asm, "save cfp->jit_return");
             asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN), 0.into());
-
-            asm_comment!(asm, "materialize caller frames");
-            unsafe extern "C" {
-                fn rb_zjit_materialize_frames(cfp: CfpPtr);
-            }
-            asm_ccall!(asm, rb_zjit_materialize_frames, CFP);
         }
 
         /// Tear down the JIT frame and return to the interpreter.

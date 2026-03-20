@@ -2911,10 +2911,8 @@ c_callable! {
             // If we side-exit from function_stub_hit (before JIT code runs), we need to set them here.
             fn prepare_for_exit(iseq: IseqPtr, cfp: CfpPtr, sp: *mut VALUE, compile_error: &CompileError) {
                 unsafe {
-                    unsafe extern "C" {
-                        fn rb_zjit_materialize_frames(cfp: CfpPtr);
-                    }
-                    rb_zjit_materialize_frames(cfp);
+                    // Caller frames are materialized by jit_exec() after the entry trampoline returns.
+                    // The current frame's pc and iseq are already set by function_stub_hit before this point.
 
                     // Set SP which gen_push_frame() doesn't set
                     rb_set_cfp_sp(cfp, sp);

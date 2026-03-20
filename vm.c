@@ -559,6 +559,8 @@ zjit_compile(rb_execution_context_t *ec)
 # define zjit_compile(ec) ((rb_jit_func_t)0)
 #endif
 
+static inline void zjit_materialize_frames(rb_control_frame_t *cfp);
+
 // Execute JIT code compiled by yjit_compile() or zjit_compile()
 static inline VALUE
 jit_exec(rb_execution_context_t *ec)
@@ -578,7 +580,14 @@ jit_exec(rb_execution_context_t *ec)
     if (zjit_entry) {
         rb_jit_func_t func = zjit_compile(ec);
         if (func) {
-            return ((rb_zjit_func_t)zjit_entry)(ec, ec->cfp, func);
+            VALUE result = ((rb_zjit_func_t)zjit_entry)(ec, ec->cfp, func);
+            // Materialize any remaining lightweight ZJIT frames on side exit.
+            // This is done here (once per JIT entry) instead of in each side exit
+            // to reduce generated code size.
+            if (UNDEF_P(result)) {
+                zjit_materialize_frames(ec->cfp);
+            }
+            return result;
         }
     }
 #endif
