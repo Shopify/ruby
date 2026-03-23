@@ -73,7 +73,7 @@ pub struct ZJITState {
     exit_locations: Option<SideExitLocations>,
 
     // TODO: consider using raw pointer of JITFrame?
-    jit_frames: Vec<Box<JITFrame>>,
+    jit_frames: Vec<*const JITFrame>,
 }
 
 impl JITFrame {
@@ -82,8 +82,8 @@ impl JITFrame {
         let instance = ZJITState::get_instance();
         // FIXME(alan): really, everyone should work with &JITFrame in safe code because &mut exclusivity may not hold
         // think about this more
-        let raw_ptr = jit_frame.as_ref() as *const _;
-        instance.jit_frames.push(jit_frame);
+        let raw_ptr = Box::into_raw(jit_frame) as *const _;
+        instance.jit_frames.push(raw_ptr);
         raw_ptr
     }
 }
@@ -203,7 +203,7 @@ impl ZJITState {
         &mut ZJITState::get_instance().invariants
     }
 
-    pub fn get_jit_frames() -> &'static mut Vec<Box<JITFrame>> {
+    pub fn get_jit_frames() -> &'static mut Vec<*const JITFrame> {
         &mut ZJITState::get_instance().jit_frames
     }
 

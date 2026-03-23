@@ -3,7 +3,7 @@
 use std::ptr::null;
 use std::{ffi::c_void, ops::Range};
 use crate::{cruby::*, state::ZJITState, stats::with_time_stat, virtualmem::CodePtr};
-use crate::payload::{IseqPayload, IseqVersionRef, get_or_create_iseq_payload};
+use crate::payload::{IseqPayload, IseqVersionRef, JITFrame, get_or_create_iseq_payload};
 use crate::stats::Counter::gc_time_ns;
 use crate::state::gc_mark_raw_samples;
 
@@ -95,12 +95,12 @@ pub extern "C" fn rb_zjit_root_update_references() {
     // rb_execution_context_update only updates JITFrames currently on the stack,
     // but JITFrames not on the stack also need their iseq pointers updated
     // because the JIT code will reuse them on the next call.
-    for jit_frame in ZJITState::get_jit_frames().iter_mut() {
-        let old_iseq = jit_frame.iseq;
+    for &jit_frame in ZJITState::get_jit_frames().iter() {
+        let old_iseq = unsafe { (*jit_frame).iseq };
         if !old_iseq.is_null() {
             let new_iseq = unsafe { rb_gc_location(VALUE::from(old_iseq)) }.as_iseq();
             if old_iseq != new_iseq {
-                jit_frame.iseq = new_iseq;
+                unsafe { (*(jit_frame as *mut JITFrame)).iseq = new_iseq; }
             }
         }
     }
@@ -229,9 +229,9 @@ pub extern "C" fn rb_zjit_root_mark() {
     if !ZJITState::has_instance() {
         return;
     }
-    for jit_frame in ZJITState::get_jit_frames().iter() {
-        if !jit_frame.iseq.is_null() {
-            unsafe { rb_gc_mark_movable(VALUE::from(jit_frame.iseq)); }
+    for &jit_frame in ZJITState::get_jit_frames().iter() {
+        if !unsafe { (*jit_frame).iseq }.is_null() {
+            unsafe { rb_gc_mark_movable(VALUE::from((*jit_frame).iseq)); }
         }
     }
 }
