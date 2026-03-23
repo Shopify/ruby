@@ -585,6 +585,7 @@ jit_exec(rb_execution_context_t *ec)
             // This is done here (once per JIT entry) instead of in each side exit
             // to reduce generated code size.
             if (UNDEF_P(result)) {
+                ec->cfp->jit_return = 0;
                 zjit_materialize_frames(ec->cfp);
             }
             return result;

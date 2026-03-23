@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use crate::bitset::BitSet;
 use crate::codegen::{local_size_and_idx_to_ep_offset, perf_symbol_range_start, perf_symbol_range_end};
-use crate::cruby::{CfpPtr, IseqPtr, Qundef, RUBY_OFFSET_CFP_ISEQ, RUBY_OFFSET_CFP_JIT_RETURN, RUBY_OFFSET_CFP_PC, RUBY_OFFSET_CFP_SP, SIZEOF_VALUE_I32, vm_stack_canary};
+use crate::cruby::{IseqPtr, Qundef, RUBY_OFFSET_CFP_ISEQ, RUBY_OFFSET_CFP_PC, RUBY_OFFSET_CFP_SP, SIZEOF_VALUE_I32, vm_stack_canary};
 use crate::hir::{Invariant, SideExitReason};
 use crate::hir;
 use crate::options::{TraceExits, PerfMap, get_option};
@@ -2639,8 +2639,8 @@ impl Assembler
             asm_comment!(asm, "save cfp->iseq");
             asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_ISEQ), VALUE::from(*iseq).into());
 
-            asm_comment!(asm, "save cfp->jit_return");
-            asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN), 0.into());
+            //asm_comment!(asm, "save cfp->jit_return");
+            //asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN), 0.into());
         }
 
         /// Tear down the JIT frame and return to the interpreter.
