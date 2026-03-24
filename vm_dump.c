@@ -119,7 +119,7 @@ control_frame_dump(const rb_execution_context_t *ec, const rb_control_frame_t *c
         selfstr = "";
     }
 
-    if (cfp->iseq || CFP_JIT_RETURN(cfp)) {
+    if (rb_zjit_cfp_has_iseq(cfp)) {
         iseq = rb_zjit_cfp_iseq(cfp);
 #define RUBY_VM_IFUNC_P(ptr) IMEMO_TYPE_P(ptr, imemo_ifunc)
         if (RUBY_VM_IFUNC_P(iseq)) {
@@ -132,7 +132,7 @@ control_frame_dump(const rb_execution_context_t *ec, const rb_control_frame_t *c
             line = -1;
         }
         else {
-            if (cfp->pc || CFP_JIT_RETURN(cfp)) {
+            if (rb_zjit_cfp_has_pc(cfp)) {
                 pc = rb_zjit_cfp_pc(cfp) - ISEQ_BODY(iseq)->iseq_encoded;
                 iseq_name = RSTRING_PTR(ISEQ_BODY(iseq)->location.label);
                 if (pc >= 0 && (size_t)pc <= ISEQ_BODY(iseq)->iseq_size) {
@@ -341,7 +341,7 @@ box_env_dump(const rb_execution_context_t *ec, const VALUE *env, const rb_contro
         break;
     }
 
-    if (cfp && (cfp->iseq != 0 || CFP_JIT_RETURN(cfp))) {
+    if (cfp && rb_zjit_cfp_has_iseq(cfp)) {
 #define RUBY_VM_IFUNC_P(ptr) IMEMO_TYPE_P(ptr, imemo_ifunc)
         const rb_iseq_t *resolved_iseq = rb_zjit_cfp_iseq(cfp);
         if (RUBY_VM_IFUNC_P(resolved_iseq)) {
@@ -354,7 +354,7 @@ box_env_dump(const rb_execution_context_t *ec, const VALUE *env, const rb_contro
             line = -1;
         }
         else {
-            if (cfp->pc || CFP_JIT_RETURN(cfp)) {
+            if (rb_zjit_cfp_has_pc(cfp)) {
                 iseq = resolved_iseq;
                 pc = rb_zjit_cfp_pc(cfp) - ISEQ_BODY(iseq)->iseq_encoded;
                 iseq_name = RSTRING_PTR(ISEQ_BODY(iseq)->location.label);

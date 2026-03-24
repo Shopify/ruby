@@ -1348,7 +1348,7 @@ rb_jit_cont_each_iseq(rb_iseq_callback callback, void *data)
 
         const rb_control_frame_t *cfp = cont->ec->cfp;
         while (!RUBY_VM_CONTROL_FRAME_STACK_OVERFLOW_P(cont->ec, cfp)) {
-            if ((cfp->pc || CFP_JIT_RETURN(cfp)) && (cfp->iseq || CFP_JIT_RETURN(cfp))) {
+            if (rb_zjit_cfp_has_pc(cfp) && rb_zjit_cfp_has_iseq(cfp)) {
                 const rb_iseq_t *iseq = rb_zjit_cfp_iseq(cfp);
                 if (iseq && imemo_type((VALUE)iseq) == imemo_iseq) {
                     callback(iseq, data);

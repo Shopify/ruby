@@ -941,7 +941,7 @@ rb_control_frame_t *
 rb_vm_get_binding_creatable_next_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp)
 {
     while (!RUBY_VM_CONTROL_FRAME_STACK_OVERFLOW_P(ec, cfp)) {
-        if (cfp->iseq || CFP_JIT_RETURN(cfp)) {
+        if (rb_zjit_cfp_has_iseq(cfp)) {
             return (rb_control_frame_t *)cfp;
         }
         cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
@@ -1997,7 +1997,7 @@ rb_vm_invoke_proc_with_self(rb_execution_context_t *ec, rb_proc_t *proc, VALUE s
 VALUE *
 rb_vm_svar_lep(const rb_execution_context_t *ec, const rb_control_frame_t *cfp)
 {
-    while ((cfp->pc == 0 && !CFP_JIT_RETURN(cfp)) || (cfp->iseq == 0 && !CFP_JIT_RETURN(cfp))) {
+    while (!rb_zjit_cfp_has_pc(cfp) || !rb_zjit_cfp_has_iseq(cfp)) {
         if (VM_FRAME_TYPE(cfp) == VM_FRAME_MAGIC_IFUNC) {
             struct vm_ifunc *ifunc = (struct vm_ifunc *)rb_zjit_cfp_iseq(cfp);
             return ifunc->svar_lep;

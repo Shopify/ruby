@@ -1000,7 +1000,7 @@ gc_validate_pc(VALUE obj)
 
     rb_execution_context_t *ec = GET_EC();
     const rb_control_frame_t *cfp = ec->cfp;
-    if (cfp && VM_FRAME_RUBYFRAME_P(cfp) && (cfp->pc || CFP_JIT_RETURN(cfp))) {
+    if (cfp && VM_FRAME_RUBYFRAME_P(cfp) && rb_zjit_cfp_has_pc(cfp)) {
         const VALUE *iseq_encoded = ISEQ_BODY(rb_zjit_cfp_iseq(cfp))->iseq_encoded;
         const VALUE *iseq_encoded_end = iseq_encoded + ISEQ_BODY(rb_zjit_cfp_iseq(cfp))->iseq_size;
         RUBY_ASSERT(rb_zjit_cfp_pc(cfp) >= iseq_encoded, "PC not set when allocating, breaking tracing");

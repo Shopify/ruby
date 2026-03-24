@@ -102,7 +102,7 @@ calc_node_id(const rb_iseq_t *iseq, const VALUE *pc)
 int
 rb_vm_get_sourceline(const rb_control_frame_t *cfp)
 {
-    if (VM_FRAME_RUBYFRAME_P(cfp) && (cfp->iseq || CFP_JIT_RETURN(cfp))) {
+    if (VM_FRAME_RUBYFRAME_P(cfp) && rb_zjit_cfp_has_iseq(cfp)) {
         const rb_iseq_t *iseq = rb_zjit_cfp_iseq(cfp);
         int line = calc_lineno(iseq, rb_zjit_cfp_pc(cfp));
         if (line != 0) {
@@ -688,8 +688,8 @@ rb_ec_partial_backtrace_object(const rb_execution_context_t *ec, long start_fram
     }
 
     for (; cfp != end_cfp && (bt->backtrace_size < num_frames); cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)) {
-        if (cfp->iseq || CFP_JIT_RETURN(cfp)) {
-            if (cfp->pc || CFP_JIT_RETURN(cfp)) {
+        if (rb_zjit_cfp_has_iseq(cfp)) {
+            if (rb_zjit_cfp_has_pc(cfp)) {
                 if (start_frame > 0) {
                     start_frame--;
                 }
@@ -753,7 +753,7 @@ rb_ec_partial_backtrace_object(const rb_execution_context_t *ec, long start_fram
     // is the one of the caller Ruby frame, so if the last entry is a C frame we find the caller Ruby frame here.
     if (backpatch_counter > 0) {
         for (; cfp != end_cfp; cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)) {
-            if ((cfp->iseq || CFP_JIT_RETURN(cfp)) && (cfp->pc || CFP_JIT_RETURN(cfp)) && !(skip_internal && is_internal_location(rb_zjit_cfp_iseq(cfp)))) {
+            if (rb_zjit_cfp_has_iseq(cfp) && rb_zjit_cfp_has_pc(cfp) && !(skip_internal && is_internal_location(rb_zjit_cfp_iseq(cfp)))) {
                 VM_ASSERT(!skip_next_frame); // ISEQ_TYPE_RESCUE/ISEQ_TYPE_ENSURE should have a caller Ruby ISEQ, not a cfunc
                 bt_backpatch_loc(backpatch_counter, loc, rb_zjit_cfp_iseq(cfp), rb_zjit_cfp_pc(cfp));
                 RB_OBJ_WRITTEN(btobj, Qundef, rb_zjit_cfp_iseq(cfp));
@@ -1020,8 +1020,8 @@ backtrace_each(const rb_execution_context_t *ec,
     /* SDR(); */
     for (i=0, cfp = start_cfp; i<size; i++, cfp = RUBY_VM_NEXT_CONTROL_FRAME(cfp)) {
         /* fprintf(stderr, "cfp: %d\n", (rb_control_frame_t *)(ec->vm_stack + ec->vm_stack_size) - cfp); */
-        if (cfp->iseq || CFP_JIT_RETURN(cfp)) {
-            if (cfp->pc || CFP_JIT_RETURN(cfp)) {
+        if (rb_zjit_cfp_has_iseq(cfp)) {
+            if (rb_zjit_cfp_has_pc(cfp)) {
                 iter_iseq(arg, cfp);
             }
         }
@@ -1747,7 +1747,7 @@ thread_profile_frames(rb_execution_context_t *ec, int start, int limit, VALUE *b
     end_cfp = RUBY_VM_NEXT_CONTROL_FRAME(end_cfp);
 
     for (i=0; i<limit && cfp != end_cfp; cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)) {
-        if (VM_FRAME_RUBYFRAME_P_UNCHECKED(cfp) && (cfp->pc != 0 || CFP_JIT_RETURN(cfp))) {
+        if (VM_FRAME_RUBYFRAME_P_UNCHECKED(cfp) && rb_zjit_cfp_has_pc(cfp)) {
             if (start > 0) {
                 start--;
                 continue;
