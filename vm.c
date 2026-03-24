@@ -3671,11 +3671,16 @@ rb_execution_context_update(rb_execution_context_t *ec)
             const VALUE *ep = cfp->ep;
             cfp->self = rb_gc_location(cfp->self);
             if (rb_zjit_enabled_p && CFP_JIT_RETURN(cfp)) {
-                rb_zjit_jit_return_set_iseq(cfp->jit_return, (rb_iseq_t *)rb_gc_location((VALUE)rb_zjit_cfp_iseq(cfp)));
-                // block_code may have been written by the JIT caller (gen_block_handler_specval)
-                // for passing blocks. It must be relocated even when jit_return is set, because
-                // Proc creation (block_setup) copies it from the CFP's captured block.
-                cfp->block_code = (void *)rb_gc_location((VALUE)cfp->block_code);
+                const rb_iseq_t *iseq = rb_zjit_jit_return_iseq(cfp->jit_return);
+                if (iseq) {
+                    // ISEQ frame with JITFrame: relocate iseq in JITFrame and block_code in CFP
+                    rb_zjit_jit_return_set_iseq(cfp->jit_return, (rb_iseq_t *)rb_gc_location((VALUE)iseq));
+                    // block_code may have been written by the JIT caller (gen_block_handler_specval)
+                    // for passing blocks. It must be relocated even when jit_return is set, because
+                    // Proc creation (block_setup) copies it from the CFP's captured block.
+                    cfp->block_code = (void *)rb_gc_location((VALUE)cfp->block_code);
+                }
+                // C frame with JITFrame: iseq is NULL, block_code is stale — skip relocation
             }
             else {
                 cfp->iseq = (rb_iseq_t *)rb_gc_location((VALUE)cfp->iseq);
