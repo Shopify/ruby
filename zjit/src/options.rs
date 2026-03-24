@@ -31,6 +31,9 @@ pub type CallThreshold = u64;
 #[allow(non_upper_case_globals)]
 pub static mut rb_zjit_profile_threshold: CallThreshold = DEFAULT_CALL_THRESHOLD - DEFAULT_NUM_PROFILES as CallThreshold;
 
+/// Default --zjit-recompile-threshold. Number of side exits before triggering recompilation.
+pub const DEFAULT_RECOMPILE_THRESHOLD: u64 = 100;
+
 /// Number of calls to compile ISEQ with ZJIT at jit_compile() in vm.c.
 /// --zjit-call-threshold=1 compiles on first execution without profiling information.
 #[unsafe(no_mangle)]
@@ -105,6 +108,10 @@ pub struct Options {
 
     /// Path to a file where compiled ISEQs will be saved.
     pub log_compiled_iseqs: Option<std::path::PathBuf>,
+
+    /// Number of side exits before triggering recompilation of an ISEQ.
+    /// Set to 0 to disable recompilation.
+    pub recompile_threshold: u64,
 }
 
 impl Default for Options {
@@ -130,6 +137,7 @@ impl Default for Options {
             perf: None,
             allowed_iseqs: None,
             log_compiled_iseqs: None,
+            recompile_threshold: DEFAULT_RECOMPILE_THRESHOLD,
         }
     }
 }
@@ -154,6 +162,8 @@ pub const ZJIT_OPTIONS: &[(&str, &str)] = &[
                      "Dump symbols for Linux perf /tmp/perf-{}.map (default: iseq)."),
     ("--zjit-log-compiled-iseqs=path",
                      "Log compiled ISEQs to the file. The file will be truncated."),
+    ("--zjit-recompile-threshold=num",
+                     "Side exits to trigger recompile (default: 100, 0=off)."),
     ("--zjit-trace-exits[=counter]",
                      "Record source on side-exit. `Counter` picks specific counter."),
     ("--zjit-trace-exits-sample-rate=num",
@@ -340,6 +350,13 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
             Err(_) => return None,
         },
 
+
+        ("recompile-threshold", _) => match opt_val.parse() {
+            Ok(n) => {
+                options.recompile_threshold = n;
+            }
+            Err(_) => return None,
+        },
 
         ("stats-quiet", _) => {
             options.stats = true;

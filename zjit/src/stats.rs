@@ -156,6 +156,7 @@ make_counters! {
     default {
         compiled_iseq_count,
         failed_iseq_count,
+        recompile_count,
 
         compile_time_ns,
         profile_time_ns,
@@ -333,6 +334,7 @@ make_counters! {
     compile_error_exception_handler,
     compile_error_out_of_memory,
     compile_error_label_linking_failure,
+    compile_error_deferred_for_reprofiling,
     compile_error_jit_to_jit_optional,
     compile_error_register_spill_on_ccall,
     compile_error_register_spill_on_alloc,
@@ -509,6 +511,8 @@ pub enum CompileError {
     /// offsets that don't fit in one instruction. We error in
     /// error that case.
     LabelLinkingFailure,
+    /// Compilation deferred for re-profiling of cold branches.
+    DeferredForReprofiling,
 }
 
 /// Return a raw pointer to the exit counter for a given CompileError
@@ -524,6 +528,7 @@ pub fn exit_counter_for_compile_error(compile_error: &CompileError) -> Counter {
         ExceptionHandler        => compile_error_exception_handler,
         OutOfMemory             => compile_error_out_of_memory,
         LabelLinkingFailure     => compile_error_label_linking_failure,
+        DeferredForReprofiling  => compile_error_deferred_for_reprofiling,
         ParseError(parse_error) => match parse_error {
             StackUnderflow(_)       => compile_error_parse_stack_underflow,
             MalformedIseq(_)        => compile_error_parse_malformed_iseq,

@@ -142,6 +142,7 @@ class << RubyVM::ZJIT
     print_counters([
       :compiled_iseq_count,
       :failed_iseq_count,
+      :recompile_count,
 
       :compile_time_ns,
       :compile_side_exit_time_ns,

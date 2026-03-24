@@ -1640,6 +1640,11 @@ pub struct Assembler {
 
     /// Current instruction index, incremented for each instruction pushed
     idx: usize,
+
+    /// Payload pointer for the ISEQ being compiled (stored as usize for Send/Sync).
+    /// Points to the IseqPayload on the Rust heap (not moved by Ruby GC compaction).
+    /// Used by compile_exits to call rb_zjit_count_side_exit from generated exit code.
+    pub payload_ptr: Option<usize>,
 }
 
 impl Assembler
@@ -1655,6 +1660,7 @@ impl Assembler
             current_block_id: BlockId(0),
             num_vregs: 0,
             idx: 0,
+            payload_ptr: None,
         }
     }
 
@@ -1688,6 +1694,7 @@ impl Assembler
         // Initialize num_vregs to match the old assembler's size
         // This allows reusing VRegs from the old assembler
         asm.num_vregs = old_asm.num_vregs;
+        asm.payload_ptr = old_asm.payload_ptr;
 
         asm
     }
@@ -2644,8 +2651,18 @@ impl Assembler
 
         /// Compile the main side-exit code. This function takes only SideExit so
         /// that it can be safely deduplicated by using SideExit as a dedup key.
-        fn compile_exit(asm: &mut Assembler, exit: &SideExit) {
+        /// When recompilation is enabled, calls rb_zjit_count_side_exit(payload_ptr)
+        /// after saving VM state (ccall is safe here since state is already saved).
+        fn compile_exit(asm: &mut Assembler, exit: &SideExit, payload_ptr: Option<usize>) {
             compile_exit_save_state(asm, exit);
+            // Recompilation: count exits in the shared (deduplicated) exit stub.
+            if get_option!(recompile_threshold) > 0 {
+                if let Some(payload_ptr) = payload_ptr {
+                    use crate::codegen::rb_zjit_count_side_exit;
+                    asm_comment!(asm, "count side exit for recompilation");
+                    asm_ccall!(asm, rb_zjit_count_side_exit, Opnd::UImm(payload_ptr as u64));
+                }
+            }
             compile_exit_return(asm);
         }
 
@@ -2752,7 +2769,7 @@ impl Assembler
                     let new_exit = self.new_label("side_exit");
                     self.write_label(new_exit.clone());
                     asm_comment!(self, "Exit: {pc}");
-                    compile_exit(self, &exit);
+                    compile_exit(self, &exit, self.payload_ptr);
                     compiled_exits.insert(exit, new_exit.unwrap_label());
                     new_exit
                 };

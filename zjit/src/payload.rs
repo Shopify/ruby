@@ -1,8 +1,8 @@
-use std::ffi::c_void;
-use std::ptr::NonNull;
 use crate::codegen::IseqCallRef;
 use crate::stats::CompileError;
 use crate::{cruby::*, profile::IseqProfile, virtualmem::CodePtr};
+use std::ffi::c_void;
+use std::ptr::NonNull;
 
 /// This is all the data ZJIT stores on an ISEQ. We mark objects in this struct on GC.
 #[derive(Debug)]
@@ -14,6 +14,8 @@ pub struct IseqPayload {
     /// Whether a previous compilation of this ISEQ was invalidated due to
     /// singleton class creation (violation of [`crate::hir::Invariant::NoSingletonClass`]).
     pub was_invalidated_for_singleton_class_creation: bool,
+    /// Number of side exits observed for this ISEQ
+    pub side_exit_count: u64,
 }
 
 impl IseqPayload {
@@ -22,6 +24,7 @@ impl IseqPayload {
             profile: IseqProfile::new(),
             versions: vec![],
             was_invalidated_for_singleton_class_creation: false,
+            side_exit_count: 0,
         }
     }
 }

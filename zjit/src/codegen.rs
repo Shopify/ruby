@@ -6,6 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::ffi::{c_int, c_long, c_void};
 use std::slice;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::backend::current::ALLOC_REGS;
 use crate::invariants::{
@@ -14,7 +15,7 @@ use crate::invariants::{
     track_root_box_assumption
 };
 use crate::gc::append_gc_offsets;
-use crate::payload::{get_or_create_iseq_payload, IseqCodePtrs, IseqVersion, IseqVersionRef, IseqStatus};
+use crate::payload::{get_or_create_iseq_payload, IseqCodePtrs, IseqPayload, IseqVersion, IseqVersionRef, IseqStatus};
 use crate::state::ZJITState;
 use crate::stats::{CompileError, exit_counter_for_compile_error, exit_counter_for_unhandled_hir_insn, incr_counter, incr_counter_by, send_fallback_counter, send_fallback_counter_for_method_type, send_fallback_counter_for_super_method_type, send_fallback_counter_ptr_for_opcode, send_without_block_fallback_counter_for_method_type, send_without_block_fallback_counter_for_optimized_method_type};
 use crate::stats::{counter_ptr, with_time_stat, Counter, Counter::{compile_time_ns, exit_compile_error}};
@@ -28,6 +29,52 @@ use crate::cast::IntoUsize;
 
 /// At the moment, we support recompiling each ISEQ only once.
 pub const MAX_ISEQ_VERSIONS: usize = 2;
+
+/// Called from side-exit stubs to count exits for recompilation.
+#[unsafe(no_mangle)]
+pub extern "C" fn rb_zjit_count_side_exit(payload_raw: *mut std::ffi::c_void) {
+    if payload_raw.is_null() { return; }
+    let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
+    let threshold = get_option!(recompile_threshold) as u64;
+    if threshold == 0 || payload.side_exit_count >= threshold { return; }
+    payload.side_exit_count += 1;
+    if payload.side_exit_count == threshold && payload.versions.len() < MAX_ISEQ_VERSIONS {
+        let iseq = match payload.versions.last() {
+            Some(version_ref) => unsafe { version_ref.as_ref() }.iseq,
+            None => return,
+        };
+        with_vm_lock(src_loc!(), || {
+            trigger_recompilation(payload_raw, iseq);
+        });
+    }
+}
+
+static GLOBAL_RECOMPILE_COUNT: AtomicU64 = AtomicU64::new(0);
+const MAX_GLOBAL_RECOMPILATIONS: u64 = 50;
+
+fn trigger_recompilation(payload_raw: *mut std::ffi::c_void, iseq: IseqPtr) {
+    if MAX_GLOBAL_RECOMPILATIONS > 0 {
+        let prev = GLOBAL_RECOMPILE_COUNT.fetch_add(1, Ordering::Relaxed);
+        if prev >= MAX_GLOBAL_RECOMPILATIONS {
+            GLOBAL_RECOMPILE_COUNT.fetch_sub(1, Ordering::Relaxed);
+            return;
+        }
+    }
+    let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
+    debug!("trigger_recompilation: recompiling {}", iseq_get_location(iseq, 0));
+    incr_counter!(recompile_count);
+    payload.profile.reset_for_recompile();
+    if let Some(version) = payload.versions.last_mut() {
+        let version = unsafe { version.as_mut() };
+        version.status = IseqStatus::Invalidated;
+    }
+    unsafe { rb_iseq_reset_jit_func(iseq) };
+    unsafe { rb_zjit_profile_enable(iseq) };
+}
+
+unsafe extern "C" {
+    fn rb_zjit_profile_enable(iseq: IseqPtr);
+}
 
 /// Sentinel program counter stored in C frames when runtime checks are enabled.
 const PC_POISON: Option<*const VALUE> = if cfg!(feature = "runtime_checks") {
@@ -55,11 +102,15 @@ struct JITState {
 
     /// ISEQ calls that need to be compiled later
     iseq_calls: Vec<IseqCallRef>,
+    payload_ptr: usize,
+    has_version_budget: bool,
 }
 
 impl JITState {
-    /// Create a new JITState instance
     fn new(iseq: IseqPtr, version: IseqVersionRef, num_insns: usize, num_blocks: usize) -> Self {
+        let payload_ptr = get_or_create_iseq_payload(iseq) as *const _ as usize;
+        let payload = unsafe { &*(payload_ptr as *const IseqPayload) };
+        let has_version_budget = payload.versions.len() < MAX_ISEQ_VERSIONS;
         JITState {
             iseq,
             version,
@@ -67,6 +118,8 @@ impl JITState {
             labels: vec![None; num_blocks],
             jit_entries: Vec::default(),
             iseq_calls: Vec::default(),
+            payload_ptr,
+            has_version_budget,
         }
     }
 
@@ -152,16 +205,15 @@ pub extern "C" fn rb_zjit_iseq_gen_entry_point(iseq: IseqPtr, jit_exception: boo
         let mut code_ptr = with_time_stat(compile_time_ns, || gen_iseq_entry_point(cb, iseq, jit_exception));
 
         if let Err(err) = &code_ptr {
-            // Assert that the ISEQ compiles if RubyVM::ZJIT.assert_compiles is enabled.
-            // We assert only `jit_exception: false` cases until we support exception handlers.
-            if ZJITState::assert_compiles_enabled() && !jit_exception {
-                let iseq_location = iseq_get_location(iseq, 0);
-                panic!("Failed to compile: {iseq_location}");
-            }
-
-            // For --zjit-stats, generate an entry that just increments exit_compilation_failure and exits
-            if get_option!(stats) {
-                code_ptr = gen_compile_error_counter(cb, err);
+            // DeferredForReprofiling is not a real failure
+            if *err != CompileError::DeferredForReprofiling {
+                if ZJITState::assert_compiles_enabled() && !jit_exception {
+                    let iseq_location = iseq_get_location(iseq, 0);
+                    panic!("Failed to compile: {iseq_location}");
+                }
+                if get_option!(stats) {
+                    code_ptr = gen_compile_error_counter(cb, err);
+                }
             }
         }
 
@@ -318,6 +370,10 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
     let num_spilled_params = max_num_params(function).saturating_sub(ALLOC_REGS.len());
     let mut jit = JITState::new(iseq, version, function.num_insns(), function.num_blocks());
     let mut asm = Assembler::new_with_stack_slots(num_spilled_params);
+
+    if get_option!(recompile_threshold) > 0 && jit.payload_ptr != 0 {
+        asm.payload_ptr = Some(jit.payload_ptr);
+    }
 
     // Mapping from HIR block IDs to LIR block IDs.
     // This is is a one-to-one mapping from HIR to LIR blocks used for finding

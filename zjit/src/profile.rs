@@ -479,6 +479,17 @@ impl IseqProfile {
             }
         }
     }
+    /// Reset profiling state so all instructions get re-profiled from scratch.
+    /// Clears both the profiling counters AND the type distribution data.
+    pub fn reset_for_recompile(&mut self) {
+        for count in self.num_profiles.iter_mut() {
+            *count = 0;
+        }
+        for operands in self.opnd_types.iter_mut() {
+            operands.clear();
+        }
+        self.super_cme.clear();
+    }
 }
 
 #[cfg(test)]
