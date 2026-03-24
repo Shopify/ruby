@@ -482,12 +482,7 @@ impl IseqProfile {
     /// Reset profiling state so all instructions get re-profiled from scratch.
     /// Clears both the profiling counters AND the type distribution data.
     pub fn reset_for_recompile(&mut self) {
-        for count in self.num_profiles.iter_mut() {
-            *count = 0;
-        }
-        for operands in self.opnd_types.iter_mut() {
-            operands.clear();
-        }
+        self.entries.clear();
         self.super_cme.clear();
     }
 
@@ -495,8 +490,8 @@ impl IseqProfile {
     /// The preserved data in opnd_types gives V2 immediate access to send receiver types
     /// collected during V1 execution — no interpreter warmup needed for hot paths.
     pub fn reset_counters_for_recompile(&mut self) {
-        for count in self.num_profiles.iter_mut() {
-            *count = 0;
+        for entry in self.entries.iter_mut() {
+            entry.num_profiles = 0;
         }
         self.super_cme.clear();
         // NOTE: opnd_types intentionally NOT cleared — preserves inline feedback
@@ -511,10 +506,10 @@ impl IseqProfile {
     pub fn inline_feedback_is_high_quality(&self) -> bool {
         let mut high_quality = 0usize;
         let mut total = 0usize;
-        for operands in &self.opnd_types {
+        for entry in &self.entries {
             // Only check the receiver distribution (types[0]) — this is what the
             // compiler uses for send specialization decisions.
-            if let Some(dist) = operands.first() {
+            if let Some(dist) = entry.opnd_types.first() {
                 let summary = TypeDistributionSummary::new(dist);
                 if summary.is_monomorphic() || summary.is_skewed_polymorphic() {
                     high_quality += 1;
@@ -539,24 +534,22 @@ impl IseqProfile {
     /// Record an inline type observation for the receiver at a given instruction index.
     /// Used by JIT code to collect type feedback for NoProfile sends during execution.
     pub fn observe_receiver(&mut self, insn_idx: usize, n_operands: usize, ty: ProfiledType) {
-        if let Some(types) = self.opnd_types.get_mut(insn_idx) {
-            if types.is_empty() {
-                types.resize(n_operands, TypeDistribution::new());
-            }
-            types[0].observe(ty);
+        let entry = self.entry_mut(insn_idx);
+        if entry.opnd_types.is_empty() {
+            entry.opnd_types.resize(n_operands, TypeDistribution::new());
         }
+        entry.opnd_types[0].observe(ty);
     }
 
     /// Get the number of profiled executions for a given instruction index.
     pub fn num_profiles_for(&self, insn_idx: usize) -> NumProfiles {
-        self.num_profiles.get(insn_idx).copied().unwrap_or(0)
+        self.entry(insn_idx).map(|e| e.num_profiles).unwrap_or(0)
     }
 
     /// Increment the profiling counter for a given instruction index.
     pub fn increment_num_profiles(&mut self, insn_idx: usize) {
-        if let Some(count) = self.num_profiles.get_mut(insn_idx) {
-            *count = count.saturating_add(1);
-        }
+        let entry = self.entry_mut(insn_idx);
+        entry.num_profiles = entry.num_profiles.saturating_add(1);
     }
 }
 

@@ -28,9 +28,10 @@ use crate::invariants::{
     track_root_box_assumption, track_single_ractor_assumption,
     track_stable_constant_names_assumption,
 };
-use crate::options::{get_option, rb_zjit_call_threshold, PerfMap};
+use crate::options::{get_option, PerfMap};
 use crate::payload::{
     get_or_create_iseq_payload, IseqCodePtrs, IseqPayload, IseqStatus, IseqVersion, IseqVersionRef,
+    RecompileAction, RecompileSignal, RecompileState,
 };
 use crate::profile::ProfiledType;
 use crate::state::ZJITState;
@@ -57,34 +58,25 @@ pub extern "C" fn rb_zjit_count_side_exit(payload_raw: *mut std::ffi::c_void) {
         return;
     }
     let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
-    let threshold = get_option!(recompile_threshold) as u64;
-    if threshold == 0 || payload.side_exit_count >= threshold {
-        return;
-    }
-    payload.side_exit_count += 1;
-    if payload.side_exit_count == threshold && payload.versions.len() < MAX_ISEQ_VERSIONS {
+    if let RecompileAction::Recompile { preserve_profiles } = payload
+        .recompile
+        .on_signal(RecompileSignal::SideExit, payload.versions.len())
+    {
         let iseq = match payload.versions.last() {
             Some(version_ref) => unsafe { version_ref.as_ref() }.iseq,
             None => return,
         };
         with_vm_lock(src_loc!(), || {
-            trigger_recompilation(payload_raw, iseq, true);
+            trigger_recompilation(payload_raw, iseq, preserve_profiles);
         });
     }
 }
 
 static GLOBAL_RECOMPILE_COUNT: AtomicU64 = AtomicU64::new(0);
 
-/// Escalating threshold for deferred re-profiling. Higher deferral levels
-/// give cold branches progressively more time to warm up.
-fn deferred_threshold(defer_count: u32) -> u32 {
-    match defer_count {
-        1 => unsafe { rb_zjit_call_threshold as u32 },
-        2 => 1_000,
-        _ => 100_000,
-    }
-}
-
+/// Execute a recompilation: check global cap, reset profiles, invalidate version,
+/// reset JIT func, re-enable profiling. All decisions about *whether* to recompile
+/// are made by RecompileState before this is called.
 /// When `preserve_profiles` is true, only counters are reset (type distributions survive).
 /// When false, both counters and type distributions are cleared.
 fn trigger_recompilation(
@@ -115,10 +107,8 @@ fn trigger_recompilation(
         payload.profile.reset_for_recompile();
     }
 
-    // Reset deferral state so V2 compilation goes straight to building the HIR.
-    // If the HIR still has unresolved issues, the post-HIR deferral trigger handles escalation.
-    payload.defer_count = 0;
-    payload.deferred_stub_hits = 0;
+    // Reset the state machine so V2 compilation goes straight to the HIR check.
+    payload.recompile.reset_after_trigger();
 
     if let Some(version) = payload.versions.last_mut() {
         let version = unsafe { version.as_mut() };
@@ -129,9 +119,6 @@ fn trigger_recompilation(
 }
 
 /// Runtime helper called from JIT code to collect inline type feedback for NoProfile sends.
-/// When a NoProfile send executes, this records the receiver's class into the profiling data
-/// structure. After enough observations, triggers recompilation so the previously-NoProfile
-/// sends compile to direct calls using the collected type data.
 #[unsafe(no_mangle)]
 pub extern "C" fn rb_zjit_inline_profile_send(
     payload_raw: *mut std::ffi::c_void,
@@ -145,29 +132,28 @@ pub extern "C" fn rb_zjit_inline_profile_send(
     let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
     let insn_idx = insn_idx as usize;
 
-    let threshold = (get_option!(recompile_threshold) as u64) / 2;
-    if threshold == 0 || payload.no_profile_send_hits >= threshold {
-        return;
-    }
-
-    payload.no_profile_send_hits += 1;
-
-    if payload.no_profile_send_hits == threshold && payload.versions.len() < MAX_ISEQ_VERSIONS {
-        if !payload.profile.inline_feedback_is_high_quality() {
+    let quality_ok = payload.profile.inline_feedback_is_high_quality();
+    let action = payload.recompile.on_signal(
+        RecompileSignal::InlineSend { quality_ok },
+        payload.versions.len(),
+    );
+    match action {
+        RecompileAction::Recompile { preserve_profiles } => {
+            let iseq = match payload.versions.last() {
+                Some(version_ref) => unsafe { version_ref.as_ref() }.iseq,
+                None => return,
+            };
+            with_vm_lock(src_loc!(), || {
+                trigger_recompilation(payload_raw, iseq, preserve_profiles);
+            });
             return;
         }
-        payload.has_inline_feedback = true;
-        let iseq = match payload.versions.last() {
-            Some(version_ref) => unsafe { version_ref.as_ref() }.iseq,
-            None => return,
-        };
-        with_vm_lock(src_loc!(), || {
-            trigger_recompilation(payload_raw, iseq, true);
-        });
-        return;
+        RecompileAction::Ignore => return,
+        _ => {}
     }
 
-    const INLINE_PROFILE_LIMIT: u32 = 5;
+    // Type recording stays outside the state machine (data collection, not a decision).
+    const INLINE_PROFILE_LIMIT: u16 = 5;
     if payload.profile.num_profiles_for(insn_idx) >= INLINE_PROFILE_LIMIT {
         return;
     }
@@ -184,7 +170,6 @@ pub extern "C" fn rb_zjit_inline_profile_send(
 }
 
 /// Lightweight runtime helper for not_monomorphic ivar fallbacks.
-/// Only increments the recompilation trigger counter — no type recording.
 #[unsafe(no_mangle)]
 pub extern "C" fn rb_zjit_count_ivar_fallback(payload_raw: *mut std::ffi::c_void) {
     if payload_raw.is_null() {
@@ -192,20 +177,16 @@ pub extern "C" fn rb_zjit_count_ivar_fallback(payload_raw: *mut std::ffi::c_void
     }
     let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
 
-    let threshold = get_option!(recompile_threshold) as u64;
-    if threshold == 0 || payload.no_profile_send_hits >= threshold {
-        return;
-    }
-
-    payload.no_profile_send_hits += 1;
-
-    if payload.no_profile_send_hits == threshold && payload.versions.len() < MAX_ISEQ_VERSIONS {
+    if let RecompileAction::Recompile { preserve_profiles } = payload
+        .recompile
+        .on_signal(RecompileSignal::IvarFallback, payload.versions.len())
+    {
         let iseq = match payload.versions.last() {
             Some(version_ref) => unsafe { version_ref.as_ref() }.iseq,
             None => return,
         };
         with_vm_lock(src_loc!(), || {
-            trigger_recompilation(payload_raw, iseq, true);
+            trigger_recompilation(payload_raw, iseq, preserve_profiles);
         });
     }
 }
@@ -391,20 +372,21 @@ fn gen_iseq_entry_point(
         return Err(CompileError::ExceptionHandler);
     }
 
-    // If this ISEQ is in a deferred re-profiling window, don't compile yet.
-    // Count this interpreter entry toward the threshold and keep the ISEQ
-    // running in the interpreter with profiling active. Both interpreter
-    // entries and stub fallbacks count toward the same escalating threshold.
+    // Check the recompilation state machine for deferral.
     {
         let payload = get_or_create_iseq_payload(iseq);
-        if payload.defer_count > 0 {
-            let threshold = deferred_threshold(payload.defer_count);
-            if payload.deferred_stub_hits < threshold {
-                let call_threshold = unsafe { rb_zjit_call_threshold as u32 };
-                payload.deferred_stub_hits += call_threshold;
+        let call_threshold = unsafe { crate::options::rb_zjit_call_threshold as u32 };
+        match payload.recompile.on_signal(
+            RecompileSignal::Entry {
+                credit: call_threshold,
+            },
+            payload.versions.len(),
+        ) {
+            RecompileAction::DeferToInterpreter => {
                 unsafe { rb_iseq_reset_jit_func(iseq) };
                 return Err(CompileError::DeferredForReprofiling);
             }
+            _ => {}
         }
     }
 
@@ -415,12 +397,7 @@ fn gen_iseq_entry_point(
         })
     })?;
 
-    // Adaptive deferral for recompilations. First compilations never defer.
-    // For recompilations (latest version invalidated), if the HIR has a
-    // significant fraction of unresolved sends or any unresolved ivars,
-    // defer for 1K interpreter calls to exercise cold branches.
-    // A single dead-branch NoProfile send does NOT trigger deferral —
-    // ISEQs where most sends are well-profiled compile immediately.
+    // Post-HIR quality check: decide if recompilation should be deferred.
     if get_option!(recompile_threshold) > 0 {
         let payload = get_or_create_iseq_payload(iseq);
         let is_recompile = payload
@@ -428,16 +405,13 @@ fn gen_iseq_entry_point(
             .last()
             .map(|v| unsafe { v.as_ref() }.status == IseqStatus::Invalidated)
             .unwrap_or(false);
-        // Use ratio-based check for sends: only defer if >25% of sends lack profiles.
         let (no_profile_sends, total_sends) = function.count_no_profile_sends();
         let sends_need_deferral = total_sends > 0 && no_profile_sends * 4 > total_sends;
         let has_unresolved = sends_need_deferral || function.has_not_monomorphic_ivars();
-        let skip_deferral = payload.has_inline_feedback;
-        if is_recompile && payload.defer_count < 2 && has_unresolved && !skip_deferral {
-            payload.defer_count = 2; // level 2: deferred_threshold(2) = 1K calls
-            payload.deferred_stub_hits = 0;
-            // Preserve inline feedback — only reset counters so the interpreter
-            // adds observations on top during the 1K-call deferral window.
+        if let RecompileAction::Defer = payload
+            .recompile
+            .post_hir_check(is_recompile, has_unresolved)
+        {
             payload.profile.reset_counters_for_recompile();
             unsafe { rb_zjit_profile_enable(iseq) };
             unsafe { rb_iseq_reset_jit_func(iseq) };
@@ -2701,7 +2675,8 @@ fn gen_guarded_inline_profile(
 
     asm_comment!(asm, "guard: skip inline profiling if self-disabled");
     let payload_addr = asm.load(Opnd::UImm(jit.payload_ptr as u64));
-    let offset = std::mem::offset_of!(crate::payload::IseqPayload, no_profile_send_hits) as i32;
+    let offset = (std::mem::offset_of!(crate::payload::IseqPayload, recompile)
+        + std::mem::offset_of!(RecompileState, no_profile_send_hits)) as i32;
     let hits = asm.load(Opnd::mem(64, payload_addr, offset));
     asm.cmp(hits, Opnd::UImm(threshold));
     asm.jge(jit, skip_edge());
@@ -4457,32 +4432,14 @@ c_callable! {
             let cb = ZJITState::get_code_block();
             let payload = get_or_create_iseq_payload(iseq);
 
-            // If this ISEQ is being re-profiled after deferral, fall back to
-            // the interpreter — the zjit_* profiling instructions are active
-            // and collect type data on each fallback. The threshold escalates
-            // with each deferral level to give cold branches progressively more
-            // time to warm up. This gate fires for both first-compilation deferrals
-            // (versions empty) and inline-triggered recompilation deferrals
-            // (latest version invalidated).
-            let latest_invalidated = payload.versions.last()
-                .map(|v| unsafe { v.as_ref() }.status == IseqStatus::Invalidated)
-                .unwrap_or(false);
-            if payload.defer_count > 0 && (payload.versions.is_empty() || latest_invalidated) {
-                // Count stub hits toward the deferral threshold for BOTH initial
-                // deferrals (versions empty) and recompilation deferrals (latest
-                // invalidated). Previously, recompilation deferrals returned the
-                // exit trampoline unconditionally without counting, causing the
-                // method to stay in the interpreter indefinitely — a catastrophic
-                // overhead for hot methods (addressable-merge lost 2.5s).
-                let threshold = deferred_threshold(payload.defer_count);
-                payload.deferred_stub_hits += 1;
-                if payload.deferred_stub_hits <= threshold {
-                    // Still collecting profile data — fall back to interpreter
+            // Check the recompilation state machine for deferral.
+            match payload.recompile.on_signal(RecompileSignal::Entry { credit: 1 }, payload.versions.len()) {
+                RecompileAction::DeferToInterpreter => {
                     unsafe { Rc::increment_strong_count(iseq_call_ptr as *const IseqCall); }
                     prepare_for_exit(iseq, cfp, sp, &CompileError::DeferredForReprofiling);
                     return ZJITState::get_exit_trampoline().raw_ptr(cb);
                 }
-                // Enough profile data collected — fall through to compile
+                _ => {}
             }
 
             let last_status = payload.versions.last().map(|version| &unsafe { version.as_ref() }.status);
