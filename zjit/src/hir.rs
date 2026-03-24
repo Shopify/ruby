@@ -6398,7 +6398,8 @@ impl<'a> std::fmt::Display for FunctionGraphvizPrinter<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FrameState {
     iseq: IseqPtr,
-    insn_idx: usize,
+    /// YARV instruction index within the ISEQ
+    pub insn_idx: usize,
     // Ruby bytecode instruction pointer
     pub pc: *const VALUE,
 

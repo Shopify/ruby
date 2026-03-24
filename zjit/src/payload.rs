@@ -21,6 +21,13 @@ pub struct IseqPayload {
     pub defer_count: u32,
     /// How many stub/entry hits have been counted during the current deferral window.
     pub deferred_stub_hits: u32,
+    /// Number of NoProfile send executions observed via inline feedback.
+    /// Used as the recompilation trigger for inline-feedback-driven recompilation.
+    pub no_profile_send_hits: u64,
+    /// Whether this ISEQ's last recompilation was triggered by inline feedback.
+    /// When true, the post-HIR deferral check in gen_iseq_entry_point is skipped
+    /// because the preserved inline feedback already provides type data.
+    pub has_inline_feedback: bool,
 }
 
 impl IseqPayload {
@@ -32,6 +39,8 @@ impl IseqPayload {
             side_exit_count: 0,
             defer_count: 0,
             deferred_stub_hits: 0,
+            no_profile_send_hits: 0,
+            has_inline_feedback: false,
         }
     }
 }

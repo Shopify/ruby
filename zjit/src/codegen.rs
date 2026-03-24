@@ -32,6 +32,7 @@ use crate::options::{get_option, rb_zjit_call_threshold, PerfMap};
 use crate::payload::{
     get_or_create_iseq_payload, IseqCodePtrs, IseqPayload, IseqStatus, IseqVersion, IseqVersionRef,
 };
+use crate::profile::ProfiledType;
 use crate::state::ZJITState;
 use crate::stats::{
     counter_ptr, with_time_stat, Counter,
@@ -67,7 +68,7 @@ pub extern "C" fn rb_zjit_count_side_exit(payload_raw: *mut std::ffi::c_void) {
             None => return,
         };
         with_vm_lock(src_loc!(), || {
-            trigger_recompilation(payload_raw, iseq);
+            trigger_recompilation(payload_raw, iseq, true);
         });
     }
 }
@@ -85,7 +86,13 @@ fn deferred_threshold(defer_count: u32) -> u32 {
     }
 }
 
-fn trigger_recompilation(payload_raw: *mut std::ffi::c_void, iseq: IseqPtr) {
+/// When `preserve_profiles` is true, only counters are reset (type distributions survive).
+/// When false, both counters and type distributions are cleared.
+fn trigger_recompilation(
+    payload_raw: *mut std::ffi::c_void,
+    iseq: IseqPtr,
+    preserve_profiles: bool,
+) {
     if MAX_GLOBAL_RECOMPILATIONS > 0 {
         let prev = GLOBAL_RECOMPILE_COUNT.fetch_add(1, Ordering::Relaxed);
         if prev >= MAX_GLOBAL_RECOMPILATIONS {
@@ -95,11 +102,16 @@ fn trigger_recompilation(payload_raw: *mut std::ffi::c_void, iseq: IseqPtr) {
     }
     let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
     debug!(
-        "trigger_recompilation: recompiling {}",
-        iseq_get_location(iseq, 0)
+        "trigger_recompilation: recompiling {} (preserve_profiles={})",
+        iseq_get_location(iseq, 0),
+        preserve_profiles,
     );
     incr_counter!(recompile_count);
-    payload.profile.reset_for_recompile();
+    if preserve_profiles {
+        payload.profile.reset_counters_for_recompile();
+    } else {
+        payload.profile.reset_for_recompile();
+    }
 
     // Reset deferral state so V2 compilation goes straight to building the HIR.
     // If the HIR still has unresolved issues, the post-HIR deferral trigger handles escalation.
@@ -112,6 +124,88 @@ fn trigger_recompilation(payload_raw: *mut std::ffi::c_void, iseq: IseqPtr) {
     }
     unsafe { rb_iseq_reset_jit_func(iseq) };
     unsafe { rb_zjit_profile_enable(iseq) };
+}
+
+/// Runtime helper called from JIT code to collect inline type feedback for NoProfile sends.
+/// When a NoProfile send executes, this records the receiver's class into the profiling data
+/// structure. After enough observations, triggers recompilation so the previously-NoProfile
+/// sends compile to direct calls using the collected type data.
+#[unsafe(no_mangle)]
+pub extern "C" fn rb_zjit_inline_profile_send(
+    payload_raw: *mut std::ffi::c_void,
+    insn_idx: u64,
+    recv: VALUE,
+    n_operands: u64,
+) {
+    if payload_raw.is_null() {
+        return;
+    }
+    let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
+    let insn_idx = insn_idx as usize;
+
+    let threshold = (get_option!(recompile_threshold) as u64) / 2;
+    if threshold == 0 || payload.no_profile_send_hits >= threshold {
+        return;
+    }
+
+    payload.no_profile_send_hits += 1;
+
+    if payload.no_profile_send_hits == threshold && payload.versions.len() < MAX_ISEQ_VERSIONS {
+        if !payload.profile.inline_feedback_is_high_quality() {
+            return;
+        }
+        payload.has_inline_feedback = true;
+        let iseq = match payload.versions.last() {
+            Some(version_ref) => unsafe { version_ref.as_ref() }.iseq,
+            None => return,
+        };
+        with_vm_lock(src_loc!(), || {
+            trigger_recompilation(payload_raw, iseq, true);
+        });
+        return;
+    }
+
+    const INLINE_PROFILE_LIMIT: u32 = 5;
+    if payload.profile.num_profiles_for(insn_idx) >= INLINE_PROFILE_LIMIT {
+        return;
+    }
+
+    let ty = ProfiledType::new(recv);
+    if let Some(version_ref) = payload.versions.last() {
+        let iseq = unsafe { version_ref.as_ref() }.iseq;
+        VALUE::from(iseq).write_barrier(ty.class());
+    }
+    payload
+        .profile
+        .observe_receiver(insn_idx, n_operands as usize, ty);
+    payload.profile.increment_num_profiles(insn_idx);
+}
+
+/// Lightweight runtime helper for not_monomorphic ivar fallbacks.
+/// Only increments the recompilation trigger counter — no type recording.
+#[unsafe(no_mangle)]
+pub extern "C" fn rb_zjit_count_ivar_fallback(payload_raw: *mut std::ffi::c_void) {
+    if payload_raw.is_null() {
+        return;
+    }
+    let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
+
+    let threshold = get_option!(recompile_threshold) as u64;
+    if threshold == 0 || payload.no_profile_send_hits >= threshold {
+        return;
+    }
+
+    payload.no_profile_send_hits += 1;
+
+    if payload.no_profile_send_hits == threshold && payload.versions.len() < MAX_ISEQ_VERSIONS {
+        let iseq = match payload.versions.last() {
+            Some(version_ref) => unsafe { version_ref.as_ref() }.iseq,
+            None => return,
+        };
+        with_vm_lock(src_loc!(), || {
+            trigger_recompilation(payload_raw, iseq, true);
+        });
+    }
 }
 
 unsafe extern "C" {
@@ -146,6 +240,11 @@ struct JITState {
     iseq_calls: Vec<IseqCallRef>,
     payload_ptr: usize,
     has_version_budget: bool,
+
+    /// Whether inline profiling calls should be emitted for NoProfile sends.
+    /// False when the ISEQ has too few NoProfile sends to justify the overhead.
+    /// Set during gen_function based on the HIR's NoProfile send count.
+    should_emit_inline_profiling: bool,
 }
 
 impl JITState {
@@ -162,6 +261,7 @@ impl JITState {
             iseq_calls: Vec::default(),
             payload_ptr,
             has_version_budget,
+            should_emit_inline_profiling: false, // Set by gen_function after HIR analysis
         }
     }
 
@@ -330,10 +430,13 @@ fn gen_iseq_entry_point(
         let (no_profile_sends, total_sends) = function.count_no_profile_sends();
         let sends_need_deferral = total_sends > 0 && no_profile_sends * 4 > total_sends;
         let has_unresolved = sends_need_deferral || function.has_not_monomorphic_ivars();
-        if is_recompile && payload.defer_count < 2 && has_unresolved {
+        let skip_deferral = payload.has_inline_feedback;
+        if is_recompile && payload.defer_count < 2 && has_unresolved && !skip_deferral {
             payload.defer_count = 2; // level 2: deferred_threshold(2) = 1K calls
             payload.deferred_stub_hits = 0;
-            payload.profile.reset_for_recompile();
+            // Preserve inline feedback — only reset counters so the interpreter
+            // adds observations on top during the 1K-call deferral window.
+            payload.profile.reset_counters_for_recompile();
             unsafe { rb_zjit_profile_enable(iseq) };
             unsafe { rb_iseq_reset_jit_func(iseq) };
             incr_counter!(recompile_count);
@@ -504,6 +607,14 @@ fn gen_function(
 
     if get_option!(recompile_threshold) > 0 && jit.payload_ptr != 0 {
         asm.payload_ptr = Some(jit.payload_ptr);
+    }
+
+    // Enable inline profiling for ISEQs with enough NoProfile sends to justify
+    // the overhead. ISEQs with <3 NoProfile sends don't benefit from inline
+    // profiling — the side-exit path is sufficient for recompilation.
+    if get_option!(recompile_threshold) > 0 && jit.has_version_budget && jit.payload_ptr != 0 {
+        let (no_profile, _total) = function.count_no_profile_sends();
+        jit.should_emit_inline_profiling = no_profile >= 3;
     }
 
     // Mapping from HIR block IDs to LIR block IDs.
@@ -914,13 +1025,15 @@ fn gen_insn(
         &Insn::Send {
             cd,
             blockiseq: None,
+            recv,
             state,
             reason,
             ..
-        } => gen_send_without_block(jit, asm, cd, &function.frame_state(state), reason),
+        } => gen_send_without_block(jit, asm, cd, recv, &function.frame_state(state), reason),
         &Insn::Send {
             cd,
             blockiseq: Some(blockiseq),
+            recv,
             state,
             reason,
             ..
@@ -928,6 +1041,7 @@ fn gen_insn(
             jit,
             asm,
             cd,
+            recv,
             blockiseq,
             &function.frame_state(state),
             reason,
@@ -1210,11 +1324,16 @@ fn gen_insn(
         // Give up CCallWithFrame for 7+ args since asm.ccall() supports at most 6 args (recv + args).
         // There's no test case for this because no core cfuncs have this many parameters. But C extensions could have such methods.
         Insn::CCallWithFrame {
-            cd, state, args, ..
+            cd,
+            recv,
+            state,
+            args,
+            ..
         } if args.len() + 1 > C_ARG_OPNDS.len() => gen_send_without_block(
             jit,
             asm,
             *cd,
+            *recv,
             &function.frame_state(*state),
             SendFallbackReason::CCallWithFrameTooManyArgs,
         ),
@@ -2099,6 +2218,16 @@ fn gen_getivar(
     id: ID,
     ic: *const iseq_inline_iv_cache_entry,
 ) -> Opnd {
+    // Count not_monomorphic ivar fallback executions for the recompilation trigger.
+    if jit.payload_ptr != 0 && jit.has_version_budget {
+        asm_comment!(asm, "count not_monomorphic getivar for recompilation");
+        asm_ccall!(
+            asm,
+            rb_zjit_count_ivar_fallback,
+            Opnd::UImm(jit.payload_ptr as u64)
+        );
+    }
+
     if ic.is_null() {
         asm_ccall!(asm, rb_ivar_get, recv, id.0.into())
     } else {
@@ -2124,6 +2253,16 @@ fn gen_setivar(
     val: Opnd,
     state: &FrameState,
 ) {
+    // Count not_monomorphic ivar fallback executions for the recompilation trigger.
+    if jit.payload_ptr != 0 && jit.has_version_budget {
+        asm_comment!(asm, "count not_monomorphic setivar for recompilation");
+        asm_ccall!(
+            asm,
+            rb_zjit_count_ivar_fallback,
+            Opnd::UImm(jit.payload_ptr as u64)
+        );
+    }
+
     // Setting an ivar can raise FrozenError, so we need proper frame state for exception handling.
     gen_prepare_non_leaf_call(jit, asm, state);
     if ic.is_null() {
@@ -2534,15 +2673,70 @@ fn gen_if_false(
 }
 
 /// Compile a dynamic dispatch with block
+/// Emit inline type feedback with an assembly-level guard that skips the ccall
+/// when profiling is self-disabled (no_profile_send_hits >= threshold).
+fn gen_guarded_inline_profile(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    recv_opnd: Opnd,
+    insn_idx: u64,
+    n_operands: u64,
+) {
+    let threshold = (get_option!(recompile_threshold) as u64) / 2;
+    if threshold == 0 {
+        return;
+    }
+
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+    let skip_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let skip_edge = || {
+        Target::Block(lir::BranchEdge {
+            target: skip_block,
+            args: vec![],
+        })
+    };
+
+    asm_comment!(asm, "guard: skip inline profiling if self-disabled");
+    let payload_addr = asm.load(Opnd::UImm(jit.payload_ptr as u64));
+    let offset = std::mem::offset_of!(crate::payload::IseqPayload, no_profile_send_hits) as i32;
+    let hits = asm.load(Opnd::mem(64, payload_addr, offset));
+    asm.cmp(hits, Opnd::UImm(threshold));
+    asm.jge(jit, skip_edge());
+
+    asm_comment!(asm, "inline type feedback for NoProfile send");
+    asm_ccall!(
+        asm,
+        rb_zjit_inline_profile_send,
+        Opnd::UImm(jit.payload_ptr as u64),
+        Opnd::UImm(insn_idx),
+        recv_opnd,
+        Opnd::UImm(n_operands)
+    );
+
+    asm.jmp(skip_edge());
+    asm.set_current_block(skip_block);
+    let label = jit.get_label(asm, skip_block, hir_block_id);
+    asm.write_label(label);
+}
+
 fn gen_send(
     jit: &mut JITState,
     asm: &mut Assembler,
     cd: *const rb_call_data,
+    recv: InsnId,
     blockiseq: IseqPtr,
     state: &FrameState,
     reason: SendFallbackReason,
 ) -> lir::Opnd {
     gen_incr_send_fallback_counter(asm, reason);
+
+    // Inline type feedback for NoProfile sends
+    if matches!(reason, SendFallbackReason::SendNoProfiles) && jit.should_emit_inline_profiling {
+        let recv_opnd = jit.get_opnd(recv);
+        let n_operands = unsafe { vm_ci_argc((*cd).ci) } as u64 + 1;
+        gen_guarded_inline_profile(jit, asm, recv_opnd, state.insn_idx as u64, n_operands);
+    }
 
     gen_prepare_non_leaf_call(jit, asm, state);
     asm_comment!(
@@ -2599,10 +2793,20 @@ fn gen_send_without_block(
     jit: &mut JITState,
     asm: &mut Assembler,
     cd: *const rb_call_data,
+    recv: InsnId,
     state: &FrameState,
     reason: SendFallbackReason,
 ) -> lir::Opnd {
     gen_incr_send_fallback_counter(asm, reason);
+
+    // Inline type feedback for NoProfile sends
+    if matches!(reason, SendFallbackReason::SendWithoutBlockNoProfiles)
+        && jit.should_emit_inline_profiling
+    {
+        let recv_opnd = jit.get_opnd(recv);
+        let n_operands = unsafe { vm_ci_argc((*cd).ci) } as u64 + 1;
+        gen_guarded_inline_profile(jit, asm, recv_opnd, state.insn_idx as u64, n_operands);
+    }
 
     gen_prepare_non_leaf_call(jit, asm, state);
     asm_comment!(

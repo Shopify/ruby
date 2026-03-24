@@ -257,7 +257,7 @@ impl ProfiledType {
     }
 
     /// Profile the class and shape of the given object
-    fn new(obj: VALUE) -> Self {
+    pub(crate) fn new(obj: VALUE) -> Self {
         if obj == Qfalse {
             return Self { class: unsafe { rb_cFalseClass },
                           shape: INVALID_SHAPE_ID,
@@ -489,6 +489,74 @@ impl IseqProfile {
             operands.clear();
         }
         self.super_cme.clear();
+    }
+
+    /// Reset only profiling counters for recompilation, preserving inline type feedback.
+    /// The preserved data in opnd_types gives V2 immediate access to send receiver types
+    /// collected during V1 execution — no interpreter warmup needed for hot paths.
+    pub fn reset_counters_for_recompile(&mut self) {
+        for count in self.num_profiles.iter_mut() {
+            *count = 0;
+        }
+        self.super_cme.clear();
+        // NOTE: opnd_types intentionally NOT cleared — preserves inline feedback
+    }
+
+    /// Check if the inline-collected type feedback is high quality enough to justify
+    /// recompilation. Returns true if at least half of the non-empty receiver distributions
+    /// are monomorphic or skewed-polymorphic (would produce efficient guarded direct calls
+    /// in V2). ISEQs with mostly polymorphic/megamorphic feedback won't benefit from
+    /// recompilation — V2 can't specialize mixed-type sends, so the overhead
+    /// (code size inflation, transition cost) isn't justified.
+    pub fn inline_feedback_is_high_quality(&self) -> bool {
+        let mut high_quality = 0usize;
+        let mut total = 0usize;
+        for operands in &self.opnd_types {
+            // Only check the receiver distribution (types[0]) — this is what the
+            // compiler uses for send specialization decisions.
+            if let Some(dist) = operands.first() {
+                let summary = TypeDistributionSummary::new(dist);
+                if summary.is_monomorphic() || summary.is_skewed_polymorphic() {
+                    high_quality += 1;
+                    total += 1;
+                } else if summary.is_polymorphic()
+                    || summary.is_megamorphic()
+                    || summary.is_skewed_megamorphic()
+                {
+                    total += 1;
+                }
+                // Empty distributions are ignored (no signal)
+            }
+        }
+        // Default to high quality if no data (recompilation still happens via side-exits)
+        if total == 0 {
+            return true;
+        }
+        // Require ≥50% monomorphic/skewed to proceed with recompilation
+        high_quality * 2 >= total
+    }
+
+    /// Record an inline type observation for the receiver at a given instruction index.
+    /// Used by JIT code to collect type feedback for NoProfile sends during execution.
+    pub fn observe_receiver(&mut self, insn_idx: usize, n_operands: usize, ty: ProfiledType) {
+        if let Some(types) = self.opnd_types.get_mut(insn_idx) {
+            if types.is_empty() {
+                types.resize(n_operands, TypeDistribution::new());
+            }
+            types[0].observe(ty);
+        }
+    }
+
+    /// Get the number of profiled executions for a given instruction index.
+    pub fn num_profiles_for(&self, insn_idx: usize) -> NumProfiles {
+        self.num_profiles.get(insn_idx).copied().unwrap_or(0)
+    }
+
+    /// Increment the profiling counter for a given instruction index.
+    pub fn increment_num_profiles(&mut self, insn_idx: usize) {
+        if let Some(count) = self.num_profiles.get_mut(insn_idx) {
+            *count = count.saturating_add(1);
+        }
     }
 }
 
