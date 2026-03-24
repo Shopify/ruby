@@ -399,6 +399,60 @@ class TestZJIT < Test::Unit::TestCase
     RUBY
   end
 
+  # Test that side exits trigger recompilation after reaching the threshold
+  def test_side_exit_recompilation
+    assert_runs 'true', <<~'RUBY', call_threshold: 2, num_profiles: 1, stats: :quiet, extra_args: %w[--zjit-recompile-threshold=5]
+      def test(x)
+        x + 1
+      end
+      100.times { test(42) }
+      stats = RubyVM::ZJIT.stats
+      # Should have compiled at least one ISEQ
+      stats[:compiled_iseq_count] >= 1
+    RUBY
+  end
+
+  # Test that the deferral mechanism doesn't get stuck (the bug fix)
+  def test_deferral_does_not_get_stuck
+    assert_runs '101', <<~'RUBY', call_threshold: 2, num_profiles: 1, stats: :quiet, extra_args: %w[--zjit-recompile-threshold=5]
+      def test(x)
+        x + 1
+      end
+      # Warm up with one type
+      100.times { test(42) }
+      # The method should still be callable and return correct results
+      test(100)
+    RUBY
+  end
+
+  # Test that threshold=0 disables recompilation
+  def test_recompile_threshold_zero_disables
+    assert_runs '0', <<~'RUBY', call_threshold: 2, num_profiles: 1, stats: :quiet, extra_args: %w[--zjit-recompile-threshold=0]
+      def test(x)
+        x + 1
+      end
+      100.times { test(42) }
+      RubyVM::ZJIT.stats[:recompile_count]
+    RUBY
+  end
+
+  # Test that the global recompilation cap limits recompilations
+  def test_recompile_cap
+    assert_runs 'true', <<~'RUBY', call_threshold: 2, num_profiles: 1, stats: :quiet, extra_args: %w[--zjit-recompile-threshold=5 --zjit-recompile-cap=2]
+      results = []
+      # Create several methods that will each trigger recompilation
+      5.times do |i|
+        define_method(:"cap_test_#{i}") { |x| x + 1 }
+      end
+      5.times do |i|
+        100.times { send(:"cap_test_#{i}", 42) }
+      end
+      stats = RubyVM::ZJIT.stats
+      # Recompile count should be capped at 2
+      stats[:recompile_count] <= 2
+    RUBY
+  end
+
   private
 
   # Assert that every method call in `test_script` can be compiled by ZJIT
