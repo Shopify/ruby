@@ -117,6 +117,10 @@ pub struct Options {
     /// Number of side exits before triggering recompilation of an ISEQ.
     /// Set to 0 to disable recompilation.
     pub recompile_threshold: u64,
+
+    /// Maximum number of ISEQs that can be recompiled per process.
+    /// Limits code size inflation for large workloads. Set to 0 for unlimited.
+    pub recompile_cap: u64,
 }
 
 impl Default for Options {
@@ -143,6 +147,7 @@ impl Default for Options {
             allowed_iseqs: None,
             log_compiled_iseqs: None,
             recompile_threshold: DEFAULT_RECOMPILE_THRESHOLD,
+            recompile_cap: 50,
         }
     }
 }
@@ -186,6 +191,10 @@ pub const ZJIT_OPTIONS: &[(&str, &str)] = &[
     (
         "--zjit-recompile-threshold=num",
         "Side exits to trigger recompile (default: 100, 0=off).",
+    ),
+    (
+        "--zjit-recompile-cap=num",
+        "Max ISEQs to recompile (default: 50, 0=unlimited).",
     ),
     (
         "--zjit-trace-exits[=counter]",
@@ -393,6 +402,13 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
         ("recompile-threshold", _) => match opt_val.parse() {
             Ok(n) => {
                 options.recompile_threshold = n;
+            }
+            Err(_) => return None,
+        },
+
+        ("recompile-cap", _) => match opt_val.parse() {
+            Ok(n) => {
+                options.recompile_cap = n;
             }
             Err(_) => return None,
         },

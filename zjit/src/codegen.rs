@@ -74,7 +74,6 @@ pub extern "C" fn rb_zjit_count_side_exit(payload_raw: *mut std::ffi::c_void) {
 }
 
 static GLOBAL_RECOMPILE_COUNT: AtomicU64 = AtomicU64::new(0);
-const MAX_GLOBAL_RECOMPILATIONS: u64 = 50;
 
 /// Escalating threshold for deferred re-profiling. Higher deferral levels
 /// give cold branches progressively more time to warm up.
@@ -93,10 +92,13 @@ fn trigger_recompilation(
     iseq: IseqPtr,
     preserve_profiles: bool,
 ) {
-    if MAX_GLOBAL_RECOMPILATIONS > 0 {
+    // Global recompilation cap: prevent code size inflation and overhead from
+    // too many ISEQs recompiling. Configurable via --zjit-recompile-cap=num.
+    let cap = get_option!(recompile_cap);
+    if cap > 0 {
         let prev = GLOBAL_RECOMPILE_COUNT.fetch_add(1, Ordering::Relaxed);
-        if prev >= MAX_GLOBAL_RECOMPILATIONS {
-            GLOBAL_RECOMPILE_COUNT.fetch_sub(1, Ordering::Relaxed);
+        if prev >= cap {
+            GLOBAL_RECOMPILE_COUNT.fetch_sub(1, Ordering::Relaxed); // undo increment
             return;
         }
     }
