@@ -1,10 +1,14 @@
 //! Configurable options for ZJIT.
 
-use std::{ffi::{CStr, CString}, fs::File, ptr::null};
-use std::os::raw::{c_char, c_int, c_uint};
 use crate::cruby::*;
 use crate::stats::Counter;
 use std::collections::HashSet;
+use std::os::raw::{c_char, c_int, c_uint};
+use std::{
+    ffi::{CStr, CString},
+    fs::File,
+    ptr::null,
+};
 
 /// Type of symbols to dump into /tmp/perf-{pid}.map
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -16,7 +20,7 @@ pub enum PerfMap {
 }
 
 /// Default --zjit-num-profiles
-const DEFAULT_NUM_PROFILES: NumProfiles = 5;
+const DEFAULT_NUM_PROFILES: NumProfiles = 25;
 pub type NumProfiles = u16;
 
 /// Default --zjit-call-threshold. This should be large enough to avoid compiling
@@ -29,7 +33,8 @@ pub type CallThreshold = u64;
 /// which is equal to --zjit-num-profiles.
 #[unsafe(no_mangle)]
 #[allow(non_upper_case_globals)]
-pub static mut rb_zjit_profile_threshold: CallThreshold = DEFAULT_CALL_THRESHOLD - DEFAULT_NUM_PROFILES as CallThreshold;
+pub static mut rb_zjit_profile_threshold: CallThreshold =
+    DEFAULT_CALL_THRESHOLD - DEFAULT_NUM_PROFILES as CallThreshold;
 
 /// Default --zjit-recompile-threshold. Number of side exits before triggering recompilation.
 pub const DEFAULT_RECOMPILE_THRESHOLD: u64 = 100;
@@ -146,28 +151,50 @@ impl Default for Options {
 /// Note that --help allows only 80 chars per line, including indentation, and it also puts the
 /// description in a separate line if the option name is too long.  80-char limit --> | (any character beyond this `|` column fails the test)
 pub const ZJIT_OPTIONS: &[(&str, &str)] = &[
-    ("--zjit-mem-size=num",
-                     "Max amount of memory that ZJIT can use in MiB (default: 128)."),
-    ("--zjit-call-threshold=num",
-                     "Number of calls to trigger JIT (default: 30)."),
-    ("--zjit-num-profiles=num",
-                     "Number of profiled calls before JIT (default: 5)."),
-    ("--zjit-stats-quiet",
-                     "Collect ZJIT stats and suppress output."),
-    ("--zjit-stats[=file]",
-                     "Collect ZJIT stats (=file to write to a file)."),
-    ("--zjit-disable",
-                     "Disable ZJIT for lazily enabling it with RubyVM::ZJIT.enable."),
-    ("--zjit-perf[=iseq|hir]",
-                     "Dump symbols for Linux perf /tmp/perf-{}.map (default: iseq)."),
-    ("--zjit-log-compiled-iseqs=path",
-                     "Log compiled ISEQs to the file. The file will be truncated."),
-    ("--zjit-recompile-threshold=num",
-                     "Side exits to trigger recompile (default: 100, 0=off)."),
-    ("--zjit-trace-exits[=counter]",
-                     "Record source on side-exit. `Counter` picks specific counter."),
-    ("--zjit-trace-exits-sample-rate=num",
-                     "Frequency at which to record side exits. Must be `usize`.")
+    (
+        "--zjit-mem-size=num",
+        "Max amount of memory that ZJIT can use in MiB (default: 128).",
+    ),
+    (
+        "--zjit-call-threshold=num",
+        "Number of calls to trigger JIT (default: 30).",
+    ),
+    (
+        "--zjit-num-profiles=num",
+        "Number of profiled calls before JIT (default: 5).",
+    ),
+    (
+        "--zjit-stats-quiet",
+        "Collect ZJIT stats and suppress output.",
+    ),
+    (
+        "--zjit-stats[=file]",
+        "Collect ZJIT stats (=file to write to a file).",
+    ),
+    (
+        "--zjit-disable",
+        "Disable ZJIT for lazily enabling it with RubyVM::ZJIT.enable.",
+    ),
+    (
+        "--zjit-perf[=iseq|hir]",
+        "Dump symbols for Linux perf /tmp/perf-{}.map (default: iseq).",
+    ),
+    (
+        "--zjit-log-compiled-iseqs=path",
+        "Log compiled ISEQs to the file. The file will be truncated.",
+    ),
+    (
+        "--zjit-recompile-threshold=num",
+        "Side exits to trigger recompile (default: 100, 0=off).",
+    ),
+    (
+        "--zjit-trace-exits[=counter]",
+        "Record source on side-exit. `Counter` picks specific counter.",
+    ),
+    (
+        "--zjit-trace-exits-sample-rate=num",
+        "Frequency at which to record side exits. Must be `usize`.",
+    ),
 ];
 
 #[derive(Copy, Clone, Debug)]
@@ -232,7 +259,11 @@ const MAX_MEM_MIB: usize = 1024 * 1024;
 /// Macro to dump LIR if --zjit-dump-lir is specified
 macro_rules! asm_dump {
     ($asm:expr, $target:ident) => {
-        if let Some(crate::options::Options { dump_lir: Some(dump_lirs), .. }) = unsafe { crate::options::OPTIONS.as_ref() } {
+        if let Some(crate::options::Options {
+            dump_lir: Some(dump_lirs),
+            ..
+        }) = unsafe { crate::options::OPTIONS.as_ref() }
+        {
             if dump_lirs.contains(&crate::options::DumpLIR::$target) {
                 println!("LIR {}:\n{}", stringify!($target), $asm);
             }
@@ -246,7 +277,9 @@ macro_rules! get_option {
     // Unsafe is ok here because options are initialized
     // once before any Ruby code executes
     ($option_name:ident) => {
-        unsafe { crate::options::OPTIONS.as_ref() }.unwrap().$option_name
+        unsafe { crate::options::OPTIONS.as_ref() }
+            .unwrap()
+            .$option_name
     };
 }
 pub(crate) use get_option;
@@ -254,7 +287,10 @@ pub(crate) use get_option;
 /// Macro to reference an option value by name.
 macro_rules! get_option_ref {
     ($option_name:ident) => {
-        unsafe { crate::options::OPTIONS.as_ref() }.unwrap().$option_name.as_ref()
+        unsafe { crate::options::OPTIONS.as_ref() }
+            .unwrap()
+            .$option_name
+            .as_ref()
     };
 }
 pub(crate) use get_option_ref;
@@ -266,7 +302,9 @@ pub extern "C" fn rb_zjit_prepare_options() {
     // rb_zjit_prepare_options() could be called for feature flags or $RUBY_ZJIT_ENABLE
     // after rb_zjit_parse_option() is called, so we need to handle the already-initialized case.
     if unsafe { OPTIONS.is_none() } {
-        unsafe { OPTIONS = Some(Options::default()); }
+        unsafe {
+            OPTIONS = Some(Options::default());
+        }
     }
 }
 
@@ -316,7 +354,7 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
 
     // Match on the option name and value strings
     match (opt_name, opt_val) {
-        ("", "") => {}, // Simply --zjit
+        ("", "") => {} // Simply --zjit
 
         ("mem-size", _) => match opt_val.parse::<usize>() {
             Ok(n) if (1..=MAX_MEM_MIB).contains(&n) => {
@@ -336,9 +374,11 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
 
         ("call-threshold", _) => match opt_val.parse() {
             Ok(n) => {
-                unsafe { rb_zjit_call_threshold = n; }
+                unsafe {
+                    rb_zjit_call_threshold = n;
+                }
                 update_profile_threshold();
-            },
+            }
             Err(_) => return None,
         },
 
@@ -346,10 +386,9 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
             Ok(n) => {
                 options.num_profiles = n;
                 update_profile_threshold();
-            },
+            }
             Err(_) => return None,
         },
-
 
         ("recompile-threshold", _) => match opt_val.parse() {
             Ok(n) => {
@@ -447,7 +486,11 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
                     "scratch_split" => DumpLIR::scratch_split,
                     "live_intervals" => DumpLIR::live_intervals,
                     _ => {
-                        let valid_options = DUMP_LIR_ALL.iter().map(|opt| format!("{opt:?}")).collect::<Vec<_>>().join(", ");
+                        let valid_options = DUMP_LIR_ALL
+                            .iter()
+                            .map(|opt| format!("{opt:?}"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         eprintln!("invalid --zjit-dump-lir option: '{filter}'");
                         eprintln!("valid --zjit-dump-lir options: all, {valid_options}");
                         return None;
@@ -482,7 +525,9 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
         ("perf", "" | "iseq") => options.perf = Some(PerfMap::ISEQ),
         ("perf", "hir") => options.perf = Some(PerfMap::HIR),
 
-        ("allowed-iseqs", _) if !opt_val.is_empty() => options.allowed_iseqs = Some(parse_jit_list(opt_val)),
+        ("allowed-iseqs", _) if !opt_val.is_empty() => {
+            options.allowed_iseqs = Some(parse_jit_list(opt_val))
+        }
         ("log-compiled-iseqs", _) if !opt_val.is_empty() => {
             // Truncate the file if it exists
             std::fs::OpenOptions::new()
@@ -507,18 +552,26 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
 fn update_profile_threshold() {
     if unsafe { rb_zjit_call_threshold == 1 } {
         // If --zjit-call-threshold=1, never rewrite ISEQs to profile instructions.
-        unsafe { rb_zjit_profile_threshold = 0; }
+        unsafe {
+            rb_zjit_profile_threshold = 0;
+        }
     } else {
         // Otherwise, profile instructions at least once.
         let num_profiles = get_option!(num_profiles);
-        unsafe { rb_zjit_profile_threshold = rb_zjit_call_threshold.saturating_sub(num_profiles.into()).max(1) };
+        unsafe {
+            rb_zjit_profile_threshold = rb_zjit_call_threshold
+                .saturating_sub(num_profiles.into())
+                .max(1)
+        };
     }
 }
 
 /// Update --zjit-call-threshold for testing
 #[cfg(test)]
 pub fn set_call_threshold(call_threshold: CallThreshold) {
-    unsafe { rb_zjit_call_threshold = call_threshold; }
+    unsafe {
+        rb_zjit_call_threshold = call_threshold;
+    }
     rb_zjit_prepare_options();
     update_profile_threshold();
 }
@@ -536,12 +589,29 @@ pub fn enable_zjit_stats() {
 pub extern "C" fn rb_zjit_show_usage(help: c_int, highlight: c_int, width: c_uint, columns: c_int) {
     for &(name, description) in ZJIT_OPTIONS.iter() {
         unsafe extern "C" {
-            fn ruby_show_usage_line(name: *const c_char, secondary: *const c_char, description: *const c_char,
-                                    help: c_int, highlight: c_int, width: c_uint, columns: c_int);
+            fn ruby_show_usage_line(
+                name: *const c_char,
+                secondary: *const c_char,
+                description: *const c_char,
+                help: c_int,
+                highlight: c_int,
+                width: c_uint,
+                columns: c_int,
+            );
         }
         let name = CString::new(name).unwrap();
         let description = CString::new(description).unwrap();
-        unsafe { ruby_show_usage_line(name.as_ptr(), null(), description.as_ptr(), help, highlight, width, columns) }
+        unsafe {
+            ruby_show_usage_line(
+                name.as_ptr(),
+                null(),
+                description.as_ptr(),
+                help,
+                highlight,
+                width,
+                columns,
+            )
+        }
     }
 }
 
@@ -604,7 +674,9 @@ mod tests {
 
     #[test]
     fn parse_dump_disasm_path() {
-        unsafe { OPTIONS = Some(Options::default()); }
+        unsafe {
+            OPTIONS = Some(Options::default());
+        }
 
         let dir = std::env::temp_dir();
         let expected_path = dir.join(format!("zjit_{}.log", std::process::id()));
