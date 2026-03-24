@@ -5466,14 +5466,12 @@ mod hir_opt_tests {
           v30:CShape[0x1001] = GuardBitEquals v29, CShape(0x1001)
           StoreField v28, :@foo@0x1002, v10
           WriteBarrier v28, v10
-          v33:CShape[0x1003] = Const CShape(0x1003)
-          StoreField v28, :_shape_id@0x1000, v33
           v14:HeapBasicObject = RefineType v6, HeapBasicObject
           v17:Fixnum[2] = Const Value(2)
           PatchPoint SingleRactorMode
-          StoreField v14, :@bar@0x1004, v17
+          StoreField v14, :@bar@0x1003, v17
           WriteBarrier v14, v17
-          v40:CShape[0x1005] = Const CShape(0x1005)
+          v40:CShape[0x1004] = Const CShape(0x1004)
           StoreField v14, :_shape_id@0x1000, v40
           CheckInterrupts
           Return v17
@@ -14777,21 +14775,17 @@ mod hir_opt_tests {
           v44:CShape[0x1001] = GuardBitEquals v43, CShape(0x1001)
           StoreField v42, :@a@0x1002, v10
           WriteBarrier v42, v10
-          v47:CShape[0x1003] = Const CShape(0x1003)
-          StoreField v42, :_shape_id@0x1000, v47
           v14:HeapBasicObject = RefineType v6, HeapBasicObject
           v17:Fixnum[2] = Const Value(2)
           PatchPoint SingleRactorMode
-          StoreField v14, :@b@0x1004, v17
+          StoreField v14, :@b@0x1003, v17
           WriteBarrier v14, v17
-          v54:CShape[0x1005] = Const CShape(0x1005)
-          StoreField v14, :_shape_id@0x1000, v54
           v21:HeapBasicObject = RefineType v14, HeapBasicObject
           v24:Fixnum[3] = Const Value(3)
           PatchPoint SingleRactorMode
-          StoreField v21, :@c@0x1006, v24
+          StoreField v21, :@c@0x1004, v24
           WriteBarrier v21, v24
-          v61:CShape[0x1007] = Const CShape(0x1007)
+          v61:CShape[0x1005] = Const CShape(0x1005)
           StoreField v21, :_shape_id@0x1000, v61
           v28:HeapBasicObject = RefineType v21, HeapBasicObject
           v31:Fixnum[4] = Const Value(4)
@@ -15324,21 +15318,17 @@ mod hir_opt_tests {
           v37:CShape[0x1001] = GuardBitEquals v36, CShape(0x1001)
           StoreField v35, :@a@0x1002, v10
           WriteBarrier v35, v10
-          v40:CShape[0x1003] = Const CShape(0x1003)
-          StoreField v35, :_shape_id@0x1000, v40
           v14:HeapBasicObject = RefineType v6, HeapBasicObject
           v17:Fixnum[2] = Const Value(2)
           PatchPoint SingleRactorMode
-          StoreField v14, :@b@0x1004, v17
+          StoreField v14, :@b@0x1003, v17
           WriteBarrier v14, v17
-          v47:CShape[0x1005] = Const CShape(0x1005)
-          StoreField v14, :_shape_id@0x1000, v47
           v21:HeapBasicObject = RefineType v14, HeapBasicObject
           v24:Fixnum[3] = Const Value(3)
           PatchPoint SingleRactorMode
-          StoreField v21, :@c@0x1006, v24
+          StoreField v21, :@c@0x1004, v24
           WriteBarrier v21, v24
-          v54:CShape[0x1007] = Const CShape(0x1007)
+          v54:CShape[0x1005] = Const CShape(0x1005)
           StoreField v21, :_shape_id@0x1000, v54
           CheckInterrupts
           Return v24
@@ -15414,29 +15404,22 @@ mod hir_opt_tests {
           v49:HeapBasicObject = GuardType v6, HeapBasicObject
           v50:CShape = LoadField v49, :_shape_id@0x1000
           v51:CShape[0x1001] = GuardBitEquals v50, CShape(0x1001)
-          StoreField v49, :@a@0x1002, v10
           WriteBarrier v49, v10
-          v54:CShape[0x1003] = Const CShape(0x1003)
+          v54:CShape[0x1002] = Const CShape(0x1002)
           StoreField v49, :_shape_id@0x1000, v54
           v14:HeapBasicObject = RefineType v6, HeapBasicObject
           v17:Fixnum[2] = Const Value(2)
           PatchPoint SingleRactorMode
-          StoreField v14, :@a@0x1002, v17
           WriteBarrier v14, v17
           v21:HeapBasicObject = RefineType v14, HeapBasicObject
           v24:Fixnum[3] = Const Value(3)
-          PatchPoint SingleRactorMode
-          StoreField v21, :@a@0x1002, v24
           WriteBarrier v21, v24
           v28:HeapBasicObject = RefineType v21, HeapBasicObject
           v31:Fixnum[4] = Const Value(4)
-          PatchPoint SingleRactorMode
-          StoreField v28, :@a@0x1002, v31
           WriteBarrier v28, v31
           v35:HeapBasicObject = RefineType v28, HeapBasicObject
           v38:Fixnum[5] = Const Value(5)
-          PatchPoint SingleRactorMode
-          StoreField v35, :@a@0x1002, v38
+          StoreField v35, :@a@0x1003, v38
           WriteBarrier v35, v38
           CheckInterrupts
           Return v38
