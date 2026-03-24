@@ -5,10 +5,10 @@ use crate::asm::CodeBlock;
 use crate::backend::lir::Assembler;
 use crate::codegen::MAX_ISEQ_VERSIONS;
 use crate::cruby::*;
-use crate::hir::{Insn, iseq_to_hir};
+use crate::hir::tests::hir_build_tests::assert_contains_opcode;
+use crate::hir::{iseq_to_hir, Insn};
 use crate::options::{rb_zjit_prepare_options, set_call_threshold};
 use crate::payload::IseqVersion;
-use crate::hir::tests::hir_build_tests::assert_contains_opcode;
 use crate::payload::*;
 use insta::assert_snapshot;
 
@@ -32,7 +32,15 @@ fn test_breakpoint_hir_codegen() {
     asm.new_block_without_id("test");
     let mut cb = CodeBlock::new_dummy();
 
-    gen_insn(&mut cb, &mut jit, &mut asm, &function, breakpoint, &function.find(breakpoint)).unwrap();
+    gen_insn(
+        &mut cb,
+        &mut jit,
+        &mut asm,
+        &function,
+        breakpoint,
+        &function.find(breakpoint),
+    )
+    .unwrap();
     asm.compile_with_num_regs(&mut cb, 0);
 
     #[cfg(target_arch = "x86_64")]
@@ -71,20 +79,24 @@ fn test_putobject() {
 
 #[test]
 fn test_putstring() {
-    eval(r##"
+    eval(
+        r##"
         def test = "#{""}"
         test
-    "##);
+    "##,
+    );
     assert_contains_opcode("test", YARVINSN_putstring);
     assert_snapshot!(inspect(r##"test"##), @r#""""#);
 }
 
 #[test]
 fn test_putchilledstring() {
-    eval(r#"
+    eval(
+        r#"
         def test = ""
         test
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_putchilledstring);
     assert_snapshot!(inspect(r#"test"#), @r#""""#);
 }
@@ -100,7 +112,8 @@ fn test_leave_param() {
 
 #[test]
 fn test_getglobal_with_warning() {
-    eval(r#"
+    eval(
+        r#"
         Warning[:deprecated] = true
 
         module Warning
@@ -116,75 +129,87 @@ fn test_getglobal_with_warning() {
         end
         $VERBOSE = true
         test
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getglobal);
     assert_snapshot!(inspect(r#"test"#), @r#""rescued""#);
 }
 
 #[test]
 fn test_setglobal() {
-    eval("
+    eval(
+        "
         def test
           $a = 1
           $a
         end
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_setglobal);
     assert_snapshot!(inspect("test"), @"1");
 }
 
 #[test]
 fn test_string_intern() {
-    eval(r#"
+    eval(
+        r#"
         def test
           :"foo#{123}"
         end
         test
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_intern);
     assert_snapshot!(inspect(r#"test"#), @":foo123");
 }
 
 #[test]
 fn test_duphash() {
-    eval("
+    eval(
+        "
         def test
           {a: 1}
         end
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_duphash);
     assert_snapshot!(inspect("test"), @"{a: 1}");
 }
 
 #[test]
 fn test_pushtoarray() {
-    eval("
+    eval(
+        "
         def test
           [*[], 1, 2, 3]
         end
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_pushtoarray);
     assert_snapshot!(inspect("test"), @"[1, 2, 3]");
 }
 
 #[test]
 fn test_splatarray_new_array() {
-    eval("
+    eval(
+        "
         def test a
           [*a, 3]
         end
         test [1, 2]
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_splatarray);
     assert_snapshot!(inspect("test [1, 2]"), @"[1, 2, 3]");
 }
 
 #[test]
 fn test_splatarray_existing_array() {
-    eval("
+    eval(
+        "
         def foo v
           [1, 2, v]
         end
@@ -192,26 +217,30 @@ fn test_splatarray_existing_array() {
           foo(*a)
         end
         test [3]
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_splatarray);
     assert_snapshot!(inspect("test [3]"), @"[1, 2, 3]");
 }
 
 #[test]
 fn test_concattoarray() {
-    eval("
+    eval(
+        "
         def test(*a)
           [1, 2, *a]
         end
         test 3
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_concattoarray);
     assert_snapshot!(inspect("test 3"), @"[1, 2, 3]");
 }
 
 #[test]
 fn test_definedivar() {
-    eval("
+    eval(
+        "
         def test
           v0 = defined?(@a)
           @a = nil
@@ -221,14 +250,16 @@ fn test_definedivar() {
           [v0, v1, v2]
         end
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_definedivar);
     assert_snapshot!(inspect("test"), @r#"[nil, "instance-variable", nil]"#);
 }
 
 #[test]
 fn test_setglobal_with_trace_var_exception() {
-    eval(r#"
+    eval(
+        r#"
         def test
           $a = 1
         rescue
@@ -236,7 +267,8 @@ fn test_setglobal_with_trace_var_exception() {
         end
         trace_var(:$a) { raise }
         test
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_setglobal);
     assert_snapshot!(inspect(r#"test"#), @r#""rescued""#);
 }
@@ -410,45 +442,52 @@ fn test_optional_arguments_cyclic() {
 
 #[test]
 fn test_getblockparamproxy() {
-    eval("
+    eval(
+        "
         def test(&block)
           0.then(&block)
         end
         test { 1 }
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_getblockparamproxy);
     assert_snapshot!(inspect("test { 1 }"), @"1");
 }
 
 #[test]
 fn test_getblockparam() {
-    eval("
+    eval(
+        "
         def test(&blk)
           blk
         end
         test { 2 }.call
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_getblockparam);
     assert_snapshot!(inspect("test { 2 }.call"), @"2");
 }
 
 #[test]
 fn test_getblockparam_proxy_side_exit_restores_block_local() {
-    eval("
+    eval(
+        "
         def test(&block)
           b = block
           raise \"test\" unless block
           b ? 2 : 3
         end
         test {}
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_getblockparam);
     assert_snapshot!(inspect("test {}"), @"2");
 }
 
 #[test]
 fn test_getblockparam_used_twice_in_args() {
-    eval("
+    eval(
+        "
         def f(*args) = args
         def test(&blk)
           b = blk
@@ -456,55 +495,64 @@ fn test_getblockparam_used_twice_in_args() {
           blk
         end
         test {1}.call
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_getblockparam);
     assert_snapshot!(inspect("test {1}.call"), @"1");
 }
 
 #[test]
 fn test_optimized_method_call_proc_call() {
-    eval("
+    eval(
+        "
         def test(p)
           p.call(1)
         end
         test(proc { |x| x * 2 })
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("test(proc { |x| x * 2 })"), @"2");
 }
 
 #[test]
 fn test_optimized_method_call_proc_aref() {
-    eval("
+    eval(
+        "
         def test(p)
           p[2]
         end
         test(proc { |x| x * 2 })
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aref);
     assert_snapshot!(inspect("test(proc { |x| x * 2 })"), @"4");
 }
 
 #[test]
 fn test_optimized_method_call_proc_yield() {
-    eval("
+    eval(
+        "
         def test(p)
           p.yield(3)
         end
         test(proc { |x| x * 2 })
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("test(proc { |x| x * 2 })"), @"6");
 }
 
 #[test]
 fn test_optimized_method_call_proc_kw_splat() {
-    eval("
+    eval(
+        "
         def test(p, h)
           p.call(**h)
         end
         test(proc { |**kw| kw[:a] + kw[:b] }, { a: 1, b: 2 })
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("test(proc { |**kw| kw[:a] + kw[:b] }, { a: 1, b: 2 })"), @"3");
 }
@@ -918,11 +966,13 @@ fn test_forwardable_iseq() {
 
 #[test]
 fn test_sendforward() {
-    eval("
+    eval(
+        "
         def callee(a, b) = [a, b]
         def test(...) = callee(...)
         test(1, 2)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_sendforward);
     assert_snapshot!(inspect("test(1, 2)"), @"[1, 2]");
 }
@@ -1868,30 +1918,36 @@ fn test_opt_mult_overflow() {
 
 #[test]
 fn test_opt_eq() {
-    eval("
+    eval(
+        "
         def test(a, b) = a == b
         test(0, 2) # profile opt_eq
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_eq);
     assert_snapshot!(inspect("[test(1, 1), test(0, 1)]"), @"[true, false]");
 }
 
 #[test]
 fn test_opt_eq_with_minus_one() {
-    eval("
+    eval(
+        "
         def test(a) = a == -1
         test(1) # profile opt_eq
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_eq);
     assert_snapshot!(inspect("[test(0), test(-1)]"), @"[false, true]");
 }
 
 #[test]
 fn test_opt_neq_dynamic() {
-    eval("
+    eval(
+        "
         def test(a, b) = a != b
         test(0, 2) # profile opt_neq
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_neq);
     assert_snapshot!(inspect("[test(1, 1), test(0, 1)]"), @"[false, true]");
 }
@@ -2006,85 +2062,103 @@ fn test_opt_eqq_string_same_operand() {
 
 #[test]
 fn test_opt_lt() {
-    eval("
+    eval(
+        "
         def test(a, b) = a < b
         test(2, 3) # profile opt_lt
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_lt);
     assert_snapshot!(inspect("[test(0, 1), test(0, 0), test(1, 0)]"), @"[true, false, false]");
 }
 
 #[test]
 fn test_opt_lt_with_literal_lhs() {
-    eval("
+    eval(
+        "
         def test(n) = 2 < n
         test(2) # profile opt_lt
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_lt);
     assert_snapshot!(inspect("[test(1), test(2), test(3)]"), @"[false, false, true]");
 }
 
 #[test]
 fn test_opt_le() {
-    eval("
+    eval(
+        "
         def test(a, b) = a <= b
         test(2, 3) # profile opt_le
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_le);
     assert_snapshot!(inspect("[test(0, 1), test(0, 0), test(1, 0)]"), @"[true, true, false]");
 }
 
 #[test]
 fn test_opt_gt() {
-    eval("
+    eval(
+        "
         def test(a, b) = a > b
         test(2, 3) # profile opt_gt
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_gt);
     assert_snapshot!(inspect("[test(0, 1), test(0, 0), test(1, 0)]"), @"[false, false, true]");
 }
 
 #[test]
 fn test_opt_empty_p() {
-    eval("
+    eval(
+        "
         def test(x) = x.empty?
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_empty_p);
     assert_snapshot!(inspect("[test([1]), test(\"1\"), test({})]"), @"[false, false, true]");
 }
 
 #[test]
 fn test_opt_succ() {
-    eval("
+    eval(
+        "
         def test(obj) = obj.succ
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_succ);
     assert_snapshot!(inspect(r#"[test(-1), test("A")]"#), @r#"[0, "B"]"#);
 }
 
 #[test]
 fn test_opt_and() {
-    eval("
+    eval(
+        "
         def test(x, y) = x & y
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_and);
     assert_snapshot!(inspect("[test(0b1101, 3), test([3, 2, 1, 4], [8, 1, 2, 3])]"), @"[1, [3, 2, 1]]");
 }
 
 #[test]
 fn test_opt_or() {
-    eval("
+    eval(
+        "
         def test(x, y) = x | y
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_or);
     assert_snapshot!(inspect("[test(0b1000, 3), test([3, 2, 1], [1, 2, 3])]"), @"[11, [3, 2, 1]]");
 }
 
 #[test]
 fn test_fixnum_and() {
-    eval("
+    eval(
+        "
         def test(a, b) = a & b
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_and);
     assert_snapshot!(inspect("
         [
@@ -2097,9 +2171,11 @@ fn test_fixnum_and() {
 
 #[test]
 fn test_fixnum_and_side_exit() {
-    eval("
+    eval(
+        "
         def test(a, b) = a & b
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_and);
     assert_snapshot!(inspect("
         [
@@ -2112,9 +2188,11 @@ fn test_fixnum_and_side_exit() {
 
 #[test]
 fn test_fixnum_or() {
-    eval("
+    eval(
+        "
         def test(a, b) = a | b
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_or);
     assert_snapshot!(inspect("
         [
@@ -2127,9 +2205,11 @@ fn test_fixnum_or() {
 
 #[test]
 fn test_fixnum_or_side_exit() {
-    eval("
+    eval(
+        "
         def test(a, b) = a | b
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_or);
     assert_snapshot!(inspect("
         [
@@ -2166,69 +2246,82 @@ fn test_fixnum_xor_side_exit() {
 
 #[test]
 fn test_fixnum_mul() {
-    eval("
+    eval(
+        "
         C = 3
         def test(n) = C * n
         test(4)
         test(4)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_mult);
     assert_snapshot!(inspect("test(4)"), @"12");
 }
 
 #[test]
 fn test_fixnum_div() {
-    eval("
+    eval(
+        "
         C = 48
         def test(n) = C / n
         test(4)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_div);
     assert_snapshot!(inspect("test(4)"), @"12");
 }
 
 #[test]
 fn test_fixnum_floor() {
-    eval("
+    eval(
+        "
         C = 3
         def test(n) = C / n
         test(4)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_div);
     assert_snapshot!(inspect("test(4)"), @"0");
 }
 
 #[test]
 fn test_opt_not() {
-    eval("
+    eval(
+        "
         def test(obj) = !obj
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_not);
     assert_snapshot!(inspect("[test(nil), test(false), test(0)]"), @"[true, true, false]");
 }
 
 #[test]
 fn test_opt_regexpmatch2() {
-    eval("
+    eval(
+        "
         def test(haystack) = /needle/ =~ haystack
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_regexpmatch2);
     assert_snapshot!(inspect(r#"[test("kneedle"), test("")]"#), @"[1, nil]");
 }
 
 #[test]
 fn test_opt_ge() {
-    eval("
+    eval(
+        "
         def test(a, b) = a >= b
         test(2, 3) # profile opt_ge
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_ge);
     assert_snapshot!(inspect("[test(0, 1), test(0, 0), test(1, 0)]"), @"[false, true, true]");
 }
 
 #[test]
 fn test_opt_new_does_not_push_frame() {
-    eval("
+    eval(
+        "
         class Foo
           attr_reader :backtrace
           def initialize
@@ -2237,7 +2330,8 @@ fn test_opt_new_does_not_push_frame() {
         end
         def test = Foo.new
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_new);
     assert_snapshot!(inspect("
         foo = test
@@ -2247,25 +2341,29 @@ fn test_opt_new_does_not_push_frame() {
 
 #[test]
 fn test_opt_new_with_redefined() {
-    eval(r#"
+    eval(
+        r#"
         class Foo
           def self.new = "foo"
           def initialize = raise("unreachable")
         end
         def test = Foo.new
         test
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_opt_new);
     assert_snapshot!(inspect(r#"test"#), @r#""foo""#);
 }
 
 #[test]
 fn test_opt_new_invalidate_new() {
-    eval(r#"
+    eval(
+        r#"
         class Foo; end
         def test = Foo.new
         test
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_opt_new);
     assert_snapshot!(inspect(r#"
         result = [test.class.name]
@@ -2276,19 +2374,22 @@ fn test_opt_new_invalidate_new() {
 
 #[test]
 fn test_opt_newarray_send_include_p() {
-    eval("
+    eval(
+        "
         def test(x)
             [:y, 1, Object.new].include?(x)
         end
         test(1)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_newarray_send);
     assert_snapshot!(inspect("[test(1), test(\"n\")]"), @"[true, false]");
 }
 
 #[test]
 fn test_opt_newarray_send_include_p_redefined() {
-    eval("
+    eval(
+        "
         class Array
             alias_method :old_include?, :include?
             def include?(x)
@@ -2298,7 +2399,8 @@ fn test_opt_newarray_send_include_p_redefined() {
         def test(x)
             [:y, 1, Object.new].include?(x)
         end
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_newarray_send);
     assert_snapshot!(inspect("
         def test(x)
@@ -2311,19 +2413,22 @@ fn test_opt_newarray_send_include_p_redefined() {
 
 #[test]
 fn test_opt_duparray_send_include_p() {
-    eval("
+    eval(
+        "
         def test(x)
             [:y, 1].include?(x)
         end
         test(1)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_duparray_send);
     assert_snapshot!(inspect("[test(1), test(\"n\")]"), @"[true, false]");
 }
 
 #[test]
 fn test_opt_duparray_send_include_p_redefined() {
-    eval("
+    eval(
+        "
         class Array
             alias_method :old_include?, :include?
             def include?(x)
@@ -2333,7 +2438,8 @@ fn test_opt_duparray_send_include_p_redefined() {
         def test(x)
             [:y, 1].include?(x)
         end
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_duparray_send);
     assert_snapshot!(inspect("
         def test(x)
@@ -2346,12 +2452,14 @@ fn test_opt_duparray_send_include_p_redefined() {
 
 #[test]
 fn test_opt_newarray_send_pack_buffer() {
-    eval(r#"
+    eval(
+        r#"
         def test(num, buffer)
             [num].pack('C', buffer:)
         end
         test(65, "")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_opt_newarray_send);
     assert_snapshot!(inspect(r#"
         buf = ""
@@ -2361,7 +2469,8 @@ fn test_opt_newarray_send_pack_buffer() {
 
 #[test]
 fn test_opt_newarray_send_pack_buffer_redefined() {
-    eval(r#"
+    eval(
+        r#"
         class Array
             alias_method :old_pack, :pack
             def pack(fmt, buffer: nil)
@@ -2372,7 +2481,8 @@ fn test_opt_newarray_send_pack_buffer_redefined() {
         def test(num, buffer)
             [num].pack('C', buffer:)
         end
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_opt_newarray_send);
     assert_snapshot!(inspect(r#"
         def test(num, buffer)
@@ -2387,42 +2497,49 @@ fn test_opt_newarray_send_pack_buffer_redefined() {
 
 #[test]
 fn test_opt_newarray_send_hash() {
-    eval("
+    eval(
+        "
         def test(x)
             [1, 2, x].hash
         end
         test(20)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_newarray_send);
     assert_snapshot!(inspect("test(20).class"), @"Integer");
 }
 
 #[test]
 fn test_opt_newarray_send_hash_redefined() {
-    eval("
+    eval(
+        "
         Array.class_eval { def hash = 42 }
         def test(x)
             [1, 2, x].hash
         end
         test(20)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_newarray_send);
     assert_snapshot!(inspect("test(20)"), @"42");
 }
 
 #[test]
 fn test_opt_newarray_send_max() {
-    eval("
+    eval(
+        "
         def test(a,b) = [a,b].max
         test(10, 20)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_newarray_send);
     assert_snapshot!(inspect("[test(10, 20), test(40, 30)]"), @"[20, 40]");
 }
 
 #[test]
 fn test_opt_newarray_send_max_redefined() {
-    eval("
+    eval(
+        "
         class Array
             alias_method :old_max, :max
             def max
@@ -2430,7 +2547,8 @@ fn test_opt_newarray_send_max_redefined() {
             end
         end
         def test(a,b) = [a,b].max
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_newarray_send);
     assert_snapshot!(inspect("
         def test(a,b) = [a,b].max
@@ -2441,17 +2559,20 @@ fn test_opt_newarray_send_max_redefined() {
 
 #[test]
 fn test_new_hash_empty() {
-    eval("
+    eval(
+        "
         def test = {}
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_newhash);
     assert_snapshot!(inspect("test"), @"{}");
 }
 
 #[test]
 fn test_new_hash_nonempty() {
-    eval(r#"
+    eval(
+        r#"
         def test
             key = "key"
             value = "value"
@@ -2460,29 +2581,34 @@ fn test_new_hash_nonempty() {
             {key => value, num => result}
         end
         test
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_newhash);
     assert_snapshot!(inspect(r#"test"#), @r#"{"key" => "value", 42 => 100}"#);
 }
 
 #[test]
 fn test_new_hash_single_key_value() {
-    eval(r#"
+    eval(
+        r#"
         def test = {"key" => "value"}
         test
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_newhash);
     assert_snapshot!(inspect(r#"test"#), @r#"{"key" => "value"}"#);
 }
 
 #[test]
 fn test_new_hash_with_computation() {
-    eval(r#"
+    eval(
+        r#"
         def test(a, b)
             {"sum" => a + b, "product" => a * b}
         end
         test(2, 3)
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_newhash);
     assert_snapshot!(inspect(r#"test(2, 3)"#), @r#"{"sum" => 5, "product" => 6}"#);
 }
@@ -2568,10 +2694,12 @@ fn test_new_hash_with_user_eql_method_exception() {
 
 #[test]
 fn test_opt_hash_freeze() {
-    eval("
+    eval(
+        "
         def test = {}.freeze
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_hash_freeze);
     assert_snapshot!(inspect("
         result = [test]
@@ -2584,25 +2712,29 @@ fn test_opt_hash_freeze() {
 
 #[test]
 fn test_opt_hash_freeze_rewritten() {
-    eval("
+    eval(
+        "
         class Hash
             def freeze = 5
         end
         def test = {}.freeze
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_hash_freeze);
     assert_snapshot!(inspect("test"), @"5");
 }
 
 #[test]
 fn test_opt_aset_hash() {
-    eval("
+    eval(
+        "
         def test(h, k, v)
             h[k] = v
         end
         test({}, :key, 42)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aset);
     assert_snapshot!(inspect("h = {}; test(h, :key, 42); h[:key]"), @"42");
 }
@@ -2673,10 +2805,12 @@ fn test_opt_aset_hash_too_many_args() {
 
 #[test]
 fn test_opt_ary_freeze() {
-    eval("
+    eval(
+        "
         def test = [].freeze
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_ary_freeze);
     assert_snapshot!(inspect("
         result = [test]
@@ -2689,23 +2823,27 @@ fn test_opt_ary_freeze() {
 
 #[test]
 fn test_opt_ary_freeze_rewritten() {
-    eval("
+    eval(
+        "
         class Array
             def freeze = 5
         end
         def test = [].freeze
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_ary_freeze);
     assert_snapshot!(inspect("test"), @"5");
 }
 
 #[test]
 fn test_opt_str_freeze() {
-    eval("
+    eval(
+        "
         def test = ''.freeze
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_str_freeze);
     assert_snapshot!(inspect(r#"
         result = [test]
@@ -2718,23 +2856,27 @@ fn test_opt_str_freeze() {
 
 #[test]
 fn test_opt_str_freeze_rewritten() {
-    eval("
+    eval(
+        "
         class String
             def freeze = 5
         end
         def test = ''.freeze
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_str_freeze);
     assert_snapshot!(inspect("test"), @"5");
 }
 
 #[test]
 fn test_opt_str_uminus() {
-    eval("
+    eval(
+        "
         def test = -''
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_str_uminus);
     assert_snapshot!(inspect(r#"
         result = [test]
@@ -2747,23 +2889,27 @@ fn test_opt_str_uminus() {
 
 #[test]
 fn test_opt_str_uminus_rewritten() {
-    eval("
+    eval(
+        "
         class String
             def -@ = 5
         end
         def test = -''
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_str_uminus);
     assert_snapshot!(inspect("test"), @"5");
 }
 
 #[test]
 fn test_new_array_empty() {
-    eval("
+    eval(
+        "
         def test = []
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_newarray);
     assert_snapshot!(inspect("test"), @"[]");
 }
@@ -2801,51 +2947,61 @@ fn test_array_dup() {
 
 #[test]
 fn test_array_fixnum_aref() {
-    eval("
+    eval(
+        "
         def test(x) = [1,2,3][x]
         test(2)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aref);
     assert_snapshot!(inspect("test(2)"), @"3");
 }
 
 #[test]
 fn test_array_fixnum_aref_negative_index() {
-    eval("
+    eval(
+        "
         def test(x) = [1,2,3][x]
         test(-1)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aref);
     assert_snapshot!(inspect("test(-1)"), @"3");
 }
 
 #[test]
 fn test_array_fixnum_aref_out_of_bounds_positive() {
-    eval("
+    eval(
+        "
         def test(x) = [1,2,3][x]
         test(10)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aref);
     assert_snapshot!(inspect("test(10)"), @"nil");
 }
 
 #[test]
 fn test_array_fixnum_aref_out_of_bounds_negative() {
-    eval("
+    eval(
+        "
         def test(x) = [1,2,3][x]
         test(-10)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aref);
     assert_snapshot!(inspect("test(-10)"), @"nil");
 }
 
 #[test]
 fn test_array_fixnum_aref_array_subclass() {
-    eval("
+    eval(
+        "
         class MyArray < Array; end
         def test(arr, idx) = arr[idx]
         test(MyArray[1,2,3], 2)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aref);
     assert_snapshot!(inspect("test(MyArray[1,2,3], 2)"), @"3");
 }
@@ -2866,24 +3022,28 @@ fn test_array_aref_non_fixnum_index() {
 
 #[test]
 fn test_array_fixnum_aset() {
-    eval("
+    eval(
+        "
         def test(arr, idx)
             arr[idx] = 7
         end
         test([1,2,3], 2)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aset);
     assert_snapshot!(inspect("arr = [1,2,3]; test(arr, 2); arr"), @"[1, 2, 7]");
 }
 
 #[test]
 fn test_array_fixnum_aset_returns_value() {
-    eval("
+    eval(
+        "
         def test(arr, idx)
             arr[idx] = 7
         end
         test([1,2,3], 2)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aset);
     assert_snapshot!(inspect("test([1,2,3], 2)"), @"7");
 }
@@ -2951,13 +3111,15 @@ fn test_array_fixnum_aset_frozen() {
 
 #[test]
 fn test_array_fixnum_aset_array_subclass() {
-    eval("
+    eval(
+        "
         class MyArray < Array; end
         def test(arr, idx)
             arr[idx] = 7
         end
         test(MyArray.new, 0)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_aset);
     assert_snapshot!(inspect("arr = MyArray.new; test(arr, 0); arr[0]"), @"7");
 }
@@ -3034,60 +3196,72 @@ fn test_new_range_with_literal() {
 
 #[test]
 fn test_new_range_fixnum_both_literals_inclusive() {
-    eval("
+    eval(
+        "
         def test()
           a = 2
           (1..a)
         end
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_newrange);
     assert_snapshot!(inspect("test; test"), @"1..2");
 }
 
 #[test]
 fn test_new_range_fixnum_both_literals_exclusive() {
-    eval("
+    eval(
+        "
         def test()
           a = 2
           (1...a)
         end
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_newrange);
     assert_snapshot!(inspect("test; test"), @"1...2");
 }
 
 #[test]
 fn test_new_range_fixnum_low_literal_inclusive() {
-    eval("
+    eval(
+        "
         def test(a) = (1..a)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_newrange);
     assert_snapshot!(inspect("test(2); test(3)"), @"1..3");
 }
 
 #[test]
 fn test_new_range_fixnum_low_literal_exclusive() {
-    eval("
+    eval(
+        "
         def test(a) = (1...a)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_newrange);
     assert_snapshot!(inspect("test(2); test(3)"), @"1...3");
 }
 
 #[test]
 fn test_new_range_fixnum_high_literal_inclusive() {
-    eval("
+    eval(
+        "
         def test(a) = (a..10)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_newrange);
     assert_snapshot!(inspect("test(2); test(3)"), @"3..10");
 }
 
 #[test]
 fn test_new_range_fixnum_high_literal_exclusive() {
-    eval("
+    eval(
+        "
         def test(a) = (a...10)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_newrange);
     assert_snapshot!(inspect("test(2); test(3)"), @"3...10");
 }
@@ -3505,7 +3679,8 @@ fn test_setclassvariable_raises() {
 
 #[test]
 fn test_attr_reader() {
-    eval("
+    eval(
+        "
         class C
           attr_reader :foo
           def initialize
@@ -3514,14 +3689,16 @@ fn test_attr_reader() {
         end
         def test(c) = c.foo
         test(C.new)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("c = C.new; [test(c), test(c)]"), @"[4, 4]");
 }
 
 #[test]
 fn test_attr_accessor_getivar() {
-    eval("
+    eval(
+        "
         class C
           attr_accessor :foo
           def initialize
@@ -3530,14 +3707,16 @@ fn test_attr_accessor_getivar() {
         end
         def test(c) = c.foo
         test(C.new)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("c = C.new; [test(c), test(c)]"), @"[4, 4]");
 }
 
 #[test]
 fn test_attr_accessor_setivar() {
-    eval("
+    eval(
+        "
         class C
           attr_accessor :foo
           def initialize
@@ -3549,14 +3728,16 @@ fn test_attr_accessor_setivar() {
           c.foo
         end
         test(C.new)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("c = C.new; [test(c), test(c)]"), @"[5, 5]");
 }
 
 #[test]
 fn test_attr_writer() {
-    eval("
+    eval(
+        "
         class C
           attr_writer :foo
           def initialize
@@ -3569,14 +3750,16 @@ fn test_attr_writer() {
           c.get_foo
         end
         test(C.new)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("c = C.new; [test(c), test(c)]"), @"[5, 5]");
 }
 
 #[test]
 fn test_getconstant() {
-    eval("
+    eval(
+        "
         class Foo
           CONST = 1
         end
@@ -3584,66 +3767,76 @@ fn test_getconstant() {
           klass::CONST
         end
         test(Foo)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_getconstant);
     assert_snapshot!(inspect("test(Foo)"), @"1");
 }
 
 #[test]
 fn test_expandarray_no_splat() {
-    eval("
+    eval(
+        "
         def test(o)
           a, b = o
           [a, b]
         end
         test [3, 4]
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_expandarray);
     assert_snapshot!(inspect("test [3, 4]"), @"[3, 4]");
 }
 
 #[test]
 fn test_expandarray_splat() {
-    eval("
+    eval(
+        "
         def test(o)
           a, *b = o
           [a, b]
         end
         test [3, 4]
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_expandarray);
     assert_snapshot!(inspect("test [3, 4]"), @"[3, [4]]");
 }
 
 #[test]
 fn test_expandarray_splat_post() {
-    eval("
+    eval(
+        "
         def test(o)
           a, *b, c = o
           [a, b, c]
         end
         test [3, 4, 5]
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_expandarray);
     assert_snapshot!(inspect("test [3, 4, 5]"), @"[3, [4], 5]");
 }
 
 #[test]
 fn test_constant_invalidation() {
-    eval("
+    eval(
+        "
         class C; end
         def test = C
         test
         test
         C = 123
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_getconstant_path);
     assert_snapshot!(inspect("test"), @"123");
 }
 
 #[test]
 fn test_constant_path_invalidation() {
-    eval("
+    eval(
+        "
         module A
           module B; end
         end
@@ -3652,7 +3845,8 @@ fn test_constant_path_invalidation() {
         end
         A::B = Foo
         def test = A::B::C
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_getconstant_path);
     assert_snapshot!(inspect(r#"
         module A
@@ -3677,10 +3871,12 @@ fn test_constant_path_invalidation() {
 
 #[test]
 fn test_dupn() {
-    eval("
+    eval(
+        "
         def test(array) = (array[1, 2] ||= :rhs)
         test([1, 1])
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_dupn);
     assert_snapshot!(inspect("
         one = [1, 1]
@@ -3703,33 +3899,39 @@ fn test_bop_invalidation() {
 
 #[test]
 fn test_defined_with_defined_values() {
-    eval("
+    eval(
+        "
         class Foo; end
         def bar; end
         $ruby = 1
         def test = [defined?(Foo), defined?(bar), defined?($ruby)]
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_defined);
     assert_snapshot!(inspect("test"), @r#"["constant", "method", "global-variable"]"#);
 }
 
 #[test]
 fn test_defined_with_undefined_values() {
-    eval("
+    eval(
+        "
         def test = [defined?(FooUndef), defined?(bar_undef), defined?($ruby_undef)]
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_defined);
     assert_snapshot!(inspect("test"), @"[nil, nil, nil]");
 }
 
 #[test]
 fn test_defined_with_method_call() {
-    eval(r#"
+    eval(
+        r#"
         def test = [defined?("x".reverse(1)), defined?("x".reverse(1).reverse)]
         test
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_defined);
     assert_snapshot!(inspect(r#"test"#), @r#"["method", nil]"#);
 }
@@ -3758,9 +3960,11 @@ fn test_defined_method_raise() {
 
 #[test]
 fn test_defined_yield() {
-    eval("
+    eval(
+        "
         def test = defined?(yield)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_defined);
     assert_snapshot!(inspect("[test, test, test{}]"), @r#"[nil, nil, "yield"]"#);
 }
@@ -3811,13 +4015,15 @@ fn test_invokeblock_without_block_after_jit_call() {
 
 #[test]
 fn test_putspecialobject_vm_core_and_cbase() {
-    eval("
+    eval(
+        "
         def test
           alias bar test
           10
         end
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_putspecialobject);
     assert_snapshot!(inspect("bar"), @"10");
 }
@@ -3834,162 +4040,188 @@ fn test_putspecialobject_const_base() {
 
 #[test]
 fn test_branchnil() {
-    eval("
+    eval(
+        "
         def test(x)
           x&.succ
         end
         test(0)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_branchnil);
     assert_snapshot!(inspect("[test(1), test(nil)]"), @"[2, nil]");
 }
 
 #[test]
 fn test_nil_nil() {
-    eval("
+    eval(
+        "
         def test = nil.nil?
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test"), @"true");
 }
 
 #[test]
 fn test_non_nil_nil() {
-    eval("
+    eval(
+        "
         def test = 1.nil?
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test"), @"false");
 }
 
 #[test]
 fn test_getspecial_last_match() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /hello/
           $&
         end
         test("hello world")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("hello world")"#), @r#""hello""#);
 }
 
 #[test]
 fn test_getspecial_match_pre() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /world/
           $`
         end
         test("hello world")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("hello world")"#), @r#""hello ""#);
 }
 
 #[test]
 fn test_getspecial_match_post() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /hello/
           $'
         end
         test("hello world")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("hello world")"#), @r#"" world""#);
 }
 
 #[test]
 fn test_getspecial_match_last_group() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /(hello) (world)/
           $+
         end
         test("hello world")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("hello world")"#), @r#""world""#);
 }
 
 #[test]
 fn test_getspecial_numbered_match_1() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /(hello) (world)/
           $1
         end
         test("hello world")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("hello world")"#), @r#""hello""#);
 }
 
 #[test]
 fn test_getspecial_numbered_match_2() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /(hello) (world)/
           $2
         end
         test("hello world")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("hello world")"#), @r#""world""#);
 }
 
 #[test]
 fn test_getspecial_numbered_match_nonexistent() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /(hello)/
           $2
         end
         test("hello world")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("hello world")"#), @"nil");
 }
 
 #[test]
 fn test_getspecial_no_match() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /xyz/
           $&
         end
         test("hello world")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("hello world")"#), @"nil");
 }
 
 #[test]
 fn test_getspecial_complex_pattern() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /(\d+)/
           $1
         end
         test("abc123def")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("abc123def")"#), @r#""123""#);
 }
 
 #[test]
 fn test_getspecial_multiple_groups() {
-    eval(r#"
+    eval(
+        r#"
         def test(str)
           str =~ /(\d+)-(\d+)/
           $2
         end
         test("123-456")
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_getspecial);
     assert_snapshot!(inspect(r#"test("123-456")"#), @r#""456""#);
 }
@@ -4228,168 +4460,200 @@ fn test_string_bytesize_multibyte() {
 
 #[test]
 fn test_nil_value_nil_opt_with_guard() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(nil)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(nil)"), @"true");
 }
 
 #[test]
 fn test_nil_value_nil_opt_with_guard_side_exit() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(nil)
         test(nil)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(1)"), @"false");
 }
 
 #[test]
 fn test_true_nil_opt_with_guard() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(true)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(true)"), @"false");
 }
 
 #[test]
 fn test_true_nil_opt_with_guard_side_exit() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(true)
         test(true)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(nil)"), @"true");
 }
 
 #[test]
 fn test_false_nil_opt_with_guard() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(false)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(false)"), @"false");
 }
 
 #[test]
 fn test_false_nil_opt_with_guard_side_exit() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(false)
         test(false)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(nil)"), @"true");
 }
 
 #[test]
 fn test_integer_nil_opt_with_guard() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(1)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(2)"), @"false");
 }
 
 #[test]
 fn test_integer_nil_opt_with_guard_side_exit() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(1)
         test(2)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(nil)"), @"true");
 }
 
 #[test]
 fn test_float_nil_opt_with_guard() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(1.0)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(2.0)"), @"false");
 }
 
 #[test]
 fn test_float_nil_opt_with_guard_side_exit() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(1.0)
         test(2.0)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(nil)"), @"true");
 }
 
 #[test]
 fn test_symbol_nil_opt_with_guard() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(:foo)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(:bar)"), @"false");
 }
 
 #[test]
 fn test_symbol_nil_opt_with_guard_side_exit() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(:foo)
         test(:bar)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(nil)"), @"true");
 }
 
 #[test]
 fn test_class_nil_opt_with_guard() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(String)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(Integer)"), @"false");
 }
 
 #[test]
 fn test_class_nil_opt_with_guard_side_exit() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(String)
         test(Integer)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(nil)"), @"true");
 }
 
 #[test]
 fn test_module_nil_opt_with_guard() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(Enumerable)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(Kernel)"), @"false");
 }
 
 #[test]
 fn test_module_nil_opt_with_guard_side_exit() {
-    eval("
+    eval(
+        "
         def test(val) = val.nil?
         test(Enumerable)
         test(Kernel)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_nil_p);
     assert_snapshot!(inspect("test(nil)"), @"true");
 }
@@ -4418,30 +4682,36 @@ fn test_basic_object_guard_works_with_false() {
 
 #[test]
 fn test_string_concat() {
-    eval(r##"
+    eval(
+        r##"
         def test = "#{1}#{2}#{3}"
         test
-    "##);
+    "##,
+    );
     assert_contains_opcode("test", YARVINSN_concatstrings);
     assert_snapshot!(inspect(r##"test"##), @r#""123""#);
 }
 
 #[test]
 fn test_string_concat_empty() {
-    eval(r##"
+    eval(
+        r##"
         def test = "#{}"
         test
-    "##);
+    "##,
+    );
     assert_contains_opcode("test", YARVINSN_concatstrings);
     assert_snapshot!(inspect(r##"test"##), @r#""""#);
 }
 
 #[test]
 fn test_regexp_interpolation() {
-    eval(r##"
+    eval(
+        r##"
         def test = /#{1}#{2}#{3}/
         test
-    "##);
+    "##,
+    );
     assert_contains_opcode("test", YARVINSN_toregexp);
     assert_snapshot!(inspect(r##"test"##), @"/123/");
 }
@@ -4492,7 +4762,8 @@ fn test_struct_set() {
 
 #[test]
 fn test_opt_case_dispatch() {
-    eval("
+    eval(
+        "
         def test(x)
           case x
           when :foo
@@ -4502,14 +4773,16 @@ fn test_opt_case_dispatch() {
           end
         end
         test(:warmup)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_case_dispatch);
     assert_snapshot!(inspect("[test(:foo), test(1)]"), @"[true, false]");
 }
 
 #[test]
 fn test_checkmatch_case() {
-    eval(r#"
+    eval(
+        r#"
         def test(o)
           case o
           in Integer
@@ -4518,14 +4791,16 @@ fn test_checkmatch_case() {
             2
           end
         end
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_checkmatch);
     assert_snapshot!(inspect(r#"[test(1), test(2), test("3")]"#), @"[1, 1, 2]");
 }
 
 #[test]
 fn test_checkmatch_case_splat_array() {
-    eval(r#"
+    eval(
+        r#"
         def test(o)
           case o
           when *[1, 2]
@@ -4534,14 +4809,16 @@ fn test_checkmatch_case_splat_array() {
             2
           end
         end
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_checkmatch);
     assert_snapshot!(inspect("[test(1), test(2), test(3)]"), @"[1, 1, 2]");
 }
 
 #[test]
 fn test_checkmatch_when_splat_array() {
-    eval(r#"
+    eval(
+        r#"
         def test
           case
           when *[1, 2]
@@ -4550,7 +4827,8 @@ fn test_checkmatch_when_splat_array() {
             2
           end
         end
-    "#);
+    "#,
+    );
     assert_contains_opcode("test", YARVINSN_checkmatch);
     assert_snapshot!(inspect("[test, test]"), @"[1, 1]");
 }
@@ -4559,7 +4837,8 @@ fn test_checkmatch_when_splat_array() {
 fn test_checkmatch_rescue() {
     // Rescue behavior is tested functionally here. It still side-exits because
     // JIT exception handling is not supported yet.
-    eval(r#"
+    eval(
+        r#"
         def test
           begin
             raise TypeError
@@ -4567,13 +4846,15 @@ fn test_checkmatch_rescue() {
             1
           end
         end
-    "#);
+    "#,
+    );
     assert_snapshot!(inspect("[test, test]"), @"[1, 1]");
 }
 
 #[test]
 fn test_checkmatch_rescue_splat_array() {
-    eval(r#"
+    eval(
+        r#"
         def test
           begin
             raise TypeError
@@ -4581,7 +4862,8 @@ fn test_checkmatch_rescue_splat_array() {
             1
           end
         end
-    "#);
+    "#,
+    );
     assert_snapshot!(inspect("[test, test]"), @"[1, 1]");
 }
 
@@ -4604,50 +4886,58 @@ fn test_stack_overflow() {
 
 #[test]
 fn test_invokeblock() {
-    eval("
+    eval(
+        "
         def test
           yield
         end
         test { 41 }
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_invokeblock);
     assert_snapshot!(inspect("test { 42 }"), @"42");
 }
 
 #[test]
 fn test_invokeblock_with_args() {
-    eval("
+    eval(
+        "
         def test(x, y)
           yield x, y
         end
         test(1, 2) { |a, b| a + b }
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_invokeblock);
     assert_snapshot!(inspect("test(1, 2) { |a, b| a + b }"), @"3");
 }
 
 #[test]
 fn test_invokeblock_no_block_given() {
-    eval("
+    eval(
+        "
         def test
           yield rescue :error
         end
         test { }
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_invokeblock);
     assert_snapshot!(inspect("test"), @":error");
 }
 
 #[test]
 fn test_invokeblock_multiple_yields() {
-    eval("
+    eval(
+        "
         def test
           yield 1
           yield 2
           yield 3
         end
         test { |x| x }
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_invokeblock);
     assert_snapshot!(inspect("
         results = []
@@ -4658,48 +4948,55 @@ fn test_invokeblock_multiple_yields() {
 
 #[test]
 fn test_ccall_variadic_with_multiple_args() {
-    eval("
+    eval(
+        "
         def test
           a = []
           a.push(1, 2, 3)
           a
         end
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("test"), @"[1, 2, 3]");
 }
 
 #[test]
 fn test_ccall_variadic_with_no_args() {
-    eval("
+    eval(
+        "
         def test
           a = [1]
           a.push
         end
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("test"), @"[1]");
 }
 
 #[test]
 fn test_ccall_variadic_with_no_args_causing_argument_error() {
-    eval("
+    eval(
+        "
         def test
           format
         rescue ArgumentError
           :error
         end
         test
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_send_without_block);
     assert_snapshot!(inspect("test"), @":error");
 }
 
 #[test]
 fn test_allocating_in_hir_c_method_is() {
-    eval("
+    eval(
+        "
         def a(f) = test(f)
         def test(f) = (f.new if f)
         def second = third
@@ -4710,7 +5007,8 @@ fn test_allocating_in_hir_c_method_is() {
         def self.new = :k
         end
         second
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_new);
     assert_snapshot!(inspect("a(Foo)"), @":k");
 }
@@ -4830,14 +5128,16 @@ fn test_is_a_normal_case() {
 
 #[test]
 fn test_fixnum_div_zero() {
-    eval("
+    eval(
+        "
         def test(n)
           n / 0
         rescue ZeroDivisionError => e
           e.message
         end
         test(0)
-    ");
+    ",
+    );
     assert_contains_opcode("test", YARVINSN_opt_div);
     assert_snapshot!(inspect(r#"test(0)"#), @r#""divided by 0""#);
 }
@@ -4865,7 +5165,8 @@ fn test_invokesuper_with_local_written_by_blockiseq() {
 
 #[test]
 fn test_max_iseq_versions() {
-    eval(&format!("
+    eval(&format!(
+        "
         TEST = -1
         def test = TEST
 
@@ -4879,7 +5180,8 @@ fn test_max_iseq_versions() {
 
           i += 1
         end
-    "));
+    "
+    ));
 
     // It should not exceed MAX_ISEQ_VERSIONS
     let iseq = get_method_iseq("self", "test");
@@ -4887,7 +5189,10 @@ fn test_max_iseq_versions() {
     assert_eq!(payload.versions.len(), MAX_ISEQ_VERSIONS);
 
     // The last call should not discard the JIT code
-    assert!(matches!(unsafe { payload.versions.last().unwrap().as_ref() }.status, IseqStatus::Compiled(_)));
+    assert!(matches!(
+        unsafe { payload.versions.last().unwrap().as_ref() }.status,
+        IseqStatus::Compiled(_)
+    ));
 }
 
 #[test]

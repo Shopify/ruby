@@ -5722,6 +5722,55 @@ impl Function {
         }
     }
 
+    /// Count how many Send instructions have empty (NoProfile) type profiles.
+    /// Returns (no_profile_count, total_send_count).
+    pub fn count_no_profile_sends(&self) -> (usize, usize) {
+        let Some(profiles) = self.profiles.as_ref() else {
+            return (0, 0);
+        };
+        let mut no_profile = 0;
+        let mut total = 0;
+        for block in self.rpo() {
+            for &insn_id in &self.blocks[block.0].insns {
+                if let Insn::Send { state, .. } = self.find(insn_id) {
+                    total += 1;
+                    let frame_state = self.frame_state(state);
+                    let insn_idx = frame_state.insn_idx;
+                    // Check if the profile entry at this instruction is empty
+                    if let Some(entries) = profiles.types.get(&insn_idx) {
+                        if entries.is_empty() {
+                            no_profile += 1;
+                        }
+                    }
+                }
+            }
+        }
+        (no_profile, total)
+    }
+
+    /// Check if any Send instructions have empty profiles.
+    /// Convenience wrapper around count_no_profile_sends().
+    pub fn has_no_profile_sends(&self) -> bool {
+        self.count_no_profile_sends().0 > 0
+    }
+
+    /// Check if the optimized HIR has any GetIvar/SetIvar instructions that
+    /// weren't optimized by optimize_getivar (i.e., they use the fallback
+    /// rb_vm_getinstancevariable/rb_vm_setinstancevariable path). These
+    /// survive in the HIR when the profiled self type was not monomorphic
+    /// or had no profile data at all.
+    pub fn has_not_monomorphic_ivars(&self) -> bool {
+        for block in self.rpo() {
+            for &insn_id in &self.blocks[block.0].insns {
+                match self.find(insn_id) {
+                    Insn::GetIvar { .. } | Insn::SetIvar { .. } => return true,
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
+
     /// Dump HIR passed to codegen if specified by options.
     pub fn dump_hir(&self) {
         // Dump HIR after optimization

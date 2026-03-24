@@ -16,6 +16,11 @@ pub struct IseqPayload {
     pub was_invalidated_for_singleton_class_creation: bool,
     /// Number of side exits observed for this ISEQ
     pub side_exit_count: u64,
+    /// How many times this ISEQ has been deferred for re-profiling.
+    /// 0 = not deferred, 1 = first deferral (call_threshold calls), 2 = second (1K calls), etc.
+    pub defer_count: u32,
+    /// How many stub/entry hits have been counted during the current deferral window.
+    pub deferred_stub_hits: u32,
 }
 
 impl IseqPayload {
@@ -25,6 +30,8 @@ impl IseqPayload {
             versions: vec![],
             was_invalidated_for_singleton_class_creation: false,
             side_exit_count: 0,
+            defer_count: 0,
+            deferred_stub_hits: 0,
         }
     }
 }
