@@ -4175,7 +4175,6 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
     }
 #endif
     RUBY_ATOMIC_SET(sweep_page->before_sweep, 0);
-    sweep_page->free_slots = 0;
 
     p = (uintptr_t)sweep_page->start;
     bits = sweep_page->mark_bits;
@@ -4203,9 +4202,9 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
         bits_t *age_bits = sweep_page->age_bits;
         for (int i = 0; i < bitmap_plane_count; i++) {
             bits_t unmarked = ~bits[i] & slot_mask;
-            RUBY_ATOMIC_VALUE_AND(wb_unprotected_bits[i], ~unmarked);
-            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2], ~unmarked);
-            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2 + 1], ~unmarked);
+            wb_unprotected_bits[i] &= ~unmarked;
+            age_bits[i * 2] &= ~unmarked;
+            age_bits[i * 2 + 1] &= ~unmarked;
         }
     }
 
@@ -5246,7 +5245,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         }
         else if (free_slots > 0) {
             GC_ASSERT(free_slots < sweep_page->total_slots);
-            // These are just for statistics, not used in calculations
             heap->freed_slots += ctx.freed_slots;
             heap->empty_slots += ctx.empty_slots;
 
@@ -5269,6 +5267,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             }
         }
         else {
+            GC_ASSERT(free_slots == 0);
             sweep_page->free_next = NULL;
         }
     }
