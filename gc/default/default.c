@@ -689,6 +689,8 @@ typedef struct rb_objspace {
         struct timespec ruby_thread_sweep_cpu_start_time;
         struct timespec ruby_thread_sweep_wall_start_time;
 #endif
+        size_t pages_swept_by_sweep_thread;
+        size_t pages_swept_by_sweep_thread_had_deferred_free_objects;
 
         /* Weak references */
         size_t weak_references_count;
@@ -4572,7 +4574,10 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
         }
         p += BITS_BITLENGTH * slot_size;
     }
-
+    objspace->profile.pages_swept_by_sweep_thread++;
+    if (page->pre_deferred_free_slots > 0) {
+        objspace->profile.pages_swept_by_sweep_thread_had_deferred_free_objects++;
+    }
     psweep_debug(1, "[sweep] gc_pre_sweep_page(heap:%p page:%p) done, deferred free:%d\n", heap, page, page->pre_deferred_free_slots);
 }
 
@@ -9099,6 +9104,8 @@ enum gc_stat_sym {
     gc_stat_sym_remembered_wb_unprotected_objects_limit,
     gc_stat_sym_old_objects,
     gc_stat_sym_old_objects_limit,
+    gc_stat_sym_pages_swept_by_sweep_thread,
+    gc_stat_sym_pages_swept_by_sweep_thread_had_deferred_free_objects,
 #if RGENGC_ESTIMATE_OLDMALLOC
     gc_stat_sym_oldmalloc_increase_bytes,
     gc_stat_sym_oldmalloc_increase_bytes_limit,
@@ -9149,6 +9156,8 @@ setup_gc_stat_symbols(void)
         S(remembered_wb_unprotected_objects_limit);
         S(old_objects);
         S(old_objects_limit);
+        S(pages_swept_by_sweep_thread);
+        S(pages_swept_by_sweep_thread_had_deferred_free_objects);
 #if RGENGC_ESTIMATE_OLDMALLOC
         S(oldmalloc_increase_bytes);
         S(oldmalloc_increase_bytes_limit);
@@ -9230,6 +9239,8 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(remembered_wb_unprotected_objects_limit, objspace->rgengc.uncollectible_wb_unprotected_objects_limit);
     SET(old_objects, objspace->rgengc.old_objects);
     SET(old_objects_limit, objspace->rgengc.old_objects_limit);
+    SET(pages_swept_by_sweep_thread, objspace->profile.pages_swept_by_sweep_thread);
+    SET(pages_swept_by_sweep_thread_had_deferred_free_objects, objspace->profile.pages_swept_by_sweep_thread_had_deferred_free_objects);
 #if RGENGC_ESTIMATE_OLDMALLOC
     SET(oldmalloc_increase_bytes, objspace->malloc_counters.oldmalloc_increase);
     SET(oldmalloc_increase_bytes_limit, objspace->rgengc.oldmalloc_increase_limit);
