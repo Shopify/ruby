@@ -4741,6 +4741,39 @@ gc_stat_concurrent_set(VALUE hash_or_sym)
     CS_SET(fstring_table_capacity, rb_fstring_table_capacity());
     CS_SET(symbol_table_size, rb_symbol_table_size());
     CS_SET(symbol_table_capacity, rb_symbol_table_capacity());
+
+#define CS_SET_F(name, val) \
+    if (key == ID2SYM(rb_intern_const(#name))) \
+        return DBL2NUM(val); \
+    else if (hash != Qnil) \
+        rb_hash_aset(hash, ID2SYM(rb_intern_const(#name)), DBL2NUM(val));
+
+    {
+        rb_atomic_t fc, fpt, fpm, ic, ipt, ipm;
+
+        rb_concurrent_set_probe_stats(rb_fstring_table_obj(), &fc, &fpt, &fpm, &ic, &ipt, &ipm);
+        CS_SET(fstring_table_find_count, fc);
+        CS_SET(fstring_table_find_probe_total, fpt);
+        CS_SET_F(fstring_table_find_probe_avg, fc > 0 ? (double)fpt / fc : 0.0);
+        CS_SET(fstring_table_find_probe_max, fpm);
+        CS_SET(fstring_table_insert_count, ic);
+        CS_SET(fstring_table_insert_probe_total, ipt);
+        CS_SET_F(fstring_table_insert_probe_avg, ic > 0 ? (double)ipt / ic : 0.0);
+        CS_SET(fstring_table_insert_probe_max, ipm);
+
+        rb_concurrent_set_probe_stats(rb_symbol_table_obj(), &fc, &fpt, &fpm, &ic, &ipt, &ipm);
+        CS_SET(symbol_table_find_count, fc);
+        CS_SET(symbol_table_find_probe_total, fpt);
+        CS_SET_F(symbol_table_find_probe_avg, fc > 0 ? (double)fpt / fc : 0.0);
+        CS_SET(symbol_table_find_probe_max, fpm);
+        CS_SET(symbol_table_insert_count, ic);
+        CS_SET(symbol_table_insert_probe_total, ipt);
+        CS_SET_F(symbol_table_insert_probe_avg, ic > 0 ? (double)ipt / ic : 0.0);
+        CS_SET(symbol_table_insert_probe_max, ipm);
+    }
+
+#undef CS_SET_F
+
 #undef CS_SET
 
     return Qundef;

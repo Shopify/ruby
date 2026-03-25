@@ -602,6 +602,12 @@ rb_fstring_table_capacity(void)
     return rb_concurrent_set_capacity(fstring_table_obj);
 }
 
+VALUE
+rb_fstring_table_obj(void)
+{
+    return fstring_table_obj;
+}
+
 void
 rb_gc_free_fstring(VALUE obj)
 {

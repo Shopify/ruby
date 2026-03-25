@@ -123,6 +123,7 @@ void rb_gc_free_fstring(VALUE obj);
 bool rb_obj_is_fstring_table(VALUE obj);
 size_t rb_fstring_table_size(void);
 size_t rb_fstring_table_capacity(void);
+VALUE rb_fstring_table_obj(void);
 void Init_fstring_table();
 VALUE rb_obj_as_string_result(VALUE str, VALUE obj);
 VALUE rb_str_opt_plus(VALUE x, VALUE y);

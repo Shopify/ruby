@@ -18,5 +18,8 @@ VALUE rb_concurrent_set_find(VALUE *set_obj_ptr, VALUE key);
 VALUE rb_concurrent_set_find_or_insert(VALUE *set_obj_ptr, VALUE key, void *data);
 VALUE rb_concurrent_set_delete_by_identity(VALUE *set_obj_ptr, VALUE key);
 void rb_concurrent_set_foreach_with_replace(VALUE set_obj, int (*callback)(VALUE *key, void *data), void *data);
+void rb_concurrent_set_probe_stats(VALUE set_obj,
+                                   rb_atomic_t *find_count, rb_atomic_t *find_probe_total, rb_atomic_t *find_probe_max,
+                                   rb_atomic_t *insert_count, rb_atomic_t *insert_probe_total, rb_atomic_t *insert_probe_max);
 
 #endif

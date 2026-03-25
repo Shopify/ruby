@@ -933,6 +933,12 @@ rb_symbol_table_capacity(void)
     return rb_concurrent_set_capacity(ruby_global_symbols.sym_set);
 }
 
+VALUE
+rb_symbol_table_obj(void)
+{
+    return ruby_global_symbols.sym_set;
+}
+
 struct global_symbol_table_foreach_weak_reference_data {
     int (*callback)(VALUE *key, void *data);
     void *data;
