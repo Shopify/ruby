@@ -426,7 +426,7 @@ Init_sym(void)
 {
     rb_symbols_t *symbols = &ruby_global_symbols;
 
-    symbols->sym_set = rb_concurrent_set_new(&sym_set_funcs, 1024);
+    symbols->sym_set = rb_concurrent_set_new(&sym_set_funcs, 1024, 0);
     symbols->ids = rb_ary_hidden_new(0);
 
     Init_op_tbl();

@@ -8,6 +8,9 @@
 #define CONCURRENT_SET_CONTINUATION_BIT ((VALUE)0x2)
 #define CONCURRENT_SET_KEY_MASK (~CONCURRENT_SET_CONTINUATION_BIT)
 
+/*#define CONCURRENT_SET_DEBUG 0*/
+#define CONCURRENT_SET_DEBUG 1
+
 enum concurrent_set_special_values {
     CONCURRENT_SET_EMPTY = 0,
     CONCURRENT_SET_TOMBSTONE = 1,
@@ -31,6 +34,7 @@ struct concurrent_set {
     rb_atomic_t deleted_entries;
     const struct rb_concurrent_set_funcs *funcs;
     struct concurrent_set_entry *entries;
+    int key_type;
 };
 
 static bool
@@ -103,13 +107,17 @@ static const rb_data_type_t concurrent_set_type = {
 };
 
 VALUE
-rb_concurrent_set_new(const struct rb_concurrent_set_funcs *funcs, int capacity)
+rb_concurrent_set_new(const struct rb_concurrent_set_funcs *funcs, int capacity, int key_type)
 {
     struct concurrent_set *set;
     VALUE obj = TypedData_Make_Struct(0, struct concurrent_set, &concurrent_set_type, set);
     set->funcs = funcs;
     set->entries = ZALLOC_N(struct concurrent_set_entry, capacity);
     set->capacity = capacity;
+    (void)key_type;
+#if CONCURRENT_SET_DEBUG
+    set->key_type = key_type;
+#endif
     return obj;
 }
 
@@ -167,6 +175,16 @@ concurrent_set_try_resize_locked(VALUE old_set_obj, VALUE *set_obj_ptr, VALUE ne
         if (prev_key < CONCURRENT_SET_SPECIAL_VALUE_COUNT) continue;
 
         if (!RB_SPECIAL_CONST_P(prev_key) && rb_objspace_garbage_object_p(prev_key)) continue;
+
+#if CONCURRENT_SET_DEBUG
+        if (new_set->key_type == T_STRING) {
+            RUBY_ASSERT(BUILTIN_TYPE(prev_key) == T_STRING);
+            RUBY_ASSERT(FL_TEST(prev_key, RSTRING_FSTR));
+        }
+        else {
+            RUBY_ASSERT(STATIC_SYM_P(prev_key));
+        }
+#endif
 
         VALUE hash = rbimpl_atomic_value_load(&old_entry->hash, RBIMPL_ATOMIC_ACQUIRE) & CONCURRENT_SET_HASH_MASK;
         if (hash == 0) continue;
@@ -286,7 +304,8 @@ concurrent_set_try_resize(VALUE old_set_obj, VALUE *set_obj_ptr)
         }
 
         // May cause GC and therefore deletes, so must happen first.
-        VALUE new_set_obj = rb_concurrent_set_new(old_set->funcs, new_capacity);
+        VALUE new_set_obj = rb_concurrent_set_new(old_set->funcs, new_capacity, old_set->key_type);
+        fprintf(stderr, "concurrent set resize from %d to %d\n", old_capacity, new_capacity);
         // deletes from sweep thread must not happen during resize and sweep thread can't take VM lock so it takes the resize lock
         resize_lock_wrlock(true);
         {
@@ -481,6 +500,7 @@ start_search:
             RB_VM_LOCKING();
             goto retry;
           default:
+            // what about if hash is marked reclaimed but key is not cleared yet
             if (curr_hash != hash) {
                 goto probe_next;
             }
@@ -491,9 +511,7 @@ start_search:
                 if (continuation) {
                     goto probe_next;
                 }
-                // NOTE: entry->key could be a different key from the one we're inserting, but we can't call the comparison function because it's a garbage object.
                 rbimpl_atomic_value_cas(&entry->key, raw_key, CONCURRENT_SET_EMPTY, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_RELAXED);
-                // NOTE: hash not updated, so our hash value is stuck to this slot until a resize occurs or a delete at this slot.
                 continue;
             }
 
@@ -582,7 +600,7 @@ rb_concurrent_set_delete_by_identity_locked(VALUE set_obj, VALUE key)
 
                 if (!hash_cleared) {
                     // Hashes only change here and they get reclaimed in find_or_insert
-                    prev_hash = rbimpl_atomic_value_cas(&entry->hash, hash, hash | CONCURRENT_SET_HASH_RECLAIMABLE_BIT, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_ACQUIRE);
+                    prev_hash = rbimpl_atomic_value_cas(&entry->hash, loaded_hash_raw, hash | CONCURRENT_SET_HASH_RECLAIMABLE_BIT, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_ACQUIRE);
                     RUBY_ASSERT(prev_hash == hash || prev_hash == (hash | CONCURRENT_SET_HASH_RECLAIMABLE_BIT));
                     hash_cleared = true;
                 }
@@ -608,7 +626,6 @@ rb_concurrent_set_delete_by_identity_locked(VALUE set_obj, VALUE key)
                     return curr_key;
                 }
             }
-            if (!continuation) return 0;
             break;
         }
 

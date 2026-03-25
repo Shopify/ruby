@@ -549,7 +549,7 @@ static const struct rb_concurrent_set_funcs fstring_concurrent_set_funcs = {
 void
 Init_fstring_table(void)
 {
-    fstring_table_obj = rb_concurrent_set_new(&fstring_concurrent_set_funcs, 8192);
+    fstring_table_obj = rb_concurrent_set_new(&fstring_concurrent_set_funcs, 8192, T_STRING);
     rb_gc_register_address(&fstring_table_obj);
 }
 
