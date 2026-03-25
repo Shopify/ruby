@@ -599,7 +599,7 @@ rb_gc_free_fstring(VALUE obj)
     RUBY_ASSERT(OBJ_FROZEN(obj));
     RUBY_ASSERT(!FL_TEST(obj, STR_SHARED));
 
-    rb_concurrent_set_delete_by_identity(fstring_table_obj, obj);
+    rb_concurrent_set_delete_by_identity(&fstring_table_obj, obj);
 
     RB_DEBUG_COUNTER_INC(obj_str_fstr);
 
