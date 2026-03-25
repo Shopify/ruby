@@ -58,9 +58,8 @@ pub extern "C" fn rb_zjit_count_side_exit(payload_raw: *mut std::ffi::c_void) {
         return;
     }
     let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
-    if let RecompileAction::Recompile { preserve_profiles } = payload
-        .recompile
-        .on_signal(RecompileSignal::SideExit, payload.versions.len())
+    if let RecompileAction::Recompile { preserve_profiles } =
+        payload.recompile.on_signal(RecompileSignal::SideExit, payload.versions.len())
     {
         let iseq = match payload.versions.last() {
             Some(version_ref) => unsafe { version_ref.as_ref() }.iseq,
@@ -177,9 +176,8 @@ pub extern "C" fn rb_zjit_count_ivar_fallback(payload_raw: *mut std::ffi::c_void
     }
     let payload = unsafe { &mut *(payload_raw as *mut IseqPayload) };
 
-    if let RecompileAction::Recompile { preserve_profiles } = payload
-        .recompile
-        .on_signal(RecompileSignal::IvarFallback, payload.versions.len())
+    if let RecompileAction::Recompile { preserve_profiles } =
+        payload.recompile.on_signal(RecompileSignal::IvarFallback, payload.versions.len())
     {
         let iseq = match payload.versions.last() {
             Some(version_ref) => unsafe { version_ref.as_ref() }.iseq,
@@ -376,12 +374,7 @@ fn gen_iseq_entry_point(
     {
         let payload = get_or_create_iseq_payload(iseq);
         let call_threshold = unsafe { crate::options::rb_zjit_call_threshold as u32 };
-        match payload.recompile.on_signal(
-            RecompileSignal::Entry {
-                credit: call_threshold,
-            },
-            payload.versions.len(),
-        ) {
+        match payload.recompile.on_signal(RecompileSignal::Entry { credit: call_threshold }, payload.versions.len()) {
             RecompileAction::DeferToInterpreter => {
                 unsafe { rb_iseq_reset_jit_func(iseq) };
                 return Err(CompileError::DeferredForReprofiling);
@@ -408,10 +401,7 @@ fn gen_iseq_entry_point(
         let (no_profile_sends, total_sends) = function.count_no_profile_sends();
         let sends_need_deferral = total_sends > 0 && no_profile_sends * 4 > total_sends;
         let has_unresolved = sends_need_deferral || function.has_not_monomorphic_ivars();
-        if let RecompileAction::Defer = payload
-            .recompile
-            .post_hir_check(is_recompile, has_unresolved)
-        {
+        if let RecompileAction::Defer = payload.recompile.post_hir_check(is_recompile, has_unresolved) {
             payload.profile.reset_counters_for_recompile();
             unsafe { rb_zjit_profile_enable(iseq) };
             unsafe { rb_iseq_reset_jit_func(iseq) };
@@ -2675,8 +2665,7 @@ fn gen_guarded_inline_profile(
 
     asm_comment!(asm, "guard: skip inline profiling if self-disabled");
     let payload_addr = asm.load(Opnd::UImm(jit.payload_ptr as u64));
-    let offset = (std::mem::offset_of!(crate::payload::IseqPayload, recompile)
-        + std::mem::offset_of!(RecompileState, no_profile_send_hits)) as i32;
+    let offset = (std::mem::offset_of!(crate::payload::IseqPayload, recompile) + std::mem::offset_of!(RecompileState, no_profile_send_hits)) as i32;
     let hits = asm.load(Opnd::mem(64, payload_addr, offset));
     asm.cmp(hits, Opnd::UImm(threshold));
     asm.jge(jit, skip_edge());

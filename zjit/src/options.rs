@@ -1,14 +1,10 @@
 //! Configurable options for ZJIT.
 
+use std::{ffi::{CStr, CString}, fs::File, ptr::null};
+use std::os::raw::{c_char, c_int, c_uint};
 use crate::cruby::*;
 use crate::stats::Counter;
 use std::collections::HashSet;
-use std::os::raw::{c_char, c_int, c_uint};
-use std::{
-    ffi::{CStr, CString},
-    fs::File,
-    ptr::null,
-};
 
 /// Type of symbols to dump into /tmp/perf-{pid}.map
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -33,8 +29,7 @@ pub type CallThreshold = u64;
 /// which is equal to --zjit-num-profiles.
 #[unsafe(no_mangle)]
 #[allow(non_upper_case_globals)]
-pub static mut rb_zjit_profile_threshold: CallThreshold =
-    DEFAULT_CALL_THRESHOLD - DEFAULT_NUM_PROFILES as CallThreshold;
+pub static mut rb_zjit_profile_threshold: CallThreshold = DEFAULT_CALL_THRESHOLD - DEFAULT_NUM_PROFILES as CallThreshold;
 
 /// Default --zjit-recompile-threshold. Number of side exits before triggering recompilation.
 pub const DEFAULT_RECOMPILE_THRESHOLD: u64 = 100;
@@ -156,54 +151,30 @@ impl Default for Options {
 /// Note that --help allows only 80 chars per line, including indentation, and it also puts the
 /// description in a separate line if the option name is too long.  80-char limit --> | (any character beyond this `|` column fails the test)
 pub const ZJIT_OPTIONS: &[(&str, &str)] = &[
-    (
-        "--zjit-mem-size=num",
-        "Max amount of memory that ZJIT can use in MiB (default: 128).",
-    ),
-    (
-        "--zjit-call-threshold=num",
-        "Number of calls to trigger JIT (default: 30).",
-    ),
-    (
-        "--zjit-num-profiles=num",
-        "Number of profiled calls before JIT (default: 5).",
-    ),
-    (
-        "--zjit-stats-quiet",
-        "Collect ZJIT stats and suppress output.",
-    ),
-    (
-        "--zjit-stats[=file]",
-        "Collect ZJIT stats (=file to write to a file).",
-    ),
-    (
-        "--zjit-disable",
-        "Disable ZJIT for lazily enabling it with RubyVM::ZJIT.enable.",
-    ),
-    (
-        "--zjit-perf[=iseq|hir]",
-        "Dump symbols for Linux perf /tmp/perf-{}.map (default: iseq).",
-    ),
-    (
-        "--zjit-log-compiled-iseqs=path",
-        "Log compiled ISEQs to the file. The file will be truncated.",
-    ),
-    (
-        "--zjit-recompile-threshold=num",
-        "Side exits to trigger recompile (default: 100, 0=off).",
-    ),
-    (
-        "--zjit-recompile-cap=num",
-        "Max ISEQs to recompile (default: 50, 0=unlimited).",
-    ),
-    (
-        "--zjit-trace-exits[=counter]",
-        "Record source on side-exit. `Counter` picks specific counter.",
-    ),
-    (
-        "--zjit-trace-exits-sample-rate=num",
-        "Frequency at which to record side exits. Must be `usize`.",
-    ),
+    ("--zjit-mem-size=num",
+                     "Max amount of memory that ZJIT can use in MiB (default: 128)."),
+    ("--zjit-call-threshold=num",
+                     "Number of calls to trigger JIT (default: 30)."),
+    ("--zjit-num-profiles=num",
+                     "Number of profiled calls before JIT (default: 5)."),
+    ("--zjit-stats-quiet",
+                     "Collect ZJIT stats and suppress output."),
+    ("--zjit-stats[=file]",
+                     "Collect ZJIT stats (=file to write to a file)."),
+    ("--zjit-disable",
+                     "Disable ZJIT for lazily enabling it with RubyVM::ZJIT.enable."),
+    ("--zjit-perf[=iseq|hir]",
+                     "Dump symbols for Linux perf /tmp/perf-{}.map (default: iseq)."),
+    ("--zjit-log-compiled-iseqs=path",
+                     "Log compiled ISEQs to the file. The file will be truncated."),
+    ("--zjit-recompile-threshold=num",
+                     "Side exits to trigger recompile (default: 100, 0=off)."),
+    ("--zjit-recompile-cap=num",
+                     "Max ISEQs to recompile (default: 50, 0=unlimited)."),
+    ("--zjit-trace-exits[=counter]",
+                     "Record source on side-exit. `Counter` picks specific counter."),
+    ("--zjit-trace-exits-sample-rate=num",
+                     "Frequency at which to record side exits. Must be `usize`.")
 ];
 
 #[derive(Copy, Clone, Debug)]
