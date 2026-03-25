@@ -154,11 +154,6 @@ concurrent_set_probe_next(struct concurrent_set_probe *probe)
 static void
 concurrent_set_try_resize_locked(VALUE old_set_obj, VALUE *set_obj_ptr, VALUE new_set_obj, int old_capacity)
 {
-    // Check if another thread has already resized.
-    if (rbimpl_atomic_value_load(set_obj_ptr, RBIMPL_ATOMIC_ACQUIRE) != old_set_obj) {
-        return;
-    }
-
     struct concurrent_set *old_set = RTYPEDDATA_GET_DATA(old_set_obj);
     struct concurrent_set_entry *old_entries = old_set->entries;
     struct concurrent_set *new_set = RTYPEDDATA_GET_DATA(new_set_obj);
@@ -266,7 +261,14 @@ resize_lock_rdunlock(void)
 static void
 concurrent_set_try_resize(VALUE old_set_obj, VALUE *set_obj_ptr)
 {
-    RB_VM_LOCKING() {
+    unsigned int lev;
+    RB_VM_LOCK_ENTER_LEV(&lev);
+    {
+        // Check if another thread has already resized.
+        if (rbimpl_atomic_value_load(set_obj_ptr, RBIMPL_ATOMIC_ACQUIRE) != old_set_obj) {
+            RB_VM_LOCK_LEAVE_LEV(&lev);
+            return;
+        }
         struct concurrent_set *old_set = RTYPEDDATA_GET_DATA(old_set_obj);
 
         // This may overcount by up to the number of threads concurrently attempting to insert
@@ -292,6 +294,7 @@ concurrent_set_try_resize(VALUE old_set_obj, VALUE *set_obj_ptr)
         }
         resize_lock_wrunlock();
     }
+    RB_VM_LOCK_LEAVE_LEV(&lev);
 }
 
 VALUE
