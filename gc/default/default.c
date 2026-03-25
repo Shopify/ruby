@@ -624,6 +624,11 @@ typedef struct rb_objspace {
         size_t major_gc_count;
         size_t compact_count;
         size_t read_barrier_faults;
+        size_t major_by_nofree;
+        size_t major_by_oldgen;
+        size_t major_by_shady;
+        size_t major_by_force;
+        size_t major_by_oldmalloc;
 #if RGENGC_PROFILE > 0
         size_t total_generated_normal_object_count;
         size_t total_generated_shady_object_count;
@@ -7907,6 +7912,13 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
 #if RGENGC_ESTIMATE_OLDMALLOC
         (void)RB_DEBUG_COUNTER_INC_IF(gc_major_oldmalloc, reason & GPR_FLAG_MAJOR_BY_OLDMALLOC);
 #endif
+        if (reason & GPR_FLAG_MAJOR_BY_NOFREE)    objspace->profile.major_by_nofree++;
+        if (reason & GPR_FLAG_MAJOR_BY_OLDGEN)    objspace->profile.major_by_oldgen++;
+        if (reason & GPR_FLAG_MAJOR_BY_SHADY)     objspace->profile.major_by_shady++;
+        if (reason & GPR_FLAG_MAJOR_BY_FORCE)     objspace->profile.major_by_force++;
+#if RGENGC_ESTIMATE_OLDMALLOC
+        if (reason & GPR_FLAG_MAJOR_BY_OLDMALLOC) objspace->profile.major_by_oldmalloc++;
+#endif
     }
     else {
         (void)RB_DEBUG_COUNTER_INC_IF(gc_minor_newobj, reason & GPR_FLAG_NEWOBJ);
@@ -8986,6 +8998,11 @@ enum gc_stat_sym {
     gc_stat_sym_remembered_wb_unprotected_objects_limit,
     gc_stat_sym_old_objects,
     gc_stat_sym_old_objects_limit,
+    gc_stat_sym_major_by_nofree,
+    gc_stat_sym_major_by_oldgen,
+    gc_stat_sym_major_by_shady,
+    gc_stat_sym_major_by_force,
+    gc_stat_sym_major_by_oldmalloc,
 #if RGENGC_ESTIMATE_OLDMALLOC
     gc_stat_sym_oldmalloc_increase_bytes,
     gc_stat_sym_oldmalloc_increase_bytes_limit,
@@ -9036,6 +9053,11 @@ setup_gc_stat_symbols(void)
         S(remembered_wb_unprotected_objects_limit);
         S(old_objects);
         S(old_objects_limit);
+        S(major_by_nofree);
+        S(major_by_oldgen);
+        S(major_by_shady);
+        S(major_by_force);
+        S(major_by_oldmalloc);
 #if RGENGC_ESTIMATE_OLDMALLOC
         S(oldmalloc_increase_bytes);
         S(oldmalloc_increase_bytes_limit);
@@ -9117,6 +9139,11 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(remembered_wb_unprotected_objects_limit, objspace->rgengc.uncollectible_wb_unprotected_objects_limit);
     SET(old_objects, objspace->rgengc.old_objects);
     SET(old_objects_limit, objspace->rgengc.old_objects_limit);
+    SET(major_by_nofree, objspace->profile.major_by_nofree);
+    SET(major_by_oldgen, objspace->profile.major_by_oldgen);
+    SET(major_by_shady, objspace->profile.major_by_shady);
+    SET(major_by_force, objspace->profile.major_by_force);
+    SET(major_by_oldmalloc, objspace->profile.major_by_oldmalloc);
 #if RGENGC_ESTIMATE_OLDMALLOC
     SET(oldmalloc_increase_bytes, (size_t)(objspace->malloc_counters.oldmalloc_increase > 0 ? objspace->malloc_counters.oldmalloc_increase : 0));
     SET(oldmalloc_increase_bytes_limit, objspace->rgengc.oldmalloc_increase_limit);
