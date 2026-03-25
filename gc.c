@@ -2392,6 +2392,13 @@ rb_gc_obj_has_blacklisted_vm_weak_references(VALUE obj)
             break;
         }
         return false;
+      case T_STRING:
+        if (FL_TEST_RAW(obj, RSTRING_FSTR)) {
+            return true;
+        }
+        return false;
+      case T_SYMBOL:
+        return true;
       default:
         return false;
     }
@@ -2406,17 +2413,16 @@ rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(VALUE obj)
         bool freed_generic = rb_free_generic_ivar(obj);
         if (!freed_generic) result = false;
     }
-    switch (BUILTIN_TYPE(obj)) {
-      case T_STRING:
-        if (FL_TEST_RAW(obj, RSTRING_FSTR)) {
-            rb_gc_free_fstring(obj);
-        }
-      case T_SYMBOL:
-        rb_gc_free_dsymbol(obj);
-        break;
-      default:
-        break;
-    }
+    /*switch (BUILTIN_TYPE(obj)) {*/
+      /*case T_STRING:*/
+        /*if (FL_TEST_RAW(obj, RSTRING_FSTR)) {*/
+            /*rb_gc_free_fstring(obj);*/
+        /*}*/
+      /*case T_SYMBOL:*/
+        /*rb_gc_free_dsymbol(obj);*/
+      /*default:*/
+        /*break;*/
+    /*}*/
     return result;
 }
 
