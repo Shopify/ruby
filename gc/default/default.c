@@ -505,7 +505,6 @@ typedef struct rb_heap_struct {
     rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
     rb_nativethread_cond_t sweep_page_cond; // associated with global sweep lock
     rb_nativethread_lock_t swept_pages_lock;
-    size_t pre_swept_slots_nodeferred;
     size_t pre_swept_slots_deferred;
     deferred_sweep_data_t deferred_sweep_data;
     bool is_finished_sweeping;
@@ -839,7 +838,6 @@ struct heap_page {
         unsigned int has_remembered_objects : 1;
         unsigned int has_uncollectible_wb_unprotected_objects : 1;
     } flags;
-    bool needs_setup_mark_bits;
     rb_atomic_t before_sweep; // bool
 
     rb_heap_t *heap;
@@ -4124,7 +4122,7 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
 
 // Clear bits for the page that was swept by the background thread.
 static inline void
-gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, bool force_setup_mark_bits)
+gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page)
 {
     GC_ASSERT(sweep_page->heap == heap);
 
@@ -4159,30 +4157,19 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
     bits_t slot_mask = heap->slot_bits_mask;
 
     // Clear wb_unprotected and age bits for all unmarked slots.
-    // Use atomic operations because mutator write barriers may concurrently
-    // modify bits for live objects in the same bitmap word.
     {
         bits_t *wb_unprotected_bits = sweep_page->wb_unprotected_bits;
         bits_t *age_bits = sweep_page->age_bits;
         for (int i = 0; i < bitmap_plane_count; i++) {
             bits_t unmarked = ~bits[i] & slot_mask;
-            RUBY_ATOMIC_VALUE_AND(wb_unprotected_bits[i], ~unmarked);
-            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2], ~unmarked);
-            RUBY_ATOMIC_VALUE_AND(age_bits[i * 2 + 1], ~unmarked);
+            wb_unprotected_bits[i] &= ~unmarked;
+            age_bits[i * 2] &= ~unmarked;
+            age_bits[i * 2 + 1] &= ~unmarked;
         }
     }
 
     if (!heap->compact_cursor) {
-        if (objspace->background_sweep_mode && !force_setup_mark_bits) {
-            /* Defer gc_setup_mark_bits to gc_sweep_finish on the GC thread,
-             * because it overwrites mark_bits which would race with mutator
-             * write barriers for objects on the same page. */
-            sweep_page->needs_setup_mark_bits = true;
-        }
-        else {
-            gc_setup_mark_bits(sweep_page);
-            sweep_page->needs_setup_mark_bits = false;
-        }
+        gc_setup_mark_bits(sweep_page);
     }
 
     if (RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final) && !finalizing) {
@@ -4697,63 +4684,6 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         int pre_empty_slots = sweep_page->pre_empty_slots;
         int free_slots = pre_freed_slots + pre_empty_slots;
 
-        if (objspace->background_sweep_mode && sweep_page->pre_deferred_free_slots == 0) {
-            if (free_slots == sweep_page->total_slots) {
-                GC_ASSERT(sweep_page->total_slots > 0);
-                psweep_debug(-6, "[sweep] (bg) gc_sweep_step_worker: heap %ld adding to empty_pages:%p (pre_empty:%d, pre_freed:%d)\n",
-                    heap - heaps, sweep_page, sweep_page->pre_empty_slots, sweep_page->pre_freed_slots);
-                // We're guaranteed to stay in background mode during this (starting GC requires taking the
-                // sweep_lock to change sweep background mode to false)
-                GC_ASSERT(sweep_page->pre_final_slots == 0);
-                clear_pre_sweep_fields(sweep_page);
-                gc_post_sweep_page(objspace, heap, sweep_page, true);
-                move_to_empty_pages(objspace, heap, sweep_page);
-                continue;
-            }
-            else if (free_slots > 0) {
-                // These are just for statistics, not used in calculations
-                heap->freed_slots += sweep_page->pre_freed_slots;
-                heap->empty_slots += sweep_page->pre_empty_slots;
-
-                sweep_page->free_slots = free_slots;
-                sweep_page->heap->total_freed_objects += sweep_page->pre_freed_slots;
-                clear_pre_sweep_fields(sweep_page);
-                gc_post_sweep_page(objspace, heap, sweep_page, false);
-                if (sweep_page->deferred_freelist) {
-                    merge_freelists(sweep_page->deferred_freelist, sweep_page->freelist);
-                    sweep_page->freelist = sweep_page->deferred_freelist;
-                }
-                sweep_page->deferred_freelist = NULL;
-                if (heap->pre_swept_slots_nodeferred < GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT) {
-                    psweep_debug(-6, "[sweep] (bg) gc_sweep_step_worker: heap %ld adding to pooled pages:%p (pre_empty:%d, pre_freed:%d, pre_swept:%lu->%lu)\n",
-                                 heap - heaps, sweep_page, pre_empty_slots, pre_freed_slots, heap->pre_swept_slots_nodeferred,
-                                 heap->pre_swept_slots_nodeferred + free_slots);
-                    heap->pre_swept_slots_nodeferred += free_slots;
-                    heap_add_poolpage(objspace, heap, sweep_page);
-                    continue;
-                }
-                else {
-                    psweep_debug(-6, "[sweep] (bg) gc_sweep_step_worker: heap %ld adding to free pages:%p (pre_empty:%d, pre_freed:%d, pre_swept:%lu->%lu)\n",
-                                 heap - heaps, sweep_page, pre_empty_slots, pre_freed_slots, heap->pre_swept_slots_nodeferred,
-                                 heap->pre_swept_slots_nodeferred + free_slots);
-                    heap_add_freepage(heap, sweep_page, "gc_sweep_step_worker");
-                    heap->pre_swept_slots_nodeferred += free_slots;
-                    if (heap->pre_swept_slots_nodeferred > (GC_INCREMENTAL_SWEEP_SLOT_COUNT + GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT)) {
-                        heap->pre_swept_slots_nodeferred = 0;
-                        /*break;*/
-                    }
-                    continue;
-                }
-            }
-            else {
-                // Don't even add to `swept_pages`, no further processing needed by ruby thread (no free slots)
-                clear_pre_sweep_fields(sweep_page);
-                gc_post_sweep_page(objspace, heap, sweep_page, false);
-                continue;
-            }
-        }
-
-
 #if PSWEEP_LOCK_STATS > 0
         instrumented_lock_acquire(&heap->swept_pages_lock, &swept_pages_lock_stats);
 #else
@@ -4797,7 +4727,6 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         // notify of newly swept page in case Ruby thread is waiting on us
         rb_native_cond_broadcast(&heap->sweep_page_cond);
     }
-    // sweep_lock is acquired
 }
 
 static void *
@@ -4864,7 +4793,6 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->swept_pages = NULL;
     heap->pooled_pages = NULL;
     heap->latest_swept_page = NULL;
-    heap->pre_swept_slots_nodeferred = 0;
     heap->pre_swept_slots_deferred = 0;
 
     heap->pre_sweeping_page = NULL;
@@ -5041,19 +4969,6 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
     objspace->use_background_sweep_thread = false;
 
-    /* Run deferred gc_setup_mark_bits for pages swept by the background thread.
-     * This must run on the GC thread to avoid racing with mutator write barriers
-     * that modify mark_bits and uncollectible_bits. */
-    for (int i = 0; i < HEAP_COUNT; i++) {
-        struct heap_page *page;
-        ccan_list_for_each(&heaps[i].pages, page, page_node) {
-            if (page->needs_setup_mark_bits) {
-                gc_setup_mark_bits(page);
-                page->needs_setup_mark_bits = false;
-            }
-        }
-    }
-
     gc_prof_set_heap_info(objspace);
     heap_pages_free_unused_pages(objspace);
 
@@ -5187,13 +5102,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     int swept_slots = 0;
     int pooled_slots = 0;
-    if (heap->pre_swept_slots_nodeferred >= GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT) {
-        swept_slots = heap->pre_swept_slots_nodeferred - GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT;
-    }
-    else if (heap->pre_swept_slots_nodeferred > 0) {
-        pooled_slots = heap->pre_swept_slots_nodeferred;
-    }
-    heap->pre_swept_slots_nodeferred = 0;
 
 #if VM_CHECK_MODE > 0
     sweep_lock_lock(&objspace->sweep_lock);
@@ -5245,7 +5153,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(sweep_page->pre_deferred_free_slots == 0);
         }
         else {
-            gc_post_sweep_page(objspace, heap, sweep_page, false); // clear bits
+            gc_post_sweep_page(objspace, heap, sweep_page); // clear bits
             // Process deferred free objects
             unsigned short deferred_free_freed = 0;
             unsigned short deferred_to_free = sweep_page->pre_deferred_free_slots;
@@ -5371,7 +5279,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
                 swept_slots += free_slots;
                 if (swept_slots > GC_INCREMENTAL_SWEEP_SLOT_COUNT) {
                     if (!sweep_rest && use_bg_thread) {
-                        RUBY_ATOMIC_INC(heap->foreground_sweep_steps); // signal sweep thread to move on
+                        RUBY_ATOMIC_INC(heap->foreground_sweep_steps); // signal sweep thread to move on to next heap
                     }
                     psweep_debug(0, "[gc] gc_sweep_step got to SWEEP_SLOT_COUNT, break\n");
                     break;
