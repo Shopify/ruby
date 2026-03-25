@@ -135,6 +135,14 @@ rb_concurrent_set_size(VALUE set_obj)
     return RUBY_ATOMIC_LOAD(set->size);
 }
 
+unsigned int
+rb_concurrent_set_capacity(VALUE set_obj)
+{
+    struct concurrent_set *set = RTYPEDDATA_GET_DATA(set_obj);
+
+    return set->capacity;
+}
+
 struct concurrent_set_probe {
     int idx;
     int d;

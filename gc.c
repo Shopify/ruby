@@ -101,6 +101,7 @@
 #include "internal/proc.h"
 #include "internal/rational.h"
 #include "internal/sanitizers.h"
+#include "internal/string.h"
 #include "internal/struct.h"
 #include "internal/symbol.h"
 #include "internal/thread.h"
@@ -4725,6 +4726,33 @@ rb_gc_latest_gc_info(VALUE key)
 }
 
 static VALUE
+gc_stat_concurrent_set(VALUE hash_or_sym)
+{
+    VALUE hash = Qnil, key = Qnil;
+
+    if (RB_TYPE_P(hash_or_sym, T_HASH)) {
+        hash = hash_or_sym;
+    }
+    else if (SYMBOL_P(hash_or_sym)) {
+        key = hash_or_sym;
+    }
+
+#define CS_SET(name, val) \
+    if (key == ID2SYM(rb_intern_const(#name))) \
+        return SIZET2NUM(val); \
+    else if (hash != Qnil) \
+        rb_hash_aset(hash, ID2SYM(rb_intern_const(#name)), SIZET2NUM(val));
+
+    CS_SET(fstring_table_size, rb_fstring_table_size());
+    CS_SET(fstring_table_capacity, rb_fstring_table_capacity());
+    CS_SET(symbol_table_size, rb_symbol_table_size());
+    CS_SET(symbol_table_capacity, rb_symbol_table_capacity());
+#undef CS_SET
+
+    return Qundef;
+}
+
+static VALUE
 gc_stat(rb_execution_context_t *ec, VALUE self, VALUE arg) // arg is (nil || hash || symbol)
 {
     if (NIL_P(arg)) {
@@ -4737,9 +4765,18 @@ gc_stat(rb_execution_context_t *ec, VALUE self, VALUE arg) // arg is (nil || has
     VALUE ret = rb_gc_impl_stat(rb_gc_get_objspace(), arg);
 
     if (ret == Qundef) {
+        /* Check concurrent set stats before raising */
+        ret = gc_stat_concurrent_set(arg);
+    }
+
+    if (ret == Qundef) {
         GC_ASSERT(SYMBOL_P(arg));
 
         rb_raise(rb_eArgError, "unknown key: %"PRIsVALUE, rb_sym2str(arg));
+    }
+
+    if (RB_TYPE_P(arg, T_HASH)) {
+        gc_stat_concurrent_set(arg);
     }
 
     return ret;
@@ -4755,6 +4792,10 @@ rb_gc_stat(VALUE arg)
     VALUE ret = rb_gc_impl_stat(rb_gc_get_objspace(), arg);
 
     if (ret == Qundef) {
+        ret = gc_stat_concurrent_set(arg);
+    }
+
+    if (ret == Qundef) {
         GC_ASSERT(SYMBOL_P(arg));
 
         rb_raise(rb_eArgError, "unknown key: %"PRIsVALUE, rb_sym2str(arg));
@@ -4764,6 +4805,7 @@ rb_gc_stat(VALUE arg)
         return NUM2SIZET(ret);
     }
     else {
+        gc_stat_concurrent_set(arg);
         return 0;
     }
 }

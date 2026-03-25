@@ -590,6 +590,18 @@ rb_obj_is_fstring_table(VALUE obj)
     return obj == fstring_table_obj;
 }
 
+size_t
+rb_fstring_table_size(void)
+{
+    return rb_concurrent_set_size(fstring_table_obj);
+}
+
+size_t
+rb_fstring_table_capacity(void)
+{
+    return rb_concurrent_set_capacity(fstring_table_obj);
+}
+
 void
 rb_gc_free_fstring(VALUE obj)
 {

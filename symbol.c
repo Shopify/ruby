@@ -921,6 +921,18 @@ rb_obj_is_symbol_table(VALUE obj)
     return obj == ruby_global_symbols.sym_set;
 }
 
+size_t
+rb_symbol_table_size(void)
+{
+    return rb_concurrent_set_size(ruby_global_symbols.sym_set);
+}
+
+size_t
+rb_symbol_table_capacity(void)
+{
+    return rb_concurrent_set_capacity(ruby_global_symbols.sym_set);
+}
+
 struct global_symbol_table_foreach_weak_reference_data {
     int (*callback)(VALUE *key, void *data);
     void *data;

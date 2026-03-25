@@ -31,6 +31,8 @@ PUREFUNC(int rb_is_attrset_sym(VALUE sym));
 ID rb_make_internal_id(void);
 ID rb_make_temporary_id(size_t n);
 bool rb_obj_is_symbol_table(VALUE obj);
+size_t rb_symbol_table_size(void);
+size_t rb_symbol_table_capacity(void);
 void rb_sym_global_symbol_table_foreach_weak_reference(int (*callback)(VALUE *key, void *data), void *data);
 void rb_gc_free_dsymbol(VALUE);
 int rb_static_id_valid_p(ID id);
