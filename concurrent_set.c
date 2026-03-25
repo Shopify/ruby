@@ -624,7 +624,8 @@ rb_concurrent_set_delete_by_identity_locked(VALUE set_obj, VALUE key)
                 }
                 else if (!continuation && prev_key == (raw_key | CONCURRENT_SET_CONTINUATION_BIT)) {
                     continue; // try again, the continuation bit was just set on this key so we can tombstone it
-                } else if ((prev_key & CONCURRENT_SET_KEY_MASK) == CONCURRENT_SET_EMPTY || (prev_key & CONCURRENT_SET_KEY_MASK) == CONCURRENT_SET_TOMBSTONE) {
+                }
+                else if ((prev_key & CONCURRENT_SET_KEY_MASK) == CONCURRENT_SET_EMPTY || (prev_key & CONCURRENT_SET_KEY_MASK) == CONCURRENT_SET_TOMBSTONE) {
                     return curr_key; // the key was deleted by another thread
                 }
                 else {
@@ -633,6 +634,9 @@ rb_concurrent_set_delete_by_identity_locked(VALUE set_obj, VALUE key)
                     RUBY_ASSERT(prev_hash != 0);
                     return curr_key;
                 }
+            }
+            else if (!continuation) {
+                return 0;
             }
             break;
         }
