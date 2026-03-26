@@ -5038,6 +5038,18 @@ gc_sweep_finish(rb_objspace_t *objspace)
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
+#ifdef DEBUG_SWEEP_BOOKKEEPING
+        {
+            /* Assert that every page in this heap was swept. */
+            struct heap_page *page;
+            ccan_list_for_each(&heap->pages, page, page_node) {
+                if (RUBY_ATOMIC_LOAD(page->before_sweep)) {
+                    rb_bug("gc_sweep_finish: page %p in heap %d still has before_sweep set", (void *)page, i);
+                }
+            }
+        }
+#endif
+
         heap->freed_slots = 0;
         heap->empty_slots = 0;
         if (heap->background_sweep_steps < heap->foreground_sweep_steps) {
