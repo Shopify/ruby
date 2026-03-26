@@ -366,7 +366,7 @@ Init_sym(void)
 {
     rb_symbols_t *symbols = &ruby_global_symbols;
 
-    symbols->sym_set = rb_concurrent_set_new(&sym_set_funcs, 1024);
+    symbols->sym_set = rb_concurrent_set_new(&sym_set_funcs, 1024, T_SYMBOL);
     symbols->ids = rb_ary_hidden_new(0);
 
     Init_op_tbl();
@@ -922,7 +922,7 @@ rb_gc_free_dsymbol(VALUE sym)
     VALUE str = RSYMBOL(sym)->fstr;
 
     if (str) {
-        rb_concurrent_set_delete_by_identity(ruby_global_symbols.sym_set, sym);
+        rb_concurrent_set_delete_by_identity(&ruby_global_symbols.sym_set, sym);
 
         RSYMBOL(sym)->fstr = 0;
     }
