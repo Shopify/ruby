@@ -555,6 +555,11 @@ typedef struct rb_objspace {
 
         size_t minor_gc_count;
         size_t major_gc_count;
+        size_t major_gc_count_by_nofree;
+        size_t major_gc_count_by_oldgen;
+        size_t major_gc_count_by_shady;
+        size_t major_gc_count_by_force;
+        size_t major_gc_count_by_oldmalloc;
         size_t compact_count;
         size_t read_barrier_faults;
 #if RGENGC_PROFILE > 0
@@ -6489,6 +6494,11 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
 #if RGENGC_ESTIMATE_OLDMALLOC
         (void)RB_DEBUG_COUNTER_INC_IF(gc_major_oldmalloc, reason & GPR_FLAG_MAJOR_BY_OLDMALLOC);
 #endif
+        if (reason & GPR_FLAG_MAJOR_BY_NOFREE)    objspace->profile.major_gc_count_by_nofree++;
+        if (reason & GPR_FLAG_MAJOR_BY_OLDGEN)    objspace->profile.major_gc_count_by_oldgen++;
+        if (reason & GPR_FLAG_MAJOR_BY_SHADY)     objspace->profile.major_gc_count_by_shady++;
+        if (reason & GPR_FLAG_MAJOR_BY_FORCE)     objspace->profile.major_gc_count_by_force++;
+        if (reason & GPR_FLAG_MAJOR_BY_OLDMALLOC) objspace->profile.major_gc_count_by_oldmalloc++;
     }
     else {
         (void)RB_DEBUG_COUNTER_INC_IF(gc_minor_newobj, reason & GPR_FLAG_NEWOBJ);
@@ -7460,6 +7470,11 @@ enum gc_stat_sym {
     gc_stat_sym_malloc_increase_bytes_limit,
     gc_stat_sym_minor_gc_count,
     gc_stat_sym_major_gc_count,
+    gc_stat_sym_major_gc_count_by_nofree,
+    gc_stat_sym_major_gc_count_by_oldgen,
+    gc_stat_sym_major_gc_count_by_shady,
+    gc_stat_sym_major_gc_count_by_force,
+    gc_stat_sym_major_gc_count_by_oldmalloc,
     gc_stat_sym_compact_count,
     gc_stat_sym_read_barrier_faults,
     gc_stat_sym_total_moved_objects,
@@ -7511,6 +7526,11 @@ setup_gc_stat_symbols(void)
         S(malloc_increase_bytes_limit);
         S(minor_gc_count);
         S(major_gc_count);
+        S(major_gc_count_by_nofree);
+        S(major_gc_count_by_oldgen);
+        S(major_gc_count_by_shady);
+        S(major_gc_count_by_force);
+        S(major_gc_count_by_oldmalloc);
         S(compact_count);
         S(read_barrier_faults);
         S(total_moved_objects);
@@ -7593,6 +7613,11 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(malloc_increase_bytes_limit, malloc_limit);
     SET(minor_gc_count, objspace->profile.minor_gc_count);
     SET(major_gc_count, objspace->profile.major_gc_count);
+    SET(major_gc_count_by_nofree, objspace->profile.major_gc_count_by_nofree);
+    SET(major_gc_count_by_oldgen, objspace->profile.major_gc_count_by_oldgen);
+    SET(major_gc_count_by_shady, objspace->profile.major_gc_count_by_shady);
+    SET(major_gc_count_by_force, objspace->profile.major_gc_count_by_force);
+    SET(major_gc_count_by_oldmalloc, objspace->profile.major_gc_count_by_oldmalloc);
     SET(compact_count, objspace->profile.compact_count);
     SET(read_barrier_faults, objspace->profile.read_barrier_faults);
     SET(total_moved_objects, objspace->rcompactor.total_moved);
