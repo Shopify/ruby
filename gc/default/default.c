@@ -4347,6 +4347,26 @@ zombie_needs_deferred_free(VALUE zombie)
     return ZOMBIE_NEEDS_FREE_P(zombie);
 }
 
+#if RGENGC_CHECK_MODE
+static void
+debug_free_check(rb_objspace_t *objspace, VALUE vp)
+{
+    if (!is_full_marking(objspace)) {
+        if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)p);
+        if (RVALUE_REMEMBERED(objspace, vp)) rb_bug("page_sweep: %p - remembered.", (void *)p);
+    }
+    if (RVALUE_WB_UNPROTECTED(objspace, vp)) CLEAR_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(vp), vp);
+#define CHECK(x) if (x(objspace, vp) != FALSE) rb_bug("obj_free: " #x "(%s) != FALSE", rb_obj_info(vp))
+    CHECK(RVALUE_WB_UNPROTECTED);
+    CHECK(RVALUE_MARKED);
+    CHECK(RVALUE_MARKING);
+    CHECK(RVALUE_UNCOLLECTIBLE);
+#undef CHECK
+}
+#else
+#define debug_free_check(...) (void)0
+#endif
+
 static inline void
 gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page, uintptr_t p, bits_t bitset, short slot_size, short slot_bits)
 {
@@ -4378,6 +4398,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 }
                 break;
               case T_DATA: {
+                debug_free_check(objspace, vp);
                 void *data = RTYPEDDATA_P(vp) ? RTYPEDDATA_GET_DATA(vp) : DATA_PTR(vp);
                 if (!data) {
                     goto free;
@@ -4408,6 +4429,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 break;
               }
               case T_IMEMO: {
+                debug_free_check(objspace, vp);
                 if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
                     sweep_in_ruby_thread(objspace, page, vp, true);
                     break;
@@ -4442,6 +4464,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               case T_MATCH:
               case T_REGEXP:
               case T_FILE: {
+                debug_free_check(objspace, vp);
                 if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
                     sweep_in_ruby_thread(objspace, page, vp, true);
                     break;
@@ -4452,6 +4475,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 break;
               }
               default: // ex: T_CLASS/T_MODULE/T_ICLASS
+                debug_free_check(objspace, vp);
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
                     heap_page_add_deferred_freeobj(objspace, page, vp);
                     psweep_debug(2, "[sweep] freed: page(%p), obj(%p)\n", (void*)page, (void*)vp);
@@ -4462,6 +4486,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 }
                 break;
               free: {
+                  debug_free_check(objspace, vp);
                   if (rb_gc_obj_free_vm_weak_references(vp)) {
                       bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
                       if (can_put_back_on_freelist) {
