@@ -851,7 +851,6 @@ struct heap_page {
         unsigned int has_remembered_objects : 1;
         unsigned int has_uncollectible_wb_unprotected_objects : 1;
     } flags;
-    bool needs_setup_mark_bits;
     rb_atomic_t before_sweep; // bool
 
     rb_heap_t *heap;
@@ -954,14 +953,6 @@ slot_index_for_offset(size_t offset, uint32_t div_magic)
 #define MARKED_IN_BITMAP(bits, p)    _MARKED_IN_BITMAP(bits, GET_HEAP_PAGE(p), p)
 #define MARK_IN_BITMAP(bits, p)      _MARK_IN_BITMAP(bits, GET_HEAP_PAGE(p), p)
 #define CLEAR_IN_BITMAP(bits, p)     _CLEAR_IN_BITMAP(bits, GET_HEAP_PAGE(p), p)
-
-/* Atomic bitmap operations for use during parallel sweep, where the sweep
- * thread and mutator write barriers may modify different bits in the same
- * bitmap word concurrently. */
-#define _ATOMIC_MARK_IN_BITMAP(bits, page, p)   RUBY_ATOMIC_VALUE_OR((bits)[SLOT_BITMAP_INDEX(page, p)], SLOT_BITMAP_BIT(page, p))
-#define _ATOMIC_CLEAR_IN_BITMAP(bits, page, p)  RUBY_ATOMIC_VALUE_AND((bits)[SLOT_BITMAP_INDEX(page, p)], ~SLOT_BITMAP_BIT(page, p))
-#define ATOMIC_MARK_IN_BITMAP(bits, p)   _ATOMIC_MARK_IN_BITMAP(bits, GET_HEAP_PAGE(p), p)
-#define ATOMIC_CLEAR_IN_BITMAP(bits, p)  _ATOMIC_CLEAR_IN_BITMAP(bits, GET_HEAP_PAGE(p), p)
 
 #define GET_HEAP_MARK_BITS(x)           (&GET_HEAP_PAGE(x)->mark_bits[0])
 #define GET_HEAP_PINNED_BITS(x)         (&GET_HEAP_PAGE(x)->pinned_bits[0])
@@ -2608,7 +2599,7 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
 #endif
 
     if (RB_UNLIKELY(wb_protected == FALSE)) {
-        ATOMIC_MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
+        MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
     }
 
 #if RGENGC_PROFILE
@@ -4113,7 +4104,7 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
 
 // Clear bits for the page that was swept by the background thread.
 static inline void
-gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, bool force_setup_mark_bits)
+gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page)
 {
     GC_ASSERT(sweep_page->heap == heap);
 
@@ -4151,16 +4142,7 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
     }
 
     if (!heap->compact_cursor) {
-        if (objspace->background_sweep_mode && !force_setup_mark_bits) {
-            /* Defer gc_setup_mark_bits to gc_sweep_finish on the GC thread,
-             * because it overwrites mark_bits which would race with mutator
-             * write barriers for objects on the same page. */
-            sweep_page->needs_setup_mark_bits = true;
-        }
-        else {
-            gc_setup_mark_bits(sweep_page);
-            sweep_page->needs_setup_mark_bits = false;
-        }
+        gc_setup_mark_bits(sweep_page);
     }
 
     if (RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final) && !finalizing) {
@@ -4938,19 +4920,6 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
     objspace->use_background_sweep_thread = false;
 
-    /* Run deferred gc_setup_mark_bits for pages swept by the background thread.
-     * This must run on the GC thread to avoid racing with mutator write barriers
-     * that modify mark_bits and uncollectible_bits. */
-    for (int i = 0; i < HEAP_COUNT; i++) {
-        struct heap_page *page;
-        ccan_list_for_each(&heaps[i].pages, page, page_node) {
-            if (page->needs_setup_mark_bits) {
-                gc_setup_mark_bits(page);
-                page->needs_setup_mark_bits = false;
-            }
-        }
-    }
-
     gc_prof_set_heap_info(objspace);
     heap_pages_free_unused_pages(objspace);
 
@@ -5135,7 +5104,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(sweep_page->pre_deferred_free_slots == 0);
         }
         else {
-            gc_post_sweep_page(objspace, heap, sweep_page, false); // clear bits
+            gc_post_sweep_page(objspace, heap, sweep_page); // clear bits
             // Process deferred free objects
             unsigned short deferred_free_freed = 0;
             unsigned short deferred_to_free = sweep_page->pre_deferred_free_slots;
@@ -7592,7 +7561,7 @@ rb_gc_impl_writebarrier_unprotect(void *objspace_ptr, VALUE obj)
             }
 
             RB_DEBUG_COUNTER_INC(obj_wb_unprotect);
-            ATOMIC_MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
+            MARK_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(obj), obj);
         }
         RB_GC_VM_UNLOCK_NO_BARRIER(lev);
     }
