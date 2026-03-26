@@ -926,19 +926,20 @@ heap_page_in_global_empty_pages_pool(rb_objspace_t *objspace, struct heap_page *
 #define GET_HEAP_WB_UNPROTECTED_BITS(x) (&GET_HEAP_PAGE(x)->wb_unprotected_bits[0])
 #define GET_HEAP_MARKING_BITS(x)        (&GET_HEAP_PAGE(x)->marking_bits[0])
 
-/* Planar age_bits layout: two bit-planes, each with the same 1-bit-per-slot
- * layout as mark_bits.  age_bits[i*2] holds bit 0, age_bits[i*2+1] holds
- * bit 1 of the age for the slots covered by mark_bits[i]. */
+// Planar layout: age_bits[i*2] = plane 0 (low bit), age_bits[i*2+1] = plane 1 (high bit)
+// This matches the mark_bits layout so bulk clearing with ~unmarked works directly.
+#define RVALUE_AGE_BITMAP_PLANE_INDEX(n) BITMAP_INDEX(n)
+#define RVALUE_AGE_BITMAP_OFFSET(n)      BITMAP_OFFSET(n)
 
 static int
 RVALUE_AGE_GET(VALUE obj)
 {
     bits_t *age_bits = GET_HEAP_PAGE(obj)->age_bits;
-    int idx = BITMAP_INDEX(obj) * 2;
-    int shift = BITMAP_OFFSET(obj);
-    int bit0 = (age_bits[idx]     >> shift) & 1;
-    int bit1 = (age_bits[idx + 1] >> shift) & 1;
-    return bit0 | (bit1 << 1);
+    int idx = RVALUE_AGE_BITMAP_PLANE_INDEX(obj);
+    int offset = RVALUE_AGE_BITMAP_OFFSET(obj);
+    int lo = (age_bits[idx * 2] >> offset) & 1;
+    int hi = (age_bits[idx * 2 + 1] >> offset) & 1;
+    return lo | (hi << 1);
 }
 
 static void
@@ -946,16 +947,15 @@ RVALUE_AGE_SET_BITMAP(VALUE obj, int age)
 {
     RUBY_ASSERT(age <= RVALUE_OLD_AGE);
     bits_t *age_bits = GET_HEAP_PAGE(obj)->age_bits;
-    int idx = BITMAP_INDEX(obj) * 2;
-    int shift = BITMAP_OFFSET(obj);
-    bits_t mask = (bits_t)1 << shift;
-
-    /* Use atomic operations because the sweep thread may concurrently clear
-     * age bits for dead objects in the same bitmap word. */
-    if (age & 1) { age_bits[idx] |= mask; }
-    else         { age_bits[idx] &= ~mask; }
-    if (age & 2) { age_bits[idx + 1] |= mask; }
-    else         { age_bits[idx + 1] &= ~mask; }
+    int idx = RVALUE_AGE_BITMAP_PLANE_INDEX(obj);
+    int offset = RVALUE_AGE_BITMAP_OFFSET(obj);
+    bits_t mask = (bits_t)1 << offset;
+    // clear both planes
+    age_bits[idx * 2] &= ~mask;
+    age_bits[idx * 2 + 1] &= ~mask;
+    // set the bits
+    if (age & 1) age_bits[idx * 2] |= mask;
+    if (age & 2) age_bits[idx * 2 + 1] |= mask;
 }
 
 static void
@@ -2559,6 +2559,7 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
     }
 #endif
     GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE);
+    GC_ASSERT(RVALUE_AGE_GET(obj) == 0);
     GC_ASSERT((flags & FL_WB_PROTECTED) == 0);
     RBASIC(obj)->flags = flags;
     *((VALUE *)&RBASIC(obj)->klass) = klass;
@@ -3969,6 +3970,8 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 }
 #endif
 
+                if (RVALUE_WB_UNPROTECTED(objspace, vp)) CLEAR_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(vp), vp);
+
 #if RGENGC_CHECK_MODE
 #define CHECK(x) if (x(objspace, vp) != FALSE) rb_bug("obj_free: " #x "(%s) != FALSE", rb_obj_info(vp))
                 CHECK(RVALUE_WB_UNPROTECTED);
@@ -3984,6 +3987,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     }
 
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
+                    RVALUE_AGE_SET_BITMAP(vp, 0);
                     heap_page_add_freeobj(objspace, sweep_page, vp);
                     gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
                     ctx->freed_slots++;
@@ -3998,6 +4002,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     }
                     if (rb_gc_obj_free(objspace, vp)) {
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
+                        RVALUE_AGE_SET_BITMAP(vp, 0);
                         heap_page_add_freeobj(objspace, sweep_page, vp);
                         gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
                         ctx->freed_slots++;
@@ -4140,8 +4145,6 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
     bits_t slot_mask = heap->slot_bits_mask;
 
     // Clear wb_unprotected and age bits for all unmarked slots.
-    // Use atomic operations because mutator write barriers may concurrently
-    // modify bits for live objects in the same bitmap word.
     {
         bits_t *wb_unprotected_bits = sweep_page->wb_unprotected_bits;
         bits_t *age_bits = sweep_page->age_bits;
@@ -4203,20 +4206,6 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
                   bitmap_plane_count == HEAP_PAGE_BITMAP_LIMIT);
 
     bits_t slot_mask = heap->slot_bits_mask;
-
-    // Clear wb_unprotected and age bits for all unmarked slots.
-    // Use atomic operations because mutator write barriers may concurrently
-    // modify bits for live objects in the same bitmap word.
-    {
-        bits_t *wb_unprotected_bits = sweep_page->wb_unprotected_bits;
-        bits_t *age_bits = sweep_page->age_bits;
-        for (int i = 0; i < bitmap_plane_count; i++) {
-            bits_t unmarked = ~bits[i] & slot_mask;
-            wb_unprotected_bits[i] &= ~unmarked;
-            age_bits[i * 2] &= ~unmarked;
-            age_bits[i * 2 + 1] &= ~unmarked;
-        }
-    }
 
     // Skip out of range slots at the head of the page
     bitset = ~bits[0];
