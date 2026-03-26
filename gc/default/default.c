@@ -852,6 +852,7 @@ struct heap_page {
     unsigned short pre_empty_slots;
     unsigned short pre_deferred_free_slots;
     unsigned short pre_final_slots;
+    unsigned short pre_zombie_slots;
     struct {
         unsigned int has_remembered_objects : 1;
         unsigned int has_uncollectible_wb_unprotected_objects : 1;
@@ -944,6 +945,16 @@ static inline size_t
 slot_index_for_offset(size_t offset, uint32_t div_magic)
 {
     return (size_t)(((uint64_t)offset * div_magic) >> 32);
+}
+
+static inline int
+popcount_bits(bits_t x)
+{
+#if SIZEOF_VOIDP == 8
+    return __builtin_popcountl(x);
+#else
+    return __builtin_popcount(x);
+#endif
 }
 
 #define SLOT_INDEX(page, p)          slot_index_for_offset((uintptr_t)(p) - (page)->start, (page)->slot_div_magic)
@@ -3922,6 +3933,7 @@ struct gc_sweep_context {
     int final_slots;
     int freed_slots;
     int empty_slots;
+    int zombie_slots; /* pre-existing zombies not yet ready to free */
 };
 
 bool rb_gc_obj_needs_cleanup_p(VALUE obj);
@@ -3957,6 +3969,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     goto free_object;
                 }
                 /* already counted as final slot */
+                ctx->zombie_slots++;
                 break;
               case T_NONE:
                 ctx->empty_slots++; /* already freed */
@@ -4215,6 +4228,35 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
         }
     }
 
+#ifdef DEBUG_SWEEP_BOOKKEEPING
+    {
+        /* Assert that all unmarked slots with live objects were either freed or made into zombies.
+         * Count unmarked slot-aligned bits the same way the sweep loop does. */
+        int unmarked_slots = 0;
+        uintptr_t vp = (uintptr_t)sweep_page->start;
+
+        bits_t bs = ~bits[0];
+        bs >>= NUM_IN_PAGE(vp);
+        bs &= slot_mask;
+        unmarked_slots += popcount_bits(bs);
+
+        for (int i = 1; i < bitmap_plane_count; i++) {
+            bs = ~bits[i] & slot_mask;
+            unmarked_slots += popcount_bits(bs);
+        }
+
+        int freed_or_zombie = ctx->freed_slots + ctx->final_slots;
+        int unmarked_live = unmarked_slots - ctx->empty_slots - ctx->zombie_slots;
+        if (freed_or_zombie != unmarked_live) {
+            rb_bug("gc_sweep_page: unmarked live slot count mismatch: "
+                   "unmarked_slots=%d - empty_slots=%d - zombie_slots=%d = %d unmarked live, "
+                   "but freed_slots=%d + final_slots=%d = %d",
+                   unmarked_slots, ctx->empty_slots, ctx->zombie_slots, unmarked_live,
+                   ctx->freed_slots, ctx->final_slots, freed_or_zombie);
+        }
+    }
+#endif
+
     if (!heap->compact_cursor) {
         gc_setup_mark_bits(sweep_page);
     }
@@ -4363,6 +4405,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
     unsigned short freed = 0;
     unsigned short empties = 0;
     unsigned short finals = 0;
+    unsigned short zombies = 0;
     do {
         VALUE vp = (VALUE)p;
         GC_ASSERT(GET_HEAP_PAGE(vp) == page);
@@ -4386,6 +4429,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 }
                 else {
                     // already counted as final_slot when made into a zombie
+                    zombies++;
                 }
                 break;
               case T_DATA: {
@@ -4510,6 +4554,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
     page->pre_freed_slots += freed;
     page->pre_empty_slots += empties;
     page->pre_final_slots += finals;
+    page->pre_zombie_slots += zombies;
 }
 
 static void
@@ -4523,6 +4568,7 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     psweep_debug(1, "[sweep] gc_pre_sweep_page(heap:%p page:%p) start\n", heap, page);
     GC_ASSERT(page->heap == heap);
     page->pre_deferred_free_slots = 0;
+    page->pre_zombie_slots = 0;
 
     int bitmap_plane_count = CEILDIV(total_slots, BITS_BITLENGTH);
     int out_of_range_bits = total_slots % BITS_BITLENGTH;
@@ -4542,6 +4588,35 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     if (page->pre_deferred_free_slots > 0) {
         objspace->profile.pages_swept_by_sweep_thread_had_deferred_free_objects++;
     }
+
+#ifdef DEBUG_SWEEP_BOOKKEEPING
+    {
+        /* Assert that all unmarked slots with live objects were either freed, made into
+         * zombies, or deferred to the Ruby thread. */
+        int unmarked_slots = 0;
+
+        bits_t bs = ~bits[0];
+        bs >>= NUM_IN_PAGE((uintptr_t)page->start);
+        bs &= slot_mask;
+        unmarked_slots += popcount_bits(bs);
+
+        for (int i = 1; i < bitmap_plane_count; i++) {
+            bs = ~bits[i] & slot_mask;
+            unmarked_slots += popcount_bits(bs);
+        }
+
+        int freed_or_zombie = page->pre_freed_slots + page->pre_final_slots + page->pre_deferred_free_slots;
+        int unmarked_live = unmarked_slots - page->pre_empty_slots - page->pre_zombie_slots;
+        if (freed_or_zombie != unmarked_live) {
+            rb_bug("gc_pre_sweep_page: unmarked live slot count mismatch: "
+                   "unmarked_slots=%d - empty_slots=%d - zombie_slots=%d = %d unmarked live, "
+                   "but freed_slots=%d + final_slots=%d + deferred_free_slots=%d = %d",
+                   unmarked_slots, page->pre_empty_slots, page->pre_zombie_slots, unmarked_live,
+                   page->pre_freed_slots, page->pre_final_slots, page->pre_deferred_free_slots, freed_or_zombie);
+        }
+    }
+#endif
+
     psweep_debug(1, "[sweep] gc_pre_sweep_page(heap:%p page:%p) done, deferred free:%d\n", heap, page, page->pre_deferred_free_slots);
 }
 
@@ -4600,6 +4675,7 @@ clear_pre_sweep_fields(struct heap_page *page)
     page->pre_deferred_free_slots = 0;
     page->pre_empty_slots = 0;
     page->pre_final_slots = 0;
+    page->pre_zombie_slots = 0;
 }
 
 // add beginning of b to end of a
