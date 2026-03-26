@@ -2570,6 +2570,7 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
     }
 #endif
     GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE);
+    GC_ASSERT(RVALUE_AGE_GET(obj) == 0);
     GC_ASSERT((flags & FL_WB_PROTECTED) == 0);
     RBASIC(obj)->flags = flags;
     *((VALUE *)&RBASIC(obj)->klass) = klass;
@@ -3966,6 +3967,8 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 }
 #endif
 
+                if (RVALUE_WB_UNPROTECTED(objspace, vp)) CLEAR_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(vp), vp);
+
 #if RGENGC_CHECK_MODE
 #define CHECK(x) if (x(objspace, vp) != FALSE) rb_bug("obj_free: " #x "(%s) != FALSE", rb_obj_info(vp))
                 CHECK(RVALUE_WB_UNPROTECTED);
@@ -3980,9 +3983,10 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                         rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
                     }
 
-                    (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, slot_size);
+                    RVALUE_AGE_SET_BITMAP(vp, 0);
                     heap_page_add_freeobj(objspace, sweep_page, vp);
                     gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
+                    (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, slot_size);
                     ctx->freed_slots++;
                 }
                 else {
@@ -3992,9 +3996,10 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
                     rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
-                        (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, slot_size);
+                        RVALUE_AGE_SET_BITMAP(vp, 0);
                         heap_page_add_freeobj(objspace, sweep_page, vp);
                         gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
+                        (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, slot_size);
                         ctx->freed_slots++;
                     }
                     else {
