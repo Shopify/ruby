@@ -610,8 +610,6 @@ rb_obj_is_fstring_table(VALUE obj)
 void
 rb_gc_free_fstring(VALUE obj)
 {
-    ASSERT_vm_locking_with_barrier();
-
     RUBY_ASSERT(FL_TEST(obj, RSTRING_FSTR));
     RUBY_ASSERT(OBJ_FROZEN(obj));
     RUBY_ASSERT(!FL_TEST(obj, STR_SHARED));
