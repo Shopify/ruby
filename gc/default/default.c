@@ -4416,6 +4416,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               case T_BIGNUM:
               case T_OBJECT:
               case T_STRING:
+              case T_SYMBOL:
               case T_ARRAY:
               case T_HASH:
               case T_STRUCT:
@@ -4431,7 +4432,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 }
                 break;
               }
-              default: // ex: T_CLASS/T_MODULE/T_ICLASS/T_SYMBOL
+              default: // ex: T_CLASS/T_MODULE/T_ICLASS
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
                     heap_page_add_deferred_freeobj(objspace, page, vp);
                     psweep_debug(2, "[sweep] freed: page(%p), obj(%p)\n", (void*)page, (void*)vp);
