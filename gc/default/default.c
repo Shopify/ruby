@@ -4108,7 +4108,9 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
 #if VM_CHECK_MODE > 0
     MAYBE_UNUSED(const char *obj_info) = rb_obj_info(obj);
 #endif
-    rb_gc_obj_free_vm_weak_references(obj);
+    bool freed_weakrefs = rb_gc_obj_free_vm_weak_references(obj);
+    (void)freed_weakrefs;
+    GC_ASSERT(freed_weakrefs);
     if (rb_gc_obj_free(objspace, obj)) {
         struct heap_page *page = GET_HEAP_PAGE(obj);
         psweep_debug(1, "[gc] deferred free: page(%p) obj(%p) %s (success)\n", page, (void*)obj, obj_info);
@@ -5203,12 +5205,13 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         bool dequeued_unswept_page = false;
         // NOTE: pages we dequeue from the sweep thread need to be AFTER the list of heap->free_pages so we don't free from pages
         // we've allocated from since sweep started.
-        struct heap_page *sweep_page = gc_sweep_dequeue_page(objspace, heap, free_in_user_thread_p, &free_in_user_thread_p);
+        struct heap_page *sweep_page = gc_sweep_dequeue_page(objspace, heap, free_in_user_thread_p, &dequeued_unswept_page);
         if (RB_UNLIKELY(!sweep_page)) {
             psweep_debug(-2, "[gc] gc_sweep_step heap:%p (%ld) deq() = nil, break\n", heap, heap - heaps);
             break;
         }
         if (dequeued_unswept_page) {
+            free_in_user_thread_p =  true;
             psweep_debug(-2, "[gc] gc_sweep_step heap:%p (%ld) deq unswept page\n", heap, heap - heaps);
         }
         else {
@@ -5228,8 +5231,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(sweep_page->pre_deferred_free_slots == 0);
         }
         else {
-            gc_post_sweep_page(objspace, heap, sweep_page); // clear bits
-            // Process deferred free objects
             unsigned short deferred_free_freed = 0;
             unsigned short deferred_to_free = sweep_page->pre_deferred_free_slots;
 
@@ -5261,6 +5262,8 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             ctx.final_slots = sweep_page->pre_final_slots + deferred_free_final_slots;
             ctx.freed_slots = sweep_page->pre_freed_slots + deferred_free_freed;
             ctx.empty_slots = sweep_page->pre_empty_slots;
+
+            gc_post_sweep_page(objspace, heap, sweep_page); // clear bits
         }
 
         if (0) fprintf(stderr, "gc_sweep_page(%"PRIdSIZE"): total_slots: %d, freed_slots: %d, empty_slots: %d, final_slots: %d\n",
