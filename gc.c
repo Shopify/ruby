@@ -2298,6 +2298,10 @@ bool
 rb_gc_obj_has_blacklisted_vm_weak_references(VALUE obj)
 {
     switch (BUILTIN_TYPE(obj)) {
+      case T_STRING:
+        return FL_TEST_RAW(obj, RSTRING_FSTR);
+      case T_SYMBOL:
+        return true;
       case T_IMEMO:
         switch (imemo_type(obj)) {
           case imemo_callcache: {
@@ -2324,18 +2328,6 @@ rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(VALUE obj)
     if (rb_obj_gen_fields_p(obj)) {
         bool freed_generic = rb_free_generic_ivar(obj);
         if (!freed_generic) result = false;
-    }
-    switch (BUILTIN_TYPE(obj)) {
-      case T_STRING:
-        if (FL_TEST_RAW(obj, RSTRING_FSTR)) {
-            rb_gc_free_fstring(obj);
-        }
-        break;
-      case T_SYMBOL:
-        rb_gc_free_dsymbol(obj);
-        break;
-      default:
-        break;
     }
     return result;
 }
