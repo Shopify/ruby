@@ -541,13 +541,15 @@ typedef struct rb_objspace {
         unsigned int during_reference_updating : 1;
         unsigned int gc_stressful: 1;
         unsigned int has_newobj_hook: 1;
-        unsigned int during_minor_gc : 1;
         unsigned int during_incremental_marking : 1;
-        unsigned int during_lazy_sweeping : 1;
-
 
         unsigned int measure_gc : 1;
     } flags;
+    // This can't be a bitfield because it's accessed in garbage_object_p() from the sweep thread
+    // while the ruby GC thread could be running and changing other bitfields.
+    bool during_lazy_sweeping;
+    // This one too, it's accessed in debug_free_check
+    bool during_minor_gc;
 
     rb_event_flag_t hook_events;
 
@@ -563,10 +565,10 @@ typedef struct rb_objspace {
     bool sweep_thread_sweep_exited;
     bool sweep_thread_waiting_request;
     bool sweep_thread_sweeping;
+    rb_atomic_t use_background_sweep_thread;
     bool background_sweep_mode;
     bool background_sweep_abort;
     bool background_sweep_restart_heaps;
-    bool use_background_sweep_thread;
     bool sweep_rest;
     unsigned int heaps_done_background_sweep;
 
@@ -1349,12 +1351,12 @@ total_final_slots_count(rb_objspace_t *objspace)
 
 #define is_marking(objspace)             (gc_mode(objspace) == gc_mode_marking)
 #define is_sweeping(objspace)            (gc_mode(objspace) == gc_mode_sweeping)
-#define is_full_marking(objspace)        ((objspace)->flags.during_minor_gc == FALSE)
+#define is_full_marking(objspace)        ((objspace)->during_minor_gc == FALSE)
 #define is_incremental_marking(objspace) ((objspace)->flags.during_incremental_marking != FALSE)
 #define will_be_incremental_marking(objspace) ((objspace)->rgengc.need_major_gc != GPR_FLAG_NONE)
 #define GC_INCREMENTAL_SWEEP_SLOT_COUNT 2048
 #define GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT 1024
-#define is_lazy_sweeping(objspace)           ((objspace)->flags.during_lazy_sweeping != FALSE)
+#define is_lazy_sweeping(objspace)           ((objspace)->during_lazy_sweeping != FALSE)
 /* In lazy sweeping or the previous incremental marking finished and did not yield a free page. */
 #define needs_continue_sweeping(objspace, heap) \
     ((heap)->free_pages == NULL && is_lazy_sweeping(objspace))
@@ -1555,6 +1557,14 @@ RVALUE_MARKED(rb_objspace_t *objspace, VALUE obj)
 {
     check_rvalue_consistency(objspace, obj);
     return RVALUE_MARKED_BITMAP(obj) != 0;
+}
+
+static inline int
+RVALUE_MARKED_ATOMIC(rb_objspace_t *objspace, VALUE obj)
+{
+    bits_t *bits = GET_HEAP_MARK_BITS(obj);
+    bits_t word = __atomic_load_n(&bits[BITMAP_INDEX(obj)], __ATOMIC_SEQ_CST);
+    return (word & BITMAP_BIT(obj)) != 0;
 }
 
 static inline int
@@ -1912,8 +1922,11 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
 
     bool dead = false;
 
-    if (!objspace->background_sweep_mode) { // set to false/true by ruby GC thread when entering/exiting GC
-        // psweep: not safe to read flags on object if during background sweeping
+    // Set to false/true by the ruby GC thread when entering/exiting GC, so shouldn't change throughout this call.
+    rb_atomic_t use_sweep_thread = RUBY_ATOMIC_LOAD(objspace->use_background_sweep_thread);
+
+    if (!use_sweep_thread) {
+        // It's not safe to read flags on an object if the sweep thread is running
         asan_unpoisoning_object(ptr) {
             switch (BUILTIN_TYPE(ptr)) {
             case T_NONE:
@@ -1932,17 +1945,19 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
     struct heap_page *page = GET_HEAP_PAGE(ptr);
     bool during_lazy_sweep = is_lazy_sweeping(objspace);
 
-    if (!objspace->background_sweep_mode) {
-        return during_lazy_sweep && !RVALUE_MARKED(objspace, ptr) && RUBY_ATOMIC_LOAD(page->before_sweep);
+    if (!use_sweep_thread) {
+        // The ruby GC thread or a user thread called us
+        bool marked = RVALUE_MARKED(objspace, ptr);
+        GC_ASSERT(marked == RVALUE_MARKED_ATOMIC(objspace, ptr));
+        return during_lazy_sweep && !marked && RUBY_ATOMIC_LOAD(page->before_sweep);
     }
     // we're currently lazy sweeping with the sweep thread in background mode
     else if (during_lazy_sweep) {
-        bool is_before1, is_before2;
-        // This is technically UB because reading of mark bits is not synchronized, but I think it's fine.
-        bool is_garbage = ((is_before1 = RUBY_ATOMIC_LOAD(page->before_sweep)) &&
-            !RVALUE_MARKED(objspace, ptr) && (is_before2 = RUBY_ATOMIC_LOAD(page->before_sweep)));
+        bool marked = RVALUE_MARKED_ATOMIC(objspace, ptr); // load it atomically so it can't be re-ordered past the next atomic load
+        bool before_sweep = RUBY_ATOMIC_LOAD(page->before_sweep);
+        bool is_garbage = !marked && before_sweep;
         if (is_garbage) return true;
-        if (is_before1 && is_before2) return false; // must be marked (before_sweep and marked)
+        if (marked && before_sweep) return false;
         // already swept page, just check flags
         return BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || BUILTIN_TYPE(ptr) == T_ZOMBIE;
     }
@@ -4402,9 +4417,7 @@ debug_free_check(rb_objspace_t *objspace, VALUE vp)
         if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)p);
         if (RVALUE_REMEMBERED(objspace, vp)) rb_bug("page_sweep: %p - remembered.", (void *)p);
     }
-    if (RVALUE_WB_UNPROTECTED(objspace, vp)) CLEAR_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(vp), vp);
 #define CHECK(x) if (x(objspace, vp) != FALSE) rb_bug("obj_free: " #x "(%s) != FALSE", rb_obj_info(vp))
-    CHECK(RVALUE_WB_UNPROTECTED);
     CHECK(RVALUE_MARKED);
     CHECK(RVALUE_MARKING);
     CHECK(RVALUE_UNCOLLECTIBLE);
@@ -4944,7 +4957,7 @@ static void
 gc_sweep_start(rb_objspace_t *objspace)
 {
     gc_mode_transition(objspace, gc_mode_sweeping);
-    objspace->flags.during_lazy_sweeping = TRUE;
+    objspace->during_lazy_sweeping = TRUE;
     objspace->rincgc.pooled_slots = 0;
 
 // Background sweeping cannot be happening
@@ -4984,7 +4997,7 @@ gc_sweep_start(rb_objspace_t *objspace)
         (objspace->profile.latest_gc_info & GPR_FLAG_METHOD) == 0 &&
         !(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
 
-        objspace->use_background_sweep_thread = true;
+        RUBY_ATOMIC_SET(objspace->use_background_sweep_thread, true);
         psweep_debug(-1, "[gc] gc_sweep_start: requesting sweep thread\n");
         sweep_lock_lock(&objspace->sweep_lock);
         {
@@ -4994,7 +5007,7 @@ gc_sweep_start(rb_objspace_t *objspace)
         sweep_lock_unlock(&objspace->sweep_lock);
     }
     else {
-        objspace->use_background_sweep_thread = false;
+        RUBY_ATOMIC_SET(objspace->use_background_sweep_thread, false);
         psweep_debug(-1, "[gc] gc_sweep_start: not using background sweep thread\n");
     }
 }
@@ -5053,7 +5066,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
     gc_report(1, objspace, "gc_sweep_finish\n");
     psweep_debug(-1, "[gc] gc_sweep_finish\n");
 
-    objspace->use_background_sweep_thread = false;
+    RUBY_ATOMIC_SET(objspace->use_background_sweep_thread, false);
 
     gc_prof_set_heap_info(objspace);
     heap_pages_free_unused_pages(objspace);
@@ -5095,7 +5108,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
     rb_gc_event_hook(0, RUBY_INTERNAL_EVENT_GC_END_SWEEP);
     gc_mode_transition(objspace, gc_mode_none);
-    objspace->flags.during_lazy_sweeping = FALSE;
+    objspace->during_lazy_sweeping = FALSE;
 
 #if RGENGC_CHECK_MODE >= 2
     gc_verify_internal_consistency(objspace);
@@ -7348,7 +7361,7 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
                        "objspace->rincgc.pooled_page_num: %"PRIdSIZE", "
                        "objspace->rincgc.step_slots: %"PRIdSIZE", \n",
                        objspace->marked_slots, objspace->rincgc.pooled_slots, objspace->rincgc.step_slots);
-        objspace->flags.during_minor_gc = FALSE;
+        objspace->during_minor_gc = FALSE;
         if (ruby_enable_autocompact) {
             objspace->flags.during_compacting |= TRUE;
         }
@@ -7373,7 +7386,7 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
         }
     }
     else {
-        objspace->flags.during_minor_gc = TRUE;
+        objspace->during_minor_gc = TRUE;
         objspace->marked_slots =
           objspace->rgengc.old_objects + objspace->rgengc.uncollectible_wb_unprotected_objects; /* uncollectible objects are marked already */
         objspace->profile.minor_gc_count++;
