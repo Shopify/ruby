@@ -184,6 +184,7 @@
 #ifdef RB_THREAD_LOCAL_SPECIFIER
 #define USE_MALLOC_INCREASE_LOCAL 1
 static RB_THREAD_LOCAL_SPECIFIER int malloc_increase_local;
+static RB_THREAD_LOCAL_SPECIFIER struct heap_page *current_sweep_thread_page;
 #else
 #define USE_MALLOC_INCREASE_LOCAL 0
 #endif
@@ -856,6 +857,7 @@ struct heap_page {
     unsigned short pre_deferred_free_slots;
     unsigned short pre_final_slots;
     unsigned short pre_zombie_slots;
+    size_t pre_freed_malloc_bytes;
     struct {
         unsigned int has_remembered_objects : 1;
         unsigned int has_uncollectible_wb_unprotected_objects : 1;
@@ -1420,6 +1422,8 @@ static int garbage_collect(rb_objspace_t *, unsigned int reason);
 
 static int  gc_start(rb_objspace_t *objspace, unsigned int reason);
 static void gc_rest(rb_objspace_t *objspace);
+static inline void atomic_sub_nounderflow(size_t *var, size_t sub);
+static size_t malloc_increase_local_flush(rb_objspace_t *objspace);
 
 enum gc_enter_event {
     gc_enter_event_start,
@@ -4586,6 +4590,8 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     GC_ASSERT(page->heap == heap);
     page->pre_deferred_free_slots = 0;
     page->pre_zombie_slots = 0;
+    page->pre_freed_malloc_bytes = 0;
+    current_sweep_thread_page = page;
 
     int bitmap_plane_count = CEILDIV(total_slots, BITS_BITLENGTH);
     int out_of_range_bits = total_slots % BITS_BITLENGTH;
@@ -4633,6 +4639,9 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
         }
     }
 #endif
+
+    malloc_increase_local_flush(objspace);
+    current_sweep_thread_page = NULL;
 
     psweep_debug(1, "[sweep] gc_pre_sweep_page(heap:%p page:%p) done, deferred free:%d\n", heap, page, page->pre_deferred_free_slots);
 }
@@ -4693,6 +4702,7 @@ clear_pre_sweep_fields(struct heap_page *page)
     page->pre_empty_slots = 0;
     page->pre_final_slots = 0;
     page->pre_zombie_slots = 0;
+    page->pre_freed_malloc_bytes = 0;
 }
 
 // add beginning of b to end of a
@@ -5327,6 +5337,12 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             asan_lock_deferred_freelist(sweep_page);
             asan_lock_freelist(sweep_page);
 
+            if (sweep_page->pre_freed_malloc_bytes > 0) {
+                atomic_sub_nounderflow(&malloc_increase, sweep_page->pre_freed_malloc_bytes);
+#if RGENGC_ESTIMATE_OLDMALLOC
+                atomic_sub_nounderflow(&objspace->malloc_counters.oldmalloc_increase, sweep_page->pre_freed_malloc_bytes);
+#endif
+            }
             clear_pre_sweep_fields(sweep_page);
         }
 
@@ -9711,6 +9727,7 @@ static size_t
 malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size)
 {
     if (new_size > old_size) {
+        GC_ASSERT(!is_sweep_thread_p());
         size_t delta = new_size - old_size;
         size_t old_val = rbimpl_atomic_size_fetch_add(&malloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
 #if RGENGC_ESTIMATE_OLDMALLOC
@@ -9719,10 +9736,16 @@ malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size
         return old_val + delta;
     }
     else {
-        atomic_sub_nounderflow(&malloc_increase, old_size - new_size);
+        size_t delta = old_size - new_size;
+        if (current_sweep_thread_page) {
+            current_sweep_thread_page->pre_freed_malloc_bytes += delta;
+        }
+        else {
+            atomic_sub_nounderflow(&malloc_increase, delta);
 #if RGENGC_ESTIMATE_OLDMALLOC
-        atomic_sub_nounderflow(&objspace->malloc_counters.oldmalloc_increase, old_size - new_size);
+            atomic_sub_nounderflow(&objspace->malloc_counters.oldmalloc_increase, delta);
 #endif
+        }
         return 0;
     }
 }
