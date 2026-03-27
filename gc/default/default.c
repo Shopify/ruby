@@ -454,11 +454,6 @@ typedef struct mark_stack {
 
 typedef int (*gc_compact_compare_func)(const void *l, const void *r, void *d);
 
-typedef struct {
-    rb_darray(VALUE) object_list;
-    rb_nativethread_lock_t lock;
-} deferred_sweep_data_t;
-
 typedef struct rb_heap_struct {
     short slot_size;
     bits_t slot_bits_mask;
@@ -492,7 +487,6 @@ typedef struct rb_heap_struct {
     rb_nativethread_cond_t sweep_page_cond; // associated with global sweep lock
     rb_nativethread_lock_t swept_pages_lock;
     size_t pre_swept_slots_deferred;
-    deferred_sweep_data_t deferred_sweep_data;
     bool is_finished_sweeping;
     bool done_background_sweep;
     bool skip_sweep_continue; // skip current sweep continue
@@ -860,6 +854,7 @@ struct heap_page {
     /* If set, the object is not movable */
     bits_t pinned_bits[HEAP_PAGE_BITMAP_LIMIT];
     bits_t age_bits[HEAP_PAGE_BITMAP_LIMIT * RVALUE_AGE_BIT_COUNT];
+    bits_t deferred_free_bits[HEAP_PAGE_BITMAP_LIMIT];
 };
 
 /*
@@ -1074,7 +1069,7 @@ typedef struct lock_stats {
 
 static lock_stats_t sweep_lock_stats = {"objspace->sweep_lock", {{0}}, 0};
 static lock_stats_t swept_pages_lock_stats = {"heap->swept_pages_lock", {{0}}, 0};
-static lock_stats_t deferred_sweep_data_lock_stats = {"heap->deferred_sweep_data.lock", {{0}}, 0};
+
 
 static lock_callsite_stats_t*
 find_or_create_callsite(lock_stats_t *stats, const char *function, int line)
@@ -1125,9 +1120,9 @@ print_lock_stats(void)
     fprintf(stderr, "%-40s %-30s %12s %12s %10s\n", "Lock Name", "Callsite", "Uncontended", "Contended", "Ratio");
     fprintf(stderr, "%-40s %-30s %12s %12s %10s\n", "---------", "--------", "-----------", "---------", "-----");
 
-    lock_stats_t *all_stats[] = {&sweep_lock_stats, &swept_pages_lock_stats, &deferred_sweep_data_lock_stats};
+    lock_stats_t *all_stats[] = {&sweep_lock_stats, &swept_pages_lock_stats};
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         lock_stats_t *stats = all_stats[i];
 
         /* Sort callsites by total contentions (descending) */
@@ -1955,8 +1950,8 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
         GC_ASSERT(marked == RVALUE_MARKED_ATOMIC(objspace, ptr));
         return during_lazy_sweep && !marked && RUBY_ATOMIC_LOAD(page->before_sweep);
     }
-    // we're currently lazy sweeping with the sweep thread in background mode
     else if (during_lazy_sweep) {
+        // we're currently lazy sweeping with the sweep thread
         bool marked = RVALUE_MARKED_ATOMIC(objspace, ptr); // load it atomically so it can't be re-ordered past the next atomic load
         bool before_sweep = RUBY_ATOMIC_LOAD(page->before_sweep);
         bool is_garbage = !marked && before_sweep;
@@ -4095,32 +4090,6 @@ wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_curre
     sweep_lock_unlock(&objspace->sweep_lock);
 }
 
-// dequeue MIN(left_to_deq, 10) objects from the deferred object list into `obj_buf`, returning the amount dequeued.
-static short
-deq_deferred_sweep_objects(rb_objspace_t *objspace, rb_heap_t *heap, VALUE obj_buf[10], short left_to_deq)
-{
-    GC_ASSERT(left_to_deq > 0);
-    short to_deq = 10;
-    if (left_to_deq < 10) to_deq = left_to_deq;
-#if PSWEEP_LOCK_STATS > 0
-    instrumented_lock_acquire(&heap->deferred_sweep_data.lock, &deferred_sweep_data_lock_stats);
-#else
-    rb_native_mutex_lock(&heap->deferred_sweep_data.lock);
-#endif
-    {
-        if ((size_t)to_deq > rb_darray_size(heap->deferred_sweep_data.object_list)) {
-            psweep_debug(0, "Error: trying to deq %hi from object_list of size %lu\n", to_deq, rb_darray_size(heap->deferred_sweep_data.object_list));
-        }
-        GC_ASSERT((size_t)to_deq <= rb_darray_size(heap->deferred_sweep_data.object_list));
-        for (short i = 0; i < to_deq; i++) {
-            obj_buf[i] = rb_darray_get(heap->deferred_sweep_data.object_list, i);
-        }
-    }
-    rb_darray_shift_n(heap->deferred_sweep_data.object_list, to_deq);
-    rb_native_mutex_unlock(&heap->deferred_sweep_data.lock);
-    return to_deq;
-}
-
 // Free the object in a Ruby thread. Return whether or not we put the slot back on the page's freelist.
 static bool
 deferred_free(rb_objspace_t *objspace, VALUE obj)
@@ -4389,22 +4358,10 @@ heap_page_freelist_append(struct heap_page *page, struct free_slot *freelist)
 static void
 sweep_in_ruby_thread(rb_objspace_t *objspace, struct heap_page *page, VALUE obj, bool nozombie)
 {
-    rb_heap_t *heap = page->heap;
-#if PSWEEP_LOCK_STATS > 0
-    instrumented_lock_acquire(&heap->deferred_sweep_data.lock, &deferred_sweep_data_lock_stats);
-#else
-    rb_native_mutex_lock(&heap->deferred_sweep_data.lock);
-#endif
-    {
-        page->pre_deferred_free_slots += 1;
-        psweep_debug(1, "[sweep] register sweep later: page(%p), obj(%p) %s\n", (void*)page, (void*)obj, rb_obj_info(obj));
-        GC_ASSERT(BUILTIN_TYPE(obj) != T_NONE);
-        rb_darray_append_without_gc(&heap->deferred_sweep_data.object_list, obj);
-        /*if (rb_darray_size(heap->deferred_sweep_data.object_list) > 128) {*/
-            /*fprintf(stderr, "deferred sweep data object list size:%lu\n", rb_darray_size(heap->deferred_sweep_data.object_list));*/
-        /*}*/
-    }
-    rb_native_mutex_unlock(&heap->deferred_sweep_data.lock);
+    page->pre_deferred_free_slots += 1;
+    psweep_debug(1, "[sweep] register sweep later: page(%p), obj(%p) %s\n", (void*)page, (void*)obj, rb_obj_info(obj));
+    GC_ASSERT(BUILTIN_TYPE(obj) != T_NONE);
+    MARK_IN_BITMAP(page->deferred_free_bits, obj);
 }
 
 bool
@@ -4596,6 +4553,7 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     psweep_debug(1, "[sweep] gc_pre_sweep_page(heap:%p page:%p) start\n", heap, page);
     GC_ASSERT(page->heap == heap);
     page->pre_deferred_free_slots = 0;
+    memset(page->deferred_free_bits, 0, sizeof(page->deferred_free_bits));
     page->pre_zombie_slots = 0;
     page->pre_freed_malloc_bytes = 0;
     current_sweep_thread_page = page;
@@ -4718,6 +4676,7 @@ clear_pre_sweep_fields(struct heap_page *page)
 {
     page->pre_freed_slots = 0;
     page->pre_deferred_free_slots = 0;
+    memset(page->deferred_free_bits, 0, sizeof(page->deferred_free_bits));
     page->pre_empty_slots = 0;
     page->pre_final_slots = 0;
     page->pre_zombie_slots = 0;
@@ -4800,6 +4759,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         {
             if (heap->swept_pages) {
                 // NOTE: heap->swept_pages needs to be in swept order for gc_sweep_step to work properly.
+                // TODO: Change to LIFO to get better shared memory cache benefits across threads (L2/L3)
                 struct heap_page *latest = heap->latest_swept_page;
                 GC_ASSERT(latest);
                 latest->free_next = sweep_page;
@@ -4909,12 +4869,6 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->is_finished_sweeping = false;
     heap->done_background_sweep = false;
     heap->skip_sweep_continue = false;
-    // TODO
-    /*rb_darray_clear_and_free_without_gc(heap->deferred_sweep_data.object_list);*/
-    /*if (rb_darray_size(heap->deferred_sweep_data.object_list) > 0) {*/
-        /*psweep_debug(-1, "Error: gc_sweep_start_heap with object_list of size %lu\n", rb_darray_size(heap->deferred_sweep_data.object_list));*/
-    /*}*/
-    /*GC_ASSERT(rb_darray_size(heap->deferred_sweep_data.object_list) == 0);*/
 
     struct heap_page *page = NULL;
 
@@ -5278,31 +5232,59 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             unsigned short deferred_free_freed = 0;
             unsigned short deferred_to_free = sweep_page->pre_deferred_free_slots;
 
-            VALUE obj_buf[10];
-            short deq_sz = 0;
             psweep_debug(-2, "[gc] gc_sweep_step: (heap:%p %ld, page:%p) free_ruby_th: %d, deferred_to_free:%d, pre_freed:%d, pre_empty:%d\n",
                 heap, heap - heaps, sweep_page, free_in_user_thread_p, deferred_to_free, sweep_page->pre_freed_slots, sweep_page->pre_empty_slots);
-            int deferred_processed = 0;
-            while (deferred_processed < deferred_to_free) {
-                deq_sz = deq_deferred_sweep_objects(objspace, heap, obj_buf, deferred_to_free - deferred_processed);
-                psweep_debug(1, "[gc] gc_sweep_step(heap:%p %ld, page:%p) deq:%d\n", heap, heap - heaps, sweep_page, deq_sz);
-                for (short i = 0; i < deq_sz; i++) {
-                    VALUE obj = obj_buf[i];
-#if VM_CHECK_MODE > 0
-                    if (GET_HEAP_PAGE(obj) != sweep_page) {
-                        psweep_debug(0, "Error! bad heap page (got:%p, expecting:%p) obj type:%s\n", GET_HEAP_PAGE(obj), sweep_page, rb_obj_info(obj));
+
+            if (deferred_to_free > 0) {
+                uintptr_t p = (uintptr_t)sweep_page->start;
+                bits_t *deferred_bits = sweep_page->deferred_free_bits;
+                short slot_size = sweep_page->slot_size;
+                short slot_bits = slot_size / BASE_SLOT_SIZE;
+                bits_t slot_mask = heap->slot_bits_mask;
+
+                int page_rvalue_count = sweep_page->total_slots * slot_bits;
+                int bitmap_plane_count = CEILDIV(NUM_IN_PAGE(p) + page_rvalue_count, BITS_BITLENGTH);
+
+                // First plane: skip out-of-range slots at head of page
+                bits_t bitset = deferred_bits[0];
+                bitset >>= NUM_IN_PAGE(p);
+                bitset &= slot_mask;
+                while (bitset) {
+                    if (bitset & 1) {
+                        VALUE obj = (VALUE)p;
+                        GC_ASSERT(GET_HEAP_PAGE(obj) == sweep_page);
+                        if (deferred_free(objspace, obj)) {
+                            deferred_free_freed++;
+                        }
+                        else {
+                            deferred_free_final_slots++;
+                        }
                     }
-                    GC_ASSERT(GET_HEAP_PAGE(obj) == sweep_page);
-#endif
-                    if (deferred_free(objspace, obj)) {
-                        deferred_free_freed++;
+                    p += slot_size;
+                    bitset >>= slot_bits;
+                }
+                p = (uintptr_t)sweep_page->start + (BITS_BITLENGTH - NUM_IN_PAGE((uintptr_t)sweep_page->start)) * BASE_SLOT_SIZE;
+
+                for (int i = 1; i < bitmap_plane_count; i++) {
+                    bitset = deferred_bits[i] & slot_mask;
+                    while (bitset) {
+                        if (bitset & 1) {
+                            VALUE obj = (VALUE)p;
+                            GC_ASSERT(GET_HEAP_PAGE(obj) == sweep_page);
+                            if (deferred_free(objspace, obj)) {
+                                deferred_free_freed++;
+                            }
+                            else {
+                                deferred_free_final_slots++;
+                            }
+                        }
+                        p += slot_size;
+                        bitset >>= slot_bits;
                     }
-                    else {
-                        deferred_free_final_slots++;
-                    }
-                    deferred_processed++;
+                    p = (uintptr_t)sweep_page->start + (BITS_BITLENGTH * (i + 1) - NUM_IN_PAGE((uintptr_t)sweep_page->start)) * BASE_SLOT_SIZE;
                 }
             }
+
             ctx.final_slots = sweep_page->pre_final_slots + deferred_free_final_slots;
             ctx.freed_slots = sweep_page->pre_freed_slots + deferred_free_freed;
             ctx.empty_slots = sweep_page->pre_empty_slots;
@@ -11219,7 +11201,6 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
 
-            rb_native_mutex_initialize(&heap->deferred_sweep_data.lock);
             rb_native_mutex_initialize(&heap->swept_pages_lock);
             rb_native_cond_initialize(&heap->sweep_page_cond);
             heap->pre_sweeping_page = NULL;
@@ -11342,9 +11323,7 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
         heap->slot_bits_mask = slot_bits_masks[i];
 
         ccan_list_head_init(&heap->pages);
-        rb_native_mutex_initialize(&heap->deferred_sweep_data.lock);
         rb_native_mutex_initialize(&heap->swept_pages_lock);
-        rb_darray_make_without_gc(&heap->deferred_sweep_data.object_list, 0);
         rb_native_cond_initialize(&heap->sweep_page_cond);
     }
 
