@@ -13,6 +13,9 @@
 #define CONCURRENT_SET_HASH_MASK (~CONCURRENT_SET_HASH_RECLAIMABLE_BIT)
 
 #define CONCURRENT_SET_DEBUG 0
+#define CONCURRENT_SET_DEBUG_STATS 0
+#define CONCURRENT_SET_DEBUG_DUPLICATES 0
+#define CONCURRENT_SET_DEBUG_BAD_HASH_FN 0
 
 enum concurrent_set_special_values {
     CONCURRENT_SET_EMPTY = 0,
@@ -33,7 +36,7 @@ struct concurrent_set {
     const struct rb_concurrent_set_funcs *funcs;
     struct concurrent_set_entry *entries;
     int key_type;
-#if CONCURRENT_SET_DEBUG
+#if CONCURRENT_SET_DEBUG_STATS
     rb_atomic_t find_count;
     rb_atomic_t find_probe_total;
     rb_atomic_t find_probe_max;
@@ -68,6 +71,10 @@ static VALUE
 concurrent_set_hash(const struct concurrent_set *set, VALUE key)
 {
     VALUE hash = set->funcs->hash(key);
+#if CONCURRENT_SET_DEBUG_BAD_HASH_FN
+    hash = hash % 1024;
+    if (hash == 0) hash = 1;
+#endif
     hash &= CONCURRENT_SET_HASH_MASK;
     if (hash == 0) hash = ~(VALUE)0 & CONCURRENT_SET_HASH_MASK;
     RUBY_ASSERT(hash != 0);
@@ -155,7 +162,7 @@ rb_concurrent_set_probe_stats(VALUE set_obj,
                               rb_atomic_t *find_count, rb_atomic_t *find_probe_total, rb_atomic_t *find_probe_max,
                               rb_atomic_t *insert_count, rb_atomic_t *insert_probe_total, rb_atomic_t *insert_probe_max)
 {
-#if CONCURRENT_SET_DEBUG
+#if CONCURRENT_SET_DEBUG_STATS
     struct concurrent_set *set = RTYPEDDATA_GET_DATA(set_obj);
     *find_count = RUBY_ATOMIC_LOAD(set->find_count);
     *find_probe_total = RUBY_ATOMIC_LOAD(set->find_probe_total);
@@ -173,7 +180,7 @@ rb_concurrent_set_probe_stats(VALUE set_obj,
 #endif
 }
 
-#if CONCURRENT_SET_DEBUG
+#if CONCURRENT_SET_DEBUG_STATS
 static void
 concurrent_set_atomic_max(rb_atomic_t *target, rb_atomic_t val)
 {
@@ -244,6 +251,7 @@ concurrent_set_try_resize_locked(VALUE old_set_obj, VALUE *set_obj_ptr, VALUE ne
         // Insert key into new_set.
         struct concurrent_set_probe probe;
         int idx = concurrent_set_probe_start(&probe, new_set, hash);
+        int start_idx = idx;
 
         while (true) {
             struct concurrent_set_entry *entry = &new_set->entries[idx];
@@ -262,6 +270,7 @@ concurrent_set_try_resize_locked(VALUE old_set_obj, VALUE *set_obj_ptr, VALUE ne
             RUBY_ASSERT(entry->key >= CONCURRENT_SET_SPECIAL_VALUE_COUNT);
             entry->key |= CONCURRENT_SET_CONTINUATION_BIT;
             idx = concurrent_set_probe_next(&probe);
+            RUBY_ASSERT(idx != start_idx);
         }
     }
 
@@ -397,7 +406,7 @@ rb_concurrent_set_find(VALUE *set_obj_ptr, VALUE key)
         VALUE curr_hash = rbimpl_atomic_value_load(&entry->hash, RBIMPL_ATOMIC_ACQUIRE) & CONCURRENT_SET_HASH_MASK;
 
         if (curr_hash == 0) {
-#if CONCURRENT_SET_DEBUG
+#if CONCURRENT_SET_DEBUG_STATS
             rbimpl_atomic_fetch_add(&set->find_count, 1, RBIMPL_ATOMIC_RELAXED);
             rbimpl_atomic_fetch_add(&set->find_probe_total, probe.d, RBIMPL_ATOMIC_RELAXED);
             concurrent_set_atomic_max(&set->find_probe_max, probe.d);
@@ -411,7 +420,7 @@ rb_concurrent_set_find(VALUE *set_obj_ptr, VALUE key)
 
         if (curr_hash != hash) {
             if (!continuation) {
-#if CONCURRENT_SET_DEBUG
+#if CONCURRENT_SET_DEBUG_STATS
                 rbimpl_atomic_fetch_add(&set->find_count, 1, RBIMPL_ATOMIC_RELAXED);
                 rbimpl_atomic_fetch_add(&set->find_probe_total, probe.d, RBIMPL_ATOMIC_RELAXED);
                 concurrent_set_atomic_max(&set->find_probe_max, probe.d);
@@ -442,7 +451,7 @@ rb_concurrent_set_find(VALUE *set_obj_ptr, VALUE key)
 
             if (set->funcs->cmp(key, curr_key)) {
                 // We've found a match.
-#if CONCURRENT_SET_DEBUG
+#if CONCURRENT_SET_DEBUG_STATS
                 rbimpl_atomic_fetch_add(&set->find_count, 1, RBIMPL_ATOMIC_RELAXED);
                 rbimpl_atomic_fetch_add(&set->find_probe_total, probe.d, RBIMPL_ATOMIC_RELAXED);
                 concurrent_set_atomic_max(&set->find_probe_max, probe.d);
@@ -452,7 +461,7 @@ rb_concurrent_set_find(VALUE *set_obj_ptr, VALUE key)
             }
 
             if (!continuation) {
-#if CONCURRENT_SET_DEBUG
+#if CONCURRENT_SET_DEBUG_STATS
                 rbimpl_atomic_fetch_add(&set->find_count, 1, RBIMPL_ATOMIC_RELAXED);
                 rbimpl_atomic_fetch_add(&set->find_probe_total, probe.d, RBIMPL_ATOMIC_RELAXED);
                 concurrent_set_atomic_max(&set->find_probe_max, probe.d);
@@ -551,10 +560,35 @@ start_search:
 
             VALUE prev_raw_key = rbimpl_atomic_value_cas(&entry->key, raw_key, key | (continuation ? CONCURRENT_SET_CONTINUATION_BIT : 0), RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_ACQUIRE);
             if (prev_raw_key == raw_key) {
-#if CONCURRENT_SET_DEBUG
+#if CONCURRENT_SET_DEBUG_STATS
                 rbimpl_atomic_fetch_add(&set->insert_count, 1, RBIMPL_ATOMIC_RELAXED);
                 rbimpl_atomic_fetch_add(&set->insert_probe_total, probe.d, RBIMPL_ATOMIC_RELAXED);
                 concurrent_set_atomic_max(&set->insert_probe_max, probe.d);
+#endif
+#if CONCURRENT_SET_DEBUG_DUPLICATES
+                {
+                    // Probe further to verify no duplicate of our key exists
+                    struct concurrent_set_probe dup_probe = probe;
+                    int dup_idx = concurrent_set_probe_next(&dup_probe);
+                    int dup_idx_start = dup_idx;
+                    while (true) {
+                        struct concurrent_set_entry *dup_entry = &set->entries[dup_idx];
+                        VALUE dup_raw_key = rbimpl_atomic_value_load(&dup_entry->key, RBIMPL_ATOMIC_ACQUIRE);
+                        VALUE dup_key = dup_raw_key & CONCURRENT_SET_KEY_MASK;
+
+                        if (dup_key == CONCURRENT_SET_EMPTY) break;
+                        if (dup_key == CONCURRENT_SET_MOVED) break;
+
+                        if (dup_key >= CONCURRENT_SET_SPECIAL_VALUE_COUNT && dup_key == key) {
+                            rb_bug("concurrent_set_find_or_insert: duplicate key %p found at index %d after inserting at index %d",
+                                   (void *)key, dup_idx, idx);
+                        }
+                        int next_dup_idx = concurrent_set_probe_next(&dup_probe);
+                        if (dup_idx < dup_idx_start && next_dup_idx >= dup_idx_start) break;
+                        if (next_dup_idx == dup_idx_start) break;
+                        dup_idx = next_dup_idx;
+                    }
+                }
 #endif
                 RB_GC_GUARD(set_obj);
                 return key;
@@ -593,7 +627,7 @@ start_search:
 
             if (set->funcs->cmp(key, curr_key)) {
                 // We've found a live match.
-#if CONCURRENT_SET_DEBUG
+#if CONCURRENT_SET_DEBUG_STATS
                 rbimpl_atomic_fetch_add(&set->insert_count, 1, RBIMPL_ATOMIC_RELAXED);
                 rbimpl_atomic_fetch_add(&set->insert_probe_total, probe.d, RBIMPL_ATOMIC_RELAXED);
                 concurrent_set_atomic_max(&set->insert_probe_max, probe.d);
