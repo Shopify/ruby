@@ -519,7 +519,7 @@ start_search:
         VALUE curr_hash = raw_hash & CONCURRENT_SET_HASH_MASK;
         if (raw_hash == 0) {
             // Reserve this slot for our hash value
-            raw_hash = rbimpl_atomic_value_cas(&entry->hash, 0, hash, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_ACQUIRE);
+            raw_hash = rbimpl_atomic_value_cas(&entry->hash, 0, hash, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_RELAXED);
             if (raw_hash != 0) {
                 // Lost race, retry same slot to check winner's hash
                 continue;
@@ -537,7 +537,7 @@ start_search:
           case CONCURRENT_SET_EMPTY: {
             if ((raw_hash & CONCURRENT_SET_HASH_RECLAIMABLE_BIT) && !continuation) {
                 // Reclaim this reclaimable slot by clearing the reclaimable bit
-                VALUE prev_hash = rbimpl_atomic_value_cas(&entry->hash, raw_hash, hash, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_ACQUIRE);
+                VALUE prev_hash = rbimpl_atomic_value_cas(&entry->hash, raw_hash, hash, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_RELAXED);
                 if (prev_hash != raw_hash) {
                     // Lost race, retry same slot
                     continue;
@@ -558,7 +558,7 @@ start_search:
                 goto retry;
             }
 
-            VALUE prev_raw_key = rbimpl_atomic_value_cas(&entry->key, raw_key, key | (continuation ? CONCURRENT_SET_CONTINUATION_BIT : 0), RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_ACQUIRE);
+            VALUE prev_raw_key = rbimpl_atomic_value_cas(&entry->key, raw_key, key | (continuation ? CONCURRENT_SET_CONTINUATION_BIT : 0), RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_RELAXED);
             if (prev_raw_key == raw_key) {
 #if CONCURRENT_SET_DEBUG_STATS
                 rbimpl_atomic_fetch_add(&set->insert_count, 1, RBIMPL_ATOMIC_RELAXED);
@@ -715,7 +715,7 @@ rb_concurrent_set_delete_by_identity_locked(VALUE set_obj, VALUE key)
 
                 if (!hash_cleared) {
                     // Hashes only change here and they get reclaimed in find_or_insert
-                    prev_hash = rbimpl_atomic_value_cas(&entry->hash, loaded_hash_raw, hash | CONCURRENT_SET_HASH_RECLAIMABLE_BIT, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_ACQUIRE);
+                    prev_hash = rbimpl_atomic_value_cas(&entry->hash, loaded_hash_raw, hash | CONCURRENT_SET_HASH_RECLAIMABLE_BIT, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_RELAXED);
                     RUBY_ASSERT(prev_hash == hash || prev_hash == (hash | CONCURRENT_SET_HASH_RECLAIMABLE_BIT));
                     hash_cleared = true;
                 }
