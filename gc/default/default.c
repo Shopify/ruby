@@ -947,14 +947,10 @@ slot_index_for_offset(size_t offset, uint32_t div_magic)
     return (size_t)(((uint64_t)offset * div_magic) >> 32);
 }
 
-static inline int
+static inline unsigned
 popcount_bits(bits_t x)
 {
-#if SIZEOF_VOIDP == 8
-    return __builtin_popcountl(x);
-#else
-    return __builtin_popcount(x);
-#endif
+    return rb_popcount_intptr((uintptr_t)x);
 }
 
 #define SLOT_INDEX(page, p)          slot_index_for_offset((uintptr_t)(p) - (page)->start, (page)->slot_div_magic)
@@ -4219,21 +4215,13 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
         }
     }
 
-#ifdef DEBUG_SWEEP_BOOKKEEPING
+#if RGENGC_CHECK_MODE
     {
-        /* Assert that all unmarked slots with live objects were either freed or made into zombies.
-         * Count unmarked slot-aligned bits the same way the sweep loop does. */
+        /* Assert that all unmarked slots with live objects were either freed or made into zombies. */
         int unmarked_slots = 0;
-        uintptr_t vp = (uintptr_t)sweep_page->start;
-
-        bits_t bs = ~bits[0];
-        bs >>= NUM_IN_PAGE(vp);
-        bs &= slot_mask;
-        unmarked_slots += popcount_bits(bs);
-
-        for (int i = 1; i < bitmap_plane_count; i++) {
-            bs = ~bits[i] & slot_mask;
-            unmarked_slots += popcount_bits(bs);
+        for (int i = 0; i < bitmap_plane_count; i++) {
+            bits_t unmarked = ~bits[i];
+            unmarked_slots += (int)popcount_bits(unmarked);
         }
 
         int freed_or_zombie = ctx->freed_slots + ctx->final_slots;
@@ -4569,20 +4557,14 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
         objspace->profile.pages_swept_by_sweep_thread_had_deferred_free_objects++;
     }
 
-#ifdef DEBUG_SWEEP_BOOKKEEPING
+#if RGENGC_CHECK_MODE
     {
         /* Assert that all unmarked slots with live objects were either freed, made into
          * zombies, or deferred to the Ruby thread. */
         int unmarked_slots = 0;
-
-        bits_t bs = ~bits[0];
-        bs >>= NUM_IN_PAGE((uintptr_t)page->start);
-        bs &= slot_mask;
-        unmarked_slots += popcount_bits(bs);
-
-        for (int i = 1; i < bitmap_plane_count; i++) {
-            bs = ~bits[i] & slot_mask;
-            unmarked_slots += popcount_bits(bs);
+        for (int i = 0; i < bitmap_plane_count; i++) {
+            bits_t unmarked = ~bits[i];
+            unmarked_slots += (int)popcount_bits(unmarked);
         }
 
         int freed_or_zombie = page->pre_freed_slots + page->pre_final_slots + page->pre_deferred_free_slots;
