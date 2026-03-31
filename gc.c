@@ -2141,13 +2141,9 @@ id2ref_tbl_unlock(void)
 static void
 id2ref_tbl_free(void *data)
 {
-    id2ref_tbl_lock(true);
-    {
-        RUBY_ATOMIC_PTR_SET(id2ref_tbl, NULL); // clear global ref
-        st_table *table = (st_table *)data;
-        st_free_table(table);
-    }
-    id2ref_tbl_unlock();
+    st_table *table = (st_table *)data;
+    st_free_table(table);
+    RUBY_ATOMIC_PTR_SET(id2ref_tbl, NULL); // clear global ref
 }
 
 static const rb_data_type_t id2ref_tbl_type = {
@@ -2159,7 +2155,7 @@ static const rb_data_type_t id2ref_tbl_type = {
         // dcompact function not required because the table is reference updated
         // in rb_gc_vm_weak_table_foreach
     },
-    .flags = RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
+    .flags = RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY
 };
 
 static VALUE
@@ -2270,36 +2266,26 @@ build_id2ref_i(VALUE obj, void *data)
 {
     st_table *id2ref_tbl = (st_table *)data;
 
+    if (rb_objspace_garbage_object_p(obj)) return;
+
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
       case T_MODULE:
         RUBY_ASSERT(!rb_objspace_garbage_object_p(obj));
         if (RCLASS(obj)->object_id) {
-            id2ref_tbl_lock(false);
-            {
-                st_insert(id2ref_tbl, RCLASS(obj)->object_id, obj);
-            }
-            id2ref_tbl_unlock();
+            st_insert(id2ref_tbl, RCLASS(obj)->object_id, obj);
         }
         break;
       case T_IMEMO:
         RUBY_ASSERT(!rb_objspace_garbage_object_p(obj));
         if (IMEMO_TYPE_P(obj, imemo_fields) && rb_shape_obj_has_id(obj)) {
-            id2ref_tbl_lock(false);
-            {
-                st_insert(id2ref_tbl, rb_obj_id(obj), rb_imemo_fields_owner(obj));
-            }
-            id2ref_tbl_unlock();
+            st_insert(id2ref_tbl, rb_obj_id(obj), rb_imemo_fields_owner(obj));
         }
         break;
       case T_OBJECT:
         RUBY_ASSERT(!rb_objspace_garbage_object_p(obj));
         if (rb_shape_obj_has_id(obj)) {
-            id2ref_tbl_lock(false);
-            {
-                st_insert(id2ref_tbl, rb_obj_id(obj), obj);
-            }
-            id2ref_tbl_unlock();
+            st_insert(id2ref_tbl, rb_obj_id(obj), obj);
         }
         break;
       default:
@@ -2317,24 +2303,30 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
 
     if (!RUBY_ATOMIC_PTR_LOAD(id2ref_tbl)) {
         rb_gc_vm_barrier(); // stop other ractors, background sweeper could still be running
+            if (!RUBY_ATOMIC_PTR_LOAD(id2ref_tbl)) {
 
-        // GC Must not trigger while we build the table, otherwise if we end
-        // up freeing an object that had an ID, we might try to delete it from
-        // the table even though it wasn't inserted yet.
-        st_table *tmp_id2ref_tbl = st_init_table(&object_id_hash_type);
-        VALUE tmp_id2ref_value = TypedData_Wrap_Struct(0, &id2ref_tbl_type, tmp_id2ref_tbl);
+            // GC Must not trigger while we build the table, otherwise if we end
+            // up freeing an object that had an ID, we might try to delete it from
+            // the table even though it wasn't inserted yet.
+            st_table *tmp_id2ref_tbl = st_init_table(&object_id_hash_type);
+            VALUE tmp_id2ref_value = TypedData_Wrap_Struct(0, &id2ref_tbl_type, tmp_id2ref_tbl);
 
-        // build_id2ref_i will most certainly malloc, which could trigger GC and sweep
-        // objects we just added to the table.
-        // By calling rb_gc_disable() we also save having to handle potentially garbage objects.
-        bool gc_disabled = RTEST(rb_gc_disable());
-        {
-            id2ref_value = tmp_id2ref_value;
+            // build_id2ref_i will most certainly malloc, which could trigger GC and sweep
+            // objects we just added to the table.
+            // By calling rb_gc_disable() we also save having to handle potentially garbage objects.
+            bool gc_disabled = RTEST(rb_gc_disable());
+            {
+                id2ref_value = tmp_id2ref_value;
 
-            rb_gc_impl_each_object(objspace, build_id2ref_i, (void *)tmp_id2ref_tbl);
-            RUBY_ATOMIC_PTR_SET(id2ref_tbl, tmp_id2ref_tbl);
+                id2ref_tbl_lock(false);
+                {
+                    rb_gc_impl_each_object(objspace, build_id2ref_i, (void *)tmp_id2ref_tbl);
+                }
+                id2ref_tbl_unlock();
+                RUBY_ATOMIC_PTR_SET(id2ref_tbl, tmp_id2ref_tbl);
+            }
+            if (!gc_disabled) rb_gc_enable();
         }
-        if (!gc_disabled) rb_gc_enable();
     }
 
     VALUE obj;
