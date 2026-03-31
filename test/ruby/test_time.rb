@@ -1421,7 +1421,7 @@ class TestTime < Test::Unit::TestCase
     # Time objects are common in some code, try to keep them small
     omit "Time object size test" if /^(?:i.?86|x86_64)-linux/ !~ RUBY_PLATFORM
     omit "GC is in debug" if GC::INTERNAL_CONSTANTS[:RVALUE_OVERHEAD] > 0
-    omit "memsize is not accurate due to using malloc_usable_size" if GC::INTERNAL_CONSTANTS[:SIZE_POOL_COUNT] == 1
+    omit "memsize is not accurate due to using malloc_usable_size" if GC::INTERNAL_CONSTANTS[:HEAP_COUNT] == 1
     omit "Only run this test on 64-bit" if RbConfig::SIZEOF["void*"] != 8
 
     require 'objspace'
