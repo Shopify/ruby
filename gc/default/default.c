@@ -550,9 +550,7 @@ typedef struct rb_objspace {
         unsigned int during_compacting : 1;
         unsigned int during_reference_updating : 1;
         unsigned int gc_stressful: 1;
-        unsigned int has_newobj_hook: 1;
         unsigned int during_incremental_marking : 1;
-
         unsigned int measure_gc : 1;
     } flags;
     // This can't be a bitfield because it's accessed in garbage_object_p() from the sweep thread
