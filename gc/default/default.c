@@ -187,9 +187,41 @@ static RB_THREAD_LOCAL_SPECIFIER int malloc_increase_local;
 #define USE_TICK_T                 (PRINT_ENTER_EXIT_TICK || PRINT_ROOT_TICKS)
 
 #ifndef HEAP_COUNT
-# define HEAP_COUNT 5
+# if SIZEOF_VALUE >= 8
+#  define HEAP_COUNT 12
+# else
+#  define HEAP_COUNT 5
+# endif
 #endif
 
+/* Precomputed reciprocals for fast slot index calculation.
+ * For slot size d: reciprocal = ceil(2^48 / d).
+ * Then offset / d == (uint32_t)((offset * reciprocal) >> 48)
+ * for all offset < HEAP_PAGE_SIZE. */
+#define SLOT_RECIPROCAL_SHIFT 48
+
+static const uint64_t heap_slot_reciprocal_table[HEAP_COUNT] = {
+#if SIZEOF_VALUE >= 8
+    /* 32   */ (1ULL << 48) / 32,
+    /* 40   */ (1ULL << 48) / 40 + 1,
+    /* 64   */ (1ULL << 48) / 64,
+    /* 80   */ (1ULL << 48) / 80 + 1,
+    /* 96   */ (1ULL << 48) / 96 + 1,
+    /* 128  */ (1ULL << 48) / 128,
+    /* 160  */ (1ULL << 48) / 160 + 1,
+    /* 256  */ (1ULL << 48) / 256,
+    /* 512  */ (1ULL << 48) / 512,
+    /* 640  */ (1ULL << 48) / 640 + 1,
+    /* 768  */ (1ULL << 48) / 768 + 1,
+    /* 1024 */ (1ULL << 48) / 1024,
+#else
+    /* 32  */ (1ULL << 48) / 32,
+    /* 64  */ (1ULL << 48) / 64,
+    /* 128 */ (1ULL << 48) / 128,
+    /* 256 */ (1ULL << 48) / 256,
+    /* 512 */ (1ULL << 48) / 512,
+#endif
+};
 typedef struct ractor_newobj_heap_cache {
     struct free_slot *freelist;
     struct heap_page *using_page;
@@ -689,15 +721,17 @@ size_t rb_gc_impl_obj_slot_size(VALUE obj);
 
 #define RVALUE_SLOT_SIZE (sizeof(struct RBasic) + sizeof(VALUE[RBIMPL_RVALUE_EMBED_LEN_MAX]) + RVALUE_OVERHEAD)
 
+#if SIZEOF_VALUE >= 8
 static const size_t pool_slot_sizes[HEAP_COUNT] = {
-    RVALUE_SLOT_SIZE,
-    RVALUE_SLOT_SIZE * 2,
-    RVALUE_SLOT_SIZE * 4,
-    RVALUE_SLOT_SIZE * 8,
-    RVALUE_SLOT_SIZE * 16,
+    32, 40, 64, 80, 96, 128, 160, 256, 512, 640, 768, 1024,
 };
-
-static uint8_t size_to_heap_idx[RVALUE_SLOT_SIZE * (1 << (HEAP_COUNT - 1)) / 8 + 1];
+static uint8_t size_to_heap_idx[1024 / 8 + 1];
+#else
+static const size_t pool_slot_sizes[HEAP_COUNT] = {
+    32, 64, 128, 256, 512,
+};
+static uint8_t size_to_heap_idx[512 / 8 + 1];
+#endif
 
 #ifndef MAX
 # define MAX(a, b) (((a) > (b)) ? (a) : (b))
@@ -707,11 +741,12 @@ static uint8_t size_to_heap_idx[RVALUE_SLOT_SIZE * (1 << (HEAP_COUNT - 1)) / 8 +
 #endif
 #define roomof(x, y) (((x) + (y) - 1) / (y))
 #define CEILDIV(i, mod) roomof(i, mod)
+#define MIN_POOL_SLOT_SIZE 32
 enum {
     HEAP_PAGE_ALIGN = (1UL << HEAP_PAGE_ALIGN_LOG),
     HEAP_PAGE_ALIGN_MASK = (~(~0UL << HEAP_PAGE_ALIGN_LOG)),
     HEAP_PAGE_SIZE = HEAP_PAGE_ALIGN,
-    HEAP_PAGE_BITMAP_LIMIT = CEILDIV(CEILDIV(HEAP_PAGE_SIZE, RVALUE_SLOT_SIZE), BITS_BITLENGTH),
+    HEAP_PAGE_BITMAP_LIMIT = CEILDIV(CEILDIV(HEAP_PAGE_SIZE, MIN_POOL_SLOT_SIZE), BITS_BITLENGTH),
     HEAP_PAGE_BITMAP_SIZE = (BITS_SIZE * HEAP_PAGE_BITMAP_LIMIT),
 };
 #define HEAP_PAGE_ALIGN (1 << HEAP_PAGE_ALIGN_LOG)
@@ -773,8 +808,11 @@ struct free_slot {
 };
 
 struct heap_page {
+    /* Cache line 0: allocation fast path + SLOT_INDEX */
+    struct free_slot *freelist;
+    uintptr_t start;
+    uint64_t slot_size_reciprocal;
     unsigned short slot_size;
-    uint32_t slot_div_magic;
     unsigned short total_slots;
     unsigned short free_slots;
     unsigned short final_slots;
@@ -789,8 +827,6 @@ struct heap_page {
 
     struct heap_page *free_next;
     struct heap_page_body *body;
-    uintptr_t start;
-    struct free_slot *freelist;
     struct ccan_list_node page_node;
 
     bits_t wb_unprotected_bits[HEAP_PAGE_BITMAP_LIMIT];
@@ -851,15 +887,13 @@ heap_page_in_global_empty_pages_pool(rb_objspace_t *objspace, struct heap_page *
 #define GET_PAGE_HEADER(x) (&GET_PAGE_BODY(x)->header)
 #define GET_HEAP_PAGE(x)   (GET_PAGE_HEADER(x)->page)
 
-static uint32_t slot_div_magics[HEAP_COUNT];
-
 static inline size_t
-slot_index_for_offset(size_t offset, uint32_t div_magic)
+slot_index_for_offset(size_t offset, uint64_t reciprocal)
 {
-    return (size_t)(((uint64_t)offset * div_magic) >> 32);
+    return (uint32_t)(((uint64_t)offset * reciprocal) >> SLOT_RECIPROCAL_SHIFT);
 }
 
-#define SLOT_INDEX(page, p)          slot_index_for_offset((uintptr_t)(p) - (page)->start, (page)->slot_div_magic)
+#define SLOT_INDEX(page, p)          slot_index_for_offset((uintptr_t)(p) - (page)->start, (page)->slot_size_reciprocal)
 #define SLOT_BITMAP_INDEX(page, p)   (SLOT_INDEX(page, p) / BITS_BITLENGTH)
 #define SLOT_BITMAP_OFFSET(page, p)  (SLOT_INDEX(page, p) & (BITS_BITLENGTH - 1))
 #define SLOT_BITMAP_BIT(page, p)     ((bits_t)1 << SLOT_BITMAP_OFFSET(page, p))
@@ -1980,19 +2014,17 @@ heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
     GC_ASSERT(!heap->sweeping_page);
     GC_ASSERT(heap_page_in_global_empty_pages_pool(objspace, page));
 
-    /* Align start to the first slot_size boundary after the page header */
+    /* Align start to slot_size boundary */
     uintptr_t start = (uintptr_t)page->body + sizeof(struct heap_page_header);
-    size_t remainder = start % heap->slot_size;
-    if (remainder != 0) {
-        start += heap->slot_size - remainder;
-    }
+    uintptr_t rem = start % heap->slot_size;
+    if (rem) start += heap->slot_size - rem;
 
     int slot_count = (int)((HEAP_PAGE_SIZE - (start - (uintptr_t)page->body))/heap->slot_size);
 
     page->start = start;
     page->total_slots = slot_count;
     page->slot_size = heap->slot_size;
-    page->slot_div_magic = slot_div_magics[heap - heaps];
+    page->slot_size_reciprocal = heap_slot_reciprocal_table[heap - heaps];
     page->heap = heap;
 
     memset(&page->wb_unprotected_bits[0], 0, HEAP_PAGE_BITMAP_SIZE);
@@ -9509,11 +9541,15 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
         rb_bug("Could not preregister postponed job for GC");
     }
 
+    /* A standard RVALUE (RBasic + embedded VALUEs + debug overhead) must fit
+     * in at least one pool.  In debug builds RVALUE_OVERHEAD can push this
+     * beyond the 48-byte pool into the 64-byte pool, which is fine. */
+    GC_ASSERT(rb_gc_impl_size_allocatable_p(sizeof(struct RBasic) + sizeof(VALUE[RBIMPL_RVALUE_EMBED_LEN_MAX])));
+
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
         heap->slot_size = pool_slot_sizes[i];
-        slot_div_magics[i] = (uint32_t)((uint64_t)UINT32_MAX / heap->slot_size + 1);
 
         ccan_list_head_init(&heap->pages);
     }
