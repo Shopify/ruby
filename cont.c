@@ -298,16 +298,28 @@ rb_free_shared_fiber_pool(void)
 
 static ID fiber_initialize_keywords[3] = {0};
 
+// We don't use the VM lock to protect the shared fiber pool because the sweep
+// thread needs to be able to free fibers and it can't take the VM lock.
 rb_nativethread_lock_t fiber_lock;
 #ifdef RUBY_THREAD_PTHREAD_H
 pthread_t fiber_pool_lock_owner;
 #endif
 
+MAYBE_UNUSED(static inline bool
+fiber_pool_locked_p(bool fallback))
+{
+#ifdef RUBY_THREAD_PTHREAD_H
+    return pthread_self() == fiber_pool_lock_owner;
+#else
+    return fallback;
+#endif
+}
+
 static inline void
 ASSERT_fiber_pool_locked(void)
 {
 #ifdef RUBY_THREAD_PTHREAD_H
-    VM_ASSERT(pthread_self() == fiber_pool_lock_owner);
+    VM_ASSERT(fiber_pool_locked_p(true));
 #endif
 }
 
@@ -315,7 +327,7 @@ static inline void
 ASSERT_fiber_pool_unlocked(void)
 {
 #ifdef RUBY_THREAD_PTHREAD_H
-    VM_ASSERT(pthread_self() != fiber_pool_lock_owner);
+    VM_ASSERT(!fiber_pool_locked_p(false));
 #endif
 }
 
@@ -439,6 +451,7 @@ fiber_pool_vacancy_reset(struct fiber_pool_vacancy * vacancy)
 inline static struct fiber_pool_vacancy *
 fiber_pool_vacancy_push(struct fiber_pool_vacancy * vacancy, struct fiber_pool_vacancy * head)
 {
+    ASSERT_fiber_pool_locked();
     vacancy->next = head;
 
 #ifdef FIBER_POOL_ALLOCATION_FREE
@@ -471,7 +484,7 @@ fiber_pool_vacancy_remove(struct fiber_pool_vacancy * vacancy)
 inline static struct fiber_pool_vacancy *
 fiber_pool_vacancy_pop(struct fiber_pool * pool)
 {
-    // fiber_pool_lock is acquired
+    ASSERT_fiber_pool_locked();
     struct fiber_pool_vacancy * vacancy = pool->vacancies;
 
     if (vacancy) {
@@ -484,7 +497,7 @@ fiber_pool_vacancy_pop(struct fiber_pool * pool)
 inline static struct fiber_pool_vacancy *
 fiber_pool_vacancy_pop(struct fiber_pool * pool)
 {
-    // fiber_pool_lock is acquired
+    ASSERT_fiber_pool_locked();
     struct fiber_pool_vacancy * vacancy = pool->vacancies;
 
     if (vacancy) {
@@ -583,7 +596,7 @@ fiber_pool_expand(struct fiber_pool * fiber_pool, size_t count, bool needs_lock,
     // must not run after base is mapped, or the region would leak.
     struct fiber_pool_allocation * allocation = RB_ALLOC(struct fiber_pool_allocation);
 
-    if (needs_lock) fiber_pool_lock();
+    if (needs_lock) fiber_pool_lock(); // no xmalloc allocations can occur with this lock held
     {
         STACK_GROW_DIR_DETECTION;
 
@@ -702,9 +715,11 @@ fiber_pool_expand(struct fiber_pool * fiber_pool, size_t count, bool needs_lock,
 static struct fiber_pool_vacancy *
 fiber_pool_expand_and_pop(struct fiber_pool * fiber_pool, size_t count, bool needs_lock, bool unlock_before_raise)
 {
-    struct fiber_pool_vacancy *vacancy_out;
+    RUBY_ASSERT(needs_lock || (!needs_lock && fiber_pool_locked_p(true)));
+    struct fiber_pool_vacancy *vacancy_out = NULL;
     struct fiber_pool_allocation *allocation = fiber_pool_expand(fiber_pool, count, needs_lock, unlock_before_raise, &vacancy_out);
     if (allocation) {
+        RUBY_ASSERT(vacancy_out);
         return vacancy_out;
     }
     else {
@@ -731,7 +746,7 @@ fiber_pool_initialize(struct fiber_pool * fiber_pool, size_t size, size_t minimu
     fiber_pool->vm_stack_size = vm_stack_size;
 
     if (fiber_pool->minimum_count > 0) {
-        if (RB_UNLIKELY(!fiber_pool_expand(fiber_pool, fiber_pool->minimum_count, false, false, NULL))) {
+        if (RB_UNLIKELY(!fiber_pool_expand(fiber_pool, fiber_pool->minimum_count, true, true, NULL))) {
             rb_raise(rb_eFiberError, "can't allocate initial fiber stacks (%"PRIuSIZE" x %"PRIuSIZE" bytes): %s", fiber_pool->minimum_count, fiber_pool->size, strerror(errno));
         }
     }
@@ -786,6 +801,7 @@ fiber_pool_allocation_free(struct fiber_pool_allocation * allocation)
 static size_t
 fiber_pool_stack_expand_count(const struct fiber_pool *pool)
 {
+    ASSERT_fiber_pool_locked();
     const size_t maximum_allocations = FIBER_POOL_MAXIMUM_ALLOCATIONS;
     const size_t minimum_count = FIBER_POOL_MINIMUM_COUNT;
 
@@ -964,6 +980,7 @@ fiber_pool_stack_free(struct fiber_pool_stack * stack)
 static void
 fiber_pool_stack_release(struct fiber_pool_stack * stack)
 {
+    ASSERT_fiber_pool_locked();
     struct fiber_pool * pool = stack->pool;
     struct fiber_pool_vacancy * vacancy = fiber_pool_vacancy_pointer(stack->base, stack->size);
 
