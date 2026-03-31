@@ -1402,6 +1402,10 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
       case T_COMPLEX:
         return rb_shape_has_fields(shape_id);
 
+      case T_ZOMBIE:
+        RUBY_ASSERT(flags & FL_FREEZE);
+        return true;
+
       default:
         UNREACHABLE_RETURN(true);
     }
