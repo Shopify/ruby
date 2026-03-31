@@ -2425,10 +2425,6 @@ rb_gc_obj_has_blacklisted_vm_weak_references(VALUE obj)
     switch (BUILTIN_TYPE(obj)) {
       case T_IMEMO:
         switch (imemo_type(obj)) {
-          case imemo_callcache: {
-              const struct rb_callcache *cc = (const struct rb_callcache *)obj;
-              return vm_cc_refinement_p(cc);
-          }
           case imemo_callinfo:
           case imemo_ment:
             return true;
