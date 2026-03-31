@@ -48,10 +48,6 @@
 #define rb_darray_append_without_gc(ptr_to_ary, element) \
     rb_darray_append_impl(ptr_to_ary, element, rb_darray_realloc_mul_add_without_gc)
 
-//#define rb_darray_clear_and_free_without_gc(ptr_to_ary) \
-    //rb_darray_size(ptr_to_ary) ? (rb_darray_free_without_gc(ptr_to_ary)) : (void)0
-
-
 #define rb_darray_append_impl(ptr_to_ary, element, realloc_func) do {  \
     rb_darray_ensure_space((ptr_to_ary), \
                            sizeof(**(ptr_to_ary)), \
