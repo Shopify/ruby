@@ -1206,8 +1206,8 @@ sweep_lock_lock_impl(rb_nativethread_lock_t *sweep_lock, const char *function, i
 static inline void
 sweep_lock_unlock(rb_nativethread_lock_t *sweep_lock)
 {
-    GC_ASSERT(sweep_lock_owner == pthread_self());
 #if VM_CHECK_MODE > 0
+    GC_ASSERT(sweep_lock_owner == pthread_self());
     sweep_lock_owner = 0;
 #endif
     rb_native_mutex_unlock(sweep_lock);
@@ -1225,8 +1225,8 @@ sweep_lock_set_locked(void)
 static inline void
 sweep_lock_set_unlocked(void)
 {
-    GC_ASSERT(sweep_lock_owner == pthread_self());
 #if VM_CHECK_MODE > 0
+    GC_ASSERT(sweep_lock_owner == pthread_self());
     sweep_lock_owner = 0;
 #endif
 }
@@ -1639,6 +1639,10 @@ static int
 check_rvalue_consistency_force(rb_objspace_t *objspace, const VALUE obj, int terminate)
 {
     int err = 0;
+
+
+    rb_execution_context_t *ec = rb_current_execution_context(false);
+    if (!ec) return 0; // sweep thread
 
     int lev = RB_GC_VM_LOCK_NO_BARRIER();
     {
@@ -4349,8 +4353,8 @@ static void
 debug_free_check(rb_objspace_t *objspace, VALUE vp)
 {
     if (!is_full_marking(objspace)) {
-        if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)p);
-        if (RVALUE_REMEMBERED(objspace, vp)) rb_bug("page_sweep: %p - remembered.", (void *)p);
+        if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)vp);
+        if (RVALUE_REMEMBERED(objspace, vp)) rb_bug("page_sweep: %p - remembered.", (void *)vp);
     }
 #define CHECK(x) if (x(objspace, vp) != FALSE) rb_bug("obj_free: " #x "(%s) != FALSE", rb_obj_info(vp))
     CHECK(RVALUE_MARKED);
@@ -4433,6 +4437,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     break;
                 }
                 switch (imemo_type(vp)) {
+                    case imemo_callcache:
                     case imemo_constcache:
                     case imemo_cref:
                     case imemo_env:
