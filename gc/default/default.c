@@ -496,7 +496,7 @@ typedef struct rb_heap_struct {
     size_t total_pages;      /* total page count in a heap */
     size_t total_slots;      /* total slot count */
     unsigned short made_zombies;
-    unsigned short freed_zombies;
+    unsigned short to_free_zombies;
 
     rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
     rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
@@ -3363,7 +3363,6 @@ rb_gc_impl_free_zombie(rb_objspace_t *objspace, VALUE obj)
     GC_ASSERT(RUBY_ATOMIC_VALUE_LOAD(page->heap->final_slots_count) > 0);
     RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
     GC_ASSERT(page->final_slots > 0);
-    page->heap->freed_zombies++;
     page->final_slots--;
     RVALUE_AGE_SET_BITMAP(obj, 0);
 }
@@ -4848,7 +4847,6 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->latest_swept_page = NULL;
     heap->pre_swept_slots_deferred = 0;
     heap->made_zombies = 0;
-    heap->freed_zombies = 0;
 
     heap->pre_sweeping_page = NULL;
     heap->background_sweep_steps = heap->foreground_sweep_steps;
@@ -4975,9 +4973,10 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 
     /*fprintf(stderr, "swept heap %d, freed:%lu out of %lu\n", heap - heaps, swept_slots, total_slots);*/
     if (is_full_marking(objspace)) {
-        objspace->have_swept_slots += swept_slots;
+        objspace->have_swept_slots += swept_slots - heap->to_free_zombies;
         objspace->have_swept_slots += heap->made_zombies;
     }
+    heap->to_free_zombies = heap->made_zombies;
 
     GC_ASSERT(heap->background_sweep_steps <= ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps));
     GC_ASSERT(!heap->is_finished_sweeping);
@@ -5357,7 +5356,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             if (sweep_page->total_slots == 0) {
                 rb_bug("?");
             }
-            objspace->have_swept_slots += sweep_page->total_slots;
+            objspace->have_swept_slots += free_slots;
             psweep_debug(0, "[gc] gc_sweep_step: adding to empty_pages:%p\n", sweep_page);
             move_to_empty_pages(objspace, heap, sweep_page);
         }
@@ -6975,6 +6974,10 @@ gc_marks_finish(rb_objspace_t *objspace)
         if (full_marking) {
             objspace->have_swept_slots = 0;
             objspace->will_be_swept_slots = sweep_slots;
+            for (int i = 0; i < HEAP_COUNT; i++) {
+                GC_ASSERT((&heaps[i])->empty_slots == 0);
+                GC_ASSERT((&heaps[i])->freed_slots == 0);
+            }
             /*fprintf(stderr, "Full marking end. total_slots:%lu, marked:%lu, to sweep:%lu\n", total_slots, objspace->marked_slots, sweep_slots);*/
         }
 

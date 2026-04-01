@@ -1596,7 +1596,7 @@ rb_gc_obj_free(void *objspace, VALUE obj)
         }
         break;
       case T_DATA:
-        if (!rb_data_free(objspace, obj)) return false;
+        if (!rb_data_free(objspace, obj)) return FALSE;
         break;
       case T_MATCH:
         {
@@ -1686,7 +1686,7 @@ rb_gc_obj_free(void *objspace, VALUE obj)
         GC_ASSERT(!FL_TEST(obj, FL_FINALIZE));
         void rb_gc_impl_free_zombie(rb_objspace_t *, VALUE);
         rb_gc_impl_free_zombie(objspace, obj);
-        break;
+        return TRUE;
       default:
         rb_bug("gc_sweep(): unknown data type 0x%x(%p) 0x%"PRIxVALUE,
                BUILTIN_TYPE(obj), (void*)obj, RBASIC(obj)->flags);
@@ -2406,6 +2406,7 @@ obj_free_object_id(VALUE obj, bool in_user_gc_thread)
                 // The the object is a T_IMEMO/fields, then it's possible the actual object
                 // has been garbage collected already.
                 if (!RB_TYPE_P(obj, T_IMEMO)) {
+                    id2ref_tbl_unlock();
                     rb_bug("Object ID seen, but not in _id2ref table: object_id=%llu object=%s", NUM2ULL(obj_id), rb_obj_info(obj));
                 }
             }
