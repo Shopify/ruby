@@ -1407,7 +1407,7 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
         return true;
 
       default:
-        UNREACHABLE_RETURN(true);
+        rb_bug("bad object type in needs_cleanup_p: %lu", flags & RUBY_T_MASK);
     }
 }
 
