@@ -116,7 +116,6 @@
 #define GC_HEAP_INIT_BYTES (2560 * 1024)
 #endif
 
-/*#define PSWEEP_DEBUG -6*/
 #if defined(PSWEEP_DEBUG)
 #define psweep_debug(lvl, ...) if (lvl <= PSWEEP_DEBUG) fprintf(stderr, __VA_ARGS__)
 #else
@@ -3431,7 +3430,7 @@ gc_abort(void *objspace_ptr)
         objspace->flags.during_incremental_marking = FALSE;
     }
 
-#if VM_CHECK_MODE > 0
+#if RUBY_DEBUG
     sweep_lock_lock(&objspace->sweep_lock);
     GC_ASSERT(!objspace->sweep_rest);
     sweep_lock_unlock(&objspace->sweep_lock);
@@ -4095,7 +4094,7 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
 {
     ASSERT_vm_locking_with_barrier();
     bool result;
-#if VM_CHECK_MODE > 0
+#ifdef PSWEEP_DEBUG
     MAYBE_UNUSED(const char *obj_info) = rb_obj_info(obj);
 #endif
     bool freed_weakrefs = rb_gc_obj_free_vm_weak_references(obj);
@@ -4387,6 +4386,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
 
         rb_asan_unpoison_object(vp, false);
         if (bitset & 1) {
+            GC_ASSERT(!RVALUE_MARKED(objspace, vp));
             switch (BUILTIN_TYPE(vp)) {
               case T_MOVED: {
                 empties++;
@@ -4395,7 +4395,6 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 break;
               }
               case T_NONE:
-                /*psweep_debug("[sweep] empty: page(%p), obj(%p)\n", (void*)page, (void*)vp);*/
                 empties++; // already in freelist
                 break;
               case T_ZOMBIE:
@@ -5014,7 +5013,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
-#if VM_CHECK_MODE > 0
+#if RUBY_DEBUG
         {
             struct heap_page *page;
             ccan_list_for_each(&heap->pages, page, page_node) {
@@ -5153,7 +5152,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
     size_t swept_slots = 0;
     size_t pooled_slots = 0;
 
-#if VM_CHECK_MODE > 0
+#if RUBY_DEBUG
     sweep_lock_lock(&objspace->sweep_lock);
     GC_ASSERT(!objspace->background_sweep_mode);
     sweep_lock_unlock(&objspace->sweep_lock);
@@ -5412,7 +5411,6 @@ gc_sweep_rest(rb_objspace_t *objspace)
     }
     sweep_lock_unlock(&objspace->sweep_lock);
 
-    // We go backwards because the sweep thread goes forwards, and we want to avoid lock contention
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
@@ -5424,16 +5422,6 @@ gc_sweep_rest(rb_objspace_t *objspace)
         heap->background_sweep_steps = heap->foreground_sweep_steps;
     }
 
-    /*for (int i = 0; i < HEAP_COUNT; i++) {*/
-        /*rb_heap_t *heap = &heaps[i];*/
-
-        /*while (!heap_is_sweep_done(objspace, heap)) {*/
-            /*psweep_debug(0, "[gc] gc_sweep_rest: gc_sweep_step heap:%p (heap %ld)\n", heap, heap - heaps);*/
-            /*gc_sweep_step(objspace, heap, false);*/
-        /*}*/
-        /*GC_ASSERT(heap->is_finished_sweeping);*/
-        /*heap->background_sweep_steps = heap->foreground_sweep_steps;*/
-    /*}*/
     GC_ASSERT(!has_sweeping_pages(objspace));
     GC_ASSERT(gc_mode(objspace) == gc_mode_none);
 }
@@ -5623,7 +5611,7 @@ gc_compact_start(rb_objspace_t *objspace)
     struct heap_page *page = NULL;
     gc_mode_transition(objspace, gc_mode_compacting);
 
-#if VM_CHECK_MODE > 0
+#if RUBY_DEBUG
     sweep_lock_lock(&objspace->sweep_lock);
     GC_ASSERT(!objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested);
     sweep_lock_unlock(&objspace->sweep_lock);
@@ -8454,7 +8442,7 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
     }
 
     garbage_collect(objspace, reason);
-#if VM_CHECK_MODE > 0
+#if RUBY_DEBUG
     if (immediate_sweep) {
         sweep_lock_lock(&objspace->sweep_lock);
         {
