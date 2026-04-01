@@ -495,6 +495,8 @@ typedef struct rb_heap_struct {
     struct heap_page *pooled_pages;
     size_t total_pages;      /* total page count in a heap */
     size_t total_slots;      /* total slot count */
+    unsigned short made_zombies;
+    unsigned short freed_zombies;
 
     rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
     rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
@@ -543,9 +545,7 @@ typedef struct rb_objspace {
     struct {
         unsigned int mode : 2;
         unsigned int immediate_sweep : 1;
-        unsigned int dont_gc : 1;
         unsigned int dont_incremental : 1;
-        unsigned int during_gc : 1;
         unsigned int during_compacting : 1;
         unsigned int during_reference_updating : 1;
         unsigned int gc_stressful: 1;
@@ -557,6 +557,10 @@ typedef struct rb_objspace {
     bool during_lazy_sweeping;
     // This one too, it's accessed in debug_free_check
     bool during_minor_gc;
+    bool during_gc;
+    bool dont_gc;
+    size_t will_be_swept_slots;
+    size_t have_swept_slots;
 
     rb_event_flag_t hook_events;
 
@@ -1017,7 +1021,7 @@ RVALUE_AGE_SET(VALUE obj, int age)
 #define heap_pages_freeable_pages	objspace->heap_pages.freeable_pages
 #define heap_pages_deferred_final	objspace->heap_pages.deferred_final
 #define heaps              objspace->heaps
-#define during_gc		objspace->flags.during_gc
+#define during_gc		objspace->during_gc
 #define finalizing		objspace->atomic_flags.finalizing
 #define finalizer_table 	objspace->finalizer_table
 #define ruby_gc_stressful	objspace->flags.gc_stressful
@@ -1031,15 +1035,15 @@ RVALUE_AGE_SET(VALUE obj, int age)
 #endif
 
 #if 0
-#define dont_gc_on()          (fprintf(stderr, "dont_gc_on@%s:%d\n",      __FILE__, __LINE__), objspace->flags.dont_gc = 1)
-#define dont_gc_off()         (fprintf(stderr, "dont_gc_off@%s:%d\n",     __FILE__, __LINE__), objspace->flags.dont_gc = 0)
-#define dont_gc_set(b)        (fprintf(stderr, "dont_gc_set(%d)@%s:%d\n", __FILE__, __LINE__), objspace->flags.dont_gc = (int)(b))
-#define dont_gc_val()         (objspace->flags.dont_gc)
+#define dont_gc_on()          (fprintf(stderr, "dont_gc_on@%s:%d\n",      __FILE__, __LINE__), objspace->dont_gc = 1)
+#define dont_gc_off()         (fprintf(stderr, "dont_gc_off@%s:%d\n",     __FILE__, __LINE__), objspace->dont_gc = 0)
+#define dont_gc_set(b)        (fprintf(stderr, "dont_gc_set(%d)@%s:%d\n", __FILE__, __LINE__), objspace->dont_gc = (int)(b))
+#define dont_gc_val()         (objspace->dont_gc)
 #else
-#define dont_gc_on()          (objspace->flags.dont_gc = 1)
-#define dont_gc_off()         (objspace->flags.dont_gc = 0)
-#define dont_gc_set(b)        (objspace->flags.dont_gc = (int)(b))
-#define dont_gc_val()         (objspace->flags.dont_gc)
+#define dont_gc_on()          (objspace->dont_gc = 1)
+#define dont_gc_off()         (objspace->dont_gc = 0)
+#define dont_gc_set(b)        (objspace->dont_gc = (bool)(b))
+#define dont_gc_val()         (objspace->dont_gc)
 #endif
 
 #define gc_config_full_mark_set(b) (objspace->gc_config.full_mark = (int)(b))
@@ -1934,6 +1938,12 @@ rb_gc_impl_get_measure_total_time(void *objspace_ptr)
     return objspace->flags.measure_gc;
 }
 
+#define ZOMBIE_OBJ_KEPT_FLAGS (FL_FINALIZE)
+// Zombie needs to be put back on the freelist later (during GC) and finalizer has ran
+#define ZOMBIE_NEEDS_FREE_FLAG (FL_FREEZE)
+#define ZOMBIE_NEEDS_FREE_P(zombie) (FL_TEST(zombie, ZOMBIE_NEEDS_FREE_FLAG))
+#define ZOMBIE_SET_NEEDS_FREE_FLAG(zombie) (FL_SET(zombie, ZOMBIE_NEEDS_FREE_FLAG))
+
 /* garbage objects will be collected soon. */
 bool
 rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
@@ -1951,8 +1961,10 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
             switch (BUILTIN_TYPE(ptr)) {
             case T_NONE:
             case T_MOVED:
-            case T_ZOMBIE:
                 dead = true;
+                break;
+            case T_ZOMBIE:
+                dead = ZOMBIE_NEEDS_FREE_P(ptr);
                 break;
             default:
                 break;
@@ -1978,10 +1990,10 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
         if (is_garbage) return true;
         if (marked && before_sweep) return false;
         // already swept page, just check flags
-        return BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || BUILTIN_TYPE(ptr) == T_ZOMBIE;
+        return BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || (BUILTIN_TYPE(ptr) == T_ZOMBIE && ZOMBIE_NEEDS_FREE_P(ptr));
     }
     else {
-        return BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || BUILTIN_TYPE(ptr) == T_ZOMBIE;
+        return BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || (BUILTIN_TYPE(ptr) == T_ZOMBIE && ZOMBIE_NEEDS_FREE_P(ptr));
     }
 }
 
@@ -3051,11 +3063,6 @@ rb_gc_impl_pointer_to_heap_p(void *objspace_ptr, const void *ptr)
     return is_pointer_to_heap(objspace_ptr, ptr);
 }
 
-#define ZOMBIE_OBJ_KEPT_FLAGS (FL_FINALIZE)
-// Zombie needs to be put back on the freelist later (during GC) and finalizer has ran
-#define ZOMBIE_NEEDS_FREE_FLAG (FL_FREEZE)
-#define ZOMBIE_NEEDS_FREE_P(zombie) (FL_TEST(zombie, ZOMBIE_NEEDS_FREE_FLAG))
-#define ZOMBIE_SET_NEEDS_FREE_FLAG(zombie) (FL_SET(zombie, ZOMBIE_NEEDS_FREE_FLAG))
 
 void
 rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), void *data)
@@ -3075,6 +3082,7 @@ rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), voi
         next = RUBY_ATOMIC_VALUE_CAS(heap_pages_deferred_final, prev, obj);
     } while (next != prev);
     page->final_slots++; // NOTE: not synchronized, but either background thread or user thread owns page during free
+    page->heap->made_zombies++;
     RUBY_ATOMIC_SIZE_INC(page->heap->final_slots_count);
 }
 
@@ -3355,6 +3363,7 @@ rb_gc_impl_free_zombie(rb_objspace_t *objspace, VALUE obj)
     GC_ASSERT(RUBY_ATOMIC_VALUE_LOAD(page->heap->final_slots_count) > 0);
     RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
     GC_ASSERT(page->final_slots > 0);
+    page->heap->freed_zombies++;
     page->final_slots--;
     RVALUE_AGE_SET_BITMAP(obj, 0);
 }
@@ -4838,6 +4847,8 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->pooled_pages = NULL;
     heap->latest_swept_page = NULL;
     heap->pre_swept_slots_deferred = 0;
+    heap->made_zombies = 0;
+    heap->freed_zombies = 0;
 
     heap->pre_sweeping_page = NULL;
     heap->background_sweep_steps = heap->foreground_sweep_steps;
@@ -4962,6 +4973,12 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 
     psweep_debug(-1, "[gc] gc_sweep_finish heap:%p (%ld)\n", heap, heap - heaps);
 
+    /*fprintf(stderr, "swept heap %d, freed:%lu out of %lu\n", heap - heaps, swept_slots, total_slots);*/
+    if (is_full_marking(objspace)) {
+        objspace->have_swept_slots += swept_slots;
+        objspace->have_swept_slots += heap->made_zombies;
+    }
+
     GC_ASSERT(heap->background_sweep_steps <= ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps));
     GC_ASSERT(!heap->is_finished_sweeping);
     heap->is_finished_sweeping = true;
@@ -5006,6 +5023,13 @@ gc_sweep_finish(rb_objspace_t *objspace)
     psweep_debug(-1, "[gc] gc_sweep_finish\n");
 
     rbimpl_atomic_store(&objspace->use_background_sweep_thread, false, RBIMPL_ATOMIC_RELEASE);
+
+    if (is_full_marking(objspace)) {
+        if (objspace->will_be_swept_slots != objspace->have_swept_slots) {
+            fprintf(stderr, "Expecting to free %lu slots, freed %lu slots\n", objspace->will_be_swept_slots, objspace->have_swept_slots);
+            rb_bug("woops");
+        }
+    }
 
     gc_prof_set_heap_info(objspace);
     heap_pages_free_unused_pages(objspace);
@@ -5330,11 +5354,14 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         psweep_debug(0, "[gc] gc_sweep_step: dequeued page(heap:%p %ld, page:%p) free_slots:%u,total_slots:%u\n", heap, heap - heaps, sweep_page, free_slots, sweep_page->total_slots);
 
         if (free_slots == sweep_page->total_slots) {
+            if (sweep_page->total_slots == 0) {
+                rb_bug("?");
+            }
+            objspace->have_swept_slots += sweep_page->total_slots;
             psweep_debug(0, "[gc] gc_sweep_step: adding to empty_pages:%p\n", sweep_page);
             move_to_empty_pages(objspace, heap, sweep_page);
         }
         else if (free_slots > 0) {
-            // These are just for statistics, not used in calculations
             heap->freed_slots += ctx.freed_slots;
             heap->empty_slots += ctx.empty_slots;
 
@@ -6943,7 +6970,13 @@ gc_marks_finish(rb_objspace_t *objspace)
             min_free_slots = gc_params.heap_free_slots * r_mul;
         }
 
+
         int full_marking = is_full_marking(objspace);
+        if (full_marking) {
+            objspace->have_swept_slots = 0;
+            objspace->will_be_swept_slots = sweep_slots;
+            /*fprintf(stderr, "Full marking end. total_slots:%lu, marked:%lu, to sweep:%lu\n", total_slots, objspace->marked_slots, sweep_slots);*/
+        }
 
         GC_ASSERT(objspace_available_slots(objspace) >= objspace->marked_slots);
 
