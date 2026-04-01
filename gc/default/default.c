@@ -1830,7 +1830,7 @@ check_rvalue_consistency_force(rb_objspace_t *objspace, const VALUE obj, int ter
                 fprintf(stderr, "check_rvalue_consistency: %s is T_NONE.\n", rb_obj_info(obj));
                 err++;
             }
-            if (BUILTIN_TYPE(obj) == T_ZOMBIE) {
+            if (BUILTIN_TYPE(obj) == T_ZOMBIE && !FL_TEST(obj, FL_FREEZE)) {
                 fprintf(stderr, "check_rvalue_consistency: %s is T_ZOMBIE.\n", rb_obj_info(obj));
                 err++;
             }
@@ -4114,7 +4114,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 ctx->empty_slots++;
                 heap_page_add_freeobj(objspace, sweep_page, vp);
                 break;
-              case T_ZOMBIE: // FIXME: no more zombies?
+              case T_ZOMBIE:
                 if (ZOMBIE_NEEDS_FREE_P(vp)) {
                     goto free_object;
                 }
@@ -4130,8 +4130,8 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 psweep_debug(0, "[gc] gc_sweep_plane: heap:%p (%ld) freeing obj:%p (%s)\n", heap, heap - heaps, (void*)vp, rb_obj_info(vp));
 #if RGENGC_CHECK_MODE
                 if (!is_full_marking(objspace)) {
-                    if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)p);
-                    if (RVALUE_REMEMBERED(objspace, vp)) rb_bug("page_sweep: %p - remembered.", (void *)p);
+                    if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)vp);
+                    if (RVALUE_REMEMBERED(objspace, vp)) rb_bug("page_sweep: %p - remembered.", (void *)vp);
                 }
 #endif
 
@@ -4158,7 +4158,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     ctx->freed_slots++;
                 }
                 else {
-                    gc_report(2, objspace, "page_sweep: free %p\n", (void *)p);
+                    gc_report(2, objspace, "page_sweep: free %p\n", (void *)vp);
 
                     rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
@@ -4174,6 +4174,9 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 }
                 break;
             }
+        }
+        else {
+            GC_ASSERT(RVALUE_MARKED(objspace, vp));
         }
         p += slot_size;
         bitset >>= 1;
@@ -4242,6 +4245,11 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
         result = true;
     }
     else {
+#if RUBY_DEBUG
+        if (!(BUILTIN_TYPE(obj) == T_ZOMBIE && !FL_TEST(obj, FL_FREEZE))) {
+            rb_bug("should be unfreeable zombie");
+        }
+#endif
         result = false;
         MAYBE_UNUSED(struct heap_page *page) = GET_HEAP_PAGE(obj);
         psweep_debug(1, "[gc] deferred sweep: page(%p) obj(%p) %s (zombie)\n", page, (void*)obj, obj_info);
@@ -4648,6 +4656,9 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                   break;
               }
             }
+        }
+        else {
+            GC_ASSERT(RVALUE_MARKED(objspace, vp));
         }
 
         p += slot_size;
