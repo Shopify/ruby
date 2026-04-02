@@ -483,7 +483,9 @@ typedef struct rb_heap_struct {
     /* Sweeping statistics */
     size_t freed_slots;
     size_t empty_slots;
+#if RUBY_DEBUG
     size_t zombie_slots; // pre-existing zombies not ready yet to free
+#endif
 
     struct heap_page *free_pages;
     struct ccan_list_head pages;
@@ -496,8 +498,9 @@ typedef struct rb_heap_struct {
     struct heap_page *pooled_pages;
     size_t total_pages;      /* total page count in a heap */
     size_t total_slots;      /* total slot count */
+#if RUBY_DEBUG
     rb_atomic_t made_zombies;
-    unsigned short to_free_zombies;
+#endif
 
     rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
     rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
@@ -548,7 +551,9 @@ typedef struct rb_objspace {
         unsigned int immediate_sweep : 1;
         unsigned int dont_incremental : 1;
         unsigned int during_compacting : 1;
+#if RUBY_DEBUG
         unsigned int was_compacting: 1;
+#endif
         unsigned int during_reference_updating : 1;
         unsigned int during_incremental_marking : 1;
         unsigned int measure_gc : 1;
@@ -561,8 +566,10 @@ typedef struct rb_objspace {
     bool during_gc;
     bool dont_gc;
     bool gc_stressful;
+#if RUBY_DEBUG
     size_t will_be_swept_slots;
     size_t have_swept_slots;
+#endif
 
     rb_event_flag_t hook_events;
 
@@ -3088,7 +3095,9 @@ rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), voi
         next = RUBY_ATOMIC_VALUE_CAS(heap_pages_deferred_final, prev, obj);
     } while (next != prev);
     page->final_slots++; // NOTE: not synchronized, but either background thread or user thread owns page during free
+#if RUBY_DEBUG
     RUBY_ATOMIC_INC(page->heap->made_zombies);
+#endif
     RUBY_ATOMIC_SIZE_INC(page->heap->final_slots_count);
 }
 
@@ -4852,7 +4861,9 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->pooled_pages = NULL;
     heap->latest_swept_page = NULL;
     heap->pre_swept_slots_deferred = 0;
+#if RUBY_DEBUG
     heap->made_zombies = 0;
+#endif
 
     heap->pre_sweeping_page = NULL;
     heap->background_sweep_steps = heap->foreground_sweep_steps;
@@ -4977,11 +4988,13 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 
     psweep_debug(-1, "[gc] gc_sweep_finish heap:%p (%ld)\n", heap, heap - heaps);
 
+#if RUBY_DEBUG
     if (!objspace->flags.during_compacting) {
         objspace->have_swept_slots += swept_slots;
         objspace->have_swept_slots += heap->made_zombies;
         objspace->will_be_swept_slots -= heap->zombie_slots;
     }
+#endif
 
     GC_ASSERT(heap->background_sweep_steps <= ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps));
     GC_ASSERT(!heap->is_finished_sweeping);
@@ -5028,7 +5041,8 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
     rbimpl_atomic_store(&objspace->use_background_sweep_thread, false, RBIMPL_ATOMIC_RELEASE);
 
-    if ((!objspace->flags.was_compacting) && gc_config_full_mark_val) {
+#if RUBY_DEBUG
+    if (!objspace->flags.was_compacting) {
         if (objspace->will_be_swept_slots != objspace->have_swept_slots) {
             fprintf(stderr, "Expecting to free %lu slots, freed %lu slots (major:%d)\n", objspace->will_be_swept_slots, objspace->have_swept_slots, is_full_marking(objspace));
             for (int i = 0; i < HEAP_COUNT; i++) {
@@ -5041,6 +5055,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
         }
     }
     objspace->flags.was_compacting = FALSE;
+#endif
 
     gc_prof_set_heap_info(objspace);
     heap_pages_free_unused_pages(objspace);
@@ -5057,11 +5072,11 @@ gc_sweep_finish(rb_objspace_t *objspace)
                 }
             }
         }
+        heap->zombie_slots = 0;
 #endif
 
         heap->freed_slots = 0;
         heap->empty_slots = 0;
-        heap->zombie_slots = 0;
         if (heap->background_sweep_steps < heap->foreground_sweep_steps) {
             heap->background_sweep_steps = heap->foreground_sweep_steps;
         }
@@ -5366,13 +5381,17 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 
         psweep_debug(0, "[gc] gc_sweep_step: dequeued page(heap:%p %ld, page:%p) free_slots:%u,total_slots:%u\n", heap, heap - heaps, sweep_page, free_slots, sweep_page->total_slots);
 
+#if RUBY_DEBUG
         heap->zombie_slots += ctx.zombie_slots;
+#endif
 
         if (free_slots == sweep_page->total_slots) {
             if (sweep_page->total_slots == 0) {
                 rb_bug("?");
             }
+#if RUBY_DEBUG
             objspace->have_swept_slots += free_slots;
+#endif
             psweep_debug(0, "[gc] gc_sweep_step: adding to empty_pages:%p\n", sweep_page);
             move_to_empty_pages(objspace, heap, sweep_page);
         }
@@ -6987,14 +7006,12 @@ gc_marks_finish(rb_objspace_t *objspace)
 
 
         int full_marking = is_full_marking(objspace);
+#if RUBY_DEBUG
         if (!objspace->flags.during_compacting) {
             objspace->have_swept_slots = 0;
             objspace->will_be_swept_slots = sweep_slots;
-            for (int i = 0; i < HEAP_COUNT; i++) {
-                GC_ASSERT((&heaps[i])->empty_slots == 0);
-                GC_ASSERT((&heaps[i])->freed_slots == 0);
-            }
         }
+#endif
 
         GC_ASSERT(objspace_available_slots(objspace) >= objspace->marked_slots);
 
@@ -8021,14 +8038,18 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
     /* Explicitly enable compaction (GC.compact) */
     if (do_full_mark && ruby_enable_autocompact) {
         objspace->flags.during_compacting = TRUE;
+#if RUBY_DEBUG
         objspace->flags.was_compacting =  TRUE;
+#endif
 #if RGENGC_CHECK_MODE
         objspace->rcompactor.compare_func = ruby_autocompact_compare_func;
 #endif
     }
     else {
         objspace->flags.during_compacting = !!(reason & GPR_FLAG_COMPACT);
+#if RUBY_DEBUG
         objspace->flags.was_compacting = objspace->flags.during_compacting;
+#endif
     }
 
     if (!GC_ENABLE_LAZY_SWEEP || objspace->flags.dont_incremental) {
