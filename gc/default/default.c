@@ -4363,7 +4363,7 @@ heap_page_freelist_append(struct heap_page *page, struct free_slot *freelist)
 }
 
 static void
-sweep_in_ruby_thread(rb_objspace_t *objspace, struct heap_page *page, VALUE obj, bool nozombie)
+sweep_in_ruby_thread(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
 {
     page->pre_deferred_free_slots += 1;
     psweep_debug(1, "[sweep] register sweep later: page(%p), obj(%p) %s\n", (void*)page, (void*)obj, rb_obj_info(obj));
@@ -4421,7 +4421,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 break;
               case T_ZOMBIE:
                 if (zombie_needs_deferred_free(vp)) {
-                    sweep_in_ruby_thread(objspace, page, vp, false);
+                    sweep_in_ruby_thread(objspace, page, vp);
                 }
                 else {
                     // already counted as final_slot when made into a zombie
@@ -4446,7 +4446,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 }
                 if (!dfree || dfree == RUBY_DEFAULT_FREE || free_immediately) {
                     if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
-                        sweep_in_ruby_thread(objspace, page, vp, true);
+                        sweep_in_ruby_thread(objspace, page, vp);
                         break;
                     }
                     else {
@@ -4454,7 +4454,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     }
                 }
                 else {
-                    sweep_in_ruby_thread(objspace, page, vp, false);
+                    sweep_in_ruby_thread(objspace, page, vp);
                     break;
                 }
                 break;
@@ -4462,7 +4462,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               case T_IMEMO: {
                 debug_free_check(objspace, vp);
                 if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
-                    sweep_in_ruby_thread(objspace, page, vp, true);
+                    sweep_in_ruby_thread(objspace, page, vp);
                     break;
                 }
                 switch (imemo_type(vp)) {
@@ -4478,7 +4478,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     case imemo_fields:
                         goto free;
                     default:
-                        sweep_in_ruby_thread(objspace, page, vp, true);
+                        sweep_in_ruby_thread(objspace, page, vp);
                         break;
                 }
                 break;
@@ -4498,7 +4498,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               case T_FILE: {
                 debug_free_check(objspace, vp);
                 if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
-                    sweep_in_ruby_thread(objspace, page, vp, true);
+                    sweep_in_ruby_thread(objspace, page, vp);
                     break;
                 }
                 else {
@@ -4506,7 +4506,9 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 }
                 break;
               }
-              default: // ex: T_CLASS/T_MODULE/T_ICLASS
+              case T_CLASS:
+              case T_MODULE:
+              case T_ICLASS:
                 debug_free_check(objspace, vp);
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
                     heap_page_add_deferred_freeobj(objspace, page, vp);
@@ -4515,7 +4517,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     freed++;
                 }
                 else {
-                    sweep_in_ruby_thread(objspace, page, vp, true);
+                    sweep_in_ruby_thread(objspace, page, vp);
                 }
                 break;
               free: {
@@ -4529,7 +4531,6 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                           (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
                       }
                       else {
-                          // They are zombies now
                           RUBY_ASSERT(BUILTIN_TYPE(vp) == T_ZOMBIE);
                           psweep_debug(2, "[sweep] zombie: page(%p), obj(%p)\n", (void*)page, (void*)vp);
                           finals++;
@@ -4537,10 +4538,12 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                   }
                   else {
                       GC_ASSERT(BUILTIN_TYPE(vp) != T_NONE);
-                      sweep_in_ruby_thread(objspace, page, vp, true);
+                      sweep_in_ruby_thread(objspace, page, vp);
                   }
                   break;
               }
+              default:
+                rb_bug("unexpected type: %d\n", BUILTIN_TYPE(vp));
             }
         }
         else {
