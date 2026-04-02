@@ -2528,17 +2528,24 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     GC_ASSERT(heap->free_pages == NULL);
 
-    sweep_lock_lock(&objspace->sweep_lock);
-    {
-        if (heap->total_slots < gc_params.heap_init_bytes / heap->slot_size &&
-                heap->sweeping_page == NULL && heap->swept_pages == NULL && !heap->pre_sweeping_page) {
-            heap_page_allocate_and_initialize_force(objspace, heap, true);
-            GC_ASSERT(heap->free_pages != NULL);
-            sweep_lock_unlock(&objspace->sweep_lock);
-            return;
-        }
+    if (heap->is_finished_sweeping && heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size)) {
+        heap_page_allocate_and_initialize_force(objspace, heap, false);
+        GC_ASSERT(heap->free_pages != NULL);
+        return;
     }
-    sweep_lock_unlock(&objspace->sweep_lock);
+    else {
+        sweep_lock_lock(&objspace->sweep_lock);
+        {
+            if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) &&
+                    heap->sweeping_page == NULL && heap->swept_pages == NULL && !heap->pre_sweeping_page) {
+                heap_page_allocate_and_initialize_force(objspace, heap, true);
+                GC_ASSERT(heap->free_pages != NULL);
+                sweep_lock_unlock(&objspace->sweep_lock);
+                return;
+            }
+        }
+        sweep_lock_unlock(&objspace->sweep_lock);
+    }
 
     /* Continue incremental marking or lazy sweeping, if in any of those steps. */
     gc_continue(objspace, heap);
@@ -2767,12 +2774,8 @@ heap_next_free_page(rb_objspace_t *objspace, rb_heap_t *heap)
         heap_prepare(objspace, heap);
     }
 
-    sweep_lock_lock(&objspace->sweep_lock);
-    {
-        page = heap->free_pages;
-        heap->free_pages = page->free_next;
-    }
-    sweep_lock_unlock(&objspace->sweep_lock);
+    page = heap->free_pages;
+    heap->free_pages = page->free_next;
     psweep_debug(1, "[gc] heap_next_free_page heap:%p free_pages:%p -> %p (free_slots:%d)\n", heap, page, heap->free_pages, page->free_slots);
     GC_ASSERT(page->free_slots > 0);
 
