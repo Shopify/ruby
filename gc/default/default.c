@@ -5387,9 +5387,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 #endif
 
         if (free_slots == sweep_page->total_slots) {
-            if (sweep_page->total_slots == 0) {
-                rb_bug("?");
-            }
 #if RUBY_DEBUG
             objspace->have_swept_slots += free_slots;
 #endif
