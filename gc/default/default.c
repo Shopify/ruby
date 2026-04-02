@@ -116,18 +116,13 @@
 #define GC_HEAP_INIT_BYTES (2560 * 1024)
 #endif
 
-#if defined(PSWEEP_DEBUG)
+#define PSWEEP_DEBUG 0
+#if PSWEEP_DEBUG
 #define psweep_debug(lvl, ...) if (lvl <= PSWEEP_DEBUG) fprintf(stderr, __VA_ARGS__)
 #else
 #define psweep_debug(...) (void)0
 #endif
-
-/* Define PSWEEP_LOCK_STATS to > 0 to enable lock contention statistics */
 #define PSWEEP_LOCK_STATS 0
-#ifndef PSWEEP_LOCK_STATS
-#define PSWEEP_LOCK_STATS 0
-#endif
-
 #define PSWEEP_COLLECT_TIMINGS 0
 
 #ifndef GC_HEAP_FREE_SLOTS
