@@ -4001,9 +4001,9 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                         rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
                     }
 
+                    gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
                     RVALUE_AGE_SET_BITMAP(vp, 0);
                     heap_page_add_freeobj(objspace, sweep_page, vp);
-                    gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, slot_size);
                     ctx->freed_slots++;
                 }
@@ -4014,9 +4014,9 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
                     rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
+                        gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
                         RVALUE_AGE_SET_BITMAP(vp, 0);
                         heap_page_add_freeobj(objspace, sweep_page, vp);
-                        gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, slot_size);
                         ctx->freed_slots++;
                     }
