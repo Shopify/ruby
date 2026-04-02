@@ -4618,7 +4618,9 @@ move_to_empty_pages(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *
     GC_ASSERT(bitmap_is_all_zero(page->wb_unprotected_bits, HEAP_PAGE_BITMAP_LIMIT));
     GC_ASSERT(bitmap_is_all_zero(page->marking_bits, HEAP_PAGE_BITMAP_LIMIT));
     GC_ASSERT(bitmap_is_all_zero(page->remembered_bits, HEAP_PAGE_BITMAP_LIMIT));
+    GC_ASSERT(bitmap_is_all_zero(page->deferred_free_bits, HEAP_PAGE_BITMAP_LIMIT));
     GC_ASSERT(bitmap_is_all_zero(page->age_bits, HEAP_PAGE_BITMAP_LIMIT * RVALUE_AGE_BIT_COUNT));
+    // NOTE: pinned bits can still be set, but it's okay because they are cleared when compaction starts
 
     heap_unlink_page(objspace, heap, page);
 
@@ -5014,7 +5016,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
 #if RUBY_DEBUG
     // When calling GC.start, if in the middle of a non-full mark it will be set as full mark in gc_rest() so the numbers
     // will be off.
-    if (!objspace->flags.was_compacting && !objspace->sweep_rest) {
+    if (!objspace->flags.was_compacting && !objspace->sweep_rest && gc_config_full_mark_val) {
         if (objspace->will_be_swept_slots != objspace->have_swept_slots) {
             fprintf(stderr, "Expecting to free %lu slots, freed %lu slots (major:%d)\n", objspace->will_be_swept_slots, objspace->have_swept_slots, is_full_marking(objspace));
             for (int i = 0; i < HEAP_COUNT; i++) {
@@ -5076,13 +5078,12 @@ gc_sweep_finish(rb_objspace_t *objspace)
 #endif
 }
 
-// Dequeue a page swept by the background thread. If `free_in_user_thread` is true, then
+// Dequeue a page swept by the sweep thread. If `free_in_user_thread` is true, then
 // dequeue an unswept page to be swept by the Ruby thread. It can also dequeue an unswept
-// page if otherwise it would have to wait for the background thread. In that case, `dequeued_unswept_page`
+// page if otherwise it would have to wait for the sweep thread. In that case, `dequeued_unswept_page`
 // is set to true.
 //
-// It returns NULL when there are no more pages to sweep for the heap, and also when the incremental
-// step is finished for the heap (1 incremental step = `gc_continue()`).
+// It returns NULL when there are no more pages to sweep for the heap.
 static struct heap_page *
 gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_user_thread, bool *dequeued_unswept_page)
 {
@@ -5423,11 +5424,11 @@ gc_sweep_rest(rb_objspace_t *objspace)
     sweep_rest_count++;
     sweep_lock_lock(&objspace->sweep_lock);
     {
+        objspace->sweep_rest = true; // reset to false in `gc_sweeping_exit`
         if (background_sweep_done_p(objspace)) {
             psweep_debug(-2, "[gc] gc_sweep_rest: bg done, not requesting\n");
         }
         else {
-            objspace->sweep_rest = true; // reset to false in `gc_sweeping_exit`
             if (objspace->use_background_sweep_thread && !objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested) {
                 psweep_debug(-2, "[gc] gc_sweep_rest: request sweep thread\n");
                 objspace->sweep_thread_sweep_requested = true;
