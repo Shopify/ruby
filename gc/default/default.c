@@ -2056,7 +2056,7 @@ heap_allocatable_bytes_expand(rb_objspace_t *objspace,
     }
 
     if (gc_params.growth_max_bytes > 0) {
-        size_t max_total_slots = total_slots + gc_params.growth_max_bytes / slot_size;
+        size_t max_total_slots = total_slots + (gc_params.growth_max_bytes / slot_size);
         if (target_total_slots > max_total_slots) target_total_slots = max_total_slots;
     }
 
@@ -2106,6 +2106,7 @@ heap_unlink_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pag
     GC_ASSERT(heap->total_pages > 0);
     heap->total_pages--;
     GC_ASSERT(heap->total_slots >= page->total_slots);
+    GC_ASSERT(page->total_slots > 0);
     heap->total_slots -= page->total_slots;
 }
 
@@ -3053,8 +3054,7 @@ rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), voi
     zombie->dfree = dfree;
     zombie->data = data;
     VALUE prev, next = (VALUE)RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final);
-    struct heap_page *page_after = GET_HEAP_PAGE(zombie);
-    GC_ASSERT(page == page_after);
+    GC_ASSERT(page == GET_HEAP_PAGE(zombie));
     do {
         zombie->next = prev = next;
         next = RUBY_ATOMIC_VALUE_CAS(heap_pages_deferred_final, prev, obj);
@@ -7019,7 +7019,13 @@ gc_marks_finish(rb_objspace_t *objspace)
             }
 
             if (full_marking) {
-                heap_allocatable_bytes_expand(objspace, NULL, sweep_slots, total_slots, heaps[0].slot_size);
+                /* Use weighted average slot size since total_slots spans all heaps */
+                size_t total_heap_bytes = 0;
+                for (int i = 0; i < HEAP_COUNT; i++) {
+                    total_heap_bytes += heaps[i].total_slots * heaps[i].slot_size;
+                }
+                size_t avg_slot_size = total_slots > 0 ? total_heap_bytes / total_slots : heaps[0].slot_size;
+                heap_allocatable_bytes_expand(objspace, NULL, sweep_slots, total_slots, avg_slot_size);
             }
         }
 
