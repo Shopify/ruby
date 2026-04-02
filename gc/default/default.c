@@ -1239,35 +1239,6 @@ sweep_lock_set_unlocked(void)
 #endif
 }
 
-// TODO: put it in objspace struct
-/*static rb_nativethread_lock_t gc_data_lock_ = PTHREAD_MUTEX_INITIALIZER;*/
-/*static pthread_t gc_data_lock_owner = 0;*/
-/*static int gc_data_lock_lvl = 0;*/
-
-/*static inline void*/
-/*gc_data_lock(rb_objspace_t *objspace, bool allow_reentry)*/
-/*{*/
-    /*if (allow_reentry && pthread_self() == gc_data_lock_owner) {*/
-    /*}*/
-    /*else {*/
-        /*GC_ASSERT(gc_data_lock_owner != pthread_self());*/
-        /*rb_native_mutex_lock(&gc_data_lock_);*/
-        /*gc_data_lock_owner = pthread_self();*/
-    /*}*/
-    /*gc_data_lock_lvl++;*/
-/*}*/
-
-/*static inline void*/
-/*gc_data_unlock(rb_objspace_t *objspace)*/
-/*{*/
-    /*GC_ASSERT(gc_data_lock_owner == pthread_self());*/
-    /*gc_data_lock_lvl--;*/
-    /*if (gc_data_lock_lvl == 0) {*/
-        /*gc_data_lock_owner = 0;*/
-        /*rb_native_mutex_unlock(&gc_data_lock_);*/
-    /*}*/
-/*}*/
-
 // Returns true when the background sweep thread and Ruby thread have finished processing
 // (background sweeping + ruby thread post-processing or deferred freeing) all pages for that heap.
 static bool
@@ -2620,11 +2591,6 @@ rb_gc_impl_source_location_cstr(int *ptr)
 static inline VALUE
 newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace, VALUE obj)
 {
-#if VM_CHECK_MODE > 0
-    if (BUILTIN_TYPE(obj) != T_NONE) {
-        fprintf(stderr, "BUILTIN_TYPE(newobj) = %s for obj:%p\n", rb_obj_info(obj), (void*)obj);
-    }
-#endif
     GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE);
     GC_ASSERT(RVALUE_AGE_GET(obj) == 0);
     GC_ASSERT((flags & FL_WB_PROTECTED) == 0);
