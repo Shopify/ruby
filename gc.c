@@ -2145,9 +2145,13 @@ id2ref_tbl_unlock(void)
 static void
 id2ref_tbl_free(void *data)
 {
-    st_table *table = (st_table *)data;
-    st_free_table(table);
-    RUBY_ATOMIC_PTR_SET(id2ref_tbl, NULL); // clear global ref
+    id2ref_tbl_lock(true);
+    {
+        st_table *table = (st_table *)data;
+        st_free_table(table);
+        RUBY_ATOMIC_PTR_SET(id2ref_tbl, NULL); // clear global ref
+    }
+    id2ref_tbl_unlock();
 }
 
 static const rb_data_type_t id2ref_tbl_type = {
@@ -2159,6 +2163,8 @@ static const rb_data_type_t id2ref_tbl_type = {
         // dcompact function not required because the table is reference updated
         // in rb_gc_vm_weak_table_foreach
     },
+    // Not marked concurrent free safe so that we can know that when we take the VM lock and check for
+    // the id2ref_tbl, it won't be deleted out from under us while the VM lock is held.
     .flags = RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -2177,7 +2183,7 @@ class_object_id(VALUE klass)
             if (RB_UNLIKELY(id2ref_tbl)) {
                 id2ref_tbl_lock(false);
                 {
-                    st_insert(id2ref_tbl, id, klass); // FIXME: currently needs VM lock for allocation
+                    st_insert(id2ref_tbl, id, klass); // needs VM lock for allocation
                 }
                 id2ref_tbl_unlock();
             }
@@ -2230,7 +2236,7 @@ object_id0(VALUE obj)
         RB_VM_LOCKING() {
             id2ref_tbl_lock(false);
             {
-                st_insert(id2ref_tbl, (st_data_t)id, (st_data_t)obj); // FIXME: currently needs VM lock for allocation
+                st_insert(id2ref_tbl, (st_data_t)id, (st_data_t)obj); // needs VM lock for allocation
             }
             id2ref_tbl_unlock();
         }
@@ -2306,31 +2312,25 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
     unsigned int lev = RB_GC_VM_LOCK();
 
     if (!RUBY_ATOMIC_PTR_LOAD(id2ref_tbl)) {
-        rb_gc_vm_barrier(); // stop other ractors, background sweeper could still be running
-            if (!RUBY_ATOMIC_PTR_LOAD(id2ref_tbl)) {
+        rb_gc_vm_barrier(); // stop other ractors but sweep thread could still be running
 
-            // GC Must not trigger while we build the table, otherwise if we end
-            // up freeing an object that had an ID, we might try to delete it from
-            // the table even though it wasn't inserted yet.
-            st_table *tmp_id2ref_tbl = st_init_table(&object_id_hash_type);
-            VALUE tmp_id2ref_value = TypedData_Wrap_Struct(0, &id2ref_tbl_type, tmp_id2ref_tbl);
+        // GC Must not trigger while we build the table, otherwise if we end
+        // up freeing an object that had an ID, we might try to delete it from
+        // the table even though it wasn't inserted yet.
+        st_table *tmp_id2ref_tbl = st_init_table(&object_id_hash_type);
+        VALUE tmp_id2ref_value = TypedData_Wrap_Struct(0, &id2ref_tbl_type, tmp_id2ref_tbl);
 
-            // build_id2ref_i will most certainly malloc, which could trigger GC and sweep
-            // objects we just added to the table.
-            // By calling rb_gc_disable() we also save having to handle potentially garbage objects.
-            bool gc_disabled = RTEST(rb_gc_disable());
-            {
-                id2ref_value = tmp_id2ref_value;
+        // build_id2ref_i will most certainly malloc, which could trigger GC and sweep
+        // objects we just added to the table. The sweep thread could still be running so
+        // we need to handle garbage objects.
+        bool gc_disabled = RTEST(rb_gc_disable());
+        {
+            id2ref_value = tmp_id2ref_value;
 
-                id2ref_tbl_lock(false);
-                {
-                    rb_gc_impl_each_object(objspace, build_id2ref_i, (void *)tmp_id2ref_tbl);
-                }
-                id2ref_tbl_unlock();
-                RUBY_ATOMIC_PTR_SET(id2ref_tbl, tmp_id2ref_tbl);
-            }
-            if (!gc_disabled) rb_gc_enable();
+            rb_gc_impl_each_object(objspace, build_id2ref_i, (void *)tmp_id2ref_tbl);
+            RUBY_ATOMIC_PTR_SET(id2ref_tbl, tmp_id2ref_tbl);
         }
+        if (!gc_disabled) rb_gc_enable();
     }
 
     VALUE obj;
@@ -2395,6 +2395,9 @@ obj_free_object_id(VALUE obj, bool in_user_gc_thread)
         if (RB_UNLIKELY(obj_id)) {
             RUBY_ASSERT(FIXNUM_P(obj_id) || RB_TYPE_P(obj_id, T_BIGNUM));
 
+            // If we're in the sweep thread, we must use trylock because GC could have been
+            // triggered by inserting into the id2ref_tbl, which means the GC thread holds the
+            // lock and we can't wait on it.
             bool needs_id2ref_tbl_trylock = !in_user_gc_thread;
             if (needs_id2ref_tbl_trylock) {
                 bool did_lock = id2ref_tbl_trylock(false);
