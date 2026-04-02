@@ -5029,7 +5029,7 @@ rb_method_type_name(rb_method_type_t type)
 static void
 rb_raw_iseq_info(char *const buff, const size_t buff_size, const rb_iseq_t *iseq)
 {
-    if (buff_size > 0 && ISEQ_BODY(iseq) && ISEQ_BODY(iseq)->location.label && !RB_TYPE_P(ISEQ_BODY(iseq)->location.pathobj, T_MOVED)) {
+    if (buff_size > 0 && ISEQ_BODY(iseq) && ISEQ_BODY(iseq)->location.label && !rb_objspace_garbage_object_p(ISEQ_BODY(iseq)->location.pathobj)) {
         VALUE path = rb_iseq_path(iseq);
         int n = ISEQ_BODY(iseq)->location.first_lineno;
         snprintf(buff, buff_size, " %s@%s:%d",
@@ -5060,7 +5060,7 @@ str_len_no_raise(VALUE str)
 #define C(c, s) ((c) != 0 ? (s) : " ")
 
 static size_t
-rb_raw_obj_info_common(char *const buff, const size_t buff_size, const VALUE obj)
+rb_raw_obj_info_common(char *const buff, const size_t buff_size, const VALUE obj, bool *is_garbage_out)
 {
     size_t pos = 0;
 
@@ -5102,6 +5102,10 @@ rb_raw_obj_info_common(char *const buff, const size_t buff_size, const VALUE obj
         }
         else if (RBASIC(obj)->klass == 0) {
             APPEND_S("(temporary internal)");
+        }
+        else if (rb_objspace_garbage_object_p(RBASIC(obj)->klass)) {
+            APPEND_S("(garbage class)");
+            *is_garbage_out = true;
         }
         else if (RTEST(RBASIC(obj)->klass)) {
             VALUE class_path = rb_class_path_cached(RBASIC(obj)->klass);
@@ -5201,9 +5205,14 @@ rb_raw_obj_info_buitin_type(char *const buff, const size_t buff_size, const VALU
             }
           case T_ICLASS:
             {
-                VALUE class_path = rb_class_path_cached(RBASIC_CLASS(obj));
-                if (!NIL_P(class_path)) {
-                    APPEND_F("src:%s", RSTRING_PTR(class_path));
+                if (rb_objspace_garbage_object_p(RBASIC_CLASS(obj))) {
+                    APPEND_S("src: garbage");
+                }
+                else {
+                    VALUE class_path = rb_class_path_cached(RBASIC_CLASS(obj));
+                    if (!NIL_P(class_path)) {
+                        APPEND_F("src:%s", RSTRING_PTR(class_path));
+                    }
                 }
                 break;
             }
@@ -5344,8 +5353,11 @@ rb_asan_poisoned_object_p(VALUE obj)
 static void
 raw_obj_info(char *const buff, const size_t buff_size, VALUE obj)
 {
-    size_t pos = rb_raw_obj_info_common(buff, buff_size, obj);
-    pos = rb_raw_obj_info_buitin_type(buff, buff_size, obj, pos);
+    bool is_garbage = false;
+    size_t pos = rb_raw_obj_info_common(buff, buff_size, obj, &is_garbage);
+    if (!is_garbage) {
+        pos = rb_raw_obj_info_buitin_type(buff, buff_size, obj, pos);
+    }
     if (pos >= buff_size) {} // truncated
 }
 
@@ -5360,11 +5372,9 @@ rb_raw_obj_info(char *const buff, const size_t buff_size, VALUE obj)
     else if (!rb_gc_impl_pointer_to_heap_p(objspace, (const void *)obj)) {
         snprintf(buff, buff_size, "out-of-heap:%p", (void *)obj);
     }
-#if 0 // maybe no need to check it?
-    else if (0 && rb_gc_impl_garbage_object_p(objspace, obj)) {
+    else if (rb_gc_impl_garbage_object_p(objspace, obj)) {
         snprintf(buff, buff_size, "garbage:%p", (void *)obj);
     }
-#endif
     else {
         asan_unpoisoning_object(obj) {
             raw_obj_info(buff, buff_size, obj);
