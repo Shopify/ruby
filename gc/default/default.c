@@ -5012,7 +5012,9 @@ gc_sweep_finish(rb_objspace_t *objspace)
     rbimpl_atomic_store(&objspace->use_background_sweep_thread, false, RBIMPL_ATOMIC_RELEASE);
 
 #if RUBY_DEBUG
-    if (!objspace->flags.was_compacting) {
+    // When calling GC.start, if in the middle of a non-full mark it will be set as full mark in gc_rest() so the numbers
+    // will be off.
+    if (!objspace->flags.was_compacting && !objspace->sweep_rest) {
         if (objspace->will_be_swept_slots != objspace->have_swept_slots) {
             fprintf(stderr, "Expecting to free %lu slots, freed %lu slots (major:%d)\n", objspace->will_be_swept_slots, objspace->have_swept_slots, is_full_marking(objspace));
             for (int i = 0; i < HEAP_COUNT; i++) {
