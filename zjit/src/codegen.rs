@@ -2546,6 +2546,23 @@ fn gen_guard_type(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, guard
     } else if guard_type.is_immediate() {
         // All immediate types' guard should have been handled above
         panic!("unexpected immediate guard type: {guard_type}");
+    } else if let Some(builtin_type) = guard_type.builtin_type_equivalent() {
+        let side = side_exit(jit, state, GuardType(guard_type));
+
+        // Check special constant
+        asm.test(val, Opnd::UImm(RUBY_IMMEDIATE_MASK as u64));
+        asm.jnz(jit, side.clone());
+
+        // Check false
+        asm.cmp(val, Qfalse.into());
+        asm.je(jit, side.clone());
+
+        // Mask and check the builtin type
+        let val = asm.load_mem(val);
+        let flags = asm.load(Opnd::mem(VALUE_BITS, val, RUBY_OFFSET_RBASIC_FLAGS));
+        let tag   = asm.and(flags, Opnd::UImm(RUBY_T_MASK as u64));
+        asm.cmp(tag, Opnd::UImm(builtin_type as u64));
+        asm.jne(jit, side);
     } else if let Some(expected_class) = guard_type.runtime_exact_ruby_class() {
         asm_comment!(asm, "guard exact class for non-immediate types");
 
@@ -2585,23 +2602,6 @@ fn gen_guard_type(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, guard
         let expected = RUBY_T_DATA.to_usize() | RUBY_TYPED_FL_IS_TYPED_DATA.to_usize();
         let masked = asm.and(flags, mask.into());
         asm.cmp(masked, expected.into());
-        asm.jne(jit, side);
-    } else if let Some(builtin_type) = guard_type.builtin_type_equivalent() {
-        let side = side_exit(jit, state, GuardType(guard_type));
-
-        // Check special constant
-        asm.test(val, Opnd::UImm(RUBY_IMMEDIATE_MASK as u64));
-        asm.jnz(jit, side.clone());
-
-        // Check false
-        asm.cmp(val, Qfalse.into());
-        asm.je(jit, side.clone());
-
-        // Mask and check the builtin type
-        let val = asm.load_mem(val);
-        let flags = asm.load(Opnd::mem(VALUE_BITS, val, RUBY_OFFSET_RBASIC_FLAGS));
-        let tag   = asm.and(flags, Opnd::UImm(RUBY_T_MASK as u64));
-        asm.cmp(tag, Opnd::UImm(builtin_type as u64));
         asm.jne(jit, side);
     } else if guard_type.bit_equal(types::HeapBasicObject) {
         let side_exit = side_exit(jit, state, GuardType(guard_type));
