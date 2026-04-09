@@ -144,7 +144,11 @@ module MonitorMixin
   # +MonitorMixin+.
   #
   def mon_synchronize(&b)
-    @mon_data.synchronize(&b)
+    if @mon_data
+      @mon_data.synchronize(&b)
+    else
+      yield
+    end
   end
   alias synchronize mon_synchronize
 
