@@ -160,6 +160,14 @@ module MonitorMixin
     return ConditionVariable.new(@mon_data)
   end
 
+  # Clear the monitor before freezing. A frozen object cannot be
+  # synchronized, so the Monitor serves no purpose and would prevent
+  # the object from being made Ractor-shareable.
+  def freeze
+    @mon_data = nil
+    super
+  end
+
   private
 
   # Use <tt>extend MonitorMixin</tt> or <tt>include MonitorMixin</tt> instead
