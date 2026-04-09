@@ -4325,8 +4325,6 @@ debug_free_check(rb_objspace_t *objspace, VALUE vp)
 #define debug_free_check(...) (void)0
 #endif
 
-bool rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(VALUE obj);
-
 static inline void
 gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page, uintptr_t p, bits_t bitset, short slot_size)
 {
@@ -4442,7 +4440,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 break;
               free: {
                   debug_free_check(objspace, vp);
-                  if (RB_LIKELY(rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(vp))) {
+                  if (RB_LIKELY(rb_gc_obj_free_concurrency_safe_vm_weak_references(vp))) {
                       bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
                       if (can_put_back_on_freelist) {
                           heap_page_add_freeobj(objspace, page, vp, true);
