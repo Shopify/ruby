@@ -4411,13 +4411,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     dfree = RDATA(vp)->dfree;
                 }
                 if (!dfree || dfree == RUBY_DEFAULT_FREE || free_immediately) {
-                    if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
-                        sweep_in_ruby_thread(objspace, page, vp);
-                        break;
-                    }
-                    else {
-                        goto free;
-                    }
+                    goto free;
                 }
                 else {
                     sweep_in_ruby_thread(objspace, page, vp);
@@ -4427,10 +4421,6 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               }
               case T_IMEMO: {
                 debug_free_check(objspace, vp);
-                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
-                    sweep_in_ruby_thread(objspace, page, vp);
-                    break;
-                }
                 switch (imemo_type(vp)) {
                     case imemo_callcache:
                     case imemo_constcache:
@@ -4442,10 +4432,11 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     case imemo_throw_data:
                     case imemo_tmpbuf:
                     case imemo_fields:
+                    case imemo_iseq:
                         goto free;
                     case imemo_callinfo:
                     case imemo_ment:
-                    case imemo_iseq:
+                        // blacklisted due to vm weak references
                         sweep_in_ruby_thread(objspace, page, vp);
                         break;
                     default:
@@ -4467,14 +4458,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               case T_REGEXP:
               case T_FILE: {
                 debug_free_check(objspace, vp);
-                if (rb_gc_obj_has_blacklisted_vm_weak_references(vp)) {
-                    sweep_in_ruby_thread(objspace, page, vp);
-                    break;
-                }
-                else {
-                    goto free;
-                }
-                break;
+                goto free;
               }
               case T_CLASS:
               case T_MODULE:
