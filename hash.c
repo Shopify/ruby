@@ -103,6 +103,14 @@ static VALUE rb_hash_s_try_convert(VALUE, VALUE);
 VALUE
 rb_hash_freeze(VALUE hash)
 {
+    /* Clear the default proc before freezing. A frozen Hash cannot be
+     * mutated, so a default proc that inserts missing keys would raise
+     * FrozenError anyway. Removing it allows the Hash to be made
+     * Ractor-shareable (default procs capture self, which prevents
+     * Ractor.make_shareable from succeeding). */
+    if (FL_TEST_RAW(hash, RHASH_PROC_DEFAULT)) {
+        SET_DEFAULT(hash, Qnil);
+    }
     return rb_obj_freeze(hash);
 }
 
