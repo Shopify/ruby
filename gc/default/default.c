@@ -4443,9 +4443,13 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     case imemo_tmpbuf:
                     case imemo_fields:
                         goto free;
-                    default:
+                    case imemo_callinfo:
+                    case imemo_ment:
+                    case imemo_iseq:
                         sweep_in_ruby_thread(objspace, page, vp);
                         break;
+                    default:
+                        rb_bug("Unknown imemo type: %d\n", imemo_type(vp));
                 }
                 break;
               }
