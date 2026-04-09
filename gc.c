@@ -1596,7 +1596,7 @@ rb_gc_obj_free(void *objspace, VALUE obj)
         }
         break;
       case T_DATA:
-        if (!rb_data_free(objspace, obj)) return FALSE;
+        if (!RB_LIKELY(rb_data_free(objspace, obj))) return FALSE;
         break;
       case T_MATCH:
         {
@@ -2420,29 +2420,11 @@ obj_free_object_id(VALUE obj, bool in_user_gc_thread)
 }
 
 bool
-rb_gc_obj_has_blacklisted_vm_weak_references(VALUE obj)
-{
-    switch (BUILTIN_TYPE(obj)) {
-      case T_IMEMO:
-        switch (imemo_type(obj)) {
-          case imemo_callinfo:
-          case imemo_ment:
-            return true;
-          default:
-            break;
-        }
-        return false;
-      default:
-        return false;
-    }
-}
-
-static bool
 rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(VALUE obj)
 {
     VM_ASSERT(pthread_self() == GET_VM()->gc.sweep_thread);
     bool result = obj_free_object_id(obj, false);
-    if (rb_obj_gen_fields_p(obj)) {
+    if (RB_UNLIKELY(rb_obj_gen_fields_p(obj))) {
         bool freed_generic = rb_free_generic_ivar(obj);
         if (!freed_generic) result = false;
     }
@@ -2466,14 +2448,9 @@ rb_gc_obj_free_vm_weak_references(VALUE obj)
 {
     ASSUME(!RB_SPECIAL_CONST_P(obj));
 
-    rb_execution_context_t *ec = rb_current_execution_context(false);
-    if (!ec) {
-        return rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(obj);
-    }
-
     obj_free_object_id(obj, true);
 
-    if (rb_obj_gen_fields_p(obj)) {
+    if (RB_UNLIKELY(rb_obj_gen_fields_p(obj))) {
         rb_free_generic_ivar(obj);
     }
 

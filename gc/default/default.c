@@ -872,7 +872,6 @@ struct heap_page {
     struct free_slot *freelist;
     struct free_slot *deferred_freelist;
     struct ccan_list_node page_node;
-    rb_ractor_newobj_heap_cache_t *heap_cache;
 
     bits_t wb_unprotected_bits[HEAP_PAGE_BITMAP_LIMIT];
     /* the following three bitmaps are cleared at the beginning of full GC */
@@ -1255,7 +1254,7 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
     }
 
     // We always dequeue the last page, never the sweep thread. This avoids locking in the common case.
-    // It should be synchronized, but it's a "benign race" (FIXME: use atomics?)
+    // It should be synchronized, but it's a "benign race".
     if (heap->sweeping_page) {
         return false;
     }
@@ -2759,15 +2758,10 @@ ractor_cache_set_page(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, 
     GC_ASSERT(page->free_slots != 0);
     GC_ASSERT(page->freelist != NULL);
 
-    if (heap_cache->using_page) {
-        heap_cache->using_page->heap_cache = NULL;
-    }
-
     heap_cache->using_page = page;
     heap_cache->freelist = page->freelist;
     page->free_slots = 0;
     page->freelist = NULL;
-    page->heap_cache = heap_cache;
 
     rb_asan_unpoison_object((VALUE)heap_cache->freelist, false);
     GC_ASSERT(RB_TYPE_P((VALUE)heap_cache->freelist, T_NONE));
@@ -3952,7 +3946,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
         if (bitset & 1) {
             switch (BUILTIN_TYPE(vp)) {
               case T_MOVED:
-                if (objspace->flags.during_compacting) {
+                if (RB_UNLIKELY(objspace->flags.during_compacting)) {
                     /* The sweep cursor shouldn't have made it to any
                      * T_MOVED slots while the compact flag is enabled.
                      * The sweep cursor and compact cursor move in
@@ -4337,7 +4331,7 @@ sweep_in_ruby_thread(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
     MARK_IN_BITMAP(page->deferred_free_bits, obj);
 }
 
-bool
+static inline bool
 zombie_needs_deferred_free(VALUE zombie)
 {
     return ZOMBIE_NEEDS_FREE_P(zombie);
@@ -4360,6 +4354,8 @@ debug_free_check(rb_objspace_t *objspace, VALUE vp)
 #else
 #define debug_free_check(...) (void)0
 #endif
+
+bool rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(VALUE obj);
 
 static inline void
 gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page, uintptr_t p, bits_t bitset, short slot_size)
@@ -4476,7 +4472,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 break;
               free: {
                   debug_free_check(objspace, vp);
-                  if (rb_gc_obj_free_vm_weak_references(vp)) {
+                  if (RB_LIKELY(rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(vp))) {
                       bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
                       if (can_put_back_on_freelist) {
                           heap_page_add_deferred_freeobj(objspace, page, vp);
@@ -4872,7 +4868,6 @@ gc_ractor_newobj_cache_clear(void *c, void *data)
 
         heap_page_freelist_append(page, freelist);
 
-        if (page) page->heap_cache = NULL;
         cache->using_page = NULL;
         cache->freelist = NULL;
     }
@@ -5157,6 +5152,47 @@ is_last_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     return heap - heaps == (HEAP_COUNT - 1);
 }
 
+static void
+gc_sweep_step_deferred_free(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, unsigned short *freed_out, unsigned short *finals_out)
+{
+    unsigned short freed = 0;
+    unsigned short finals = 0;
+    uintptr_t p = (uintptr_t)sweep_page->start;
+    bits_t *deferred_bits = sweep_page->deferred_free_bits;
+    int total_slots = sweep_page->total_slots;
+    short slot_size = sweep_page->slot_size;
+
+    int bitmap_plane_count = CEILDIV(total_slots, BITS_BITLENGTH);
+    int out_of_range_bits = total_slots % BITS_BITLENGTH;
+    bits_t bitset;
+
+    if (out_of_range_bits != 0) {
+        deferred_bits[bitmap_plane_count - 1] &= (((bits_t)1 << out_of_range_bits) - 1);
+    }
+
+    for (int i = 0; i < bitmap_plane_count; i++) {
+        bitset = deferred_bits[i];
+        p = (uintptr_t)sweep_page->start + (i * BITS_BITLENGTH * slot_size);
+        while (bitset) {
+            if (bitset & 1) {
+                VALUE obj = (VALUE)p;
+                GC_ASSERT(GET_HEAP_PAGE(obj) == sweep_page);
+                GC_ASSERT(!RVALUE_MARKED(objspace, obj));
+                if (deferred_free(objspace, obj)) {
+                    freed++;
+                }
+                else {
+                    finals++;
+                }
+            }
+            p += slot_size;
+            bitset >>= 1;
+        }
+    }
+    *freed_out = freed;
+    *finals_out = finals;
+}
+
 // Perform incremental (lazy) sweep on a heap.
 static int
 gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
@@ -5209,51 +5245,20 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             .page = sweep_page
         };
 
-        unsigned short deferred_free_final_slots = 0;
         if (free_in_user_thread_p) {
             gc_sweep_page(objspace, heap, &ctx);
             GC_ASSERT(sweep_page->pre_deferred_free_slots == 0);
         }
         else {
             unsigned short deferred_free_freed = 0;
+            unsigned short deferred_free_final_slots = 0;
             unsigned short deferred_to_free = sweep_page->pre_deferred_free_slots;
 
             psweep_debug(-2, "[gc] gc_sweep_step: (heap:%p %ld, page:%p) free_ruby_th: %d, deferred_to_free:%d, pre_freed:%d, pre_empty:%d\n",
                 heap, heap - heaps, sweep_page, free_in_user_thread_p, deferred_to_free, sweep_page->pre_freed_slots, sweep_page->pre_empty_slots);
 
             if (deferred_to_free > 0) {
-                uintptr_t p = (uintptr_t)sweep_page->start;
-                bits_t *deferred_bits = sweep_page->deferred_free_bits;
-                int total_slots = sweep_page->total_slots;
-                short slot_size = sweep_page->slot_size;
-
-                int bitmap_plane_count = CEILDIV(total_slots, BITS_BITLENGTH);
-                int out_of_range_bits = total_slots % BITS_BITLENGTH;
-                bits_t bitset;
-
-                if (out_of_range_bits != 0) {
-                    deferred_bits[bitmap_plane_count - 1] &= (((bits_t)1 << out_of_range_bits) - 1);
-                }
-
-                for (int i = 0; i < bitmap_plane_count; i++) {
-                    bitset = deferred_bits[i];
-                    p = (uintptr_t)sweep_page->start + (i * BITS_BITLENGTH * slot_size);
-                    while (bitset) {
-                        if (bitset & 1) {
-                            VALUE obj = (VALUE)p;
-                            GC_ASSERT(GET_HEAP_PAGE(obj) == sweep_page);
-                            GC_ASSERT(!RVALUE_MARKED(objspace, obj));
-                            if (deferred_free(objspace, obj)) {
-                                deferred_free_freed++;
-                            }
-                            else {
-                                deferred_free_final_slots++;
-                            }
-                        }
-                        p += slot_size;
-                        bitset >>= 1;
-                    }
-                }
+                gc_sweep_step_deferred_free(objspace, heap, sweep_page, &deferred_free_freed, &deferred_free_final_slots);
             }
             GC_ASSERT(deferred_to_free == (deferred_free_freed + deferred_free_final_slots));
 
@@ -5319,9 +5324,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             }
             clear_pre_sweep_fields(sweep_page);
         }
-
-        // We never sweep a page that's currently in free_pages, such as a cached page. Our iterator is past those already.
-        GC_ASSERT(!sweep_page->heap_cache);
 
 #if RGENGC_CHECK_MODE
         short freelist_len = 0;
