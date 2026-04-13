@@ -233,8 +233,6 @@ rb_darray_realloc_mul_add(void *orig_ptr, size_t capa, size_t element_size, size
     return ptr;
 }
 
-bool is_sweep_thread_p(void);
-
 /* Internal function. Like rb_xrealloc_mul_add but does not trigger GC. */
 static inline void *
 rb_darray_realloc_mul_add_without_gc(void *orig_ptr, size_t x, size_t y, size_t z)
@@ -243,12 +241,7 @@ rb_darray_realloc_mul_add_without_gc(void *orig_ptr, size_t x, size_t y, size_t 
 
     void *ptr = realloc(orig_ptr, size);
     if (ptr == NULL) {
-        if (!is_sweep_thread_p()) {
-            rb_bug("rb_darray_realloc_mul_add_without_gc: failed");
-        }
-        else {
-            fprintf(stderr, "darray: realloc failed (from sweep thread)\n");
-        }
+        rb_bug("rb_darray_realloc_mul_add_without_gc: failed");
     }
 
     return ptr;
