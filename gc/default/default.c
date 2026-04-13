@@ -4869,10 +4869,7 @@ gc_sweep_start(rb_objspace_t *objspace)
     rb_gc_ractor_newobj_cache_foreach(gc_ractor_newobj_cache_clear, NULL);
 
     psweep_debug(1, "[gc] gc_sweep_start\n");
-    if (!objspace->flags.during_compacting &&
-        (objspace->profile.latest_gc_info & GPR_FLAG_METHOD) == 0 &&
-        !(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
-
+    if (!objspace->flags.during_compacting && !(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
         rbimpl_atomic_store(&objspace->use_background_sweep_thread, true, RBIMPL_ATOMIC_RELEASE);
         psweep_debug(-1, "[gc] gc_sweep_start: requesting sweep thread\n");
         sweep_lock_lock(&objspace->sweep_lock);
@@ -8428,7 +8425,6 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
         sweep_lock_lock(&objspace->sweep_lock);
         {
             GC_ASSERT(!objspace->sweep_thread_sweeping);
-            GC_ASSERT(!objspace->sweep_thread_sweep_requested);
             for (int j = 0; j < HEAP_COUNT; j++) {
                 rb_heap_t *heap = &heaps[j];
                 GC_ASSERT(!heap->swept_pages);
