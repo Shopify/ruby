@@ -8,25 +8,13 @@
 void rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr);
 void rb_ractor_sched_barrier_join(rb_vm_t *vm, rb_ractor_t *cr);
 void rb_ractor_sched_barrier_end(rb_vm_t *vm, rb_ractor_t *cr);
-
-static bool
-is_sweep_thread_p(void)
-{
-    rb_vm_t *vm = GET_VM();
-    if (!vm) return false;
-    return vm->gc.sweep_thread == pthread_self();
-}
+bool is_sweep_thread_p(void);
 
 static bool
 vm_locked(rb_vm_t *vm)
 {
     if (!vm) return false;
-    if (is_sweep_thread_p()) {
-        return vm->ractor.sync.lock_owner == (void*)-1;
-    }
-    else {
-        return vm_locked_by_ractor_p(vm, GET_RACTOR());
-    }
+    return vm_locked_by_ractor_p(vm, GET_RACTOR());
 }
 
 #if RUBY_DEBUG > 0
@@ -91,24 +79,19 @@ vm_need_barrier(bool no_barrier, const rb_ractor_t *cr, const rb_vm_t *vm)
 }
 
 static void
-vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, bool is_sweep_thread, unsigned int *lev APPEND_LOCATION_ARGS)
+vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, unsigned int *lev APPEND_LOCATION_ARGS)
 {
     RUBY_DEBUG_LOG2(file, line, "start locked:%d", locked);
+
+    VM_ASSERT(!is_sweep_thread_p());
 
     if (locked) {
         ASSERT_vm_locking();
     }
     else {
 #if RACTOR_CHECK_MODE
-        if (is_sweep_thread) {
-            VM_ASSERT(0);
-            VM_ASSERT(cr == 0);
-            VM_ASSERT(vm->ractor.sync.lock_owner != (void*)-1);
-        }
-        else {
-            // locking ractor and acquire VM lock will cause deadlock
-            VM_ASSERT(cr->sync.locked_by != rb_ractor_self(cr));
-        }
+        // locking ractor and acquire VM lock will cause deadlock
+        VM_ASSERT(cr->sync.locked_by != rb_ractor_self(cr));
 #endif
         // lock
         rb_native_mutex_lock(&vm->ractor.sync.lock);
@@ -116,7 +99,7 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, bool i
         VM_ASSERT(vm->ractor.sync.lock_rec == 0);
 
         // barrier
-        if (!is_sweep_thread && vm_need_barrier(no_barrier, cr, vm)) {
+        if (vm_need_barrier(no_barrier, cr, vm)) {
             rb_execution_context_t *ec = GET_EC();
             RB_VM_SAVE_MACHINE_CONTEXT(rb_ec_thread_ptr(ec));
 
@@ -129,20 +112,18 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, bool i
 
         VM_ASSERT(vm->ractor.sync.lock_rec == 0);
         VM_ASSERT(vm->ractor.sync.lock_owner == NULL);
-        vm->ractor.sync.lock_owner = is_sweep_thread ? (rb_ractor_t*)-1 : cr;
+        vm->ractor.sync.lock_owner = cr;
     }
 
     vm->ractor.sync.lock_rec++;
     *lev = vm->ractor.sync.lock_rec;
 
-    if (!is_sweep_thread) {
-        RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%u", vm->ractor.sync.lock_rec,
-                        (unsigned int)rb_ractor_id(vm->ractor.sync.lock_owner));
-    }
+    RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%u", vm->ractor.sync.lock_rec,
+                    (unsigned int)rb_ractor_id(vm->ractor.sync.lock_owner));
 }
 
 static void
-vm_lock_leave(rb_vm_t *vm, bool no_barrier, bool is_sweep_thread, unsigned int *lev APPEND_LOCATION_ARGS)
+vm_lock_leave(rb_vm_t *vm, bool no_barrier, unsigned int *lev APPEND_LOCATION_ARGS)
 {
     MAYBE_UNUSED(rb_ractor_t *cr = vm->ractor.sync.lock_owner);
 
@@ -153,15 +134,10 @@ vm_lock_leave(rb_vm_t *vm, bool no_barrier, bool is_sweep_thread, unsigned int *
     ASSERT_vm_locking();
     VM_ASSERT(vm->ractor.sync.lock_rec > 0);
     VM_ASSERT(vm->ractor.sync.lock_rec == *lev);
-    if (is_sweep_thread) {
-        VM_ASSERT(cr == (void*)-1);
-    }
-    else {
-        VM_ASSERT(cr == GET_RACTOR());
-    }
+    VM_ASSERT(cr == GET_RACTOR());
 
 #ifdef RUBY_THREAD_PTHREAD_H
-    if (!is_sweep_thread && vm->ractor.sched.barrier_ractor == cr &&
+    if (vm->ractor.sched.barrier_ractor == cr &&
         vm->ractor.sched.barrier_lock_rec == vm->ractor.sync.lock_rec) {
         VM_ASSERT(!no_barrier);
         rb_ractor_sched_barrier_end(vm, cr);
@@ -183,11 +159,10 @@ rb_vm_lock_enter_body(unsigned int *lev APPEND_LOCATION_ARGS)
     rb_vm_t *vm = GET_VM();
     VM_ASSERT(vm);
     if (vm_locked(vm)) {
-        vm_lock_enter(NULL, vm, true, false, is_sweep_thread_p(), lev APPEND_LOCATION_PARAMS);
+        vm_lock_enter(NULL, vm, true, false, lev APPEND_LOCATION_PARAMS);
     }
     else {
-        bool is_sweep_th = is_sweep_thread_p();
-        vm_lock_enter(is_sweep_th ? NULL : GET_RACTOR(), vm, false, false, is_sweep_th, lev APPEND_LOCATION_PARAMS);
+        vm_lock_enter(GET_RACTOR(), vm, false, false, lev APPEND_LOCATION_PARAMS);
     }
 }
 
@@ -197,11 +172,10 @@ rb_vm_lock_enter_body_nb(unsigned int *lev APPEND_LOCATION_ARGS)
     rb_vm_t *vm = GET_VM();
     VM_ASSERT(vm);
     if (vm_locked(vm)) {
-        vm_lock_enter(NULL, vm, true, true, is_sweep_thread_p(), lev APPEND_LOCATION_PARAMS);
+        vm_lock_enter(NULL, vm, true, true, lev APPEND_LOCATION_PARAMS);
     }
     else {
-        bool is_sweep_th = is_sweep_thread_p();
-        vm_lock_enter(is_sweep_th ? NULL : GET_RACTOR(), vm, false, true, is_sweep_th, lev APPEND_LOCATION_PARAMS);
+        vm_lock_enter(GET_RACTOR(), vm, false, true, lev APPEND_LOCATION_PARAMS);
     }
 }
 
@@ -210,19 +184,19 @@ rb_vm_lock_enter_body_cr(rb_ractor_t *cr, unsigned int *lev APPEND_LOCATION_ARGS
 {
     rb_vm_t *vm = GET_VM();
     VM_ASSERT(vm);
-    vm_lock_enter(cr, vm, vm_locked(vm), false, false, lev APPEND_LOCATION_PARAMS);
+    vm_lock_enter(cr, vm, vm_locked(vm), false, lev APPEND_LOCATION_PARAMS);
 }
 
 void
 rb_vm_lock_leave_body_nb(unsigned int *lev APPEND_LOCATION_ARGS)
 {
-    vm_lock_leave(GET_VM(), true, is_sweep_thread_p(), lev APPEND_LOCATION_PARAMS);
+    vm_lock_leave(GET_VM(), true, lev APPEND_LOCATION_PARAMS);
 }
 
 void
 rb_vm_lock_leave_body(unsigned int *lev APPEND_LOCATION_ARGS)
 {
-    vm_lock_leave(GET_VM(), false, is_sweep_thread_p(), lev APPEND_LOCATION_PARAMS);
+    vm_lock_leave(GET_VM(), false, lev APPEND_LOCATION_PARAMS);
 }
 
 void
@@ -232,8 +206,7 @@ rb_vm_lock_body(LOCATION_ARGS)
     VM_ASSERT(vm);
     ASSERT_vm_unlocking();
 
-    bool is_sweep_th = is_sweep_thread_p();
-    vm_lock_enter(is_sweep_th ? NULL : GET_RACTOR(), vm, false, false, is_sweep_th, &vm->ractor.sync.lock_rec APPEND_LOCATION_PARAMS);
+    vm_lock_enter(GET_RACTOR(), vm, false, false, &vm->ractor.sync.lock_rec APPEND_LOCATION_PARAMS);
 }
 
 void
@@ -242,7 +215,7 @@ rb_vm_unlock_body(LOCATION_ARGS)
     rb_vm_t *vm = GET_VM();
     ASSERT_vm_locking();
     VM_ASSERT(vm->ractor.sync.lock_rec == 1);
-    vm_lock_leave(vm, false, is_sweep_thread_p(), &vm->ractor.sync.lock_rec APPEND_LOCATION_PARAMS);
+    vm_lock_leave(vm, false, &vm->ractor.sync.lock_rec APPEND_LOCATION_PARAMS);
 }
 
 static void
