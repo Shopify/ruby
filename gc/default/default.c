@@ -6402,6 +6402,7 @@ struct verify_internal_consistency_struct {
     int err_count;
     size_t live_object_count;
     size_t zombie_object_count;
+    size_t zombie_ran_finalizer_object_count;
 
     VALUE parent;
     size_t old_object_count;
@@ -6457,7 +6458,6 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride,
 {
     VALUE obj;
     rb_objspace_t *objspace = data->objspace;
-    return 0; // FIXME for parallel sweep
 
     for (obj = (VALUE)page_start; obj != (VALUE)page_end; obj += stride) {
         asan_unpoisoning_object(obj) {
@@ -6499,7 +6499,11 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride,
                 if (BUILTIN_TYPE(obj) == T_ZOMBIE) {
                     data->zombie_object_count++;
 
-                    if ((RBASIC(obj)->flags & ~ZOMBIE_OBJ_KEPT_FLAGS) != T_ZOMBIE) {
+                    if (FL_TEST(obj, ZOMBIE_NEEDS_FREE_FLAG)) {
+                        data->zombie_ran_finalizer_object_count++;
+                    }
+
+                    if ((RBASIC(obj)->flags & ~(ZOMBIE_OBJ_KEPT_FLAGS|ZOMBIE_NEEDS_FREE_FLAG)) != T_ZOMBIE) {
                         fprintf(stderr, "verify_internal_consistency_i: T_ZOMBIE has extra flags set: %s\n",
                                 rb_obj_info(obj));
                         data->err_count++;
@@ -6622,7 +6626,6 @@ gc_verify_heap_pages(rb_objspace_t *objspace)
 static void
 gc_verify_internal_consistency_(rb_objspace_t *objspace)
 {
-    return; // FIXME for parallel sweep
     struct verify_internal_consistency_struct data = {0};
 
     data.objspace = objspace;
@@ -6637,6 +6640,7 @@ gc_verify_internal_consistency_(rb_objspace_t *objspace)
         uintptr_t end = start + page->total_slots * slot_size;
 
         verify_internal_consistency_i((void *)start, (void *)end, slot_size, &data);
+        data.live_object_count += (page->pre_freed_slots + page->pre_final_slots + page->pre_zombie_slots);
     }
 
     if (data.err_count != 0) {
@@ -6689,7 +6693,7 @@ gc_verify_internal_consistency_(rb_objspace_t *objspace)
         }
 
         if (total_final_slots_count(objspace) != data.zombie_object_count ||
-            total_final_slots_count(objspace) != list_count) {
+            (data.zombie_object_count - data.zombie_ran_finalizer_object_count) != list_count) {
 
             rb_bug("inconsistent finalizing object count:\n"
                     "  expect %"PRIuSIZE"\n"
@@ -6714,6 +6718,7 @@ gc_verify_internal_consistency(void *objspace_ptr)
         rb_gc_vm_barrier(); // stop other ractors
 
         unsigned int prev_during_gc = during_gc;
+        wait_for_background_sweeping_to_finish(objspace, true, false, "verify_internal_consistency");
         during_gc = FALSE; // stop gc here
         {
             gc_verify_internal_consistency_(objspace);
