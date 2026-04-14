@@ -122,8 +122,8 @@
 #else
 #define psweep_debug(...) (void)0
 #endif
-#define PSWEEP_LOCK_STATS 0
-#define PSWEEP_COLLECT_TIMINGS 0
+#define PSWEEP_LOCK_STATS 1
+#define PSWEEP_COLLECT_TIMINGS 1
 
 #ifndef GC_HEAP_FREE_SLOTS
 #define GC_HEAP_FREE_SLOTS  4096
@@ -4624,7 +4624,8 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         return;
     }
     while (1) {
-        struct heap_page *sweep_page = heap->sweeping_page;
+    try_again:
+        struct heap_page *sweep_page = RUBY_ATOMIC_PTR_LOAD(heap->sweeping_page);
         if (!sweep_page) {
             GC_ASSERT(!heap->done_background_sweep);
             GC_ASSERT(objspace->heaps_done_background_sweep < HEAP_COUNT);
@@ -4646,7 +4647,10 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             break;
         }
 
-        heap->sweeping_page = next;
+        struct heap_page *prev = RUBY_ATOMIC_PTR_CAS(heap->sweeping_page, sweep_page, next);
+        if (prev != sweep_page) {
+            goto try_again;
+        }
         heap->pre_sweeping_page = sweep_page;
 
         sweep_lock_unlock(&objspace->sweep_lock);
@@ -5051,6 +5055,23 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
             page = heap->swept_pages;
             psweep_debug(0, "[gc] gc_sweep_dequeue_page: got page:%p from heap(%p)->swept_pages (swept_pages lock) (heap %ld)\n", page, heap, heap - heaps);
             heap->swept_pages = page->free_next;
+        } else if (!(page = RUBY_ATOMIC_PTR_LOAD(heap->sweeping_page))) {
+        }
+        else {
+            while (page) {
+                struct heap_page *next = ccan_list_next(&heap->pages, page, page_node);
+                struct heap_page *prev = RUBY_ATOMIC_PTR_CAS(heap->sweeping_page, page, next);
+                if (prev == page) {
+                    *dequeued_unswept_page = true;
+                    break;
+                }
+                else if (prev == NULL) {
+                    page = NULL;
+                    break;
+                }
+                page = RUBY_ATOMIC_PTR_LOAD(heap->sweeping_page);
+            }
+            psweep_debug(0, "[gc] gc_sweep_dequeue_page: dequeued unswept page from heap(%p) (heap %ld)\n", heap, heap - heaps);
         }
     }
     rb_native_mutex_unlock(&heap->swept_pages_lock);
@@ -5065,7 +5086,7 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
             psweep_debug(0, "[gc] gc_sweep_dequeue_page: got page:%p from heap(%p)->swept_pages (sweep_lock) (heap %ld)\n", page, heap, heap - heaps);
             heap->swept_pages = page->free_next;
         }
-        else if (!heap->sweeping_page) { // This heap is finished
+        else if (!RUBY_ATOMIC_PTR_LOAD(heap->sweeping_page)) { // This heap is finished
             while (heap->pre_sweeping_page) {
                 sweep_lock_set_unlocked();
                 rb_native_cond_wait(&heap->sweep_page_cond, &objspace->sweep_lock);
@@ -5074,13 +5095,6 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
             }
             psweep_debug(0, "[gc] gc_sweep_dequeue_page: got nil page from heap(%p) (heap %ld) end\n", heap, heap - heaps);
         }
-        else {
-            *dequeued_unswept_page = true;
-            page = heap->sweeping_page; // this could be the last page
-            heap->sweeping_page = ccan_list_next(&heap->pages, page, page_node);
-            psweep_debug(0, "[gc] gc_sweep_dequeue_page: dequeued unswept page from heap(%p) (heap %ld)\n", heap, heap - heaps);
-        }
-        GC_ASSERT(!objspace->background_sweep_mode);
     }
     sweep_lock_unlock(&objspace->sweep_lock);
 
