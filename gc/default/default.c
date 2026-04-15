@@ -1180,6 +1180,48 @@ print_lock_stats(void)
 }
 #endif /* PSWEEP_LOCK_STATS > 0 */
 
+#if PSWEEP_LOCK_STATS > 0
+/*
+ * Sweep step contention stats: first incremental step (gc_sweep) vs
+ * subsequent steps (gc_sweep_continue), tracking swept_pages_lock trylock
+ * success/failure to see if the first step has disproportionate contention.
+ */
+typedef struct sweep_step_contention {
+    size_t step_count;
+    size_t swept_pages_trylock_success;
+    size_t swept_pages_trylock_fail;
+} sweep_step_contention_t;
+
+/* [0] = first step (gc_sweep), [1] = continue step (gc_sweep_continue) */
+static sweep_step_contention_t step_contention[2] = {{0}};
+static int current_step_type = 0;
+
+static void
+print_sweep_step_contention(void)
+{
+    fprintf(stderr, "\n=== Sweep Step Contention (first step vs continue) ===\n");
+    fprintf(stderr, "%-30s %15s %15s\n", "", "First Step", "Continue");
+    fprintf(stderr, "%-30s %15s %15s\n", "", "----------", "--------");
+
+    fprintf(stderr, "%-30s %15zu %15zu\n", "step_count",
+            step_contention[0].step_count, step_contention[1].step_count);
+    fprintf(stderr, "%-30s %15zu %15zu\n", "trylock_success",
+            step_contention[0].swept_pages_trylock_success, step_contention[1].swept_pages_trylock_success);
+    fprintf(stderr, "%-30s %15zu %15zu\n", "trylock_fail",
+            step_contention[0].swept_pages_trylock_fail, step_contention[1].swept_pages_trylock_fail);
+
+    {
+        size_t total0 = step_contention[0].swept_pages_trylock_success + step_contention[0].swept_pages_trylock_fail;
+        size_t total1 = step_contention[1].swept_pages_trylock_success + step_contention[1].swept_pages_trylock_fail;
+        fprintf(stderr, "%-30s %14.2f%% %14.2f%%\n", "trylock_fail_ratio",
+                total0 > 0 ? (double)step_contention[0].swept_pages_trylock_fail / total0 * 100.0 : 0,
+                total1 > 0 ? (double)step_contention[1].swept_pages_trylock_fail / total1 * 100.0 : 0);
+    }
+
+    fprintf(stderr, "=====================================================\n\n");
+}
+#endif /* PSWEEP_LOCK_STATS > 0 (sweep step contention) */
+
 static pthread_t sweep_lock_owner = 0;
 
 static inline void
@@ -1247,6 +1289,9 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
     // It should be synchronized, but it's a "benign race".
     if (heap->sweeping_page) {
         return false;
+    }
+    else if (heap->dequeued_last_page) {
+        return true;
     }
 
     bool done;
@@ -5056,19 +5101,22 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
     struct heap_page *page = NULL;
 
     // Avoid taking the global sweep_lock if we can
-#if PSWEEP_LOCK_STATS > 3
-    instrumented_lock_acquire(&heap->swept_pages_lock, &swept_pages_lock_stats);
-#else
-    rb_native_mutex_trylock(&heap->swept_pages_lock);
+    if (rb_native_mutex_trylock(&heap->swept_pages_lock) == 0) {
+#if PSWEEP_LOCK_STATS > 0
+        step_contention[current_step_type].swept_pages_trylock_success++;
 #endif
-    {
         if (heap->swept_pages) {
             page = heap->swept_pages;
             psweep_debug(0, "[gc] gc_sweep_dequeue_page: got page:%p from heap(%p)->swept_pages (swept_pages lock) (heap %ld)\n", page, heap, heap - heaps);
             heap->swept_pages = page->free_next;
         }
+        rb_native_mutex_unlock(&heap->swept_pages_lock);
     }
-    rb_native_mutex_unlock(&heap->swept_pages_lock);
+#if PSWEEP_LOCK_STATS > 0
+    else {
+        step_contention[current_step_type].swept_pages_trylock_fail++;
+    }
+#endif
     if (page) return page;
 
 #if PSWEEP_LOCK_STATS > 0
@@ -5106,9 +5154,9 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
             psweep_debug(0, "[gc] gc_sweep_dequeue_page: got nil page from heap(%p) (heap %ld) end\n", heap, heap - heaps);
         }
         GC_ASSERT(!objspace->background_sweep_mode);
-    }
-    if (!heap->sweeping_page && !heap->pre_sweeping_page) {
-        heap->dequeued_last_page = true;
+        if (!heap->sweeping_page && !heap->pre_sweeping_page && !heap->swept_pages) {
+            heap->dequeued_last_page = true;
+        }
     }
     sweep_lock_unlock(&objspace->sweep_lock);
 
@@ -5393,7 +5441,7 @@ gc_sweep_rest(rb_objspace_t *objspace)
     }
     sweep_lock_unlock(&objspace->sweep_lock);
 
-    for (int i = 0; i < HEAP_COUNT; i++) {
+    for (int i = HEAP_COUNT-1; i >= 0; i--) {
         rb_heap_t *heap = &heaps[i];
 
         while (!heap_is_sweep_done(objspace, heap)) {
@@ -5462,6 +5510,10 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
     }
     sweep_lock_unlock(&objspace->sweep_lock);
 
+#if PSWEEP_LOCK_STATS > 0
+    current_step_type = 1;
+    step_contention[1].step_count++;
+#endif
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
@@ -5651,7 +5703,11 @@ gc_sweep(rb_objspace_t *objspace)
     }
     else {
         /* Sweep every size pool. */
-        for (int i = 0; i < HEAP_COUNT; i++) {
+#if PSWEEP_LOCK_STATS > 0
+        current_step_type = 0;
+        step_contention[0].step_count++;
+#endif
+        for (int i = HEAP_COUNT-1; i >= 0; i--) {
             rb_heap_t *heap = &heaps[i];
             gc_sweep_step(objspace, heap);
         }
@@ -11043,6 +11099,7 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
 #if PSWEEP_LOCK_STATS > 0
     /* Print lock contention statistics before freeing */
     print_lock_stats();
+    print_sweep_step_contention();
 #endif
 
 #if PSWEEP_COLLECT_TIMINGS > 0
