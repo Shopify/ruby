@@ -905,13 +905,16 @@ onig_region_resize(OnigRegion* region, int n)
   if (n < ONIG_NREGION)
     n = ONIG_NREGION;
 
-  size_t region_half_sz = n * sizeof(OnigPosition);
   if (region->allocated == 0) {
-    region->beg = (OnigPosition* )xmalloc(region_half_sz * 2);
+    region->beg = (OnigPosition* )xmalloc(n * sizeof(OnigPosition));
     if (region->beg == 0)
       return ONIGERR_MEMORY;
 
-    region->end = (OnigPosition* )region->beg + n;
+    region->end = (OnigPosition* )xmalloc(n * sizeof(OnigPosition));
+    if (region->end == 0) {
+      xfree(region->beg);
+      return ONIGERR_MEMORY;
+    }
 
     region->allocated = n;
   }
@@ -919,13 +922,20 @@ onig_region_resize(OnigRegion* region, int n)
     OnigPosition *tmp;
 
     region->allocated = 0;
-    tmp = (OnigPosition* )xrealloc(region->beg, region_half_sz * 2);
+    tmp = (OnigPosition* )xrealloc(region->beg, n * sizeof(OnigPosition));
     if (tmp == 0) {
       xfree(region->beg);
+      xfree(region->end);
       return ONIGERR_MEMORY;
     }
     region->beg = tmp;
-    region->end = (OnigPosition*)region->beg + n;
+    tmp = (OnigPosition* )xrealloc(region->end, n * sizeof(OnigPosition));
+    if (tmp == 0) {
+      xfree(region->beg);
+      xfree(region->end);
+      return ONIGERR_MEMORY;
+    }
+    region->end = tmp;
 
     region->allocated = n;
   }
@@ -988,6 +998,7 @@ onig_region_free(OnigRegion* r, int free_self)
   if (r) {
     if (r->allocated > 0) {
       xfree(r->beg);
+      xfree(r->end);
     }
 #ifdef USE_CAPTURE_HISTORY
     history_root_free(r);
