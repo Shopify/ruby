@@ -4769,6 +4769,10 @@ gc_sweep_thread_func(void *ptr)
 {
     rb_objspace_t *objspace = ptr;
 
+#ifdef SET_CURRENT_THREAD_NAME
+    SET_CURRENT_THREAD_NAME("Ruby/VM Sweep");
+#endif
+
     psweep_debug(1, "[sweep] sweep_thread start\n");
     sweep_lock_lock(&objspace->sweep_lock);
     objspace->sweep_thread_sweep_exited = false;
