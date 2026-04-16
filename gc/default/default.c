@@ -4911,7 +4911,7 @@ gc_sweep_start(rb_objspace_t *objspace)
 
     objspace->heaps_done_background_sweep = 0;
 
-    for (int i = 0; i < HEAP_COUNT; i++) {
+    for (int i = HEAP_COUNT-1; i >= 0; i--) {
         rb_heap_t *heap = &heaps[i];
         gc_sweep_start_heap(objspace, heap);
 
@@ -5458,6 +5458,39 @@ gc_sweep_rest(rb_objspace_t *objspace)
 
 unsigned long long sweep_continue_count = 0;
 
+static int
+sweep_heap_first(bool sweep_backwards)
+{
+    if (sweep_backwards) {
+        return HEAP_COUNT-1;
+    }
+    else {
+        return 0;
+    }
+}
+
+static int
+sweep_heap_last(bool sweep_backwards)
+{
+    if (sweep_backwards) {
+        return -1;
+    }
+    else {
+        return HEAP_COUNT;
+    }
+}
+
+static void
+sweep_heap_iter(bool sweep_backwards, int *i)
+{
+    if (sweep_backwards) {
+        (*i)--;
+    }
+    else {
+        (*i)++;
+    }
+}
+
 static void
 gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
 {
@@ -5468,6 +5501,7 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
 
     sweep_continue_count++;
 
+    int num_heaps_need_continue = 0;
     gc_sweeping_enter(objspace, "gc_sweep_continue");
     sweep_lock_lock(&objspace->sweep_lock);
     {
@@ -5476,7 +5510,6 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
                 psweep_debug(-2, "[gc] gc_sweep_continue: bg done, not requesting\n");
             }
             else {
-                int num_heaps_need_continue = 0;
                 for (int i = 0; i < HEAP_COUNT; i++) {
                     rb_heap_t *heap = &heaps[i];
                     heap->background_sweep_steps = heap->foreground_sweep_steps;
@@ -5509,12 +5542,13 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
         }
     }
     sweep_lock_unlock(&objspace->sweep_lock);
+    bool sweep_backwards = num_heaps_need_continue > 0 && !heaps[0].skip_sweep_continue;
 
 #if PSWEEP_LOCK_STATS > 0
     current_step_type = 1;
     step_contention[1].step_count++;
 #endif
-    for (int i = 0; i < HEAP_COUNT; i++) {
+    for (int i = sweep_heap_first(sweep_backwards); i != sweep_heap_last(sweep_backwards); sweep_heap_iter(sweep_backwards, &i)) {
         rb_heap_t *heap = &heaps[i];
 
         if (gc_sweep_step(objspace, heap)) {
