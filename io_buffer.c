@@ -332,7 +332,7 @@ static const rb_data_type_t rb_io_buffer_type = {
         .dcompact = rb_io_buffer_type_compact,
     },
     .data = NULL,
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE,
 };
 
 static inline enum rb_io_buffer_flags

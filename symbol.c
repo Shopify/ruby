@@ -233,17 +233,19 @@ static VALUE
 dup_string_for_create(VALUE str)
 {
     rb_encoding *enc = rb_enc_get(str);
+    VALUE new_str;
 
-    str = rb_enc_str_new(RSTRING_PTR(str), RSTRING_LEN(str), enc);
+    new_str = rb_enc_str_new(RSTRING_PTR(str), RSTRING_LEN(str), enc);
+    RB_GC_GUARD(str);
 
     rb_encoding *ascii = rb_usascii_encoding();
-    if (enc != ascii && sym_check_asciionly(str, false)) {
-        rb_enc_associate(str, ascii);
+    if (enc != ascii && sym_check_asciionly(new_str, false)) {
+        rb_enc_associate(new_str, ascii);
     }
-    OBJ_FREEZE(str);
+    OBJ_FREEZE(new_str);
 
-    str = rb_fstring(str);
-    return str;
+    new_str = rb_fstring(new_str);
+    return new_str;
 }
 
 static int
@@ -338,6 +340,7 @@ sym_set_create(VALUE sym, void *data)
         RB_VM_LOCKING() {
             set_id_entry(&ruby_global_symbols, rb_id_to_serial(STATIC_SYM2ID(static_sym)), str, static_sym);
         }
+        RB_GC_GUARD(str);
 
         return sym_set_static_sym_tag(new_static_sym_entry);
     }
@@ -415,7 +418,7 @@ Init_sym(void)
 {
     rb_symbols_t *symbols = &ruby_global_symbols;
 
-    symbols->sym_set = rb_concurrent_set_new(&sym_set_funcs, 1024);
+    symbols->sym_set = rb_concurrent_set_new(&sym_set_funcs, 1024, T_SYMBOL);
     symbols->ids = rb_ary_hidden_new(0);
 
     Init_op_tbl();
@@ -950,7 +953,7 @@ rb_gc_free_dsymbol(VALUE sym)
     VALUE str = RSYMBOL(sym)->fstr;
 
     if (str) {
-        rb_concurrent_set_delete_by_identity(ruby_global_symbols.sym_set, sym);
+        rb_concurrent_set_delete_by_identity(&ruby_global_symbols.sym_set, sym);
 
         RSYMBOL(sym)->fstr = 0;
     }

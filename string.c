@@ -549,7 +549,7 @@ static const struct rb_concurrent_set_funcs fstring_concurrent_set_funcs = {
 void
 Init_fstring_table(void)
 {
-    fstring_table_obj = rb_concurrent_set_new(&fstring_concurrent_set_funcs, 8192);
+    fstring_table_obj = rb_concurrent_set_new(&fstring_concurrent_set_funcs, 8192, T_STRING);
     rb_gc_register_address(&fstring_table_obj);
 }
 
@@ -593,13 +593,11 @@ rb_obj_is_fstring_table(VALUE obj)
 void
 rb_gc_free_fstring(VALUE obj)
 {
-    ASSERT_vm_locking_with_barrier();
-
     RUBY_ASSERT(FL_TEST(obj, RSTRING_FSTR));
     RUBY_ASSERT(OBJ_FROZEN(obj));
     RUBY_ASSERT(!FL_TEST(obj, STR_SHARED));
 
-    rb_concurrent_set_delete_by_identity(fstring_table_obj, obj);
+    rb_concurrent_set_delete_by_identity(&fstring_table_obj, obj);
 
     RB_DEBUG_COUNTER_INC(obj_str_fstr);
 
@@ -7835,7 +7833,7 @@ mapping_buffer_free(void *p)
 static const rb_data_type_t mapping_buffer_type = {
     "mapping_buffer",
     {0, mapping_buffer_free,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE
