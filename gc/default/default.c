@@ -184,6 +184,10 @@ static struct heap_page *current_sweep_thread_page;
 #endif
 #endif
 
+#if !defined(SET_CURRENT_THREAD_NAME) && defined(__linux__) && defined(PR_SET_NAME)
+# define SET_CURRENT_THREAD_NAME(name) prctl(PR_SET_NAME, name)
+#endif
+
 #ifndef PRINT_ENTER_EXIT_TICK
 # define PRINT_ENTER_EXIT_TICK 0
 #endif
