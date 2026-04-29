@@ -905,7 +905,7 @@ static const rb_data_type_t tp_data_type = {
         RUBY_TYPED_DEFAULT_FREE,
         NULL, // Nothing allocated externally, so don't need a memsize function
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE

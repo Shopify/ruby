@@ -10017,7 +10017,7 @@ argf_memsize(const void *ptr)
 static const rb_data_type_t argf_type = {
     "ARGF",
     {argf_mark_and_move, RUBY_TYPED_DEFAULT_FREE, argf_memsize, argf_mark_and_move},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static inline void

@@ -1117,11 +1117,16 @@ rb_bug_without_die(const char *fmt, ...)
     va_end(args);
 }
 
+bool is_sweep_thread_p(void);
+
 void
 rb_bug(const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
+    if (is_sweep_thread_p()) {
+        fprintf(stderr, "rb_bug() called from sweep_thread!\n");
+    }
     rb_bug_without_die_internal(fmt, args);
     va_end(args);
     die();
@@ -2530,7 +2535,7 @@ static const rb_data_type_t name_err_mesg_data_type = {
         NULL, // No external memory to report,
         name_err_mesg_mark_and_move,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 /* :nodoc: */

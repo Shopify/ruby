@@ -280,7 +280,7 @@ static const rb_data_type_t enumerator_data_type = {
         NULL, // Nothing allocated externally, so don't need a memsize function
         NULL,
     },
-    0, NULL, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_DECL_MARKING | RUBY_TYPED_EMBEDDABLE
+    0, NULL, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_DECL_MARKING | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static struct enumerator *
@@ -311,7 +311,7 @@ static const rb_data_type_t proc_entry_data_type = {
         NULL, // Nothing allocated externally, so don't need a memsize function
         proc_entry_mark_and_move,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static struct proc_entry *
@@ -1323,7 +1323,7 @@ static const rb_data_type_t yielder_data_type = {
         NULL,
         yielder_mark_and_move,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static struct yielder *
@@ -1447,7 +1447,7 @@ static const rb_data_type_t generator_data_type = {
         NULL,
         generator_mark_and_move,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static struct generator *
@@ -2978,7 +2978,7 @@ static const rb_data_type_t producer_data_type = {
         producer_memsize,
         producer_mark_and_move,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static struct producer *
@@ -3196,7 +3196,7 @@ static const rb_data_type_t enum_chain_data_type = {
         enum_chain_memsize,
         enum_chain_mark_and_move,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static struct enum_chain *
@@ -3511,7 +3511,7 @@ static const rb_data_type_t enum_product_data_type = {
         enum_product_memsize,
         enum_product_mark_and_move,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static struct enum_product *
@@ -3849,7 +3849,7 @@ static const rb_data_type_t arith_seq_data_type = {
         NULL,
     },
     .parent = &enumerator_data_type,
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_DECL_MARKING | RUBY_TYPED_EMBEDDABLE
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_DECL_MARKING | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE

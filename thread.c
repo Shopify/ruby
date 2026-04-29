@@ -446,18 +446,26 @@ rb_threadptr_join_list_wakeup(rb_thread_t *thread)
     }
 }
 
+void mutexes_lock_lock(void);
+void mutexes_lock_unlock(void);
+
 void
 rb_threadptr_unlock_all_locking_mutexes(rb_thread_t *th)
 {
+    mutexes_lock_lock();
     while (th->keeping_mutexes) {
         rb_mutex_t *mutex = th->keeping_mutexes;
-        th->keeping_mutexes = mutex->next_mutex;
-
+        rb_mutex_t *next = mutex->next_mutex;
+        th->keeping_mutexes = next;
+        mutex->next_mutex = NULL;
+        mutexes_lock_unlock();
         // rb_warn("mutex #<%p> was not unlocked by thread #<%p>", (void *)mutex, (void*)th);
         VM_ASSERT(mutex->ec_serial);
-        const char *error_message = rb_mutex_unlock_th(mutex, th, 0);
+        const char *error_message = rb_mutex_unlock_th(mutex, th, 0, false);
         if (error_message) rb_bug("invalid keeping_mutexes: %s", error_message);
+        mutexes_lock_lock();
     }
+    mutexes_lock_unlock();
 }
 
 void
@@ -5011,6 +5019,9 @@ rb_thread_atfork_internal(rb_thread_t *th, void (*atfork)(rb_thread_t *, const r
     rb_thread_reset_timer_thread();
     rb_thread_start_timer_thread();
 
+    void mutexes_lock_reset(void);
+    mutexes_lock_reset(); // TODO: should be on thread
+
     VM_ASSERT(vm->ractor.blocking_cnt == 0);
     VM_ASSERT(vm->ractor.cnt == 1);
 }
@@ -5081,7 +5092,7 @@ static const rb_data_type_t thgroup_data_type = {
         RUBY_TYPED_DEFAULT_FREE,
         NULL, // No external memory to report
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 /*
@@ -5250,7 +5261,7 @@ thread_shield_mark(void *ptr)
 static const rb_data_type_t thread_shield_data_type = {
     "thread_shield",
     {thread_shield_mark, 0, 0,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE

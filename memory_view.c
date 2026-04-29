@@ -65,7 +65,7 @@ const rb_data_type_t rb_memory_view_exported_object_registry_data_type = {
         exported_object_registry_free,
         0,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static int
@@ -124,7 +124,7 @@ static const rb_data_type_t memory_view_entry_data_type = {
         0,
         0,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 /* Register memory view functions for the given class */

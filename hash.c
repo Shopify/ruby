@@ -6905,7 +6905,7 @@ static const rb_data_type_t env_data_type = {
         NULL,
         NULL,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE,
 };
 
 /*

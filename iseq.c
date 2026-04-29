@@ -1606,7 +1606,7 @@ static const rb_data_type_t iseqw_data_type = {
         iseqw_memsize,
         iseqw_mark_and_move,
     },
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED|RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE
@@ -2846,7 +2846,7 @@ iseq_inspect(const rb_iseq_t *iseq)
 static const rb_data_type_t tmp_set = {
     "tmpset",
     {(void (*)(void *))rb_mark_set, (void (*)(void *))st_free_table, 0, 0,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static VALUE
@@ -3324,7 +3324,7 @@ cdhash_each(VALUE key, VALUE value, VALUE ary)
 static const rb_data_type_t label_wrapper = {
     "label_wrapper",
     {(void (*)(void *))rb_mark_tbl, (void (*)(void *))st_free_table, 0, 0,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 #define DECL_ID(name) \

@@ -214,7 +214,7 @@ void rb_alias_variable(ID dst, ID src);
  * This just  destroys the given object.   @shyouhei has no idea  why extension
  * libraries should use this API.
  */
-void rb_free_generic_ivar(VALUE obj);
+bool rb_free_generic_ivar(VALUE obj);
 
 /**
  * Identical to rb_iv_get(), except it accepts the name as an ::ID instead of a

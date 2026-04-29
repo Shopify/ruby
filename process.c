@@ -597,7 +597,7 @@ static const rb_data_type_t rb_process_status_type = {
         .dfree = RUBY_DEFAULT_FREE,
         .dsize = NULL,
     },
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE,
 };
 
 static VALUE
@@ -1582,8 +1582,6 @@ before_fork_ruby(void)
 static void
 after_fork_ruby(rb_pid_t pid)
 {
-    rb_gc_after_fork(pid);
-
     if (pid == 0) {
         // child
         clear_pid_cache();
@@ -1593,6 +1591,8 @@ after_fork_ruby(rb_pid_t pid)
         // parent
         after_exec();
     }
+
+    rb_gc_after_fork(pid);
 }
 #endif
 
@@ -1740,7 +1740,7 @@ memsize_exec_arg(const void *ptr)
 static const rb_data_type_t exec_arg_data_type = {
     "exec_arg",
     {mark_exec_arg, RUBY_TYPED_DEFAULT_FREE, memsize_exec_arg},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_EMBEDDABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 #ifdef _WIN32
@@ -4131,7 +4131,7 @@ rb_fork_ruby(int *status)
     struct child_handler_disabler_state old;
 
     do {
-        prefork();
+        prefork(); // NOTE: can context switch
 
         before_fork_ruby();
         rb_thread_acquire_fork_lock();
