@@ -99,6 +99,10 @@
 # include <mach/mach_port.h>
 #endif
 
+#if defined(__x86_64__)
+#include <immintrin.h> // Required for _mm_pause
+#endif
+
 #ifndef VM_CHECK_MODE
 # define VM_CHECK_MODE RUBY_DEBUG
 #endif
@@ -122,7 +126,7 @@
 #else
 #define psweep_debug(...) (void)0
 #endif
-#define PSWEEP_LOCK_STATS 0
+#define PSWEEP_LOCK_STATS 1
 #define PSWEEP_COLLECT_TIMINGS 0
 
 #ifndef GC_HEAP_FREE_SLOTS
@@ -1194,7 +1198,8 @@ print_lock_stats(void)
 typedef struct sweep_step_contention {
     size_t step_count;
     size_t swept_pages_trylock_success;
-    size_t swept_pages_trylock_fail;
+    size_t swept_pages_trylock_fail1;
+    size_t swept_pages_trylock_fail2;
 } sweep_step_contention_t;
 
 /* [0] = first step (gc_sweep), [1] = continue step (gc_sweep_continue) */
@@ -1212,15 +1217,23 @@ print_sweep_step_contention(void)
             step_contention[0].step_count, step_contention[1].step_count);
     fprintf(stderr, "%-30s %15zu %15zu\n", "trylock_success",
             step_contention[0].swept_pages_trylock_success, step_contention[1].swept_pages_trylock_success);
-    fprintf(stderr, "%-30s %15zu %15zu\n", "trylock_fail",
-            step_contention[0].swept_pages_trylock_fail, step_contention[1].swept_pages_trylock_fail);
+    fprintf(stderr, "%-30s %15zu %15zu\n", "trylock_fail1",
+            step_contention[0].swept_pages_trylock_fail1, step_contention[1].swept_pages_trylock_fail1);
+    fprintf(stderr, "%-30s %15zu %15zu\n", "trylock_fail2",
+            step_contention[0].swept_pages_trylock_fail2, step_contention[1].swept_pages_trylock_fail2);
 
     {
-        size_t total0 = step_contention[0].swept_pages_trylock_success + step_contention[0].swept_pages_trylock_fail;
-        size_t total1 = step_contention[1].swept_pages_trylock_success + step_contention[1].swept_pages_trylock_fail;
-        fprintf(stderr, "%-30s %14.2f%% %14.2f%%\n", "trylock_fail_ratio",
-                total0 > 0 ? (double)step_contention[0].swept_pages_trylock_fail / total0 * 100.0 : 0,
-                total1 > 0 ? (double)step_contention[1].swept_pages_trylock_fail / total1 * 100.0 : 0);
+        size_t total0 = step_contention[0].swept_pages_trylock_success + step_contention[0].swept_pages_trylock_fail1;
+        size_t total1 = step_contention[1].swept_pages_trylock_success + step_contention[1].swept_pages_trylock_fail1;
+        fprintf(stderr, "%-30s %14.2f%% %14.2f%%\n", "trylock_fail1_ratio",
+                total0 > 0 ? (double)step_contention[0].swept_pages_trylock_fail1 / total0 * 100.0 : 0,
+                total1 > 0 ? (double)step_contention[1].swept_pages_trylock_fail1 / total1 * 100.0 : 0);
+
+        size_t fail1_0 = step_contention[0].swept_pages_trylock_fail1;
+        size_t fail1_1 = step_contention[1].swept_pages_trylock_fail1;
+        fprintf(stderr, "%-30s %14.2f%% %14.2f%%\n", "trylock_fail2_of_fail1",
+                fail1_0 > 0 ? (double)step_contention[0].swept_pages_trylock_fail2 / fail1_0 * 100.0 : 0,
+                fail1_1 > 0 ? (double)step_contention[1].swept_pages_trylock_fail2 / fail1_1 * 100.0 : 0);
     }
 
     fprintf(stderr, "=====================================================\n\n");
@@ -5072,6 +5085,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
 #endif
 }
 
+
 // Dequeue a page swept by the sweep thread. If `free_in_user_thread` is true, then
 // dequeue an unswept page to be swept by the Ruby thread. It can also dequeue an unswept
 // page if otherwise it would have to wait for the sweep thread. In that case, `dequeued_unswept_page`
@@ -5115,12 +5129,25 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
     }
     else {
 #if PSWEEP_LOCK_STATS > 0
-        step_contention[current_step_type].swept_pages_trylock_fail++;
+        step_contention[current_step_type].swept_pages_trylock_fail1++;
 #endif
         for (volatile int i = 0; i < 100; i++) {
+#if defined(__x86_64__)
+            _mm_pause();
+#elif defined(__ARM_ARCH) && (__ARM_ARCH >= 6)
+            asm volatile("yield");
+#endif
         }
-        rb_native_mutex_lock(&heap->swept_pages_lock);
-        goto swept_pages_lock_inner;
+        if (rb_native_mutex_trylock(&heap->swept_pages_lock) == 0) {
+            goto swept_pages_lock_inner;
+        }
+        else {
+#if PSWEEP_LOCK_STATS > 0
+            step_contention[current_step_type].swept_pages_trylock_fail2++;
+#endif
+            rb_native_mutex_lock(&heap->swept_pages_lock);
+            goto swept_pages_lock_inner;
+        }
     }
     if (page) return page;
 
