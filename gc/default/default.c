@@ -1296,7 +1296,7 @@ print_lock_stats(void)
 
     lock_stats_t *all_stats[] = {&sweep_lock_stats, &swept_pages_lock_stats};
 
-    for (int i = 0; i < 3; i++) {
+    for (size_t i = 0; i < sizeof(all_stats) / sizeof(all_stats[0]); i++) {
         lock_stats_t *stats = all_stats[i];
 
         /* Sort callsites by total contentions (descending) */
