@@ -7145,7 +7145,7 @@ gc_marks_finish(rb_objspace_t *objspace)
                 for (int i = 0; i < HEAP_COUNT; i++) {
                     total_heap_bytes += heaps[i].total_slots * heaps[i].slot_size;
                 }
-                size_t avg_slot_size = total_slots > 0 ? total_heap_bytes / total_slots : heaps[0].slot_size;
+                size_t avg_slot_size = total_slots > 0 ? total_heap_bytes / total_slots : (size_t)heaps[0].slot_size;
                 heap_allocatable_bytes_expand(objspace, NULL, sweep_slots, total_slots, avg_slot_size);
             }
         }
