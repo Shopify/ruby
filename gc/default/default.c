@@ -126,7 +126,7 @@
 #else
 #define psweep_debug(...) (void)0
 #endif
-#define PSWEEP_LOCK_STATS 1
+#define PSWEEP_LOCK_STATS 0
 #define PSWEEP_COLLECT_TIMINGS 0
 
 #ifndef GC_HEAP_FREE_SLOTS
@@ -4554,10 +4554,8 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     int total_slots = page->total_slots;
     psweep_debug(1, "[sweep] gc_pre_sweep_page(heap:%p page:%p) start\n", heap, page);
     GC_ASSERT(page->heap == heap);
-    page->pre_deferred_free_slots = 0;
-    memset(page->deferred_free_bits, 0, sizeof(page->deferred_free_bits));
-    page->pre_zombie_slots = 0;
-    page->pre_freed_malloc_bytes = 0;
+    GC_ASSERT(page->pre_deferred_free_slots == 0);
+    GC_ASSERT(page->pre_freed_malloc_bytes == 0);
     current_sweep_thread_page = page;
 
     int bitmap_plane_count = CEILDIV(total_slots, BITS_BITLENGTH);
@@ -4602,6 +4600,8 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
 #endif
 
 #if USE_MALLOC_INCREASE_LOCAL
+    // flush to sweep_page->pre_freed_malloc_bytes instead of malloc_increase because it's clamped at 0 right now and
+    // we don't want to decrease it too quickly
     malloc_increase_local_flush(objspace);
 #endif
     current_sweep_thread_page = NULL;
@@ -9958,13 +9958,7 @@ bad_malloc_during_gc_p(rb_objspace_t *objspace)
      * (since ractors can run while another thread is sweeping) and when we
      * have the GVL (since if we don't have the GVL, we'll try to acquire the
      * GVL which will block and ensure the other thread finishes GC). */
-    if (is_sweep_thread_p()) {
-        fprintf(stderr, "ERROR: bad malloc/calloc call family during GC in sweep thread!\n");
-        return true;
-    }
-    else {
-        return during_gc && !dont_gc_val() && !rb_gc_multi_ractor_p() && ruby_thread_has_gvl_p();
-    }
+    return during_gc && !dont_gc_val() && !rb_gc_multi_ractor_p() && ruby_thread_has_gvl_p();
 }
 
 static inline void *
