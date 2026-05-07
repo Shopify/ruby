@@ -4685,9 +4685,13 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         return;
     }
     else if (heap->skip_sweep_continue) {
-        psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - skip_continue (early return)\n", heap, heap - heaps);
-        heap->skip_sweep_continue = false;
-        return;
+        if (objspace->background_sweep_mode) {
+            heap->skip_sweep_continue = false;
+        } else {
+            psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - skip_continue (early return)\n", heap, heap - heaps);
+            heap->skip_sweep_continue = false;
+            return;
+        }
     }
     while (1) {
         struct heap_page *sweep_page = heap->sweeping_page;
@@ -5547,8 +5551,8 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
                     heap->pre_swept_slots_deferred = 0;
                 }
                 if (num_heaps_need_continue > 0) {
-                    objspace->sweep_thread_sweep_requested = true;
                     if (!objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested) {
+                        objspace->sweep_thread_sweep_requested = true;
                         psweep_debug(-2, "[gc] gc_sweep_continue: requesting sweep thread\n");
                     }
                     else {
