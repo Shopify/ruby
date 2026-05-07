@@ -4859,6 +4859,7 @@ gc_sweep_thread_func(void *ptr)
         }
 
         objspace->sweep_thread_sweep_requested = false;
+        objspace->background_sweep_restart_heaps = false;
         objspace->sweep_thread_sweeping = true;
 
     restart_heaps:
