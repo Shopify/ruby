@@ -15308,7 +15308,7 @@ mod hir_opt_tests {
             return;
         }
         eval("OBJ.test");
-        assert_snapshot!(hir_string_proc("TEST"), @"
+        assert_snapshot!(hir_string_proc("TEST"), @r"
         fn test@<compiled>:12:
         bb1():
           EntryPoint interpreter
@@ -15332,27 +15332,6 @@ mod hir_opt_tests {
           WriteBarrier v14, v17
           v34:CShape[0x1004] = Const CShape(0x1004)
           StoreField v14, :_shape_id@0x1000, v34
-          v42:HeapBasicObject = GuardType v6, HeapBasicObject
-          v43:CShape = LoadField v42, :_shape_id@0x1000
-          v44:CShape[0x1001] = GuardBitEquals v43, CShape(0x1001)
-          StoreField v42, :@a@0x1002, v10
-          WriteBarrier v42, v10
-          v14:HeapBasicObject = RefineType v6, HeapBasicObject
-          v17:Fixnum[2] = Const Value(2)
-          PatchPoint SingleRactorMode
-          StoreField v14, :@b@0x1003, v17
-          WriteBarrier v14, v17
-          v21:HeapBasicObject = RefineType v14, HeapBasicObject
-          v24:Fixnum[3] = Const Value(3)
-          PatchPoint SingleRactorMode
-          StoreField v21, :@c@0x1004, v24
-          WriteBarrier v21, v24
-          v61:CShape[0x1005] = Const CShape(0x1005)
-          StoreField v21, :_shape_id@0x1000, v61
-          v28:HeapBasicObject = RefineType v21, HeapBasicObject
-          v31:Fixnum[4] = Const Value(4)
-          PatchPoint SingleRactorMode
-          SetIvar v28, :@d, v31
           CheckInterrupts
           Return v17
         ");
@@ -15849,17 +15828,31 @@ mod hir_opt_tests {
           v13:CInt64 = LoadField v12, :_env_data_index_specval@0x1000
           v14:CInt64[3] = Const CInt64(3)
           v15:CInt64 = IntAnd v13, v14
-          v16:CInt64[3] = GuardBitEquals v15, CInt64(3)
-          v17:BasicObject = InvokeBlockIfunc v13, v10
-          v21:Fixnum[2] = Const Value(2)
-          v23:CPtr = GetEP 0
-          v24:CInt64 = LoadField v23, :_env_data_index_specval@0x1000
-          v25:CInt64[3] = Const CInt64(3)
-          v26:CInt64 = IntAnd v24, v25
-          v27:CInt64[3] = GuardBitEquals v26, CInt64(3)
-          v28:BasicObject = InvokeBlockIfunc v24, v21
+          v16:CInt64[3] = Const CInt64(3)
+          v17:CBool = IsBitEqual v15, v16
+          IfTrue v17, bb5()
+          v22:BasicObject = InvokeBlock, v10 # SendFallbackReason: InvokeBlock: not yet specialized
+          Jump bb4(v22)
+        bb5():
+          v20:BasicObject = InvokeBlockIfunc v13, v10
+          Jump bb4(v20)
+        bb4(v18:BasicObject):
+          v27:Fixnum[2] = Const Value(2)
+          v29:CPtr = GetEP 0
+          v30:CInt64 = LoadField v29, :_env_data_index_specval@0x1000
+          v31:CInt64[3] = Const CInt64(3)
+          v32:CInt64 = IntAnd v30, v31
+          v33:CInt64[3] = Const CInt64(3)
+          v34:CBool = IsBitEqual v32, v33
+          IfTrue v34, bb7()
+          v39:BasicObject = InvokeBlock, v27 # SendFallbackReason: InvokeBlock: not yet specialized
+          Jump bb6(v39)
+        bb7():
+          v37:BasicObject = InvokeBlockIfunc v30, v27
+          Jump bb6(v37)
+        bb6(v35:BasicObject):
           CheckInterrupts
-          Return v28
+          Return v35
         ");
     }
 
@@ -15930,6 +15923,7 @@ mod hir_opt_tests {
           v28:BasicObject = InvokeBlockIfunc v24, v21
           CheckInterrupts
           Return v28
+          PatchPoint SingleRactorMode
           v35:HeapBasicObject = GuardType v6, HeapBasicObject
           v36:CShape = LoadField v35, :_shape_id@0x1000
           v37:CShape[0x1001] = GuardBitEquals v36, CShape(0x1001)
@@ -16038,7 +16032,9 @@ mod hir_opt_tests {
           v38:Fixnum[5] = Const Value(5)
           StoreField v35, :@a@0x1003, v38
           WriteBarrier v35, v38
-    ");
+          CheckInterrupts
+          Return v38
+        ");
     }
 
     #[test]
