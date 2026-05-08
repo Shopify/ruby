@@ -300,9 +300,9 @@ static ID fiber_initialize_keywords[3] = {0};
 
 // We don't use the VM lock to protect the shared fiber pool because the sweep
 // thread needs to be able to free fibers and it can't take the VM lock.
-rb_nativethread_lock_t fiber_lock;
+static rb_nativethread_lock_t fiber_lock;
 #ifdef RUBY_THREAD_PTHREAD_H
-pthread_t fiber_pool_lock_owner;
+static pthread_t fiber_pool_lock_owner;
 #endif
 
 MAYBE_UNUSED(static inline bool
@@ -861,7 +861,7 @@ fiber_pool_stack_acquire_expand(struct fiber_pool *fiber_pool)
         count = fiber_pool_stack_expand_count(fiber_pool);
 
         // Try to expand the fiber pool again:
-        if (RB_LIKELY((vacancy = fiber_pool_expand_and_pop(fiber_pool, false, true, count)))) {
+        if (RB_LIKELY((vacancy = fiber_pool_expand_and_pop(fiber_pool, count, false, true)))) {
             return vacancy;
         }
         else {
