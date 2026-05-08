@@ -5110,7 +5110,7 @@ gc_sweep_start(rb_objspace_t *objspace)
 
     objspace->heaps_done_background_sweep = 0;
 
-    for (int i = HEAP_COUNT-1; i >= 0; i--) {
+    for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
         gc_sweep_start_heap(objspace, heap);
 
