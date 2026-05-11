@@ -4519,26 +4519,33 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 }
                 break;
               free: {
-                  debug_free_check(objspace, vp);
-                  if (RB_LIKELY(rb_gc_obj_free_concurrency_safe_vm_weak_references(vp))) {
-                      bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
-                      if (can_put_back_on_freelist) {
-                          heap_page_add_freeobj(objspace, page, vp, true);
-                          freed++;
-                          psweep_debug(2, "[sweep] freed: page(%p), obj(%p)\n", (void*)page, (void*)vp);
-                          (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
-                      }
-                      else {
-                          RUBY_ASSERT(BUILTIN_TYPE(vp) == T_ZOMBIE);
-                          psweep_debug(2, "[sweep] zombie: page(%p), obj(%p)\n", (void*)page, (void*)vp);
-                          finals++;
-                      }
-                  }
-                  else {
-                      GC_ASSERT(BUILTIN_TYPE(vp) != T_NONE);
-                      sweep_in_ruby_thread(objspace, page, vp);
-                  }
-                  break;
+                debug_free_check(objspace, vp);
+                if (!rb_gc_obj_needs_cleanup_p(vp)) {
+                    heap_page_add_freeobj(objspace, page, vp, true);
+                    (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
+                    freed++;
+                }
+                else {
+                    if (RB_LIKELY(rb_gc_obj_free_concurrency_safe_vm_weak_references(vp))) {
+                        bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
+                        if (can_put_back_on_freelist) {
+                            heap_page_add_freeobj(objspace, page, vp, true);
+                            freed++;
+                            psweep_debug(2, "[sweep] freed: page(%p), obj(%p)\n", (void*)page, (void*)vp);
+                            (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
+                        }
+                        else {
+                            RUBY_ASSERT(BUILTIN_TYPE(vp) == T_ZOMBIE);
+                            psweep_debug(2, "[sweep] zombie: page(%p), obj(%p)\n", (void*)page, (void*)vp);
+                            finals++;
+                        }
+                    }
+                    else {
+                        GC_ASSERT(BUILTIN_TYPE(vp) != T_NONE);
+                        sweep_in_ruby_thread(objspace, page, vp);
+                    }
+                }
+                break;
               }
               default:
                 rb_bug("unexpected type: %d\n", BUILTIN_TYPE(vp));
