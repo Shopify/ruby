@@ -4091,12 +4091,11 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 CHECK(RVALUE_UNCOLLECTIBLE);
 #undef CHECK
 #endif
+                if (RB_UNLIKELY(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
+                    rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
+                }
 
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
-                    if (RB_UNLIKELY(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
-                        rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
-                    }
-
                     gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
                     RVALUE_AGE_SET_BITMAP(vp, 0);
                     heap_page_add_freeobj(objspace, sweep_page, vp, false);
@@ -4105,9 +4104,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 }
                 else {
                     gc_report(2, objspace, "page_sweep: free %p\n", (void *)vp);
-
-                    rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
-
                     rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
                         gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
