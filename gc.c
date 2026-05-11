@@ -981,6 +981,18 @@ rb_objspace_free(void *objspace)
     rb_gc_impl_objspace_free(objspace);
 }
 
+void rb_gc_impl_parallel_sweep_start(void *objspace_ptr);
+
+void
+rb_gc_parallel_sweep_start(void)
+{
+#if USE_MODULAR_GC
+    /* Parallel sweep is a feature of the default GC only. */
+    if (rb_gc_modular_gc_loaded_p()) return;
+#endif
+    rb_gc_impl_parallel_sweep_start(rb_gc_get_objspace());
+}
+
 size_t
 rb_gc_obj_slot_size(VALUE obj)
 {
