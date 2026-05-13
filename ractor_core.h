@@ -166,8 +166,13 @@ bool rb_thread_ractor_isolation_check_p(void);
 /* Report a Ractor isolation violation:
  *   - if Ractor.check_isolation is active on the current thread, emit a
  *     :ractor_isolation category warning and return;
- *   - otherwise, raise Ractor::IsolationError (does not return). */
+ *   - otherwise, raise Ractor::IsolationError (does not return).
+ *
+ * Use the printf-style overload for ad-hoc messages and the _str overload
+ * when the message is already constructed (e.g. via several rb_str_catf
+ * calls). */
 PRINTF_ARGS(void rb_ractor_isolation_violation(const char *fmt, ...), 1, 2);
+void rb_ractor_isolation_violation_str(VALUE message);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 void rb_ractor_finish_marking(void);

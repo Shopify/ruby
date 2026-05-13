@@ -1463,7 +1463,7 @@ env_copy(const VALUE *src_ep, VALUE read_only_variables)
                         VALUE name = rb_id2str(id);
                         VALUE msg = rb_sprintf("cannot make a shareable Proc because "
                                                "the outer variable '%" PRIsVALUE "' may be reassigned.", name);
-                        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, msg));
+                        rb_ractor_isolation_violation_str(msg);
                     }
 
                     // check shareable
@@ -1476,7 +1476,7 @@ env_copy(const VALUE *src_ep, VALUE read_only_variables)
                             rb_str_catf(msg, "variable '%" PRIsVALUE "'", name);
                         else
                             rb_str_cat_cstr(msg, "a hidden variable");
-                        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, msg));
+                        rb_ractor_isolation_violation_str(msg);
                     }
                     RB_OBJ_WRITE((VALUE)copied_env, &env_body[j], v);
                     rb_ary_delete_at(read_only_variables, i);
@@ -1534,10 +1534,10 @@ proc_shared_outer_variables(struct rb_id_table *outer_variables, bool isolate, c
         }
         if (*sep == ',') rb_str_cat_cstr(str, ")");
         rb_str_cat_cstr(str, data.yield ? " and uses 'yield'." : ".");
-        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, str));
+        rb_ractor_isolation_violation_str(str);
     }
     else if (data.yield) {
-        rb_raise(rb_eRactorIsolationError, "can not %s because it uses 'yield'.", message);
+        rb_ractor_isolation_violation("can not %s because it uses 'yield'.", message);
     }
 
     return data.read_only;
@@ -1594,7 +1594,7 @@ rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
         if (proc->block.type != block_type_iseq) rb_raise(rb_eRuntimeError, "not supported yet");
 
         if (!rb_ractor_shareable_p(vm_block_self(&proc->block))) {
-            rb_raise(rb_eRactorIsolationError,
+            rb_ractor_isolation_violation(
                      "Proc's self is not shareable: %" PRIsVALUE,
                      self);
         }
@@ -1615,7 +1615,7 @@ rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
 
         VALUE proc_self = vm_block_self(block);
         if (!rb_ractor_shareable_p(proc_self)) {
-            rb_raise(rb_eRactorIsolationError,
+            rb_ractor_isolation_violation(
                      "Proc's self is not shareable: %" PRIsVALUE,
                      self);
         }

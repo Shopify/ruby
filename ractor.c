@@ -1568,9 +1568,10 @@ VALUE
 rb_ractor_ensure_shareable(VALUE obj, VALUE name)
 {
     if (!rb_ractor_shareable_p(obj)) {
-        VALUE message = rb_sprintf("cannot assign unshareable object to %"PRIsVALUE,
-                                   name);
-        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+        rb_ractor_isolation_violation("cannot assign unshareable object to %"PRIsVALUE, name);
+        // In check_isolation mode the violation only warned: return obj as-is
+        // so the caller can keep going. The caller's invariant ("this is now
+        // shareable") will be wrong, which is exactly the bug we want surfaced.
     }
     return obj;
 }
@@ -1578,8 +1579,8 @@ rb_ractor_ensure_shareable(VALUE obj, VALUE name)
 void
 rb_ractor_ensure_main_ractor(const char *msg)
 {
-    if (!rb_ractor_main_p()) {
-        rb_raise(rb_eRactorIsolationError, "%s", msg);
+    if (rb_ractor_isolation_check_active()) {
+        rb_ractor_isolation_violation("%s", msg);
     }
 }
 
@@ -2430,12 +2431,12 @@ static VALUE
 ractor_shareable_proc(rb_execution_context_t *ec, VALUE replace_self, bool is_lambda)
 {
     if (!rb_ractor_shareable_p(replace_self)) {
-        rb_raise(rb_eRactorIsolationError, "self should be shareable: %" PRIsVALUE, replace_self);
+        // In check_isolation mode this only warns; fall through and try to
+        // make the proc shareable anyway so the sweep can keep going.
+        rb_ractor_isolation_violation("self should be shareable: %" PRIsVALUE, replace_self);
     }
-    else {
-        VALUE proc = is_lambda ? rb_block_lambda() : rb_block_proc();
-        return rb_proc_ractor_make_shareable(rb_proc_dup(proc), replace_self);
-    }
+    VALUE proc = is_lambda ? rb_block_lambda() : rb_block_proc();
+    return rb_proc_ractor_make_shareable(rb_proc_dup(proc), replace_self);
 }
 
 // Ractor#require
@@ -2673,6 +2674,17 @@ rb_thread_ractor_isolation_check_p(void)
 }
 
 void
+rb_ractor_isolation_violation_str(VALUE message)
+{
+    if (rb_thread_ractor_isolation_check_p()) {
+        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, "%s", StringValueCStr(message));
+        return;
+    }
+
+    rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+}
+
+void
 rb_ractor_isolation_violation(const char *fmt, ...)
 {
     va_list args;
@@ -2680,12 +2692,7 @@ rb_ractor_isolation_violation(const char *fmt, ...)
     VALUE message = rb_vsprintf(fmt, args);
     va_end(args);
 
-    if (rb_thread_ractor_isolation_check_p()) {
-        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, "%s", StringValueCStr(message));
-        return;
-    }
-
-    rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+    rb_ractor_isolation_violation_str(message);
 }
 
 static VALUE
