@@ -81,6 +81,7 @@
 #define T_TRUE     RUBY_T_TRUE     /**< @old{RUBY_T_TRUE} */
 #define T_UNDEF    RUBY_T_UNDEF    /**< @old{RUBY_T_UNDEF} */
 #define T_ZOMBIE   RUBY_T_ZOMBIE   /**< @old{RUBY_T_ZOMBIE} */
+#define T_LAST     RUBY_T_MOVED
 
 #define BUILTIN_TYPE      RB_BUILTIN_TYPE   /**< @old{RB_BUILTIN_TYPE} */
 #define DYNAMIC_SYM_P     RB_DYNAMIC_SYM_P  /**< @old{RB_DYNAMIC_SYM_P} */
