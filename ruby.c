@@ -2412,10 +2412,12 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     ruby_mn_threads_params();
 
     extern int ruby_parallel_sweep_enabled;
+#if USE_PARALLEL_SWEEP
     if (FEATURE_SET_P(opt->features, parallel_sweep)) {
         ruby_parallel_sweep_enabled = 1;
         rb_gc_parallel_sweep_start();
     }
+#endif
 
     Init_ruby_description(opt);
 
