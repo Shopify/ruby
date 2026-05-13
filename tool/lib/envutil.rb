@@ -301,7 +301,7 @@ module EnvUtil
 
   def current_parallel_sweep?
     features = RUBY_DESCRIPTION[%r{\)\K [-+*/%._0-9a-zA-Z\[\] ]*(?=\[[-+*/%._0-9a-zA-Z]+\]\z)}]
-    features&.split&.include?("+parallel-sweep")
+    features&.split&.include?("+Parallel-Sweep")
   end
   module_function :current_parallel_sweep?
 
