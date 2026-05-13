@@ -914,7 +914,6 @@ struct heap_page {
 
     struct heap_page *free_next;
     struct heap_page_body *body;
-    struct free_slot *deferred_freelist;
     struct ccan_list_node page_node;
 
     bits_t wb_unprotected_bits[HEAP_PAGE_BITMAP_LIMIT];
@@ -947,18 +946,6 @@ static void
 asan_unlock_freelist(struct heap_page *page)
 {
     asan_unpoison_memory_region(&page->freelist, sizeof(struct free_list *), false);
-}
-
-static void
-asan_lock_deferred_freelist(struct heap_page *page)
-{
-    asan_poison_memory_region(&page->deferred_freelist, sizeof(struct free_list *));
-}
-
-static void
-asan_unlock_deferred_freelist(struct heap_page *page)
-{
-    asan_unpoison_memory_region(&page->deferred_freelist, sizeof(struct free_list *), false);
 }
 
 static inline bool
@@ -2099,7 +2086,7 @@ static void mark_stack_free_cache(mark_stack_t *);
 static void heap_page_free(rb_objspace_t *objspace, struct heap_page *page, bool log);
 
 static inline void
-heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
+heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj, bool from_sweep_thread)
 {
     rb_asan_unpoison_object(obj, false);
 
@@ -2111,8 +2098,10 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
     page->freelist = slot;
     asan_lock_freelist(page);
 
-    // Should have already been reset
-    GC_ASSERT(RVALUE_AGE_GET(obj) == 0);
+    if (!from_sweep_thread) {
+        // Should have already been reset
+        GC_ASSERT(RVALUE_AGE_GET(obj) == 0);
+    }
 
     if (RGENGC_CHECK_MODE &&
         /* obj should belong to page */
@@ -2124,22 +2113,6 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
 
     rb_asan_poison_object(obj);
     gc_report(3, objspace, "heap_page_add_freeobj: add %p to freelist\n", (void *)obj);
-}
-
-static inline void
-heap_page_add_deferred_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
-{
-    rb_asan_unpoison_object(obj, false);
-
-    struct free_slot *slot = (struct free_slot *)obj;
-    slot->flags = 0;
-    asan_unlock_deferred_freelist(page);
-    slot->next = page->deferred_freelist;
-    page->deferred_freelist = slot;
-    asan_lock_deferred_freelist(page);
-
-    rb_asan_poison_object(obj);
-    gc_report(3, objspace, "heap_page_add_deferred_freeobj: add %p to deferred_freelist\n", (void *)obj);
 }
 
 static void
@@ -2504,17 +2477,14 @@ heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page, 
     memset(&page->age_bits[0], 0, sizeof(page->age_bits));
 
     asan_unlock_freelist(page);
-    asan_unlock_deferred_freelist(page);
     page->freelist = NULL;
-    page->deferred_freelist = NULL;
     asan_unpoison_memory_region(page->body, HEAP_PAGE_SIZE, false);
     int i = 0;
     for (VALUE p = (VALUE)start; p < start + (slot_count * heap->slot_size); p += heap->slot_size) {
         i++;
-        heap_page_add_freeobj(objspace, page, p);
+        heap_page_add_freeobj(objspace, page, p, false);
     }
     GC_ASSERT(i == slot_count);
-    asan_lock_deferred_freelist(page);
     asan_lock_freelist(page);
 
     page->free_slots = slot_count;
@@ -4091,7 +4061,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 }
                 gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
                 ctx->empty_slots++;
-                heap_page_add_freeobj(objspace, sweep_page, vp);
+                heap_page_add_freeobj(objspace, sweep_page, vp, false);
                 break;
               case T_ZOMBIE:
                 if (ZOMBIE_NEEDS_FREE_P(vp)) {
@@ -4132,7 +4102,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
                     gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
                     RVALUE_AGE_SET_BITMAP(vp, 0);
-                    heap_page_add_freeobj(objspace, sweep_page, vp);
+                    heap_page_add_freeobj(objspace, sweep_page, vp, false);
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, slot_size);
                     ctx->freed_slots++;
                 }
@@ -4143,7 +4113,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     if (rb_gc_obj_free(objspace, vp)) {
                         gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
                         RVALUE_AGE_SET_BITMAP(vp, 0);
-                        heap_page_add_freeobj(objspace, sweep_page, vp);
+                        heap_page_add_freeobj(objspace, sweep_page, vp, false);
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, slot_size);
                         ctx->freed_slots++;
                     }
@@ -4219,7 +4189,7 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
         struct heap_page *page = GET_HEAP_PAGE(obj);
         psweep_debug(1, "[gc] deferred free: page(%p) obj(%p) %s (success)\n", page, (void*)obj, obj_info);
         RVALUE_AGE_SET_BITMAP(obj, 0);
-        heap_page_add_freeobj(objspace, page, obj);
+        heap_page_add_freeobj(objspace, page, obj, false);
         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)obj, page->slot_size);
         result = true;
     }
@@ -4455,7 +4425,7 @@ heap_page_freelist_append(struct heap_page *page, struct free_slot *freelist)
     }
 }
 
-static void
+static inline void
 sweep_in_ruby_thread(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
 {
     page->pre_deferred_free_slots += 1;
@@ -4507,7 +4477,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
             switch (BUILTIN_TYPE(vp)) {
               case T_MOVED: {
                 empties++;
-                heap_page_add_deferred_freeobj(objspace, page, vp);
+                heap_page_add_freeobj(objspace, page, vp, true);
                 (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
                 break;
               }
@@ -4561,9 +4531,9 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     case imemo_throw_data:
                     case imemo_tmpbuf:
                     case imemo_fields:
-                    case imemo_iseq:
                         goto free;
                     case imemo_callinfo:
+                    case imemo_iseq: // calls rb_yjit_iseq_free which is not concurrency safe
                     case imemo_ment:
                         // blacklisted due to vm weak references
                         sweep_in_ruby_thread(objspace, page, vp);
@@ -4594,7 +4564,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               case T_ICLASS:
                 debug_free_check(objspace, vp);
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
-                    heap_page_add_deferred_freeobj(objspace, page, vp);
+                    heap_page_add_freeobj(objspace, page, vp, true);
                     psweep_debug(2, "[sweep] freed: page(%p), obj(%p)\n", (void*)page, (void*)vp);
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
                     freed++;
@@ -4608,7 +4578,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                   if (RB_LIKELY(rb_gc_obj_free_whitelisted_vm_weak_references_in_sweep_thread(vp))) {
                       bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
                       if (can_put_back_on_freelist) {
-                          heap_page_add_deferred_freeobj(objspace, page, vp);
+                          heap_page_add_freeobj(objspace, page, vp, true);
                           freed++;
                           psweep_debug(2, "[sweep] freed: page(%p), obj(%p)\n", (void*)page, (void*)vp);
                           (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
@@ -4768,18 +4738,6 @@ clear_pre_sweep_fields(struct heap_page *page)
     page->pre_final_slots = 0;
     page->pre_zombie_slots = 0;
     page->pre_freed_malloc_bytes = 0;
-}
-
-// add beginning of b to end of a
-static void
-merge_freelists(struct free_slot *a, struct free_slot *b)
-{
-    if (a && b) {
-        while (a->next) {
-            a = a->next;
-        }
-        a->next = b;
-    }
 }
 
 // Perform incremental (lazy) sweep on a heap by the background sweep thread.
@@ -5484,32 +5442,12 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         if (free_in_user_thread_p) {
             GC_ASSERT(sweep_page->free_slots == free_slots); // gc_sweep_page() sets sweep_page->free slots
             GC_ASSERT(sweep_page->heap->total_freed_objects >= (unsigned long)ctx.freed_slots);
-            GC_ASSERT(!sweep_page->deferred_freelist);
         } else {
             sweep_page->free_slots = free_slots;
             // NOTE: sweep_page->final slots have already been updated by make_zombie
             GC_ASSERT(sweep_page->free_slots <= sweep_page->total_slots);
             GC_ASSERT(sweep_page->final_slots <= sweep_page->total_slots);
             sweep_page->heap->total_freed_objects += ctx.freed_slots;
-            // merge freelists
-            asan_unlock_freelist(sweep_page);
-            asan_unlock_deferred_freelist(sweep_page);
-            struct free_slot *deferred_freelist = sweep_page->deferred_freelist;
-            psweep_debug(1, "[gc] gc_sweep_step: deferred freelist size:%d, free slots:%d\n", freelist_size(deferred_freelist), free_slots);
-            if (deferred_freelist) {
-                struct free_slot *cur_list = sweep_page->freelist;
-                psweep_debug(1, "[gc] gc_sweep_step: sweep_page->freelist size:%d\n", freelist_size(cur_list));
-                if (cur_list) {
-                    merge_freelists(deferred_freelist, cur_list);
-                }
-                sweep_page->freelist = deferred_freelist;
-                sweep_page->deferred_freelist = NULL;
-            }
-            else {
-                GC_ASSERT(sweep_page->pre_freed_slots == 0);
-            }
-            asan_lock_deferred_freelist(sweep_page);
-            asan_lock_freelist(sweep_page);
 
             if (sweep_page->pre_freed_malloc_bytes > 0) {
                 atomic_sub_nounderflow(&malloc_increase, sweep_page->pre_freed_malloc_bytes);
@@ -5775,7 +5713,7 @@ invalidate_moved_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_
                     struct heap_page *orig_page = GET_HEAP_PAGE(object);
                     orig_page->free_slots++;
                     RVALUE_AGE_SET_BITMAP(object, 0);
-                    heap_page_add_freeobj(objspace, orig_page, object);
+                    heap_page_add_freeobj(objspace, orig_page, object, false);
 
                     GC_ASSERT(RVALUE_MARKED(objspace, forwarding_object));
                     GC_ASSERT(BUILTIN_TYPE(forwarding_object) != T_MOVED);
