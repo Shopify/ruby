@@ -1656,17 +1656,26 @@ rb_ractor_make_shareable(VALUE obj)
     VALUE chain = Qnil;
     VALUE exception = Qfalse;
     if (rb_obj_traverse(obj, make_shareable_check_shareable, null_leave, mark_shareable, &chain, &exception)) {
-        if (exception) {
+        if (!exception) {
+            exception = rb_exc_new3(rb_eRactorError, rb_sprintf("can not make shareable object for %+"PRIsVALUE, obj));
+        }
+        // In Ractor.check_isolation mode downgrade to a :ractor_isolation
+        // warning (with the chain inlined) so the sweep can keep going.
+        // Outside that mode, attach the chain to @reference_chain and raise
+        // exactly as before.
+        if (rb_thread_ractor_isolation_check_p()) {
+            VALUE message = rb_obj_as_string(rb_funcall(exception, rb_intern("message"), 0));
+            if (!NIL_P(chain)) {
+                rb_str_append(message, chain);
+            }
+            rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, "%s", StringValueCStr(message));
+        }
+        else {
             if (!NIL_P(chain)) {
                 rb_ivar_set(exception, id_reference_chain, chain);
             }
             rb_exc_raise(exception);
         }
-        exception = rb_exc_new3(rb_eRactorError, rb_sprintf("can not make shareable object for %+"PRIsVALUE, obj));
-        if (!NIL_P(chain)) {
-            rb_ivar_set(exception, id_reference_chain, chain);
-        }
-        rb_exc_raise(exception);
     }
     RB_GC_GUARD(chain);
     RB_GC_GUARD(exception);
