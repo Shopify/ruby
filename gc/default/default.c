@@ -5255,6 +5255,8 @@ is_last_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 static int
 gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 {
+    size_t sweep_budget = GC_INCREMENTAL_SWEEP_BYTES / heap->slot_size;
+    size_t pool_budget = GC_INCREMENTAL_SWEEP_POOL_BYTES / heap->slot_size;
     size_t swept_slots = 0;
     size_t pooled_slots = 0;
 
