@@ -610,7 +610,6 @@ start_search:
             RB_VM_LOCKING();
             goto retry;
           default:
-            // what about if hash is marked reclaimed but key is not cleared yet
             if (curr_hash != hash) {
                 goto probe_next;
             }
@@ -622,12 +621,12 @@ start_search:
                     goto probe_next;
                 }
                 {
-                    VALUE prev = rbimpl_atomic_value_cas(&entry->key, curr_key, CONCURRENT_SET_EMPTY, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_RELAXED);
-                    if (prev == curr_key) {
+                    VALUE prev = rbimpl_atomic_value_cas(&entry->key, raw_key, CONCURRENT_SET_EMPTY, RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_RELAXED);
+                    if (prev == raw_key) {
                         rbimpl_atomic_sub(&set->size, 1, RBIMPL_ATOMIC_RELAXED);
                     }
                 }
-                continue;
+                continue; // try to reclaim same slot, because the hash is the same and it's now EMPTY
             }
 
             if (set->funcs->cmp(key, curr_key)) {
