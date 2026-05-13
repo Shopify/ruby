@@ -1609,8 +1609,6 @@ total_final_slots_count(rb_objspace_t *objspace)
 #define GC_INCREMENTAL_SWEEP_BYTES           (2048 * RVALUE_SLOT_SIZE)
 #define GC_INCREMENTAL_SWEEP_POOL_BYTES      (1024 * RVALUE_SLOT_SIZE)
 // TODO get rid of next 2 defines
-#define GC_INCREMENTAL_SWEEP_SLOT_COUNT 2048
-#define GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT 1024
 #define is_lazy_sweeping(objspace)           ((objspace)->during_lazy_sweeping != FALSE)
 /* In lazy sweeping or the previous incremental marking finished and did not yield a free page. */
 #define needs_continue_sweeping(objspace, heap) \
@@ -5802,8 +5800,10 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
                 else {
                     for (int i = 0; i < HEAP_COUNT; i++) {
                         rb_heap_t *heap = &heaps[i];
+                        size_t sweep_budget = GC_INCREMENTAL_SWEEP_BYTES / heap->slot_size;
+                        size_t pool_budget = GC_INCREMENTAL_SWEEP_POOL_BYTES / heap->slot_size;
                         heap->background_sweep_steps = heap->foreground_sweep_steps;
-                        if (heap->pre_swept_slots_deferred >= (GC_INCREMENTAL_SWEEP_SLOT_COUNT + GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT)) {
+                        if (heap->pre_swept_slots_deferred >= (sweep_budget + pool_budget)) {
                             heap->skip_sweep_continue = true;
                         }
                         else {
