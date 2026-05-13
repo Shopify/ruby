@@ -598,8 +598,8 @@ rb_find_global_entry(ID id)
         }
     }
 
-    if (UNLIKELY(!rb_ractor_main_p()) && (!entry || !entry->ractor_local)) {
-        rb_raise(rb_eRactorIsolationError, "can not access global variable %s from non-main Ractor", rb_id2name(id));
+    if (UNLIKELY(rb_ractor_isolation_check_active()) && (!entry || !entry->ractor_local)) {
+        rb_ractor_isolation_violation("can not access global variable %s from non-main Ractor", rb_id2name(id));
     }
 
     return entry;
@@ -1135,8 +1135,8 @@ rb_f_global_variables(void)
     VALUE ary = rb_ary_new();
     VALUE sym, backref = rb_backref_get();
 
-    if (!rb_ractor_main_p()) {
-        rb_raise(rb_eRactorIsolationError, "can not access global variables from non-main Ractors");
+    if (rb_ractor_isolation_check_active()) {
+        rb_ractor_isolation_violation("can not access global variables from non-main Ractors");
     }
     /* gvar access (get/set) in boxes creates gvar entries globally */
 
@@ -1169,8 +1169,8 @@ rb_alias_variable(ID name1, ID name2)
     VALUE data1;
     struct rb_id_table *gtbl = rb_global_tbl;
 
-    if (!rb_ractor_main_p()) {
-        rb_raise(rb_eRactorIsolationError, "can not access global variables from non-main Ractors");
+    if (rb_ractor_isolation_check_active()) {
+        rb_ractor_isolation_violation("can not access global variables from non-main Ractors");
     }
 
     RB_VM_LOCKING() {
@@ -1201,9 +1201,9 @@ rb_alias_variable(ID name1, ID name2)
 static void
 IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(ID id)
 {
-    if (UNLIKELY(!rb_ractor_main_p())) {
+    if (UNLIKELY(rb_ractor_isolation_check_active())) {
         if (rb_is_instance_id(id)) { // check only normal ivars
-            rb_raise(rb_eRactorIsolationError, "can not set instance variables of classes/modules by non-main Ractors");
+            rb_ractor_isolation_violation("can not set instance variables of classes/modules by non-main Ractors");
         }
     }
 }
@@ -1211,8 +1211,8 @@ IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(ID id)
 static void
 CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(VALUE klass, ID id)
 {
-    if (UNLIKELY(!rb_ractor_main_p())) {
-        rb_raise(rb_eRactorIsolationError, "can not access class variables from non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")", rb_id2str(id), klass);
+    if (UNLIKELY(rb_ractor_isolation_check_active())) {
+        rb_ractor_isolation_violation("can not access class variables from non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")", rb_id2str(id), klass);
     }
 }
 
@@ -1221,10 +1221,10 @@ ivar_ractor_check(VALUE obj, ID id)
 {
     if (LIKELY(rb_is_instance_id(id)) /* not internal ID */ &&
         !RB_OBJ_FROZEN_RAW(obj) &&
-        UNLIKELY(!rb_ractor_main_p()) &&
+        UNLIKELY(rb_ractor_isolation_check_active()) &&
         UNLIKELY(rb_ractor_shareable_p(obj))) {
 
-        rb_raise(rb_eRactorIsolationError, "can not access instance variables of shareable objects from non-main Ractors");
+        rb_ractor_isolation_violation("can not access instance variables of shareable objects from non-main Ractors");
     }
 }
 
@@ -1457,9 +1457,9 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
             VALUE val = rb_ivar_lookup(RCLASS_WRITABLE_FIELDS_OBJ(obj), id, undef);
             if (val != undef &&
                     rb_is_instance_id(id) &&
-                    UNLIKELY(!rb_ractor_main_p()) &&
+                    UNLIKELY(rb_ractor_isolation_check_active()) &&
                     !rb_ractor_shareable_p(val)) {
-                rb_raise(rb_eRactorIsolationError,
+                rb_ractor_isolation_violation(
                         "can not get unshareable values from instance variables of classes/modules from non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")",
                         rb_id2str(id), obj);
             }
@@ -1524,8 +1524,8 @@ rb_ivar_get_at(VALUE obj, attr_index_t index, ID id)
             VALUE fields_obj = RCLASS_WRITABLE_FIELDS_OBJ(obj);
             VALUE val = rb_imemo_fields_ptr(fields_obj)[index];
 
-            if (UNLIKELY(!rb_ractor_main_p()) && !rb_ractor_shareable_p(val)) {
-                rb_raise(rb_eRactorIsolationError,
+            if (UNLIKELY(rb_ractor_isolation_check_active()) && !rb_ractor_shareable_p(val)) {
+                rb_ractor_isolation_violation(
                         "can not get unshareable values from instance variables of classes/modules from non-main Ractors");
             }
 
@@ -3368,9 +3368,9 @@ rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
     VALUE found_in;
     VALUE c = rb_const_search(klass, id, exclude, recurse, visibility, &found_in);
     if (!UNDEF_P(c)) {
-        if (UNLIKELY(!rb_ractor_main_p())) {
+        if (UNLIKELY(rb_ractor_isolation_check_active())) {
             if (!rb_ractor_shareable_p(c)) {
-                rb_raise(rb_eRactorIsolationError, "can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" by non-main Ractor.", rb_class_path(found_in), rb_id2str(id));
+                rb_ractor_isolation_violation("can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" by non-main Ractor.", rb_class_path(found_in), rb_id2str(id));
             }
         }
         return c;
@@ -3878,8 +3878,8 @@ const_set(VALUE klass, ID id, VALUE val)
                  QUOTE_ID(id));
     }
 
-    if (!rb_ractor_main_p() && !rb_ractor_shareable_p(val)) {
-        rb_raise(rb_eRactorIsolationError, "can not set constants with non-shareable objects by non-main Ractors");
+    if (rb_ractor_isolation_check_active() && !rb_ractor_shareable_p(val)) {
+        rb_ractor_isolation_violation("can not set constants with non-shareable objects by non-main Ractors");
     }
 
     check_before_mod_set(klass, id, val, "constant");

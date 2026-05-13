@@ -87,6 +87,7 @@ static ID id_deprecated;
 static ID id_experimental;
 static ID id_performance;
 static ID id_strict_unused_block;
+static ID id_ractor_isolation;
 static VALUE sym_category;
 static VALUE sym_highlight;
 static struct {
@@ -222,6 +223,10 @@ rb_warning_category_enabled_p(rb_warning_category_t category)
  * +:performance+ ::
  *   performance hints
  *   * Shape variation limit
+ *
+ * +:ractor_isolation+ ::
+ *   Ractor isolation violations reported by Ractor.check_isolation
+ *   (downgraded from Ractor::IsolationError exceptions to warnings).
  */
 
 static VALUE
@@ -3751,6 +3756,7 @@ Init_Exception(void)
     id_experimental = rb_intern_const("experimental");
     id_performance = rb_intern_const("performance");
     id_strict_unused_block = rb_intern_const("strict_unused_block");
+    id_ractor_isolation = rb_intern_const("ractor_isolation");
     id_top = rb_intern_const("top");
     id_bottom = rb_intern_const("bottom");
     id_iseq = rb_make_internal_id();
@@ -3764,6 +3770,7 @@ Init_Exception(void)
     st_add_direct(warning_categories.id2enum, id_experimental, RB_WARN_CATEGORY_EXPERIMENTAL);
     st_add_direct(warning_categories.id2enum, id_performance, RB_WARN_CATEGORY_PERFORMANCE);
     st_add_direct(warning_categories.id2enum, id_strict_unused_block, RB_WARN_CATEGORY_STRICT_UNUSED_BLOCK);
+    st_add_direct(warning_categories.id2enum, id_ractor_isolation, RB_WARN_CATEGORY_RACTOR_ISOLATION);
 
     warning_categories.enum2id = rb_init_identtable();
     st_add_direct(warning_categories.enum2id, RB_WARN_CATEGORY_NONE, 0);
@@ -3771,6 +3778,7 @@ Init_Exception(void)
     st_add_direct(warning_categories.enum2id, RB_WARN_CATEGORY_EXPERIMENTAL, id_experimental);
     st_add_direct(warning_categories.enum2id, RB_WARN_CATEGORY_PERFORMANCE, id_performance);
     st_add_direct(warning_categories.enum2id, RB_WARN_CATEGORY_STRICT_UNUSED_BLOCK, id_strict_unused_block);
+    st_add_direct(warning_categories.enum2id, RB_WARN_CATEGORY_RACTOR_ISOLATION, id_ractor_isolation);
 }
 
 void

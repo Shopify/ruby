@@ -529,6 +529,42 @@ class Ractor
     }
   end
 
+  # call-seq:
+  #   Ractor.check_isolation { ... } -> result of block
+  #
+  # Run the given block with Ractor isolation checks enabled on the current
+  # thread. While the block is running, every access that would be illegal
+  # from a non-main Ractor (instance variables and class variables of
+  # classes/modules, constants holding non-shareable objects, global
+  # variables, etc.) is reported as a +:ractor_isolation+ category warning
+  # instead of raising +Ractor::IsolationError+. This lets you sweep a
+  # codebase for Ractor-unsafe access in a single run, without having to
+  # restructure it into actual Ractors first.
+  #
+  # As a side effect, the VM is switched into multi-ractor mode the first
+  # time +check_isolation+ is called. Multi-ractor mode cannot be turned
+  # off again, so the VM keeps that overhead for the rest of the process.
+  #
+  # The check is per-thread. Threads spawned while the block is running
+  # inherit the mode at the moment they are created, so the violations
+  # they trigger are also reported as warnings rather than raised. Nested
+  # calls correctly restore the previous state.
+  #
+  # Suppress the warnings with +Warning[:ractor_isolation] = false+ or
+  # +-W:no-ractor_isolation+.
+  #
+  #   Ractor.check_isolation do
+  #     SomeClass.some_unshareable_constant   # => warning, not exception
+  #   end
+  def self.check_isolation(&block)
+    Primitive.ractor_check_isolation
+  end
+
+  # Returns true when Ractor.check_isolation is active on the current thread.
+  def self.check_isolation?
+    Primitive.ractor_check_isolation_p
+  end
+
   # internal method
   def self._require feature # :nodoc:
     if main?

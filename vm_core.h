@@ -1157,6 +1157,10 @@ typedef struct rb_thread_struct {
     unsigned int abort_on_exception: 1;
     unsigned int report_on_exception: 1;
     unsigned int pending_interrupt_queue_checked: 1;
+    /* When set, Ractor isolation checks are forced on for this thread and
+     * any violation is downgraded from a raised Ractor::IsolationError to a
+     * :ractor_isolation category warning. Toggled by Ractor.check_isolation. */
+    unsigned int ractor_isolation_check: 1;
     int8_t priority; /* -3 .. 3 (RUBY_THREAD_PRIORITY_{MIN,MAX}) */
     uint32_t running_time_us; /* 12500..800000 */
 

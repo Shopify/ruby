@@ -2618,4 +2618,88 @@ rb_ractor_autoload_load(VALUE module, ID name)
     }
 }
 
+// =============================================================================
+// Ractor.check_isolation { ... }
+//
+// A development/debugging mode: while the block runs on the current thread,
+// every Ractor isolation check that would normally be performed by a non-main
+// Ractor is forced on. Violations are downgraded from Ractor::IsolationError
+// to :ractor_isolation category warnings so the program can keep running and
+// you get to see ALL the violations on a single run rather than crashing on
+// the first one.
+//
+// As a side effect (matches Ractor semantics), the VM is switched into
+// multi-ractor mode the first time check_isolation is enabled. Multi-ractor
+// mode cannot be turned off again, so the VM keeps paying that overhead for
+// the rest of the process lifetime.
+// =============================================================================
+
+bool
+rb_thread_ractor_isolation_check_p(void)
+{
+    rb_execution_context_t *ec = rb_current_ec_noinline();
+    if (!ec) return false;
+    rb_thread_t *th = rb_ec_thread_ptr(ec);
+    return th && th->ractor_isolation_check;
+}
+
+void
+rb_ractor_isolation_violation(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    VALUE message = rb_vsprintf(fmt, args);
+    va_end(args);
+
+    if (rb_thread_ractor_isolation_check_p()) {
+        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, "%s", StringValueCStr(message));
+        return;
+    }
+
+    rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+}
+
+static VALUE
+ractor_check_isolation_ensure(VALUE prev_state)
+{
+    rb_thread_t *th = GET_THREAD();
+    th->ractor_isolation_check = (unsigned int)(RTEST(prev_state) ? 1 : 0);
+    return Qnil;
+}
+
+static VALUE
+ractor_check_isolation_body(VALUE _)
+{
+    return rb_yield_values2(0, NULL);
+}
+
+static VALUE
+ractor_check_isolation(rb_execution_context_t *ec, VALUE self)
+{
+    if (!rb_block_given_p()) {
+        rb_raise(rb_eArgError, "Ractor.check_isolation requires a block");
+    }
+
+    rb_thread_t *th = rb_ec_thread_ptr(ec);
+    VALUE prev = th->ractor_isolation_check ? Qtrue : Qfalse;
+
+    // Switch the VM into multi-ractor mode so every fast path that branches
+    // on `ruby_single_main_ractor` takes the slow / shared path. This makes
+    // the simulation faithful even though we're still on the main Ractor.
+    // Mirrors what vm_insert_ractor() does when a second Ractor is created.
+    if (ruby_single_main_ractor != NULL) {
+        cancel_single_ractor_mode();
+    }
+
+    th->ractor_isolation_check = 1;
+    return rb_ensure(ractor_check_isolation_body, Qnil,
+                     ractor_check_isolation_ensure, prev);
+}
+
+static VALUE
+ractor_check_isolation_p(rb_execution_context_t *ec, VALUE self)
+{
+    return rb_thread_ractor_isolation_check_p() ? Qtrue : Qfalse;
+}
+
 #include "ractor.rbinc"
