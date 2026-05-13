@@ -882,6 +882,11 @@ thread_create_core(VALUE thval, struct thread_create_params *params)
     th->priority = current_th->priority;
     th->thgroup = current_th->thgroup;
 
+    /* Inherit Ractor.check_isolation mode so threads spawned inside the block
+     * also see the violations as :ractor_isolation warnings rather than
+     * raising at the first access. */
+    th->ractor_isolation_check = current_th->ractor_isolation_check;
+
     th->pending_interrupt_queue = rb_ary_hidden_new(0);
     th->pending_interrupt_queue_checked = 0;
     th->pending_interrupt_mask_stack = rb_ary_dup(current_th->pending_interrupt_mask_stack);

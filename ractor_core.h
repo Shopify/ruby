@@ -160,6 +160,15 @@ VALUE rb_ractor_autoload_load(VALUE space, ID id);
 VALUE rb_ractor_ensure_shareable(VALUE obj, VALUE name);
 st_table *rb_ractor_targeted_hooks(rb_ractor_t *cr);
 
+/* True if the current thread has Ractor.check_isolation enabled. */
+bool rb_thread_ractor_isolation_check_p(void);
+
+/* Report a Ractor isolation violation:
+ *   - if Ractor.check_isolation is active on the current thread, emit a
+ *     :ractor_isolation category warning and return;
+ *   - otherwise, raise Ractor::IsolationError (does not return). */
+PRINTF_ARGS(void rb_ractor_isolation_violation(const char *fmt, ...), 1, 2);
+
 RUBY_SYMBOL_EXPORT_BEGIN
 void rb_ractor_finish_marking(void);
 
@@ -180,6 +189,14 @@ rb_ractor_main_p(void)
     else {
         return rb_ractor_main_p_();
     }
+}
+
+/* True if the current thread is subject to Ractor isolation rules
+ * (either it's actually a non-main Ractor, or it has check-isolation enabled). */
+static inline bool
+rb_ractor_isolation_check_active(void)
+{
+    return !rb_ractor_main_p() || rb_thread_ractor_isolation_check_p();
 }
 
 static inline bool
