@@ -1267,13 +1267,16 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
       case T_CLASS:
       case T_MODULE:
         {
-            if (UNLIKELY(!rb_ractor_main_p())) {
+            if (UNLIKELY(rb_ractor_isolation_check_active())) {
                 // For two reasons we can only use the fast path on the main
                 // ractor.
                 // First, only the main ractor is allowed to set ivars on classes
                 // and modules. So we can skip locking.
                 // Second, other ractors need to check the shareability of the
                 // values returned from the class ivars.
+                //
+                // Ractor.check_isolation also routes here so the isolation
+                // checks in the general path get a chance to fire.
 
                 if (default_value == Qundef) { // defined?
                     return rb_ivar_defined(obj, id) ? Qtrue : Qundef;
@@ -1466,7 +1469,9 @@ NOINLINE(static VALUE vm_setivar_class(VALUE obj, ID id, VALUE val, shape_id_t d
 static VALUE
 vm_setivar_class(VALUE obj, ID id, VALUE val, shape_id_t dest_shape_id, attr_index_t index)
 {
-    if (UNLIKELY(!rb_ractor_main_p())) {
+    if (UNLIKELY(rb_ractor_isolation_check_active())) {
+        // Bail out of the inline cache fast path so the slow path can run
+        // the isolation check (also fires under Ractor.check_isolation).
         return Qundef;
     }
 
@@ -1633,7 +1638,7 @@ vm_getclassvariable(const rb_iseq_t *iseq, const rb_control_frame_t *reg_cfp, ID
     const rb_cref_t *cref;
     cref = vm_get_cref(GET_EP());
 
-    if (ic->entry && ic->entry->global_cvar_state == GET_GLOBAL_CVAR_STATE() && ic->entry->cref == cref && LIKELY(rb_ractor_main_p())) {
+    if (ic->entry && ic->entry->global_cvar_state == GET_GLOBAL_CVAR_STATE() && ic->entry->cref == cref && LIKELY(!rb_ractor_isolation_check_active())) {
         RB_DEBUG_COUNTER_INC(cvar_read_inline_hit);
 
         VALUE v = rb_ivar_lookup(ic->entry->class_value, id, Qundef);
@@ -1659,7 +1664,7 @@ vm_setclassvariable(const rb_iseq_t *iseq, const rb_control_frame_t *reg_cfp, ID
     const rb_cref_t *cref;
     cref = vm_get_cref(GET_EP());
 
-    if (ic->entry && ic->entry->global_cvar_state == GET_GLOBAL_CVAR_STATE() && ic->entry->cref == cref && LIKELY(rb_ractor_main_p())) {
+    if (ic->entry && ic->entry->global_cvar_state == GET_GLOBAL_CVAR_STATE() && ic->entry->cref == cref && LIKELY(!rb_ractor_isolation_check_active())) {
         RB_DEBUG_COUNTER_INC(cvar_write_inline_hit);
 
         rb_class_ivar_set(ic->entry->class_value, id, val);
@@ -6541,7 +6546,7 @@ vm_ic_track_const_chain(rb_control_frame_t *cfp, IC ic, const ID *segments)
 static inline bool
 vm_inlined_ic_hit_p(VALUE flags, VALUE value, const rb_cref_t *ic_cref, const VALUE *reg_ep)
 {
-    if ((flags & IMEMO_CONST_CACHE_SHAREABLE) || rb_ractor_main_p()) {
+    if ((flags & IMEMO_CONST_CACHE_SHAREABLE) || !rb_ractor_isolation_check_active()) {
         VM_ASSERT(ractor_incidental_shareable_p(flags & IMEMO_CONST_CACHE_SHAREABLE, value));
 
         return (ic_cref == NULL || // no need to check CREF
