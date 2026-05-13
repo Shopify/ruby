@@ -3552,9 +3552,21 @@ vm_call_iseq_setup_tailcall(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 static void
 ractor_unsafe_check(void)
 {
-    if (!rb_ractor_main_p()) {
-        rb_raise(rb_eRactorUnsafeError, "ractor unsafe method called from not main ractor");
+    if (LIKELY(!rb_ractor_isolation_check_active())) return;
+
+    if (rb_thread_ractor_isolation_check_p()) {
+        // Ractor.check_isolation: downgrade to a :ractor_isolation warning so
+        // the sweep can keep going. We deliberately route through the same
+        // category as the IsolationError downgrades because from the caller's
+        // point of view both mean "this code would not work in a Ractor".
+        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
+                         "ractor unsafe method called from not main ractor");
+        return;
     }
+
+    // Real non-main Ractor: preserve the existing UnsafeError behaviour so
+    // user code that rescues Ractor::UnsafeError specifically keeps working.
+    rb_raise(rb_eRactorUnsafeError, "ractor unsafe method called from not main ractor");
 }
 
 static VALUE
