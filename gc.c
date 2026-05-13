@@ -993,6 +993,7 @@ rb_objspace_free(void *objspace)
 
 void rb_gc_impl_parallel_sweep_start(void *objspace_ptr);
 
+#if USE_PARALLEL_SWEEP
 void
 rb_gc_parallel_sweep_start(void)
 {
@@ -1002,6 +1003,7 @@ rb_gc_parallel_sweep_start(void)
 #endif
     rb_gc_impl_parallel_sweep_start(rb_gc_get_objspace());
 }
+#endif
 
 size_t
 rb_gc_obj_slot_size(VALUE obj)
@@ -2500,7 +2502,7 @@ rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
     ASSUME(!RB_SPECIAL_CONST_P(obj));
     bool result = obj_free_object_id(obj, false);
 
-    if (RB_UNLIKELY(rb_obj_gen_fields_p(obj))) {
+    if (rb_obj_gen_fields_p(obj)) {
         bool freed_generic = rb_free_generic_ivar(obj);
         if (!freed_generic) result = false;
     }
@@ -2519,14 +2521,14 @@ rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
     return result;
 }
 
-bool
+void
 rb_gc_obj_free_vm_weak_references(VALUE obj)
 {
     ASSUME(!RB_SPECIAL_CONST_P(obj));
 
     obj_free_object_id(obj, true);
 
-    if (RB_UNLIKELY(rb_obj_gen_fields_p(obj))) {
+    if (rb_obj_gen_fields_p(obj)) {
         rb_free_generic_ivar(obj);
     }
 
@@ -2554,7 +2556,6 @@ rb_gc_obj_free_vm_weak_references(VALUE obj)
       default:
         break;
     }
-    return true;
 }
 
 /*
@@ -4453,7 +4454,7 @@ vm_weak_table_frozen_strings_foreach(VALUE *str, void *data)
     }
 
     if (retval == ST_DELETE) {
-        FL_UNSET(*str, RSTRING_FSTR);
+        FL_UNSET_RAW(*str, RSTRING_FSTR);
     }
 
     return retval;
