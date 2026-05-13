@@ -2664,6 +2664,8 @@ rb_ractor_autoload_load(VALUE module, ID name)
 // the rest of the process lifetime.
 // =============================================================================
 
+bool ruby_ractor_isolation_check_enabled = false;
+
 bool
 rb_thread_ractor_isolation_check_p(void)
 {
@@ -2722,13 +2724,16 @@ ractor_check_isolation(rb_execution_context_t *ec, VALUE self)
     // Switch the VM into multi-ractor mode so every fast path that branches
     // on `ruby_single_main_ractor` takes the slow / shared path. This makes
     // the simulation faithful even though we're still on the main Ractor,
-    // and -- importantly -- it disables the LIKELY short-circuit in
-    // rb_ractor_isolation_check_active() so the per-thread flag below
-    // actually starts being consulted. One-way: never reset (matches the
-    // existing Ractor.new transition).
+    // and disables the FIRST short-circuit in rb_ractor_isolation_check_active().
+    // One-way (matches the existing Ractor.new transition).
     if (ruby_single_main_ractor != NULL) {
         cancel_single_ractor_mode();
     }
+
+    // Disable the SECOND short-circuit so isolation gates start consulting
+    // the per-thread flag below. Programs which only use Ractor.new (case 2)
+    // never flip this and don't pay the per-thread function call.
+    ruby_ractor_isolation_check_enabled = true;
 
     th->ractor_isolation_check = 1;
     return rb_ensure(ractor_check_isolation_body, Qnil,

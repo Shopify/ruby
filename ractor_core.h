@@ -160,10 +160,16 @@ VALUE rb_ractor_autoload_load(VALUE space, ID id);
 VALUE rb_ractor_ensure_shareable(VALUE obj, VALUE name);
 st_table *rb_ractor_targeted_hooks(rb_ractor_t *cr);
 
+/* Set to true the first time any thread enters Ractor.check_isolation,
+ * never reset. Used as a second-stage precheck so that programs which
+ * use real Ractors (Ractor.new) but never use Ractor.check_isolation
+ * do not pay an extra per-thread function call at every isolation
+ * gate site -- they just pay one extra LIKELY-false byte load. */
+RUBY_EXTERN bool ruby_ractor_isolation_check_enabled;
+
 /* True if the current thread has Ractor.check_isolation enabled.
  * Hot-path callers should NOT call this directly; go through
- * rb_ractor_isolation_check_active() which short-circuits on
- * ruby_single_main_ractor first. */
+ * rb_ractor_isolation_check_active(). */
 bool rb_thread_ractor_isolation_check_p(void);
 
 /* Report a Ractor isolation violation:
@@ -202,13 +208,22 @@ rb_ractor_main_p(void)
 /* True if the current thread is subject to Ractor isolation rules
  * (either it's actually a non-main Ractor, or it has check-isolation enabled).
  *
- * Hot path: in any program that has never called Ractor.new or
- * Ractor.check_isolation, ruby_single_main_ractor is non-NULL and we return
- * false after a single global pointer load -- byte-identical to what
- * `!rb_ractor_main_p()` (the pre-feature check) would compile to. Both
- * Ractor.new and Ractor.check_isolation null out ruby_single_main_ractor via
- * cancel_single_ractor_mode(); only after that does the per-thread
- * check_isolation flag get consulted, so the slow path is opt-in.
+ * The two LIKELY short-circuits are picked so that the only programs which
+ * pay any added cost are the ones actively exercising the new feature:
+ *
+ *   1. Programs that have never called Ractor.new AND never called
+ *      Ractor.check_isolation: ruby_single_main_ractor is non-NULL, this
+ *      returns false after a single global pointer load -- byte-identical
+ *      cost to the pre-feature `!rb_ractor_main_p()` check.
+ *
+ *   2. Programs that DO use Ractor.new but never call Ractor.check_isolation:
+ *      ruby_single_main_ractor is NULL, but ruby_ractor_isolation_check_enabled
+ *      is also still false. We do exactly the same `!rb_ractor_main_p()`
+ *      check the original code did, plus one extra LIKELY-false byte load
+ *      to skip the per-thread lookup.
+ *
+ *   3. Programs that have used Ractor.check_isolation: full per-thread
+ *      check (function call). This is the opt-in cost.
  *
  * We do NOT lie inside rb_ractor_main_p() itself because many unrelated
  * callers (per-Ractor stdout/stderr/stdin routing, constant cache decisions,
@@ -216,15 +231,18 @@ rb_ractor_main_p(void)
 static inline bool
 rb_ractor_isolation_check_active(void)
 {
-    // Fast path: single-ractor mode. Neither Ractor.new nor
-    // Ractor.check_isolation has been called in this process. Identical cost
-    // to the pre-feature `!rb_ractor_main_p()` check.
+    // Case 1: single-ractor mode. No Ractor.new and no Ractor.check_isolation
+    // has been called. Same cost as the pre-feature check.
     if (LIKELY(ruby_single_main_ractor != NULL)) {
         return false;
     }
-    // Multi-ractor mode (real Ractors and/or Ractor.check_isolation has been
-    // used). Pay the proper check.
-    return !rb_ractor_main_p() || rb_thread_ractor_isolation_check_p();
+    // Multi-ractor mode. Real non-main Ractor threads must violate.
+    if (!rb_ractor_main_p()) return true;
+    // Case 2: main-Ractor thread in multi-ractor mode without the feature
+    // ever being used. Skip the per-thread lookup.
+    if (LIKELY(!ruby_ractor_isolation_check_enabled)) return false;
+    // Case 3: feature has been used. Consult the per-thread flag.
+    return rb_thread_ractor_isolation_check_p();
 }
 
 static inline bool
