@@ -146,7 +146,10 @@ VALUE rb_ractor_autoload_load(VALUE space, ID id);
 VALUE rb_ractor_ensure_shareable(VALUE obj, VALUE name);
 st_table *rb_ractor_targeted_hooks(rb_ractor_t *cr);
 
-/* True if the current thread has Ractor.check_isolation enabled. */
+/* True if the current thread has Ractor.check_isolation enabled.
+ * Hot-path callers should NOT call this directly; go through
+ * rb_ractor_isolation_check_active() which short-circuits on
+ * ruby_single_main_ractor first. */
 bool rb_thread_ractor_isolation_check_p(void);
 
 /* Report a Ractor isolation violation:
@@ -183,10 +186,30 @@ rb_ractor_main_p(void)
 }
 
 /* True if the current thread is subject to Ractor isolation rules
- * (either it's actually a non-main Ractor, or it has check-isolation enabled). */
+ * (either it's actually a non-main Ractor, or it has check-isolation enabled).
+ *
+ * Hot path: in any program that has never called Ractor.new or
+ * Ractor.check_isolation, ruby_single_main_ractor is non-NULL and we return
+ * false after a single global pointer load -- byte-identical to what
+ * `!rb_ractor_main_p()` (the pre-feature check) would compile to. Both
+ * Ractor.new and Ractor.check_isolation null out ruby_single_main_ractor via
+ * cancel_single_ractor_mode(); only after that does the per-thread
+ * check_isolation flag get consulted, so the slow path is opt-in.
+ *
+ * We do NOT lie inside rb_ractor_main_p() itself because many unrelated
+ * callers (per-Ractor stdout/stderr/stdin routing, constant cache decisions,
+ * require, etc.) depend on its real meaning. */
 static inline bool
 rb_ractor_isolation_check_active(void)
 {
+    // Fast path: single-ractor mode. Neither Ractor.new nor
+    // Ractor.check_isolation has been called in this process. Identical cost
+    // to the pre-feature `!rb_ractor_main_p()` check.
+    if (LIKELY(ruby_single_main_ractor != NULL)) {
+        return false;
+    }
+    // Multi-ractor mode (real Ractors and/or Ractor.check_isolation has been
+    // used). Pay the proper check.
     return !rb_ractor_main_p() || rb_thread_ractor_isolation_check_p();
 }
 
