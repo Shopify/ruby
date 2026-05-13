@@ -1368,7 +1368,6 @@ rb_gc_imemo_needs_cleanup_p(VALUE obj)
       case imemo_ment:
       case imemo_iseq:
       case imemo_callinfo:
-      case imemo_subclasses:
         return true;
 
       case imemo_subclasses:
@@ -1379,6 +1378,8 @@ rb_gc_imemo_needs_cleanup_p(VALUE obj)
 
       case imemo_fields:
         return FL_TEST_RAW(obj, OBJ_FIELD_HEAP) || (id2ref_tbl && rb_obj_shape_has_id(obj));
+      case imemo_subclasses:
+        return FL_TEST_RAW(obj, IMEMO_SUBCLASSES_HEAP);
     }
     UNREACHABLE_RETURN(true);
 }

@@ -4545,6 +4545,8 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     case imemo_throw_data:
                     case imemo_tmpbuf:
                     case imemo_fields:
+                    case imemo_cvar_entry:
+                    case imemo_subclasses:
                         goto free;
                     case imemo_callinfo:
                     case imemo_iseq: // calls rb_yjit_iseq_free which is not concurrency safe
@@ -4569,24 +4571,12 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               case T_STRUCT:
               case T_MATCH:
               case T_REGEXP:
-              case T_FILE: {
-                debug_free_check(objspace, vp);
-                goto free;
-              }
+              case T_FILE:
               case T_CLASS:
               case T_MODULE:
-              case T_ICLASS:
-                debug_free_check(objspace, vp);
-                if (!rb_gc_obj_needs_cleanup_p(vp)) {
-                    heap_page_add_freeobj(objspace, page, vp, true);
-                    psweep_debug(2, "[sweep] freed: page(%p), obj(%p)\n", (void*)page, (void*)vp);
-                    (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
-                    freed++;
-                }
-                else {
-                    sweep_in_ruby_thread(objspace, page, vp);
-                }
-                break;
+              case T_ICLASS: {
+                goto free;
+              }
               free: {
                 debug_free_check(objspace, vp);
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
