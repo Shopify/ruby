@@ -135,7 +135,7 @@ static const rb_data_type_t cc_table_type = {
         .dcompact = vm_cc_table_compact,
     },
     .parent = &rb_managed_id_table_type,
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_CONCURRENT_FREE_SAFE,
 };
 
 VALUE

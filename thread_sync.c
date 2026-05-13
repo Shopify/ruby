@@ -168,7 +168,7 @@ mutex_memsize(const void *ptr)
 static const rb_data_type_t mutex_data_type = {
     "mutex",
     {NULL, mutex_free, mutex_memsize,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static rb_mutex_t *
@@ -789,7 +789,7 @@ static const rb_data_type_t queue_data_type = {
         .dsize = queue_memsize,
         .dcompact = queue_mark_and_move,
     },
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE,
 };
 
 static VALUE
@@ -895,7 +895,7 @@ static const rb_data_type_t szqueue_data_type = {
         .dcompact = szqueue_mark_and_move,
     },
     .parent = &queue_data_type,
-    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_CONCURRENT_FREE_SAFE,
 };
 
 static VALUE
@@ -1235,7 +1235,7 @@ condvar_memsize(const void *ptr)
 static const rb_data_type_t cv_data_type = {
     "condvar",
     {0, RUBY_TYPED_DEFAULT_FREE, condvar_memsize,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED|RUBY_TYPED_CONCURRENT_FREE_SAFE
 };
 
 static struct rb_condvar *
