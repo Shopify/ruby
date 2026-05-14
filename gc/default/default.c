@@ -120,14 +120,20 @@
 #define GC_HEAP_INIT_BYTES (2560 * 1024)
 #endif
 
+#ifndef PSWEEP_DEBUG
 #define PSWEEP_DEBUG 0
+#endif
 #if PSWEEP_DEBUG
 #define psweep_debug(lvl, ...) if (lvl <= PSWEEP_DEBUG) fprintf(stderr, __VA_ARGS__)
 #else
 #define psweep_debug(...) (void)0
 #endif
+#ifndef PSWEEP_LOCK_STATS
 #define PSWEEP_LOCK_STATS 0
+#endif
+#ifndef PSWEEP_COLLECT_TIMINGS
 #define PSWEEP_COLLECT_TIMINGS 0
+#endif
 
 #ifndef GC_HEAP_FREE_SLOTS
 #define GC_HEAP_FREE_SLOTS  4096
@@ -525,9 +531,11 @@ typedef struct rb_heap_struct {
     struct heap_page *free_pages;
     struct ccan_list_head pages;
     struct heap_page *sweeping_page; /* iterator for .pages. It always points to the next page to sweep. */
+#if USE_PARALLEL_SWEEP
     struct heap_page *pre_sweeping_page; /* Background thread is currently sweeping this page */
     struct heap_page *swept_pages; /* pages claimed and swept by background thread */
     struct heap_page *latest_swept_page; // tail of `swept_pages`
+#endif
     struct heap_page *compact_cursor;
     uintptr_t compact_cursor_index;
     struct heap_page *pooled_pages;
@@ -537,6 +545,7 @@ typedef struct rb_heap_struct {
     rb_atomic_t made_zombies;
 #endif
 
+#if USE_PARALLEL_SWEEP
     rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
     rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
     rb_nativethread_cond_t sweep_page_cond; // associated with global sweep lock
@@ -546,6 +555,7 @@ typedef struct rb_heap_struct {
     bool done_background_sweep;
     bool skip_sweep_continue; // skip current sweep continue
     bool dequeued_last_page;
+#endif
 } rb_heap_t;
 
 enum {
@@ -613,6 +623,7 @@ typedef struct rb_objspace {
     size_t empty_pages_count;
     struct heap_page *empty_pages;
 
+#if USE_PARALLEL_SWEEP
     rb_nativethread_lock_t sweep_lock;
     rb_nativethread_cond_t sweep_cond;
     pthread_t sweep_thread;
@@ -625,8 +636,10 @@ typedef struct rb_objspace {
     bool background_sweep_mode;
     bool background_sweep_abort;
     bool background_sweep_restart_heaps;
-    bool sweep_rest;
     unsigned int heaps_done_background_sweep;
+#endif
+
+    bool sweep_rest;
 
     struct {
         rb_atomic_t finalizing;
@@ -716,14 +729,14 @@ typedef struct rb_objspace {
         size_t weak_references_count;
     } profile;
 
+#if USE_PARALLEL_SWEEP
     /* Cumulative sweep counters that persist across GC cycles (never reset) */
     struct {
         size_t pages_swept_by_sweep_thread;
         size_t pages_swept_by_sweep_thread_had_deferred_free_objects;
         size_t pages_swept_by_ruby_thread;
-        size_t mutator_sweep_wait_count;
-        size_t mutator_sweep_wait_ns;
     } sweep_stats;
+#endif
 
     VALUE gc_stress_mode;
 
@@ -910,12 +923,14 @@ struct heap_page {
     unsigned short free_slots;
     unsigned short final_slots;
     unsigned short pinned_slots;
+#if USE_PARALLEL_SWEEP
     unsigned short pre_freed_slots;
     unsigned short pre_empty_slots;
     unsigned short pre_deferred_free_slots;
     unsigned short pre_final_slots;
     unsigned short pre_zombie_slots;
     size_t pre_freed_malloc_bytes;
+#endif
     struct {
         unsigned int has_remembered_objects : 1;
         unsigned int has_uncollectible_wb_unprotected_objects : 1;
@@ -939,7 +954,9 @@ struct heap_page {
     /* If set, the object is not movable */
     bits_t pinned_bits[HEAP_PAGE_BITMAP_LIMIT];
     bits_t age_bits[HEAP_PAGE_BITMAP_LIMIT * RVALUE_AGE_BIT_COUNT];
+#if USE_PARALLEL_SWEEP
     bits_t deferred_free_bits[HEAP_PAGE_BITMAP_LIMIT];
+#endif
 };
 
 /*
@@ -1123,7 +1140,7 @@ gc_mode_verify(enum gc_mode mode)
     return mode;
 }
 
-#if PSWEEP_LOCK_STATS > 0
+#if USE_PARALLEL_SWEEP && PSWEEP_LOCK_STATS > 0
 /* Lock contention statistics per callsite */
 #define MAX_LOCK_CALLSITES 100
 
@@ -1142,7 +1159,6 @@ typedef struct lock_stats {
 
 static lock_stats_t sweep_lock_stats = {"objspace->sweep_lock", {{0}}, 0};
 static lock_stats_t swept_pages_lock_stats = {"heap->swept_pages_lock", {{0}}, 0};
-
 
 static lock_callsite_stats_t*
 find_or_create_callsite(lock_stats_t *stats, const char *function, int line)
@@ -1282,6 +1298,8 @@ print_sweep_step_contention(void)
 }
 #endif /* PSWEEP_LOCK_STATS > 0 (sweep step contention) */
 
+
+#if USE_PARALLEL_SWEEP
 static pthread_t sweep_lock_owner = 0;
 
 static inline void
@@ -1335,6 +1353,10 @@ sweep_lock_set_unlocked(rb_objspace_t *objspace)
     sweep_lock_owner = 0;
 #endif
 }
+#else
+#define sweep_lock_lock(objspace) (void)0
+#define sweep_lock_unlock(objspace) (void)0
+#endif // USE_PARALLEL_SWEEP
 
 // Returns true when the background sweep thread and Ruby thread have finished processing
 // (background sweeping + ruby thread post-processing or deferred freeing) all pages for that heap.
@@ -1371,20 +1393,7 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
         sweep_lock_set_unlocked(objspace);
         // We need to wait because this is the final page for this heap, and the caller calls us
         // like `while (!heap_is_sweep_done(heap)) { gc_sweep_step(heap) }` (we don't want to spin).
-        struct timespec wait_start;
-        if (clock_gettime(CLOCK_MONOTONIC, &wait_start) != 0) {
-            wait_start.tv_sec = 0;
-            wait_start.tv_nsec = 0;
-        }
         rb_native_cond_wait(&heap->sweep_page_cond, &objspace->sweep_lock);
-        struct timespec wait_end;
-        if ((wait_start.tv_sec || wait_start.tv_nsec) &&
-                clock_gettime(CLOCK_MONOTONIC, &wait_end) == 0) {
-            objspace->sweep_stats.mutator_sweep_wait_ns +=
-                (size_t)(wait_end.tv_sec - wait_start.tv_sec) * 1000000000ULL +
-                (wait_end.tv_nsec - wait_start.tv_nsec);
-        }
-        objspace->sweep_stats.mutator_sweep_wait_count++;
         sweep_lock_set_locked(objspace);
         GC_ASSERT(heap->swept_pages);
         done = false;
@@ -1395,30 +1404,34 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
     sweep_lock_unlock(objspace);
     return done;
 #else
-    return heap->sweeping_page == NULL;
+    return !heap->sweeping_page;
 #endif
 }
 
+#if USE_PARALLEL_SWEEP
 // Does the GC still have pages to sweep? If returns false, then the Ruby thread has fully
 // processed all the pages in every heap.
 static bool
 has_sweeping_pages(rb_objspace_t *objspace)
 {
     rb_heap_t *heap_not_finished = NULL;
+    if (objspace->sweeping_heap_count > 1) return true;
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
         if (!heap->is_finished_sweeping) {
-            if (heap_not_finished) {
-                return true;
-            }
-            else {
-                heap_not_finished = heap;
-            }
+            heap_not_finished = heap;
+            break;
         }
     }
-    if (!heap_not_finished) return false; // all done
     return !heap_is_sweep_done(objspace, heap_not_finished);
 }
+#else
+static bool
+has_sweeping_pages(rb_objspace_t *objspace)
+{
+    return objspace->sweeping_heap_count > 0;
+}
+#endif // USE_PARALLEL_SWEEP
 
 static inline size_t
 heap_eden_total_pages(rb_objspace_t *objspace)
@@ -1484,7 +1497,6 @@ total_final_slots_count(rb_objspace_t *objspace)
  */
 #define GC_INCREMENTAL_SWEEP_BYTES           (2048 * RVALUE_SLOT_SIZE)
 #define GC_INCREMENTAL_SWEEP_POOL_BYTES      (1024 * RVALUE_SLOT_SIZE)
-// TODO get rid of next 2 defines
 #define is_lazy_sweeping(objspace)           ((objspace)->during_lazy_sweeping != FALSE)
 /* In lazy sweeping or the previous incremental marking finished and did not yield a free page. */
 #define needs_continue_sweeping(objspace, heap) \
@@ -2048,6 +2060,7 @@ rb_gc_impl_get_measure_total_time(void *objspace_ptr)
 #define ZOMBIE_NEEDS_FREE_P(zombie) (FL_TEST(zombie, ZOMBIE_NEEDS_FREE_FLAG))
 #define ZOMBIE_SET_NEEDS_FREE_FLAG(zombie) (FL_SET(zombie, ZOMBIE_NEEDS_FREE_FLAG))
 
+#if USE_PARALLEL_SWEEP
 /* garbage objects will be collected soon. */
 bool
 rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
@@ -2100,6 +2113,40 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
         return BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || (BUILTIN_TYPE(ptr) == T_ZOMBIE && ZOMBIE_NEEDS_FREE_P(ptr));
     }
 }
+#else
+/* garbage objects will be collected soon. */
+bool
+rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
+{
+    rb_objspace_t *objspace = objspace_ptr;
+
+    bool dead = false;
+
+    // It's not safe to read flags on an object if the sweep thread is running
+    asan_unpoisoning_object(ptr) {
+        switch (BUILTIN_TYPE(ptr)) {
+        case T_NONE:
+        case T_MOVED:
+            dead = true;
+            break;
+        case T_ZOMBIE:
+            dead = ZOMBIE_NEEDS_FREE_P(ptr);
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (dead) return true;
+
+    struct heap_page *page = GET_HEAP_PAGE(ptr);
+    bool during_lazy_sweep = is_lazy_sweeping(objspace);
+
+    // The ruby GC thread or a user thread called us
+    bool marked = RVALUE_MARKED(objspace, ptr);
+    return during_lazy_sweep && !marked && page->before_sweep;
+}
+#endif
 
 struct rb_gc_vm_context *
 rb_gc_impl_get_vm_context(void *objspace_ptr)
@@ -2606,13 +2653,16 @@ gc_continue(rb_objspace_t *objspace, rb_heap_t *heap)
     gc_exit(objspace, gc_enter_event_continue, &lock_lev);
 }
 
+#if USE_PARALLEL_SWEEP
 void wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_current_background_sweep, bool exit_sweep_thread, const char *from_fn);
+#endif
 
 static void
 heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     GC_ASSERT(heap->free_pages == NULL);
 
+#if USE_PARALLEL_SWEEP
     if (heap->is_finished_sweeping && heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size)) {
         heap_page_allocate_and_initialize_force(objspace, heap, false);
         GC_ASSERT(heap->free_pages != NULL);
@@ -2631,6 +2681,14 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
         }
         sweep_lock_unlock(objspace);
     }
+#else
+    if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) &&
+            heap->sweeping_page == NULL) {
+        heap_page_allocate_and_initialize_force(objspace, heap, true);
+        GC_ASSERT(heap->free_pages != NULL);
+        return;
+    }
+#endif
 
     /* Continue incremental marking or lazy sweeping, if in any of those steps. */
     gc_continue(objspace, heap);
@@ -3299,7 +3357,9 @@ objspace_each_exec(bool protected, struct each_obj_data *each_obj_data)
 static void
 objspace_each_objects(rb_objspace_t *objspace, each_obj_callback *callback, void *data, bool protected)
 {
+#if USE_PARALLEL_SWEEP
     wait_for_background_sweeping_to_finish(objspace, true, false, "objspace_each_objects");
+#endif
     struct each_obj_data each_obj_data = {
         .objspace = objspace,
         .each_obj_callback = callback,
@@ -3450,7 +3510,9 @@ run_final(rb_objspace_t *objspace, VALUE zombie, unsigned int lev)
 void
 rb_gc_impl_free_zombie(rb_objspace_t *objspace, VALUE obj)
 {
+#if USE_PARALLEL_SWEEP
     GC_ASSERT(!is_sweep_thread_p());
+#endif
     struct heap_page *page = GET_HEAP_PAGE(obj);
     GC_ASSERT(RUBY_ATOMIC_VALUE_LOAD(page->heap->final_slots_count) > 0);
     RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
@@ -3530,24 +3592,22 @@ gc_abort(void *objspace_ptr)
         objspace->flags.during_incremental_marking = FALSE;
     }
 
-#if RUBY_DEBUG
-    sweep_lock_lock(objspace);
-    GC_ASSERT(!objspace->sweep_rest);
-    sweep_lock_unlock(objspace);
-#endif
-
+#if USE_PARALLEL_SWEEP
     wait_for_background_sweeping_to_finish(objspace, true, false, "gc_abort");
+#endif
 
     if (is_lazy_sweeping(objspace)) {
         objspace->sweeping_heap_count = 0;
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
+#if USE_PARALLEL_SWEEP
             heap->sweeping_page = NULL;
             heap->swept_pages = NULL;
-
             heap->pre_sweeping_page = NULL;
             heap->is_finished_sweeping = false;
             heap->background_sweep_steps = heap->foreground_sweep_steps;
+#endif
+
             struct heap_page *page = NULL;
 
             ccan_list_for_each(&heap->pages, page, page_node) {
@@ -3605,8 +3665,6 @@ rb_gc_impl_shutdown_call_finalizer_i(st_data_t key, st_data_t val, st_data_t _da
     return ST_DELETE;
 }
 
-void rb_gc_stop_background_threads(rb_objspace_t *objspace, const char *from_fn);
-
 void
 rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
 {
@@ -3616,7 +3674,9 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
     gc_verify_internal_consistency(objspace);
 #endif
 
+#if USE_PARALLEL_SWEEP
     wait_for_background_sweeping_to_finish(objspace, true, false, "shutdown_call_finalizer");
+#endif
 
     /* prohibit incremental GC */
     objspace->flags.dont_incremental = 1;
@@ -4144,6 +4204,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
     } while (bitset);
 }
 
+#if USE_PARALLEL_SWEEP
 void
 wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_current_background_sweep, bool exit_sweep_thread, const char *from_fn)
 {
@@ -4185,7 +4246,6 @@ wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_curre
     sweep_lock_unlock(objspace);
 }
 
-#if USE_PARALLEL_SWEEP
 // Free the object in a Ruby thread. Return whether or not we put the slot back on the page's freelist.
 static bool
 deferred_free(rb_objspace_t *objspace, VALUE obj)
@@ -4216,7 +4276,6 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
     }
     return result;
 }
-#endif
 
 // Clear bits for the page that was swept by the background thread.
 static inline void
@@ -4267,6 +4326,7 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
 
     gc_report(2, objspace, "post_page_sweep: end.\n");
 }
+#endif // USE_PARALLEL_SWEEP
 
 // Sweep a page by the Ruby thread (synchronous freeing).
 static inline void
@@ -4287,9 +4347,13 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
         GC_ASSERT(RUBY_ATOMIC_LOAD(sweep_page->before_sweep));
     }
 #endif
+#if USE_PARALLEL_SWEEP
     rbimpl_atomic_store(&sweep_page->before_sweep, 0, RBIMPL_ATOMIC_RELEASE);
-    sweep_page->free_slots = 0;
     objspace->sweep_stats.pages_swept_by_ruby_thread++;
+#else
+    sweep_page->before_sweep = 1;
+#endif
+    sweep_page->free_slots = 0;
 
     p = (uintptr_t)sweep_page->start;
     bits = sweep_page->mark_bits;
@@ -4652,10 +4716,12 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
         }
         p += BITS_BITLENGTH * slot_size;
     }
+#if USE_PARALLEL_SWEEP
     objspace->sweep_stats.pages_swept_by_sweep_thread++;
     if (page->pre_deferred_free_slots > 0) {
         objspace->sweep_stats.pages_swept_by_sweep_thread_had_deferred_free_objects++;
     }
+#endif
 
 #if RGENGC_CHECK_MODE
     {
@@ -4717,8 +4783,10 @@ move_to_empty_pages(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *
     GC_ASSERT(bitmap_is_all_zero(page->wb_unprotected_bits, HEAP_PAGE_BITMAP_LIMIT));
     GC_ASSERT(bitmap_is_all_zero(page->marking_bits, HEAP_PAGE_BITMAP_LIMIT));
     GC_ASSERT(bitmap_is_all_zero(page->remembered_bits, HEAP_PAGE_BITMAP_LIMIT));
-    GC_ASSERT(bitmap_is_all_zero(page->deferred_free_bits, HEAP_PAGE_BITMAP_LIMIT));
     GC_ASSERT(bitmap_is_all_zero(page->age_bits, HEAP_PAGE_BITMAP_LIMIT * RVALUE_AGE_BIT_COUNT));
+#if USE_PARALLEL_SWEEP
+    GC_ASSERT(bitmap_is_all_zero(page->deferred_free_bits, HEAP_PAGE_BITMAP_LIMIT));
+#endif
     // NOTE: pinned bits can still be set, but it's okay because they are cleared when compaction starts
 
     heap_unlink_page(objspace, heap, page);
@@ -4930,27 +4998,32 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
         objspace->sweeping_heap_count++;
     }
     heap->free_pages = NULL;
-    heap->swept_pages = NULL;
     heap->pooled_pages = NULL;
+
+#if USE_PARALLEL_SWEEP
+    heap->swept_pages = NULL;
     heap->latest_swept_page = NULL;
     heap->pre_swept_slots_deferred = 0;
-#if RUBY_DEBUG
-    heap->made_zombies = 0;
-#endif
-
     heap->pre_sweeping_page = NULL;
     heap->background_sweep_steps = heap->foreground_sweep_steps;
     heap->is_finished_sweeping = false;
     heap->done_background_sweep = false;
     heap->skip_sweep_continue = false;
     heap->dequeued_last_page = false;
+#endif
+
+#if RUBY_DEBUG
+    heap->made_zombies = 0;
+#endif
 
     struct heap_page *page = NULL;
 
     if (!objspace->flags.immediate_sweep) {
         ccan_list_for_each(&heap->pages, page, page_node) {
             page->before_sweep = 1;
+#if USE_PARALLEL_SWEEP
             GC_ASSERT(page->pre_deferred_free_slots == 0);
+#endif
         }
     }
 }
@@ -4998,12 +5071,15 @@ gc_sweep_start(rb_objspace_t *objspace)
     objspace->during_lazy_sweeping = TRUE;
     objspace->rincgc.pooled_slots = 0;
 
-// Background sweeping cannot be happening
+#if USE_PARALLEL_SWEEP
+    objspace->heaps_done_background_sweep = 0;
 #if VM_CHECK_MODE > 0
+    // Background sweeping cannot be happening
     sweep_lock_lock(objspace);
     GC_ASSERT(!objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested);
     sweep_lock_unlock(objspace);
 #endif
+#endif // PARALLEL_SWEEP
 
 #if GC_CAN_COMPILE_COMPACTION
     if (objspace->flags.during_compacting) {
@@ -5013,8 +5089,6 @@ gc_sweep_start(rb_objspace_t *objspace)
         );
     }
 #endif
-
-    objspace->heaps_done_background_sweep = 0;
 
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
@@ -5030,6 +5104,7 @@ gc_sweep_start(rb_objspace_t *objspace)
 
     rb_gc_ractor_newobj_cache_foreach(gc_ractor_newobj_cache_clear, NULL);
 
+#if USE_PARALLEL_SWEEP
     psweep_debug(1, "[gc] gc_sweep_start\n");
     if (objspace->sweep_thread &&
             !objspace->flags.during_compacting &&
@@ -5047,6 +5122,7 @@ gc_sweep_start(rb_objspace_t *objspace)
         rbimpl_atomic_store(&objspace->use_background_sweep_thread, false, RBIMPL_ATOMIC_RELEASE);
         psweep_debug(-1, "[gc] gc_sweep_start: not using background sweep thread\n");
     }
+#endif
 }
 
 static void
@@ -5058,7 +5134,12 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     size_t init_slots = gc_params.heap_init_bytes / heap->slot_size;
     size_t min_free_slots = (size_t)(MAX(total_slots, init_slots) * gc_params.heap_free_slots_min_ratio);
 
+#if USE_PARALLEL_SWEEP
     psweep_debug(-1, "[gc] gc_sweep_finish heap:%p (%ld)\n", heap, heap - heaps);
+    GC_ASSERT(heap->background_sweep_steps <= ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps));
+    GC_ASSERT(!heap->is_finished_sweeping);
+    heap->is_finished_sweeping = true;
+#endif
 
 #if RUBY_DEBUG
     if (!objspace->flags.during_compacting) {
@@ -5067,10 +5148,6 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
         objspace->will_be_swept_slots -= heap->zombie_slots;
     }
 #endif
-
-    GC_ASSERT(heap->background_sweep_steps <= ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps));
-    GC_ASSERT(!heap->is_finished_sweeping);
-    heap->is_finished_sweeping = true;
 
     if (swept_slots < min_free_slots &&
             /* The heap is a growth heap if it freed more slots than had empty slots. */
@@ -5112,11 +5189,11 @@ gc_sweep_finish(rb_objspace_t *objspace)
     gc_report(1, objspace, "gc_sweep_finish\n");
     psweep_debug(-1, "[gc] gc_sweep_finish\n");
 
+#if USE_PARALLEL_SWEEP
     rbimpl_atomic_store(&objspace->use_background_sweep_thread, false, RBIMPL_ATOMIC_RELEASE);
+#endif
 
 #if RUBY_DEBUG
-    // When calling GC.start, if in the middle of a non-full mark it will be set as full mark in gc_rest() so the numbers
-    // will be off.
     if (!objspace->flags.was_compacting && !objspace->sweep_rest && gc_config_full_mark_val) {
         if (objspace->will_be_swept_slots != objspace->have_swept_slots) {
             fprintf(stderr, "Expecting to free %lu slots, freed %lu slots (major:%d)\n", objspace->will_be_swept_slots, objspace->have_swept_slots, is_full_marking(objspace));
@@ -5152,9 +5229,11 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
         heap->freed_slots = 0;
         heap->empty_slots = 0;
+#if USE_PARALLEL_SWEEP
         if (heap->background_sweep_steps < heap->foreground_sweep_steps) {
             heap->background_sweep_steps = heap->foreground_sweep_steps;
         }
+#endif
 
         if (!will_be_incremental_marking(objspace)) {
             struct heap_page *end_page = heap->free_pages;
@@ -5257,20 +5336,7 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
         else if (!heap->sweeping_page) { // This heap is finished
             while (heap->pre_sweeping_page) {
                 sweep_lock_set_unlocked(objspace);
-                struct timespec wait_start;
-                if (clock_gettime(CLOCK_MONOTONIC, &wait_start) != 0) {
-                    wait_start.tv_sec = 0;
-                    wait_start.tv_nsec = 0;
-                }
                 rb_native_cond_wait(&heap->sweep_page_cond, &objspace->sweep_lock);
-                struct timespec wait_end;
-                if ((wait_start.tv_sec || wait_start.tv_nsec) &&
-                        clock_gettime(CLOCK_MONOTONIC, &wait_end) == 0) {
-                    objspace->sweep_stats.mutator_sweep_wait_ns +=
-                        (size_t)(wait_end.tv_sec - wait_start.tv_sec) * 1000000000ULL +
-                        (wait_end.tv_nsec - wait_start.tv_nsec);
-                }
-                objspace->sweep_stats.mutator_sweep_wait_count++;
                 sweep_lock_set_locked(objspace);
                 goto retry_swept_pages;
             }
@@ -5547,6 +5613,8 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
     }
 
     if (heap_is_sweep_done(objspace, heap)) {
+        objspace->sweeping_heap_count--;
+        GC_ASSERT(objspace->sweeping_heap_count >= 0);
         psweep_debug(0, "[gc] gc_sweep_step heap:%p (%ld) sweep done\n", heap, heap - heaps);
         gc_sweep_finish_heap(objspace, heap);
 
@@ -5563,16 +5631,19 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
     return heap->free_pages != NULL;
 }
 
+#if USE_PARALLEL_SWEEP
 static bool
 background_sweep_done_p(rb_objspace_t *objspace)
 {
     // must have sweep_lock acquired (TODO: add assertion)
     return objspace->heaps_done_background_sweep == HEAP_COUNT;
 }
+#endif
 
 static void
 gc_sweep_rest(rb_objspace_t *objspace)
 {
+#if USE_PARALLEL_SWEEP
     sweep_lock_lock(objspace);
     {
         objspace->sweep_rest = true; // reset to false in `gc_sweeping_exit`
@@ -5593,9 +5664,9 @@ gc_sweep_rest(rb_objspace_t *objspace)
     }
     sweep_lock_unlock(objspace);
 
+    // sweep backwards to reduce contention with sweep thread
     for (int i = HEAP_COUNT-1; i >= 0; i--) {
         rb_heap_t *heap = &heaps[i];
-
         while (!heap_is_sweep_done(objspace, heap)) {
             psweep_debug(0, "[gc] gc_sweep_rest: gc_sweep_step heap:%p (heap %ld)\n", heap, heap - heaps);
             gc_sweep_step(objspace, heap);
@@ -5603,13 +5674,20 @@ gc_sweep_rest(rb_objspace_t *objspace)
         GC_ASSERT(heap->is_finished_sweeping);
         heap->background_sweep_steps = heap->foreground_sweep_steps;
     }
+#else
+    for (int i = 0; i < HEAP_COUNT; i++) {
+        rb_heap_t *heap = &heaps[i];
+        while (!heap_is_sweep_done(objspace, heap)) {
+            gc_sweep_step(objspace, heap);
+        }
+    }
+#endif
 
     GC_ASSERT(!has_sweeping_pages(objspace));
     GC_ASSERT(gc_mode(objspace) == gc_mode_none);
 }
 
-unsigned long long sweep_continue_count = 0;
-
+#if USE_PARALLEL_SWEEP
 static int
 sweep_heap_first(bool sweep_backwards)
 {
@@ -5642,6 +5720,7 @@ sweep_heap_iter(bool sweep_backwards, int *i)
         (*i)++;
     }
 }
+#endif
 
 static void
 gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
@@ -5649,12 +5728,11 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
     GC_ASSERT(dont_gc_val() == FALSE || objspace->profile.latest_gc_info & GPR_FLAG_METHOD);
     if (!GC_ENABLE_LAZY_SWEEP) return;
 
-    psweep_debug(-2, "[gc] gc_sweep_continue\n");
-
-    sweep_continue_count++;
-
-    int num_heaps_need_continue = 0;
     gc_sweeping_enter(objspace, "gc_sweep_continue");
+
+#if USE_PARALLEL_SWEEP
+    psweep_debug(-2, "[gc] gc_sweep_continue\n");
+    int num_heaps_need_continue = 0;
     if (objspace->sweep_thread) {
         sweep_lock_lock(objspace);
         {
@@ -5709,6 +5787,9 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
     }
 #endif
     for (int i = sweep_heap_first(sweep_backwards); i != sweep_heap_last(sweep_backwards); sweep_heap_iter(sweep_backwards, &i)) {
+#else
+    for (int i = 0; i < HEAP_COUNT; i++) {
+#endif // USE_PARALLEL_SWEEP
         rb_heap_t *heap = &heaps[i];
 
         if (gc_sweep_step(objspace, heap)) {
@@ -5829,7 +5910,7 @@ gc_compact_start(rb_objspace_t *objspace)
     struct heap_page *page = NULL;
     gc_mode_transition(objspace, gc_mode_compacting);
 
-#if RUBY_DEBUG
+#if RUBY_DEBUG && USE_PARALLEL_SWEEP
     sweep_lock_lock(objspace);
     GC_ASSERT(!objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested);
     sweep_lock_unlock(objspace);
@@ -5887,22 +5968,28 @@ gc_sweep(rb_objspace_t *objspace)
     }
     else {
         /* Sweep every size pool. */
+#if USE_PARALLEL_SWEEP
 #if PSWEEP_LOCK_STATS > 0
         current_step_type = 0;
         step_contention[0].step_count++;
 #endif
+
         if (objspace->sweep_thread) {
+            // sweep backwards to reduce contention with sweep thread
             for (int i = HEAP_COUNT-1; i >= 0; i--) {
                 rb_heap_t *heap = &heaps[i];
                 gc_sweep_step(objspace, heap);
             }
         }
         else {
+#endif // USE_PARALLEL_SWEEP
             for (int i = 0; i < HEAP_COUNT; i++) {
                 rb_heap_t *heap = &heaps[i];
                 gc_sweep_step(objspace, heap);
             }
+#if USE_PARALLEL_SWEEP
         }
+#endif
     }
 
     gc_sweeping_exit(objspace);
@@ -6913,7 +7000,9 @@ gc_verify_internal_consistency_(rb_objspace_t *objspace)
         uintptr_t end = start + page->total_slots * slot_size;
 
         verify_internal_consistency_i((void *)start, (void *)end, slot_size, &data);
+#if USE_PARALLEL_SWEEP
         data.live_object_count += (page->pre_freed_slots + page->pre_final_slots + page->pre_zombie_slots);
+#endif
     }
 
     if (data.err_count != 0) {
@@ -6991,7 +7080,9 @@ gc_verify_internal_consistency(void *objspace_ptr)
         rb_gc_vm_barrier(); // stop other ractors
 
         unsigned int prev_during_gc = during_gc;
+#if USE_PARALLEL_SWEEP
         wait_for_background_sweeping_to_finish(objspace, true, false, "verify_internal_consistency");
+#endif
         during_gc = FALSE; // stop gc here
         {
             gc_verify_internal_consistency_(objspace);
@@ -8144,7 +8235,9 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
     if (!(reason & GPR_FLAG_METHOD) && !ready_to_gc(objspace)) return TRUE; /* GC is not allowed */
 
     rb_gc_initialize_vm_context(&objspace->vm_context);
+#if USE_PARALLEL_SWEEP
     wait_for_background_sweeping_to_finish(objspace, true, false, "gc_start"); // in case user called `GC.start` explicitly
+#endif
 
     GC_ASSERT(gc_mode(objspace) == gc_mode_none, "gc_mode is %s\n", gc_mode_name(gc_mode(objspace)));
     GC_ASSERT(!is_lazy_sweeping(objspace));
@@ -8469,7 +8562,9 @@ gc_enter(rb_objspace_t *objspace, enum gc_enter_event event, unsigned int *lock_
     if (RB_UNLIKELY(during_gc != 0)) rb_bug("during_gc != 0");
     if (RGENGC_CHECK_MODE >= 3) gc_verify_internal_consistency(objspace);
 
+#if USE_PARALLEL_SWEEP
     GC_ASSERT(!is_sweep_thread_p());
+#endif
     during_gc = TRUE;
     RUBY_DEBUG_LOG("%s (%s)",gc_enter_event_cstr(event), gc_current_status(objspace));
     gc_report(1, objspace, "gc_enter: %s [%s]\n", gc_enter_event_cstr(event), gc_current_status(objspace));
@@ -8488,7 +8583,9 @@ gc_exit(rb_objspace_t *objspace, enum gc_enter_event event, unsigned int *lock_l
     gc_record(objspace, 1, gc_enter_event_cstr(event));
     RUBY_DEBUG_LOG("%s (%s)", gc_enter_event_cstr(event), gc_current_status(objspace));
     gc_report(1, objspace, "gc_exit: %s [%s]\n", gc_enter_event_cstr(event), gc_current_status(objspace));
+#if USE_PARALLEL_SWEEP
     GC_ASSERT(!is_sweep_thread_p());
+#endif
     during_gc = FALSE; // NOTE: background thread could still be sweeping even if !during_gc
 
     RB_GC_VM_UNLOCK(*lock_lev);
@@ -8520,37 +8617,36 @@ gc_marking_exit(rb_objspace_t *objspace)
     }
 }
 
-unsigned long long sweeping_enter_count = 0;
-
 static void
 gc_sweeping_enter(rb_objspace_t *objspace, const char *from_fn)
 {
-    MAYBE_UNUSED(const unsigned int immediate_sweep) = objspace->flags.immediate_sweep;
-    psweep_debug(1, "[gc] gc_sweeping_enter from %s (immediate:%u)\n", from_fn, immediate_sweep);
     GC_ASSERT(during_gc != 0);
 
+#if USE_PARALLEL_SWEEP
+    MAYBE_UNUSED(const unsigned int immediate_sweep) = objspace->flags.immediate_sweep;
+    psweep_debug(1, "[gc] gc_sweeping_enter from %s (immediate:%u)\n", from_fn, immediate_sweep);
     sweep_lock_lock(objspace);
     {
         objspace->background_sweep_mode = false;
     }
     sweep_lock_unlock(objspace);
-
-    if (MEASURE_GC) {
-        gc_clock_start(&objspace->profile.sweeping_start_time);
-    }
-
-    sweeping_enter_count++;
-    /* Always track Ruby thread sweep time */
 #if PSWEEP_COLLECT_TIMINGS > 0
     gc_clock_start(&objspace->profile.ruby_thread_sweep_cpu_start_time);
     gc_wall_clock_start(&objspace->profile.ruby_thread_sweep_wall_start_time);
 #endif
+#endif // USE_PARALLEL_SWEEP
+
+    if (MEASURE_GC) {
+        gc_clock_start(&objspace->profile.sweeping_start_time);
+    }
 }
 
 static void
 gc_sweeping_exit(rb_objspace_t *objspace)
 {
     GC_ASSERT(during_gc != 0);
+
+#if USE_PARALLEL_SWEEP
     psweep_debug(1, "[gc] gc_sweeping_exit\n");
     MAYBE_UNUSED(bool was_rest) = objspace->sweep_rest;
 
@@ -8584,16 +8680,15 @@ gc_sweeping_exit(rb_objspace_t *objspace)
         objspace->sweep_rest = false;
         sweep_lock_unlock(objspace);
     }
-
-    if (MEASURE_GC) {
-        objspace->profile.sweeping_time_ns += gc_clock_end(&objspace->profile.sweeping_start_time);
-    }
-
-    /* Always track Ruby thread sweep time */
 #if PSWEEP_COLLECT_TIMINGS > 0
     objspace->profile.ruby_thread_sweep_cpu_time_ns += gc_clock_end(&objspace->profile.ruby_thread_sweep_cpu_start_time);
     objspace->profile.ruby_thread_sweep_wall_time_ns += gc_wall_clock_end(&objspace->profile.ruby_thread_sweep_wall_start_time);
 #endif
+#endif // USE_PARALLEL_SWEEP
+
+    if (MEASURE_GC) {
+        objspace->profile.sweeping_time_ns += gc_clock_end(&objspace->profile.sweeping_start_time);
+    }
 }
 
 static void *
@@ -8695,12 +8790,6 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
     gc_finalize_deferred(objspace);
 
     gc_config_full_mark_set(full_marking_p);
-}
-
-void
-rb_gc_stop_background_threads(rb_objspace_t *objspace, const char *from_fn)
-{
-    wait_for_background_sweeping_to_finish(objspace, true, true, from_fn);
 }
 
 void
@@ -9330,11 +9419,11 @@ enum gc_stat_sym {
     gc_stat_sym_old_objects,
     gc_stat_sym_old_objects_limit,
     gc_stat_sym_pages_swept,
+#if USE_PARALLEL_SWEEP
     gc_stat_sym_pages_swept_by_sweep_thread,
     gc_stat_sym_pages_swept_by_sweep_thread_had_deferred_free_objects,
     gc_stat_sym_pages_swept_by_ruby_thread,
-    gc_stat_sym_mutator_sweep_wait_count,
-    gc_stat_sym_mutator_sweep_wait_ms,
+#endif
 #if RGENGC_ESTIMATE_OLDMALLOC
     gc_stat_sym_oldmalloc_increase_bytes,
     gc_stat_sym_oldmalloc_increase_bytes_limit,
@@ -9390,12 +9479,12 @@ setup_gc_stat_symbols(void)
         S(remembered_wb_unprotected_objects_limit);
         S(old_objects);
         S(old_objects_limit);
+#if USE_PARALLEL_SWEEP
         S(pages_swept);
         S(pages_swept_by_sweep_thread);
         S(pages_swept_by_sweep_thread_had_deferred_free_objects);
         S(pages_swept_by_ruby_thread);
-        S(mutator_sweep_wait_count);
-        S(mutator_sweep_wait_ms);
+#endif
 #if RGENGC_ESTIMATE_OLDMALLOC
         S(oldmalloc_increase_bytes);
         S(oldmalloc_increase_bytes_limit);
@@ -9482,12 +9571,12 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(remembered_wb_unprotected_objects_limit, objspace->rgengc.uncollectible_wb_unprotected_objects_limit);
     SET(old_objects, objspace->rgengc.old_objects);
     SET(old_objects_limit, objspace->rgengc.old_objects_limit);
+#if USE_PARALLEL_SWEEP
     SET(pages_swept, objspace->sweep_stats.pages_swept_by_sweep_thread + objspace->sweep_stats.pages_swept_by_ruby_thread);
     SET(pages_swept_by_sweep_thread, objspace->sweep_stats.pages_swept_by_sweep_thread);
     SET(pages_swept_by_sweep_thread_had_deferred_free_objects, objspace->sweep_stats.pages_swept_by_sweep_thread_had_deferred_free_objects);
     SET(pages_swept_by_ruby_thread, objspace->sweep_stats.pages_swept_by_ruby_thread);
-    SET(mutator_sweep_wait_count, objspace->sweep_stats.mutator_sweep_wait_count);
-    SET(mutator_sweep_wait_ms, (size_t)ns_to_ms(objspace->sweep_stats.mutator_sweep_wait_ns));
+#endif
 #if RGENGC_ESTIMATE_OLDMALLOC
     SET(oldmalloc_increase_bytes, objspace->malloc_counters.oldmalloc_increase);
     SET(oldmalloc_increase_bytes_limit, objspace->rgengc.oldmalloc_increase_limit);
@@ -9930,7 +10019,9 @@ static size_t
 malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size, struct heap_page *sweep_thread_page)
 {
     if (new_size > old_size) {
+#if USE_PARALLEL_SWEEP
         GC_ASSERT(!is_sweep_thread_p());
+#endif
         size_t delta = new_size - old_size;
         size_t old_val = rbimpl_atomic_size_fetch_add(&malloc_increase, delta, RBIMPL_ATOMIC_RELAXED);
 #if RGENGC_ESTIMATE_OLDMALLOC
@@ -9940,6 +10031,7 @@ malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size
     }
     else {
         size_t delta = old_size - new_size;
+#if USE_PARALLEL_SWEEP
         if (sweep_thread_page) {
             sweep_thread_page->pre_freed_malloc_bytes += delta;
         }
@@ -9949,6 +10041,12 @@ malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size
             atomic_sub_nounderflow(&objspace->malloc_counters.oldmalloc_increase, delta);
 #endif
         }
+#else // USE_PARALLEL_SWEEP
+        atomic_sub_nounderflow(&malloc_increase, delta);
+#if RGENGC_ESTIMATE_OLDMALLOC
+        atomic_sub_nounderflow(&objspace->malloc_counters.oldmalloc_increase, delta);
+#endif
+#endif // USE_PARALLEL_SWEEP
         return 0;
     }
 }
@@ -10008,8 +10106,12 @@ objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_siz
         current_malloc_increase = malloc_increase_commit(objspace, new_size, old_size, current_sweep_thread_page);
     }
 #else
+#if USE_PARALLEL_SWEEP
     current_malloc_increase = malloc_increase_commit(objspace, new_size, old_size, is_sweep_thread_p() ? current_sweep_thread_page : NULL);
+#else
+    current_malloc_increase = malloc_increase_commit(objspace, new_size, old_size, NULL);
 #endif
+#endif // USE_MALLOC_INCREASE_LOCAL
 
     if (type == MEMOP_TYPE_MALLOC && gc_allowed) {
       retry:
@@ -10150,11 +10252,14 @@ static void
 check_malloc_not_in_gc(rb_objspace_t *objspace, const char *msg)
 {
     if (RB_UNLIKELY(bad_malloc_during_gc_p(objspace))) {
+#if USE_PARALLEL_SWEEP
         if (is_sweep_thread_p()) {
             fprintf(stderr, "Bad %s in sweep thread, exiting\n", msg);
             exit(EXIT_FAILURE);
         }
-        else {
+        else
+#endif
+        {
             dont_gc_on();
             during_gc = false;
             rb_bug("Cannot %s during GC", msg);
@@ -10218,10 +10323,13 @@ rb_gc_impl_calloc(void *objspace_ptr, size_t size, bool gc_allowed)
     rb_objspace_t *objspace = objspace_ptr;
 
     if (RB_UNLIKELY(bad_malloc_during_gc_p(objspace))) {
+#if USE_PARALLEL_SWEEP
         if (is_sweep_thread_p()) {
             fprintf(stderr, "calloc in sweep thread detected! This could cause crashes!\n");
         }
-        else {
+        else
+#endif
+        {
             rb_warn("calloc during GC detected, this could cause crashes if it triggers another GC");
 #if RGENGC_CHECK_MODE || RUBY_DEBUG
             rb_bug("Cannot calloc during GC");
@@ -11281,7 +11389,7 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
 //        rb_bug("lazy sweeping underway when freeing object space");
 
 #if USE_PARALLEL_SWEEP
-    rb_gc_stop_background_threads(objspace, "objspace_free");
+    wait_for_background_sweeping_to_finish(objspace, true, true, "objspace_free");
 #if PSWEEP_LOCK_STATS > 0
     {
         /* Print lock contention statistics before freeing */
@@ -11297,8 +11405,6 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
     double ruby_thread_sweep_wall_time_ms = ((double)objspace->profile.ruby_thread_sweep_wall_time_ns) / 1000000.0;
     fprintf(stderr, "\nSweep Time (CPU): %.3f ms (%.6f seconds)\n", ruby_thread_sweep_cpu_time_ms, ruby_thread_sweep_cpu_time_ms / 1000.0);
     fprintf(stderr, "\nSweep Time (Wall): %.3f ms (%.6f seconds)\n", ruby_thread_sweep_wall_time_ms, ruby_thread_sweep_wall_time_ms / 1000.0);
-    fprintf(stderr, "\nSweeping enter count: %llu\n", sweeping_enter_count);
-    fprintf(stderr, "\nSweep continue count: %llu\n", sweep_continue_count);
 #endif
 
     free(objspace->profile.records);
@@ -11521,8 +11627,10 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
         heap->slot_size = pool_slot_sizes[i];
 
         ccan_list_head_init(&heap->pages);
+#if USE_PARALLEL_SWEEP
         rb_native_mutex_initialize(&heap->swept_pages_lock);
         rb_native_cond_initialize(&heap->sweep_page_cond);
+#endif
     }
 
     init_size_to_heap_idx();
@@ -11544,11 +11652,13 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
     objspace->profile.invoke_time = getrusage_time();
     finalizer_table = st_init_numtable();
 
+#if USE_PARALLEL_SWEEP
     rb_native_mutex_initialize(&objspace->sweep_lock);
     rb_native_cond_initialize(&objspace->sweep_cond);
     /* The sweep thread is created later from `rb_gc_impl_parallel_sweep_start`
      * once command-line options have been parsed, if --enable-parallel-sweep was
      * passed. Otherwise it is never created. */
+#endif
 }
 
 #if USE_PARALLEL_SWEEP
