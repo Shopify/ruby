@@ -637,9 +637,8 @@ typedef struct rb_objspace {
     bool background_sweep_abort;
     bool background_sweep_restart_heaps;
     unsigned int heaps_done_background_sweep;
-#endif
-
     bool sweep_rest;
+#endif
 
     struct {
         rb_atomic_t finalizing;
@@ -3609,8 +3608,8 @@ gc_abort(void *objspace_ptr)
         objspace->sweeping_heap_count = 0;
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
-#if USE_PARALLEL_SWEEP
             heap->sweeping_page = NULL;
+#if USE_PARALLEL_SWEEP
             heap->swept_pages = NULL;
             heap->pre_sweeping_page = NULL;
             heap->is_finished_sweeping = false;
@@ -4360,7 +4359,7 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
     rbimpl_atomic_store(&sweep_page->before_sweep, 0, RBIMPL_ATOMIC_RELEASE);
     objspace->sweep_stats.pages_swept_by_ruby_thread++;
 #else
-    sweep_page->before_sweep = 1;
+    sweep_page->before_sweep = 0;
 #endif
     sweep_page->free_slots = 0;
 
@@ -5196,9 +5195,9 @@ static void
 gc_sweep_finish(rb_objspace_t *objspace)
 {
     gc_report(1, objspace, "gc_sweep_finish\n");
-    psweep_debug(-1, "[gc] gc_sweep_finish\n");
 
 #if USE_PARALLEL_SWEEP
+    psweep_debug(-1, "[gc] gc_sweep_finish\n");
     rbimpl_atomic_store(&objspace->use_background_sweep_thread, false, RBIMPL_ATOMIC_RELEASE);
 #endif
 
@@ -5452,7 +5451,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         return heap->free_pages != NULL;
     }
 #else
-    if (heap->sweeping_page == NULL) return heap->free_pages != NULL;
+    if (!heap->sweeping_page) return FALSE;
 #endif
 
 #if GC_ENABLE_LAZY_SWEEP
@@ -5610,8 +5609,8 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
                     if (!sweep_rest && use_sweep_thread) {
                         rbimpl_atomic_inc(&heap->foreground_sweep_steps, RBIMPL_ATOMIC_RELEASE); // signal sweep thread to move on
                     }
-#endif
                     psweep_debug(0, "[gc] gc_sweep_step got to SWEEP_SLOT_COUNT, break\n");
+#endif
                     break;
                 }
             }
