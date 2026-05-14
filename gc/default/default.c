@@ -1245,9 +1245,7 @@ print_lock_stats(void)
     }
     fprintf(stderr, "================================================\n\n");
 }
-#endif /* PSWEEP_LOCK_STATS > 0 */
 
-#if PSWEEP_LOCK_STATS > 0
 /*
  * Sweep step contention stats: first incremental step (gc_sweep) vs
  * subsequent steps (gc_sweep_continue), tracking swept_pages_lock trylock
@@ -1296,7 +1294,7 @@ print_sweep_step_contention(void)
 
     fprintf(stderr, "=====================================================\n\n");
 }
-#endif /* PSWEEP_LOCK_STATS > 0 (sweep step contention) */
+#endif /* USE_PARALLEL_SWEEP && PSWEEP_LOCK_STATS > 0 */
 
 
 #if USE_PARALLEL_SWEEP
@@ -1415,15 +1413,26 @@ static bool
 has_sweeping_pages(rb_objspace_t *objspace)
 {
     rb_heap_t *heap_not_finished = NULL;
-    if (objspace->sweeping_heap_count > 1) return true;
-    for (int i = 0; i < HEAP_COUNT; i++) {
-        rb_heap_t *heap = &heaps[i];
-        if (!heap->is_finished_sweeping) {
-            heap_not_finished = heap;
-            break;
+    if (ruby_parallel_sweep_enabled) {
+        if (objspace->sweeping_heap_count > 1) {
+            return true;
         }
+        else if (objspace->sweeping_heap_count == 0) {
+            return false;
+        }
+        for (int i = 0; i < HEAP_COUNT; i++) {
+            rb_heap_t *heap = &heaps[i];
+            if (!heap->is_finished_sweeping) {
+                heap_not_finished = heap;
+                break;
+            }
+        }
+        GC_ASSERT(heap_not_finished);
+        return !heap_is_sweep_done(objspace, heap_not_finished);
     }
-    return !heap_is_sweep_done(objspace, heap_not_finished);
+    else {
+        return objspace->sweeping_heap_count > 0;
+    }
 }
 #else
 static bool
