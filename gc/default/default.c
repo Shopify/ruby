@@ -5202,7 +5202,11 @@ gc_sweep_finish(rb_objspace_t *objspace)
 #endif
 
 #if RUBY_DEBUG
+#if USE_PARALLEL_SWEEP
     if (!objspace->flags.was_compacting && !objspace->sweep_rest && gc_config_full_mark_val) {
+#else
+    if (!objspace->flags.was_compacting && gc_config_full_mark_val) {
+#endif
         if (objspace->will_be_swept_slots != objspace->have_swept_slots) {
             fprintf(stderr, "Expecting to free %lu slots, freed %lu slots (major:%d)\n", objspace->will_be_swept_slots, objspace->have_swept_slots, is_full_marking(objspace));
             for (int i = 0; i < HEAP_COUNT; i++) {
@@ -8780,7 +8784,7 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
     }
 
     garbage_collect(objspace, reason);
-#if RUBY_DEBUG
+#if RUBY_DEBUG && USE_PARALLEL_SWEEP
     if (immediate_sweep) {
         sweep_lock_lock(objspace);
         {
