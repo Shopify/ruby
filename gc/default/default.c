@@ -5905,7 +5905,6 @@ gc_sweep_rest(rb_objspace_t *objspace)
     }
     sweep_lock_unlock(objspace);
 
-    // sweep backwards to reduce contention with sweep thread
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
         while (!heap_is_sweep_done(objspace, heap)) {
@@ -5973,8 +5972,9 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
 
 #if USE_PARALLEL_SWEEP
     psweep_debug(-2, "[gc] gc_sweep_continue\n");
-    int num_heaps_need_continue = 0;
+    /*int num_heaps_need_continue = 0;*/
     if (objspace->sweep_thread) {
+        bool do_signal = false;
         sweep_lock_lock(objspace);
         {
             if (objspace->use_background_sweep_thread) {
@@ -5982,6 +5982,7 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
                     psweep_debug(-2, "[gc] gc_sweep_continue: bg done, not requesting\n");
                 }
                 else {
+                    do_signal = true;
                     /*for (int i = 0; i < HEAP_COUNT; i++) {*/
                         /*rb_heap_t *heap = &heaps[i];*/
                         /*size_t sweep_budget = GC_INCREMENTAL_SWEEP_BYTES / heap->slot_size;*/
@@ -6015,7 +6016,7 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
             }
         }
         sweep_lock_unlock(objspace);
-        if (num_heaps_need_continue > 0) {
+        if (do_signal) {
             rb_native_cond_broadcast(&objspace->sweep_cond);
         }
     }
@@ -6024,9 +6025,7 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
 
 #if PSWEEP_LOCK_STATS > 0
     current_step_type = 1;
-    if (num_heaps_need_continue) {
-        step_contention[1].step_count++;
-    }
+    step_contention[1].step_count++;
 #endif
     for (int i = sweep_heap_first(sweep_backwards); i != sweep_heap_last(sweep_backwards); sweep_heap_iter(sweep_backwards, &i)) {
 #else
