@@ -129,6 +129,18 @@
 #else
 #define psweep_debug(...) (void)0
 #endif
+/* One-off diagnostic printf gate. Flip DBG_PRINTF to 0 to silence every
+ * dbg_fprintf() call site at once without re-editing them. Keep this isolated
+ * from psweep_debug (which is much noisier). */
+#ifndef DBG_PRINTF
+#define DBG_PRINTF 1
+#endif
+#if DBG_PRINTF
+#define dbg_fprintf(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define dbg_fprintf(...) ((void)0)
+#endif
+
 #ifndef PSWEEP_LOCK_STATS
 #define PSWEEP_LOCK_STATS 0
 #endif
@@ -5787,7 +5799,26 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         int free_slots = ctx.freed_slots + ctx.empty_slots;
         GC_ASSERT(sweep_page->total_slots > 0);
         if (sweep_page->total_slots < free_slots) {
-            fprintf(stderr, "free_slots: %d, total_slots:%d\n", free_slots, (int)sweep_page->total_slots);
+#if USE_PARALLEL_SWEEP
+            dbg_fprintf(
+                "gc_sweep_step: free_slots(%d) > total_slots(%d) "
+                "page:%p heap:%ld slot_size:%d before_sweep_was_set:%d "
+                "free_in_user_thread_p:%d dequeued_unswept:%d "
+                "ctx.freed:%d ctx.empty:%d ctx.final:%d ctx.zombie:%d "
+                "pre_freed:%d pre_empty:%d pre_final:%d pre_zombie:%d "
+                "pre_deferred_free:%d during_compacting:%d compact_count:%lu gc_count:%zu\n",
+                free_slots, (int)sweep_page->total_slots,
+                (void *)sweep_page, sweep_page->heap - heaps, (int)sweep_page->slot_size,
+                (int)sweep_page->before_sweep, free_in_user_thread_p, dequeued_unswept_page,
+                ctx.freed_slots, ctx.empty_slots, ctx.final_slots, ctx.zombie_slots,
+                (int)sweep_page->pre_freed_slots, (int)sweep_page->pre_empty_slots,
+                (int)sweep_page->pre_final_slots, (int)sweep_page->pre_zombie_slots,
+                (int)sweep_page->pre_deferred_free_slots,
+                objspace->flags.during_compacting, (unsigned long)objspace->profile.compact_count,
+                rb_gc_count());
+#else
+            dbg_fprintf("free_slots: %d, total_slots:%d\n", free_slots, (int)sweep_page->total_slots);
+#endif
         }
         GC_ASSERT(sweep_page->total_slots >= free_slots);
 
