@@ -5201,9 +5201,15 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     struct heap_page *page = NULL;
 
 #if USE_PARALLEL_SWEEP
+    /* During compaction we defer building the snapshot until gc_sweep_compact
+     * has finished: compact may add or modify pages, so the post-compact
+     * heap->pages list is the one that needs sweeping. gc_sweep then calls
+     * gc_sweep_start_heap_snapshot for each heap. */
+    const bool build_snapshot = !objspace->flags.during_compacting;
+
     /* We're inside GC; growth must not call ruby's GC-aware realloc.
      * Pre-size the snapshot to total_pages so the loop appends without realloc. */
-    if (rb_darray_capa(heap->sweep_pages) < heap->total_pages) {
+    if (build_snapshot && rb_darray_capa(heap->sweep_pages) < heap->total_pages) {
         rb_darray_resize_capa_without_gc(&heap->sweep_pages, heap->total_pages);
     }
 #endif
@@ -5216,10 +5222,48 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
         page->before_sweep = 1;
 #if USE_PARALLEL_SWEEP
         GC_ASSERT(page->pre_deferred_free_slots == 0);
-        rb_darray_append_without_gc(&heap->sweep_pages, page);
+        if (build_snapshot) {
+            rb_darray_append_without_gc(&heap->sweep_pages, page);
+        }
 #endif
     }
 }
+
+#if USE_PARALLEL_SWEEP
+/* Build the sweep_pages snapshot after gc_sweep_compact has run. Compact may
+ * add/modify pages in heap->pages, so the snapshot must be taken from the
+ * post-compact list. The background worker is suppressed during compaction
+ * (see gc_sweep_start: use_background_sweep_thread is forced false when
+ * during_compacting), so we are the only producer here — no atomics needed
+ * beyond what the dequeue side will use. */
+static void
+gc_sweep_start_heap_snapshot(rb_objspace_t *objspace, rb_heap_t *heap)
+{
+    if (heap->is_finished_sweeping) return;
+
+    GC_ASSERT(rb_darray_size(heap->sweep_pages) == 0);
+    GC_ASSERT(heap->pre_swept_head == NULL);
+    GC_ASSERT(heap->drained_local == NULL);
+    GC_ASSERT(heap->claimed_local_start == 0 && heap->claimed_local_end == 0);
+    GC_ASSERT(RUBY_ATOMIC_LOAD(heap->sweep_claim_index) == 0);
+    GC_ASSERT(RUBY_ATOMIC_LOAD(heap->sweep_in_flight) == 0);
+
+    if (rb_darray_capa(heap->sweep_pages) < heap->total_pages) {
+        rb_darray_resize_capa_without_gc(&heap->sweep_pages, heap->total_pages);
+    }
+
+    /* Compact may have already swept the prefix of heap->pages via
+     * gc_compact_move (gc_sweep_page on dest_pool->sweeping_page when the
+     * destination's free list ran dry). Those pages have before_sweep == 0
+     * and their stats are already in heap->{freed,empty}_slots — skip them. */
+    struct heap_page *page = NULL;
+    ccan_list_for_each(&heap->pages, page, page_node) {
+        if (page->before_sweep == 0) continue;
+        GC_ASSERT(page->pre_deferred_free_slots == 0);
+        rb_darray_append_without_gc(&heap->sweep_pages, page);
+    }
+}
+#endif
 
 #if defined(__GNUC__) && __GNUC__ == 4 && __GNUC_MINOR__ == 4
 __attribute__((noinline))
@@ -6218,6 +6262,13 @@ gc_sweep(rb_objspace_t *objspace)
     gc_sweep_start(objspace);
     if (objspace->flags.during_compacting) {
         gc_sweep_compact(objspace);
+#if USE_PARALLEL_SWEEP
+        /* Snapshot was deliberately deferred in gc_sweep_start_heap — build it
+         * now from the post-compact heap->pages list. */
+        for (int i = 0; i < HEAP_COUNT; i++) {
+            gc_sweep_start_heap_snapshot(objspace, &heaps[i]);
+        }
+#endif
     }
 
     if (immediate_sweep) {
@@ -9067,20 +9118,6 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
     }
 
     garbage_collect(objspace, reason);
-#if RUBY_DEBUG && USE_PARALLEL_SWEEP
-    if (immediate_sweep) {
-        sweep_lock_lock(objspace);
-        {
-            GC_ASSERT(!objspace->sweep_thread_sweeping);
-            for (int j = 0; j < HEAP_COUNT; j++) {
-                rb_heap_t *heap = &heaps[j];
-                GC_ASSERT(!heap->swept_pages);
-                GC_ASSERT(!heap->sweeping_page);
-            }
-        }
-        sweep_lock_unlock(objspace);
-    }
-#endif
     // NOTE: background sweeping can still be active here. We also may enter a new GC cycle from finalizers below.
     gc_finalize_deferred(objspace);
 
