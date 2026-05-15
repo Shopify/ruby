@@ -568,16 +568,15 @@ typedef struct rb_heap_struct {
     struct heap_page *drained_local;
     size_t claimed_local_start;
     size_t claimed_local_end;
-    rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
 
-    // these fields are only for the sweep thread:
+    // these fields are only for the sweep thread (except set to 0 in sweep_start_heap)
     size_t worker_cache_start;
     size_t worker_cache_end;
     rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
-    /* Hot cross-thread atomics, each on its own cache line. */
-    RUBY_ALIGNAS(64) rb_atomic_t sweep_claim_index;
-    RUBY_ALIGNAS(64) struct heap_page *pre_swept_head;
-    RUBY_ALIGNAS(64) rb_atomic_t sweep_in_flight;
+    RUBY_ALIGNAS(64) rb_atomic_t sweep_claim_index; // cross-thread atomic
+    RUBY_ALIGNAS(64) struct heap_page *pre_swept_head; // cross-thread atomic
+    RUBY_ALIGNAS(64) rb_atomic_t sweep_in_flight; // cross-thread atomic
+    RUBY_ALIGNAS(64) rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
 #endif
 } rb_heap_t;
 
@@ -832,8 +831,8 @@ typedef struct rb_objspace {
     struct rb_gc_vm_context vm_context;
 
 #if USE_PARALLEL_SWEEP
-    rb_atomic_t use_background_sweep_thread;
-    RUBY_ALIGNAS(64) rb_atomic_t background_sweep_abort;
+    rb_atomic_t use_background_sweep_thread; // set by Ruby thread, read by both
+    rb_atomic_t background_sweep_abort; // set by Ruby thread, read by sweep thread
 #endif
 } rb_objspace_t;
 
@@ -1513,12 +1512,6 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
         psweep_debug(2, "[gc] heap_is_sweep_done: %d, heap:%p (%ld), heap->is_finished_sweeping\n", true, heap, heap - heaps);
         return true;
     }
-
-    /* Synchronous mode walks heap->sweeping_page directly and never touches
-     * the snapshot/atomic counters, so use the legacy predicate. */
-    /*if (!objspace->use_background_sweep_thread) {*/
-        /*return heap->sweeping_page == NULL;*/
-    /*}*/
 
     /* Local caches owned by the Ruby thread count as not-yet-done work. */
     if (heap->drained_local) return false;
@@ -5108,7 +5101,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             }
         }
         else {
-            if (RB_UNLIKELY(RUBY_ATOMIC_LOAD(objspace->background_sweep_abort))) {
+            if (RB_UNLIKELY(objspace->background_sweep_abort)) { // atomic load not necessary here
                 psweep_debug(-2, "[sweep] (bg) gc_sweep_step_worker: break early heap:%p (%ld) (abort)\n", heap, heap - heaps);
                 break;
             }
@@ -5196,11 +5189,11 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->pooled_pages = NULL;
 
 #if USE_PARALLEL_SWEEP
-    /*heap->pre_swept_slots_deferred = 0;*/
     heap->background_sweep_steps = heap->foreground_sweep_steps;
     heap->is_finished_sweeping = false;
     heap->done_background_sweep = false;
     /*heap->skip_sweep_continue = false;*/
+    /*heap->pre_swept_slots_deferred = 0;*/
 
     /* Build the page snapshot for this sweep cycle. Pages can be added during
      * sweep (heap_add_page asserts !heap->sweeping_page), so this is stable. */
