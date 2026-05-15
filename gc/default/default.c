@@ -5668,8 +5668,10 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 
 #if USE_PARALLEL_SWEEP
     if (heap_is_sweep_done(objspace, heap)) {
+        if (!heap->is_finished_sweeping) {
+            goto heap_sweep_done;
+        }
         psweep_debug(0, "[gc] gc_sweep_step: heap %p (%ld) is heap_is_sweep_done() early!\n", heap, heap - heaps);
-        heap->is_finished_sweeping = true;
         return heap->free_pages != NULL;
     }
 #else
@@ -5853,6 +5855,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
     }
 
     if (heap_is_sweep_done(objspace, heap)) {
+heap_sweep_done:
         objspace->sweeping_heap_count--;
         GC_ASSERT(objspace->sweeping_heap_count >= 0);
         psweep_debug(0, "[gc] gc_sweep_step heap:%p (%ld) sweep done\n", heap, heap - heaps);
