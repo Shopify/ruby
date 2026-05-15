@@ -549,16 +549,7 @@ typedef struct rb_heap_struct {
     bool done_background_sweep;
     bool skip_sweep_continue; // skip current sweep continue
 
-    /* Lock-free parallel sweep: page snapshot + atomic claim index + Treiber stack handoff.
-     * sweep_pages: frozen for the cycle (heap_add_page asserts !heap->sweeping_page).
-     * Both background worker and Ruby thread claim chunks via fetch_add into sweep_claim_index.
-     * Worker pre-sweeps and CAS-pushes onto pre_swept_head; Ruby thread ATOMIC_PTR_EXCHANGE-drains
-     * the whole stack to commit in bulk. sweep_in_flight counts claimed-but-not-yet-committed
-     * pages so we can detect heap completion.
-     *
-     * pre_swept_head and sweep_in_flight are placed at the end of the struct, each on its own
-     * 64-byte aligned slot, to keep their cache lines isolated from other heap fields and from
-     * each other (avoiding false sharing on the hottest cross-thread atomics). */
+    // Snapshot of pages to sweep. Both threads claim pages off this list
     rb_darray(struct heap_page *) sweep_pages;
 
     /* Ruby-thread-local caches consumed by gc_sweep_dequeue_page. Only the
@@ -5043,8 +5034,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 
         /* Accumulate up to SWEEP_CHUNK pre-swept pages in a local linked list
          * (via page->free_next), then push the whole batch onto pre_swept_head
-         * with a single CAS. Amortizes the CAS cost and contention with the
-         * Ruby-thread consumer. */
+         * with a single CAS. */
         struct heap_page *batch_head = NULL;
         struct heap_page *batch_tail = NULL;
         int batch_count = 0;
@@ -5080,11 +5070,10 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             batch_tail = page;
             batch_count++;
 
-            /* After the 2nd page in a batch, do a cheap atomic peek at the
-             * abort flag. If a Ruby thread has raised it, drain what we have
-             * and bail — don't keep accumulating up to 4. Bounds the abort
-             * latency to ~2 pre-swept pages of extra work. */
-            if (batch_count == 2 && RUBY_ATOMIC_LOAD(objspace->background_sweep_abort)) {
+            /* Halfway into a batch, do a cheap atomic peek at the abort flag.
+             * If a Ruby thread has raised it, drain what we have and bail — don't
+             * keep accumulating up to 4. Bounds the abort latency to ~2 pre-swept pages of work. */
+            if (batch_count == (SWEEP_CHUNK / 2) && RUBY_ATOMIC_LOAD(objspace->background_sweep_abort)) {
                 aborted_mid_batch = true;
                 break;
             }
@@ -5107,7 +5096,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             break;
         }
 
-        if (aborted_mid_batch) {
+        if (RB_UNLIKELY(aborted_mid_batch)) {
             psweep_debug(-2, "[sweep] (bg) gc_sweep_step_worker: break early heap:%p (%ld) (abort after page 2)\n", heap, heap - heaps);
             rb_native_cond_broadcast(&heap->sweep_page_cond);
             break;
@@ -5561,19 +5550,6 @@ gc_sweep_finish(rb_objspace_t *objspace)
 static struct heap_page *
 gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_user_thread, bool *dequeued_unswept_page)
 {
-    /*if (free_in_user_thread) {*/
-        /*GC_ASSERT(!objspace->use_background_sweep_thread);*/
-        /*struct heap_page *sweep_page = heap->sweeping_page;*/
-        /*if (!sweep_page) {*/
-            /*psweep_debug(0, "[gc] gc_sweep_dequeue_page: NULL page (synchronous) from heap(%p %ld)\n", heap, heap - heaps);*/
-            /*return NULL;*/
-        /*}*/
-        /*heap->sweeping_page = ccan_list_next(&heap->pages, sweep_page, page_node);*/
-        /**dequeued_unswept_page = true;*/
-        /*psweep_debug(0, "[gc] gc_sweep_dequeue_page:%p (synchronous) from heap(%p %ld)\n", sweep_page, heap, heap - heaps);*/
-        /*return sweep_page;*/
-    /*}*/
-
     /* 1) Local drain cache from a previous bulk grab. */
 retry:
     if (heap->drained_local) {
