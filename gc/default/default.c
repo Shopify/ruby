@@ -535,8 +535,6 @@ typedef struct rb_heap_struct {
 #endif
 
 #if USE_PARALLEL_SWEEP
-    rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
-    rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
     rb_nativethread_cond_t sweep_page_cond; // associated with global sweep lock
     rb_nativethread_lock_t swept_pages_lock;
     /*size_t pre_swept_slots_deferred;*/
@@ -556,7 +554,6 @@ typedef struct rb_heap_struct {
      * 64-byte aligned slot, to keep their cache lines isolated from other heap fields and from
      * each other (avoiding false sharing on the hottest cross-thread atomics). */
     rb_darray(struct heap_page *) sweep_pages;
-    rb_atomic_t sweep_claim_index;
 
     /* Ruby-thread-local caches consumed by gc_sweep_dequeue_page. Only the
      * Ruby GC thread reads/writes these; no atomics needed. drained_local is
@@ -572,12 +569,16 @@ typedef struct rb_heap_struct {
      * abort/restart, it stashes the unswept tail here so the next worker
      * iteration consumes it before claiming a fresh chunk. Only the sweep
      * thread touches these. */
-    size_t worker_cache_start;
-    size_t worker_cache_end;
 
+    RUBY_ALIGNAS(64) rb_atomic_t sweep_claim_index;
     /* Hot cross-thread atomics, each on its own cache line. */
     RUBY_ALIGNAS(64) struct heap_page *pre_swept_head;
     RUBY_ALIGNAS(64) rb_atomic_t sweep_in_flight;
+    RUBY_ALIGNAS(64) rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
+    // these fields are only for the sweep worker:
+    RUBY_ALIGNAS(64) size_t worker_cache_start;
+    size_t worker_cache_end;
+    rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
 #endif
 } rb_heap_t;
 
@@ -2822,6 +2823,7 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
         return;
     }
     else {
+        // FIXME: bad with lock-free queue
         sweep_lock_lock(objspace);
         {
             if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) &&
@@ -5514,8 +5516,8 @@ gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_use
         /*return sweep_page;*/
     /*}*/
 
-retry:
     /* 1) Local drain cache from a previous bulk grab. */
+retry:
     if (heap->drained_local) {
         struct heap_page *page = heap->drained_local;
         heap->drained_local = page->free_next;
@@ -5740,6 +5742,9 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 
         int free_slots = ctx.freed_slots + ctx.empty_slots;
         GC_ASSERT(sweep_page->total_slots > 0);
+        if (sweep_page->total_slots < free_slots) {
+            fprintf(stderr, "free_slots: %d, total_slots:%d\n", free_slots, (int)sweep_page->total_slots);
+        }
         GC_ASSERT(sweep_page->total_slots >= free_slots);
 
 #if USE_PARALLEL_SWEEP
@@ -6203,28 +6208,14 @@ gc_sweep(rb_objspace_t *objspace)
     }
     else {
         /* Sweep every size pool. */
-#if USE_PARALLEL_SWEEP
-#if PSWEEP_LOCK_STATS > 0
+#if USE_PARALLEL_SWEEP && PSWEEP_LOCK_STATS > 0
         current_step_type = 0;
         step_contention[0].step_count++;
 #endif
-
-        if (objspace->sweep_thread) {
-            // sweep backwards to reduce contention with sweep thread
-            for (int i = 0; i < HEAP_COUNT; i++) {
-                rb_heap_t *heap = &heaps[i];
-                gc_sweep_step(objspace, heap);
-            }
+        for (int i = 0; i < HEAP_COUNT; i++) {
+            rb_heap_t *heap = &heaps[i];
+            gc_sweep_step(objspace, heap);
         }
-        else {
-#endif // USE_PARALLEL_SWEEP
-            for (int i = 0; i < HEAP_COUNT; i++) {
-                rb_heap_t *heap = &heaps[i];
-                gc_sweep_step(objspace, heap);
-            }
-#if USE_PARALLEL_SWEEP
-        }
-#endif
     }
 
     gc_sweeping_exit(objspace);
