@@ -5093,7 +5093,13 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - swept page:%p\n", heap, heap - heaps, page);
 
         if (!objspace->background_sweep_mode) {
-            if (!objspace->sweep_rest && done_worker_incremental_sweep_steps_p(objspace, heap)) {
+            /* Only honor the foreground-done break when the local cache is fully drained.
+             * Pages still in worker_cache_start..worker_cache_end are counted in
+             * sweep_in_flight but not yet pushed to the Treiber stack — if we break with
+             * cached pages, the Ruby thread can later wait on sweep_page_cond with
+             * in_flight > 0 and no path to wake the worker, deadlocking the sweep. */
+            if (!objspace->sweep_rest && done_worker_incremental_sweep_steps_p(objspace, heap) &&
+                    heap->worker_cache_start >= heap->worker_cache_end) {
                 rb_native_cond_broadcast(&heap->sweep_page_cond);
                 psweep_debug(-2, "[sweep] (fg) gc_sweep_step_worker: done incremental step heap:%p (%ld)\n", heap, heap - heaps);
                 heap->background_sweep_steps = ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps);
@@ -5891,6 +5897,20 @@ gc_sweep_rest(rb_objspace_t *objspace)
         }
         GC_ASSERT(heap->is_finished_sweeping);
         heap->background_sweep_steps = heap->foreground_sweep_steps;
+    }
+
+    /* All heaps are heap_is_sweep_done, but the worker may still be mid-iteration
+     * in its outer for-loop (between sweep_lock_unlock and the claim-failed re-lock).
+     * Wait for it to set sweep_thread_sweeping = false so the rest of the GC cycle
+     * can rely on a quiescent worker. */
+    if (objspace->use_background_sweep_thread) {
+        sweep_lock_lock(objspace);
+        while (objspace->sweep_thread_running && objspace->sweep_thread_sweeping) {
+            sweep_lock_set_unlocked(objspace);
+            rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
+            sweep_lock_set_locked(objspace);
+        }
+        sweep_lock_unlock(objspace);
     }
 #else
     for (int i = 0; i < HEAP_COUNT; i++) {
