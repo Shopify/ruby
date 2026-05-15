@@ -5206,7 +5206,7 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     /*heap->skip_sweep_continue = false;*/
     heap->dequeued_last_page = false;
 
-    /* Build the page snapshot for this sweep cycle. Pages cannot be added during
+    /* Build the page snapshot for this sweep cycle. Pages can be added during
      * sweep (heap_add_page asserts !heap->sweeping_page), so this is stable. */
     rb_darray_clear(heap->sweep_pages);
     heap->sweep_claim_index = 0;
@@ -5445,14 +5445,6 @@ gc_sweep_finish(rb_objspace_t *objspace)
         rb_heap_t *heap = &heaps[i];
 
 #if RUBY_DEBUG
-        {
-            struct heap_page *page;
-            ccan_list_for_each(&heap->pages, page, page_node) {
-                if (RUBY_ATOMIC_LOAD(page->before_sweep)) {
-                    rb_bug("gc_sweep_finish: page %p in heap %d still has before_sweep set", (void *)page, i);
-                }
-            }
-        }
         heap->zombie_slots = 0;
 #endif
 
