@@ -1512,9 +1512,9 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
 
     /* Synchronous mode walks heap->sweeping_page directly and never touches
      * the snapshot/atomic counters, so use the legacy predicate. */
-    if (!objspace->use_background_sweep_thread) {
-        return heap->sweeping_page == NULL;
-    }
+    /*if (!objspace->use_background_sweep_thread) {*/
+        /*return heap->sweeping_page == NULL;*/
+    /*}*/
 
     /* Local caches owned by the Ruby thread count as not-yet-done work. */
     if (heap->drained_local) return false;
@@ -5523,18 +5523,18 @@ gc_sweep_finish(rb_objspace_t *objspace)
 static struct heap_page *
 gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_user_thread, bool *dequeued_unswept_page)
 {
-    if (free_in_user_thread) {
-        GC_ASSERT(!objspace->use_background_sweep_thread);
-        struct heap_page *sweep_page = heap->sweeping_page;
-        if (!sweep_page) {
-            psweep_debug(0, "[gc] gc_sweep_dequeue_page: NULL page (synchronous) from heap(%p %ld)\n", heap, heap - heaps);
-            return NULL;
-        }
-        heap->sweeping_page = ccan_list_next(&heap->pages, sweep_page, page_node);
-        *dequeued_unswept_page = true;
-        psweep_debug(0, "[gc] gc_sweep_dequeue_page:%p (synchronous) from heap(%p %ld)\n", sweep_page, heap, heap - heaps);
-        return sweep_page;
-    }
+    /*if (free_in_user_thread) {*/
+        /*GC_ASSERT(!objspace->use_background_sweep_thread);*/
+        /*struct heap_page *sweep_page = heap->sweeping_page;*/
+        /*if (!sweep_page) {*/
+            /*psweep_debug(0, "[gc] gc_sweep_dequeue_page: NULL page (synchronous) from heap(%p %ld)\n", heap, heap - heaps);*/
+            /*return NULL;*/
+        /*}*/
+        /*heap->sweeping_page = ccan_list_next(&heap->pages, sweep_page, page_node);*/
+        /**dequeued_unswept_page = true;*/
+        /*psweep_debug(0, "[gc] gc_sweep_dequeue_page:%p (synchronous) from heap(%p %ld)\n", sweep_page, heap, heap - heaps);*/
+        /*return sweep_page;*/
+    /*}*/
 
 retry:
     /* 1) Local drain cache from a previous bulk grab. */
@@ -5669,6 +5669,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 #if USE_PARALLEL_SWEEP
     if (heap_is_sweep_done(objspace, heap)) {
         psweep_debug(0, "[gc] gc_sweep_step: heap %p (%ld) is heap_is_sweep_done() early!\n", heap, heap - heaps);
+        heap->is_finished_sweeping = true;
         return heap->free_pages != NULL;
     }
 #else
