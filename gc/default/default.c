@@ -532,11 +532,6 @@ typedef struct rb_heap_struct {
     struct heap_page *free_pages;
     struct ccan_list_head pages;
     struct heap_page *sweeping_page; /* iterator for .pages. It always points to the next page to sweep. */
-#if USE_PARALLEL_SWEEP
-    struct heap_page *pre_sweeping_page; /* Background thread is currently sweeping this page */
-    struct heap_page *swept_pages; /* pages claimed and swept by background thread */
-    struct heap_page *latest_swept_page; // tail of `swept_pages`
-#endif
     struct heap_page *compact_cursor;
     uintptr_t compact_cursor_index;
     struct heap_page *pooled_pages;
@@ -553,7 +548,6 @@ typedef struct rb_heap_struct {
     bool is_finished_sweeping;
     bool done_background_sweep;
     bool skip_sweep_continue; // skip current sweep continue
-    bool dequeued_last_page;
 
     /* Lock-free parallel sweep: page snapshot + atomic claim index + Treiber stack handoff.
      * sweep_pages: frozen for the cycle (heap_add_page asserts !heap->sweeping_page).
@@ -576,21 +570,16 @@ typedef struct rb_heap_struct {
     struct heap_page *drained_local;
     size_t claimed_local_start;
     size_t claimed_local_end;
+    rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
 
-    /* Worker-thread-local cache. When the worker breaks mid-chunk on
-     * abort/restart, it stashes the unswept tail here so the next worker
-     * iteration consumes it before claiming a fresh chunk. Only the sweep
-     * thread touches these. */
-
-    RUBY_ALIGNAS(64) rb_atomic_t sweep_claim_index;
-    /* Hot cross-thread atomics, each on its own cache line. */
-    RUBY_ALIGNAS(64) struct heap_page *pre_swept_head;
-    RUBY_ALIGNAS(64) rb_atomic_t sweep_in_flight;
-    RUBY_ALIGNAS(64) rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
-    // these fields are only for the sweep worker:
-    RUBY_ALIGNAS(64) size_t worker_cache_start;
+    // these fields are only for the sweep thread:
+    size_t worker_cache_start;
     size_t worker_cache_end;
     rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
+    /* Hot cross-thread atomics, each on its own cache line. */
+    RUBY_ALIGNAS(64) rb_atomic_t sweep_claim_index;
+    RUBY_ALIGNAS(64) struct heap_page *pre_swept_head;
+    RUBY_ALIGNAS(64) rb_atomic_t sweep_in_flight;
 #endif
 } rb_heap_t;
 
@@ -845,8 +834,8 @@ typedef struct rb_objspace {
     struct rb_gc_vm_context vm_context;
 
 #if USE_PARALLEL_SWEEP
-    RUBY_ALIGNAS(64) rb_atomic_t background_sweep_abort;
     rb_atomic_t use_background_sweep_thread;
+    RUBY_ALIGNAS(64) rb_atomic_t background_sweep_abort;
 #endif
 } rb_objspace_t;
 
@@ -998,6 +987,7 @@ struct heap_page {
     } flags;
 
     rb_heap_t *heap;
+    rb_atomic_t before_sweep; // bool, ruby thread sets, sweep thread reads
 
     struct heap_page *free_next;
     struct heap_page_body *body;
@@ -1015,10 +1005,9 @@ struct heap_page {
     bits_t pinned_bits[HEAP_PAGE_BITMAP_LIMIT];
     bits_t age_bits[HEAP_PAGE_BITMAP_LIMIT * RVALUE_AGE_BIT_COUNT];
 #if USE_PARALLEL_SWEEP
-    bits_t deferred_free_bits[HEAP_PAGE_BITMAP_LIMIT]; // sweep thread sets, ruby thread reads
-    rb_atomic_t before_sweep; // bool, ruby thread sets, sweep thread reads
-    // sweep thread sets these fields and ruby thread reads
-    RUBY_ALIGNAS(64) unsigned short pre_freed_slots;
+    bits_t deferred_free_bits[HEAP_PAGE_BITMAP_LIMIT]; // both threads set when they own page
+    // both threads set when they own the page
+    unsigned short pre_freed_slots;
     unsigned short pre_empty_slots;
     unsigned short pre_deferred_free_slots;
     unsigned short pre_final_slots;
@@ -2831,24 +2820,10 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
     GC_ASSERT(heap->free_pages == NULL);
 
 #if USE_PARALLEL_SWEEP
-    if (heap->is_finished_sweeping && heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size)) {
+    if (heap_is_sweep_done(objspace, heap) && heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size)) {
         heap_page_allocate_and_initialize_force(objspace, heap, false);
         GC_ASSERT(heap->free_pages != NULL);
         return;
-    }
-    else {
-        // FIXME: bad with lock-free queue
-        sweep_lock_lock(objspace);
-        {
-            if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) &&
-                    heap->sweeping_page == NULL && heap->swept_pages == NULL && !heap->pre_sweeping_page) {
-                heap_page_allocate_and_initialize_force(objspace, heap, true);
-                GC_ASSERT(heap->free_pages != NULL);
-                sweep_lock_unlock(objspace);
-                return;
-            }
-        }
-        sweep_lock_unlock(objspace);
     }
 #else
     if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) &&
@@ -3769,8 +3744,6 @@ gc_abort(void *objspace_ptr)
             rb_heap_t *heap = &heaps[i];
             heap->sweeping_page = NULL;
 #if USE_PARALLEL_SWEEP
-            heap->swept_pages = NULL;
-            heap->pre_sweeping_page = NULL;
             heap->is_finished_sweeping = false;
             heap->background_sweep_steps = heap->foreground_sweep_steps;
 
@@ -5250,27 +5223,23 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->pooled_pages = NULL;
 
 #if USE_PARALLEL_SWEEP
-    heap->swept_pages = NULL;
-    heap->latest_swept_page = NULL;
     /*heap->pre_swept_slots_deferred = 0;*/
-    heap->pre_sweeping_page = NULL;
     heap->background_sweep_steps = heap->foreground_sweep_steps;
     heap->is_finished_sweeping = false;
     heap->done_background_sweep = false;
     /*heap->skip_sweep_continue = false;*/
-    heap->dequeued_last_page = false;
 
     /* Build the page snapshot for this sweep cycle. Pages can be added during
      * sweep (heap_add_page asserts !heap->sweeping_page), so this is stable. */
     rb_darray_clear(heap->sweep_pages);
     heap->sweep_claim_index = 0;
-    heap->sweep_in_flight = 0;
     heap->pre_swept_head = NULL;
     heap->drained_local = NULL;
     heap->claimed_local_start = 0;
     heap->claimed_local_end = 0;
     heap->worker_cache_start = 0;
     heap->worker_cache_end = 0;
+    heap->sweep_in_flight = 0;
 #endif
 
 #if RUBY_DEBUG
@@ -5462,9 +5431,6 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
      * and the post-sweep assertions (line 5838 etc.) keep working until they
      * can be removed in a follow-up commit. */
     heap->sweeping_page = NULL;
-    heap->pre_sweeping_page = NULL;
-    heap->swept_pages = NULL;
-    heap->latest_swept_page = NULL;
 #endif
 
 #if RUBY_DEBUG
@@ -11893,7 +11859,6 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
 
             rb_native_mutex_initialize(&heap->swept_pages_lock);
             rb_native_cond_initialize(&heap->sweep_page_cond);
-            heap->pre_sweeping_page = NULL;
             heap->background_sweep_steps = heap->foreground_sweep_steps;
         }
 
