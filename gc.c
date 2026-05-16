@@ -2488,10 +2488,6 @@ rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
     ASSUME(!RB_SPECIAL_CONST_P(obj));
     bool result = obj_free_object_id(obj, false);
 
-    if (rb_obj_gen_fields_p(obj)) {
-        bool freed_generic = rb_free_generic_ivar(obj);
-        if (!freed_generic) result = false;
-    }
     switch (BUILTIN_TYPE(obj)) {
       case T_STRING:
         if (FL_TEST_RAW(obj, RSTRING_FSTR)) {
@@ -2503,6 +2499,9 @@ rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
         break;
       default:
         break;
+    }
+    if (rb_obj_gen_fields_p(obj)) {
+        return false;
     }
     return result;
 }

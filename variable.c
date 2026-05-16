@@ -1239,68 +1239,6 @@ ivar_ractor_check(VALUE obj, ID id)
     }
 }
 
-// TODO: platforms other than pthread
-static rb_nativethread_lock_t gen_fields_tbl_lock_ = PTHREAD_MUTEX_INITIALIZER;
-#ifdef RUBY_THREAD_PTHREAD_H
-static pthread_t gen_fields_tbl_lock_owner;
-#endif
-static unsigned int gen_fields_tbl_lock_lvl;
-
-static inline void
-ASSERT_gen_fields_tbl_locked(void)
-{
-#ifdef RUBY_THREAD_PTHREAD_H
-    VM_ASSERT(pthread_self() == gen_fields_tbl_lock_owner);
-#endif
-}
-
-static inline void
-ASSERT_gen_fields_tbl_unlocked(void)
-{
-#ifdef RUBY_THREAD_PTHREAD_H
-    VM_ASSERT(pthread_self() != gen_fields_tbl_lock_owner);
-#endif
-}
-
-static inline void
-gen_fields_tbl_lock(bool allow_reentry)
-{
-    if (allow_reentry && pthread_self() == gen_fields_tbl_lock_owner) {
-    } else {
-        ASSERT_gen_fields_tbl_unlocked();
-        rb_native_mutex_lock(&gen_fields_tbl_lock_);
-        gen_fields_tbl_lock_owner = pthread_self();
-    }
-    gen_fields_tbl_lock_lvl++;
-}
-
-static inline bool
-gen_fields_tbl_trylock(bool allow_reentry)
-{
-    if (allow_reentry && pthread_self() == gen_fields_tbl_lock_owner) {
-    } else {
-        ASSERT_gen_fields_tbl_unlocked();
-        if (rb_native_mutex_trylock(&gen_fields_tbl_lock_) == EBUSY) {
-            return false;
-        }
-        gen_fields_tbl_lock_owner = pthread_self();
-    }
-    gen_fields_tbl_lock_lvl++;
-    return true;
-}
-
-static inline void
-gen_fields_tbl_unlock(void)
-{
-    ASSERT_gen_fields_tbl_locked();
-    RUBY_ASSERT(gen_fields_tbl_lock_lvl > 0);
-    gen_fields_tbl_lock_lvl--;
-    if (gen_fields_tbl_lock_lvl == 0) {
-        gen_fields_tbl_lock_owner = 0;
-        rb_native_mutex_unlock(&gen_fields_tbl_lock_);
-    }
-}
-
 static inline struct st_table *
 generic_fields_tbl_no_ractor_check(void)
 {
@@ -1317,27 +1255,21 @@ void
 rb_mark_generic_ivar(VALUE obj)
 {
     VALUE data;
-    gen_fields_tbl_lock(true);
-    {
-        // Bypass ASSERT_vm_locking() check because marking may happen concurrently with mmtk
-        if (st_lookup(generic_fields_tbl_, (st_data_t)obj, (st_data_t *)&data)) {
-            rb_gc_mark_movable(data);
-        }
+    // Bypass ASSERT_vm_locking() check because marking may happen concurrently with mmtk
+    if (st_lookup(generic_fields_tbl_, (st_data_t)obj, (st_data_t *)&data)) {
+        rb_gc_mark_movable(data);
     }
-    gen_fields_tbl_unlock();
 }
 
 VALUE
 rb_obj_fields_generic_uncached(VALUE obj)
 {
     VALUE fields_obj = 0;
-    gen_fields_tbl_lock(false);
-    {
+    RB_VM_LOCKING() {
         if (!st_lookup(generic_fields_tbl_, (st_data_t)obj, (st_data_t *)&fields_obj)) {
             rb_bug("Object is missing entry in generic_fields_tbl");
         }
     }
-    gen_fields_tbl_unlock();
     return fields_obj;
 }
 
@@ -1399,27 +1331,16 @@ rb_free_generic_ivar(VALUE obj)
             {
                 // Other EC may have stale caches, so fields_obj should be
                 // invalidated and the GC will replace with Qundef
-                rb_execution_context_t *ec = rb_current_execution_context(false);
+                rb_execution_context_t *ec = GET_EC();
                 if (ec && ec->gen_fields_cache.obj == obj) {
                     ec->gen_fields_cache.obj = Qundef;
                     ec->gen_fields_cache.fields_obj = Qundef;
                 }
-                if (ec) {
-                    gen_fields_tbl_lock(true); // needs to be re-entrant
-                }
-                else {
-                    bool did_lock = gen_fields_tbl_trylock(false);
-                    // If we can't acquire it, bail (could lead to deadlock)
-                    if (!did_lock) return false;
-                }
-                // gen_fields_tbl_lock();
-                {
+                RB_VM_LOCKING() {
                     if (!st_delete(generic_fields_tbl_no_ractor_check(), &key, &value)) {
-                        gen_fields_tbl_unlock();
                         rb_bug("Object is missing entry in generic_fields_tbl");
                     }
                 }
-                gen_fields_tbl_unlock();
             }
         }
         RBASIC_SET_SHAPE_ID(obj, ROOT_SHAPE_ID);
@@ -1456,12 +1377,8 @@ rb_obj_set_fields(VALUE obj, VALUE fields_obj, ID field_name, VALUE original_fie
           default:
           generic_fields:
             {
-                RB_VM_LOCKING() { // needed in case insert triggers GC
-                    gen_fields_tbl_lock(false);
-                    {
-                        st_insert(generic_fields_tbl_, (st_data_t)obj, (st_data_t)fields_obj);
-                    }
-                    gen_fields_tbl_unlock();
+                RB_VM_LOCKING() {
+                    st_insert(generic_fields_tbl_, (st_data_t)obj, (st_data_t)fields_obj);
                 }
                 RB_OBJ_WRITTEN(obj, original_fields_obj, fields_obj);
 
@@ -2409,7 +2326,6 @@ rb_replace_generic_ivar(VALUE clone, VALUE obj)
 {
     RB_VM_LOCKING() {
         st_data_t fields_tbl, obj_data = (st_data_t)obj;
-        // We've STW at this point, no need to lock gen_fields_tbl_lock
         if (st_delete(generic_fields_tbl_, &obj_data, &fields_tbl)) {
             st_insert(generic_fields_tbl_, (st_data_t)clone, fields_tbl);
             RB_OBJ_WRITTEN(clone, Qundef, fields_tbl);
