@@ -2630,7 +2630,7 @@ heap_page_allocate(rb_objspace_t *objspace)
 
 /* Add either an empty page (objspace->empty_pages) or a newly allocated page to a heap. Thread the freelist and set `heap->free_slots` */
 static void
-heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page, bool sweep_lock_taken)
+heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
 {
     /* Adding to eden heap during incremental sweeping is forbidden */
     GC_ASSERT(!heap->sweeping_page);
@@ -2668,11 +2668,7 @@ heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page, 
 
     heap->total_allocated_pages++;
 
-    if (!sweep_lock_taken) sweep_lock_lock(objspace);
-    {
-        ccan_list_add_tail(&heap->pages, &page->page_node);
-    }
-    if (!sweep_lock_taken) sweep_lock_unlock(objspace);
+    ccan_list_add_tail(&heap->pages, &page->page_node);
 
     heap->total_pages++;
     GC_ASSERT(page->total_slots == page->free_slots);
@@ -2680,7 +2676,7 @@ heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page, 
 }
 
 static int
-heap_page_allocate_and_initialize(rb_objspace_t *objspace, rb_heap_t *heap, bool sweep_lock_taken)
+heap_page_allocate_and_initialize(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     gc_report(1, objspace, "heap_page_allocate_and_initialize: rb_darray_size(objspace->heap_pages.sorted): %"PRIdSIZE", "
                   "allocatable_bytes: %"PRIdSIZE", heap->total_pages: %"PRIdSIZE"\n",
@@ -2698,7 +2694,7 @@ heap_page_allocate_and_initialize(rb_objspace_t *objspace, rb_heap_t *heap, bool
     }
 
     if (page != NULL) {
-        heap_add_page(objspace, heap, page, sweep_lock_taken);
+        heap_add_page(objspace, heap, page);
         heap_add_freepage(heap, page, "allocate_and_initialize");
 
         if (allocated) {
@@ -2716,11 +2712,11 @@ heap_page_allocate_and_initialize(rb_objspace_t *objspace, rb_heap_t *heap, bool
 }
 
 static void
-heap_page_allocate_and_initialize_force(rb_objspace_t *objspace, rb_heap_t *heap, bool sweep_lock_taken)
+heap_page_allocate_and_initialize_force(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     size_t prev_allocatable_bytes = objspace->heap_pages.allocatable_bytes;
     objspace->heap_pages.allocatable_bytes = HEAP_PAGE_SIZE;
-    heap_page_allocate_and_initialize(objspace, heap, sweep_lock_taken);
+    heap_page_allocate_and_initialize(objspace, heap);
     GC_ASSERT(heap->free_pages != NULL);
     objspace->heap_pages.allocatable_bytes = prev_allocatable_bytes;
 }
@@ -2766,14 +2762,14 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
 
 #if USE_PARALLEL_SWEEP
     if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) && heap_is_sweep_done(objspace, heap)) {
-        heap_page_allocate_and_initialize_force(objspace, heap, false);
+        heap_page_allocate_and_initialize_force(objspace, heap);
         GC_ASSERT(heap->free_pages != NULL);
         return;
     }
 #else
     if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) &&
             heap->sweeping_page == NULL) {
-        heap_page_allocate_and_initialize_force(objspace, heap, true);
+        heap_page_allocate_and_initialize_force(objspace, heap);
         GC_ASSERT(heap->free_pages != NULL);
         return;
     }
@@ -2784,7 +2780,7 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
 
     if (heap->free_pages == NULL) {
         psweep_debug(1, "[gc] heap_prepare: heap->free_pages is NULL after gc_continue\n");
-        heap_page_allocate_and_initialize(objspace, heap, false);
+        heap_page_allocate_and_initialize(objspace, heap);
     }
 
     /* If we still don't have a free page and not allowed to create a new page,
@@ -2810,7 +2806,7 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
             /* If we're not incremental marking (e.g. a minor GC) or finished
              * sweeping and still don't have a free page, then
              * gc_sweep_finish_heap should allow us to create a new page. */
-            if (heap->free_pages == NULL && !heap_page_allocate_and_initialize(objspace, heap, false)) {
+            if (heap->free_pages == NULL && !heap_page_allocate_and_initialize(objspace, heap)) {
                 if (gc_needs_major_flags == GPR_FLAG_NONE) {
                     rb_bug("cannot create a new page after GC");
                 }
@@ -2823,7 +2819,7 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
                         gc_continue(objspace, heap);
 
                         if (heap->free_pages == NULL &&
-                                !heap_page_allocate_and_initialize(objspace, heap, false)) {
+                                !heap_page_allocate_and_initialize(objspace, heap)) {
                             rb_bug("cannot create a new page after major GC");
                         }
                     }
@@ -5512,7 +5508,7 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
         struct heap_page *resurrected_page;
         while (swept_slots < min_free_slots &&
                 (resurrected_page = heap_page_resurrect(objspace))) {
-            heap_add_page(objspace, heap, resurrected_page, false);
+            heap_add_page(objspace, heap, resurrected_page);
             heap_add_freepage(heap, resurrected_page, "gc_sweep_finish_heap");
 
             swept_slots += resurrected_page->free_slots;
@@ -6154,7 +6150,7 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
                  * empty/allocatable pages. If other heaps are not finished sweeping
                  * then we do not finish this GC and we will end up triggering a new
                  * GC cycle during this GC phase. */
-                heap_page_allocate_and_initialize(objspace, heap, false);
+                heap_page_allocate_and_initialize(objspace, heap);
 
                 GC_ASSERT(heap->free_pages != NULL);
             }
@@ -8487,9 +8483,9 @@ static void
 heap_ready_to_gc(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     if (!heap->free_pages) {
-        if (!heap_page_allocate_and_initialize(objspace, heap, false)) {
+        if (!heap_page_allocate_and_initialize(objspace, heap)) {
             objspace->heap_pages.allocatable_bytes = HEAP_PAGE_SIZE;
-            heap_page_allocate_and_initialize(objspace, heap, false);
+            heap_page_allocate_and_initialize(objspace, heap);
         }
     }
 }
@@ -11734,7 +11730,7 @@ gc_verify_compaction_references(int argc, VALUE* argv, VALUE self)
                  */
                 objspace->heap_pages.allocatable_bytes = desired_compaction.required_slots[i] * heap->slot_size;
                 while (objspace->heap_pages.allocatable_bytes > 0) {
-                    heap_page_allocate_and_initialize(objspace, heap, false);
+                    heap_page_allocate_and_initialize(objspace, heap);
                 }
                 /*
                  * Step 3: Add two more pages so that the compact & sweep cursors will meet _after_ all objects
@@ -11743,7 +11739,7 @@ gc_verify_compaction_references(int argc, VALUE* argv, VALUE self)
                 pages_to_add += 2;
 
                 for (; pages_to_add > 0; pages_to_add--) {
-                    heap_page_allocate_and_initialize_force(objspace, heap, false);
+                    heap_page_allocate_and_initialize_force(objspace, heap);
                 }
             }
         }
