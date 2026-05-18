@@ -2812,7 +2812,7 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
     GC_ASSERT(heap->free_pages == NULL);
 
 #if USE_PARALLEL_SWEEP
-    if (heap_is_sweep_done(objspace, heap) && heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size)) {
+    if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) && heap_is_sweep_done(objspace, heap)) {
         heap_page_allocate_and_initialize_force(objspace, heap, false);
         GC_ASSERT(heap->free_pages != NULL);
         return;
@@ -4987,12 +4987,12 @@ sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, bool is_s
 {
     size_t total = rb_darray_size(heap->sweep_pages);
     if (total == 0) return false;
-    rb_atomic_t start = RUBY_ATOMIC_FETCH_ADD(heap->sweep_claim_index, SWEEP_CHUNK);
+    rb_atomic_t start = rbimpl_atomic_fetch_add(&heap->sweep_claim_index, SWEEP_CHUNK, RBIMPL_ATOMIC_ACQ_REL);
     if ((size_t)start >= total) return false;
     size_t end = (size_t)start + SWEEP_CHUNK;
     if (end > total) end = total;
     if (is_sweep_thread) {
-        RUBY_ATOMIC_FETCH_ADD(heap->sweep_in_flight, (rb_atomic_t)(end - (size_t)start));
+        rbimpl_atomic_add(&heap->sweep_in_flight, (rb_atomic_t)(end - (size_t)start), RBIMPL_ATOMIC_RELEASE);
     }
     *out_start = (size_t)start;
     *out_end = end;
@@ -5008,9 +5008,10 @@ sweep_stack_push_bulk(rb_heap_t *heap, struct heap_page *head, struct heap_page 
 {
     struct heap_page *old;
     do {
-        old = RUBY_ATOMIC_PTR_LOAD(heap->pre_swept_head);
+        old = rbimpl_atomic_ptr_load((void**)&heap->pre_swept_head, RBIMPL_ATOMIC_RELAXED);
         tail->free_next = old;
-    } while ((struct heap_page *)RUBY_ATOMIC_PTR_CAS(heap->pre_swept_head, old, head) != old);
+    } while ((struct heap_page *)rbimpl_atomic_ptr_cas((void**)&heap->pre_swept_head, old, head,
+                                                        RBIMPL_ATOMIC_RELEASE, RBIMPL_ATOMIC_RELAXED) != old);
 }
 
 /* Atomically detach the entire pre-swept stack and return its head, or NULL.
@@ -5018,7 +5019,7 @@ sweep_stack_push_bulk(rb_heap_t *heap, struct heap_page *head, struct heap_page 
 static struct heap_page *
 sweep_stack_drain(rb_heap_t *heap)
 {
-    return RUBY_ATOMIC_PTR_EXCHANGE(heap->pre_swept_head, NULL);
+    return rbimpl_atomic_ptr_exchange((void**)&heap->pre_swept_head, NULL, RBIMPL_ATOMIC_ACQ_REL);
 }
 
 // Perform incremental (lazy) sweep on a heap by the background sweep thread.
@@ -5111,7 +5112,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             /* Halfway into a batch, do a cheap atomic peek at the abort flag.
              * If a Ruby thread has raised it, drain what we have and bail — don't
              * keep accumulating up to 4. Bounds the abort latency to ~2 pre-swept pages of work. */
-            if (batch_count == (SWEEP_CHUNK / 2) && RUBY_ATOMIC_LOAD(objspace->background_sweep_abort)) {
+            if (batch_count == (SWEEP_CHUNK / 2) && rbimpl_atomic_load(&objspace->background_sweep_abort, RBIMPL_ATOMIC_ACQUIRE)) {
                 aborted_mid_batch = true;
                 break;
             }
