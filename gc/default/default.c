@@ -567,6 +567,10 @@ typedef struct rb_heap_struct {
     struct heap_page *drained_local;
     size_t claimed_local_start;
     size_t claimed_local_end;
+    /* Local (Ruby-thread-only) tally of how much of the claim_index overshoot
+     * is attributable to Ruby-thread claims rather than to the worker. See the
+     * comment block above heap_is_sweep_done. */
+    size_t ruby_overshoot;
 
     // these fields are only for the sweep thread (except set to 0 in sweep_start_heap)
     size_t worker_cache_start;
@@ -1512,29 +1516,38 @@ sweep_lock_set_unlocked(rb_objspace_t *objspace)
 #if USE_PARALLEL_SWEEP
 /* Page claim / in-flight bookkeeping.
  *
- * Two quantities are checked together in heap_is_sweep_done:
- *   - sweep_claim_index: how many pages of the sweep_pages snapshot have been
- *     handed out to either the worker or the Ruby thread (chunks of SWEEP_CHUNK).
- *   - sweep_in_flight:  pages the worker has claimed but the Ruby thread has
- *     not yet committed (via gc_sweep_step's per-page decrement).
+ * Two quantities determine when a heap is fully done sweeping:
+ *   - claim_index: how many SWEEP_CHUNK-sized chunks of the sweep_pages
+ *     snapshot have been handed out (to either the worker or the Ruby thread).
+ *   - in_flight:   pages the worker has claimed but the Ruby thread has not
+ *     yet committed (via gc_sweep_step's per-page decrement).
  *
- * Done condition is (claim_index >= total && in_flight == 0). The trap is the
- * narrow window between bumping one and the other: an observer that loads them
- * in the wrong order can see "all claimed && none in flight" while the worker
- * is mid-claim, and falsely conclude the heap is done.
+ * 64-bit (SIZEOF_VOIDP >= 8): both quantities live in a single size_t,
+ * sweep_claim_state, laid out as [claim_index : 32 high | in_flight : 32 low].
+ * A single fetch_add atomically bumps both halves, so the original race
+ * ("claim_index past total while in_flight not yet credited") cannot occur.
  *
- * 64-bit platforms (SIZEOF_VOIDP >= 8): pack both halves into a single size_t
- * and bump them with one atomic fetch_add. The pair is observed atomically, so
- * the window is closed.
+ * No refunds. Each sweep_claim_chunk call bumps claim_index by SWEEP_CHUNK
+ * even when it overshoots `total` or claims a short chunk, and the worker's
+ * call always bumps in_flight by SWEEP_CHUNK too — which means in_flight ends
+ * up over-credited. The observer reconciles by tracking:
  *
- * 32-bit platforms: no double-width atomic, so two fields with refund-first
- * ordering — the worker writes in_flight FIRST (release) and claim_index
- * SECOND (release). An observer that loads claim_index (acquire) and sees the
- * worker's bump has happens-before with the in_flight bump, so the in_flight
- * credit is visible. A transient case — worker bumps in_flight then sees
- * prev >= total and refunds — is fine: any Ruby thread that observed the
- * transient bump and went to sleep on sweep_page_cond is woken by
- * gc_sweep_step_worker's no_more_work broadcast. */
+ *   total_overshoot  = claim_index - total          (when claim_index > total)
+ *   ruby_overshoot   = heap-local count maintained by the Ruby thread, the
+ *                      portion of total_overshoot caused by Ruby-thread calls
+ *   worker_overshoot = total_overshoot - ruby_overshoot
+ *   true_in_flight   = in_flight - worker_overshoot
+ *
+ * Invariant: in_flight >= worker_overshoot, because in_flight = (worker bumps)
+ * - (commits), and commits <= (worker bumps - worker_overshoot), so
+ * in_flight >= worker_overshoot.
+ *
+ * The Ruby thread is the only writer to heap->ruby_overshoot AND the only
+ * caller of heap_is_sweep_done / sweep_true_in_flight, so ruby_overshoot
+ * doesn't need to be atomic. The worker doesn't read or write it.
+ *
+ * 32-bit: not yet implemented (would need two atomics plus refund-first
+ * ordering for the same end). sweep_claim_chunk #errors in that branch. */
 
 #if SIZEOF_VOIDP >= 8
 #define SWEEP_CLAIM_INDEX_SHIFT 32
@@ -1542,14 +1555,46 @@ sweep_lock_set_unlocked(rb_objspace_t *objspace)
 #define SWEEP_CLAIM_INDEX_UNIT  ((size_t)1 << SWEEP_CLAIM_INDEX_SHIFT)
 #endif
 
+/* Load the (claim_index, in_flight) pair atomically. */
+static inline void
+sweep_load_claim_state(rb_heap_t *heap, size_t *out_claim_idx, size_t *out_in_flight)
+{
+#if SIZEOF_VOIDP >= 8
+    size_t state = rbimpl_atomic_size_load(&heap->sweep_claim_state, RBIMPL_ATOMIC_ACQUIRE);
+    *out_claim_idx = state >> SWEEP_CLAIM_INDEX_SHIFT;
+    *out_in_flight = state & SWEEP_IN_FLIGHT_MASK;
+#else
+#error "32-bit parallel sweep path not yet implemented"
+#endif
+}
+
+/* Raw in_flight load (no overshoot reconciliation). Use sweep_true_in_flight
+ * for done-detection; this one is only for assertions that the packed counter
+ * is consistent with a pending decrement. */
 static inline size_t
 sweep_in_flight_load(rb_heap_t *heap)
 {
-#if SIZEOF_VOIDP >= 8
-    return rbimpl_atomic_size_load(&heap->sweep_claim_state, RBIMPL_ATOMIC_ACQUIRE) & SWEEP_IN_FLIGHT_MASK;
-#else
-    return (size_t)RUBY_ATOMIC_LOAD(heap->sweep_in_flight);
-#endif
+    size_t claim_idx, in_flight;
+    sweep_load_claim_state(heap, &claim_idx, &in_flight);
+    (void)claim_idx;
+    return in_flight;
+}
+
+/* Pages the worker has actually claimed but the Ruby thread has not yet
+ * committed. See the comment block above for the over-credit reconciliation. */
+static inline size_t
+sweep_true_in_flight(rb_heap_t *heap)
+{
+    size_t total = rb_darray_size(heap->sweep_pages);
+    size_t claim_idx, in_flight;
+    sweep_load_claim_state(heap, &claim_idx, &in_flight);
+    if (claim_idx <= total) return in_flight;
+    size_t total_overshoot = claim_idx - total;
+    size_t worker_overshoot = (total_overshoot > heap->ruby_overshoot)
+                              ? total_overshoot - heap->ruby_overshoot
+                              : 0;
+    GC_ASSERT(in_flight >= worker_overshoot);
+    return in_flight - worker_overshoot;
 }
 
 static inline void
@@ -1558,7 +1603,7 @@ sweep_in_flight_dec(rb_heap_t *heap)
 #if SIZEOF_VOIDP >= 8
     rbimpl_atomic_size_sub(&heap->sweep_claim_state, 1, RBIMPL_ATOMIC_RELEASE);
 #else
-    rbimpl_atomic_sub(&heap->sweep_in_flight, 1, RBIMPL_ATOMIC_RELEASE);
+#error "32-bit parallel sweep path not yet implemented"
 #endif
 }
 
@@ -1568,19 +1613,19 @@ sweep_claim_state_reset(rb_heap_t *heap)
 #if SIZEOF_VOIDP >= 8
     heap->sweep_claim_state = 0;
 #else
-    heap->sweep_claim_index = 0;
-    heap->sweep_in_flight = 0;
+#error "32-bit parallel sweep path not yet implemented"
 #endif
+    heap->ruby_overshoot = 0;
 }
 
 static inline bool
 sweep_claim_state_is_reset(rb_heap_t *heap)
 {
 #if SIZEOF_VOIDP >= 8
-    return rbimpl_atomic_size_load(&heap->sweep_claim_state, RBIMPL_ATOMIC_ACQUIRE) == 0;
+    return rbimpl_atomic_size_load(&heap->sweep_claim_state, RBIMPL_ATOMIC_ACQUIRE) == 0 &&
+           heap->ruby_overshoot == 0;
 #else
-    return RUBY_ATOMIC_LOAD(heap->sweep_claim_index) == 0 &&
-           RUBY_ATOMIC_LOAD(heap->sweep_in_flight) == 0;
+#error "32-bit parallel sweep path not yet implemented"
 #endif
 }
 #endif // USE_PARALLEL_SWEEP
@@ -1601,24 +1646,23 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
     if (heap->claimed_local_start < heap->claimed_local_end) return false;
 
     size_t total = rb_darray_size(heap->sweep_pages);
+    size_t claim_idx, in_flight;
+    sweep_load_claim_state(heap, &claim_idx, &in_flight);
 
-    /* All chunks claimed (claim_index has been bumped past the last page) AND
-     * every claimed page has been committed (in_flight == 0). The Treiber stack
-     * is implicitly empty when in_flight == 0 because every push sits between
-     * an in_flight++ and the matching commit-time in_flight--. */
-#if SIZEOF_VOIDP >= 8
-    size_t state = rbimpl_atomic_size_load(&heap->sweep_claim_state, RBIMPL_ATOMIC_ACQUIRE);
-    size_t claimed = state >> SWEEP_CLAIM_INDEX_SHIFT;
-    size_t in_flight = state & SWEEP_IN_FLIGHT_MASK;
-#else
-    /* Load claim_index first; release/acquire on it guarantees we then see the
-     * worker's prior in_flight bump (worker writes in_flight before claim_index). */
-    size_t claimed = (size_t)rbimpl_atomic_load(&heap->sweep_claim_index, RBIMPL_ATOMIC_ACQUIRE);
-    size_t in_flight = (size_t)rbimpl_atomic_load(&heap->sweep_in_flight, RBIMPL_ATOMIC_ACQUIRE);
-#endif
-    bool done = claimed >= total && in_flight == 0;
-    psweep_debug(2, "[gc] heap_is_sweep_done: %d, heap:%p (%ld) claimed:%zu/%zu in_flight:%zu\n",
-                 done, heap, heap - heaps, claimed, total, in_flight);
+    if (claim_idx < total) {
+        psweep_debug(2, "[gc] heap_is_sweep_done: %d, heap:%p (%ld) claim_idx:%zu < total:%zu\n",
+                     false, heap, heap - heaps, claim_idx, total);
+        return false;
+    }
+    /* Every chunk handed out AND every worker-claimed page committed. */
+    size_t total_overshoot = claim_idx - total;
+    size_t worker_overshoot = (total_overshoot > heap->ruby_overshoot)
+                              ? total_overshoot - heap->ruby_overshoot
+                              : 0;
+    GC_ASSERT(in_flight >= worker_overshoot);
+    bool done = in_flight == worker_overshoot;
+    psweep_debug(2, "[gc] heap_is_sweep_done: %d, heap:%p (%ld) claim_idx:%zu/%zu in_flight:%zu worker_overshoot:%zu ruby_overshoot:%zu\n",
+                 done, heap, heap - heaps, claim_idx, total, in_flight, worker_overshoot, heap->ruby_overshoot);
     return done;
 #else
     return !heap->sweeping_page;
@@ -5044,11 +5088,11 @@ clear_pre_sweep_fields(struct heap_page *page)
 
 /* Atomically claim a chunk of page indices to sweep. Returns true and writes
  * [start, end) into out params on success. When called from the worker
- * (is_sweep_thread=true), also credits sweep_in_flight by (end - start).
- * Returns false when there is no more work to claim.
+ * (is_sweep_thread=true), also credits the in_flight counter by SWEEP_CHUNK
+ * (NOT by (end - start)) — overshoot is accounted for by the observer side,
+ * see the comment block above heap_is_sweep_done.
  *
- * See the comment block above heap_is_sweep_done for the per-platform
- * ordering rationale. */
+ * Returns false when there is no more work to claim. */
 static bool
 sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, bool is_sweep_thread)
 {
@@ -5057,53 +5101,34 @@ sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, bool is_s
 
 #if SIZEOF_VOIDP >= 8
     /* Single atomic fetch_add bumps both claim_index (high 32) and (for the
-     * worker) in_flight (low 32). Refund on no-work / partial-chunk. */
-    size_t increment = (size_t)SWEEP_CHUNK << SWEEP_CLAIM_INDEX_SHIFT;
+     * worker) in_flight (low 32). No refund: any over-credit to in_flight is
+     * cancelled out by sweep_true_in_flight via the worker_overshoot derived
+     * from (claim_idx - total) - ruby_overshoot. */
+    size_t increment = SWEEP_CLAIM_INDEX_UNIT * SWEEP_CHUNK;
     if (is_sweep_thread) increment |= (size_t)SWEEP_CHUNK;
     size_t prev = rbimpl_atomic_size_fetch_add(&heap->sweep_claim_state, increment, RBIMPL_ATOMIC_ACQ_REL);
     size_t start = prev >> SWEEP_CLAIM_INDEX_SHIFT;
     if (start >= total) {
-        rbimpl_atomic_size_sub(&heap->sweep_claim_state, increment, RBIMPL_ATOMIC_RELEASE);
+        /* Full no-work overshoot. The Ruby thread tracks its own contribution
+         * locally so the observer can attribute the rest to the worker. */
+        if (!is_sweep_thread) {
+            heap->ruby_overshoot += SWEEP_CHUNK;
+        }
         return false;
     }
     size_t end = start + SWEEP_CHUNK;
     if (end > total) {
-        size_t overshoot = end - total;
-        end = total;
-        /* Index past total is harmless (observers treat anything >= total as
-         * "all claimed"); only refund the in_flight overshoot. */
-        if (is_sweep_thread && overshoot > 0) {
-            rbimpl_atomic_size_sub(&heap->sweep_claim_state, overshoot, RBIMPL_ATOMIC_RELEASE);
+        /* Partial-chunk overshoot. */
+        if (!is_sweep_thread) {
+            heap->ruby_overshoot += end - total;
         }
+        end = total;
     }
     *out_start = start;
     *out_end = end;
     return true;
 #else
-    /* Refund-first: bump in_flight BEFORE claim_index so that any observation
-     * of claim_index >= total via the worker's bump synchronizes-with the
-     * preceding in_flight bump. */
-    if (is_sweep_thread) {
-        rbimpl_atomic_add(&heap->sweep_in_flight, (rb_atomic_t)SWEEP_CHUNK, RBIMPL_ATOMIC_RELEASE);
-    }
-    rb_atomic_t start = rbimpl_atomic_fetch_add(&heap->sweep_claim_index, SWEEP_CHUNK, RBIMPL_ATOMIC_ACQ_REL);
-    if ((size_t)start >= total) {
-        if (is_sweep_thread) {
-            rbimpl_atomic_sub(&heap->sweep_in_flight, (rb_atomic_t)SWEEP_CHUNK, RBIMPL_ATOMIC_RELEASE);
-        }
-        return false;
-    }
-    size_t end = (size_t)start + SWEEP_CHUNK;
-    if (end > total) {
-        size_t overshoot = end - total;
-        end = total;
-        if (is_sweep_thread && overshoot > 0) {
-            rbimpl_atomic_sub(&heap->sweep_in_flight, (rb_atomic_t)overshoot, RBIMPL_ATOMIC_RELEASE);
-        }
-    }
-    *out_start = (size_t)start;
-    *out_end = end;
-    return true;
+#error "32-bit parallel sweep path not yet implemented for overshoot accounting"
 #endif
 }
 
@@ -5792,10 +5817,12 @@ retry_drain:
     }
 
     /* 5) Nothing left to claim. If the worker still has pages in flight, wait for
-     *    them to land on the stack and retry the drain. */
-    if (sweep_in_flight_load(heap) > 0) {
+     *    them to land on the stack and retry the drain. Use true_in_flight so
+     *    that worker over-credits from no-work/partial-chunk calls don't trick
+     *    us into waiting for pages that aren't coming. */
+    if (sweep_true_in_flight(heap) > 0) {
         sweep_lock_lock(objspace);
-        while (sweep_in_flight_load(heap) > 0 &&
+        while (sweep_true_in_flight(heap) > 0 &&
                RUBY_ATOMIC_PTR_LOAD(heap->pre_swept_head) == NULL) {
             sweep_lock_set_unlocked(objspace);
             rb_native_cond_wait(&heap->sweep_page_cond, &objspace->sweep_lock);
