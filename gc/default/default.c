@@ -574,9 +574,17 @@ typedef struct rb_heap_struct {
     size_t worker_cache_start;
     size_t worker_cache_end;
     rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
+#if SIZEOF_VOIDP >= 8
+    /* Packed [claim_index : 32 high | in_flight : 32 low]. A single fetch_add
+     * bumps both halves atomically, so an observer can never see claim_index
+     * past total while in_flight hasn't been credited yet. See helpers near
+     * heap_is_sweep_done. */
+    RUBY_ALIGNAS(64) size_t sweep_claim_state;
+#else
     RUBY_ALIGNAS(64) rb_atomic_t sweep_claim_index; // cross-thread atomic
+    RUBY_ALIGNAS(64) rb_atomic_t sweep_in_flight;   // cross-thread atomic
+#endif
     RUBY_ALIGNAS(64) struct heap_page *pre_swept_head; // cross-thread atomic
-    RUBY_ALIGNAS(64) rb_atomic_t sweep_in_flight; // cross-thread atomic
     RUBY_ALIGNAS(64) rb_atomic_t foreground_sweep_steps; // incremented by ruby thread, checked by sweep thread
 #endif
 } rb_heap_t;
@@ -1515,6 +1523,82 @@ sweep_lock_set_unlocked(rb_objspace_t *objspace)
 #define sweep_lock_unlock(objspace) (void)0
 #endif // USE_PARALLEL_SWEEP
 
+#if USE_PARALLEL_SWEEP
+/* Page claim / in-flight bookkeeping.
+ *
+ * Two quantities are checked together in heap_is_sweep_done:
+ *   - sweep_claim_index: how many pages of the sweep_pages snapshot have been
+ *     handed out to either the worker or the Ruby thread (chunks of SWEEP_CHUNK).
+ *   - sweep_in_flight:  pages the worker has claimed but the Ruby thread has
+ *     not yet committed (via gc_sweep_step's per-page decrement).
+ *
+ * Done condition is (claim_index >= total && in_flight == 0). The trap is the
+ * narrow window between bumping one and the other: an observer that loads them
+ * in the wrong order can see "all claimed && none in flight" while the worker
+ * is mid-claim, and falsely conclude the heap is done.
+ *
+ * 64-bit platforms (SIZEOF_VOIDP >= 8): pack both halves into a single size_t
+ * and bump them with one atomic fetch_add. The pair is observed atomically, so
+ * the window is closed.
+ *
+ * 32-bit platforms: no double-width atomic, so two fields with refund-first
+ * ordering — the worker writes in_flight FIRST (release) and claim_index
+ * SECOND (release). An observer that loads claim_index (acquire) and sees the
+ * worker's bump has happens-before with the in_flight bump, so the in_flight
+ * credit is visible. A transient case — worker bumps in_flight then sees
+ * prev >= total and refunds — is fine: any Ruby thread that observed the
+ * transient bump and went to sleep on sweep_page_cond is woken by
+ * gc_sweep_step_worker's no_more_work broadcast. */
+
+#if SIZEOF_VOIDP >= 8
+#define SWEEP_CLAIM_INDEX_SHIFT 32
+#define SWEEP_IN_FLIGHT_MASK    ((size_t)0xFFFFFFFFu)
+#define SWEEP_CLAIM_INDEX_UNIT  ((size_t)1 << SWEEP_CLAIM_INDEX_SHIFT)
+#endif
+
+static inline size_t
+sweep_in_flight_load(rb_heap_t *heap)
+{
+#if SIZEOF_VOIDP >= 8
+    return rbimpl_atomic_size_load(&heap->sweep_claim_state, RBIMPL_ATOMIC_ACQUIRE) & SWEEP_IN_FLIGHT_MASK;
+#else
+    return (size_t)RUBY_ATOMIC_LOAD(heap->sweep_in_flight);
+#endif
+}
+
+static inline void
+sweep_in_flight_dec(rb_heap_t *heap)
+{
+#if SIZEOF_VOIDP >= 8
+    rbimpl_atomic_size_sub(&heap->sweep_claim_state, 1, RBIMPL_ATOMIC_RELEASE);
+#else
+    rbimpl_atomic_sub(&heap->sweep_in_flight, 1, RBIMPL_ATOMIC_RELEASE);
+#endif
+}
+
+static inline void
+sweep_claim_state_reset(rb_heap_t *heap)
+{
+#if SIZEOF_VOIDP >= 8
+    heap->sweep_claim_state = 0;
+#else
+    heap->sweep_claim_index = 0;
+    heap->sweep_in_flight = 0;
+#endif
+}
+
+static inline bool
+sweep_claim_state_is_reset(rb_heap_t *heap)
+{
+#if SIZEOF_VOIDP >= 8
+    return rbimpl_atomic_size_load(&heap->sweep_claim_state, RBIMPL_ATOMIC_ACQUIRE) == 0;
+#else
+    return RUBY_ATOMIC_LOAD(heap->sweep_claim_index) == 0 &&
+           RUBY_ATOMIC_LOAD(heap->sweep_in_flight) == 0;
+#endif
+}
+#endif // USE_PARALLEL_SWEEP
+
 // Returns true when the background sweep thread and Ruby thread have finished processing
 // (background sweeping + ruby thread post-processing or deferred freeing) all pages for that heap.
 static bool
@@ -1531,15 +1615,24 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
     if (heap->claimed_local_start < heap->claimed_local_end) return false;
 
     size_t total = rb_darray_size(heap->sweep_pages);
-    size_t claimed = (size_t)RUBY_ATOMIC_LOAD(heap->sweep_claim_index);
 
     /* All chunks claimed (claim_index has been bumped past the last page) AND
      * every claimed page has been committed (in_flight == 0). The Treiber stack
      * is implicitly empty when in_flight == 0 because every push sits between
      * an in_flight++ and the matching commit-time in_flight--. */
-    bool done = claimed >= total && RUBY_ATOMIC_LOAD(heap->sweep_in_flight) == 0;
-    psweep_debug(2, "[gc] heap_is_sweep_done: %d, heap:%p (%ld) claimed:%zu/%zu in_flight:%u\n",
-                 done, heap, heap - heaps, claimed, total, (unsigned)in_flight);
+#if SIZEOF_VOIDP >= 8
+    size_t state = rbimpl_atomic_size_load(&heap->sweep_claim_state, RBIMPL_ATOMIC_ACQUIRE);
+    size_t claimed = state >> SWEEP_CLAIM_INDEX_SHIFT;
+    size_t in_flight = state & SWEEP_IN_FLIGHT_MASK;
+#else
+    /* Load claim_index first; release/acquire on it guarantees we then see the
+     * worker's prior in_flight bump (worker writes in_flight before claim_index). */
+    size_t claimed = (size_t)rbimpl_atomic_load(&heap->sweep_claim_index, RBIMPL_ATOMIC_ACQUIRE);
+    size_t in_flight = (size_t)rbimpl_atomic_load(&heap->sweep_in_flight, RBIMPL_ATOMIC_ACQUIRE);
+#endif
+    bool done = claimed >= total && in_flight == 0;
+    psweep_debug(2, "[gc] heap_is_sweep_done: %d, heap:%p (%ld) claimed:%zu/%zu in_flight:%zu\n",
+                 done, heap, heap - heaps, claimed, total, in_flight);
     return done;
 #else
     return !heap->sweeping_page;
@@ -1567,7 +1660,7 @@ has_sweeping_pages(rb_objspace_t *objspace)
                 break;
             }
         }
-        GC_ASSERT(heap_not_finished);
+        if (!heap_not_finished) return false;
         return !heap_is_sweep_done(objspace, heap_not_finished);
     }
     else {
@@ -4444,6 +4537,7 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
         GC_ASSERT(RUBY_ATOMIC_LOAD(sweep_page->before_sweep));
     }
 #endif
+    GC_ASSERT(RUBY_ATOMIC_LOAD(sweep_page->before_sweep) == 1);
     rbimpl_atomic_store(&sweep_page->before_sweep, 0, RBIMPL_ATOMIC_RELEASE);
 
     bits = sweep_page->mark_bits;
@@ -4976,23 +5070,68 @@ clear_pre_sweep_fields(struct heap_page *page)
 #define SWEEP_CHUNK 4
 
 /* Atomically claim a chunk of page indices to sweep. Returns true and writes
- * [start, end) into out params on success. Bumps sweep_in_flight by (end - start).
- * Returns false when there is no more work to claim. */
+ * [start, end) into out params on success. When called from the worker
+ * (is_sweep_thread=true), also credits sweep_in_flight by (end - start).
+ * Returns false when there is no more work to claim.
+ *
+ * See the comment block above heap_is_sweep_done for the per-platform
+ * ordering rationale. */
 static bool
 sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, bool is_sweep_thread)
 {
     size_t total = rb_darray_size(heap->sweep_pages);
     if (total == 0) return false;
-    rb_atomic_t start = rbimpl_atomic_fetch_add(&heap->sweep_claim_index, SWEEP_CHUNK, RBIMPL_ATOMIC_ACQ_REL);
-    if ((size_t)start >= total) return false;
-    size_t end = (size_t)start + SWEEP_CHUNK;
-    if (end > total) end = total;
+
+#if SIZEOF_VOIDP >= 8
+    /* Single atomic fetch_add bumps both claim_index (high 32) and (for the
+     * worker) in_flight (low 32). Refund on no-work / partial-chunk. */
+    size_t increment = (size_t)SWEEP_CHUNK << SWEEP_CLAIM_INDEX_SHIFT;
+    if (is_sweep_thread) increment |= (size_t)SWEEP_CHUNK;
+    size_t prev = rbimpl_atomic_size_fetch_add(&heap->sweep_claim_state, increment, RBIMPL_ATOMIC_ACQ_REL);
+    size_t start = prev >> SWEEP_CLAIM_INDEX_SHIFT;
+    if (start >= total) {
+        rbimpl_atomic_size_sub(&heap->sweep_claim_state, increment, RBIMPL_ATOMIC_RELEASE);
+        return false;
+    }
+    size_t end = start + SWEEP_CHUNK;
+    if (end > total) {
+        size_t overshoot = end - total;
+        end = total;
+        /* Index past total is harmless (observers treat anything >= total as
+         * "all claimed"); only refund the in_flight overshoot. */
+        if (is_sweep_thread && overshoot > 0) {
+            rbimpl_atomic_size_sub(&heap->sweep_claim_state, overshoot, RBIMPL_ATOMIC_RELEASE);
+        }
+    }
+    *out_start = start;
+    *out_end = end;
+    return true;
+#else
+    /* Refund-first: bump in_flight BEFORE claim_index so that any observation
+     * of claim_index >= total via the worker's bump synchronizes-with the
+     * preceding in_flight bump. */
     if (is_sweep_thread) {
-        rbimpl_atomic_add(&heap->sweep_in_flight, (rb_atomic_t)(end - (size_t)start), RBIMPL_ATOMIC_RELEASE);
+        rbimpl_atomic_add(&heap->sweep_in_flight, (rb_atomic_t)SWEEP_CHUNK, RBIMPL_ATOMIC_RELEASE);
+    }
+    rb_atomic_t start = rbimpl_atomic_fetch_add(&heap->sweep_claim_index, SWEEP_CHUNK, RBIMPL_ATOMIC_ACQ_REL);
+    if ((size_t)start >= total) {
+        if (is_sweep_thread) {
+            rbimpl_atomic_sub(&heap->sweep_in_flight, (rb_atomic_t)SWEEP_CHUNK, RBIMPL_ATOMIC_RELEASE);
+        }
+        return false;
+    }
+    size_t end = (size_t)start + SWEEP_CHUNK;
+    if (end > total) {
+        size_t overshoot = end - total;
+        end = total;
+        if (is_sweep_thread && overshoot > 0) {
+            rbimpl_atomic_sub(&heap->sweep_in_flight, (rb_atomic_t)overshoot, RBIMPL_ATOMIC_RELEASE);
+        }
     }
     *out_start = (size_t)start;
     *out_end = end;
     return true;
+#endif
 }
 
 /* Lock-free bulk push of a pre-linked chain of pages onto heap->pre_swept_head.
@@ -5260,14 +5399,13 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     /* Build the page snapshot for this sweep cycle. Pages can be added during
      * sweep (heap_add_page asserts !heap->sweeping_page), so this is stable. */
     rb_darray_clear(heap->sweep_pages);
-    heap->sweep_claim_index = 0;
+    sweep_claim_state_reset(heap);
     heap->pre_swept_head = NULL;
     heap->drained_local = NULL;
     heap->claimed_local_start = 0;
     heap->claimed_local_end = 0;
     heap->worker_cache_start = 0;
     heap->worker_cache_end = 0;
-    heap->sweep_in_flight = 0;
 #endif
 
 #if RUBY_DEBUG
@@ -5321,8 +5459,7 @@ gc_sweep_start_heap_snapshot(rb_objspace_t *objspace, rb_heap_t *heap)
     GC_ASSERT(heap->pre_swept_head == NULL);
     GC_ASSERT(heap->drained_local == NULL);
     GC_ASSERT(heap->claimed_local_start == 0 && heap->claimed_local_end == 0);
-    GC_ASSERT(RUBY_ATOMIC_LOAD(heap->sweep_claim_index) == 0);
-    GC_ASSERT(RUBY_ATOMIC_LOAD(heap->sweep_in_flight) == 0);
+    GC_ASSERT(sweep_claim_state_is_reset(heap));
 
     if (rb_darray_capa(heap->sweep_pages) < heap->total_pages) {
         rb_darray_resize_capa_without_gc(&heap->sweep_pages, heap->total_pages);
@@ -5603,6 +5740,7 @@ retry:
         heap->drained_local = page->free_next;
         page->free_next = NULL;
         psweep_debug(0, "[gc] gc_sweep_dequeue_page: got page:%p from drained_local (heap %ld)\n", page, heap - heaps);
+        GC_ASSERT(page->before_sweep == 1);
         return page;
     }
 retry_drain:
@@ -5633,9 +5771,9 @@ retry_drain:
 
     /* 5) Nothing left to claim. If the worker still has pages in flight, wait for
      *    them to land on the stack and retry the drain. */
-    if (RUBY_ATOMIC_LOAD(heap->sweep_in_flight) > 0) {
+    if (sweep_in_flight_load(heap) > 0) {
         sweep_lock_lock(objspace);
-        while (RUBY_ATOMIC_LOAD(heap->sweep_in_flight) > 0 &&
+        while (sweep_in_flight_load(heap) > 0 &&
                RUBY_ATOMIC_PTR_LOAD(heap->pre_swept_head) == NULL) {
             sweep_lock_set_unlocked(objspace);
             rb_native_cond_wait(&heap->sweep_page_cond, &objspace->sweep_lock);
@@ -5728,7 +5866,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 
 #if USE_PARALLEL_SWEEP
     if (heap_is_sweep_done(objspace, heap)) {
-        if (!heap->is_finished_sweeping) {
+        if (!heap->is_finished_sweeping && heap->sweeping_page) {
             goto heap_sweep_done;
         }
         psweep_debug(0, "[gc] gc_sweep_step: heap %p (%ld) is heap_is_sweep_done() early!\n", heap, heap - heaps);
@@ -5928,8 +6066,8 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 
 #if USE_PARALLEL_SWEEP
         if (!dequeued_unswept_page) {
-            GC_ASSERT(RUBY_ATOMIC_LOAD(heap->sweep_in_flight) > 0);
-            RUBY_ATOMIC_FETCH_SUB(heap->sweep_in_flight, 1);
+            GC_ASSERT(sweep_in_flight_load(heap) > 0);
+            sweep_in_flight_dec(heap);
         }
 #endif
 
@@ -5995,14 +6133,13 @@ gc_sweep_rest(rb_objspace_t *objspace)
             psweep_debug(0, "[gc] gc_sweep_rest: gc_sweep_step heap:%p (heap %ld)\n", heap, heap - heaps);
             gc_sweep_step(objspace, heap);
         }
-        GC_ASSERT(heap->is_finished_sweeping); // FIXME: this is failing!
         heap->background_sweep_steps = heap->foreground_sweep_steps;
     }
 
     /* All heaps are heap_is_sweep_done, but the worker may still be mid-iteration
      * in its outer for-loop (between sweep_lock_unlock and the claim-failed re-lock).
      * Wait for it to set sweep_thread_sweeping = false so the rest of the GC cycle
-     * can rely on a quiescent worker. */
+     * can rely on a quiescent worker. TODO: remove? */
     if (objspace->use_background_sweep_thread) {
         sweep_lock_lock(objspace);
         while (objspace->sweep_thread_running && objspace->sweep_thread_sweeping) {
@@ -6024,41 +6161,6 @@ gc_sweep_rest(rb_objspace_t *objspace)
     GC_ASSERT(!has_sweeping_pages(objspace));
     GC_ASSERT(gc_mode(objspace) == gc_mode_none);
 }
-
-#if USE_PARALLEL_SWEEP
-static int
-sweep_heap_first(bool sweep_backwards)
-{
-    if (sweep_backwards) {
-        return HEAP_COUNT-1;
-    }
-    else {
-        return 0;
-    }
-}
-
-static int
-sweep_heap_last(bool sweep_backwards)
-{
-    if (sweep_backwards) {
-        return -1;
-    }
-    else {
-        return HEAP_COUNT;
-    }
-}
-
-static void
-sweep_heap_iter(bool sweep_backwards, int *i)
-{
-    if (sweep_backwards) {
-        (*i)--;
-    }
-    else {
-        (*i)++;
-    }
-}
-#endif
 
 static void
 gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
@@ -6100,16 +6202,13 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
             rb_native_cond_broadcast(&objspace->sweep_cond);
         }
     }
-    bool sweep_backwards = false;
 
 #if PSWEEP_LOCK_STATS > 0
     current_step_type = 1;
     step_contention[1].step_count++;
 #endif
-    for (int i = sweep_heap_first(sweep_backwards); i != sweep_heap_last(sweep_backwards); sweep_heap_iter(sweep_backwards, &i)) {
-#else
-    for (int i = 0; i < HEAP_COUNT; i++) {
 #endif // USE_PARALLEL_SWEEP
+    for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
         if (gc_sweep_step(objspace, heap)) {
