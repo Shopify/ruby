@@ -678,6 +678,7 @@ typedef struct rb_objspace {
     bool sweep_thread_sweep_exited;
     bool sweep_thread_waiting_request;
     bool sweep_thread_sweeping;
+    bool sweep_thread_locked;
     bool background_sweep_mode;
     bool background_sweep_restart_heaps;
     unsigned int heaps_done_background_sweep;
@@ -1964,8 +1965,8 @@ check_rvalue_consistency_force(rb_objspace_t *objspace, const VALUE obj, int ter
                 fprintf(stderr, "check_rvalue_consistency: %s is T_NONE.\n", rb_obj_info(obj));
                 err++;
             }
-            if (BUILTIN_TYPE(obj) == T_ZOMBIE && !FL_TEST(obj, FL_FREEZE)) {
-                fprintf(stderr, "check_rvalue_consistency: %s is T_ZOMBIE.\n", rb_obj_info(obj));
+            if (BUILTIN_TYPE(obj) == T_ZOMBIE && FL_TEST(obj, FL_FREEZE)) {
+                fprintf(stderr, "check_rvalue_consistency: %s is freeable T_ZOMBIE.\n", rb_obj_info(obj));
                 err++;
             }
 
@@ -2812,7 +2813,7 @@ gc_continue(rb_objspace_t *objspace, rb_heap_t *heap)
 }
 
 #if USE_PARALLEL_SWEEP
-void wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_current_background_sweep, bool exit_sweep_thread, const char *from_fn);
+void wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_current_background_sweep, bool lock_sweep_thread, bool exit_sweep_thread, const char *from_fn);
 #endif
 
 static void
@@ -3503,7 +3504,7 @@ static void
 objspace_each_objects(rb_objspace_t *objspace, each_obj_callback *callback, void *data, bool protected)
 {
 #if USE_PARALLEL_SWEEP
-    wait_for_background_sweeping_to_finish(objspace, true, false, "objspace_each_objects");
+    wait_for_background_sweeping_to_finish(objspace, true, false, false, "objspace_each_objects");
 #endif
     struct each_obj_data each_obj_data = {
         .objspace = objspace,
@@ -3742,7 +3743,7 @@ gc_abort(void *objspace_ptr)
     }
 
 #if USE_PARALLEL_SWEEP
-    wait_for_background_sweeping_to_finish(objspace, true, false, "gc_abort");
+    wait_for_background_sweeping_to_finish(objspace, true, false, false, "gc_abort");
 #endif
 
     if (is_lazy_sweeping(objspace)) {
@@ -3842,7 +3843,7 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
 #endif
 
 #if USE_PARALLEL_SWEEP
-    wait_for_background_sweeping_to_finish(objspace, true, false, "shutdown_call_finalizer");
+    wait_for_background_sweeping_to_finish(objspace, true, false, false, "shutdown_call_finalizer");
 #endif
 
     /* prohibit incremental GC */
@@ -4373,14 +4374,14 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
 #if USE_PARALLEL_SWEEP
 void
-wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_current_background_sweep, bool exit_sweep_thread, const char *from_fn)
+wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_current_background_sweep, bool lock_sweep_thread, bool exit_sweep_thread, const char *from_fn)
 {
     if (!objspace->sweep_thread) {
         return;
     }
     sweep_lock_lock(objspace);
     if (abort_current_background_sweep) {
-        RUBY_ATOMIC_SET(objspace->background_sweep_abort, 1);
+        rbimpl_atomic_store(&objspace->background_sweep_abort, 1, RBIMPL_ATOMIC_RELEASE);
         objspace->background_sweep_restart_heaps = false;
         objspace->sweep_thread_sweep_requested = false;
     }
@@ -4412,8 +4413,11 @@ wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_curre
     else {
         psweep_debug(0, "Waited for sweep thread to finish sweep from %s\n", from_fn);
     }
-    RUBY_ATOMIC_SET(objspace->background_sweep_abort, 0);
+    rbimpl_atomic_store(&objspace->background_sweep_abort, 0, RBIMPL_ATOMIC_RELEASE);
     objspace->background_sweep_mode = false;
+    if (lock_sweep_thread) {
+        objspace->sweep_thread_locked = true;
+    }
     sweep_lock_unlock(objspace);
 }
 
@@ -5238,7 +5242,7 @@ gc_sweep_thread_func(void *ptr)
     objspace->sweep_thread_sweep_exited = false;
 
     while (objspace->sweep_thread_running) {
-        while (!objspace->sweep_thread_sweep_requested && objspace->sweep_thread_running) {
+        while (objspace->sweep_thread_running && (!objspace->sweep_thread_sweep_requested || objspace->sweep_thread_locked)) {
             psweep_debug(1, "[sweep] sweep_thread wait\n");
             objspace->sweep_thread_waiting_request = true;
             sweep_lock_set_unlocked(objspace);
@@ -7135,7 +7139,7 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride,
 
     for (obj = (VALUE)page_start; obj != (VALUE)page_end; obj += stride) {
         asan_unpoisoning_object(obj) {
-            if (!rb_gc_impl_garbage_object_p(objspace, obj)) {
+            if (!(rb_gc_impl_garbage_object_p(objspace, obj) || BUILTIN_TYPE(obj) == T_ZOMBIE)) {
                 /* count objects */
                 data->live_object_count++;
                 data->parent = obj;
@@ -7395,7 +7399,7 @@ gc_verify_internal_consistency(void *objspace_ptr)
 
         unsigned int prev_during_gc = during_gc;
 #if USE_PARALLEL_SWEEP
-        wait_for_background_sweeping_to_finish(objspace, true, false, "verify_internal_consistency");
+        wait_for_background_sweeping_to_finish(objspace, true, false, false, "verify_internal_consistency");
 #endif
         during_gc = FALSE; // stop gc here
         {
@@ -8550,7 +8554,7 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
 
     rb_gc_initialize_vm_context(&objspace->vm_context);
 #if USE_PARALLEL_SWEEP
-    wait_for_background_sweeping_to_finish(objspace, true, false, "gc_start"); // in case user called `GC.start` explicitly
+    wait_for_background_sweeping_to_finish(objspace, true, false, false, "gc_start"); // in case user called `GC.start` explicitly
 #endif
 
     GC_ASSERT(gc_mode(objspace) == gc_mode_none, "gc_mode is %s\n", gc_mode_name(gc_mode(objspace)));
@@ -11693,7 +11697,7 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
 //        rb_bug("lazy sweeping underway when freeing object space");
 
 #if USE_PARALLEL_SWEEP
-    wait_for_background_sweeping_to_finish(objspace, true, true, "objspace_free");
+    wait_for_background_sweeping_to_finish(objspace, true, false, true, "objspace_free");
 #if PSWEEP_LOCK_STATS > 0
     {
         /* Print lock contention statistics before freeing */
@@ -11785,7 +11789,7 @@ rb_gc_impl_before_fork(void *objspace_ptr)
     rb_objspace_t *objspace = objspace_ptr;
 
 #if USE_PARALLEL_SWEEP
-    wait_for_background_sweeping_to_finish(objspace, true, false, "impl_before_fork");
+    wait_for_background_sweeping_to_finish(objspace, true, true, false, "impl_before_fork");
 #endif
 
     objspace->fork_vm_lock_lev = RB_GC_VM_LOCK();
@@ -11801,12 +11805,11 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
     RB_GC_VM_UNLOCK(objspace->fork_vm_lock_lev);
     objspace->fork_vm_lock_lev = 0;
 
-    void fiber_pool_lock_reset(void);
-    fiber_pool_lock_reset();
-    // TODO: reset the id_table lock in case of Ractors.
-
     GC_ASSERT(!during_gc);
     if (pid == 0) { /* child process */
+        void fiber_pool_lock_reset(void);
+        fiber_pool_lock_reset();
+
         rb_gc_ractor_newobj_cache_foreach(gc_ractor_newobj_cache_clear, NULL);
 #if USE_PARALLEL_SWEEP
         objspace->sweep_thread = 0;
@@ -11821,19 +11824,17 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
         }
 
         sweep_lock_owner = 0;
-        GC_ASSERT(!objspace->background_sweep_mode);
-        GC_ASSERT(!RUBY_ATOMIC_LOAD(objspace->background_sweep_abort));
-        GC_ASSERT(!objspace->background_sweep_restart_heaps);
         if (ruby_parallel_sweep_enabled) {
-            /* Start the sweep thread after fork */
             objspace->sweep_thread_running = true;
             objspace->sweep_thread_sweep_requested = false;
             objspace->sweep_thread_sweeping = false;
             objspace->sweep_thread_waiting_request = false;
+            objspace->background_sweep_mode = false;
+            objspace->background_sweep_abort = 0;
             pthread_create(&objspace->sweep_thread, NULL, gc_sweep_thread_func, objspace);
             GET_VM()->gc.sweep_thread = objspace->sweep_thread;
             sweep_lock_lock(objspace);
-            // The thread needs to be ready to accept sweep requests.
+            // The thread should be ready to accept sweep requests.
             while (!objspace->sweep_thread_waiting_request) {
                 sweep_lock_unlock(objspace);
                 usleep(50);
@@ -11843,6 +11844,13 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
         }
 #endif
     }
+#if USE_PARALLEL_SWEEP
+    sweep_lock_lock(objspace);
+    {
+        objspace->sweep_thread_locked = false;
+    }
+    sweep_lock_unlock(objspace);
+#endif
 }
 
 VALUE rb_ident_hash_new_with_size(st_index_t size);
@@ -11979,6 +11987,7 @@ rb_gc_impl_parallel_sweep_start(void *objspace_ptr)
     objspace->sweep_thread_sweep_requested = false;
     objspace->sweep_thread_sweeping = false;
     objspace->sweep_thread_waiting_request = false;
+    objspace->sweep_thread_locked = false;
     pthread_create(&objspace->sweep_thread, NULL, gc_sweep_thread_func, objspace);
     GET_VM()->gc.sweep_thread = objspace->sweep_thread;
 
