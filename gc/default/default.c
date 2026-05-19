@@ -129,17 +129,6 @@
 #else
 #define psweep_debug(...) (void)0
 #endif
-/* One-off diagnostic printf gate. Flip DBG_PRINTF to 0 to silence every
- * dbg_fprintf() call site at once without re-editing them. Keep this isolated
- * from psweep_debug (which is much noisier). */
-#ifndef DBG_PRINTF
-#define DBG_PRINTF 1
-#endif
-#if DBG_PRINTF
-#define dbg_fprintf(...) fprintf(stderr, __VA_ARGS__)
-#else
-#define dbg_fprintf(...) ((void)0)
-#endif
 
 #ifndef PSWEEP_LOCK_STATS
 #define PSWEEP_LOCK_STATS 0
@@ -544,28 +533,14 @@ typedef struct rb_heap_struct {
 #if USE_PARALLEL_SWEEP
     rb_nativethread_cond_t sweep_page_cond; // associated with global sweep lock
     rb_nativethread_lock_t swept_pages_lock;
-    /* Background-swept slots accumulated for this heap during the current
-     * sweep-continue window. Excludes pages that will become fully empty
-     * (those go to the empty pool, not this heap's free list). Read/written
-     * under sweep_lock. Reset to 0 in gc_sweeping_exit. */
     size_t pre_swept_bg_slots;
     bool is_finished_sweeping;
     bool done_background_sweep;
-    /* Set by the BG worker (under sweep_lock) when pre_swept_bg_slots crosses
-     * sweep_budget + pool_budget for this heap. gc_sweep_continue reads it
-     * under sweep_lock and skips gc_sweep_step on heaps that already have
-     * enough work staged. Reset to false in gc_sweeping_exit. */
     bool skip_sweep_continue;
 
     // Snapshot of pages to sweep. Both threads claim pages off this list
     rb_darray(struct heap_page *) sweep_pages;
 
-    /* Ruby-thread-local caches consumed by gc_sweep_dequeue_page. Only the
-     * Ruby GC thread reads/writes these; no atomics needed. drained_local is
-     * the head of a singly-linked list of pre-swept pages (via free_next) we
-     * grabbed from pre_swept_head in one xchg. claimed_local_{start,end}
-     * is a half-open range of indices into sweep_pages we have claimed but
-     * not yet processed. */
     struct heap_page *drained_local;
     size_t claimed_local_start;
     size_t claimed_local_end;
@@ -574,20 +549,15 @@ typedef struct rb_heap_struct {
      * comment block above heap_is_sweep_done. */
     size_t sweep_claim_overshoot;
     /* Ruby-thread-only count of pages popped from pre_swept_head and committed
-     * by gc_sweep_step. Subtracted from the worker-credited in_flight when
-     * checking sweep completion — see the comment block above heap_is_sweep_done. */
+     * by gc_sweep_step. */
     size_t in_flight_processed;
 
-    // these fields are only for the sweep thread (except set to 0 in sweep_start_heap)
     size_t worker_cache_start;
     size_t worker_cache_end;
     rb_atomic_t background_sweep_steps; // only incremented/checked by sweep thread
 #if SIZEOF_VOIDP >= 8
     /* Packed [claim_index : 32 high | in_flight : 32 low]. A single fetch_add
-     * bumps both halves atomically, so an observer can never see claim_index
-     * past total while in_flight hasn't been credited yet. Only the worker
-     * writes; the Ruby thread tracks its own commits in in_flight_processed.
-     * See helpers near heap_is_sweep_done. */
+     * bumps both halves atomically. */
     RUBY_ALIGNAS(64) size_t sweep_claim_state;
 #else
     RUBY_ALIGNAS(64) rb_atomic_t sweep_claim_index; // cross-thread atomic
@@ -1548,31 +1518,10 @@ sweep_lock_set_unlocked(rb_objspace_t *objspace)
  *
  * 64-bit (SIZEOF_VOIDP >= 8): claim_index and in_flight live in a single size_t,
  * sweep_claim_state, laid out as [claim_index : 32 high | in_flight : 32 low].
- * A single fetch_add atomically bumps both halves, so the original race
- * ("claim_index past total while in_flight not yet credited") cannot occur.
- *
- * No refunds. Each sweep_claim_chunk call bumps claim_index by SWEEP_CHUNK
- * even when it overshoots `total` or claims a short chunk, and the worker's
- * call always bumps in_flight by SWEEP_CHUNK too — which means in_flight ends
- * up over-credited. The observer reconciles by tracking:
- *
- *   total_overshoot  = claim_index - total          (when claim_index > total)
- *   sweep_claim_overshoot   = heap-local count maintained by the Ruby thread, the
- *                      portion of total_overshoot caused by Ruby-thread calls
- *   worker_overshoot = total_overshoot - sweep_claim_overshoot
- *   true_in_flight   = in_flight - in_flight_processed - worker_overshoot
- *
- * Invariant: in_flight >= in_flight_processed + worker_overshoot, because
- * in_flight = (worker bumps), in_flight_processed = (Ruby-thread commits),
- * and commits <= (worker bumps - worker_overshoot).
- *
- * The Ruby thread is the only writer to heap->sweep_claim_overshoot and
- * heap->in_flight_processed AND the only caller of heap_is_sweep_done /
- * sweep_true_in_flight, so neither field needs to be atomic. The worker
- * reads/writes neither.
+ * A single fetch_add atomically bumps both halves.
  *
  * 32-bit: not yet implemented (would need two atomics for the worker's
- * claim_index/in_flight bump). sweep_claim_chunk #errors in that branch. */
+ * claim_index/in_flight bump). */
 
 #if SIZEOF_VOIDP >= 8
 #define SWEEP_CLAIM_INDEX_SHIFT 32
@@ -1606,8 +1555,7 @@ sweep_in_flight_load(rb_heap_t *heap)
     return in_flight;
 }
 
-/* Pages the worker has actually claimed but the Ruby thread has not yet
- * committed. See the comment block above for the over-credit reconciliation. */
+/* Pages the worker has claimed but the Ruby thread has not yet finished processing. */
 static inline size_t
 sweep_true_in_flight(rb_heap_t *heap)
 {
@@ -5122,13 +5070,8 @@ clear_pre_sweep_fields(struct heap_page *page)
 
 #define SWEEP_CHUNK 4
 
-/* Atomically claim a chunk of page indices to sweep. Returns true and writes
- * [start, end) into out params on success. When called from the worker
- * (is_sweep_thread=true), also credits the in_flight counter by SWEEP_CHUNK
- * (NOT by (end - start)) — overshoot is accounted for by the observer side,
- * see the comment block above heap_is_sweep_done.
- *
- * Returns false when there is no more work to claim. */
+/* Atomically claim a chunk of page indices to sweep. Returns true and writes [start, end)
+ * into out params on success. Returns false when there is no more work to claim. */
 static bool
 sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, bool is_sweep_thread)
 {
@@ -5138,8 +5081,7 @@ sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, bool is_s
 #if SIZEOF_VOIDP >= 8
     /* Single atomic fetch_add bumps both claim_index (high 32) and (for the
      * worker) in_flight (low 32). No refund: any over-credit to in_flight is
-     * cancelled out by sweep_true_in_flight via the worker_overshoot derived
-     * from (claim_idx - total) - sweep_claim_overshoot. */
+     * cancelled out by sweep_true_in_flight. */
     size_t increment = SWEEP_CLAIM_INDEX_UNIT * SWEEP_CHUNK;
     if (is_sweep_thread) increment |= (size_t)SWEEP_CHUNK;
     size_t prev = rbimpl_atomic_size_fetch_add(&heap->sweep_claim_state, increment, RBIMPL_ATOMIC_ACQ_REL);
@@ -5168,10 +5110,7 @@ sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, bool is_s
 #endif
 }
 
-/* Lock-free bulk push of a pre-linked chain of pages onto heap->pre_swept_head.
- * The chain runs head -> ... -> tail via page->free_next; tail->free_next is
- * overwritten by the CAS loop to point at the old stack top. One CAS amortizes
- * the push cost across up to SWEEP_CHUNK pages. */
+/* Lock-free bulk push of a pre-linked chain of pages onto heap->pre_swept_head. */
 static void
 sweep_stack_push_bulk(rb_heap_t *heap, struct heap_page *head, struct heap_page *tail)
 {
@@ -5196,28 +5135,21 @@ static void
 gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     // sweep_lock is acquired
-    //
-    // We're finished either when they are no pages left to pre-sweep, OR:
-    // 1) When we're not in `sweep_rest` or `background_mode`, if we've encountered a change in `heap->foreground_sweep_steps`
+
     GC_ASSERT(heap->background_sweep_steps <= ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps));
     if (heap->done_background_sweep) {
         psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - done (early return)\n", heap, heap - heaps);
         return;
     }
     /* In foreground mode, honor the per-heap throttle the worker set during
-     * the prior background phase: if this heap already has more than
-     * (sweep_budget + pool_budget) pre-swept slots staged, don't sweep more
-     * pages from it this step. Reset to false in gc_sweeping_exit. Read under
-     * sweep_lock (which we hold here); the only writers are this worker (also
-     * under sweep_lock) and gc_sweeping_exit. */
+     * the prior background phase. */
     if (!objspace->background_sweep_mode && heap->skip_sweep_continue) {
         psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - skip (skip_sweep_continue)\n", heap, heap - heaps);
         return;
     }
     while (1) {
         /* Claim work via atomic fetch_add. The claim itself is lock-free, so we
-         * drop sweep_lock around it (sweep_lock guards thread-state, not page-claim).
-         * The heavy pre-sweep is also done without sweep_lock. */
+         * drop sweep_lock */
         sweep_lock_unlock(objspace);
 
         /* Accumulate up to SWEEP_CHUNK pre-swept pages in a local linked list
@@ -5253,11 +5185,6 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             page->free_next = NULL;
             gc_pre_sweep_page(objspace, heap, page);
 
-            /* Count this page's contribution toward the BG budget. Pages that
-             * will be classified as fully empty by gc_sweep_step (every unmarked
-             * slot was either already-empty or freshly-freed, no finals/zombies)
-             * go to the empty pool, not this heap's free list, so they don't
-             * count against this heap's pre-sweep budget. */
             {
                 size_t page_free_slots = (size_t)page->pre_freed_slots + (size_t)page->pre_empty_slots;
                 bool page_will_be_empty =
@@ -5279,8 +5206,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             batch_count++;
 
             /* Halfway into a batch, do a cheap atomic peek at the abort flag.
-             * If a Ruby thread has raised it, drain what we have and bail — don't
-             * keep accumulating up to 4. Bounds the abort latency to ~2 pre-swept pages of work. */
+             * If a Ruby thread has raised it, drain what we have and bail */
             if (batch_count == (SWEEP_CHUNK / 2) && rbimpl_atomic_load(&objspace->background_sweep_abort, RBIMPL_ATOMIC_ACQUIRE)) {
                 aborted_mid_batch = true;
                 break;
@@ -5322,11 +5248,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         }
 
         if (!objspace->background_sweep_mode) {
-            /* Only honor the foreground-done break when the local cache is fully drained.
-             * Pages still in worker_cache_start..worker_cache_end are counted in
-             * sweep_in_flight but not yet pushed to the Treiber stack — if we break with
-             * cached pages, the Ruby thread can later wait on sweep_page_cond with
-             * in_flight > 0 and no path to wake the worker, deadlocking the sweep. */
+            /* Only honor the foreground-done break when the local cache is fully drained. */
             if (!objspace->sweep_rest && done_worker_incremental_sweep_steps_p(objspace, heap) &&
                     heap->worker_cache_start >= heap->worker_cache_end) {
                 rb_native_cond_broadcast(&heap->sweep_page_cond);
@@ -5993,29 +5915,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 #endif
 
         int free_slots = ctx.freed_slots + ctx.empty_slots;
-        GC_ASSERT(sweep_page->total_slots > 0);
-        if (sweep_page->total_slots < free_slots) {
-#if USE_PARALLEL_SWEEP
-            dbg_fprintf(
-                "gc_sweep_step: free_slots(%d) > total_slots(%d) "
-                "page:%p heap:%ld slot_size:%d before_sweep_was_set:%d "
-                "free_in_user_thread_p:%d dequeued_unswept:%d "
-                "ctx.freed:%d ctx.empty:%d ctx.final:%d ctx.zombie:%d "
-                "pre_freed:%d pre_empty:%d pre_final:%d pre_zombie:%d "
-                "pre_deferred_free:%d during_compacting:%d compact_count:%lu gc_count:%zu\n",
-                free_slots, (int)sweep_page->total_slots,
-                (void *)sweep_page, sweep_page->heap - heaps, (int)sweep_page->slot_size,
-                (int)sweep_page->before_sweep, free_in_user_thread_p, dequeued_unswept_page,
-                ctx.freed_slots, ctx.empty_slots, ctx.final_slots, ctx.zombie_slots,
-                (int)sweep_page->pre_freed_slots, (int)sweep_page->pre_empty_slots,
-                (int)sweep_page->pre_final_slots, (int)sweep_page->pre_zombie_slots,
-                (int)sweep_page->pre_deferred_free_slots,
-                objspace->flags.during_compacting, (unsigned long)objspace->profile.compact_count,
-                rb_gc_count());
-#else
-            dbg_fprintf("free_slots: %d, total_slots:%d\n", free_slots, (int)sweep_page->total_slots);
-#endif
-        }
         GC_ASSERT(sweep_page->total_slots >= free_slots);
 
 #if USE_PARALLEL_SWEEP
