@@ -1439,7 +1439,7 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
 
       case T_MATCH:
         if ((flags & (RMATCH_ONIG | RMATCH_OFFSETS_EXTERNAL)) || USE_DEBUG_COUNTER) return true;
-        return rb_shape_has_fields(shape_id);
+        return rb_shape_has_fields(RBASIC_SHAPE_ID(obj));
 
       case T_BIGNUM:
         if (!(flags & BIGNUM_EMBED_FLAG)) return true;
@@ -2130,78 +2130,12 @@ id2ref_tbl_memsize(const void *data)
     return rb_st_memsize(data);
 }
 
-// TODO: platforms other than pthread
-static rb_nativethread_lock_t id2ref_tbl_lock_ = PTHREAD_MUTEX_INITIALIZER;
-#ifdef RUBY_THREAD_PTHREAD_H
-static pthread_t id2ref_tbl_lock_owner;
-#endif
-static unsigned int id2ref_tbl_lock_lvl;
-
-static inline void
-ASSERT_id2ref_tbl_locked(void)
-{
-#ifdef RUBY_THREAD_PTHREAD_H
-    VM_ASSERT(pthread_self() == id2ref_tbl_lock_owner);
-#endif
-}
-
-static inline void
-ASSERT_id2ref_tbl_unlocked(void)
-{
-#ifdef RUBY_THREAD_PTHREAD_H
-    VM_ASSERT(pthread_self() != id2ref_tbl_lock_owner);
-#endif
-}
-
-static inline void
-id2ref_tbl_lock(bool allow_reentry)
-{
-    if (allow_reentry && pthread_self() == id2ref_tbl_lock_owner) {
-    } else {
-        ASSERT_id2ref_tbl_unlocked();
-        rb_native_mutex_lock(&id2ref_tbl_lock_);
-        id2ref_tbl_lock_owner = pthread_self();
-    }
-    id2ref_tbl_lock_lvl++;
-}
-
-static inline bool
-id2ref_tbl_trylock(bool allow_reentry)
-{
-    if (allow_reentry && pthread_self() == id2ref_tbl_lock_owner) {
-    } else {
-        ASSERT_id2ref_tbl_unlocked();
-        if (rb_native_mutex_trylock(&id2ref_tbl_lock_) == EBUSY) {
-            return false;
-        }
-        id2ref_tbl_lock_owner = pthread_self();
-    }
-    id2ref_tbl_lock_lvl++;
-    return true;
-}
-
-static inline void
-id2ref_tbl_unlock(void)
-{
-    ASSERT_id2ref_tbl_locked();
-    GC_ASSERT(id2ref_tbl_lock_lvl > 0);
-    id2ref_tbl_lock_lvl--;
-    if (id2ref_tbl_lock_lvl == 0) {
-        id2ref_tbl_lock_owner = 0;
-        rb_native_mutex_unlock(&id2ref_tbl_lock_);
-    }
-}
-
 static void
 id2ref_tbl_free(void *data)
 {
-    id2ref_tbl_lock(true);
-    {
-        st_table *table = (st_table *)data;
-        st_free_table(table);
-        RUBY_ATOMIC_PTR_SET(id2ref_tbl, NULL); // clear global ref
-    }
-    id2ref_tbl_unlock();
+    st_table *table = (st_table *)data;
+    st_free_table(table);
+    RUBY_ATOMIC_PTR_SET(id2ref_tbl, NULL); // clear global ref
 }
 
 static const rb_data_type_t id2ref_tbl_type = {
@@ -2231,11 +2165,7 @@ class_object_id(VALUE klass)
         }
         else {
             if (RB_UNLIKELY(id2ref_tbl)) {
-                id2ref_tbl_lock(false);
-                {
-                    st_insert(id2ref_tbl, id, klass); // needs VM lock for allocation
-                }
-                id2ref_tbl_unlock();
+                st_insert(id2ref_tbl, id, klass); // needs VM lock for allocation
             }
         }
         RB_GC_VM_UNLOCK(lock_lev);
@@ -2284,11 +2214,7 @@ object_id0(VALUE obj)
 
     if (RB_UNLIKELY(RUBY_ATOMIC_PTR_LOAD(id2ref_tbl))) {
         RB_VM_LOCKING() {
-            id2ref_tbl_lock(false);
-            {
-                st_insert(id2ref_tbl, (st_data_t)id, (st_data_t)obj); // needs VM lock for allocation
-            }
-            id2ref_tbl_unlock();
+            st_insert(id2ref_tbl, (st_data_t)id, (st_data_t)obj); // needs VM lock for allocation
         }
     }
     return id;
@@ -2339,21 +2265,13 @@ build_id2ref_i(VALUE obj, void *data)
       case T_IMEMO:
         RUBY_ASSERT(!rb_objspace_garbage_object_p(obj));
         if (IMEMO_TYPE_P(obj, imemo_fields) && rb_obj_shape_has_id(obj)) {
-            id2ref_tbl_lock(false);
-            {
-                st_insert(id2ref_tbl, rb_obj_id(obj), rb_imemo_fields_owner(obj));
-            }
-            id2ref_tbl_unlock();
+            st_insert(id2ref_tbl, rb_obj_id(obj), rb_imemo_fields_owner(obj));
         }
         break;
       case T_OBJECT:
         RUBY_ASSERT(!rb_objspace_garbage_object_p(obj));
         if (rb_obj_shape_has_id(obj)) {
-            id2ref_tbl_lock(false);
-            {
-                st_insert(id2ref_tbl, rb_obj_id(obj), obj);
-            }
-            id2ref_tbl_unlock();
+            st_insert(id2ref_tbl, rb_obj_id(obj), obj);
         }
         break;
       default:
@@ -2393,11 +2311,7 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
 
     VALUE obj;
     bool found;
-    id2ref_tbl_lock(false);
-    {
-        found = st_lookup(id2ref_tbl, object_id, &obj) && !rb_gc_impl_garbage_object_p(objspace, obj);
-    }
-    id2ref_tbl_unlock();
+    found = st_lookup(id2ref_tbl, object_id, &obj) && !rb_gc_impl_garbage_object_p(objspace, obj);
 
     RB_GC_VM_UNLOCK(lev);
 
@@ -2413,76 +2327,11 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
     }
 }
 
-static VALUE
-obj_get_object_id(VALUE obj)
-{
-    VALUE obj_id = 0;
-    if (RB_UNLIKELY(RUBY_ATOMIC_PTR_LOAD(id2ref_tbl))) {
-        switch (BUILTIN_TYPE(obj)) {
-          case T_CLASS:
-          case T_MODULE:
-            obj_id = RCLASS(obj)->object_id;
-            break;
-          case T_IMEMO:
-            if (!IMEMO_TYPE_P(obj, imemo_fields)) {
-                break;
-            }
-            // fallthrough
-          case T_OBJECT:
-          {
-            shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
-            if (rb_shape_has_object_id(shape_id)) {
-                obj_id = object_id_get(obj, shape_id);
-            }
-            break;
-          }
-          default:
-            break;
-            // For generic_fields, the T_IMEMO/fields is responsible for freeing the id.
-        }
-    }
-    return obj_id;
-}
-
-static inline bool
-obj_free_object_id(VALUE obj, bool in_user_gc_thread)
-{
-    if (RB_UNLIKELY(RUBY_ATOMIC_PTR_LOAD(id2ref_tbl))) {
-        VALUE obj_id = obj_get_object_id(obj);
-
-        if (RB_UNLIKELY(obj_id)) {
-            RUBY_ASSERT(FIXNUM_P(obj_id) || RB_TYPE_P(obj_id, T_BIGNUM));
-
-            // If we're in the sweep thread, we must use trylock because GC could have been
-            // triggered by inserting into the id2ref_tbl, which means the GC thread holds the
-            // lock and we can't wait on it.
-            bool needs_id2ref_tbl_trylock = !in_user_gc_thread;
-            if (needs_id2ref_tbl_trylock) {
-                bool did_lock = id2ref_tbl_trylock(false);
-                if (!did_lock) return false;
-            } else {
-                id2ref_tbl_lock(true);
-            }
-            if (!st_delete(id2ref_tbl, (st_data_t *)&obj_id, NULL)) {
-                // The the object is a T_IMEMO/fields, then it's possible the actual object
-                // has been garbage collected already.
-                if (!RB_TYPE_P(obj, T_IMEMO)) {
-                    id2ref_tbl_unlock();
-                    rb_bug("Object ID seen, but not in _id2ref table: object_id=%llu object=%s", NUM2ULL(obj_id), rb_obj_info(obj));
-                }
-            }
-            id2ref_tbl_unlock();
-        }
-    }
-    return true;
-}
-
 #if USE_PARALLEL_SWEEP
 bool
 rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
 {
     ASSUME(!RB_SPECIAL_CONST_P(obj));
-    bool result = obj_free_object_id(obj, false);
 
     switch (BUILTIN_TYPE(obj)) {
       case T_STRING:
@@ -2496,10 +2345,7 @@ rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
       default:
         break;
     }
-    if (rb_obj_gen_fields_p(obj)) {
-        return false;
-    }
-    return result;
+    return true;
 }
 #endif
 
