@@ -5077,7 +5077,7 @@ clear_pre_sweep_fields(struct heap_page *page)
 /* Atomically claim a chunk of page indices to sweep. Returns true and writes [start, end)
  * into out params on success. Returns false when there is no more work to claim. */
 static bool
-sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, bool is_sweep_thread)
+sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, int chunk_sz, bool is_sweep_thread)
 {
     size_t total = rb_darray_size(heap->sweep_pages);
     if (total == 0) return false;
@@ -5086,19 +5086,19 @@ sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, bool is_s
     /* Single atomic fetch_add bumps both claim_index (high 32) and (for the
      * worker) in_flight (low 32). No refund: any over-credit to in_flight is
      * cancelled out by sweep_true_in_flight. */
-    size_t increment = SWEEP_CLAIM_INDEX_UNIT * SWEEP_CHUNK;
-    if (is_sweep_thread) increment |= (size_t)SWEEP_CHUNK;
+    size_t increment = SWEEP_CLAIM_INDEX_UNIT * chunk_sz;
+    if (is_sweep_thread) increment |= (size_t)chunk_sz;
     size_t prev = rbimpl_atomic_size_fetch_add(&heap->sweep_claim_state, increment, RBIMPL_ATOMIC_ACQ_REL);
     size_t start = prev >> SWEEP_CLAIM_INDEX_SHIFT;
     if (start >= total) {
         /* Full no-work overshoot. The Ruby thread tracks its own contribution
          * locally so the observer can attribute the rest to the worker. */
         if (!is_sweep_thread) {
-            heap->sweep_claim_overshoot += SWEEP_CHUNK;
+            heap->sweep_claim_overshoot += chunk_sz;
         }
         return false;
     }
-    size_t end = start + SWEEP_CHUNK;
+    size_t end = start + chunk_sz;
     if (end > total) {
         /* Partial-chunk overshoot. */
         if (!is_sweep_thread) {
@@ -5169,6 +5169,8 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
          * under sweep_lock at the bottom of this iteration. */
         size_t batch_bg_slots = 0;
 
+        int chunk_sz = SWEEP_CHUNK;
+
         while (batch_count < SWEEP_CHUNK) {
             if (heap->worker_cache_start >= heap->worker_cache_end) {
                 /* Leave the last chunk for the Ruby thread. If at most one chunk's
@@ -5188,12 +5190,15 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
                 }
 
                 size_t chunk_start, chunk_end;
-                if (!sweep_claim_chunk(heap, &chunk_start, &chunk_end, true)) {
+                if (!sweep_claim_chunk(heap, &chunk_start, &chunk_end, chunk_sz, true)) {
                     no_more_work = true;
                     break;
                 }
                 heap->worker_cache_start = chunk_start;
                 heap->worker_cache_end = chunk_end;
+                if (heap->worker_cache_end >= total - (SWEEP_CHUNK * 2)) {
+                    chunk_sz = SWEEP_CHUNK/2;
+                }
             }
 
             size_t i = heap->worker_cache_start++;
@@ -5756,7 +5761,7 @@ retry_drain:
     }
 
     /* 4) Claim a fresh chunk. */
-    if (sweep_claim_chunk(heap, &heap->claimed_local_start, &heap->claimed_local_end, false)) {
+    if (sweep_claim_chunk(heap, &heap->claimed_local_start, &heap->claimed_local_end, SWEEP_CHUNK, false)) {
         GC_ASSERT(heap->claimed_local_end <= rb_darray_size(heap->sweep_pages));
         GC_ASSERT(heap->claimed_local_start < rb_darray_size(heap->sweep_pages));
         struct heap_page *page = heap->sweep_pages->data[heap->claimed_local_start++];
