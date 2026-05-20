@@ -4299,7 +4299,13 @@ rb_cvar_set(VALUE klass, ID id, VALUE val)
             new_cvc_tbl = rb_marked_id_table_new(2);
         }
         else if (rb_multi_ractor_p()) {
-            new_cvc_tbl = rb_marked_id_table_new(rb_marked_id_table_size(cvc_tbl) + 1);
+            // Copy-on-write so the readable table (a snapshot from before
+            // multi-Ractor mode flipped on) is left intact. Duplicating
+            // preserves existing entries — we must NOT start from an empty
+            // table here or readers via RCLASS_CVC_TBL on classes that had
+            // entries before COW would see them disappear and trip the
+            // "should have cvar cache entry" assertion in vm_insnhelper.c.
+            new_cvc_tbl = rb_marked_id_table_dup(cvc_tbl);
         }
 
         rb_marked_id_table_insert(new_cvc_tbl, id, (VALUE)ent);
