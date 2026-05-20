@@ -5171,6 +5171,22 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 
         while (batch_count < SWEEP_CHUNK) {
             if (heap->worker_cache_start >= heap->worker_cache_end) {
+                /* Leave the last chunk for the Ruby thread. If at most one chunk's
+                 * worth of pages remains unclaimed, bail so the Ruby thread can
+                 * claim them directly via gc_sweep_dequeue_page step 4 instead
+                 * of waiting on sweep_page_cond.
+                 *
+                 * Race-tolerant: the peek may be stale (Ruby thread can also
+                 * claim chunks), but cur_idx only moves up, so a stale-low read
+                 * just degrades to the existing behavior. */
+                size_t cur_idx, cur_in_flight;
+                sweep_load_claim_state(heap, &cur_idx, &cur_in_flight);
+                size_t total = rb_darray_size(heap->sweep_pages);
+                if (cur_idx < total && total - cur_idx <= SWEEP_CHUNK) {
+                    no_more_work = true;
+                    break;
+                }
+
                 size_t chunk_start, chunk_end;
                 if (!sweep_claim_chunk(heap, &chunk_start, &chunk_end, true)) {
                     no_more_work = true;
@@ -5756,6 +5772,7 @@ retry_drain:
         while (sweep_true_in_flight(heap) > 0 &&
                rbimpl_atomic_ptr_load((void**)&heap->pre_swept_head, RBIMPL_ATOMIC_ACQUIRE) == NULL) {
             sweep_lock_set_unlocked(objspace);
+            fprintf(stderr, "ruby thread: native cond wait\n");
             rb_native_cond_wait(&heap->sweep_page_cond, &objspace->sweep_lock);
             sweep_lock_set_locked(objspace);
         }
@@ -6103,20 +6120,6 @@ gc_sweep_rest(rb_objspace_t *objspace)
             gc_sweep_step(objspace, heap);
         }
         heap->background_sweep_steps = heap->foreground_sweep_steps;
-    }
-
-    /* All heaps are heap_is_sweep_done, but the worker may still be mid-iteration
-     * in its outer for-loop (between sweep_lock_unlock and the claim-failed re-lock).
-     * Wait for it to set sweep_thread_sweeping = false so the rest of the GC cycle
-     * can rely on a quiescent worker. TODO: remove? */
-    if (objspace->use_background_sweep_thread) {
-        sweep_lock_lock(objspace);
-        while (objspace->sweep_thread_running && objspace->sweep_thread_sweeping) {
-            sweep_lock_set_unlocked(objspace);
-            rb_native_cond_wait(&objspace->sweep_cond, &objspace->sweep_lock);
-            sweep_lock_set_locked(objspace);
-        }
-        sweep_lock_unlock(objspace);
     }
 #else
     for (int i = 0; i < HEAP_COUNT; i++) {
