@@ -4413,6 +4413,10 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
         }
         p += slot_size;
         bitset >>= 1;
+        if (bitset) {
+            /* Write-prefetch next set slot: obj_free / heap_page_add_freeobj writes it. */
+            __builtin_prefetch((void *)(p + __builtin_ctzll(bitset) * slot_size), 1, 3);
+        }
     } while (bitset);
 }
 
@@ -5840,6 +5844,10 @@ gc_sweep_step_deferred_free(rb_objspace_t *objspace, rb_heap_t *heap, struct hea
             }
             p += slot_size;
             bitset >>= 1;
+            if (bitset) {
+                /* Write-prefetch next deferred slot: deferred_free -> obj_free writes it. */
+                __builtin_prefetch((void *)(p + __builtin_ctzll(bitset) * slot_size), 1, 3);
+            }
         }
     }
     *freed_out = freed;
@@ -5920,6 +5928,12 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(sweep_page->pre_deferred_free_slots == 0);
         }
         else {
+            /* Worker just wrote deferred_free_bits on its core; we'll read them now
+             * (bitmap walk) and memset later (clear_pre_sweep_fields). RFO prefetch
+             * the first plane so we don't HITM on the first load; HW streaming
+             * prefetcher picks up the remaining planes. */
+            __builtin_prefetch(&sweep_page->deferred_free_bits[0], 1, 3);
+
             unsigned short deferred_free_freed = 0;
             unsigned short deferred_free_final_slots = 0;
             unsigned short deferred_to_free = sweep_page->pre_deferred_free_slots;
