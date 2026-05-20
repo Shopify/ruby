@@ -88,6 +88,28 @@
 module MonitorMixin
   ConditionVariable = Monitor::ConditionVariable # :nodoc:
 
+  # Stub that stands in for the real Monitor after +unsynchronize!+. Every
+  # operation is a no-op: +synchronize+ yields without locking. This is
+  # only sound when the caller has confirmed the synchronize-protected
+  # state is immutable (e.g. after +freeze+) or when no synchronize calls
+  # follow — never when the monitor was serializing side effects on an
+  # external resource.
+  class NullMonitor # :nodoc:
+    def synchronize; yield; end
+    alias mon_synchronize synchronize
+    def try_enter; true; end
+    alias mon_try_enter try_enter
+    def enter; end
+    alias mon_enter enter
+    def exit; end
+    alias mon_exit exit
+    def mon_locked?; false; end
+    def mon_owned?; false; end
+    def mon_check_owner; end
+  end
+  NULL = NullMonitor.new.freeze # :nodoc:
+  Ractor.make_shareable(NULL) if defined?(Ractor)
+
   #
   # FIXME: This isn't documented in Nutshell.
   #
@@ -144,11 +166,7 @@ module MonitorMixin
   # +MonitorMixin+.
   #
   def mon_synchronize(&b)
-    if @mon_data
-      @mon_data.synchronize(&b)
-    else
-      yield
-    end
+    @mon_data.synchronize(&b)
   end
   alias synchronize mon_synchronize
 
@@ -164,12 +182,22 @@ module MonitorMixin
     return ConditionVariable.new(@mon_data)
   end
 
-  # Clear the monitor before freezing. A frozen object cannot be
-  # synchronized, so the Monitor serves no purpose and would prevent
-  # the object from being made Ractor-shareable.
-  def freeze
-    @mon_data = nil
-    super
+  # Opt-in: replace the underlying Monitor with a frozen no-op so the
+  # object can be frozen (and thus made Ractor-shareable) while
+  # synchronizing methods on it still work. After this call,
+  # +mon_synchronize+ yields without locking, +mon_enter+/+mon_exit+ are
+  # no-ops, and +mon_owned?+/+mon_locked?+ return false.
+  #
+  # WARNING: This is only sound when the author has confirmed that
+  # the monitor was protecting either
+  # (a) state on +self+ that +freeze+ now makes immutable, or
+  # (b) nothing observable.
+  # It is NOT sound when the monitor was serializing side effects on an
+  # external resource (the "Gate" pattern) — opting in there silently
+  # breaks the serialization.
+  def unsynchronize!
+    @mon_data = MonitorMixin::NULL
+    self
   end
 
   private
