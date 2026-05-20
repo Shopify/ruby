@@ -5906,11 +5906,13 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(sweep_page->pre_deferred_free_slots == 0);
         }
         else {
-            /* Worker just wrote deferred_free_bits on its core; we'll read them now
-             * (bitmap walk) and memset later (clear_pre_sweep_fields). RFO prefetch
-             * the first plane so we don't HITM on the first load; HW streaming
-             * prefetcher picks up the remaining planes. */
+            /* Worker just wrote deferred_free_bits and the pre_* counter fields on
+             * its core; the Ruby thread is about to read them (bitmap walk, counter
+             * loads) and then write them (clear_pre_sweep_fields). RFO-prefetch both
+             * the first bitmap plane and the pre_* counter line so the demand loads
+             * don't take HITM, and the later writes are already in M state. */
             __builtin_prefetch(&sweep_page->deferred_free_bits[0], 1, 3);
+            __builtin_prefetch(&sweep_page->pre_freed_slots, 1, 3);
 
             unsigned short deferred_free_freed = 0;
             unsigned short deferred_free_final_slots = 0;
