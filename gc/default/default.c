@@ -1614,7 +1614,7 @@ static bool
 heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
 {
 #if USE_PARALLEL_SWEEP
-    if (heap->is_finished_sweeping) {
+    if (heap->is_finished_sweeping || !heap->sweeping_page) {
         psweep_debug(2, "[gc] heap_is_sweep_done: %d, heap:%p (%ld), heap->is_finished_sweeping\n", true, heap, heap - heaps);
         return true;
     }
@@ -1668,7 +1668,7 @@ has_sweeping_pages(rb_objspace_t *objspace)
                 break;
             }
         }
-        if (!heap_not_finished) return false;
+        GC_ASSERT(heap_not_finished);
         return !heap_is_sweep_done(objspace, heap_not_finished);
     }
     else {
@@ -3776,7 +3776,6 @@ gc_abort(void *objspace_ptr)
             rb_heap_t *heap = &heaps[i];
             heap->sweeping_page = NULL;
 #if USE_PARALLEL_SWEEP
-            heap->is_finished_sweeping = true;
             heap->background_sweep_steps = heap->foreground_sweep_steps;
 
             /* Pages that were pre-swept but never committed have non-zero
@@ -4422,6 +4421,7 @@ wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_curre
     }
     for (int i = 0; i < HEAP_COUNT; i++) {
         heaps[i].skip_sweep_continue = false;
+        heaps[i].pre_swept_bg_slots = 0;
         heaps[i].background_sweep_steps = heaps[i].foreground_sweep_steps;
     }
     if (exit_sweep_thread) {
@@ -5215,12 +5215,15 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - swept %d pages\n", heap, heap - heaps, batch_count);
 
         if (batch_bg_slots > 0) {
-            heap->pre_swept_bg_slots += batch_bg_slots;
-            if (objspace->background_sweep_mode && !heap->skip_sweep_continue) {
-                size_t sweep_budget = GC_INCREMENTAL_SWEEP_BYTES / heap->slot_size;
-                size_t pool_budget = GC_INCREMENTAL_SWEEP_POOL_BYTES / heap->slot_size;
-                if (heap->pre_swept_bg_slots >= sweep_budget + pool_budget) {
-                    heap->skip_sweep_continue = true;
+            if (objspace->background_sweep_mode) {
+                heap->pre_swept_bg_slots += batch_bg_slots;
+                if (!heap->skip_sweep_continue) {
+                    size_t sweep_budget = GC_INCREMENTAL_SWEEP_BYTES / heap->slot_size;
+                    size_t pool_budget = GC_INCREMENTAL_SWEEP_POOL_BYTES / heap->slot_size;
+                    if (heap->pre_swept_bg_slots >= sweep_budget + pool_budget) {
+                        heap->skip_sweep_continue = true;
+                        break;
+                    }
                 }
             }
         }
