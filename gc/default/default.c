@@ -5087,6 +5087,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - skip (skip_sweep_continue)\n", heap, heap - heaps);
         return;
     }
+    int chunk_sz = SWEEP_CHUNK;
     while (1) {
         /* Claim work via atomic fetch_add. The claim itself is lock-free, so we
          * drop sweep_lock */
@@ -5105,9 +5106,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
          * under sweep_lock at the bottom of this iteration. */
         size_t batch_bg_slots = 0;
 
-        int chunk_sz = SWEEP_CHUNK;
-
-        while (batch_count < SWEEP_CHUNK) {
+        while (batch_count < chunk_sz) {
             if (heap->worker_cache_start >= heap->worker_cache_end) {
                 /* Leave the last chunk for the Ruby thread. If at most one chunk's
                  * worth of pages remains unclaimed, bail so the Ruby thread can
@@ -5123,6 +5122,8 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
                 if (cur_idx < total && total - cur_idx <= SWEEP_CHUNK) {
                     no_more_work = true;
                     break;
+                } else if (chunk_sz == SWEEP_CHUNK && cur_idx < total && total - cur_idx <= (SWEEP_CHUNK * 2)) {
+                    chunk_sz = SWEEP_CHUNK/2;
                 }
 
                 size_t chunk_start, chunk_end;
@@ -5132,9 +5133,6 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
                 }
                 heap->worker_cache_start = chunk_start;
                 heap->worker_cache_end = chunk_end;
-                if (heap->worker_cache_end >= total - (SWEEP_CHUNK * 2)) {
-                    chunk_sz = SWEEP_CHUNK/2;
-                }
             }
 
             size_t i = heap->worker_cache_start++;
@@ -5168,7 +5166,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 
             /* Halfway into a batch, do a cheap atomic peek at the abort flag.
              * If a Ruby thread has raised it, drain what we have and bail */
-            if (batch_count == (SWEEP_CHUNK / 2) && rbimpl_atomic_load(&objspace->background_sweep_abort, RBIMPL_ATOMIC_ACQUIRE)) {
+            if (batch_count == (chunk_sz / 2) && rbimpl_atomic_load(&objspace->background_sweep_abort, RBIMPL_ATOMIC_ACQUIRE)) {
                 aborted_mid_batch = true;
                 break;
             }
