@@ -193,7 +193,6 @@ static RB_THREAD_LOCAL_SPECIFIER int malloc_increase_local;
 static RB_THREAD_LOCAL_SPECIFIER struct heap_page *current_sweep_thread_page;
 #else
 #define USE_MALLOC_INCREASE_LOCAL 0
-static struct heap_page *current_sweep_thread_page;
 #endif
 
 #ifndef GC_CAN_COMPILE_COMPACTION
@@ -1773,7 +1772,7 @@ static int garbage_collect(rb_objspace_t *, unsigned int reason);
 static int  gc_start(rb_objspace_t *objspace, unsigned int reason);
 static void gc_rest(rb_objspace_t *objspace);
 static inline void atomic_sub_nounderflow(size_t *var, size_t sub);
-static size_t malloc_increase_local_flush(rb_objspace_t *objspace);
+static void malloc_increase_local_flush(rb_objspace_t *objspace);
 
 enum gc_enter_event {
     gc_enter_event_start,
@@ -4804,6 +4803,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     case imemo_fields:
                     case imemo_cvar_entry:
                     case imemo_subclasses:
+                    case imemo_cdhash:
                         goto free;
                     case imemo_callinfo:
                     case imemo_iseq: // calls rb_yjit_iseq_free which is not concurrency safe
@@ -4893,7 +4893,9 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     GC_ASSERT(page->heap == heap);
     GC_ASSERT(page->pre_deferred_free_slots == 0);
     GC_ASSERT(page->pre_freed_malloc_bytes == 0);
+#if USE_MALLOC_INCREASE_LOCAL
     current_sweep_thread_page = page;
+#endif
 
     int bitmap_plane_count = CEILDIV(total_slots, BITS_BITLENGTH);
     int out_of_range_bits = total_slots % BITS_BITLENGTH;
@@ -4942,8 +4944,8 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     // flush to sweep_page->pre_freed_malloc_bytes instead of malloc_increase because it's clamped at 0 right now and
     // we don't want to decrease it too quickly
     malloc_increase_local_flush(objspace);
-#endif
     current_sweep_thread_page = NULL;
+#endif
 
     psweep_debug(1, "[sweep] gc_pre_sweep_page(heap:%p page:%p) done, deferred free:%d\n", heap, page, page->pre_deferred_free_slots);
 }
@@ -5810,6 +5812,8 @@ gc_sweep_step_deferred_free(rb_objspace_t *objspace, rb_heap_t *heap, struct hea
 }
 #endif
 
+static void malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size, struct heap_page *sweep_thread_page);
+
 // Perform incremental (lazy) sweep on a heap.
 static int
 gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
@@ -5942,10 +5946,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             sweep_page->heap->total_freed_objects += ctx.freed_slots;
 
             if (sweep_page->pre_freed_malloc_bytes > 0) {
-                atomic_sub_nounderflow(&malloc_increase, sweep_page->pre_freed_malloc_bytes);
-#if RGENGC_ESTIMATE_OLDMALLOC
-                atomic_sub_nounderflow(&objspace->malloc_counters.oldmalloc_increase, sweep_page->pre_freed_malloc_bytes);
-#endif
+                malloc_increase_commit(objspace, 0, sweep_page->pre_freed_malloc_bytes, NULL);
             }
             clear_pre_sweep_fields(sweep_page);
         }
@@ -9869,8 +9870,6 @@ ns_to_ms(uint64_t ns)
     return ns / (1000 * 1000);
 }
 
-static size_t malloc_increase_local_flush(rb_objspace_t *objspace);
-
 VALUE
 rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
 {
@@ -10392,7 +10391,7 @@ objspace_malloc_gc_stress(rb_objspace_t *objspace)
     }
 }
 
-static size_t
+static void
 malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size, struct heap_page *sweep_thread_page)
 {
     if (new_size > old_size) {
@@ -10409,41 +10408,42 @@ malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size
     }
     else if (old_size > new_size) {
         size_t delta = old_size - new_size;
-        MALLOC_COUNTERS_LOCK(objspace);
-        gc_counter_add(&objspace->malloc_counters.counters.free, delta);
-#if RGENGC_ESTIMATE_OLDMALLOC
-        gc_counter_add(&objspace->malloc_counters.oldcounters.free, delta);
-#endif
-        MALLOC_COUNTERS_UNLOCK(objspace);
 #if USE_PARALLEL_SWEEP
         if (sweep_thread_page) {
             sweep_thread_page->pre_freed_malloc_bytes += delta;
         }
+        else
 #endif
+        {
+            MALLOC_COUNTERS_LOCK(objspace);
+            gc_counter_add(&objspace->malloc_counters.counters.free, delta);
+#if RGENGC_ESTIMATE_OLDMALLOC
+            gc_counter_add(&objspace->malloc_counters.oldcounters.free, delta);
+#endif
+            MALLOC_COUNTERS_UNLOCK(objspace);
+        }
     }
-    return 0;
 }
 
 #if USE_MALLOC_INCREASE_LOCAL
-static size_t
+static void
 malloc_increase_local_flush(rb_objspace_t *objspace)
 {
     int delta = malloc_increase_local;
-    if (delta == 0) return 0;
+    if (delta == 0) return;
 
     malloc_increase_local = 0;
     if (delta > 0) {
-        return malloc_increase_commit(objspace, (size_t)delta, 0, NULL);
+        malloc_increase_commit(objspace, (size_t)delta, 0, NULL);
     }
     else {
-        return malloc_increase_commit(objspace, 0, (size_t)(-delta), current_sweep_thread_page);
+        malloc_increase_commit(objspace, 0, (size_t)(-delta), current_sweep_thread_page);
     }
 }
 #else
-static size_t
+static void
 malloc_increase_local_flush(rb_objspace_t *objspace)
 {
-    return 0;
 }
 #endif
 
@@ -10462,8 +10462,6 @@ objspace_malloc_increase_report(rb_objspace_t *objspace, void *mem, size_t new_s
 static bool
 objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_size, size_t old_size, enum memop_type type, bool gc_allowed)
 {
-    size_t current_malloc_increase = 0;
-
 #if USE_MALLOC_INCREASE_LOCAL
     if (new_size < GC_MALLOC_INCREASE_LOCAL_THRESHOLD &&
         old_size < GC_MALLOC_INCREASE_LOCAL_THRESHOLD) {
@@ -10471,27 +10469,22 @@ objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_siz
 
         if (malloc_increase_local >= GC_MALLOC_INCREASE_LOCAL_THRESHOLD ||
             malloc_increase_local <= -GC_MALLOC_INCREASE_LOCAL_THRESHOLD) {
-            current_malloc_increase = malloc_increase_local_flush(objspace);
+            malloc_increase_local_flush(objspace);
         }
     }
     else {
         malloc_increase_local_flush(objspace);
-        current_malloc_increase = malloc_increase_commit(objspace, new_size, old_size, current_sweep_thread_page);
+        malloc_increase_commit(objspace, new_size, old_size, current_sweep_thread_page);
     }
 #else
-#if USE_PARALLEL_SWEEP
-    current_malloc_increase = malloc_increase_commit(objspace, new_size, old_size, is_sweep_thread_p() ? current_sweep_thread_page : NULL);
-#else
-    current_malloc_increase = malloc_increase_commit(objspace, new_size, old_size, NULL);
+    malloc_increase_commit(objspace, new_size, old_size, NULL);
 #endif
-#endif // USE_MALLOC_INCREASE_LOCAL
 
     if (type == MEMOP_TYPE_MALLOC && gc_allowed) {
       retry:
-        if (current_malloc_increase > malloc_limit && ruby_native_thread_p() && !dont_gc_val()) {
+        if (malloc_increase > malloc_limit && ruby_native_thread_p() && !dont_gc_val()) {
             if (ruby_thread_has_gvl_p() && is_lazy_sweeping(objspace)) {
                 gc_rest(objspace); /* gc_rest can reduce malloc_increase */
-                current_malloc_increase = rbimpl_atomic_size_load(&malloc_increase, RBIMPL_ATOMIC_RELAXED);
                 goto retry;
             }
             garbage_collect_with_gvl(objspace, GPR_FLAG_MALLOC);
