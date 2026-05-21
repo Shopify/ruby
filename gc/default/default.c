@@ -530,6 +530,7 @@ typedef struct rb_heap_struct {
 
 #if USE_PARALLEL_SWEEP
     rb_nativethread_cond_t sweep_page_cond; // associated with global sweep lock
+    rb_nativethread_cond_t sweep_page_cond_done; // associated with global sweep lock
     rb_nativethread_lock_t swept_pages_lock;
     size_t pre_swept_bg_slots;
     bool is_finished_sweeping;
@@ -549,6 +550,7 @@ typedef struct rb_heap_struct {
     /* Ruby-thread-only count of pages popped from pre_swept_head and committed
      * by gc_sweep_step. */
     size_t in_flight_processed;
+    bool ruby_thread_waiting_dequeue;
 
     size_t worker_cache_start;
     size_t worker_cache_end;
@@ -5070,6 +5072,18 @@ sweep_stack_drain(rb_heap_t *heap)
     return rbimpl_atomic_ptr_exchange((void**)&heap->pre_swept_head, NULL, RBIMPL_ATOMIC_ACQ_REL);
 }
 
+static void
+sweep_thread_signal_enqueued_pages(rb_objspace_t *objspace, rb_heap_t *heap)
+{
+    // sweep_lock is acquired
+    while (heap->ruby_thread_waiting_dequeue) {
+        rb_native_cond_signal(&heap->sweep_page_cond);
+        sweep_lock_set_unlocked(objspace);
+        rb_native_cond_wait(&heap->sweep_page_cond_done, &objspace->sweep_lock);
+        sweep_lock_set_locked(objspace);
+    }
+}
+
 // Perform incremental (lazy) sweep on a heap by the background sweep thread.
 static void
 gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
@@ -5195,14 +5209,14 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(objspace->heaps_done_background_sweep < HEAP_COUNT);
             heap->done_background_sweep = true;
             objspace->heaps_done_background_sweep++;
-            rb_native_cond_broadcast(&heap->sweep_page_cond);
+            sweep_thread_signal_enqueued_pages(objspace, heap);
             psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - no work to claim\n", heap, heap - heaps);
             break;
         }
 
         if (RB_UNLIKELY(aborted_mid_batch)) {
             psweep_debug(-2, "[sweep] (bg) gc_sweep_step_worker: break early heap:%p (%ld) (abort after page 2)\n", heap, heap - heaps);
-            rb_native_cond_broadcast(&heap->sweep_page_cond);
+            sweep_thread_signal_enqueued_pages(objspace, heap);
             break;
         }
 
@@ -5210,7 +5224,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             /* Only honor the foreground-done break when the local cache is fully drained. */
             if (!objspace->sweep_rest && done_worker_incremental_sweep_steps_p(objspace, heap) &&
                     heap->worker_cache_start >= heap->worker_cache_end) {
-                rb_native_cond_broadcast(&heap->sweep_page_cond);
+                sweep_thread_signal_enqueued_pages(objspace, heap);
                 psweep_debug(-2, "[sweep] (fg) gc_sweep_step_worker: done incremental step heap:%p (%ld)\n", heap, heap - heaps);
                 heap->background_sweep_steps = ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps);
                 break;
@@ -5227,7 +5241,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             }
         }
         // notify of newly swept pages in case Ruby thread is waiting on us
-        rb_native_cond_broadcast(&heap->sweep_page_cond);
+        sweep_thread_signal_enqueued_pages(objspace, heap);
     }
     // sweep_lock is acquired
 }
@@ -5321,6 +5335,7 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->claimed_local_end = 0;
     heap->worker_cache_start = 0;
     heap->worker_cache_end = 0;
+    heap->ruby_thread_waiting_dequeue = false;
 #endif
 
 #if RUBY_DEBUG
@@ -5759,9 +5774,12 @@ retry_drain:
         sweep_lock_lock(objspace);
         while (sweep_true_in_flight(heap) > 0 &&
                rbimpl_atomic_ptr_load((void**)&heap->pre_swept_head, RBIMPL_ATOMIC_ACQUIRE) == NULL) {
+            heap->ruby_thread_waiting_dequeue = true;
             sweep_lock_set_unlocked(objspace);
             rb_native_cond_wait(&heap->sweep_page_cond, &objspace->sweep_lock);
             sweep_lock_set_locked(objspace);
+            heap->ruby_thread_waiting_dequeue = false;
+            rb_native_cond_signal(&heap->sweep_page_cond_done);
         }
         sweep_lock_unlock(objspace);
         goto retry_drain;
@@ -11844,6 +11862,7 @@ rb_gc_impl_objspace_free(void *objspace_ptr)
 #if USE_PARALLEL_SWEEP
         rb_native_mutex_destroy(&heap->swept_pages_lock);
         rb_native_cond_destroy(&heap->sweep_page_cond);
+        rb_native_cond_destroy(&heap->sweep_page_cond_done);
         rb_darray_free_without_gc(heap->sweep_pages);
         heap->sweep_pages = NULL;
 #endif
@@ -11935,6 +11954,7 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
 
             rb_native_mutex_initialize(&heap->swept_pages_lock);
             rb_native_cond_initialize(&heap->sweep_page_cond);
+            rb_native_cond_initialize(&heap->sweep_page_cond_done);
             heap->background_sweep_steps = heap->foreground_sweep_steps;
         }
 
@@ -12061,6 +12081,7 @@ rb_gc_impl_objspace_init(void *objspace_ptr)
 #if USE_PARALLEL_SWEEP
         rb_native_mutex_initialize(&heap->swept_pages_lock);
         rb_native_cond_initialize(&heap->sweep_page_cond);
+        rb_native_cond_initialize(&heap->sweep_page_cond_done);
 #endif
     }
 
