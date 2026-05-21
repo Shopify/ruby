@@ -128,6 +128,15 @@
 #define psweep_debug(...) (void)0
 #endif
 
+#ifndef MAJOR_GC_DIAG
+#define MAJOR_GC_DIAG 1
+#endif
+#if MAJOR_GC_DIAG
+#define major_gc_diag(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define major_gc_diag(...) (void)0
+#endif
+
 #ifndef PSWEEP_LOCK_STATS
 #define PSWEEP_LOCK_STATS 0
 #endif
@@ -8762,6 +8771,65 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
         if (reason & GPR_FLAG_MAJOR_BY_SHADY)     objspace->profile.major_gc_count_by_shady++;
         if (reason & GPR_FLAG_MAJOR_BY_FORCE)     objspace->profile.major_gc_count_by_force++;
         if (reason & GPR_FLAG_MAJOR_BY_OLDMALLOC) objspace->profile.major_gc_count_by_oldmalloc++;
+
+#if MAJOR_GC_DIAG
+        {
+            size_t total_slots = objspace_available_slots(objspace);
+            size_t live_slots = objspace_live_slots(objspace);
+            size_t free_slots = objspace_free_slots(objspace);
+            size_t final_slots = total_final_slots_count(objspace);
+            size_t mi  = gc_malloc_counters_increase_unsigned(objspace, &objspace->malloc_counters.counters);
+#if RGENGC_ESTIMATE_OLDMALLOC
+            size_t omi = gc_malloc_counters_increase_unsigned(objspace, &objspace->malloc_counters.oldcounters);
+            size_t omi_limit = objspace->rgengc.oldmalloc_increase_limit;
+#else
+            size_t omi = 0, omi_limit = 0;
+#endif
+            fprintf(stderr,
+                "[major_gc_diag] count=%zu major=%zu minor=%zu reason=0x%x [%s%s%s%s%s%s] "
+                "old=%zu/%zu shady=%zu/%zu omi=%zu/%zu mi=%zu/%zu "
+                "total=%zu marked=%zu sweep_slots=%zu live=%zu free=%zu final=%zu "
+                "empty_pages=%zu allocatable_bytes=%zu "
+                "alloc_objs=%zu freed_objs=%zu made_zombies=%zu "
+                "by_nofree=%zu by_oldgen=%zu by_shady=%zu by_force=%zu by_oldmalloc=%zu\n",
+                objspace->profile.count,
+                objspace->profile.major_gc_count,
+                objspace->profile.minor_gc_count,
+                reason,
+                (reason & GPR_FLAG_MAJOR_BY_NOFREE)    ? "NOFREE "    : "",
+                (reason & GPR_FLAG_MAJOR_BY_OLDGEN)    ? "OLDGEN "    : "",
+                (reason & GPR_FLAG_MAJOR_BY_SHADY)     ? "SHADY "     : "",
+                (reason & GPR_FLAG_MAJOR_BY_FORCE)     ? "FORCE "     : "",
+                (reason & GPR_FLAG_MAJOR_BY_OLDMALLOC) ? "OLDMALLOC " : "",
+                (reason & GPR_FLAG_FULL_MARK)          ? "FULL_MARK"  : "",
+                objspace->rgengc.old_objects, objspace->rgengc.old_objects_limit,
+                objspace->rgengc.uncollectible_wb_unprotected_objects,
+                objspace->rgengc.uncollectible_wb_unprotected_objects_limit,
+                omi, omi_limit,
+                mi, malloc_limit,
+                total_slots, objspace->marked_slots,
+                total_slots > objspace->marked_slots ? (total_slots - objspace->marked_slots) : 0,
+                live_slots, free_slots, final_slots,
+                objspace->empty_pages_count, objspace->heap_pages.allocatable_bytes,
+                total_allocated_objects(objspace), total_freed_objects(objspace),
+                made_zombies,
+                objspace->profile.major_gc_count_by_nofree,
+                objspace->profile.major_gc_count_by_oldgen,
+                objspace->profile.major_gc_count_by_shady,
+                objspace->profile.major_gc_count_by_force,
+                objspace->profile.major_gc_count_by_oldmalloc);
+            for (int i = 0; i < HEAP_COUNT; i++) {
+                rb_heap_t *h = &heaps[i];
+                fprintf(stderr,
+                    "[major_gc_diag]   heap[%d] slot_size=%hu total_slots=%zu total_pages=%zu "
+                    "freed_slots=%zu empty_slots=%zu final_slots_count=%zu force_major=%u\n",
+                    i, h->slot_size, h->total_slots, h->total_pages,
+                    h->freed_slots, h->empty_slots,
+                    (size_t)RUBY_ATOMIC_VALUE_LOAD(h->final_slots_count),
+                    h->force_major_gc_count);
+            }
+        }
+#endif
     }
     else {
         (void)RB_DEBUG_COUNTER_INC_IF(gc_minor_newobj, reason & GPR_FLAG_NEWOBJ);
