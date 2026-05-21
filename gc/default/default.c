@@ -5590,6 +5590,11 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
         * pages from the tomb heap to the eden heap. This may prevent page
         * creation thrashing (frequently allocating and deallocting pages) and
         * GC thrashing (running GC more frequently than required). */
+#if MAJOR_GC_DIAG
+        size_t swept_slots_before_resurrect = swept_slots;
+        size_t pages_resurrected = 0;
+        size_t allocatable_bytes_before = objspace->heap_pages.allocatable_bytes;
+#endif
         struct heap_page *resurrected_page;
         while (swept_slots < min_free_slots &&
                 (resurrected_page = heap_page_resurrect(objspace))) {
@@ -5597,8 +5602,14 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
             heap_add_freepage(heap, resurrected_page, "gc_sweep_finish_heap");
 
             swept_slots += resurrected_page->free_slots;
+#if MAJOR_GC_DIAG
+            pages_resurrected++;
+#endif
         }
 
+#if MAJOR_GC_DIAG
+        const char *decision = "quiet";
+#endif
         if (swept_slots < min_free_slots) {
             /* Grow this heap if we are in a major GC or if we haven't run at least
              * RVALUE_OLD_AGE minor GC since the last major GC. */
@@ -5606,14 +5617,52 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
                     objspace->profile.count - objspace->rgengc.last_major_gc < RVALUE_OLD_AGE) {
                 if (objspace->heap_pages.allocatable_bytes < min_free_slots * heap->slot_size) {
                     heap_allocatable_bytes_expand(objspace, heap, swept_slots, heap->total_slots, heap->slot_size);
+#if MAJOR_GC_DIAG
+                    decision = "expand";
+#endif
                 }
+#if MAJOR_GC_DIAG
+                else {
+                    decision = "skip_expand_ab_ok";
+                }
+#endif
             }
             else if (swept_slots < min_free_slots * 7 / 8 &&
                      objspace->heap_pages.allocatable_bytes < (min_free_slots * 7 / 8 - swept_slots) * heap->slot_size) {
                 gc_needs_major_flags |= GPR_FLAG_MAJOR_BY_NOFREE;
                 heap->force_major_gc_count++;
+#if MAJOR_GC_DIAG
+                decision = "NOFREE";
+#endif
             }
+#if MAJOR_GC_DIAG
+            else {
+                decision = "skip_nofree_ab_ok";
+            }
+#endif
         }
+
+#if MAJOR_GC_DIAG
+        major_gc_diag(
+            "[sweep_finish_heap] gc#%zu heap[%ld] slot_size=%hu decision=%s "
+            "total=%zu init=%zu min_free=%zu min_free*7/8=%zu "
+            "freed=%zu empty=%zu swept(pre)=%zu resurrect_pages=%zu swept(post)=%zu "
+            "ab_before=%zu ab_after=%zu ab_threshold_expand=%zu ab_threshold_nofree=%zu "
+            "full_mark=%d gcs_since_major=%zu force_major=%zu\n",
+            objspace->profile.count,
+            heap - heaps, heap->slot_size, decision,
+            total_slots, init_slots, min_free_slots, (min_free_slots * 7 / 8),
+            heap->freed_slots, heap->empty_slots,
+            swept_slots_before_resurrect, pages_resurrected, swept_slots,
+            allocatable_bytes_before, objspace->heap_pages.allocatable_bytes,
+            min_free_slots * heap->slot_size,
+            swept_slots < (min_free_slots * 7 / 8)
+                ? (min_free_slots * 7 / 8 - swept_slots) * heap->slot_size
+                : (size_t)0,
+            is_full_marking(objspace) ? 1 : 0,
+            objspace->profile.count - objspace->rgengc.last_major_gc,
+            heap->force_major_gc_count);
+#endif
     }
 }
 
@@ -8758,7 +8807,7 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
                 rb_heap_t *h = &heaps[i];
                 fprintf(stderr,
                     "[major_gc_diag]   heap[%d] slot_size=%hu total_slots=%zu total_pages=%zu "
-                    "freed_slots=%zu empty_slots=%zu final_slots_count=%zu force_major=%u\n",
+                    "freed_slots=%zu empty_slots=%zu final_slots_count=%zu force_major=%zu\n",
                     i, h->slot_size, h->total_slots, h->total_pages,
                     h->freed_slots, h->empty_slots,
                     (size_t)RUBY_ATOMIC_VALUE_LOAD(h->final_slots_count),
