@@ -129,7 +129,7 @@
 #endif
 
 #ifndef MAJOR_GC_DIAG
-#define MAJOR_GC_DIAG 1
+#define MAJOR_GC_DIAG 0
 #endif
 #if MAJOR_GC_DIAG
 #define major_gc_diag(...) fprintf(stderr, __VA_ARGS__)
@@ -999,7 +999,7 @@ struct heap_page {
     bits_t pinned_bits[HEAP_PAGE_BITMAP_LIMIT];
     bits_t age_bits[HEAP_PAGE_BITMAP_LIMIT * RVALUE_AGE_BIT_COUNT];
 #if USE_PARALLEL_SWEEP
-    bits_t deferred_free_bits[HEAP_PAGE_BITMAP_LIMIT]; // both threads set when they own page
+    RUBY_ALIGNAS(64) bits_t deferred_free_bits[HEAP_PAGE_BITMAP_LIMIT]; // both threads set when they own page
     // both threads set when they own the page
     unsigned short pre_freed_slots;
     unsigned short pre_empty_slots;
@@ -2714,7 +2714,6 @@ heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
     page->slot_size = heap->slot_size;
     page->slot_size_reciprocal = heap_slot_reciprocal_table[heap - heaps];
     page->heap = heap;
-    page->free_next = NULL;
 
     memset(&page->wb_unprotected_bits[0], 0, HEAP_PAGE_BITMAP_SIZE);
     memset(&page->age_bits[0], 0, sizeof(page->age_bits));
@@ -3773,7 +3772,7 @@ gc_abort(void *objspace_ptr)
             rb_heap_t *heap = &heaps[i];
             heap->sweeping_page = NULL;
 #if USE_PARALLEL_SWEEP
-            heap->is_finished_sweeping = false;
+            heap->is_finished_sweeping = true;
             heap->background_sweep_steps = heap->foreground_sweep_steps;
 
             /* Pages that were pre-swept but never committed have non-zero
@@ -5355,6 +5354,8 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->worker_cache_end = 0;
     heap->ruby_thread_waiting_dequeue = false;
 #endif
+    heap->freed_slots = 0;
+    heap->empty_slots = 0;
 
 #if RUBY_DEBUG
     heap->made_zombies = 0;
@@ -5944,10 +5945,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 
 #if USE_PARALLEL_SWEEP
     if (heap_is_sweep_done(objspace, heap)) {
-        if (!heap->is_finished_sweeping && heap->sweeping_page) {
-            goto heap_sweep_done;
-        }
-        psweep_debug(0, "[gc] gc_sweep_step: heap %p (%ld) is heap_is_sweep_done() early!\n", heap, heap - heaps);
         return heap->free_pages != NULL;
     }
 #else
@@ -6136,7 +6133,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
     }
 
     if (heap_is_sweep_done(objspace, heap)) {
-heap_sweep_done:
         objspace->sweeping_heap_count--;
         GC_ASSERT(objspace->sweeping_heap_count >= 0);
         psweep_debug(0, "[gc] gc_sweep_step heap:%p (%ld) sweep done\n", heap, heap - heaps);
