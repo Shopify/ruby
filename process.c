@@ -1582,8 +1582,6 @@ before_fork_ruby(void)
 static void
 after_fork_ruby(rb_pid_t pid)
 {
-    rb_gc_after_fork(pid);
-
     if (pid == 0) {
         // child
         clear_pid_cache();
@@ -1593,6 +1591,8 @@ after_fork_ruby(rb_pid_t pid)
         // parent
         after_exec();
     }
+
+    rb_gc_after_fork(pid);
 }
 #endif
 
@@ -4131,7 +4131,7 @@ rb_fork_ruby(int *status)
     struct child_handler_disabler_state old;
 
     do {
-        prefork();
+        prefork(); // NOTE: can context switch
 
         before_fork_ruby();
         rb_thread_acquire_fork_lock();
