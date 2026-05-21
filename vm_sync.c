@@ -8,7 +8,9 @@
 void rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr);
 void rb_ractor_sched_barrier_join(rb_vm_t *vm, rb_ractor_t *cr);
 void rb_ractor_sched_barrier_end(rb_vm_t *vm, rb_ractor_t *cr);
+#if USE_PARALLEL_SWEEP
 bool is_sweep_thread_p(void);
+#endif
 
 static bool
 vm_locked(rb_vm_t *vm)
@@ -83,7 +85,9 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, unsign
 {
     RUBY_DEBUG_LOG2(file, line, "start locked:%d", locked);
 
+#if USE_PARALLEL_SWEEP
     VM_ASSERT(!is_sweep_thread_p());
+#endif
 
     if (locked) {
         ASSERT_vm_locking();
@@ -263,7 +267,9 @@ void
 rb_vm_barrier(void)
 {
     RB_DEBUG_COUNTER_INC(vm_sync_barrier);
+#if USE_PARALLEL_SWEEP
     VM_ASSERT(!is_sweep_thread_p());
+#endif
 
     if (!rb_multi_ractor_p()) {
         // no other ractors
