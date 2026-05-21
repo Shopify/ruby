@@ -3368,6 +3368,7 @@ rb_gc_impl_live_object_p(void *objspace_ptr, const void *ptr)
     return live;
 }
 
+static size_t made_zombies;
 
 void
 rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), void *data)
@@ -3390,6 +3391,7 @@ rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), voi
     RUBY_ATOMIC_INC(page->heap->made_zombies);
 #endif
     RUBY_ATOMIC_SIZE_INC(page->heap->final_slots_count);
+    made_zombies++;
 }
 
 typedef int each_obj_callback(void *, void *, size_t, void *);
@@ -9855,6 +9857,7 @@ enum gc_stat_sym {
     gc_stat_sym_pages_swept_by_sweep_thread_had_deferred_free_objects,
     gc_stat_sym_pages_swept_by_ruby_thread,
 #endif
+    gc_stat_sym_made_zombies,
 #if RGENGC_ESTIMATE_OLDMALLOC
     gc_stat_sym_oldmalloc_increase_bytes,
     gc_stat_sym_oldmalloc_increase_bytes_limit,
@@ -9918,6 +9921,7 @@ setup_gc_stat_symbols(void)
         S(pages_swept_by_sweep_thread_had_deferred_free_objects);
         S(pages_swept_by_ruby_thread);
 #endif
+        S(made_zombies);
 #if RGENGC_ESTIMATE_OLDMALLOC
         S(oldmalloc_increase_bytes);
         S(oldmalloc_increase_bytes_limit);
@@ -10013,6 +10017,7 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(pages_swept_by_sweep_thread_had_deferred_free_objects, objspace->sweep_stats.pages_swept_by_sweep_thread_had_deferred_free_objects);
     SET(pages_swept_by_ruby_thread, objspace->sweep_stats.pages_swept_by_ruby_thread);
 #endif
+    SET(made_zombies, made_zombies);
 #if RGENGC_ESTIMATE_OLDMALLOC
     SET(oldmalloc_increase_bytes, gc_malloc_counters_increase_unsigned(objspace, &objspace->malloc_counters.oldcounters));
     SET(oldmalloc_increase_bytes_limit, objspace->rgengc.oldmalloc_increase_limit);
