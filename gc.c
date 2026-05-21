@@ -4998,7 +4998,7 @@ rb_raw_obj_info_common(char *const buff, const size_t buff_size, const VALUE obj
             *is_garbage_out = true;
         }
         else if (RTEST(RBASIC(obj)->klass)) {
-            VALUE class_path = rb_class_path_cached(RBASIC(obj)->klass);
+            VALUE class_path = rb_mod_name(RBASIC(obj)->klass);
             if (!NIL_P(class_path)) {
                 APPEND_F("%s ", RSTRING_PTR(class_path));
             }
@@ -5099,7 +5099,7 @@ rb_raw_obj_info_buitin_type(char *const buff, const size_t buff_size, const VALU
                     APPEND_S("src: garbage");
                 }
                 else {
-                    VALUE class_path = rb_class_path_cached(RBASIC_CLASS(obj));
+                    VALUE class_path = rb_mod_name(RBASIC_CLASS(obj));
                     if (!NIL_P(class_path)) {
                         APPEND_F("src:%s", RSTRING_PTR(class_path));
                     }
