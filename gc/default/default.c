@@ -5086,11 +5086,25 @@ sweep_stack_push_bulk(rb_heap_t *heap, struct heap_page *head, struct heap_page 
 }
 
 /* Atomically detach the entire pre-swept stack and return its head, or NULL.
- * Caller iterates via page->free_next. */
+ * Caller iterates via page->free_next.
+ *
+ * The worker builds each batch as a LIFO of its own claims (most recently
+ * claimed page at the head), and sweep_stack_push_bulk stacks batches LIFO.
+ * Reverse the chain on drain so iteration order matches the underlying
+ * ccan_list / sweep_pages order, keeping the Ruby thread's pool/free-page
+ * distribution decisions order-consistent with master. */
 static struct heap_page *
 sweep_stack_drain(rb_heap_t *heap)
 {
-    return rbimpl_atomic_ptr_exchange((void**)&heap->pre_swept_head, NULL, RBIMPL_ATOMIC_ACQ_REL);
+    struct heap_page *chain = rbimpl_atomic_ptr_exchange((void**)&heap->pre_swept_head, NULL, RBIMPL_ATOMIC_ACQ_REL);
+    struct heap_page *prev = NULL;
+    while (chain != NULL) {
+        struct heap_page *next = chain->free_next;
+        chain->free_next = prev;
+        prev = chain;
+        chain = next;
+    }
+    return prev;
 }
 
 static void
@@ -5223,13 +5237,17 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap, int *swept_pages_
                 }
             }
 
-            if (batch_head == NULL) {
-                batch_head = page;
+            /* Prepend to the batch: the most recently claimed page becomes
+             * the new head, with its free_next pointing at the previous head.
+             * Combined with the chain reversal in sweep_stack_drain, this
+             * makes the Ruby thread see pages in the same ccan_list order
+             * master uses. The first page claimed becomes the batch_tail
+             * and stays put. */
+            page->free_next = batch_head;
+            batch_head = page;
+            if (batch_tail == NULL) {
+                batch_tail = page;
             }
-            else {
-                batch_tail->free_next = page;
-            }
-            batch_tail = page;
             batch_count++;
 
             /* Halfway into a batch, do a cheap atomic peek at the abort flag.
