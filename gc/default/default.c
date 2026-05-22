@@ -5909,10 +5909,10 @@ is_last_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 
 #if USE_PARALLEL_SWEEP
 static void
-gc_sweep_step_deferred_free(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, unsigned short *freed_out, unsigned short *finals_out)
+gc_sweep_step_deferred_free(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, unsigned int *freed_out, unsigned int *finals_out)
 {
-    unsigned short freed = 0;
-    unsigned short finals = 0;
+    unsigned int freed = 0;
+    unsigned int finals = 0;
     uintptr_t p = (uintptr_t)sweep_page->start;
     bits_t *deferred_bits = sweep_page->deferred_free_bits;
     int total_slots = sweep_page->total_slots;
@@ -6031,9 +6031,9 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             __builtin_prefetch(&sweep_page->deferred_free_bits[0], 1, 3);
             __builtin_prefetch(&sweep_page->pre_freed_slots, 1, 3);
 
-            unsigned short deferred_free_freed = 0;
-            unsigned short deferred_free_final_slots = 0;
-            unsigned short deferred_to_free = sweep_page->pre_deferred_free_slots;
+            unsigned int deferred_free_freed = 0;
+            unsigned int deferred_free_final_slots = 0;
+            unsigned int deferred_to_free = sweep_page->pre_deferred_free_slots;
 
             psweep_debug(-2, "[gc] gc_sweep_step: (heap:%p %ld, page:%p) free_ruby_th: %d, deferred_to_free:%d, pre_freed:%d, pre_empty:%d\n",
                 heap, heap - heaps, sweep_page, free_in_user_thread_p, deferred_to_free, sweep_page->pre_freed_slots, sweep_page->pre_empty_slots);
@@ -6068,6 +6068,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 #endif
 
         int free_slots = ctx.freed_slots + ctx.empty_slots;
+        GC_ASSERT(free_slots >= 0);
         GC_ASSERT(sweep_page->total_slots >= free_slots);
 
 #if USE_PARALLEL_SWEEP
