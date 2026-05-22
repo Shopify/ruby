@@ -5105,27 +5105,57 @@ sweep_thread_signal_enqueued_pages(rb_objspace_t *objspace, rb_heap_t *heap)
     }
 }
 
+enum sweep_step_worker_state {
+    WORKER_SKIP_HEAP,
+    WORKER_NEXT_HEAP_FG,
+    WORKER_NEXT_HEAP_BG,
+    WORKER_DONE_HEAP,
+    WORKER_DONE_ALL_HEAPS,
+    WORKER_ABORT_SWEEP_HEAPS,
+    WORKER_RESTART_SWEEP_HEAPS,
+};
+
+const char *sweep_step_worker_state_str(enum sweep_step_worker_state state) {
+    switch (state) {
+        case WORKER_SKIP_HEAP:
+            return "WORKER_SKIP_HEAP";
+        case WORKER_NEXT_HEAP_FG:
+            return "WORKER_NEXT_HEAP_FG";
+        case WORKER_NEXT_HEAP_BG:
+            return "WORKER_NEXT_HEAP_BG";
+        case WORKER_DONE_HEAP:
+            return "WORKER_DONE_HEAP";
+        case WORKER_DONE_ALL_HEAPS:
+            return "WORKER_DONE_ALL_HEAPS";
+        case WORKER_ABORT_SWEEP_HEAPS:
+            return "WORKER_ABORT_SWEEP_HEAPS";
+        case WORKER_RESTART_SWEEP_HEAPS:
+            return "WORKER_RESTART_SWEEP_HEAPS";
+    }
+}
+
 // Perform incremental (lazy) sweep on a heap by the background sweep thread.
-static void
-gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
+static enum sweep_step_worker_state
+gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap, int *swept_pages_num)
 {
     // sweep_lock is acquired
 
     GC_ASSERT(heap->background_sweep_steps <= ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps));
     if (heap->done_background_sweep) {
         psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - done (early return)\n", heap, heap - heaps);
-        return;
+        return WORKER_DONE_HEAP;
     }
     /* In foreground mode, honor the per-heap throttle the worker set during
      * the prior background phase. */
     if (!objspace->background_sweep_mode && heap->skip_sweep_continue) {
         psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - skip (skip_sweep_continue)\n", heap, heap - heaps);
-        return;
+        return WORKER_SKIP_HEAP;
     }
     int chunk_sz = SWEEP_CHUNK;
     while (1) {
         /* Claim work via atomic fetch_add. The claim itself is lock-free, so we
          * drop sweep_lock */
+        bool was_bg_mode = objspace->background_sweep_mode;
         sweep_lock_unlock(objspace);
 
         /* Accumulate up to SWEEP_CHUNK pre-swept pages in a local linked list
@@ -5178,8 +5208,9 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(page->before_sweep);
             page->free_next = NULL;
             gc_pre_sweep_page(objspace, heap, page);
+            *swept_pages_num += 1;
 
-            {
+            if (was_bg_mode) {
                 size_t page_free_slots = (size_t)page->pre_freed_slots + (size_t)page->pre_empty_slots;
                 bool page_will_be_empty =
                     page->pre_final_slots == 0 &&
@@ -5214,16 +5245,14 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         sweep_lock_lock(objspace);
         psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - swept %d pages\n", heap, heap - heaps, batch_count);
 
-        if (batch_bg_slots > 0) {
-            if (objspace->background_sweep_mode) {
-                heap->pre_swept_bg_slots += batch_bg_slots;
-                if (!heap->skip_sweep_continue) {
-                    size_t sweep_budget = GC_INCREMENTAL_SWEEP_BYTES / heap->slot_size;
-                    size_t pool_budget = GC_INCREMENTAL_SWEEP_POOL_BYTES / heap->slot_size;
-                    if (heap->pre_swept_bg_slots >= sweep_budget + pool_budget) {
-                        heap->skip_sweep_continue = true;
-                        break;
-                    }
+        if (batch_bg_slots > 0 && objspace->background_sweep_mode && !objspace->background_sweep_abort && !objspace->background_sweep_restart_heaps) {
+            heap->pre_swept_bg_slots += batch_bg_slots;
+            if (!heap->skip_sweep_continue && !no_more_work) {
+                size_t sweep_budget = GC_INCREMENTAL_SWEEP_BYTES / heap->slot_size;
+                size_t pool_budget = GC_INCREMENTAL_SWEEP_POOL_BYTES / heap->slot_size;
+                if (heap->pre_swept_bg_slots >= sweep_budget + pool_budget) {
+                    heap->skip_sweep_continue = true;
+                    return WORKER_NEXT_HEAP_BG;
                 }
             }
         }
@@ -5234,34 +5263,34 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             heap->done_background_sweep = true;
             objspace->heaps_done_background_sweep++;
             sweep_thread_signal_enqueued_pages(objspace, heap);
-            psweep_debug(-2, "[sweep] gc_sweep_step_worker: heap:%p (%ld) - no work to claim\n", heap, heap - heaps);
-            break;
+            if (objspace->heaps_done_background_sweep == HEAP_COUNT) {
+                return WORKER_DONE_ALL_HEAPS;
+            }
+            else {
+                return WORKER_DONE_HEAP;
+            }
         }
 
         if (RB_UNLIKELY(aborted_mid_batch)) {
-            psweep_debug(-2, "[sweep] (bg) gc_sweep_step_worker: break early heap:%p (%ld) (abort after page 2)\n", heap, heap - heaps);
             sweep_thread_signal_enqueued_pages(objspace, heap);
-            break;
+            return WORKER_ABORT_SWEEP_HEAPS;
         }
 
         if (!objspace->background_sweep_mode) {
             /* Only honor the foreground-done break when the local cache is fully drained. */
             if (!objspace->sweep_rest && done_worker_incremental_sweep_steps_p(objspace, heap) &&
                     heap->worker_cache_start >= heap->worker_cache_end) {
-                sweep_thread_signal_enqueued_pages(objspace, heap);
-                psweep_debug(-2, "[sweep] (fg) gc_sweep_step_worker: done incremental step heap:%p (%ld)\n", heap, heap - heaps);
                 heap->background_sweep_steps = ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps);
-                break;
+                sweep_thread_signal_enqueued_pages(objspace, heap);
+                return WORKER_NEXT_HEAP_FG;
             }
         }
         else {
-            if (RB_UNLIKELY(objspace->background_sweep_abort)) { // atomic load not necessary here
-                psweep_debug(-2, "[sweep] (bg) gc_sweep_step_worker: break early heap:%p (%ld) (abort)\n", heap, heap - heaps);
-                break;
+            if (RB_UNLIKELY(objspace->background_sweep_abort)) {
+                return WORKER_ABORT_SWEEP_HEAPS;
             }
             else if (objspace->background_sweep_restart_heaps) {
-                psweep_debug(-2, "[sweep] (bg) gc_sweep_step_worker: break early heap:%p (%ld) (restart)\n", heap, heap - heaps);
-                break;
+                return WORKER_RESTART_SWEEP_HEAPS;
             }
         }
         // notify of newly swept pages in case Ruby thread is waiting on us
@@ -5301,27 +5330,61 @@ gc_sweep_thread_func(void *ptr)
         objspace->background_sweep_restart_heaps = false;
         objspace->sweep_thread_sweeping = true;
 
+    int heaps_skipped;
+    bool done_all;
+    bool restart;
+    bool abort;
     restart_heaps:
+        heaps_skipped = 0;
+        done_all = false;
+        restart = false;
+        abort = false;
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
             if (RB_UNLIKELY(objspace->background_sweep_mode && objspace->background_sweep_abort)) {
-                psweep_debug(-2, "[sweep] abort: break before sweeping heap:%p (%d)\n", heap, i);
                 break;
             }
             if (objspace->background_sweep_mode && objspace->background_sweep_restart_heaps) {
                 objspace->background_sweep_restart_heaps = false;
-                psweep_debug(-2, "[sweep] restart heaps from 0 (at %d)\n", i);
                 goto restart_heaps;
             }
-            psweep_debug(-2, "[sweep] sweep heap:%p (%d)\n", heap, i);
-            gc_sweep_step_worker(objspace, heap);
+            int swept_pages_num = 0;
+            enum sweep_step_worker_state state = gc_sweep_step_worker(objspace, heap, &swept_pages_num);
+            /*fprintf(stderr, "gc_sweep_worker heap %lu swept %d pages, returned:%s (%s)\n", heap - heaps, swept_pages_num, sweep_step_worker_state_str(state), objspace->background_sweep_mode ? "bg" : "fg");*/
+            switch (state) {
+                case WORKER_SKIP_HEAP:
+                    heaps_skipped++;
+                    break;
+                case WORKER_NEXT_HEAP_FG:
+                case WORKER_NEXT_HEAP_BG:
+                case WORKER_DONE_HEAP:
+                    break;
+                case WORKER_DONE_ALL_HEAPS:
+                    done_all = true;
+                    break;
+                case WORKER_RESTART_SWEEP_HEAPS:
+                    restart = true;
+                    break;
+                case WORKER_ABORT_SWEEP_HEAPS:
+                    abort = true;
+                    break;
+            }
+            if (abort || done_all) {
+                break;
+            } else if (restart) {
+                objspace->background_sweep_restart_heaps = false;
+                goto restart_heaps;
+            } else if (heaps_skipped == HEAP_COUNT) {
+                break;
+            } else if (i == HEAP_COUNT-1 && objspace->background_sweep_mode) {
+                /*fprintf(stderr, "restarting in bg mode!\n");*/
+                goto restart_heaps;
+            }
         }
-        psweep_debug(1, "[sweep] /sweep_heaps\n");
 
         objspace->sweep_thread_sweeping = false;
         rb_native_cond_signal(&objspace->sweep_cond); // signal done sweeping this iteration
     }
-    psweep_debug(-5, "[sweep] sweep_thread exit\n");
     objspace->sweep_thread_sweep_requested = false;
     objspace->sweep_thread_sweep_exited = true;
     sweep_lock_unlock(objspace);
@@ -5585,6 +5648,11 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
         objspace->have_swept_slots += heap->made_zombies;
         objspace->will_be_swept_slots -= heap->zombie_slots;
     }
+    for (size_t i = 0; i < rb_darray_size(heap->sweep_pages); i++) {
+        struct heap_page *page = rb_darray_get(heap->sweep_pages, i);
+        GC_ASSERT(!page->before_sweep);
+    }
+
 #endif
 
     if (swept_slots < min_free_slots &&
@@ -9136,7 +9204,7 @@ gc_sweeping_exit(rb_objspace_t *objspace)
     MAYBE_UNUSED(bool was_rest) = objspace->sweep_rest;
 
     bool continue_sweep_in_background = objspace->use_background_sweep_thread &&
-        !objspace->sweep_rest && !dont_gc_val() && is_lazy_sweeping(objspace);
+        !objspace->sweep_rest && dont_gc_val() == FALSE && is_lazy_sweeping(objspace);
 
     bool do_signal = false;
     if (continue_sweep_in_background) {
@@ -9144,7 +9212,6 @@ gc_sweeping_exit(rb_objspace_t *objspace)
             psweep_debug(-2, "[gc] gc_sweeping_exit: bg done, not requesting\n");
         }
         else {
-            psweep_debug(-2, "[gc] gc_sweeping_exit: continue in background\n");
             sweep_lock_lock(objspace);
             objspace->background_sweep_mode = true;
             for (int hi = 0; hi < HEAP_COUNT; hi++) {
@@ -9152,12 +9219,10 @@ gc_sweeping_exit(rb_objspace_t *objspace)
                 heaps[hi].pre_swept_bg_slots = 0;
             }
             if (!objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested) {
-                psweep_debug(-2, "[gc] gc_sweeping_exit: requested\n");
                 objspace->sweep_thread_sweep_requested = true;
                 do_signal = true;
             }
             else {
-                psweep_debug(-2, "[gc] gc_sweeping_exit: restart heaps\n");
                 objspace->background_sweep_restart_heaps = true; // restart sweeping heaps from heap 0
             }
             sweep_lock_unlock(objspace);
