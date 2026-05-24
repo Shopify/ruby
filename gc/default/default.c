@@ -2353,7 +2353,7 @@ static void mark_stack_free_cache(mark_stack_t *);
 static void heap_page_free(rb_objspace_t *objspace, struct heap_page *page, bool log);
 
 static inline void
-heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj, bool from_sweep_thread)
+heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
 {
     rb_asan_unpoison_object(obj, false);
 
@@ -2364,11 +2364,6 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
     slot->next = page->freelist;
     page->freelist = slot;
     asan_lock_freelist(page);
-
-    if (!from_sweep_thread) {
-        // Should have already been reset
-        GC_ASSERT(RVALUE_AGE_GET(obj) == 0);
-    }
 
     if (RGENGC_CHECK_MODE &&
         /* obj should belong to page */
@@ -2748,7 +2743,7 @@ heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
     int i = 0;
     for (VALUE p = (VALUE)start; p < start + (slot_count * heap->slot_size); p += heap->slot_size) {
         i++;
-        heap_page_add_freeobj(objspace, page, p, false);
+        heap_page_add_freeobj(objspace, page, p);
     }
     GC_ASSERT(i == slot_count);
     asan_lock_freelist(page);
@@ -3688,7 +3683,6 @@ rb_gc_impl_free_zombie(rb_objspace_t *objspace, VALUE obj)
     RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
     GC_ASSERT(page->final_slots > 0);
     page->final_slots--;
-    RVALUE_AGE_SET_BITMAP(obj, 0);
 }
 
 static void
@@ -4326,7 +4320,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 }
                 gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
                 ctx->empty_slots++;
-                heap_page_add_freeobj(objspace, sweep_page, vp, false);
+                heap_page_add_freeobj(objspace, sweep_page, vp);
                 break;
               case T_ZOMBIE:
                 if (ZOMBIE_NEEDS_FREE_P(vp)) {
@@ -4363,8 +4357,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
                     gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
-                    RVALUE_AGE_SET_BITMAP(vp, 0);
-                    heap_page_add_freeobj(objspace, sweep_page, vp, false);
+                    heap_page_add_freeobj(objspace, sweep_page, vp);
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, slot_size);
                     ctx->freed_slots++;
                 }
@@ -4373,8 +4366,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
                         gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
-                        RVALUE_AGE_SET_BITMAP(vp, 0);
-                        heap_page_add_freeobj(objspace, sweep_page, vp, false);
+                        heap_page_add_freeobj(objspace, sweep_page, vp);
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, slot_size);
                         ctx->freed_slots++;
                     }
@@ -4460,8 +4452,7 @@ deferred_free(rb_objspace_t *objspace, VALUE obj)
     if (rb_gc_obj_free(objspace, obj)) {
         struct heap_page *page = GET_HEAP_PAGE(obj);
         psweep_debug(1, "[gc] deferred free: page(%p) obj(%p) %s (success)\n", page, (void*)obj, obj_info);
-        RVALUE_AGE_SET_BITMAP(obj, 0);
-        heap_page_add_freeobj(objspace, page, obj, false);
+        heap_page_add_freeobj(objspace, page, obj);
         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)obj, page->slot_size);
         result = true;
     }
@@ -4754,7 +4745,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
             switch (BUILTIN_TYPE(vp)) {
               case T_MOVED: {
                 empties++;
-                heap_page_add_freeobj(objspace, page, vp, true);
+                heap_page_add_freeobj(objspace, page, vp);
                 (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
                 break;
               }
@@ -4844,7 +4835,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
               free: {
                 debug_free_check(objspace, vp);
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
-                    heap_page_add_freeobj(objspace, page, vp, true);
+                    heap_page_add_freeobj(objspace, page, vp);
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
                     freed++;
                 }
@@ -4852,7 +4843,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     rb_gc_obj_free_concurrency_safe_vm_weak_references(vp);
                     bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
                     if (can_put_back_on_freelist) {
-                        heap_page_add_freeobj(objspace, page, vp, true);
+                        heap_page_add_freeobj(objspace, page, vp);
                         freed++;
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
                     }
@@ -6356,7 +6347,7 @@ invalidate_moved_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_
                     struct heap_page *orig_page = GET_HEAP_PAGE(object);
                     orig_page->free_slots++;
                     RVALUE_AGE_SET_BITMAP(object, 0);
-                    heap_page_add_freeobj(objspace, orig_page, object, false);
+                    heap_page_add_freeobj(objspace, orig_page, object);
 
                     GC_ASSERT(RVALUE_MARKED(objspace, forwarding_object));
                     GC_ASSERT(BUILTIN_TYPE(forwarding_object) != T_MOVED);
