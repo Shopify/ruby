@@ -1472,7 +1472,7 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
 
       case T_MATCH:
         if ((flags & (RMATCH_ONIG | RMATCH_OFFSETS_EXTERNAL)) || USE_DEBUG_COUNTER) return true;
-        return rb_shape_has_fields(RBASIC_SHAPE_ID(obj));
+        return false;
 
       case T_BIGNUM:
         if (!(flags & BIGNUM_EMBED_FLAG)) return true;
@@ -2365,7 +2365,7 @@ object_id_to_ref(void *objspace_ptr, VALUE object_id)
 }
 
 #if USE_PARALLEL_SWEEP
-bool
+void
 rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
 {
     ASSUME(!RB_SPECIAL_CONST_P(obj));
@@ -2382,7 +2382,6 @@ rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
       default:
         break;
     }
-    return true;
 }
 #endif
 
