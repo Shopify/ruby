@@ -4345,8 +4345,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 }
 #endif
 
-                if (RVALUE_WB_UNPROTECTED(objspace, vp)) CLEAR_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(vp), vp);
-
 #if RGENGC_CHECK_MODE
 #define CHECK(x) if (x(objspace, vp) != FALSE) rb_bug("obj_free: " #x "(%s) != FALSE", rb_obj_info(vp))
                 CHECK(RVALUE_WB_UNPROTECTED);
@@ -4564,14 +4562,6 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
         bits[bitmap_plane_count - 1] |= ~(((bits_t)1 << out_of_range_bits) - 1);
     }
 
-    for (int i = 0; i < bitmap_plane_count; i++) {
-        bitset = ~bits[i];
-        if (bitset) {
-            gc_sweep_plane(objspace, heap, p, bitset, ctx);
-        }
-        p += BITS_BITLENGTH * slot_size;
-    }
-
     // Clear wb_unprotected and age bits for all unmarked slots
     {
         bits_t *wb_unprotected_bits = sweep_page->wb_unprotected_bits;
@@ -4582,6 +4572,14 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
             age_bits[i * 2] &= ~unmarked;
             age_bits[i * 2 + 1] &= ~unmarked;
         }
+    }
+
+    for (int i = 0; i < bitmap_plane_count; i++) {
+        bitset = ~bits[i];
+        if (bitset) {
+            gc_sweep_plane(objspace, heap, p, bitset, ctx);
+        }
+        p += BITS_BITLENGTH * slot_size;
     }
 
 #if RUBY_DEBUG
@@ -6000,10 +5998,10 @@ gc_sweep_step_deferred_free(rb_objspace_t *objspace, rb_heap_t *heap, struct hea
             }
             p += slot_size;
             bitset >>= 1;
-            if (bitset) {
+            /*if (bitset) {*/
                 /* Write-prefetch next deferred slot: deferred_free -> obj_free writes it. */
-                __builtin_prefetch((void *)(p + __builtin_ctzll(bitset) * slot_size), 1, 3);
-            }
+                /*__builtin_prefetch((void *)(p + __builtin_ctzll(bitset) * slot_size), 1, 3);*/
+            /*}*/
         }
     }
     *freed_out = freed;
