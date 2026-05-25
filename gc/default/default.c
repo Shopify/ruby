@@ -4709,7 +4709,6 @@ static inline void
 sweep_in_ruby_thread(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
 {
     page->pre_deferred_free_slots += 1;
-    psweep_debug(1, "[sweep] register sweep later: page(%p), obj(%p) %s\n", (void*)page, (void*)obj, rb_obj_info(obj));
     GC_ASSERT(BUILTIN_TYPE(obj) != T_NONE);
     MARK_IN_BITMAP(page->deferred_free_bits, obj);
 }
@@ -4852,23 +4851,16 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     freed++;
                 }
                 else {
-                    if (RB_LIKELY(rb_gc_obj_free_concurrency_safe_vm_weak_references(vp))) {
-                        bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
-                        if (can_put_back_on_freelist) {
-                            heap_page_add_freeobj(objspace, page, vp, true);
-                            freed++;
-                            psweep_debug(2, "[sweep] freed: page(%p), obj(%p)\n", (void*)page, (void*)vp);
-                            (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
-                        }
-                        else {
-                            RUBY_ASSERT(BUILTIN_TYPE(vp) == T_ZOMBIE);
-                            psweep_debug(2, "[sweep] zombie: page(%p), obj(%p)\n", (void*)page, (void*)vp);
-                            finals++;
-                        }
+                    rb_gc_obj_free_concurrency_safe_vm_weak_references(vp);
+                    bool can_put_back_on_freelist = rb_gc_obj_free(objspace, vp);
+                    if (can_put_back_on_freelist) {
+                        heap_page_add_freeobj(objspace, page, vp, true);
+                        freed++;
+                        (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, page->slot_size);
                     }
                     else {
-                        GC_ASSERT(BUILTIN_TYPE(vp) != T_NONE);
-                        sweep_in_ruby_thread(objspace, page, vp);
+                        RUBY_ASSERT(BUILTIN_TYPE(vp) == T_ZOMBIE);
+                        finals++;
                     }
                 }
                 break;
@@ -6139,6 +6131,8 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 #if RUBY_DEBUG
             objspace->have_swept_slots += free_slots;
 #endif
+            GC_ASSERT(sweep_page->free_slots == free_slots);
+            GC_ASSERT(sweep_page->final_slots == 0);
             psweep_debug(0, "[gc] gc_sweep_step: adding to empty_pages:%p\n", sweep_page);
             move_to_empty_pages(objspace, heap, sweep_page);
         }
