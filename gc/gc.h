@@ -106,7 +106,7 @@ MODULAR_GC_FN void rb_gc_set_pending_interrupt(void);
 MODULAR_GC_FN void rb_gc_unset_pending_interrupt(void);
 MODULAR_GC_FN void rb_gc_obj_free_vm_weak_references(VALUE obj);
 #if USE_PARALLEL_SWEEP
-MODULAR_GC_FN bool rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj);
+MODULAR_GC_FN void rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj);
 #endif
 MODULAR_GC_FN bool rb_gc_obj_free(void *objspace, VALUE obj);
 MODULAR_GC_FN void rb_gc_save_machine_context(void);
