@@ -110,6 +110,29 @@ module MonitorMixin
   NULL = NullMonitor.new.freeze # :nodoc:
   Ractor.make_shareable(NULL) if defined?(Ractor)
 
+  # Opt-in mixin for MonitorMixin users whose monitor is unnecessary
+  # after the object is frozen. Including this module makes +freeze+
+  # replace the underlying Monitor with a shareable no-op before
+  # freezing the object.
+  #
+  # Only use this when the synchronize-protected state becomes immutable
+  # on freeze, or when no synchronize calls can observe the missing lock.
+  # Do not use it when the monitor serializes side effects on external
+  # resources.
+  module Shareable
+    include MonitorMixin
+
+    def self.extend_object(obj) # :nodoc:
+      super(obj)
+      obj.__send__(:mon_initialize)
+    end
+
+    def freeze
+      unsynchronize! unless frozen?
+      super
+    end
+  end
+
   #
   # FIXME: This isn't documented in Nutshell.
   #

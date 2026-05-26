@@ -259,6 +259,59 @@ class TestMonitor < Test::Unit::TestCase
     assert KeywordInitializeChild.new
   end
 
+  class ShareableMonitorMixinTest
+    include MonitorMixin::Shareable
+
+    def synchronized_value
+      synchronize { :ok }
+    end
+  end
+
+  def test_shareable_freeze_unsynchronizes_monitor
+    obj = ShareableMonitorMixinTest.new
+
+    obj.freeze
+
+    assert_predicate obj, :frozen?
+    assert_same MonitorMixin::NULL, obj.instance_variable_get(:@mon_data)
+    assert_equal :ok, obj.synchronized_value
+    assert_equal false, obj.mon_locked?
+    assert_equal false, obj.mon_owned?
+    assert_nothing_raised { obj.freeze }
+  end
+
+  def test_shareable_monitor_mixin_can_be_made_ractor_shareable
+    omit "Ractor is not available" unless defined?(Ractor)
+
+    obj = ShareableMonitorMixinTest.new
+
+    Ractor.make_shareable(obj)
+
+    assert_predicate obj, :frozen?
+    assert Ractor.shareable?(obj)
+    assert_same MonitorMixin::NULL, obj.instance_variable_get(:@mon_data)
+    assert_equal :ok, obj.synchronized_value
+  end
+
+  def test_shareable_monitor_mixin_initializes_object_extended_with_module
+    obj = Object.new
+
+    obj.extend(MonitorMixin::Shareable)
+
+    assert_instance_of Monitor, obj.instance_variable_get(:@mon_data)
+    obj.freeze
+    assert_same MonitorMixin::NULL, obj.instance_variable_get(:@mon_data)
+    assert_equal :ok, obj.synchronize { :ok }
+  end
+
+  def test_regular_monitor_mixin_still_fails_loudly_when_made_ractor_shareable
+    omit "Ractor is not available" unless defined?(Ractor)
+
+    obj = KeywordInitializeChild.new
+
+    assert_raise(Ractor::Error) { Ractor.make_shareable(obj) }
+  end
+
   def test_timedwait
     cond = @monitor.new_cond
     b = "foo"
