@@ -5247,14 +5247,9 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap, int *swept_pages_
 
         if (batch_bg_slots > 0 && objspace->background_sweep_mode && !objspace->background_sweep_abort && !objspace->background_sweep_restart_heaps) {
             heap->pre_swept_bg_slots += batch_bg_slots;
-            if (!no_more_work && (batch_bg_slots > slot_budget || heap->pre_swept_bg_slots > slot_budget)) {
-                if (!heap->skip_sweep_continue && heap->pre_swept_bg_slots > slot_budget) {
-                    heap->skip_sweep_continue = true;
-                    return WORKER_NEXT_HEAP_BG;
-                }
-                else if (batch_bg_slots > slot_budget) {
-                    return WORKER_NEXT_HEAP_BG;
-                }
+            if (!no_more_work && heap->pre_swept_bg_slots > slot_budget) {
+                heap->skip_sweep_continue = true;
+                return WORKER_NEXT_HEAP_BG;
             }
         }
 
