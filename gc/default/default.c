@@ -5332,11 +5332,13 @@ gc_sweep_thread_func(void *ptr)
         objspace->sweep_thread_sweeping = true;
 
     int heaps_skipped;
+    int done_heaps;
     bool done_all;
     bool restart;
     bool abort;
     restart_heaps:
         heaps_skipped = 0;
+        done_heaps = 0;
         done_all = false;
         restart = false;
         abort = false;
@@ -5358,7 +5360,9 @@ gc_sweep_thread_func(void *ptr)
                     break;
                 case WORKER_NEXT_HEAP_FG:
                 case WORKER_NEXT_HEAP_BG:
+                    break;
                 case WORKER_DONE_HEAP:
+                    done_heaps++;
                     break;
                 case WORKER_DONE_ALL_HEAPS:
                     done_all = true;
@@ -5375,7 +5379,7 @@ gc_sweep_thread_func(void *ptr)
             } else if (restart) {
                 objspace->background_sweep_restart_heaps = false;
                 goto restart_heaps;
-            } else if (heaps_skipped == HEAP_COUNT) {
+            } else if (heaps_skipped + done_heaps == HEAP_COUNT) {
                 break;
             } else if (i == HEAP_COUNT-1 && objspace->background_sweep_mode) {
                 /*fprintf(stderr, "restarting in bg mode!\n");*/
