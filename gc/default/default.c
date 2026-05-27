@@ -5149,6 +5149,9 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap, int *swept_pages_
         return WORKER_SKIP_HEAP;
     }
     int chunk_sz = SWEEP_CHUNK;
+    size_t sweep_budget = GC_INCREMENTAL_SWEEP_BYTES / heap->slot_size;
+    size_t pool_budget = GC_INCREMENTAL_SWEEP_POOL_BYTES / heap->slot_size;
+    size_t slot_budget = sweep_budget + pool_budget;
     while (1) {
         /* Claim work via atomic fetch_add. The claim itself is lock-free, so we
          * drop sweep_lock */
@@ -5248,11 +5251,12 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap, int *swept_pages_
 
         if (batch_bg_slots > 0 && objspace->background_sweep_mode && !objspace->background_sweep_abort && !objspace->background_sweep_restart_heaps) {
             heap->pre_swept_bg_slots += batch_bg_slots;
-            if (!heap->skip_sweep_continue && !no_more_work) {
-                size_t sweep_budget = GC_INCREMENTAL_SWEEP_BYTES / heap->slot_size;
-                size_t pool_budget = GC_INCREMENTAL_SWEEP_POOL_BYTES / heap->slot_size;
-                if (heap->pre_swept_bg_slots >= sweep_budget + pool_budget) {
+            if (!no_more_work && (batch_bg_slots > slot_budget || heap->pre_swept_bg_slots > slot_budget)) {
+                if (!heap->skip_sweep_continue && heap->pre_swept_bg_slots > slot_budget) {
                     heap->skip_sweep_continue = true;
+                    return WORKER_NEXT_HEAP_BG;
+                }
+                else if (batch_bg_slots > slot_budget) {
                     return WORKER_NEXT_HEAP_BG;
                 }
             }
