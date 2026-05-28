@@ -1655,8 +1655,7 @@ total_final_slots_count(rb_objspace_t *objspace)
  */
 #define GC_INCREMENTAL_SWEEP_BYTES           (2048 * RVALUE_SLOT_SIZE)
 #define GC_INCREMENTAL_SWEEP_POOL_BYTES      (1024 * RVALUE_SLOT_SIZE)
-#define is_lazy_sweeping(objspace)           ((objspace)->during_lazy_sweeping != FALSE)
-/* In lazy sweeping or the previous incremental marking finished and did not yield a free page. */
+#define is_lazy_sweeping(objspace)           (GC_ENABLE_LAZY_SWEEP && (objspace)->during_lazy_sweeping)
 #define needs_continue_sweeping(objspace, heap) \
     ((heap)->free_pages == NULL && is_lazy_sweeping(objspace))
 
@@ -5475,7 +5474,9 @@ static void
 gc_sweep_start(rb_objspace_t *objspace)
 {
     gc_mode_transition(objspace, gc_mode_sweeping);
-    objspace->during_lazy_sweeping = TRUE;
+#if GC_ENABLE_LAZY_SWEEP
+    objspace->during_lazy_sweeping = true;
+#endif
     objspace->rincgc.pooled_slots = 0;
 
 #if USE_PARALLEL_SWEEP
@@ -5677,7 +5678,9 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
     rb_gc_event_hook(0, RUBY_INTERNAL_EVENT_GC_END_SWEEP);
     gc_mode_transition(objspace, gc_mode_none);
-    objspace->during_lazy_sweeping = FALSE;
+#if GC_ENABLE_LAZY_SWEEP
+    objspace->during_lazy_sweeping = false;
+#endif
 
 #if RGENGC_CHECK_MODE >= 2
     gc_verify_internal_consistency(objspace);
