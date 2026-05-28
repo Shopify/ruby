@@ -1403,56 +1403,7 @@ print_lock_stats(void)
     fprintf(stderr, "================================================\n\n");
 }
 
-/*
- * Sweep step contention stats: first incremental step (gc_sweep) vs
- * subsequent steps (gc_sweep_continue), tracking swept_pages_lock trylock
- * success/failure to see if the first step has disproportionate contention.
- */
-typedef struct sweep_step_contention {
-    size_t step_count;
-    size_t swept_pages_trylock_success;
-    size_t swept_pages_trylock_fail1;
-    size_t swept_pages_trylock_fail2;
-} sweep_step_contention_t;
-
-/* [0] = first step (gc_sweep), [1] = continue step (gc_sweep_continue) */
-static sweep_step_contention_t step_contention[2] = {{0}};
-static int current_step_type = 0;
-
-static void
-print_sweep_step_contention(void)
-{
-    fprintf(stderr, "\n=== Sweep Step Contention (first step vs continue) ===\n");
-    fprintf(stderr, "%-30s %15s %15s\n", "", "First Step", "Continue");
-    fprintf(stderr, "%-30s %15s %15s\n", "", "----------", "--------");
-
-    fprintf(stderr, "%-30s %15zu %15zu\n", "step_count",
-            step_contention[0].step_count, step_contention[1].step_count);
-    fprintf(stderr, "%-30s %15zu %15zu\n", "trylock_success",
-            step_contention[0].swept_pages_trylock_success, step_contention[1].swept_pages_trylock_success);
-    fprintf(stderr, "%-30s %15zu %15zu\n", "trylock_fail1",
-            step_contention[0].swept_pages_trylock_fail1, step_contention[1].swept_pages_trylock_fail1);
-    fprintf(stderr, "%-30s %15zu %15zu\n", "trylock_fail2",
-            step_contention[0].swept_pages_trylock_fail2, step_contention[1].swept_pages_trylock_fail2);
-
-    {
-        size_t total0 = step_contention[0].swept_pages_trylock_success + step_contention[0].swept_pages_trylock_fail1;
-        size_t total1 = step_contention[1].swept_pages_trylock_success + step_contention[1].swept_pages_trylock_fail1;
-        fprintf(stderr, "%-30s %14.2f%% %14.2f%%\n", "trylock_fail1_ratio",
-                total0 > 0 ? (double)step_contention[0].swept_pages_trylock_fail1 / total0 * 100.0 : 0,
-                total1 > 0 ? (double)step_contention[1].swept_pages_trylock_fail1 / total1 * 100.0 : 0);
-
-        size_t fail1_0 = step_contention[0].swept_pages_trylock_fail1;
-        size_t fail1_1 = step_contention[1].swept_pages_trylock_fail1;
-        fprintf(stderr, "%-30s %14.2f%% %14.2f%%\n", "trylock_fail2_of_fail1",
-                fail1_0 > 0 ? (double)step_contention[0].swept_pages_trylock_fail2 / fail1_0 * 100.0 : 0,
-                fail1_1 > 0 ? (double)step_contention[1].swept_pages_trylock_fail2 / fail1_1 * 100.0 : 0);
-    }
-
-    fprintf(stderr, "=====================================================\n\n");
-}
-#endif /* USE_PARALLEL_SWEEP && PSWEEP_LOCK_STATS > 0 */
-
+#endif // PSWEEP_LOCK_STATS > 0
 
 #if USE_PARALLEL_SWEEP
 static pthread_t sweep_lock_owner = 0;
