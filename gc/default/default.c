@@ -1630,41 +1630,11 @@ heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
 #endif
 }
 
-#if USE_PARALLEL_SWEEP
-// Does the GC still have pages to sweep? If returns false, then the Ruby thread has fully
-// processed all the pages in every heap.
-static bool
-has_sweeping_pages(rb_objspace_t *objspace)
-{
-    rb_heap_t *heap_not_finished = NULL;
-    if (ruby_parallel_sweep_enabled) {
-        if (objspace->sweeping_heap_count > 1) {
-            return true;
-        }
-        else if (objspace->sweeping_heap_count == 0) {
-            return false;
-        }
-        for (int i = 0; i < HEAP_COUNT; i++) {
-            rb_heap_t *heap = &heaps[i];
-            if (!heap->is_finished_sweeping) {
-                heap_not_finished = heap;
-                break;
-            }
-        }
-        GC_ASSERT(heap_not_finished);
-        return !heap_is_sweep_done(objspace, heap_not_finished);
-    }
-    else {
-        return objspace->sweeping_heap_count > 0;
-    }
-}
-#else
 static bool
 has_sweeping_pages(rb_objspace_t *objspace)
 {
     return objspace->sweeping_heap_count > 0;
 }
-#endif // USE_PARALLEL_SWEEP
 
 static inline size_t
 heap_eden_total_pages(rb_objspace_t *objspace)
@@ -5726,6 +5696,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
+        GC_ASSERT(heap->is_finished_sweeping);
 
 #if RUBY_DEBUG
         heap->zombie_slots = 0;
@@ -6097,7 +6068,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
         gc_sweep_finish_heap(objspace, heap);
 
         if (!has_sweeping_pages(objspace)) {
-            gc_sweep_finish(objspace); // done, no more pages in any heap
+            gc_sweep_finish(objspace);
         }
     }
 
