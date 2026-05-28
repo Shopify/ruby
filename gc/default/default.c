@@ -1446,8 +1446,6 @@ static pthread_t sweep_lock_owner = 0;
 static inline void
 sweep_lock_lock_impl(rb_objspace_t *objspace, const char *function, int line)
 {
-    /* No parallel sweep → no sweep lock to take. Callers that depend on the
-     * lock-protected state must already be skipping their work in this mode. */
     if (!ruby_parallel_sweep_enabled) return;
     GC_ASSERT(sweep_lock_owner != pthread_self());
 #if PSWEEP_LOCK_STATS > 0
@@ -3769,12 +3767,9 @@ gc_abort(void *objspace_ptr)
             heap->background_sweep_steps = heap->foreground_sweep_steps;
 
             /* Pages that were pre-swept but never committed have non-zero
-             * pre_* counters and possibly dirty deferred_free_bits. The next
-             * sweep cycle starts in gc_sweep_start_heap, which asserts
-             * pre_deferred_free_slots == 0 on every page in the snapshot, so
-             * we have to wipe that state here. Two places hold uncommitted
-             * pages at this point: the worker's pre_swept_head Treiber stack,
-             * and the Ruby thread's drained_local list. */
+             * pre_* counters and possibly dirty deferred_free_bits.
+             * Two places hold uncommitted pages at this point: the worker's
+             * pre_swept_head stack and the Ruby thread's drained_local list. */
             for (struct heap_page *page = heap->pre_swept_head, *next; page; page = next) {
                 next = page->free_next;
                 page->free_next = NULL;
@@ -4763,7 +4758,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 if (!data) {
                     goto free;
                 }
-                // NOTE: this repeats code found in `rb_data_free`. This is just for testing purposes.
+                // NOTE: this repeats code found in `rb_data_free`.
                 bool free_immediately = false;
                 void (*dfree)(void *);
                 if (RTYPEDDATA_P(vp)) {
@@ -4800,9 +4795,8 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                     case imemo_cdhash:
                         goto free;
                     case imemo_callinfo:
-                    case imemo_iseq: // calls rb_yjit_iseq_free which is not concurrency safe
+                    case imemo_iseq:
                     case imemo_ment:
-                        // blacklisted due to vm weak references
                         sweep_in_ruby_thread(objspace, page, vp);
                         break;
                     default:
@@ -5659,9 +5653,6 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     GC_ASSERT(heap->background_sweep_steps <= ATOMIC_LOAD_RELAXED(heap->foreground_sweep_steps));
     GC_ASSERT(!heap->is_finished_sweeping);
     heap->is_finished_sweeping = true;
-    /* Legacy fields: clear so heap_add_page's invariant (!heap->sweeping_page)
-     * and the post-sweep assertions (line 5838 etc.) keep working until they
-     * can be removed in a follow-up commit. */
     heap->sweeping_page = NULL;
 #if RUBY_DEBUG
     for (size_t i = 0; i < rb_darray_size(heap->sweep_pages); i++) {
@@ -5686,11 +5677,6 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
         * pages from the tomb heap to the eden heap. This may prevent page
         * creation thrashing (frequently allocating and deallocting pages) and
         * GC thrashing (running GC more frequently than required). */
-#if MAJOR_GC_DIAG
-        size_t swept_slots_before_resurrect = swept_slots;
-        size_t pages_resurrected = 0;
-        size_t allocatable_bytes_before = objspace->heap_pages.allocatable_bytes;
-#endif
         struct heap_page *resurrected_page;
         while (swept_slots < min_free_slots &&
                 (resurrected_page = heap_page_resurrect(objspace))) {
@@ -5698,14 +5684,8 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
             heap_add_freepage(heap, resurrected_page, "gc_sweep_finish_heap");
 
             swept_slots += resurrected_page->free_slots;
-#if MAJOR_GC_DIAG
-            pages_resurrected++;
-#endif
         }
 
-#if MAJOR_GC_DIAG
-        const char *decision = "quiet";
-#endif
         if (swept_slots < min_free_slots) {
             /* Grow this heap if we are in a major GC or if we haven't run at least
              * RVALUE_OLD_AGE minor GC since the last major GC. */
@@ -5713,52 +5693,14 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
                     objspace->profile.count - objspace->rgengc.last_major_gc < RVALUE_OLD_AGE) {
                 if (objspace->heap_pages.allocatable_bytes < min_free_slots * heap->slot_size) {
                     heap_allocatable_bytes_expand(objspace, heap, swept_slots, heap->total_slots, heap->slot_size);
-#if MAJOR_GC_DIAG
-                    decision = "expand";
-#endif
                 }
-#if MAJOR_GC_DIAG
-                else {
-                    decision = "skip_expand_ab_ok";
-                }
-#endif
             }
             else if (swept_slots < min_free_slots * 7 / 8 &&
                      objspace->heap_pages.allocatable_bytes < (min_free_slots * 7 / 8 - swept_slots) * heap->slot_size) {
                 gc_needs_major_flags |= GPR_FLAG_MAJOR_BY_NOFREE;
                 heap->force_major_gc_count++;
-#if MAJOR_GC_DIAG
-                decision = "NOFREE";
-#endif
             }
-#if MAJOR_GC_DIAG
-            else {
-                decision = "skip_nofree_ab_ok";
-            }
-#endif
         }
-
-#if MAJOR_GC_DIAG
-        major_gc_diag(
-            "[sweep_finish_heap] gc#%zu heap[%ld] slot_size=%hu decision=%s "
-            "total=%zu init=%zu min_free=%zu min_free*7/8=%zu "
-            "freed=%zu empty=%zu swept(pre)=%zu resurrect_pages=%zu swept(post)=%zu "
-            "ab_before=%zu ab_after=%zu ab_threshold_expand=%zu ab_threshold_nofree=%zu "
-            "full_mark=%d gcs_since_major=%zu force_major=%zu\n",
-            objspace->profile.count,
-            heap - heaps, heap->slot_size, decision,
-            total_slots, init_slots, min_free_slots, (min_free_slots * 7 / 8),
-            heap->freed_slots, heap->empty_slots,
-            swept_slots_before_resurrect, pages_resurrected, swept_slots,
-            allocatable_bytes_before, objspace->heap_pages.allocatable_bytes,
-            min_free_slots * heap->slot_size,
-            swept_slots < (min_free_slots * 7 / 8)
-                ? (min_free_slots * 7 / 8 - swept_slots) * heap->slot_size
-                : (size_t)0,
-            is_full_marking(objspace) ? 1 : 0,
-            objspace->profile.count - objspace->rgengc.last_major_gc,
-            heap->force_major_gc_count);
-#endif
     }
 }
 
@@ -5890,12 +5832,9 @@ retry_drain:
         sweep_lock_lock(objspace);
         while (sweep_true_in_flight(heap) > 0 &&
                rbimpl_atomic_ptr_load((void**)&heap->pre_swept_head, RBIMPL_ATOMIC_ACQUIRE) == NULL) {
-            /*heap->ruby_thread_waiting_dequeue = true;*/
             sweep_lock_set_unlocked(objspace);
             rb_native_cond_wait(&heap->sweep_page_cond, &objspace->sweep_lock);
             sweep_lock_set_locked(objspace);
-            /*heap->ruby_thread_waiting_dequeue = false;*/
-            /*rb_native_cond_signal(&heap->sweep_page_cond_done);*/
         }
         sweep_lock_unlock(objspace);
         goto retry_drain;
@@ -6095,7 +6034,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(sweep_page->heap->total_freed_objects >= (unsigned long)ctx.freed_slots);
         } else {
             sweep_page->free_slots = free_slots;
-            // NOTE: sweep_page->final slots have already been updated by make_zombie
+            // NOTE: sweep_page->final_slots has already been updated by make_zombie
             GC_ASSERT(sweep_page->free_slots <= sweep_page->total_slots);
             GC_ASSERT(sweep_page->final_slots <= sweep_page->total_slots);
             sweep_page->heap->total_freed_objects += ctx.freed_slots;
