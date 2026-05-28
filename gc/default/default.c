@@ -643,10 +643,7 @@ typedef struct rb_objspace {
         unsigned int during_incremental_marking : 1;
         unsigned int measure_gc : 1;
     } flags;
-    // This can't be a bitfield because it's accessed in garbage_object_p() from the sweep thread
-    // while the ruby GC thread could be running and changing other bitfields.
     bool during_lazy_sweeping;
-    // This one too, it's accessed in debug_free_check
     bool during_minor_gc;
     bool during_gc;
     bool dont_gc;
@@ -6064,11 +6061,6 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
             rb_native_cond_signal(&objspace->sweep_cond);
         }
     }
-
-#if PSWEEP_LOCK_STATS > 0
-    current_step_type = 1;
-    step_contention[1].step_count++;
-#endif
 #endif // USE_PARALLEL_SWEEP
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
@@ -6256,10 +6248,6 @@ gc_sweep(rb_objspace_t *objspace)
     }
     else {
         /* Sweep every size pool. */
-#if USE_PARALLEL_SWEEP && PSWEEP_LOCK_STATS > 0
-        current_step_type = 0;
-        step_contention[0].step_count++;
-#endif
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
             gc_sweep_step(objspace, heap);
@@ -9135,7 +9123,6 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
     }
 
     garbage_collect(objspace, reason);
-    // NOTE: background sweeping can still be active here. We also may enter a new GC cycle from finalizers below.
     gc_finalize_deferred(objspace);
 
     gc_config_full_mark_set(full_marking_p);
