@@ -10679,18 +10679,9 @@ static void
 check_malloc_not_in_gc(rb_objspace_t *objspace, const char *msg)
 {
     if (RB_UNLIKELY(bad_malloc_during_gc_p(objspace))) {
-#if USE_PARALLEL_SWEEP
-        if (is_sweep_thread_p()) {
-            fprintf(stderr, "Bad %s in sweep thread, exiting\n", msg);
-            exit(EXIT_FAILURE);
-        }
-        else
-#endif
-        {
-            dont_gc_on();
-            during_gc = false;
-            rb_bug("Cannot %s during GC", msg);
-        }
+        dont_gc_on();
+        during_gc = false;
+        rb_bug("Cannot %s during GC", msg);
     }
 }
 
