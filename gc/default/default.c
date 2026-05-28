@@ -1253,13 +1253,20 @@ gc_malloc_counters_snapshot(rb_objspace_t *objspace, struct gc_malloc_bytes *c)
 #define set_stress_to_class(c)  ((void)objspace, (c))
 #endif
 
+#if USE_PARALLEL_SWEEP
+void wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_current_background_sweep, bool lock_sweep_thread, bool exit_sweep_thread, const char *from_fn);
+# define SET_DONT_GC_ON_PRE(o) wait_for_background_sweeping_to_finish((o), true, false, false, "dont_gc_on")
+#else
+# define SET_DONT_GC_ON_PRE(o) ((void)(o))
+#endif
+
 #if 0
-#define dont_gc_on()          (fprintf(stderr, "dont_gc_on@%s:%d\n",      __FILE__, __LINE__), objspace->dont_gc = 1)
+#define dont_gc_on()          (fprintf(stderr, "dont_gc_on@%s:%d\n",      __FILE__, __LINE__), DONT_GC_ON_WAIT_SWEEP(objspace), objspace->dont_gc = 1)
 #define dont_gc_off()         (fprintf(stderr, "dont_gc_off@%s:%d\n",     __FILE__, __LINE__), objspace->dont_gc = 0)
 #define dont_gc_set(b)        (fprintf(stderr, "dont_gc_set(%d)@%s:%d\n", __FILE__, __LINE__), objspace->dont_gc = (int)(b))
 #define dont_gc_val()         (objspace->dont_gc)
 #else
-#define dont_gc_on()          (objspace->dont_gc = 1)
+#define dont_gc_on()          (SET_DONT_GC_ON_PRE(objspace), objspace->dont_gc = 1)
 #define dont_gc_off()         (objspace->dont_gc = 0)
 #define dont_gc_set(b)        (objspace->dont_gc = (bool)(b))
 #define dont_gc_val()         (objspace->dont_gc)
@@ -2752,10 +2759,6 @@ gc_continue(rb_objspace_t *objspace, rb_heap_t *heap)
 
     gc_exit(objspace, gc_enter_event_continue, &lock_lev);
 }
-
-#if USE_PARALLEL_SWEEP
-void wait_for_background_sweeping_to_finish(rb_objspace_t *objspace, bool abort_current_background_sweep, bool lock_sweep_thread, bool exit_sweep_thread, const char *from_fn);
-#endif
 
 static void
 heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
