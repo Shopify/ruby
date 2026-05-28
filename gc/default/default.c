@@ -5854,10 +5854,6 @@ gc_sweep_step_deferred_free(rb_objspace_t *objspace, rb_heap_t *heap, struct hea
             }
             p += slot_size;
             bitset >>= 1;
-            /*if (bitset) {*/
-                /* Write-prefetch next deferred slot: deferred_free -> obj_free writes it. */
-                /*__builtin_prefetch((void *)(p + __builtin_ctzll(bitset) * slot_size), 1, 3);*/
-            /*}*/
         }
     }
     *freed_out = freed;
@@ -5940,8 +5936,8 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
              * loads) and then write them (clear_pre_sweep_fields). RFO-prefetch both
              * the first bitmap plane and the pre_* counter line so the demand loads
              * don't take HITM, and the later writes are already in M state. */
-            __builtin_prefetch(&sweep_page->deferred_free_bits[0], 1, 3);
-            __builtin_prefetch(&sweep_page->pre_freed_slots, 1, 3);
+            /*__builtin_prefetch(&sweep_page->deferred_free_bits[0], 1, 3);*/
+            /*__builtin_prefetch(&sweep_page->pre_freed_slots, 1, 3);*/
 
             unsigned int deferred_free_freed = 0;
             unsigned int deferred_free_final_slots = 0;
