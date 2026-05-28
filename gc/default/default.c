@@ -12124,6 +12124,7 @@ rb_gc_impl_init(void)
         OPT(MALLOC_ALLOCATED_SIZE_CHECK);
         OPT(GC_PROFILE_DETAIL_MEMORY);
         OPT(GC_COMPACTION_SUPPORTED);
+        OPT(USE_PARALLEL_SWEEP);
 #undef OPT
         OBJ_FREEZE(opts);
     }
