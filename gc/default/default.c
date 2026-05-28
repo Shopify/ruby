@@ -5129,7 +5129,7 @@ const char *sweep_step_worker_state_str(enum sweep_step_worker_state state) {
 
 // Perform incremental (lazy) sweep on a heap by the background sweep thread.
 static enum sweep_step_worker_state
-gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap, int *swept_pages_num)
+gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     // sweep_lock is acquired
 
@@ -5204,7 +5204,6 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap, int *swept_pages_
             GC_ASSERT(page->before_sweep);
             page->free_next = NULL;
             gc_pre_sweep_page(objspace, heap, page);
-            *swept_pages_num += 1;
 
             if (was_bg_mode) {
                 size_t page_free_slots = (size_t)page->pre_freed_slots + (size_t)page->pre_empty_slots;
@@ -5326,14 +5325,10 @@ gc_sweep_thread_func(void *ptr)
         objspace->background_sweep_restart_heaps = false;
         objspace->sweep_thread_sweeping = true;
 
-    int heaps_skipped;
-    int done_heaps;
     bool done_all;
     bool restart;
     bool abort;
     restart_heaps:
-        heaps_skipped = 0;
-        done_heaps = 0;
         done_all = false;
         restart = false;
         abort = false;
@@ -5346,18 +5341,12 @@ gc_sweep_thread_func(void *ptr)
                 objspace->background_sweep_restart_heaps = false;
                 goto restart_heaps;
             }
-            int swept_pages_num = 0;
-            enum sweep_step_worker_state state = gc_sweep_step_worker(objspace, heap, &swept_pages_num);
-            /*fprintf(stderr, "gc_sweep_worker heap %lu swept %d pages, returned:%s (%s)\n", heap - heaps, swept_pages_num, sweep_step_worker_state_str(state), objspace->background_sweep_mode ? "bg" : "fg");*/
+            enum sweep_step_worker_state state = gc_sweep_step_worker(objspace, heap);
             switch (state) {
                 case WORKER_SKIP_HEAP:
-                    heaps_skipped++;
-                    break;
                 case WORKER_NEXT_HEAP_FG:
                 case WORKER_NEXT_HEAP_BG:
-                    break;
                 case WORKER_DONE_HEAP:
-                    done_heaps++;
                     break;
                 case WORKER_DONE_ALL_HEAPS:
                     done_all = true;
@@ -5373,11 +5362,6 @@ gc_sweep_thread_func(void *ptr)
                 break;
             } else if (restart) {
                 objspace->background_sweep_restart_heaps = false;
-                goto restart_heaps;
-            } else if (heaps_skipped + done_heaps == HEAP_COUNT) {
-                break;
-            } else if (i == HEAP_COUNT-1 && objspace->background_sweep_mode) {
-                /*fprintf(stderr, "restarting in bg mode!\n");*/
                 goto restart_heaps;
             }
         }
@@ -5412,8 +5396,9 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->skip_sweep_continue = false;
     heap->pre_swept_bg_slots = 0;
 
-    /* Build the page snapshot for this sweep cycle. Pages can be added during
-     * sweep (heap_add_page asserts !heap->sweeping_page), so this is stable. */
+    /* Build the page snapshot for this sweep cycle. Pages can't be added during the
+     * sweeping of a heap, so this is stable. This is an optimization to allow a lock-free queue
+     * of pre-swept pages between the worker and the ruby GC thread */
     rb_darray_clear(heap->sweep_pages);
     sweep_claim_state_reset(heap);
     heap->pre_swept_head = NULL;
@@ -5422,7 +5407,6 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->claimed_local_end = 0;
     heap->worker_cache_start = 0;
     heap->worker_cache_end = 0;
-    /*heap->ruby_thread_waiting_dequeue = false;*/
 #endif
     heap->freed_slots = 0;
     heap->empty_slots = 0;
@@ -5434,23 +5418,19 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     struct heap_page *page = NULL;
 
 #if USE_PARALLEL_SWEEP
-    /* During compaction we defer building the snapshot until gc_sweep_compact
-     * has finished: compact may add or modify pages, so the post-compact
-     * heap->pages list is the one that needs sweeping. gc_sweep then calls
-     * gc_sweep_start_heap_snapshot for each heap. */
+    /* During compaction we defer building the snapshot until gc_sweep_compact has finished */
     const bool build_snapshot = !objspace->flags.during_compacting;
 
-    /* We're inside GC; growth must not call ruby's GC-aware realloc.
-     * Pre-size the snapshot to total_pages so the loop appends without realloc. */
-    if (build_snapshot && rb_darray_capa(heap->sweep_pages) < heap->total_pages) {
-        rb_darray_resize_capa_without_gc(&heap->sweep_pages, heap->total_pages);
+    if (build_snapshot) {
+        if (rb_darray_capa(heap->sweep_pages) < heap->total_pages) {
+            rb_darray_resize_capa_without_gc(&heap->sweep_pages, heap->total_pages);
+        }
+        else if (rb_darray_capa(heap->sweep_pages) > heap->total_pages * 4) {
+            rb_darray_resize_capa_without_gc(&heap->sweep_pages, rb_darray_capa(heap->sweep_pages) / 2);
+        }
     }
 #endif
 
-    /* Always mark pages as before_sweep and (under parallel sweep) snapshot
-     * them. The worker enforces before_sweep==1 as an invariant when it picks
-     * a page off the snapshot, so we must set it in both immediate and
-     * incremental modes — even immediate_sweep can route through the worker. */
     ccan_list_for_each(&heap->pages, page, page_node) {
         page->before_sweep = true;
 #if USE_PARALLEL_SWEEP
@@ -5463,12 +5443,7 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 }
 
 #if USE_PARALLEL_SWEEP
-/* Build the sweep_pages snapshot after gc_sweep_compact has run. Compact may
- * add/modify pages in heap->pages, so the snapshot must be taken from the
- * post-compact list. The background worker is suppressed during compaction
- * (see gc_sweep_start: use_background_sweep_thread is forced false when
- * during_compacting), so we are the only producer here — no atomics needed
- * beyond what the dequeue side will use. */
+/* NOTE: Build the sweep_pages snapshot after gc_sweep_compact has run. */
 static void
 gc_sweep_start_heap_snapshot(rb_objspace_t *objspace, rb_heap_t *heap)
 {
@@ -5484,19 +5459,12 @@ gc_sweep_start_heap_snapshot(rb_objspace_t *objspace, rb_heap_t *heap)
         rb_darray_resize_capa_without_gc(&heap->sweep_pages, heap->total_pages);
     }
 
-    /* Compact may have already swept the prefix of heap->pages via
-     * gc_compact_move (gc_sweep_page on dest_pool->sweeping_page when the
-     * destination's free list ran dry). Those pages have before_sweep == 0
-     * and their stats are already in heap->{freed,empty}_slots — skip them. */
     struct heap_page *page = NULL;
-    int num_appended = 0;
     ccan_list_for_each(&heap->pages, page, page_node) {
-        if (!page->before_sweep) continue;
+        if (!page->before_sweep) continue; // compacted page
         GC_ASSERT(page->pre_deferred_free_slots == 0);
         rb_darray_append_without_gc(&heap->sweep_pages, page);
-        num_appended++;
     }
-    GC_ASSERT(num_appended > 0); // otherwise, heap->finished_sweeping should have been set by compaction
 }
 #endif
 
@@ -6251,9 +6219,6 @@ gc_sweep_rest(rb_objspace_t *objspace)
                 do_signal = true;
                 objspace->sweep_thread_sweep_requested = true;
             }
-            else if (objspace->use_background_sweep_thread) {
-                objspace->background_sweep_restart_heaps = true; // restart sweeping heaps from heap 0
-            }
         }
     }
     sweep_lock_unlock(objspace);
@@ -6282,7 +6247,6 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
 
 #if USE_PARALLEL_SWEEP
     psweep_debug(-2, "[gc] gc_sweep_continue\n");
-    /*int num_heaps_need_continue = 0;*/
     if (objspace->sweep_thread) {
         bool do_signal = false;
         sweep_lock_lock(objspace);
@@ -6296,10 +6260,6 @@ gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *sweep_heap)
                     if (!objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested) {
                         objspace->sweep_thread_sweep_requested = true;
                         psweep_debug(-2, "[gc] gc_sweep_continue: requesting sweep thread\n");
-                    }
-                    else {
-                        psweep_debug(-2, "[gc] gc_sweep_continue: sweep thread restart heaps\n");
-                        objspace->background_sweep_restart_heaps = true;
                     }
                 }
             }
@@ -9256,6 +9216,7 @@ gc_sweeping_enter(rb_objspace_t *objspace, const char *from_fn)
     sweep_lock_lock(objspace);
     {
         objspace->background_sweep_mode = false;
+        objspace->background_sweep_restart_heaps = false;
     }
     sweep_lock_unlock(objspace);
 #if PSWEEP_COLLECT_TIMINGS > 0
