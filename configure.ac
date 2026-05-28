@@ -4298,9 +4298,15 @@ AC_ARG_ENABLE(debug-env,
 
 AC_ARG_ENABLE(parallel-sweep,
        AS_HELP_STRING([--enable-parallel-sweep],
-                      [enable background sweep thread in the default GC [[disabled by default]]]),
+                      [enable background sweep thread in the default GC (requires 64-bit pthread target, [[disabled by default]])]),
        [parallel_sweep=$enableval], [parallel_sweep=no])
 AS_IF([test "x$parallel_sweep" = xyes], [
+    AS_IF([test "$ac_cv_sizeof_voidp" -lt 8], [
+        AC_MSG_ERROR([--enable-parallel-sweep requires a 64-bit target (sizeof(void*) >= 8)])
+    ])
+    AS_IF([test "x$THREAD_MODEL" != xpthread], [
+        AC_MSG_ERROR([--enable-parallel-sweep requires the pthread thread model (got: $THREAD_MODEL)])
+    ])
     RUBY_APPEND_OPTIONS(CPPFLAGS, -DUSE_PARALLEL_SWEEP=1)
 ], [
     RUBY_APPEND_OPTIONS(CPPFLAGS, -DUSE_PARALLEL_SWEEP=0)
