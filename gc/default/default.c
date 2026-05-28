@@ -1606,8 +1606,7 @@ sweep_claim_state_is_reset(rb_heap_t *heap)
 }
 #endif // USE_PARALLEL_SWEEP
 
-// Returns true when the background sweep thread and Ruby thread have finished processing
-// (background sweeping + ruby thread post-processing or deferred freeing) all pages for that heap.
+// Returns true when the sweep thread and Ruby thread have finished processing all the pages for that heap.
 static bool
 heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
 {
@@ -5067,7 +5066,7 @@ sweep_stack_push_bulk(rb_heap_t *heap, struct heap_page *head, struct heap_page 
  * claimed page at the head), and sweep_stack_push_bulk stacks batches LIFO.
  * Reverse the chain on drain so iteration order matches the underlying
  * ccan_list / sweep_pages order, keeping the Ruby thread's pool/free-page
- * distribution decisions order-consistent with master. */
+ * distribution decisions order-consistent with non parallel sweep. */
 static struct heap_page *
 sweep_stack_drain(rb_heap_t *heap)
 {
@@ -5085,12 +5084,8 @@ sweep_stack_drain(rb_heap_t *heap)
 static void
 sweep_thread_signal_enqueued_pages(rb_objspace_t *objspace, rb_heap_t *heap)
 {
-    // sweep_lock is acquired
     if (!objspace->background_sweep_mode) {
         rb_native_cond_signal(&heap->sweep_page_cond);
-        /*sweep_lock_set_unlocked(objspace);*/
-        /*rb_native_cond_wait(&heap->sweep_page_cond_done, &objspace->sweep_lock);*/
-        /*sweep_lock_set_locked(objspace);*/
     }
 }
 
@@ -5159,7 +5154,6 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
         struct heap_page *batch_tail = NULL;
         int batch_count = 0;
         bool no_more_work = false;
-        bool aborted_mid_batch = false;
         /* Pre-swept slots that will end up on this heap's free/pool list
          * (NOT pages going to the empty pool). Folded into heap->pre_swept_bg_slots
          * under sweep_lock at the bottom of this iteration. */
@@ -5214,12 +5208,6 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
                 }
             }
 
-            /* Prepend to the batch: the most recently claimed page becomes
-             * the new head, with its free_next pointing at the previous head.
-             * Combined with the chain reversal in sweep_stack_drain, this
-             * makes the Ruby thread see pages in the same ccan_list order
-             * master uses. The first page claimed becomes the batch_tail
-             * and stays put. */
             page->free_next = batch_head;
             batch_head = page;
             if (batch_tail == NULL) {
@@ -5230,7 +5218,6 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             /* Halfway into a batch, do a cheap atomic peek at the abort flag.
              * If a Ruby thread has raised it, drain what we have and bail */
             if (batch_count == (chunk_sz / 2) && rbimpl_atomic_load(&objspace->background_sweep_abort, RBIMPL_ATOMIC_ACQUIRE)) {
-                aborted_mid_batch = true;
                 break;
             }
         }
@@ -5264,7 +5251,7 @@ gc_sweep_step_worker(rb_objspace_t *objspace, rb_heap_t *heap)
             }
         }
 
-        if (RB_UNLIKELY(aborted_mid_batch)) {
+        if (RB_UNLIKELY(objspace->background_sweep_abort)) {
             sweep_thread_signal_enqueued_pages(objspace, heap);
             return WORKER_ABORT_SWEEP_HEAPS;
         }
@@ -5898,8 +5885,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 #if USE_PARALLEL_SWEEP
         bool free_in_user_thread_p = !use_sweep_thread;
         bool dequeued_unswept_page = false;
-        // NOTE: pages we dequeue from the sweep thread need to be AFTER the list of heap->free_pages so we don't free from pages
-        // we've allocated from since sweep started.
         struct heap_page *sweep_page = gc_sweep_dequeue_page(objspace, heap, free_in_user_thread_p, &dequeued_unswept_page);
         if (RB_UNLIKELY(!sweep_page)) {
             psweep_debug(-2, "[gc] gc_sweep_step heap:%p (%ld) deq() = nil, break\n", heap, heap - heaps);
@@ -5931,14 +5916,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             GC_ASSERT(sweep_page->pre_deferred_free_slots == 0);
         }
         else {
-            /* Worker just wrote deferred_free_bits and the pre_* counter fields on
-             * its core; the Ruby thread is about to read them (bitmap walk, counter
-             * loads) and then write them (clear_pre_sweep_fields). RFO-prefetch both
-             * the first bitmap plane and the pre_* counter line so the demand loads
-             * don't take HITM, and the later writes are already in M state. */
-            /*__builtin_prefetch(&sweep_page->deferred_free_bits[0], 1, 3);*/
-            /*__builtin_prefetch(&sweep_page->pre_freed_slots, 1, 3);*/
-
             unsigned int deferred_free_freed = 0;
             unsigned int deferred_free_final_slots = 0;
             unsigned int deferred_to_free = sweep_page->pre_deferred_free_slots;
