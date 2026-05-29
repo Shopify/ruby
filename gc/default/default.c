@@ -10795,10 +10795,16 @@ rb_gc_impl_adjust_memory_usage(void *objspace_ptr, ssize_t diff)
 static bool
 current_process_time(struct timespec *ts)
 {
-#if defined(HAVE_CLOCK_GETTIME) && defined(CLOCK_PROCESS_CPUTIME_ID)
+#if defined(HAVE_CLOCK_GETTIME) && (defined(CLOCK_THREAD_CPUTIME_ID) || defined(CLOCK_PROCESS_CPUTIME_ID))
     {
         static int try_clock_gettime = 1;
-        if (try_clock_gettime && clock_gettime(CLOCK_PROCESS_CPUTIME_ID, ts) == 0) {
+        clockid_t clk_id;
+#if defined(CLOCK_THREAD_CPUTIME_ID)
+        clk_id = CLOCK_THREAD_CPUTIME_ID;
+#else
+        clk_id = CLOCK_PROCESS_CPUTIME_ID;
+#endif
+        if (try_clock_gettime && clock_gettime(clk_id, ts) == 0) {
             return true;
         }
         else {
@@ -10807,11 +10813,18 @@ current_process_time(struct timespec *ts)
     }
 #endif
 
-#ifdef RUSAGE_SELF
+
+#if defined(RUSAGE_THREAD) || defined(RUSAGE_SELF)
     {
         struct rusage usage;
         struct timeval time;
-        if (getrusage(RUSAGE_SELF, &usage) == 0) {
+        int rusage_who;
+#if defined(RUSAGE_THREAD)
+        rusage_who = RUSAGE_THREAD;
+#elif defined(RUSAGE_SELF)
+        rusage_who = RUSAGE_SELF;
+#endif
+        if (getrusage(rusage_who, &usage) == 0) {
             time = usage.ru_utime;
             ts->tv_sec = time.tv_sec;
             ts->tv_nsec = (int32_t)time.tv_usec * 1000;
