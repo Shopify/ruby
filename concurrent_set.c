@@ -217,6 +217,7 @@ concurrent_set_probe_next(struct concurrent_set_probe *probe)
     return probe->idx;
 }
 
+// NOTE: must not allocate or cause GC
 static void
 concurrent_set_try_resize_locked(VALUE old_set_obj, VALUE *set_obj_ptr, VALUE new_set_obj, int old_capacity)
 {
@@ -279,62 +280,42 @@ concurrent_set_try_resize_locked(VALUE old_set_obj, VALUE *set_obj_ptr, VALUE ne
     RB_GC_GUARD(old_set_obj);
 }
 
-// FIXME: cross-platform initializer. Also, we don't need rwlock anymore, just normal mutex will do
-static pthread_rwlock_t resize_lock = PTHREAD_RWLOCK_INITIALIZER;
+#if USE_PARALLEL_SWEEP
+static pthread_mutex_t resize_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_t resize_lock_owner;
-static unsigned int resize_lock_lvl;
 
 static inline void
-resize_lock_wrlock(bool allow_reentry)
-{
-    if (allow_reentry && pthread_self() == resize_lock_owner) {
-        // Already held by this thread.
-    }
-    else {
-        int r;
-        if ((r = pthread_rwlock_wrlock(&resize_lock))) {
-            rb_bug_errno("pthread_rwlock_wrlock", r);
-        }
-        resize_lock_owner = pthread_self();
-    }
-    resize_lock_lvl++;
-}
-
-static inline void
-resize_lock_wrunlock(void)
-{
-    RUBY_ASSERT(resize_lock_lvl > 0);
-    resize_lock_lvl--;
-    if (resize_lock_lvl == 0) {
-        resize_lock_owner = 0;
-        int r;
-        if ((r = pthread_rwlock_unlock(&resize_lock))) {
-            rb_bug_errno("pthread_rwlock_unlock", r);
-        }
-    }
-}
-
-static inline bool
-resize_lock_rdlock(void)
-{
-    if (resize_lock_owner == pthread_self()) { // we have the write lock, don't take it
-        return false;
-    }
-    int r;
-    if ((r = pthread_rwlock_rdlock(&resize_lock))) {
-        rb_bug_errno("pthread_rwlock_rdlock", r);
-    }
-    return true;
-}
-
-static inline void
-resize_lock_rdunlock(void)
+resize_lock_lock(void)
 {
     int r;
-    if ((r = pthread_rwlock_unlock(&resize_lock))) {
-        rb_bug_errno("pthread_rwlock_unlock", r);
+#if VM_CHECK_MODE > 0
+    RUBY_ASSERT(resize_lock_owner != pthread_self());
+#endif
+    if ((r = pthread_mutex_lock(&resize_lock))) {
+        rb_bug_errno("pthread_mute_lock", r);
+    }
+#if VM_CHECK_MODE > 0
+    resize_lock_owner = pthread_self();
+#endif
+}
+
+static inline void
+resize_lock_unlock(void)
+{
+    int r;
+#if VM_CHECK_MODE > 0
+    RUBY_ASSERT(resize_lock_owner == pthread_self());
+    resize_lock_owner = 0;
+#endif
+    if ((r = pthread_mutex_unlock(&resize_lock))) {
+        rb_bug_errno("pthread_mutex_unlock", r);
     }
 }
+
+#else
+#define resize_lock_lock() (void)0
+#define resize_lock_unlock() (void)0
+#endif // USE_PARALLEL_SWEEP
 
 static void
 concurrent_set_try_resize(VALUE old_set_obj, VALUE *set_obj_ptr)
@@ -365,13 +346,12 @@ concurrent_set_try_resize(VALUE old_set_obj, VALUE *set_obj_ptr)
 
         // May cause GC and therefore deletes, so must happen first.
         VALUE new_set_obj = rb_concurrent_set_new(old_set->funcs, new_capacity, old_set->key_type);
-        /*fprintf(stderr, "concurrent set resize from %d to %d\n", old_capacity, new_capacity);*/
         // deletes from sweep thread must not happen during resize and sweep thread can't take VM lock so it takes the resize lock
-        resize_lock_wrlock(true);
+        resize_lock_lock();
         {
             concurrent_set_try_resize_locked(old_set_obj, set_obj_ptr, new_set_obj, old_capacity);
         }
-        resize_lock_wrunlock();
+        resize_lock_unlock();
     }
     RB_VM_LOCK_LEAVE_LEV(&lev);
 }
@@ -768,7 +748,7 @@ rb_concurrent_set_delete_by_identity(VALUE *set_obj_ptr, VALUE key)
     bool is_sweep_thread_p(void);
     if (is_sweep_thread_p()) {
         while (1) {
-            bool lock_taken = resize_lock_rdlock();
+            resize_lock_lock();
             {
                 VALUE current_set_obj = rbimpl_atomic_value_load(set_obj_ptr, RBIMPL_ATOMIC_ACQUIRE);
                 if (current_set_obj != set_obj) {
@@ -777,11 +757,11 @@ rb_concurrent_set_delete_by_identity(VALUE *set_obj_ptr, VALUE key)
                 }
                 else {
                     result = rb_concurrent_set_delete_by_identity_locked(set_obj, key);
-                    if (lock_taken) resize_lock_rdunlock();
+                    resize_lock_unlock();
                     break;
                 }
             }
-            if (lock_taken) resize_lock_rdunlock();
+            resize_lock_unlock();
         }
     }
     else
@@ -836,15 +816,16 @@ rb_concurrent_set_foreach_with_replace_locked(VALUE set_obj, int (*callback)(VAL
     }
 }
 
+// NOTE: `callback` must not cause GC
 void
 rb_concurrent_set_foreach_with_replace(VALUE set_obj, int (*callback)(VALUE *key, void *data), void *data)
 {
     RB_VM_LOCKING() {
-        // Don't allow concurrent deletes from sweep thread during this time. Maybe we can loosen this restriction.
-        resize_lock_wrlock(true);
+        // Don't allow concurrent deletes from sweep thread during this time.
+        resize_lock_lock();
         {
             rb_concurrent_set_foreach_with_replace_locked(set_obj, callback, data);
         }
-        resize_lock_wrunlock();
+        resize_lock_unlock();
     }
 }

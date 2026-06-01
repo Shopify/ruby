@@ -4619,7 +4619,7 @@ zombie_needs_deferred_free(VALUE zombie)
 }
 #endif // USE_PARALLEL_SWEEP
 
-#if RUBY_DEBUG
+#if RUBY_DEBUG && USE_PARALLEL_SWEEP
 static void
 debug_free_check(rb_objspace_t *objspace, VALUE vp)
 {
@@ -5648,7 +5648,6 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
-        GC_ASSERT(heap->is_finished_sweeping);
 
 #if RUBY_DEBUG
         heap->zombie_slots = 0;
@@ -5657,6 +5656,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
         heap->freed_slots = 0;
         heap->empty_slots = 0;
 #if USE_PARALLEL_SWEEP
+        GC_ASSERT(heap->is_finished_sweeping);
         if (heap->background_sweep_steps < heap->foreground_sweep_steps) {
             heap->background_sweep_steps = heap->foreground_sweep_steps;
         }
