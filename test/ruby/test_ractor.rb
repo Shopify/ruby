@@ -298,6 +298,177 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  # Ractor.check_isolation { ... } forces isolation checks to behave as if the
+  # code ran in a non-main Ractor, but downgrades the resulting
+  # Ractor::IsolationError raises to :ractor_isolation category warnings.
+  def test_check_isolation_predicate_defaults_to_false
+    assert_ractor(<<~'RUBY')
+      assert_equal false, Ractor.check_isolation?
+    RUBY
+  end
+
+  def test_check_isolation_is_enabled_only_inside_the_block
+    assert_ractor(<<~'RUBY')
+      inside = nil
+      Ractor.check_isolation { inside = Ractor.check_isolation? }
+      assert_equal true, inside
+      assert_equal false, Ractor.check_isolation?
+    RUBY
+  end
+
+  def test_check_isolation_returns_the_block_value
+    assert_ractor(<<~'RUBY')
+      assert_equal :returned, Ractor.check_isolation { :returned }
+    RUBY
+  end
+
+  def test_check_isolation_requires_a_block
+    assert_ractor(<<~'RUBY')
+      assert_raise(ArgumentError) { Ractor.check_isolation }
+    RUBY
+  end
+
+  def test_check_isolation_warns_instead_of_raising
+    assert_ractor(<<~'RUBY')
+      class CheckIsolationFixture
+        @ivar = "ivar"        # not shareable
+        @@cvar = [1, 2, 3]    # not shareable
+        MUTABLE = "mutable"   # not shareable
+      end
+      $check_isolation_gvar = "global"
+
+      assert_warning(%r{instance variables of classes/modules from non-main Ractors}) do
+        Ractor.check_isolation { CheckIsolationFixture.instance_variable_get(:@ivar) }
+      end
+      assert_warning(/can not access class variables from non-main Ractors/) do
+        Ractor.check_isolation { CheckIsolationFixture.class_variable_get(:@@cvar) }
+      end
+      assert_warning(/non-shareable objects in constant CheckIsolationFixture::MUTABLE/) do
+        Ractor.check_isolation { CheckIsolationFixture::MUTABLE }
+      end
+      assert_warning(/can not access global variable \$check_isolation_gvar from non-main Ractor/) do
+        Ractor.check_isolation { $check_isolation_gvar }
+      end
+      assert_warning(%r{can not set instance variables of classes/modules by non-main Ractors}) do
+        Ractor.check_isolation { CheckIsolationFixture.instance_variable_set(:@ivar, "new") }
+      end
+    RUBY
+  end
+
+  def test_check_isolation_does_not_warn_for_shareable_values
+    assert_ractor(<<~'RUBY')
+      class CheckIsolationFixture
+        FROZEN = "frozen".freeze # shareable
+      end
+      assert_no_warning(/non-main Ractor/) do
+        Ractor.check_isolation { CheckIsolationFixture::FROZEN }
+      end
+    RUBY
+  end
+
+  def test_check_isolation_restores_state_when_nested
+    assert_ractor(<<~'RUBY')
+      # Capture the states inside the blocks and assert outside: running an
+      # assertion inside check_isolation would itself trip an isolation
+      # warning (the harness bumps an assertion counter on a module ivar).
+      states = []
+      Ractor.check_isolation do
+        states << Ractor.check_isolation?
+        Ractor.check_isolation do
+          states << Ractor.check_isolation?
+        end
+        states << Ractor.check_isolation?
+      end
+      assert_equal [true, true, true], states
+      assert_equal false, Ractor.check_isolation?
+    RUBY
+  end
+
+  def test_check_isolation_can_be_silenced
+    assert_ractor(<<~'RUBY')
+      class CheckIsolationFixture
+        @ivar = "ivar"
+      end
+      Warning[:ractor_isolation] = false
+      assert_no_warning(/non-main Ractor/) do
+        Ractor.check_isolation { CheckIsolationFixture.instance_variable_get(:@ivar) }
+      end
+    RUBY
+  end
+
+  def test_check_isolation_is_inherited_by_threads_started_inside
+    assert_ractor(<<~'RUBY')
+      inside = outside = nil
+      Ractor.check_isolation do
+        Thread.new { inside = Ractor.check_isolation? }.join
+      end
+      Thread.new { outside = Ractor.check_isolation? }.join
+      assert_equal true, inside
+      assert_equal false, outside
+    RUBY
+  end
+
+  def test_isolation_violation_still_raises_in_a_real_ractor
+    assert_ractor(<<~'RUBY')
+      class CheckIsolationFixture
+        @ivar = "ivar"
+      end
+      e = Ractor.new do
+        CheckIsolationFixture.instance_variable_get(:@ivar)
+      rescue => exc
+        exc
+      end.value
+      assert_kind_of Ractor::IsolationError, e
+    RUBY
+  end
+
+  def test_check_isolation_warns_on_cached_constant_access
+    assert_ractor(<<~'RUBY')
+      class CheckIsolationFixture
+        MUTABLE = "mutable"
+      end
+      # Access the same constant repeatedly so the inline cache is populated;
+      # the isolation check must still fire on the cached / JIT fast path.
+      assert_warning(/non-shareable objects in constant CheckIsolationFixture::MUTABLE/) do
+        Ractor.check_isolation { 3.times { CheckIsolationFixture::MUTABLE } }
+      end
+    RUBY
+  end
+
+  def test_check_isolation_warns_for_make_shareable
+    assert_ractor(<<~'RUBY')
+      h = Hash.new(Mutex.new) # unshareable: default value is a Mutex
+      assert_warning(/can not make shareable object.*from Hash default value/m) do
+        Ractor.check_isolation { Ractor.make_shareable(h) }
+      end
+      # Outside check_isolation it still raises (with the reference chain).
+      assert_raise(Ractor::Error) { Ractor.make_shareable(Hash.new(Mutex.new)) }
+    RUBY
+  end
+
+  def test_check_isolation_warns_for_shareable_proc
+    assert_ractor(<<~'RUBY')
+      foo = []
+      assert_warning(/cannot make a shareable Proc because it can refer unshareable object/) do
+        Ractor.check_isolation { Ractor.shareable_proc { foo } }
+      end
+      # Outside check_isolation it still raises.
+      assert_raise(Ractor::IsolationError) do
+        bar = []
+        Ractor.shareable_proc { bar }
+      end
+    RUBY
+  end
+
+  def test_check_isolation_warns_for_ractor_unsafe_method
+    assert_ractor(<<~'RUBY')
+      require 'etc'
+      assert_warning(/ractor unsafe method called from not main ractor/) do
+        Ractor.check_isolation { Etc.passwd }
+      end
+    RUBY
+  end
+
   def assert_make_shareable(obj)
     refute Ractor.shareable?(obj), "object was already shareable"
     Ractor.make_shareable(obj)
