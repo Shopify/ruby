@@ -17,6 +17,9 @@
 
 #ifdef BUILDING_MODULAR_GC
 # define nlz_int64(x) (x == 0 ? 64 : (unsigned int)__builtin_clzll((unsigned long long)x))
+# define ntz_intptr(x) \
+    ((x) == 0 ? (int)(sizeof(uintptr_t) * CHAR_BIT) : \
+     (int)__builtin_ctzll((unsigned long long)(x)))
 #else
 # include "internal/bits.h"
 #endif
@@ -3470,81 +3473,83 @@ struct gc_sweep_context {
 };
 
 static inline void
-gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bitset, struct gc_sweep_context *ctx)
+gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t base, bits_t bitset, struct gc_sweep_context *ctx)
 {
     struct heap_page *sweep_page = ctx->page;
-    short slot_size = sweep_page->slot_size;
-    short slot_bits = slot_size / BASE_SLOT_SIZE;
-    GC_ASSERT(slot_bits > 0);
 
+    /* Callers guarantee bitset != 0 on entry, and mask it with
+     * heap->slot_bits_mask so only the aligned starting bit of each slot is
+     * set. The lowest set bit therefore always lands on a slot boundary, and
+     * we can jump straight from one marked slot to the next instead of
+     * walking every slot in the plane. */
     do {
+        int bit = ntz_intptr(bitset);
+        uintptr_t p = base + (uintptr_t)bit * BASE_SLOT_SIZE;
         VALUE vp = (VALUE)p;
         GC_ASSERT(vp % BASE_SLOT_SIZE == 0);
+        GC_ASSERT(((uintptr_t)bit * BASE_SLOT_SIZE) % sweep_page->slot_size == 0);
 
         rb_asan_unpoison_object(vp, false);
-        if (bitset & 1) {
-            switch (BUILTIN_TYPE(vp)) {
-              default: /* majority case */
-                gc_report(2, objspace, "page_sweep: free %p\n", (void *)p);
+        switch (BUILTIN_TYPE(vp)) {
+          default: /* majority case */
+            gc_report(2, objspace, "page_sweep: free %p\n", (void *)p);
 #if RGENGC_CHECK_MODE
-                if (!is_full_marking(objspace)) {
-                    if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)p);
-                    if (RVALUE_REMEMBERED(objspace, vp)) rb_bug("page_sweep: %p - remembered.", (void *)p);
-                }
+            if (!is_full_marking(objspace)) {
+                if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)p);
+                if (RVALUE_REMEMBERED(objspace, vp)) rb_bug("page_sweep: %p - remembered.", (void *)p);
+            }
 #endif
 
-                if (RVALUE_WB_UNPROTECTED(objspace, vp)) CLEAR_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(vp), vp);
+            if (RVALUE_WB_UNPROTECTED(objspace, vp)) CLEAR_IN_BITMAP(GET_HEAP_WB_UNPROTECTED_BITS(vp), vp);
 
 #if RGENGC_CHECK_MODE
 #define CHECK(x) if (x(objspace, vp) != FALSE) rb_bug("obj_free: " #x "(%s) != FALSE", rb_obj_info(vp))
-                CHECK(RVALUE_WB_UNPROTECTED);
-                CHECK(RVALUE_MARKED);
-                CHECK(RVALUE_MARKING);
-                CHECK(RVALUE_UNCOLLECTIBLE);
+            CHECK(RVALUE_WB_UNPROTECTED);
+            CHECK(RVALUE_MARKED);
+            CHECK(RVALUE_MARKING);
+            CHECK(RVALUE_UNCOLLECTIBLE);
 #undef CHECK
 #endif
 
-                rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
+            rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
 
-                rb_gc_obj_free_vm_weak_references(vp);
-                if (rb_gc_obj_free(objspace, vp)) {
-                    // always add free slots back to the swept pages freelist,
-                    // so that if we're compacting, we can re-use the slots
-                    (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
-                    RVALUE_AGE_SET_BITMAP(vp, 0);
-                    heap_page_add_freeobj(objspace, sweep_page, vp);
-                    gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
-                    ctx->freed_slots++;
-                }
-                else {
-                    ctx->final_slots++;
-                }
-                break;
-
-              case T_MOVED:
-                if (objspace->flags.during_compacting) {
-                    /* The sweep cursor shouldn't have made it to any
-                     * T_MOVED slots while the compact flag is enabled.
-                     * The sweep cursor and compact cursor move in
-                     * opposite directions, and when they meet references will
-                     * get updated and "during_compacting" should get disabled */
-                    rb_bug("T_MOVED shouldn't be seen until compaction is finished");
-                }
-                gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
-                ctx->empty_slots++;
+            rb_gc_obj_free_vm_weak_references(vp);
+            if (rb_gc_obj_free(objspace, vp)) {
+                // always add free slots back to the swept pages freelist,
+                // so that if we're compacting, we can re-use the slots
+                (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
                 RVALUE_AGE_SET_BITMAP(vp, 0);
                 heap_page_add_freeobj(objspace, sweep_page, vp);
-                break;
-              case T_ZOMBIE:
-                /* already counted */
-                break;
-              case T_NONE:
-                ctx->empty_slots++; /* already freed */
-                break;
+                gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
+                ctx->freed_slots++;
             }
+            else {
+                ctx->final_slots++;
+            }
+            break;
+
+          case T_MOVED:
+            if (objspace->flags.during_compacting) {
+                /* The sweep cursor shouldn't have made it to any
+                 * T_MOVED slots while the compact flag is enabled.
+                 * The sweep cursor and compact cursor move in
+                 * opposite directions, and when they meet references will
+                 * get updated and "during_compacting" should get disabled */
+                rb_bug("T_MOVED shouldn't be seen until compaction is finished");
+            }
+            gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
+            ctx->empty_slots++;
+            RVALUE_AGE_SET_BITMAP(vp, 0);
+            heap_page_add_freeobj(objspace, sweep_page, vp);
+            break;
+          case T_ZOMBIE:
+            /* already counted */
+            break;
+          case T_NONE:
+            ctx->empty_slots++; /* already freed */
+            break;
         }
-        p += slot_size;
-        bitset >>= slot_bits;
+        bitset &= bitset - 1;
     } while (bitset);
 }
 
