@@ -133,6 +133,34 @@ mutex_free(void *ptr)
 {
     rb_mutex_t *mutex = ptr;
     if (mutex_locked_p(mutex)) {
+        /* A *locked* mutex is being swept. Its owner (mutex->th) must be a
+         * live thread that is keeping it in keeping_mutexes. Validate the
+         * owner against the VM's authoritative live-thread set BEFORE
+         * dereferencing it, so a dangling/garbage owner pointer (heap
+         * corruption or a freed owner) is caught here with a backtrace
+         * instead of segfaulting deeper inside thread_mutex_remove(). */
+        rb_vm_t *vm = GET_VM();
+        rb_ractor_t *r;
+        rb_thread_t *i;
+        int owner_is_live = 0;
+        ccan_list_for_each(&vm->ractor.set, r, vmlr_node) {
+            ccan_list_for_each(&r->threads.set, i, lt_node) {
+                if (i == mutex->th) { owner_is_live = 1; break; }
+            }
+            if (owner_is_live) break;
+        }
+        if (!owner_is_live) {
+            /* Is the VM tearing down? The main thread is set THREAD_KILLED at
+             * the very start of rb_ec_cleanup (eval.c) and never reverted, so
+             * this is a monotonic "shutdown in progress" signal readable from
+             * any thread without touching mutex->th. */
+            int in_shutdown = (vm->ractor.main_thread->status == THREAD_KILLED);
+            rb_bug("mutex_free: locked mutex=%p has dangling owner th=%p "
+                   "(ec_serial=%llu) not in the live-thread set (%s)",
+                   (void *)mutex, (void *)mutex->th,
+                   (unsigned long long)mutex->ec_serial,
+                   in_shutdown ? "VM shutdown in progress" : "not shutdown");
+        }
         thread_mutex_remove(mutex->th, mutex);
     }
     ruby_xfree(ptr);
@@ -479,6 +507,7 @@ rb_mutex_unlock_th(rb_mutex_t *mutex, rb_thread_t *th, rb_serial_t ec_serial)
     struct sync_waiter *cur = 0, *next;
 
     mutex->ec_serial = 0;
+    mutex->th = 0;
     thread_mutex_remove(th, mutex);
 
     ccan_list_for_each_safe(&mutex->waitq, cur, next, node) {
