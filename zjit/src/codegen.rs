@@ -21,7 +21,7 @@ use crate::stats::{counter_ptr, with_time_stat, trace_compile_phase, Counter, Co
 use crate::{asm::CodeBlock, cruby::*, options::debug, virtualmem::CodePtr};
 use crate::backend::lir::{self, Assembler, C_ARG_OPNDS, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, Opnd, SP, SideExit, SideExitRecompile, Target, asm_ccall, asm_comment};
 use crate::hir::{iseq_to_hir, BlockId, Invariant, RangeType, SideExitReason::{self, *}, SpecialBackrefSymbol, SpecialObjectType};
-use crate::hir::{BlockHandler, Const, FieldName, FrameState, Function, Insn, InsnId, Recompile, SendFallbackReason};
+use crate::hir::{BlockHandler, Const, FieldName, FrameState, Function, FunctionPrinter, Insn, InsnId, Recompile, SendFallbackReason};
 use crate::hir_type::{types, Type};
 use crate::options::{get_option, PerfMap};
 use crate::cast::IntoUsize;
@@ -52,6 +52,9 @@ struct JITState {
     /// ISEQ version that is being compiled, which will be used by PatchPoint
     version: IseqVersionRef,
 
+    /// HIR function being compiled. Used only to dump context if codegen misses an operand.
+    function: *const Function,
+
     /// Low-level IR Operands indexed by High-level IR's Instruction ID
     opnds: Vec<Option<Opnd>>,
 
@@ -71,9 +74,10 @@ struct JITState {
 
 impl JITState {
     /// Create a new JITState instance
-    fn new(version: IseqVersionRef, num_insns: usize, num_blocks: usize, jit_frame_size: usize) -> Self {
+    fn new(version: IseqVersionRef, function: &Function, num_insns: usize, num_blocks: usize, jit_frame_size: usize) -> Self {
         JITState {
             version,
+            function,
             opnds: vec![None; num_insns],
             labels: vec![None; num_blocks],
             jit_entries: Vec::default(),
@@ -82,9 +86,24 @@ impl JITState {
         }
     }
 
+    fn function(&self) -> &Function {
+        unsafe { &*self.function }
+    }
+
     /// Retrieve the output of a given instruction that has been compiled
     fn get_opnd(&self, insn_id: InsnId) -> lir::Opnd {
-        self.opnds[insn_id.0].unwrap_or_else(|| panic!("Failed to get_opnd({insn_id})"))
+        self.opnds.get(insn_id.0).copied().flatten().unwrap_or_else(|| {
+            let function = self.function();
+            let hir_insn = if insn_id.0 < function.num_insns() {
+                function.find(insn_id).to_string()
+            } else {
+                "<outside function instruction table>".to_string()
+            };
+            panic!(
+                "Failed to get_opnd({insn_id})\nHIR instruction: {hir_insn}\nHIR dump with snapshots:\n{}",
+                FunctionPrinter::with_snapshot(function),
+            )
+        })
     }
 
     /// Get the ISEQ for the version currently being compiled.
@@ -396,7 +415,7 @@ fn gen_iseq_body(cb: &mut CodeBlock, iseq: IseqPtr, mut version: IseqVersionRef,
 /// Compile a function
 fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, function: &Function) -> Result<(IseqCodePtrs, Vec<CodePtr>, Vec<IseqCallRef>), CompileError> {
     let (mut jit, asm) = trace_compile_phase("codegen", || {
-        let mut jit = JITState::new(version, function.num_insns(), function.num_blocks(), JIT_FRAME_SIZE);
+        let mut jit = JITState::new(version, function, function.num_insns(), function.num_blocks(), JIT_FRAME_SIZE);
         let mut asm = Assembler::new_with_stack_slots(JIT_FRAME_SIZE);
 
         // Mapping from HIR block IDs to LIR block IDs.
