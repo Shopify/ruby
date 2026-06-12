@@ -1031,6 +1031,51 @@ pub struct PerfettoTracer {
     string_table: std::collections::HashMap<String, u16>,
     next_string_index: u16,
     pid: u32,
+    /// The execution span (JIT or interpreter) currently open on the timeline,
+    /// if any. Used by --zjit-trace-fallbacks to emit non-overlapping slices:
+    /// every transition ends this span before beginning the next, so at most
+    /// one execution duration is ever open. See [`ExecSpan`].
+    current_exec_span: Option<ExecSpan>,
+}
+
+/// Which kind of execution the JIT/interpreter timeline is currently tracking,
+/// for --zjit-trace-fallbacks. Rendered as a Perfetto duration slice.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExecSpan {
+    /// Running inside ZJIT-compiled machine code.
+    Jit,
+    /// Running in the interpreter, e.g. servicing a send fallback. The label
+    /// names the kind of fallback (the codegen call site, e.g. "invokesuper").
+    /// It is emitted as the `kind` argument, not the slice name, so that every
+    /// interpreter slice shares the name "interpreter" and is easy to find,
+    /// filter, and aggregate in Perfetto.
+    Interp(&'static str),
+}
+
+impl ExecSpan {
+    /// Perfetto category, shared by both kinds so they group together.
+    fn category(self) -> &'static str {
+        "execution"
+    }
+
+    /// Perfetto slice name shown on the timeline. Constant per kind so all
+    /// interpreter fallbacks share one name; the specific fallback kind rides
+    /// along in the `kind` argument (see [`ExecSpan::kind`]).
+    fn name(self) -> &'static str {
+        match self {
+            ExecSpan::Jit => "jit",
+            ExecSpan::Interp(_) => "interpreter",
+        }
+    }
+
+    /// The fallback-kind label, emitted as the `kind` argument for interpreter
+    /// spans. `None` for JIT spans, which carry no argument.
+    fn kind(self) -> Option<&'static str> {
+        match self {
+            ExecSpan::Jit => None,
+            ExecSpan::Interp(label) => Some(label),
+        }
+    }
 }
 
 impl PerfettoTracer {
@@ -1074,6 +1119,7 @@ impl PerfettoTracer {
             string_table: std::collections::HashMap::new(),
             next_string_index: 1, // index 0 = empty string
             pid,
+            current_exec_span: None,
         };
 
         // Magic number record: metadata type=4 (trace info), trace info type=0,
@@ -1117,6 +1163,13 @@ impl PerfettoTracer {
         tracer.intern_string("side_exit");
         tracer.intern_string("compile");
         tracer.intern_string("invalidation");
+        tracer.intern_string("execution");
+        tracer.intern_string("jit");
+        tracer.intern_string("interpreter");
+        tracer.intern_string("kind");
+        // Interpreter spans all share the name "interpreter"; the specific
+        // fallback kind (e.g. "send", "invokesuper") is carried in the `kind`
+        // argument and interned lazily on first use.
         // Pre-intern argument names "0".."14" for per-frame arguments
         for i in 0..15u32 {
             tracer.intern_string(&i.to_string());
@@ -1176,6 +1229,63 @@ impl PerfettoTracer {
     /// Write a Duration End event (FXT event type 3).
     pub fn write_duration_end(&mut self, category: &str, name: &str, ts_ns: u64) {
         self.write_duration_event(3, category, name, ts_ns, &[]);
+    }
+
+    /// End the currently-open execution span, if any. Safe to call when no
+    /// span is open (e.g. a second JIT exit after the span was already ended).
+    fn end_exec_span(&mut self) {
+        if let Some(span) = self.current_exec_span.take() {
+            let ts = self.elapsed_ns();
+            self.write_duration_end(span.category(), span.name(), ts);
+        }
+    }
+
+    /// End the current execution span (if any) and begin `span`. Ending first
+    /// keeps the FXT duration stack at depth <= 1, so slices never overlap.
+    fn begin_exec_span(&mut self, span: ExecSpan) {
+        self.end_exec_span();
+        let ts = self.elapsed_ns();
+        match span.kind() {
+            // Interpreter span: name stays "interpreter"; the fallback kind is
+            // carried as a `kind` argument so all interpreter slices group.
+            Some(kind) => self.write_duration_begin_kv(span.category(), span.name(), ts, "kind", kind),
+            None => self.write_duration_begin(span.category(), span.name(), ts, &[]),
+        }
+        self.current_exec_span = Some(span);
+    }
+
+    /// Write a Duration Begin (event type 2) with a single named string
+    /// argument. Mirrors [`Self::write_duration_event`]'s encoding but lets the
+    /// argument be named (e.g. `kind=send_without_block`) rather than positional.
+    fn write_duration_begin_kv(&mut self, category: &str, name: &str, ts_ns: u64, arg_name: &str, arg_value: &str) {
+        let category_ref = self.intern_string(category);
+        let name_ref = self.intern_string(name);
+        let arg_name_ref = self.intern_string(arg_name);
+        let arg_value_ref = self.intern_string(arg_value);
+
+        let n_args = 1u64;
+        let event_words: u64 = 2 + n_args;
+        let header: u64 = 4u64                            // record type = event
+            | (event_words << 4)                          // record size
+            | (2u64 << 16)                                // event type = duration begin
+            | (n_args << 20)                              // argument count
+            | (1u64 << 24)                                // thread_ref = 1
+            | ((category_ref as u64) << 32)
+            | ((name_ref as u64) << 48);
+        self.write_word(header);
+        self.write_word(ts_ns);
+
+        // String argument (type 6, 1 word): interned name ref + value ref.
+        let arg_header: u64 = 6u64
+            | (1u64 << 4)
+            | ((arg_name_ref as u64) << 16)
+            | ((arg_value_ref as u64) << 32);
+        self.write_word(arg_header);
+
+        self.event_count += 1;
+
+        use std::io::Write;
+        let _ = self.writer.flush();
     }
 
     /// Write a Duration Begin or End event with optional frame arguments.
@@ -1265,6 +1375,72 @@ impl Drop for PerfettoTracer {
     fn drop(&mut self) {
         use std::io::Write;
         let _ = self.writer.flush();
+    }
+}
+
+// --- Execution-span trace hooks for --zjit-trace-fallbacks ----------------
+//
+// These are called from JIT-generated machine code (see codegen.rs) to record
+// when control crosses the JIT/interpreter boundary. They are no-ops unless a
+// tracer is active. The codegen only emits the calls when --zjit-trace-fallbacks
+// is set, so there is no runtime cost otherwise.
+
+/// Return the tracer to use for execution spans, or `None` if execution spans
+/// should not be recorded right now.
+///
+/// We only record on the single main Ractor: the FXT trace has one track, and
+/// JIT code on other Ractors runs in parallel without holding the GVL, so
+/// touching the shared tracer from there would be a data race. Once any second
+/// Ractor exists (`rb_jit_multi_ractor_p`), we stop recording entirely; in
+/// single-Ractor mode the GVL serializes all JIT execution, so tracer access is
+/// safe.
+fn exec_span_tracer() -> Option<&'static mut PerfettoTracer> {
+    if unsafe { rb_jit_multi_ractor_p() } {
+        return None;
+    }
+    ZJITState::get_tracer()
+}
+
+/// Entering JIT code from the interpreter: end the interpreter span (if any)
+/// and begin a JIT span.
+#[unsafe(no_mangle)]
+pub extern "C" fn rb_zjit_trace_enter_jit() {
+    if let Some(tracer) = exec_span_tracer() {
+        tracer.begin_exec_span(ExecSpan::Jit);
+    }
+}
+
+/// A send fallback is about to dispatch through the interpreter: end the JIT
+/// span and begin an interpreter span labeled with the fallback kind.
+///
+/// `label_ptr`/`label_len` describe a `&'static str` built by the codegen (a
+/// string literal in the binary's read-only data), so the slice borrowed here
+/// is valid for the whole process and can be stored as `&'static`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rb_zjit_trace_fallback_begin(label_ptr: *const u8, label_len: usize) {
+    if let Some(tracer) = exec_span_tracer() {
+        // SAFETY: label_ptr/label_len come from a &'static str passed by codegen.
+        let bytes: &'static [u8] = unsafe { std::slice::from_raw_parts(label_ptr, label_len) };
+        let label: &'static str = unsafe { std::str::from_utf8_unchecked(bytes) };
+        tracer.begin_exec_span(ExecSpan::Interp(label));
+    }
+}
+
+/// The interpreter fallback returned and control is back in JIT code: end the
+/// interpreter span and begin a fresh JIT span.
+#[unsafe(no_mangle)]
+pub extern "C" fn rb_zjit_trace_fallback_end() {
+    if let Some(tracer) = exec_span_tracer() {
+        tracer.begin_exec_span(ExecSpan::Jit);
+    }
+}
+
+/// Leaving JIT code through an exit trampoline: end the current JIT span. Does
+/// not begin a new span (we don't track interpreter time after a side exit).
+#[unsafe(no_mangle)]
+pub extern "C" fn rb_zjit_trace_exit_jit() {
+    if let Some(tracer) = exec_span_tracer() {
+        tracer.end_exec_span();
     }
 }
 

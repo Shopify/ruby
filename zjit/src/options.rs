@@ -103,6 +103,10 @@ pub struct Options {
     /// Trace invalidation events as Perfetto duration events.
     pub trace_invalidation: bool,
 
+    /// Trace JIT/interpreter execution and send fallbacks as Perfetto
+    /// duration events.
+    pub trace_fallbacks: bool,
+
     /// Dump code map to /tmp for performance profilers.
     pub perf: Option<PerfMap>,
 
@@ -138,6 +142,7 @@ impl Default for Options {
             trace_side_exits_sample_interval: 0,
             trace_compiles: false,
             trace_invalidation: false,
+            trace_fallbacks: false,
             perf: None,
             allowed_iseqs: None,
             log_compiled_iseqs: None,
@@ -174,6 +179,8 @@ pub const ZJIT_OPTIONS: &[(&str, &str)] = &[
                      "Record compilation phases as Perfetto trace events."),
     ("--zjit-trace-invalidation",
                      "Record invalidation events as Perfetto trace events."),
+    ("--zjit-trace-fallbacks",
+                     "Record JIT/interpreter execution and send fallbacks as Perfetto trace events."),
 ];
 
 #[derive(Copy, Clone, Debug)]
@@ -403,6 +410,8 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
         ("trace-compiles", "") => options.trace_compiles = true,
 
         ("trace-invalidation", "") => options.trace_invalidation = true,
+
+        ("trace-fallbacks", "") => options.trace_fallbacks = true,
 
         ("debug", "") => options.debug = true,
 

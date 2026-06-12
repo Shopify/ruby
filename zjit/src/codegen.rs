@@ -18,6 +18,7 @@ use crate::payload::{IseqCodePtrs, IseqStatus, IseqVersion, IseqVersionRef, JITF
 use crate::state::ZJITState;
 use crate::stats::{CompileError, exit_counter_for_compile_error, exit_counter_for_unhandled_hir_insn, incr_counter, incr_counter_by, send_fallback_counter, send_fallback_counter_for_method_type, send_fallback_counter_for_super_method_type, send_fallback_counter_ptr_for_opcode, send_without_block_fallback_counter_for_method_type, send_without_block_fallback_counter_for_optimized_method_type};
 use crate::stats::{counter_ptr, with_time_stat, trace_compile_phase, Counter, Counter::{compile_time_ns, exit_compile_error}};
+use crate::stats::{rb_zjit_trace_enter_jit, rb_zjit_trace_fallback_begin, rb_zjit_trace_fallback_end, rb_zjit_trace_exit_jit};
 use crate::{asm::CodeBlock, cruby::*, options::debug, virtualmem::CodePtr};
 use crate::backend::lir::{self, Assembler, C_ARG_OPNDS, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, Opnd, SP, SideExit, SideExitRecompile, Target, asm_ccall, asm_comment};
 use crate::hir::{iseq_to_hir, BlockId, Invariant, RangeType, SideExitReason::{self, *}, SpecialBackrefSymbol, SpecialObjectType};
@@ -1484,11 +1485,14 @@ fn gen_send(
     unsafe extern "C" {
         fn rb_vm_send(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
-    asm_ccall!(
+    gen_trace_fallback_begin(asm, "send");
+    let ret = asm_ccall!(
         asm,
         rb_vm_send,
         EC, CFP, Opnd::const_ptr(cd), VALUE::from(blockiseq).into()
-    )
+    );
+    gen_trace_fallback_end(asm);
+    ret
 }
 
 /// Compile a dynamic dispatch with `...`
@@ -1508,11 +1512,14 @@ fn gen_send_forward(
     unsafe extern "C" {
         fn rb_vm_sendforward(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
-    asm_ccall!(
+    gen_trace_fallback_begin(asm, "send_forward");
+    let ret = asm_ccall!(
         asm,
         rb_vm_sendforward,
         EC, CFP, Opnd::const_ptr(cd), VALUE::from(blockiseq).into()
-    )
+    );
+    gen_trace_fallback_end(asm);
+    ret
 }
 
 /// Compile a dynamic dispatch without block
@@ -1530,11 +1537,14 @@ fn gen_send_without_block(
     unsafe extern "C" {
         fn rb_vm_opt_send_without_block(ec: EcPtr, cfp: CfpPtr, cd: VALUE) -> VALUE;
     }
-    asm_ccall!(
+    gen_trace_fallback_begin(asm, "send_without_block");
+    let ret = asm_ccall!(
         asm,
         rb_vm_opt_send_without_block,
         EC, CFP, Opnd::const_ptr(cd)
-    )
+    );
+    gen_trace_fallback_end(asm);
+    ret
 }
 
 /// Compile a direct call to an ISEQ method.
@@ -1705,11 +1715,14 @@ fn gen_invokeblock(
     unsafe extern "C" {
         fn rb_vm_invokeblock(ec: EcPtr, cfp: CfpPtr, cd: VALUE) -> VALUE;
     }
-    asm_ccall!(
+    gen_trace_fallback_begin(asm, "invokeblock");
+    let ret = asm_ccall!(
         asm,
         rb_vm_invokeblock,
         EC, CFP, Opnd::const_ptr(cd)
-    )
+    );
+    gen_trace_fallback_end(asm);
+    ret
 }
 
 /// Compile invokeblock for IFUNC block handlers.
@@ -1788,11 +1801,14 @@ fn gen_invokesuper(
     unsafe extern "C" {
         fn rb_vm_invokesuper(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
-    asm_ccall!(
+    gen_trace_fallback_begin(asm, "invokesuper");
+    let ret = asm_ccall!(
         asm,
         rb_vm_invokesuper,
         EC, CFP, Opnd::const_ptr(cd), VALUE::from(blockiseq).into()
-    )
+    );
+    gen_trace_fallback_end(asm);
+    ret
 }
 
 /// Compile a dynamic dispatch for `super` with `...`
@@ -1811,11 +1827,14 @@ fn gen_invokesuperforward(
     unsafe extern "C" {
         fn rb_vm_invokesuperforward(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
-    asm_ccall!(
+    gen_trace_fallback_begin(asm, "invokesuperforward");
+    let ret = asm_ccall!(
         asm,
         rb_vm_invokesuperforward,
         EC, CFP, Opnd::const_ptr(cd), VALUE::from(blockiseq).into()
-    )
+    );
+    gen_trace_fallback_end(asm);
+    ret
 }
 
 /// Compile a string resurrection
@@ -2222,6 +2241,12 @@ fn gen_entry_point(jit: &mut JITState, asm: &mut Assembler, jit_entry_idx: Optio
     let jit_frame = JITFrame::new_iseq(entry_pc(jit.iseq(), jit_entry_idx), jit.iseq());
     asm.mov(Opnd::mem(64, NATIVE_BASE_PTR, -SIZEOF_VALUE_I32), Opnd::const_ptr(jit_frame));
     asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN), NATIVE_BASE_PTR);
+
+    // Only the interpreter entry (jit_entry_idx.is_none()) crosses the
+    // interpreter->JIT boundary; JIT-to-JIT call entries stay within JIT code.
+    if jit_entry_idx.is_none() {
+        gen_trace_enter_jit(asm);
+    }
 }
 
 /// Compile code that exits from JIT code with a return value
@@ -2689,6 +2714,44 @@ fn gen_incr_send_fallback_counter(asm: &mut Assembler, reason: SendFallbackReaso
             gen_incr_counter(asm, send_fallback_counter_for_super_method_type(method_type));
         }
         _ => {}
+    }
+}
+
+/// Emit a call to end the interpreter span and begin a JIT span, marking entry
+/// into JIT code from the interpreter. Only emitted with --zjit-trace-fallbacks.
+fn gen_trace_enter_jit(asm: &mut Assembler) {
+    if get_option!(trace_fallbacks) {
+        asm_comment!(asm, "trace: enter JIT from interpreter");
+        asm_ccall!(asm, rb_zjit_trace_enter_jit,);
+    }
+}
+
+/// Emit a call to end the JIT span and begin an interpreter span, just before a
+/// send falls back to the interpreter. `label` names the kind of fallback (the
+/// call site) and becomes the Perfetto slice name. Only emitted with
+/// --zjit-trace-fallbacks.
+///
+/// `label` must be a `&'static str` (a string literal): its bytes live in the
+/// binary's read-only data at a fixed address, so the pointer we pass stays
+/// valid when the JIT code runs and the helper stores it as `&'static`.
+fn gen_trace_fallback_begin(asm: &mut Assembler, label: &'static str) {
+    if get_option!(trace_fallbacks) {
+        asm_comment!(asm, "trace: fallback to interpreter ({label})");
+        asm_ccall!(
+            asm,
+            rb_zjit_trace_fallback_begin,
+            Opnd::const_ptr(label.as_ptr()),
+            Opnd::UImm(label.len() as u64)
+        );
+    }
+}
+
+/// Emit a call to end the interpreter span and begin a fresh JIT span, just
+/// after a send fallback returns. Only emitted with --zjit-trace-fallbacks.
+fn gen_trace_fallback_end(asm: &mut Assembler) {
+    if get_option!(trace_fallbacks) {
+        asm_comment!(asm, "trace: return from fallback to JIT");
+        asm_ccall!(asm, rb_zjit_trace_fallback_end,);
     }
 }
 
@@ -3338,6 +3401,13 @@ pub fn gen_exit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> 
     asm.new_block_without_id("exit_trampoline");
 
     asm_comment!(asm, "side-exit trampoline");
+    // End the current JIT span. This is the common funnel for every JIT exit:
+    // both materialize_exit trampolines jmp here, and side exits jump here
+    // directly, so ending the span once here covers all exit paths.
+    if get_option!(trace_fallbacks) {
+        asm_comment!(asm, "trace: exit JIT code");
+        asm_ccall!(asm, rb_zjit_trace_exit_jit,);
+    }
     asm.frame_teardown(&[]); // matching the setup in gen_entry_point()
     asm.cret(Qundef.into());
 
