@@ -5431,10 +5431,6 @@ gc_sweep_start(rb_objspace_t *objspace)
     bool do_signal = false;
     if (objspace->sweep_thread &&
             !objspace->flags.during_compacting &&
-            /* A major immediate GC sweeps the rest synchronously (gc_sweep_rest)
-             * right after this, so handing work to the background thread only adds
-             * lock contention with no chance to overlap. Keep it on the FG. */
-            !(is_full_marking(objspace) && objspace->flags.immediate_sweep) &&
             !(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
         psweep_debug(-1, "[gc] gc_sweep_start: requesting sweep thread\n");
         objspace->use_background_sweep_thread = true;
@@ -5960,23 +5956,23 @@ background_sweep_done_p(rb_objspace_t *objspace)
 static void
 gc_sweep_rest(rb_objspace_t *objspace)
 {
-/*#if USE_PARALLEL_SWEEP*/
-    /*bool do_signal = false;*/
-    /*sweep_lock_lock(objspace);*/
-    /*{*/
-        /*objspace->sweep_rest = true; // reset to false in `gc_sweeping_exit`*/
-        /*if (!background_sweep_done_p(objspace)) {*/
-            /*if (objspace->use_background_sweep_thread && !objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested) {*/
-                /*do_signal = true;*/
-                /*objspace->sweep_thread_sweep_requested = true;*/
-            /*}*/
-        /*}*/
-    /*}*/
-    /*sweep_lock_unlock(objspace);*/
-    /*if (do_signal) {*/
-        /*rb_native_cond_signal(&objspace->sweep_cond);*/
-    /*}*/
-/*#endif*/
+#if USE_PARALLEL_SWEEP
+    bool do_signal = false;
+    sweep_lock_lock(objspace);
+    {
+        objspace->sweep_rest = true; // reset to false in `gc_sweeping_exit`
+        if (!background_sweep_done_p(objspace)) {
+            if (objspace->use_background_sweep_thread && !objspace->sweep_thread_sweeping && !objspace->sweep_thread_sweep_requested) {
+                do_signal = true;
+                objspace->sweep_thread_sweep_requested = true;
+            }
+        }
+    }
+    sweep_lock_unlock(objspace);
+    if (do_signal) {
+        rb_native_cond_signal(&objspace->sweep_cond);
+    }
+#endif
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
         while (!heap_is_sweep_done(objspace, heap)) {
