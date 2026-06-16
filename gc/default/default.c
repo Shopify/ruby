@@ -130,6 +130,7 @@
 #define psweep_debug(...) (void)0
 #endif
 
+#define MAJOR_GC_DIAG 0
 #ifndef MAJOR_GC_DIAG
 #define MAJOR_GC_DIAG 0
 #endif
@@ -533,6 +534,9 @@ typedef struct rb_heap_struct {
     uintptr_t compact_cursor_index;
     struct heap_page *pooled_pages;
     size_t total_pages;      /* total page count in a heap */
+#if RUBY_DEBUG
+    size_t unlinked_pages;
+#endif
     size_t total_slots;      /* total slot count */
 #if RUBY_DEBUG
     rb_atomic_t made_zombies;
@@ -1531,7 +1535,7 @@ static bool
 heap_is_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
 {
 #if USE_PARALLEL_SWEEP
-    if (heap->is_finished_sweeping || !heap->sweeping_page) {
+    if (heap->is_finished_sweeping) {
         psweep_debug(2, "[gc] heap_is_sweep_done: %d, heap:%p (%ld), heap->is_finished_sweeping\n", true, heap, heap - heaps);
         return true;
     }
@@ -2350,6 +2354,9 @@ heap_unlink_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pag
     GC_ASSERT(heap->total_slots >= page->total_slots);
     GC_ASSERT(page->total_slots > 0);
     heap->total_slots -= page->total_slots;
+#if RUBY_DEBUG
+    heap->unlinked_pages++;
+#endif
 }
 
 static void
@@ -2604,7 +2611,7 @@ static void
 heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
 {
     /* Adding to eden heap during incremental sweeping is forbidden */
-    GC_ASSERT(!heap->sweeping_page);
+    GC_ASSERT(heap_is_sweep_done(objspace, heap));
     GC_ASSERT(heap_page_in_global_empty_pages_pool(objspace, page));
 
     /* Align start to slot_size boundary */
@@ -5248,6 +5255,9 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     }
     heap->free_pages = NULL;
     heap->pooled_pages = NULL;
+#if RUBY_DEBUG
+    heap->unlinked_pages = 0;
+#endif
 
 #if USE_PARALLEL_SWEEP
     heap->background_sweep_steps = heap->foreground_sweep_steps;
@@ -5467,6 +5477,11 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->is_finished_sweeping = true;
     heap->sweeping_page = NULL;
 #if RUBY_DEBUG
+    if (!objspace->flags.was_compacting) {
+        if (heap->total_pages + heap->unlinked_pages != rb_darray_size(heap->sweep_pages)) {
+            rb_bug("sweep_pages:%lu, total_pages:%lu, unlinked pages:%lu\n", rb_darray_size(heap->sweep_pages), heap->total_pages, heap->unlinked_pages);
+        }
+    }
     for (size_t i = 0; i < rb_darray_size(heap->sweep_pages); i++) {
         struct heap_page *page = rb_darray_get(heap->sweep_pages, i);
         GC_ASSERT(!page->before_sweep);
@@ -7555,12 +7570,6 @@ gc_marks_finish(rb_objspace_t *objspace)
 
             if (full_marking) {
                 /* Use weighted average slot size since total_slots spans all heaps */
-                /*size_t total_heap_bytes = 0;*/
-                /*for (int i = 0; i < HEAP_COUNT; i++) {*/
-                    /*total_heap_bytes += heaps[i].total_slots * heaps[i].slot_size;*/
-                /*}*/
-                /*size_t avg_slot_size = total_slots > 0 ? total_heap_bytes / total_slots : (size_t)heaps[0].slot_size;*/
-                /*heap_allocatable_bytes_expand(objspace, NULL, sweep_slots, total_slots, avg_slot_size);*/
                 heap_allocatable_bytes_expand(objspace, NULL, sweep_slots, total_slots, heaps[0].slot_size);
             }
         }
