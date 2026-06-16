@@ -622,16 +622,16 @@ typedef struct rb_objspace {
 
     struct {
         unsigned int mode : 2;
-        unsigned int immediate_sweep : 1;
-        unsigned int dont_incremental : 1;
-        unsigned int during_compacting : 1;
-#if RUBY_DEBUG
-        unsigned int was_compacting: 1;
-#endif
         unsigned int during_reference_updating : 1;
-        unsigned int during_incremental_marking : 1;
         unsigned int measure_gc : 1;
     } flags;
+    bool during_incremental_marking;
+    bool immediate_sweep;
+    bool dont_incremental;
+    bool during_compacting;
+#if RUBY_DEBUG
+    bool was_compacting;
+#endif
     bool during_lazy_sweeping;
     bool during_minor_gc;
     bool during_gc;
@@ -1624,7 +1624,7 @@ total_final_slots_count(rb_objspace_t *objspace)
 #define is_marking(objspace)             (gc_mode(objspace) == gc_mode_marking)
 #define is_sweeping(objspace)            (gc_mode(objspace) == gc_mode_sweeping)
 #define is_full_marking(objspace)        ((objspace)->during_minor_gc == FALSE)
-#define is_incremental_marking(objspace) ((objspace)->flags.during_incremental_marking != FALSE)
+#define is_incremental_marking(objspace) ((objspace)->during_incremental_marking != FALSE)
 #define will_be_incremental_marking(objspace) ((objspace)->rgengc.need_major_gc != GPR_FLAG_NONE)
 /*
  * Byte budget for incremental sweep steps. Each step sweeps at most
@@ -3314,7 +3314,7 @@ objspace_each_objects_ensure(VALUE arg)
 
     /* Reenable incremental GC */
     if (data->reenable_incremental) {
-        objspace->flags.dont_incremental = FALSE;
+        objspace->dont_incremental = FALSE;
     }
 
     for (int i = 0; i < HEAP_COUNT; i++) {
@@ -3396,10 +3396,10 @@ objspace_each_exec(bool protected, struct each_obj_data *each_obj_data)
     rb_objspace_t *objspace = each_obj_data->objspace;
     bool reenable_incremental = FALSE;
     if (protected) {
-        reenable_incremental = !objspace->flags.dont_incremental;
+        reenable_incremental = !objspace->dont_incremental;
 
         gc_rest(objspace);
-        objspace->flags.dont_incremental = TRUE;
+        objspace->dont_incremental = TRUE;
     }
 
     each_obj_data->reenable_incremental = reenable_incremental;
@@ -3647,7 +3647,7 @@ gc_abort(void *objspace_ptr)
         VALUE obj;
         while (pop_mark_stack(&objspace->mark_stack, &obj));
 
-        objspace->flags.during_incremental_marking = FALSE;
+        objspace->during_incremental_marking = FALSE;
     }
 
 #if USE_PARALLEL_SWEEP
@@ -3751,7 +3751,7 @@ rb_gc_impl_shutdown_call_finalizer(void *objspace_ptr)
 #endif
 
     /* prohibit incremental GC */
-    objspace->flags.dont_incremental = 1;
+    objspace->dont_incremental = 1;
 
     if (RUBY_ATOMIC_EXCHANGE(finalizing, 1)) {
         /* Abort incremental marking and lazy sweeping to speed up shutdown. */
@@ -4170,7 +4170,7 @@ gc_compact_finish(rb_objspace_t *objspace)
         gc_profile_record *record = gc_prof_record(objspace);
         record->moved_objects = objspace->rcompactor.total_moved - record->moved_objects;
     }
-    objspace->flags.during_compacting = FALSE;
+    objspace->during_compacting = FALSE;
 }
 
 struct gc_sweep_context {
@@ -4197,7 +4197,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
         if (bitset & 1) {
             switch (BUILTIN_TYPE(vp)) {
               case T_MOVED:
-                if (RB_UNLIKELY(objspace->flags.during_compacting)) {
+                if (RB_UNLIKELY(objspace->during_compacting)) {
                     /* The sweep cursor shouldn't have made it to any
                      * T_MOVED slots while the compact flag is enabled.
                      * The sweep cursor and compact cursor move in
@@ -4367,7 +4367,7 @@ gc_post_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *s
     gc_report(2, objspace, "post_page_sweep: start.\n");
 
 #if RGENGC_CHECK_MODE
-    if (!objspace->flags.immediate_sweep) {
+    if (!objspace->immediate_sweep) {
         GC_ASSERT(sweep_page->before_sweep);
     }
 #endif
@@ -4423,7 +4423,7 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
     psweep_debug(1, "[gc] gc_sweep_page: heap:%p (%ld) page:%p\n", heap, heap - heaps, sweep_page);
 
 #if RGENGC_CHECK_MODE
-    if (!objspace->flags.immediate_sweep) {
+    if (!objspace->immediate_sweep) {
         GC_ASSERT(sweep_page->before_sweep);
     }
 #endif
@@ -5290,7 +5290,7 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 
 #if USE_PARALLEL_SWEEP
     /* During compaction we defer building the snapshot until gc_sweep_compact has finished */
-    const bool build_snapshot = !objspace->flags.during_compacting;
+    const bool build_snapshot = !objspace->during_compacting;
 
     if (build_snapshot) {
         if (rb_darray_capa(heap->sweep_pages) < heap->total_pages) {
@@ -5415,7 +5415,7 @@ gc_sweep_start(rb_objspace_t *objspace)
     }
 
 #if GC_CAN_COMPILE_COMPACTION
-    if (objspace->flags.during_compacting) {
+    if (objspace->during_compacting) {
         gc_sort_heap_by_compare_func(
             objspace,
             objspace->rcompactor.compare_func ? objspace->rcompactor.compare_func : compare_pinned_slots
@@ -5441,7 +5441,7 @@ gc_sweep_start(rb_objspace_t *objspace)
     psweep_debug(1, "[gc] gc_sweep_start\n");
     bool do_signal = false;
     if (objspace->sweep_thread &&
-            !objspace->flags.during_compacting &&
+            !objspace->during_compacting &&
             !(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
         psweep_debug(-1, "[gc] gc_sweep_start: requesting sweep thread\n");
         objspace->use_background_sweep_thread = true;
@@ -5478,7 +5478,7 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->is_finished_sweeping = true;
     heap->sweeping_page = NULL;
 #if RUBY_DEBUG
-    if (!objspace->flags.was_compacting) {
+    if (!objspace->was_compacting) {
         if (heap->total_pages + heap->unlinked_pages != rb_darray_size(heap->sweep_pages)) {
             rb_bug("sweep_pages:%lu, total_pages:%lu, unlinked pages:%lu\n", rb_darray_size(heap->sweep_pages), heap->total_pages, heap->unlinked_pages);
         }
@@ -5491,7 +5491,7 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 #endif // USE_PARALLEL_SWEEP
 
 #if RUBY_DEBUG
-    if (!objspace->flags.during_compacting) {
+    if (!objspace->during_compacting) {
         objspace->have_swept_slots += swept_slots;
         objspace->have_swept_slots += heap->made_zombies;
         objspace->will_be_swept_slots -= heap->zombie_slots;
@@ -5544,9 +5544,9 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
 #if RUBY_DEBUG
 #if USE_PARALLEL_SWEEP
-    if (!objspace->flags.was_compacting && !objspace->sweep_rest && gc_config_full_mark_val) {
+    if (!objspace->was_compacting && !objspace->sweep_rest && gc_config_full_mark_val) {
 #else
-    if (!objspace->flags.was_compacting && gc_config_full_mark_val) {
+    if (!objspace->was_compacting && gc_config_full_mark_val) {
 #endif
         if (objspace->will_be_swept_slots != objspace->have_swept_slots) {
             fprintf(stderr, "Expecting to free %lu slots, freed %lu slots (major:%d)\n", objspace->will_be_swept_slots, objspace->have_swept_slots, is_full_marking(objspace));
@@ -5559,7 +5559,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
             rb_bug("MISMATCH: marked_slots:%lu, pooled_slots:%lu, empty_pages:%lu", objspace->marked_slots, objspace->rincgc.pooled_slots, objspace->empty_pages_count);
         }
     }
-    objspace->flags.was_compacting = FALSE;
+    objspace->was_compacting = FALSE;
 #endif
 
     gc_prof_set_heap_info(objspace);
@@ -6192,14 +6192,14 @@ static void gc_sweep_compact(rb_objspace_t *objspace);
 static void
 gc_sweep(rb_objspace_t *objspace)
 {
-    const unsigned int immediate_sweep = objspace->flags.immediate_sweep;
+    const unsigned int immediate_sweep = objspace->immediate_sweep;
 
     gc_sweeping_enter(objspace, "gc_sweep");
 
     gc_report(1, objspace, "gc_sweep: immediate: %d\n", immediate_sweep);
 
     gc_sweep_start(objspace);
-    if (objspace->flags.during_compacting) {
+    if (objspace->during_compacting) {
         gc_sweep_compact(objspace);
 #if USE_PARALLEL_SWEEP
         /* Snapshot was deliberately deferred in gc_sweep_start_heap — build it
@@ -6546,7 +6546,7 @@ static inline void
 gc_pin(rb_objspace_t *objspace, VALUE obj)
 {
     GC_ASSERT(!SPECIAL_CONST_P(obj));
-    if (RB_UNLIKELY(objspace->flags.during_compacting)) {
+    if (RB_UNLIKELY(objspace->during_compacting)) {
         if (RB_LIKELY(during_gc)) {
             if (!RVALUE_PINNED(objspace, obj)) {
                 GC_ASSERT(GET_HEAP_PAGE(obj)->pinned_slots <= GET_HEAP_PAGE(obj)->total_slots);
@@ -6570,7 +6570,7 @@ rb_gc_impl_mark_and_move(void *objspace_ptr, VALUE *ptr)
     rb_objspace_t *objspace = objspace_ptr;
 
     if (RB_UNLIKELY(objspace->flags.during_reference_updating)) {
-        GC_ASSERT(objspace->flags.during_compacting);
+        GC_ASSERT(objspace->during_compacting);
         GC_ASSERT(during_gc);
 
         VALUE destination = rb_gc_impl_location(objspace, *ptr);
@@ -7495,7 +7495,7 @@ gc_marks_finish(rb_objspace_t *objspace)
         }
 #endif
 
-        objspace->flags.during_incremental_marking = FALSE;
+        objspace->during_incremental_marking = FALSE;
         /* check children of all marked wb-unprotected objects */
         for (int i = 0; i < HEAP_COUNT; i++) {
             gc_marks_wb_unprotected_objects(objspace, &heaps[i]);
@@ -7528,7 +7528,7 @@ gc_marks_finish(rb_objspace_t *objspace)
 
         int full_marking = is_full_marking(objspace);
 #if RUBY_DEBUG
-        if (!objspace->flags.during_compacting) {
+        if (!objspace->during_compacting) {
             objspace->have_swept_slots = 0;
             objspace->will_be_swept_slots = sweep_slots;
         }
@@ -7851,7 +7851,7 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
                        objspace->marked_slots, objspace->rincgc.pooled_slots, objspace->rincgc.step_slots);
         objspace->during_minor_gc = FALSE;
         if (ruby_enable_autocompact) {
-            objspace->flags.during_compacting |= TRUE;
+            objspace->during_compacting |= TRUE;
         }
         objspace->profile.major_gc_count++;
         objspace->rgengc.uncollectible_wb_unprotected_objects = 0;
@@ -7864,7 +7864,7 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
             rgengc_mark_and_rememberset_clear(objspace, heap);
             heap_move_pooled_pages_to_free_pages(heap);
 
-            if (objspace->flags.during_compacting) {
+            if (objspace->during_compacting) {
                 struct heap_page *page = NULL;
 
                 ccan_list_for_each(&heap->pages, page, page_node) {
@@ -8149,7 +8149,7 @@ gc_writebarrier_incremental(VALUE a, VALUE b, rb_objspace_t *objspace)
             rgengc_remember(objspace, a);
         }
 
-        if (RB_UNLIKELY(objspace->flags.during_compacting)) {
+        if (RB_UNLIKELY(objspace->during_compacting)) {
             MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(b), b);
         }
     }
@@ -8501,7 +8501,7 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
     gc_enter(objspace, gc_enter_event_start, &lock_lev);
 
     /* reason may be clobbered, later, so keep set immediate_sweep here */
-    objspace->flags.immediate_sweep = !!(reason & GPR_FLAG_IMMEDIATE_SWEEP);
+    objspace->immediate_sweep = !!(reason & GPR_FLAG_IMMEDIATE_SWEEP);
 
 #if RGENGC_CHECK_MODE >= 2
     gc_verify_internal_consistency(objspace);
@@ -8514,7 +8514,7 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
             do_full_mark = TRUE;
         }
 
-        objspace->flags.immediate_sweep = !(flag & (1<<gc_stress_no_immediate_sweep));
+        objspace->immediate_sweep = !(flag & (1<<gc_stress_no_immediate_sweep));
     }
 
     if (gc_needs_major_flags) {
@@ -8532,41 +8532,41 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
         reason |= GPR_FLAG_MAJOR_BY_FORCE; /* GC by CAPI, METHOD, and so on. */
     }
 
-    if (objspace->flags.dont_incremental ||
+    if (objspace->dont_incremental ||
             reason & GPR_FLAG_IMMEDIATE_MARK ||
             ruby_gc_stressful) {
-        objspace->flags.during_incremental_marking = FALSE;
+        objspace->during_incremental_marking = FALSE;
     }
     else {
-        objspace->flags.during_incremental_marking = do_full_mark;
+        objspace->during_incremental_marking = do_full_mark;
     }
 
     /* Explicitly enable compaction (GC.compact) */
     if (do_full_mark && ruby_enable_autocompact) {
-        objspace->flags.during_compacting = TRUE;
+        objspace->during_compacting = TRUE;
 #if RUBY_DEBUG
-        objspace->flags.was_compacting =  TRUE;
+        objspace->was_compacting =  TRUE;
 #endif
 #if RGENGC_CHECK_MODE
         objspace->rcompactor.compare_func = ruby_autocompact_compare_func;
 #endif
     }
     else {
-        objspace->flags.during_compacting = !!(reason & GPR_FLAG_COMPACT);
+        objspace->during_compacting = !!(reason & GPR_FLAG_COMPACT);
 #if RUBY_DEBUG
-        objspace->flags.was_compacting = objspace->flags.during_compacting;
+        objspace->was_compacting = objspace->during_compacting;
 #endif
     }
 
-    if (!GC_ENABLE_LAZY_SWEEP || objspace->flags.dont_incremental) {
-        objspace->flags.immediate_sweep = TRUE;
+    if (!GC_ENABLE_LAZY_SWEEP || objspace->dont_incremental) {
+        objspace->immediate_sweep = TRUE;
     }
 
-    if (objspace->flags.immediate_sweep) reason |= GPR_FLAG_IMMEDIATE_SWEEP;
+    if (objspace->immediate_sweep) reason |= GPR_FLAG_IMMEDIATE_SWEEP;
 
     gc_report(1, objspace, "gc_start(reason: %x) => %u, %d, %d\n",
               reason,
-              do_full_mark, !is_incremental_marking(objspace), objspace->flags.immediate_sweep);
+              do_full_mark, !is_incremental_marking(objspace), objspace->immediate_sweep);
 
     RB_DEBUG_COUNTER_INC(gc_count);
 
@@ -8936,7 +8936,7 @@ gc_sweeping_enter(rb_objspace_t *objspace, const char *from_fn)
     GC_ASSERT(during_gc != 0);
 
 #if USE_PARALLEL_SWEEP
-    MAYBE_UNUSED(const unsigned int immediate_sweep) = objspace->flags.immediate_sweep;
+    MAYBE_UNUSED(const unsigned int immediate_sweep) = objspace->immediate_sweep;
     psweep_debug(1, "[gc] gc_sweeping_enter from %s (immediate:%u)\n", from_fn, immediate_sweep);
     sweep_lock_lock(objspace);
     {
