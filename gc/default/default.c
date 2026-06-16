@@ -700,6 +700,8 @@ typedef struct rb_objspace {
         double invoke_time;
 
         size_t minor_gc_count;
+        size_t minor_gc_count_by_newobj;
+        size_t minor_gc_count_by_malloc;
         size_t major_gc_count;
         size_t major_gc_count_by_nofree;
         size_t major_gc_count_by_oldgen;
@@ -8713,6 +8715,9 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
     else {
         (void)RB_DEBUG_COUNTER_INC_IF(gc_minor_newobj, reason & GPR_FLAG_NEWOBJ);
         (void)RB_DEBUG_COUNTER_INC_IF(gc_minor_malloc, reason & GPR_FLAG_MALLOC);
+
+        if (reason & GPR_FLAG_NEWOBJ) objspace->profile.minor_gc_count_by_newobj++;
+        if (reason & GPR_FLAG_MALLOC) objspace->profile.minor_gc_count_by_malloc++;
         (void)RB_DEBUG_COUNTER_INC_IF(gc_minor_method, reason & GPR_FLAG_METHOD);
         (void)RB_DEBUG_COUNTER_INC_IF(gc_minor_capi,   reason & GPR_FLAG_CAPI);
         (void)RB_DEBUG_COUNTER_INC_IF(gc_minor_stress, reason & GPR_FLAG_STRESS);
@@ -9782,6 +9787,8 @@ enum gc_stat_sym {
     gc_stat_sym_malloc_increase_bytes,
     gc_stat_sym_malloc_increase_bytes_limit,
     gc_stat_sym_minor_gc_count,
+    gc_stat_sym_minor_gc_count_by_newobj,
+    gc_stat_sym_minor_gc_count_by_malloc,
     gc_stat_sym_major_gc_count,
     gc_stat_sym_major_gc_count_by_nofree,
     gc_stat_sym_major_gc_count_by_oldgen,
@@ -9846,6 +9853,8 @@ setup_gc_stat_symbols(void)
         S(malloc_increase_bytes);
         S(malloc_increase_bytes_limit);
         S(minor_gc_count);
+        S(minor_gc_count_by_newobj);
+        S(minor_gc_count_by_malloc);
         S(major_gc_count);
         S(major_gc_count_by_nofree);
         S(major_gc_count_by_oldgen);
@@ -9942,6 +9951,8 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(malloc_increase_bytes, gc_malloc_counters_increase_unsigned(objspace, &objspace->malloc_counters.counters));
     SET(malloc_increase_bytes_limit, malloc_limit);
     SET(minor_gc_count, objspace->profile.minor_gc_count);
+    SET(minor_gc_count_by_newobj, objspace->profile.minor_gc_count_by_newobj);
+    SET(minor_gc_count_by_malloc, objspace->profile.minor_gc_count_by_malloc);
     SET(major_gc_count, objspace->profile.major_gc_count);
     SET(major_gc_count_by_nofree, objspace->profile.major_gc_count_by_nofree);
     SET(major_gc_count_by_oldgen, objspace->profile.major_gc_count_by_oldgen);
