@@ -2734,7 +2734,8 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
     GC_ASSERT(heap->free_pages == NULL);
 
 #if USE_PARALLEL_SWEEP
-    if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) && heap_is_sweep_done(objspace, heap)) {
+    if (heap->total_slots < (gc_params.heap_init_bytes / heap->slot_size) &&
+         (objspace->sweeping_heap_count == 0 || heap_is_sweep_done(objspace, heap))) {
         heap_page_allocate_and_initialize_force(objspace, heap);
         GC_ASSERT(heap->free_pages != NULL);
         return;
