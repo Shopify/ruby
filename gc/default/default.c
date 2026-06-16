@@ -5259,6 +5259,8 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 #if RUBY_DEBUG
     heap->unlinked_pages = 0;
 #endif
+    GC_ASSERT(heap->freed_slots == 0);
+    GC_ASSERT(heap->empty_slots == 0);
 
 #if USE_PARALLEL_SWEEP
     heap->background_sweep_steps = heap->foreground_sweep_steps;
