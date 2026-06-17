@@ -532,9 +532,6 @@ typedef struct rb_heap_struct {
     uintptr_t compact_cursor_index;
     struct heap_page *pooled_pages;
     size_t total_pages;      /* total page count in a heap */
-#if RUBY_DEBUG
-    size_t unlinked_pages;
-#endif
     size_t total_slots;      /* total slot count */
 #if RUBY_DEBUG
     rb_atomic_t made_zombies;
@@ -2331,9 +2328,6 @@ heap_unlink_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pag
     GC_ASSERT(heap->total_slots >= page->total_slots);
     GC_ASSERT(page->total_slots > 0);
     heap->total_slots -= page->total_slots;
-#if RUBY_DEBUG
-    heap->unlinked_pages++;
-#endif
 }
 
 static void
@@ -5222,16 +5216,12 @@ gc_sweep_thread_func(void *ptr)
 static void
 gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 {
-    // Background thread is not sweeping right now
     heap->sweeping_page = ccan_list_top(&heap->pages, struct heap_page, page_node);
     if (heap->sweeping_page) {
         objspace->sweeping_heap_count++;
     }
     heap->free_pages = NULL;
     heap->pooled_pages = NULL;
-#if RUBY_DEBUG
-    heap->unlinked_pages = 0;
-#endif
     GC_ASSERT(heap->freed_slots == 0);
     GC_ASSERT(heap->empty_slots == 0);
 
@@ -5509,11 +5499,6 @@ gc_sweep_finish_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->is_finished_sweeping = true;
     heap->sweeping_page = NULL;
 #if RUBY_DEBUG
-    if (!objspace->was_compacting) {
-        if (heap->total_pages + heap->unlinked_pages != rb_darray_size(heap->sweep_pages)) {
-            rb_bug("sweep_pages:%lu, total_pages:%lu, unlinked pages:%lu\n", rb_darray_size(heap->sweep_pages), heap->total_pages, heap->unlinked_pages);
-        }
-    }
     for (size_t i = 0; i < rb_darray_size(heap->sweep_pages); i++) {
         struct heap_page *page = rb_darray_get(heap->sweep_pages, i);
         GC_ASSERT(!page->before_sweep);
