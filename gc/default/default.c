@@ -4826,7 +4826,7 @@ done_worker_incremental_sweep_steps_p(rb_objspace_t *objspace, rb_heap_t *heap)
 }
 #endif // USE_PARALLEL_SWEEP
 
-static bool
+MAYBE_UNUSED(static bool)
 bitmap_is_all_zero(bits_t *bits, size_t count)
 {
     for (size_t i = 0; i < count; i++) {
@@ -4892,17 +4892,10 @@ sweep_claim_chunk(rb_heap_t *heap, size_t *out_start, size_t *out_end, int chunk
     size_t total = rb_darray_size(heap->sweep_pages);
     if (total == 0) return false;
 
-    /* Single atomic fetch_add bumps the shared claim_index. The Ruby thread
-     * additionally tracks its own contribution in ruby_th_claimed (kept
-     * adjacent to the fetch_add), so the worker's in_flight is derived as
-     * claim_index - ruby_th_claimed. No refund: any over-credit to in_flight
-     * is cancelled out by sweep_true_in_flight. */
     size_t prev = rbimpl_atomic_size_fetch_add(&heap->sweep_claim_index, (size_t)chunk_sz, RBIMPL_ATOMIC_ACQ_REL);
     if (!is_sweep_thread) heap->ruby_th_claimed += chunk_sz;
     size_t start = prev;
     if (start >= total) {
-        /* Full no-work overshoot. The Ruby thread tracks its own contribution
-         * locally so the observer can attribute the rest to the worker. */
         if (!is_sweep_thread) {
             heap->sweep_claim_overshoot += chunk_sz;
         }
@@ -5169,30 +5162,23 @@ gc_sweep_thread_func(void *ptr)
             objspace->sweep_thread_waiting_request = false;
             psweep_debug(1, "[sweep] sweep_thread wake\n"); // requested or signalled to exit
         }
-        if (!objspace->sweep_thread_running) {
+        objspace->sweep_thread_sweep_requested = false;
+        if (!objspace->sweep_thread_running || objspace->background_sweep_abort) {
             break;
         }
 
-        objspace->sweep_thread_sweep_requested = false;
         objspace->background_sweep_restart_heaps = false;
         objspace->sweep_thread_sweeping = true;
 
-    bool done_all;
-    bool restart;
-    bool abort;
+        bool done_all;
+        bool restart;
+        bool abort;
     restart_heaps:
         done_all = false;
         restart = false;
         abort = false;
         for (int i = 0; i < HEAP_COUNT; i++) {
             rb_heap_t *heap = &heaps[i];
-            if (RB_UNLIKELY(objspace->background_sweep_mode && objspace->background_sweep_abort)) {
-                break;
-            }
-            if (objspace->background_sweep_mode && objspace->background_sweep_restart_heaps) {
-                objspace->background_sweep_restart_heaps = false;
-                goto restart_heaps;
-            }
             enum sweep_step_worker_state state = gc_sweep_step_worker(objspace, heap);
             switch (state) {
                 case WORKER_SKIP_HEAP:
