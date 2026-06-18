@@ -2190,6 +2190,11 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
 {
     rb_objspace_t *objspace = objspace_ptr;
 
+    // FIXME: remove
+    if (BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || BUILTIN_TYPE(ptr) == T_ZOMBIE) {
+        return true;
+    }
+
     /* Asking whether a freed (T_NONE), moved (T_MOVED), or finalized (T_ZOMBIE)
      * object is garbage gives an unreliable answer: the slot may since have been
      * reused for an unrelated object. A reference to one of these is stale and a
@@ -2200,7 +2205,7 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
         GC_ASSERT(BUILTIN_TYPE(ptr) != T_ZOMBIE);
     }
 
-    return is_lazy_sweeping(objspace) && GET_HEAP_PAGE(ptr)->flags.before_sweep &&
+    return is_lazy_sweeping(objspace) && GET_HEAP_PAGE(ptr)->before_sweep &&
         !RVALUE_MARKED(objspace, ptr);
 }
 
@@ -4229,9 +4234,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 CHECK(RVALUE_UNCOLLECTIBLE);
 #undef CHECK
 #endif
-                if (RB_UNLIKELY(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
-                    rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
-                }
 
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
                     gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
@@ -4645,16 +4647,11 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 if (!data) {
                     goto free;
                 }
-                // NOTE: this repeats code found in `rb_data_free`.
-                bool free_immediately = false;
+                // NOTE: this repeats int found in `rb_data_free`.
                 void (*dfree)(void *);
-                if (RTYPEDDATA_P(vp)) {
-                    free_immediately = (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_FREE_IMMEDIATELY) != 0 && (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_CONCURRENT_FREE_SAFE) != 0;
-                    dfree = RTYPEDDATA_TYPE(vp)->function.dfree;
-                }
-                else {
-                    dfree = RDATA(vp)->dfree;
-                }
+                int free_immediately = (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_FREE_IMMEDIATELY) != 0 && (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_CONCURRENT_FREE_SAFE) != 0;
+                dfree = RTYPEDDATA_TYPE(vp)->function.dfree;
+
                 if (!dfree || dfree == RUBY_DEFAULT_FREE || free_immediately) {
                     goto free;
                 }
@@ -5424,6 +5421,10 @@ gc_sweep_start(rb_objspace_t *objspace)
 #endif
 #endif // PARALLEL_SWEEP
 
+    if (RB_UNLIKELY(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
+        gc_sweep_freeobj_hooks(objspace);
+    }
+
     for (int table = 0; table < RB_GC_VM_WEAK_TABLE_COUNT; table++) {
         if (!rb_gc_vm_weak_table_essential_p(table)) continue;
         rb_gc_vm_weak_table_foreach(
@@ -5461,9 +5462,7 @@ gc_sweep_start(rb_objspace_t *objspace)
 #if USE_PARALLEL_SWEEP
     psweep_debug(1, "[gc] gc_sweep_start\n");
     bool do_signal = false;
-    if (objspace->sweep_thread &&
-            !objspace->during_compacting &&
-            !(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
+    if (objspace->sweep_thread && !objspace->during_compacting) {
         psweep_debug(-1, "[gc] gc_sweep_start: requesting sweep thread\n");
         objspace->use_background_sweep_thread = true;
         sweep_lock_lock(objspace);
