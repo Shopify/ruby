@@ -761,10 +761,11 @@ VALUE
 rb_concurrent_set_delete_by_identity(VALUE *set_obj_ptr, VALUE key)
 {
     VALUE result;
-    bool is_sweep_thread_p(void);
 
     VALUE set_obj = rbimpl_atomic_value_load(set_obj_ptr, RBIMPL_ATOMIC_ACQUIRE);
 
+#if USE_PARALLEL_SWEEP
+    bool is_sweep_thread_p(void);
     if (is_sweep_thread_p()) {
         while (1) {
             bool lock_taken = resize_lock_rdlock();
@@ -783,7 +784,9 @@ rb_concurrent_set_delete_by_identity(VALUE *set_obj_ptr, VALUE key)
             if (lock_taken) resize_lock_rdunlock();
         }
     }
-    else {
+    else
+#endif
+    {
         result = rb_concurrent_set_delete_by_identity_locked(set_obj, key);
     }
     return result;

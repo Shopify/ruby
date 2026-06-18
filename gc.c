@@ -151,6 +151,7 @@ rb_gc_vm_unlock(unsigned int lev, const char *file, int line)
     rb_vm_lock_leave(&lev, file, line);
 }
 
+#if USE_PARALLEL_SWEEP
 bool
 is_sweep_thread_p(void)
 {
@@ -158,11 +159,14 @@ is_sweep_thread_p(void)
     if (!vm) return false;
     return vm->gc.sweep_thread == pthread_self();
 }
+#endif
 
 unsigned int
 rb_gc_cr_lock(const char *file, int line)
 {
+#if USE_PARALLEL_SWEEP
     GC_ASSERT(!is_sweep_thread_p());
+#endif
     unsigned int lev;
     rb_vm_lock_enter_cr(GET_RACTOR(), &lev, file, line);
     return lev;
@@ -171,7 +175,9 @@ rb_gc_cr_lock(const char *file, int line)
 void
 rb_gc_cr_unlock(unsigned int lev, const char *file, int line)
 {
+#if USE_PARALLEL_SWEEP
     GC_ASSERT(!is_sweep_thread_p());
+#endif
     rb_vm_lock_leave_cr(GET_RACTOR(), &lev, file, line);
 }
 
@@ -2498,6 +2504,7 @@ obj_free_object_id(VALUE obj, bool in_user_gc_thread)
     return true;
 }
 
+#if USE_PARALLEL_SWEEP
 bool
 rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
 {
@@ -2522,6 +2529,7 @@ rb_gc_obj_free_concurrency_safe_vm_weak_references(VALUE obj)
     }
     return result;
 }
+#endif
 
 void
 rb_gc_obj_free_vm_weak_references(VALUE obj)
