@@ -198,7 +198,6 @@
 #ifdef RB_THREAD_LOCAL_SPECIFIER
 #define USE_MALLOC_INCREASE_LOCAL 1
 static RB_THREAD_LOCAL_SPECIFIER int malloc_increase_local;
-static RB_THREAD_LOCAL_SPECIFIER struct heap_page *current_sweep_thread_page;
 #else
 #define USE_MALLOC_INCREASE_LOCAL 0
 #endif
@@ -4878,9 +4877,6 @@ gc_pre_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *pa
     psweep_debug(1, "[sweep] gc_pre_sweep_page(heap:%p page:%p) start\n", heap, page);
     GC_ASSERT(page->heap == heap);
     GC_ASSERT(page->pre_deferred_free_slots == 0);
-#if USE_MALLOC_INCREASE_LOCAL
-    current_sweep_thread_page = page;
-#endif
     asan_unlock_freelist(page);
     page->free_region = NULL;
 
@@ -4985,7 +4981,7 @@ move_to_empty_pages(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *
     objspace->empty_pages = page;
 }
 
-static void malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size, struct heap_page *sweep_thread_page);
+static void malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size);
 
 #if USE_PARALLEL_SWEEP
 static void
@@ -10478,7 +10474,7 @@ objspace_malloc_gc_stress(rb_objspace_t *objspace)
 }
 
 static void
-malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size, struct heap_page *sweep_thread_page)
+malloc_increase_commit(rb_objspace_t *objspace, size_t new_size, size_t old_size)
 {
     if (new_size > old_size) {
 #if USE_PARALLEL_SWEEP
@@ -10512,10 +10508,10 @@ malloc_increase_local_flush(rb_objspace_t *objspace)
 
     malloc_increase_local = 0;
     if (delta > 0) {
-        malloc_increase_commit(objspace, (size_t)delta, 0, NULL);
+        malloc_increase_commit(objspace, (size_t)delta, 0);
     }
     else {
-        malloc_increase_commit(objspace, 0, (size_t)(-delta), current_sweep_thread_page);
+        malloc_increase_commit(objspace, 0, (size_t)(-delta));
     }
 }
 #else
@@ -10552,10 +10548,10 @@ objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_siz
     }
     else {
         malloc_increase_local_flush(objspace);
-        malloc_increase_commit(objspace, new_size, old_size, current_sweep_thread_page);
+        malloc_increase_commit(objspace, new_size, old_size);
     }
 #else
-    malloc_increase_commit(objspace, new_size, old_size, NULL);
+    malloc_increase_commit(objspace, new_size, old_size);
 #endif
 
     if (type == MEMOP_TYPE_MALLOC && gc_allowed) {
