@@ -5,6 +5,8 @@
 #include "id_table.h"
 #include "vm_debug.h"
 
+// FIXME: parallel sweep
+#define RACTOR_CHECK_MODE 0
 #ifndef RACTOR_CHECK_MODE
 #define RACTOR_CHECK_MODE (VM_CHECK_MODE || RUBY_DEBUG) && (SIZEOF_UINT64_T == SIZEOF_VALUE)
 #endif
