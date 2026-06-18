@@ -5756,17 +5756,8 @@ gc_sweep_finish(rb_objspace_t *objspace)
 static struct heap_page *
 gc_sweep_dequeue_page(rb_objspace_t *objspace, rb_heap_t *heap, bool free_in_user_thread, bool *dequeued_unswept_page)
 {
-    /* 1) Resume an outstanding claimed range. */
-    if (heap->claimed_local_start < heap->claimed_local_end) {
-        GC_ASSERT(heap->claimed_local_end <= rb_darray_size(heap->sweep_pages));
-        GC_ASSERT(heap->claimed_local_start < rb_darray_size(heap->sweep_pages));
-        struct heap_page *page = heap->sweep_pages->data[heap->claimed_local_start++];
-        *dequeued_unswept_page = true;
-        psweep_debug(0, "[gc] gc_sweep_dequeue_page: got claimed page:%p (heap %ld)\n", page, heap - heaps);
-        return page;
-    }
 
-    /* 2) Local drain cache from a previous bulk grab. */
+    /* 1) Local drain cache from a previous bulk grab. */
 retry:
     if (heap->drained_local) {
         struct heap_page *page = heap->drained_local;
@@ -5778,10 +5769,19 @@ retry:
     }
 retry_drain:
 
-    /* 3) Bulk-drain the worker's pre-swept stack with one xchg. */
+    /* 2) Bulk-drain the worker's pre-swept stack with one xchg. */
     heap->drained_local = sweep_stack_drain(heap);
     if (heap->drained_local) goto retry;
 
+    /* 3) Resume an outstanding claimed range. */
+    if (heap->claimed_local_start < heap->claimed_local_end) {
+        GC_ASSERT(heap->claimed_local_end <= rb_darray_size(heap->sweep_pages));
+        GC_ASSERT(heap->claimed_local_start < rb_darray_size(heap->sweep_pages));
+        struct heap_page *page = heap->sweep_pages->data[heap->claimed_local_start++];
+        *dequeued_unswept_page = true;
+        psweep_debug(0, "[gc] gc_sweep_dequeue_page: got claimed page:%p (heap %ld)\n", page, heap - heaps);
+        return page;
+    }
 
     /* 4) Claim a fresh chunk. */
     if (sweep_claim_chunk(heap, &heap->claimed_local_start, &heap->claimed_local_end, SWEEP_CHUNK, false)) {
