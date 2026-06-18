@@ -2273,8 +2273,6 @@ build_id2ref_i(VALUE obj, void *data)
 {
     st_table *id2ref_tbl = (st_table *)data;
 
-    if (rb_objspace_garbage_object_p(obj)) return;
-
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
       case T_MODULE:

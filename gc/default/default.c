@@ -2192,11 +2192,6 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
 {
     rb_objspace_t *objspace = objspace_ptr;
 
-    // FIXME: remove
-    if (BUILTIN_TYPE(ptr) == T_NONE || BUILTIN_TYPE(ptr) == T_MOVED || BUILTIN_TYPE(ptr) == T_ZOMBIE) {
-        return true;
-    }
-
     /* Asking whether a freed (T_NONE), moved (T_MOVED), or finalized (T_ZOMBIE)
      * object is garbage gives an unreliable answer: the slot may since have been
      * reused for an unrelated object. A reference to one of these is stale and a
