@@ -220,6 +220,23 @@ rb_zjit_local_id(const rb_iseq_t *iseq, unsigned idx)
     return ISEQ_BODY(iseq)->local_table[idx];
 }
 
+// True if `blockiseq` (or any iseq nested within it) has bytecode that assigns
+// to the outer local variable named `id`.
+// The same table backs Ractor.shareable_proc's isolation checks.
+bool
+rb_zjit_iseq_writes_outer_local_p(const rb_iseq_t *blockiseq, ID id)
+{
+    struct rb_id_table *ovs = ISEQ_BODY(blockiseq)->outer_variables;
+    if (ovs == NULL) return false;
+    VALUE write = Qfalse;
+    if (rb_id_table_lookup(ovs, id, &write)) {
+        // Table entry precense means local is referenced.
+        // Truth entry means it's referenced through a setlocal.
+        return RTEST(write);
+    }
+    return false;
+}
+
 bool rb_zjit_cme_is_cfunc(const rb_callable_method_entry_t *me, const void *func);
 
 const struct rb_callable_method_entry_struct *

@@ -5082,6 +5082,41 @@ impl Function {
         self.push_insn(block, Insn::PatchPoint { invariant: Invariant::NoEPEscape(iseq), state: reload_exit_id });
     }
 
+    /// After a call that takes a block iseq, reload the locals that the block (or any iseq nested
+    /// within it) may have written. This covers syntactically visible local writes where the
+    /// environment does not escape. Exordinary modifications through `Binding` and debug.h APIs are
+    /// handled via patchpoints.
+    fn reload_locals_modified_by_block(
+        &mut self,
+        block: BlockId,
+        iseq: IseqPtr,
+        blockiseq: IseqPtr,
+        state: &mut FrameState,
+        ep_escaped: bool,
+    ) {
+        let to_reload = (0..state.locals.len())
+            .filter(|&local_idx| {
+                let id = unsafe { rb_zjit_local_id(iseq, local_idx.try_into().unwrap()) };
+                unsafe { rb_zjit_iseq_writes_outer_local_p(blockiseq, id) }
+            });
+        let mut base: Option<InsnId> = None;
+        for local_idx in to_reload {
+            let ep_offset = local_idx_to_ep_offset(iseq, local_idx);
+            let ep_offset_u32 = u32::try_from(ep_offset)
+                .unwrap_or_else(|_| panic!("Could not convert ep_offset {ep_offset} to u32"));
+            let recv = *base.get_or_insert_with(|| {
+                let base_insn = if !ep_escaped { Insn::LoadSP } else { Insn::GetEP { level: 0 } };
+                self.push_insn(block, base_insn)
+            });
+            let val = if !ep_escaped {
+                self.get_local_from_sp(block, iseq, recv, ep_offset_u32, types::BasicObject)
+            } else {
+                self.get_local_from_ep(block, iseq, recv, ep_offset_u32, 0, types::BasicObject)
+            };
+            state.setlocal(ep_offset_u32, val);
+        }
+    }
+
     fn count_not_inlined_cfunc(&mut self, block: BlockId, cme: *const rb_callable_method_entry_t) {
         let owner = unsafe { (*cme).owner };
         let called_id = unsafe { (*cme).called_id };
@@ -8770,29 +8805,12 @@ fn add_iseq_to_hir(
                     let send = fun.push_insn(block, Insn::Send { recv, cd, block: block_handler, args, state: exit_id, reason: Uncategorized(opcode) });
                     state.stack_push(send);
 
-                    if let Some(BlockHandler::BlockIseq(_)) = block_handler {
+                    if let Some(BlockHandler::BlockIseq(blockiseq)) = block_handler {
                         // Reload locals that may have been modified by the blockiseq.
-                        // TODO: Avoid reloading locals that are not referenced by the blockiseq
-                        // or not used after this. Max thinks we could eventually DCE them.
                         if !ep_escaped && !state.locals.is_empty() {
                             fun.gen_post_send_no_ep_escape_patch_point(block, &state, insn_idx);
                         }
-                        let mut base: Option<InsnId> = None;
-                        for local_idx in 0..state.locals.len() {
-                            let ep_offset = local_idx_to_ep_offset(iseq, local_idx);
-                            let ep_offset_u32 = u32::try_from(ep_offset)
-                                .unwrap_or_else(|_| panic!("Could not convert ep_offset {ep_offset} to u32"));
-                            let recv = *base.get_or_insert_with(|| {
-                                let base_insn = if !ep_escaped { Insn::LoadSP } else { Insn::GetEP { level: 0 } };
-                                fun.push_insn(block, base_insn)
-                            });
-                            let val = if !ep_escaped {
-                                fun.get_local_from_sp(block, iseq, recv, ep_offset_u32, types::BasicObject)
-                            } else {
-                                fun.get_local_from_ep(block, iseq, recv, ep_offset_u32, 0, types::BasicObject)
-                            };
-                            state.setlocal(ep_offset_u32, val);
-                        }
+                        fun.reload_locals_modified_by_block(block, iseq, blockiseq, &mut state, ep_escaped);
                     }
                 }
                 YARVINSN_sendforward => {
@@ -8823,22 +8841,7 @@ fn add_iseq_to_hir(
                         if !ep_escaped && !state.locals.is_empty() {
                             fun.gen_post_send_no_ep_escape_patch_point(block, &state, insn_idx);
                         }
-                        let mut base: Option<InsnId> = None;
-                        for local_idx in 0..state.locals.len() {
-                            let ep_offset = local_idx_to_ep_offset(iseq, local_idx);
-                            let ep_offset_u32 = u32::try_from(ep_offset)
-                                .unwrap_or_else(|_| panic!("Could not convert ep_offset {ep_offset} to u32"));
-                            let recv = *base.get_or_insert_with(|| {
-                                let base_insn = if !ep_escaped { Insn::LoadSP } else { Insn::GetEP { level: 0 } };
-                                fun.push_insn(block, base_insn)
-                            });
-                            let val = if !ep_escaped {
-                                fun.get_local_from_sp(block, iseq, recv, ep_offset_u32, types::BasicObject)
-                            } else {
-                                fun.get_local_from_ep(block, iseq, recv, ep_offset_u32, 0, types::BasicObject)
-                            };
-                            state.setlocal(ep_offset_u32, val);
-                        }
+                        fun.reload_locals_modified_by_block(block, iseq, blockiseq, &mut state, ep_escaped);
                     }
                 }
                 YARVINSN_invokesuper => {
@@ -8863,27 +8866,10 @@ fn add_iseq_to_hir(
 
                     if !blockiseq.is_null() {
                         // Reload locals that may have been modified by the blockiseq.
-                        // TODO: Avoid reloading locals that are not referenced by the blockiseq
-                        // or not used after this. Max thinks we could eventually DCE them.
                         if !ep_escaped && !state.locals.is_empty() {
                             fun.gen_post_send_no_ep_escape_patch_point(block, &state, insn_idx);
                         }
-                        let mut base: Option<InsnId> = None;
-                        for local_idx in 0..state.locals.len() {
-                            let ep_offset = local_idx_to_ep_offset(iseq, local_idx);
-                            let ep_offset_u32 = u32::try_from(ep_offset)
-                                .unwrap_or_else(|_| panic!("Could not convert ep_offset {ep_offset} to u32"));
-                            let recv = *base.get_or_insert_with(|| {
-                                let base_insn = if !ep_escaped { Insn::LoadSP } else { Insn::GetEP { level: 0 } };
-                                fun.push_insn(block, base_insn)
-                            });
-                            let val = if !ep_escaped {
-                                fun.get_local_from_sp(block, iseq, recv, ep_offset_u32, types::BasicObject)
-                            } else {
-                                fun.get_local_from_ep(block, iseq, recv, ep_offset_u32, 0, types::BasicObject)
-                            };
-                            state.setlocal(ep_offset_u32, val);
-                        }
+                        fun.reload_locals_modified_by_block(block, iseq, blockiseq, &mut state, ep_escaped);
                     }
                 }
                 YARVINSN_invokesuperforward => {
@@ -8910,27 +8896,10 @@ fn add_iseq_to_hir(
 
                     if !blockiseq.is_null() {
                         // Reload locals that may have been modified by the blockiseq.
-                        // TODO: Avoid reloading locals that are not referenced by the blockiseq
-                        // or not used after this. Max thinks we could eventually DCE them.
                         if !ep_escaped && !state.locals.is_empty() {
                             fun.gen_post_send_no_ep_escape_patch_point(block, &state, insn_idx);
                         }
-                        let mut base: Option<InsnId> = None;
-                        for local_idx in 0..state.locals.len() {
-                            let ep_offset = local_idx_to_ep_offset(iseq, local_idx);
-                            let ep_offset_u32 = u32::try_from(ep_offset)
-                                .unwrap_or_else(|_| panic!("Could not convert ep_offset {ep_offset} to u32"));
-                            let recv = *base.get_or_insert_with(|| {
-                                let base_insn = if !ep_escaped { Insn::LoadSP } else { Insn::GetEP { level: 0 } };
-                                fun.push_insn(block, base_insn)
-                            });
-                            let val = if !ep_escaped {
-                                fun.get_local_from_sp(block, iseq, recv, ep_offset_u32, types::BasicObject)
-                            } else {
-                                fun.get_local_from_ep(block, iseq, recv, ep_offset_u32, 0, types::BasicObject)
-                            };
-                            state.setlocal(ep_offset_u32, val);
-                        }
+                        fun.reload_locals_modified_by_block(block, iseq, blockiseq, &mut state, ep_escaped);
                     }
                 }
                 YARVINSN_invokeblock => {

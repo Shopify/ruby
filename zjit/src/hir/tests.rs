@@ -2007,10 +2007,132 @@ pub(crate) mod hir_build_tests {
         bb3(v9:BasicObject, v10:BasicObject):
           v15:BasicObject = Send v10, 0x1008, :each # SendFallbackReason: Uncategorized(send)
           PatchPoint NoEPEscape(test)
-          v18:CPtr = LoadSP
-          v19:BasicObject = LoadField v18, :a@0x1000
           CheckInterrupts
           Return v15
+        ");
+    }
+
+    #[test]
+    fn test_send_with_block_reloads_only_written_locals() {
+        eval("
+            def foo = yield
+            def test
+              a = 1
+              b = 2
+              foo { a = 3 }
+              a + b
+            end
+            test
+        ");
+        assert_contains_opcode("test", YARVINSN_send);
+        // Only `a` is reloaded after the call; `b` is never written by the block,
+        // so it keeps its SSA value (the Fixnum constant) and is not reloaded.
+        assert_snapshot!(hir_string("test"), @"
+        fn test@<compiled>:4:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          v2:NilClass = Const Value(nil)
+          v3:NilClass = Const Value(nil)
+          Jump bb3(v1, v2, v3)
+        bb2():
+          EntryPoint JIT(0)
+          v6:BasicObject = LoadArg :self@0
+          v7:NilClass = Const Value(nil)
+          v8:NilClass = Const Value(nil)
+          Jump bb3(v6, v7, v8)
+        bb3(v10:BasicObject, v11:NilClass, v12:NilClass):
+          v16:Fixnum[1] = Const Value(1)
+          v20:Fixnum[2] = Const Value(2)
+          v25:BasicObject = Send v10, 0x1000, :foo # SendFallbackReason: Uncategorized(send)
+          PatchPoint NoEPEscape(test)
+          v28:CPtr = LoadSP
+          v29:BasicObject = LoadField v28, :a@0x1028
+          PatchPoint NoEPEscape(test)
+          v38:BasicObject = Send v29, :+, v20 # SendFallbackReason: Uncategorized(opt_plus)
+          CheckInterrupts
+          Return v38
+        ");
+    }
+
+    #[test]
+    fn test_send_with_block_does_not_reload_read_only_local() {
+        eval("
+            def foo = yield
+            def test
+              a = 1
+              foo { a }
+              a
+            end
+            test
+        ");
+        assert_contains_opcode("test", YARVINSN_send);
+        // The block only reads `a`; it never assigns it, so `a` keeps its SSA value
+        // and is not reloaded after the call.
+        assert_snapshot!(hir_string("test"), @"
+        fn test@<compiled>:4:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          v2:NilClass = Const Value(nil)
+          Jump bb3(v1, v2)
+        bb2():
+          EntryPoint JIT(0)
+          v5:BasicObject = LoadArg :self@0
+          v6:NilClass = Const Value(nil)
+          Jump bb3(v5, v6)
+        bb3(v8:BasicObject, v9:NilClass):
+          v13:Fixnum[1] = Const Value(1)
+          v18:BasicObject = Send v8, 0x1000, :foo # SendFallbackReason: Uncategorized(send)
+          PatchPoint NoEPEscape(test)
+          PatchPoint NoEPEscape(test)
+          CheckInterrupts
+          Return v13
+        ");
+    }
+
+    #[test]
+    fn test_send_reloads_local_written_by_nested_block() {
+        eval("
+            def foo = yield
+            def test
+              a = 1
+              b = 2
+              foo { foo { a = 3 } }
+              a + b
+            end
+            test
+        ");
+        assert_contains_opcode("test", YARVINSN_send);
+        // `a` is assigned only from a block nested inside the block argument, but the
+        // outer block's outer_variables table still records that write (the compiler
+        // aggregates writes up the nesting chain), so `a` is reloaded while the
+        // untouched `b` keeps its SSA value.
+        assert_snapshot!(hir_string("test"), @"
+        fn test@<compiled>:4:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          v2:NilClass = Const Value(nil)
+          v3:NilClass = Const Value(nil)
+          Jump bb3(v1, v2, v3)
+        bb2():
+          EntryPoint JIT(0)
+          v6:BasicObject = LoadArg :self@0
+          v7:NilClass = Const Value(nil)
+          v8:NilClass = Const Value(nil)
+          Jump bb3(v6, v7, v8)
+        bb3(v10:BasicObject, v11:NilClass, v12:NilClass):
+          v16:Fixnum[1] = Const Value(1)
+          v20:Fixnum[2] = Const Value(2)
+          v25:BasicObject = Send v10, 0x1000, :foo # SendFallbackReason: Uncategorized(send)
+          PatchPoint NoEPEscape(test)
+          v28:CPtr = LoadSP
+          v29:BasicObject = LoadField v28, :a@0x1028
+          PatchPoint NoEPEscape(test)
+          v38:BasicObject = Send v29, :+, v20 # SendFallbackReason: Uncategorized(opt_plus)
+          CheckInterrupts
+          Return v38
         ");
     }
 
@@ -2291,8 +2413,6 @@ pub(crate) mod hir_build_tests {
         bb3(v9:BasicObject, v10:BasicObject):
           v16:BasicObject = InvokeSuperForward v9, 0x1008, v10 # SendFallbackReason: InvokeSuperForward: not yet specialized
           PatchPoint NoEPEscape(test)
-          v19:CPtr = LoadSP
-          v20:BasicObject = LoadField v19, :...@0x1000
           CheckInterrupts
           Return v16
         ");
