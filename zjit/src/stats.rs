@@ -1049,7 +1049,7 @@ enum ExecSpan {
     /// It is emitted as the `kind` argument, not the slice name, so that every
     /// interpreter slice shares the name "interpreter" and is easy to find,
     /// filter, and aggregate in Perfetto.
-    Interp(&'static str),
+    Interp(&'static str, &'static str /* srcloc */),
 }
 
 impl ExecSpan {
@@ -1064,16 +1064,16 @@ impl ExecSpan {
     fn name(self) -> &'static str {
         match self {
             ExecSpan::Jit => "jit",
-            ExecSpan::Interp(_) => "interpreter",
+            ExecSpan::Interp(_, _) => "interpreter",
         }
     }
 
     /// The fallback-kind label, emitted as the `kind` argument for interpreter
     /// spans. `None` for JIT spans, which carry no argument.
-    fn kind(self) -> Option<&'static str> {
+    fn kind(self) -> Option<(&'static str, &'static str)> {
         match self {
             ExecSpan::Jit => None,
-            ExecSpan::Interp(label) => Some(label),
+            ExecSpan::Interp(label, ruby_src_loc) => Some((label, ruby_src_loc)),
         }
     }
 }
@@ -1195,7 +1195,7 @@ impl PerfettoTracer {
             return idx;
         }
         if self.next_string_index >= 0x8000 {
-            return 0; // table full
+            todo!("string table full. this should return Option<NoneZeroU16> instead of u16")
         }
 
         let idx = self.next_string_index;
@@ -1248,7 +1248,9 @@ impl PerfettoTracer {
         match span.kind() {
             // Interpreter span: name stays "interpreter"; the fallback kind is
             // carried as a `kind` argument so all interpreter slices group.
-            Some(kind) => self.write_duration_begin_kv(span.category(), span.name(), ts, "kind", kind),
+            Some((kind, rb_src_loc)) => {
+                self.write_duration_begin_kv(span.category(), span.name(), ts, &[("kind", kind), ("rb_src_loc", rb_src_loc)]);
+            }
             None => self.write_duration_begin(span.category(), span.name(), ts, &[]),
         }
         self.current_exec_span = Some(span);
@@ -1257,13 +1259,24 @@ impl PerfettoTracer {
     /// Write a Duration Begin (event type 2) with a single named string
     /// argument. Mirrors [`Self::write_duration_event`]'s encoding but lets the
     /// argument be named (e.g. `kind=send_without_block`) rather than positional.
-    fn write_duration_begin_kv(&mut self, category: &str, name: &str, ts_ns: u64, arg_name: &str, arg_value: &str) {
+    fn write_duration_begin_kv(&mut self, category: &str, name: &str, ts_ns: u64, args: &[(&'static str, &'static str)]) {
         let category_ref = self.intern_string(category);
         let name_ref = self.intern_string(name);
-        let arg_name_ref = self.intern_string(arg_name);
-        let arg_value_ref = self.intern_string(arg_value);
 
-        let n_args = 1u64;
+        // Intern every argument name and value up front. intern_string emits a
+        // string record into the stream the first time it sees a string, so it
+        // MUST run before we start writing the event record. Interning mid-record
+        // (between the header and the arg words) would splice a string record into
+        // the middle of the event, desync the parser, and turn every following
+        // record into a fuchsia_invalid_event.
+        let n_args = args.len() as u64;
+        let mut arg_refs: Vec<(u16, u16)> = Vec::with_capacity(args.len());
+        for (arg_name, arg_value) in args {
+            let arg_name_ref = self.intern_string(arg_name);
+            let arg_value_ref = self.intern_string(arg_value);
+            arg_refs.push((arg_name_ref, arg_value_ref));
+        }
+
         let event_words: u64 = 2 + n_args;
         let header: u64 = 4u64                            // record type = event
             | (event_words << 4)                          // record size
@@ -1276,11 +1289,13 @@ impl PerfettoTracer {
         self.write_word(ts_ns);
 
         // String argument (type 6, 1 word): interned name ref + value ref.
-        let arg_header: u64 = 6u64
-            | (1u64 << 4)
-            | ((arg_name_ref as u64) << 16)
-            | ((arg_value_ref as u64) << 32);
-        self.write_word(arg_header);
+        for (arg_name_ref, arg_value_ref) in arg_refs {
+            let arg_header: u64 = 6u64
+                | (1u64 << 4)
+                | ((arg_name_ref as u64) << 16)
+                | ((arg_value_ref as u64) << 32);
+            self.write_word(arg_header);
+        }
 
         self.event_count += 1;
 
@@ -1417,12 +1432,15 @@ pub extern "C" fn rb_zjit_trace_enter_jit() {
 /// string literal in the binary's read-only data), so the slice borrowed here
 /// is valid for the whole process and can be stored as `&'static`.
 #[unsafe(no_mangle)]
-pub extern "C" fn rb_zjit_trace_fallback_begin(label_ptr: *const u8, label_len: usize) {
+pub extern "C" fn rb_zjit_trace_fallback_begin(label_ptr: *const u8, label_len: usize, src_loc: *const u8, src_loc_len: usize) {
     if let Some(tracer) = exec_span_tracer() {
         // SAFETY: label_ptr/label_len come from a &'static str passed by codegen.
         let bytes: &'static [u8] = unsafe { std::slice::from_raw_parts(label_ptr, label_len) };
         let label: &'static str = unsafe { std::str::from_utf8_unchecked(bytes) };
-        tracer.begin_exec_span(ExecSpan::Interp(label));
+
+        let bytes: &'static [u8] = unsafe { std::slice::from_raw_parts(src_loc, src_loc_len) };
+        let src_loc = unsafe { std::str::from_utf8_unchecked(bytes) };
+        tracer.begin_exec_span(ExecSpan::Interp(label, src_loc));
     }
 }
 

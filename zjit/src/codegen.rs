@@ -716,7 +716,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         // We can't lower to `gen_send_without_block` because the
         // source opcode isn't necessarily `opt_send_without_block`
         // and so the interpreter stack layout may be incompatible.
-        Insn::CCallWithFrame { cd, state, args, block, .. } if args.len() + 1 > C_ARG_OPNDS.len() => return Err(*state),
+        Insn::CCallWithFrame { state, args, .. } if args.len() + 1 > C_ARG_OPNDS.len() => return Err(*state),
         Insn::CCallWithFrame { cfunc, recv, name, args, cme, state, block, .. } =>
             gen_ccall_with_frame(jit, asm, *cfunc, *name, opnd!(recv), opnds!(args), *cme, *block, &function.frame_state(*state)),
         Insn::CCallVariadic { cfunc, recv, name, args, cme, state, block, return_type: _, elidable: _ } => {
@@ -1469,6 +1469,10 @@ fn gen_param(asm: &mut Assembler, _idx: usize) -> lir::Opnd {
     vreg
 }
 
+unsafe extern "C" {
+    pub fn rb_yjit_dump_iseq_loc(iseq: *const rb_iseq_t, insn_idx: u32);
+}
+
 /// Compile a dynamic dispatch with block
 fn gen_send(
     jit: &mut JITState,
@@ -1485,7 +1489,8 @@ fn gen_send(
     unsafe extern "C" {
         fn rb_vm_send(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
-    gen_trace_fallback_begin(asm, "send");
+
+    gen_trace_fallback_begin(asm, iseq_get_location(state.iseq, 0).leak(), "send");
     let ret = asm_ccall!(
         asm,
         rb_vm_send,
@@ -1512,7 +1517,7 @@ fn gen_send_forward(
     unsafe extern "C" {
         fn rb_vm_sendforward(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
-    gen_trace_fallback_begin(asm, "send_forward");
+    gen_trace_fallback_begin(asm, iseq_get_location(state.iseq, 0).leak(), "send_forward");
     let ret = asm_ccall!(
         asm,
         rb_vm_sendforward,
@@ -1537,7 +1542,7 @@ fn gen_send_without_block(
     unsafe extern "C" {
         fn rb_vm_opt_send_without_block(ec: EcPtr, cfp: CfpPtr, cd: VALUE) -> VALUE;
     }
-    gen_trace_fallback_begin(asm, "send_without_block");
+    gen_trace_fallback_begin(asm, iseq_get_location(state.iseq, 0).leak(), "send_without_block");
     let ret = asm_ccall!(
         asm,
         rb_vm_opt_send_without_block,
@@ -1715,7 +1720,7 @@ fn gen_invokeblock(
     unsafe extern "C" {
         fn rb_vm_invokeblock(ec: EcPtr, cfp: CfpPtr, cd: VALUE) -> VALUE;
     }
-    gen_trace_fallback_begin(asm, "invokeblock");
+    gen_trace_fallback_begin(asm, iseq_get_location(state.iseq, 0).leak(), "invokeblock");
     let ret = asm_ccall!(
         asm,
         rb_vm_invokeblock,
@@ -1801,7 +1806,7 @@ fn gen_invokesuper(
     unsafe extern "C" {
         fn rb_vm_invokesuper(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
-    gen_trace_fallback_begin(asm, "invokesuper");
+    gen_trace_fallback_begin(asm, iseq_get_location(state.iseq, 0).leak(), "invokesuper");
     let ret = asm_ccall!(
         asm,
         rb_vm_invokesuper,
@@ -1827,7 +1832,7 @@ fn gen_invokesuperforward(
     unsafe extern "C" {
         fn rb_vm_invokesuperforward(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
     }
-    gen_trace_fallback_begin(asm, "invokesuperforward");
+    gen_trace_fallback_begin(asm, iseq_get_location(state.iseq, 0).leak(), "invokesuperforward");
     let ret = asm_ccall!(
         asm,
         rb_vm_invokesuperforward,
@@ -2734,14 +2739,16 @@ fn gen_trace_enter_jit(asm: &mut Assembler) {
 /// `label` must be a `&'static str` (a string literal): its bytes live in the
 /// binary's read-only data at a fixed address, so the pointer we pass stays
 /// valid when the JIT code runs and the helper stores it as `&'static`.
-fn gen_trace_fallback_begin(asm: &mut Assembler, label: &'static str) {
+fn gen_trace_fallback_begin(asm: &mut Assembler, ruby_src_loc: &'static str, label: &'static str) {
     if get_option!(trace_fallbacks) {
         asm_comment!(asm, "trace: fallback to interpreter ({label})");
         asm_ccall!(
             asm,
             rb_zjit_trace_fallback_begin,
             Opnd::const_ptr(label.as_ptr()),
-            Opnd::UImm(label.len() as u64)
+            Opnd::UImm(label.len() as u64),
+            Opnd::const_ptr(ruby_src_loc.as_ptr()),
+            ruby_src_loc.len().into()
         );
     }
 }
