@@ -5094,11 +5094,16 @@ impl Function {
         state: &mut FrameState,
         ep_escaped: bool,
     ) {
-        let to_reload = (0..state.locals.len())
-            .filter(|&local_idx| {
+        let to_reload: &mut dyn Iterator<Item = usize> = if ep_escaped {
+            // Reload everything when working with an escaped environment
+            &mut (0..state.locals.len())
+        } else {
+            // When not escaped, only reload the ones syntactically written to
+            &mut (0..state.locals.len()).filter(|&local_idx| {
                 let id = unsafe { rb_zjit_local_id(iseq, local_idx.try_into().unwrap()) };
                 unsafe { rb_zjit_iseq_writes_outer_local_p(blockiseq, id) }
-            });
+            })
+        };
         let mut base: Option<InsnId> = None;
         for local_idx in to_reload {
             let ep_offset = local_idx_to_ep_offset(iseq, local_idx);
