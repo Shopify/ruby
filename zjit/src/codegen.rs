@@ -710,7 +710,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
             gen_guard_type(jit, asm, opnd!(val), val_type, guard_type, recompile, &function.frame_state(state))
         }
         &Insn::GuardBitEquals { val, expected, reason, state, recompile } => gen_guard_bit_equals(jit, asm, opnd!(val), expected, reason, recompile, &function.frame_state(state)),
-        &Insn::GuardAnyBitSet { val, mask, reason, state, .. } => gen_guard_any_bit_set(jit, asm, opnd!(val), mask, reason, &function.frame_state(state)),
+        &Insn::GuardAnyBitSet { val, mask, reason, state, recompile, .. } => gen_guard_any_bit_set(jit, asm, opnd!(val), mask, reason, recompile, &function.frame_state(state)),
         &Insn::GuardNoBitsSet { val, mask, reason, state, .. } => gen_guard_no_bits_set(jit, asm, opnd!(val), mask, reason, &function.frame_state(state)),
         &Insn::GuardLess { left, right, reason, state } => gen_guard_less(jit, asm, opnd!(left), opnd!(right), reason, &function.frame_state(state)),
         &Insn::GuardGreaterEq { left, right, state, .. } => gen_guard_greater_eq(jit, asm, opnd!(left), opnd!(right), &function.frame_state(state)),
@@ -896,8 +896,6 @@ fn gen_getblockparam(jit: &mut JITState, asm: &mut Assembler, ep_offset: u32, le
     let block_handler = asm.load(Opnd::mem(VALUE_BITS, ep, SIZEOF_VALUE_I32 * VM_ENV_DATA_INDEX_SPECVAL));
     let proc = asm_ccall!(asm, rb_vm_bh_to_procval, EC, block_handler);
 
-    // Write Proc to EP and mark modified.
-    let ep = gen_get_ep(asm, level);
     let local_ep_offset = c_int::try_from(ep_offset).unwrap_or_else(|_| {
         panic!("Could not convert local_ep_offset {ep_offset} to i32")
     });
@@ -909,8 +907,6 @@ fn gen_getblockparam(jit: &mut JITState, asm: &mut Assembler, ep_offset: u32, le
     let modified = asm.or(flags_val, VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM.into());
     asm.store(flags, modified);
 
-    // Read the Proc from EP.
-    let ep = gen_get_ep(asm, level);
     asm.load(Opnd::mem(VALUE_BITS, ep, offset))
 }
 
@@ -2776,10 +2772,10 @@ fn mask_to_opnd(mask: crate::hir::Const) -> Option<Opnd> {
 }
 
 /// Compile a bitmask check with a side exit if none of the masked bits are not set
-fn gen_guard_any_bit_set(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, mask: crate::hir::Const, reason: SideExitReason, state: &FrameState) -> lir::Opnd {
+fn gen_guard_any_bit_set(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, mask: crate::hir::Const, reason: SideExitReason, recompile: Option<Recompile>, state: &FrameState) -> lir::Opnd {
     let mask_opnd = mask_to_opnd(mask).unwrap_or_else(|| panic!("gen_guard_any_bit_set: unexpected hir::Const {mask:?}"));
     asm.test(val, mask_opnd);
-    asm.jz(jit, side_exit(jit, state, reason));
+    asm.jz(jit, side_exit_with_recompile(jit, state, reason, recompile));
     val
 }
 
@@ -2995,7 +2991,7 @@ fn gen_stack_map(jit: &JITState, asm: &mut Assembler, state: &FrameState, stack_
         assert!(matches!(opnd, Opnd::Value(_) | Opnd::VReg { .. }), "FrameState should only reference Opnd::Value or Opnd::VReg, but got: {opnd:?}");
         stack.push(opnd);
     }
-    asm.stack_map(stack, jit_frame);
+    asm.stack_map(stack, jit_frame, state.depth);
 }
 
 /// Prepare for calling a C function that may call an arbitrary method.
@@ -3208,8 +3204,7 @@ pub(crate) use c_callable;
 
 c_callable! {
     /// Called from JIT side-exit code to profile operands and trigger recompilation.
-    /// For send instructions (argc >= 0): profiles receiver + args from the stack.
-    /// For shape guard exits (argc == -1): profiles self from the CFP.
+    /// `profile_kind` selects what to profile; `profile_payload` carries kind-specific data.
     /// Once enough profiles are gathered, invalidates the compiled unit for recompilation.
     ///
     /// Two iseqs are passed because they diverge for inlined code. `frame_iseq_raw` is
@@ -3219,7 +3214,9 @@ c_callable! {
     /// inliner folds the callee's body into it), so its version is the one holding the
     /// failing guard and the one we must invalidate to force a recompile. For
     /// non-inlined code the two are identical.
-    pub(crate) fn exit_recompile(ec: EcPtr, frame_iseq_raw: VALUE, compiled_iseq_raw: VALUE, insn_idx: u32, argc: i32) {
+    pub(crate) fn exit_recompile(ec: EcPtr, frame_iseq_raw: VALUE, compiled_iseq_raw: VALUE, insn_idx: u32, profile_kind: i32, profile_payload: i32) {
+        let recompile = Recompile::from_c_args(profile_kind, profile_payload);
+
         // Fast check before taking the VM lock: skip if the compiled unit is already
         // invalidated or at the version limit. This avoids expensive lock acquisition
         // on every shape guard exit after the recompile has already been triggered.
@@ -3240,9 +3237,10 @@ c_callable! {
             let compiled_iseq: IseqPtr = compiled_iseq_raw.as_iseq();
 
             // For no-profile sends, skip if already profiled at this insn_idx.
-            // For shape guard exits (argc == -1), always re-profile because the
+            // For shape guard exits, always re-profile because the
             // original YARV profiles were monomorphic but runtime showed new shapes.
-            if argc >= 0 && get_or_create_iseq_payload(frame_iseq).profile.done_profiling_at(insn_idx as usize) {
+            if matches!(recompile, Recompile::ProfileSend { .. }) &&
+                get_or_create_iseq_payload(frame_iseq).profile.done_profiling_at(insn_idx as usize) {
                 return;
             }
 
@@ -3250,14 +3248,21 @@ c_callable! {
                 let cfp = unsafe { get_ec_cfp(ec) };
                 let payload = get_or_create_iseq_payload(frame_iseq);
 
-                if argc >= 0 {
-                    let sp = unsafe { get_cfp_sp(cfp) };
-                    // Profile the receiver and arguments for this send instruction
-                    payload.profile.profile_send_at(frame_iseq, insn_idx as usize, sp, argc as usize)
-                } else {
-                    // Profile self for shape guard exits (argc == -1)
-                    let self_val = unsafe { get_cfp_self(cfp) };
-                    payload.profile.profile_self_at(frame_iseq, insn_idx as usize, self_val)
+                match recompile {
+                    Recompile::ProfileSend { argc } => {
+                        let sp = unsafe { get_cfp_sp(cfp) };
+                        // Profile the receiver and arguments for this send instruction
+                        payload.profile.profile_send_at(frame_iseq, insn_idx as usize, sp, argc as usize)
+                    }
+                    Recompile::ProfileSelf => {
+                        // Profile self for shape guard exits
+                        let self_val = unsafe { get_cfp_self(cfp) };
+                        payload.profile.profile_self_at(frame_iseq, insn_idx as usize, self_val)
+                    }
+                    Recompile::ProfileBlockHandler => {
+                        // Profile the block handler for this getblockparamproxy instruction
+                        payload.profile.profile_getblockparamproxy_at(frame_iseq, insn_idx as usize, cfp)
+                    }
                 }
             });
 
