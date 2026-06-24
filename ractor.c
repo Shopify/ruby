@@ -1229,6 +1229,67 @@ rb_obj_set_shareable(VALUE obj)
     return obj;
 }
 
+/* Global opt-in that makes Ractor.make_shareable record objects as
+ * "warning-shareable" instead of freezing them. Those objects are kept in an
+ * identity hash so rb_check_frozen() and selected fast paths can warn if they
+ * are mutated. */
+bool ruby_ractor_warn_frozen_error = false;
+bool ruby_ractor_warn_frozen_error_objects_enabled = false;
+static VALUE ractor_warn_frozen_error_objects = Qnil;
+
+static VALUE
+ractor_warn_frozen_error_objects_hash(void)
+{
+    if (NIL_P(ractor_warn_frozen_error_objects)) {
+        ractor_warn_frozen_error_objects = rb_ident_hash_new();
+        rb_obj_hide(ractor_warn_frozen_error_objects);
+        rb_gc_register_mark_object(ractor_warn_frozen_error_objects);
+    }
+    return ractor_warn_frozen_error_objects;
+}
+
+bool
+rb_ractor_warn_frozen_error_marked_p(VALUE obj)
+{
+    if (RB_SPECIAL_CONST_P(obj) || !ruby_ractor_warn_frozen_error_objects_enabled) {
+        return false;
+    }
+
+    if (NIL_P(ractor_warn_frozen_error_objects)) {
+        return false;
+    }
+
+    return RTEST(rb_hash_lookup2(ractor_warn_frozen_error_objects, obj, Qfalse));
+}
+
+bool
+rb_ractor_warn_frozen_error_warn(VALUE obj)
+{
+    if (!rb_ractor_warn_frozen_error_marked_p(obj)) {
+        return false;
+    }
+
+    rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
+                     "would raise FrozenError: can't modify object passed to Ractor.make_shareable with Ractor.warn_frozen_error=true: %"PRIsVALUE,
+                     rb_obj_class(obj));
+    return true;
+}
+
+static void
+ractor_warn_frozen_error_mark(VALUE obj)
+{
+    if (RB_SPECIAL_CONST_P(obj)) {
+        return;
+    }
+
+    if (RB_TYPE_P(obj, T_STRING)) {
+        rb_str_make_independent(obj);
+    }
+
+    rb_hash_aset(ractor_warn_frozen_error_objects_hash(), obj, Qtrue);
+    ruby_ractor_warn_frozen_error_objects_enabled = true;
+}
+
 /// traverse function
 
 // 2: stop search
@@ -1640,6 +1701,64 @@ make_shareable_check_shareable(VALUE obj, struct obj_traverse_data *data)
 }
 
 static enum obj_traverse_iterator_result
+make_shareable_warn_check_shareable(VALUE obj, struct obj_traverse_data *data)
+{
+    VM_ASSERT(!SPECIAL_CONST_P(obj));
+
+    if (rb_ractor_shareable_p(obj)) {
+        return traverse_skip;
+    }
+    else if (!allow_frozen_shareable_p(obj)) {
+        VM_ASSERT(RB_TYPE_P(obj, T_DATA));
+        const rb_data_type_t *type = RTYPEDDATA_TYPE(obj);
+
+        if (type->flags & RUBY_TYPED_FROZEN_SHAREABLE_NO_REC) {
+            if (obj_refer_only_shareables_p(obj)) {
+                ractor_warn_frozen_error_mark(obj);
+                return traverse_skip;
+            }
+            else {
+                rb_raise(rb_eRactorError,
+                         "can not make shareable object for %+"PRIsVALUE" because it refers unshareable objects", obj);
+            }
+        }
+        else if (rb_obj_is_proc(obj)) {
+            if (!rb_proc_ractor_make_shareable_continue(obj, Qundef, data->chain)) {
+                rb_proc_t *proc = (rb_proc_t *)RTYPEDDATA_DATA(obj);
+                if (proc->block.type != block_type_iseq) rb_raise(rb_eRuntimeError, "not supported yet");
+
+                if (data->exception) {
+                    *data->exception = rb_exc_new3(rb_eRactorIsolationError, rb_sprintf("Proc's self is not shareable: %" PRIsVALUE, obj));
+                }
+                return traverse_stop;
+            }
+            return traverse_cont;
+        }
+        else {
+            return traverse_stop;
+        }
+    }
+
+    switch (TYPE(obj)) {
+      case T_IMEMO:
+        return traverse_skip;
+      case T_OBJECT:
+        break;
+      default:
+        break;
+    }
+
+    return traverse_cont;
+}
+
+static enum obj_traverse_iterator_result
+mark_warn_shareable(VALUE obj)
+{
+    ractor_warn_frozen_error_mark(obj);
+    return traverse_cont;
+}
+
+static enum obj_traverse_iterator_result
 mark_shareable(VALUE obj)
 {
     if (RB_TYPE_P(obj, T_STRING)) {
@@ -1655,7 +1774,12 @@ rb_ractor_make_shareable(VALUE obj)
 {
     VALUE chain = Qnil;
     VALUE exception = Qfalse;
-    if (rb_obj_traverse(obj, make_shareable_check_shareable, null_leave, mark_shareable, &chain, &exception)) {
+    rb_obj_traverse_enter_func enter_func = ruby_ractor_warn_frozen_error ?
+        make_shareable_warn_check_shareable : make_shareable_check_shareable;
+    rb_obj_traverse_final_func final_func = ruby_ractor_warn_frozen_error ?
+        mark_warn_shareable : mark_shareable;
+
+    if (rb_obj_traverse(obj, enter_func, null_leave, final_func, &chain, &exception)) {
         if (!exception) {
             exception = rb_exc_new3(rb_eRactorError, rb_sprintf("can not make shareable object for %+"PRIsVALUE, obj));
         }
@@ -2235,7 +2359,11 @@ ractor_obj_clone(VALUE obj)
 static enum obj_traverse_iterator_result
 copy_enter(VALUE obj, struct obj_traverse_replace_data *data)
 {
-    if (rb_ractor_shareable_p(obj)) {
+    if (rb_ractor_warn_frozen_error_marked_p(obj)) {
+        data->replacement = ractor_obj_clone(obj);
+        return traverse_cont;
+    }
+    else if (rb_ractor_shareable_p(obj)) {
         data->replacement = obj;
         return traverse_skip;
     }
@@ -2912,6 +3040,19 @@ static VALUE
 ractor_check_isolation_p(rb_execution_context_t *ec, VALUE self)
 {
     return rb_thread_ractor_isolation_check_p() ? Qtrue : Qfalse;
+}
+
+static VALUE
+ractor_warn_frozen_error(rb_execution_context_t *ec, VALUE self)
+{
+    return ruby_ractor_warn_frozen_error ? Qtrue : Qfalse;
+}
+
+static VALUE
+ractor_warn_frozen_error_set(rb_execution_context_t *ec, VALUE self, VALUE enabled)
+{
+    ruby_ractor_warn_frozen_error = RTEST(enabled);
+    return enabled;
 }
 
 #include "ractor.rbinc"

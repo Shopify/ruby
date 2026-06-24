@@ -172,6 +172,10 @@ RUBY_EXTERN bool ruby_ractor_isolation_check_enabled;
  * rb_ractor_isolation_check_active(). */
 bool rb_thread_ractor_isolation_check_p(void);
 
+/* True if obj was made warning-shareable by Ractor.make_shareable while
+ * Ractor.warn_frozen_error was enabled. */
+bool rb_ractor_warn_frozen_error_marked_p(VALUE obj);
+
 /* Report a Ractor isolation violation:
  *   - if Ractor.check_isolation is active on the current thread, emit a
  *     :ractor_isolation category warning and return;

@@ -433,6 +433,10 @@ class Ractor
   # If +copy+ keyword is +true+, it will copy objects before freezing them, and will not
   # modify +obj+ or its internal objects.
   #
+  # If +Ractor.warn_frozen_error+ is enabled, this method records the reachable
+  # object graph for mutation warnings instead of freezing it or making it
+  # actually shareable. This mode is intended only for development sweeps.
+  #
   # Note that the specification and implementation of this method are not
   # mature and may be changed in the future.
   #
@@ -563,6 +567,37 @@ class Ractor
   # Returns true when Ractor.check_isolation is active on the current thread.
   def self.check_isolation?
     Primitive.ractor_check_isolation_p
+  end
+
+  # call-seq:
+  #   Ractor.warn_frozen_error -> true or false
+  #   Ractor.warn_frozen_error? -> true or false
+  #   Ractor.warn_frozen_error = flag -> flag
+  #
+  # When enabled, +Ractor.make_shareable+ records the reachable object graph as
+  # warning-shareable instead of freezing it or making it actually shareable
+  # between real ractors. Later attempts to mutate those objects emit a
+  # +:ractor_isolation+ category warning that identifies the operation that
+  # would have raised +FrozenError+, then allow the mutation to continue. This
+  # is intended for development sweeps alongside +Ractor.check_isolation+, so
+  # code can discover objects that would be frozen by production
+  # +make_shareable+ without changing runtime behaviour as much.
+  #
+  # The setting affects future +make_shareable+ calls. Objects already marked
+  # warning-shareable keep warning on mutation even if the setting is disabled.
+  # Suppress the warnings with +Warning[:ractor_isolation] = false+ or
+  # +-W:no-ractor_isolation+.
+  def self.warn_frozen_error
+    Primitive.ractor_warn_frozen_error
+  end
+
+  def self.warn_frozen_error=(flag)
+    Primitive.ractor_warn_frozen_error_set(flag)
+  end
+
+  # Returns true when Ractor.warn_frozen_error is enabled.
+  def self.warn_frozen_error?
+    Primitive.ractor_warn_frozen_error
   end
 
   # internal method

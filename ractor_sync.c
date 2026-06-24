@@ -777,7 +777,11 @@ ractor_prepare_payload(rb_execution_context_t *ec, VALUE obj, enum ractor_basket
       case basket_type_move:
         return ractor_move(obj);
       default:
-        if (rb_ractor_shareable_p(obj)) {
+        if (rb_ractor_warn_frozen_error_marked_p(obj)) {
+            *ptype = basket_type_copy;
+            return ractor_copy(obj);
+        }
+        else if (rb_ractor_shareable_p(obj)) {
             *ptype = basket_type_ref;
             return obj;
         }

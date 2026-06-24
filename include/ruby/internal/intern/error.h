@@ -202,6 +202,22 @@ RBIMPL_ATTR_NORETURN()
 void rb_error_frozen_object(VALUE what);
 
 /**
+ * True once Ractor.warn_frozen_error has marked any objects whose would-be
+ * FrozenError should be reported as a warning instead.
+ *
+ * @internal
+ */
+RUBY_EXTERN bool ruby_ractor_warn_frozen_error_objects_enabled;
+
+/**
+ * Emits a warning and returns true if +obj+ was recorded by Ractor.make_shareable
+ * while Ractor.warn_frozen_error was enabled.
+ *
+ * @internal
+ */
+bool rb_ractor_warn_frozen_error_warn(VALUE obj);
+
+/**
  * Queries  if the  passed  object is  frozen.
  *
  * @param[in]  obj  Target object to test frozen-ness.
@@ -253,7 +269,15 @@ static inline void
 rb_check_frozen_inline(VALUE obj)
 {
     if (RB_UNLIKELY(RB_OBJ_FROZEN(obj))) {
+        if (RB_UNLIKELY(ruby_ractor_warn_frozen_error_objects_enabled) &&
+            rb_ractor_warn_frozen_error_warn(obj)) {
+            return;
+        }
         rb_error_frozen_object(obj);
+    }
+    else if (RB_UNLIKELY(ruby_ractor_warn_frozen_error_objects_enabled) &&
+             !(RB_TYPE_P(obj, T_STRING) && FL_TEST_RAW(obj, RUBY_FL_USER2 | RUBY_FL_USER3))) {
+        rb_ractor_warn_frozen_error_warn(obj);
     }
 
     /* ref: internal CHILLED_STRING_P()

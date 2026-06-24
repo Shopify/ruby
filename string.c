@@ -2673,6 +2673,9 @@ str_modifiable(VALUE str)
         rb_check_lockedtmp(str);
         rb_check_frozen(str);
     }
+    else if (RB_UNLIKELY(ruby_ractor_warn_frozen_error_objects_enabled)) {
+        rb_check_frozen(str);
+    }
 }
 
 static inline int
@@ -2694,7 +2697,7 @@ str_independent(VALUE str)
 {
     RUBY_ASSERT(ruby_thread_has_gvl_p());
 
-    if (RB_UNLIKELY(FL_ANY_RAW(str, STR_DEPENDANT_MASK))) {
+    if (RB_UNLIKELY(FL_ANY_RAW(str, STR_DEPENDANT_MASK) || ruby_ractor_warn_frozen_error_objects_enabled)) {
         str_modifiable(str);
         return !str_dependent_p(str);
     }

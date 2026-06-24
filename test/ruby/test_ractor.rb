@@ -564,6 +564,94 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  def test_warn_frozen_error_marks_make_shareable_objects_without_freezing
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        ary = []
+
+        assert_same ary, Ractor.make_shareable(ary)
+        assert_equal false, Ractor.shareable?(ary)
+        assert_equal false, ary.frozen?
+
+        assert_warning(/would raise FrozenError.*Array/) do
+          ary << :mutated
+        end
+        assert_equal [:mutated], ary
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_tracks_nested_objects
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        obj = {items: [String.new("a")]}
+        Ractor.make_shareable(obj)
+
+        assert_equal false, obj.frozen?
+        assert_equal false, obj[:items].frozen?
+        assert_equal false, obj[:items][0].frozen?
+
+        assert_warning(/would raise FrozenError.*Hash/) do
+          obj[:new_key] = :new_value
+        end
+        assert_warning(/would raise FrozenError.*Array/) do
+          obj[:items] << "b"
+        end
+        assert_warning(/would raise FrozenError.*String/) do
+          obj[:items][0] << "!"
+        end
+
+        assert_equal({items: ["a!", "b"], new_key: :new_value}, obj)
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_warns_on_instance_variable_writes
+    assert_ractor(<<~'RUBY')
+      klass = Class.new do
+        attr_accessor :value
+      end
+      obj = klass.new
+      obj.value = :before
+
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        Ractor.make_shareable(obj)
+
+        assert_warning(/would raise FrozenError/) do
+          obj.value = :after
+        end
+        assert_equal :after, obj.value
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_off_uses_normal_make_shareable_freezing
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = false
+        ary = []
+        Ractor.make_shareable(ary)
+        assert_equal true, ary.frozen?
+        assert_raise(FrozenError) { ary << :mutated }
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
   def assert_make_shareable(obj)
     refute Ractor.shareable?(obj), "object was already shareable"
     Ractor.make_shareable(obj)

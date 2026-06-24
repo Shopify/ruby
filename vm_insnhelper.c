@@ -1466,6 +1466,10 @@ NOINLINE(static VALUE vm_setivar_default(VALUE obj, ID id, VALUE val, rb_setivar
 static VALUE
 vm_setivar_default(VALUE obj, ID id, VALUE val, rb_setivar_cache cache)
 {
+    if (UNLIKELY(ruby_ractor_warn_frozen_error_objects_enabled)) {
+        rb_ractor_warn_frozen_error_warn(obj);
+    }
+
     shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
     shape_id_t dest_shape_id = rb_setivar_cache_revalidate(shape_id, cache);
     if (UNLIKELY(dest_shape_id == INVALID_SHAPE_ID)) {
@@ -1493,7 +1497,10 @@ vm_setivar(VALUE obj, VALUE val, rb_setivar_cache cache)
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
         {
-            VM_ASSERT(!rb_ractor_shareable_p(obj) || rb_obj_frozen_p(obj));
+            VM_ASSERT(!rb_ractor_shareable_p(obj) || rb_obj_frozen_p(obj) || rb_ractor_warn_frozen_error_marked_p(obj));
+            if (UNLIKELY(ruby_ractor_warn_frozen_error_objects_enabled)) {
+                rb_ractor_warn_frozen_error_warn(obj);
+            }
 
             shape_id_t shape_id = RBASIC_SHAPE_ID(obj);
             shape_id_t dest_shape_id = rb_setivar_cache_revalidate(shape_id, cache);
