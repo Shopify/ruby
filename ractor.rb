@@ -735,6 +735,11 @@ class Ractor
   #     Ractor.shareable_proc(self: self){}
   #     #=> self should be shareable: main (Ractor::IsolationError)
   #
+  # If +Ractor.warn_frozen_error+ is enabled, the returned Proc (and any
+  # unshareable replacement +self+) is recorded for mutation warnings instead
+  # of being frozen or made actually shareable. This mode is intended only for
+  # development sweeps.
+  #
   def self.shareable_proc self: nil
     Primitive.attr! :use_block
 
@@ -748,6 +753,7 @@ class Ractor
   #   Ractor.shareable_lambda(self: nil){} -> shareable lambda
   #
   # Same as Ractor.shareable_proc, but returns a lambda Proc.
+  # +Ractor.warn_frozen_error+ has the same development-mode behavior here.
   #
   def self.shareable_lambda self: nil
     Primitive.attr! :use_block

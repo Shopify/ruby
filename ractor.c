@@ -1270,13 +1270,13 @@ rb_ractor_warn_frozen_error_warn(VALUE obj)
     }
 
     rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
-                     "would raise FrozenError: can't modify object passed to Ractor.make_shareable with Ractor.warn_frozen_error=true: %"PRIsVALUE,
+                     "would raise FrozenError: can't modify object that would be frozen for Ractor shareability with Ractor.warn_frozen_error=true: %"PRIsVALUE,
                      rb_obj_class(obj));
     return true;
 }
 
-static void
-ractor_warn_frozen_error_mark(VALUE obj)
+void
+rb_ractor_warn_frozen_error_mark(VALUE obj)
 {
     if (RB_SPECIAL_CONST_P(obj)) {
         return;
@@ -1708,19 +1708,22 @@ make_shareable_warn_check_shareable(VALUE obj, struct obj_traverse_data *data)
     if (rb_ractor_shareable_p(obj)) {
         return traverse_skip;
     }
-    else if (!allow_frozen_shareable_p(obj)) {
+    else if (rb_ractor_warn_frozen_error_marked_p(obj)) {
+        return traverse_skip;
+    }
+
+    /* Mark on entry, not as a finalizer, so recursive warning-mode
+     * make_shareable calls that come from Proc self / outer-variable checks
+     * can detect cycles and stop instead of re-walking the same object graph
+     * until SystemStackError. */
+    rb_ractor_warn_frozen_error_mark(obj);
+
+    if (!allow_frozen_shareable_p(obj)) {
         VM_ASSERT(RB_TYPE_P(obj, T_DATA));
         const rb_data_type_t *type = RTYPEDDATA_TYPE(obj);
 
         if (type->flags & RUBY_TYPED_FROZEN_SHAREABLE_NO_REC) {
-            if (obj_refer_only_shareables_p(obj)) {
-                ractor_warn_frozen_error_mark(obj);
-                return traverse_skip;
-            }
-            else {
-                rb_raise(rb_eRactorError,
-                         "can not make shareable object for %+"PRIsVALUE" because it refers unshareable objects", obj);
-            }
+            return obj_refer_only_shareables_p(obj) ? traverse_skip : traverse_cont;
         }
         else if (rb_obj_is_proc(obj)) {
             if (!rb_proc_ractor_make_shareable_continue(obj, Qundef, data->chain)) {
@@ -1735,7 +1738,7 @@ make_shareable_warn_check_shareable(VALUE obj, struct obj_traverse_data *data)
             return traverse_cont;
         }
         else {
-            return traverse_stop;
+            return traverse_cont;
         }
     }
 
@@ -1754,7 +1757,7 @@ make_shareable_warn_check_shareable(VALUE obj, struct obj_traverse_data *data)
 static enum obj_traverse_iterator_result
 mark_warn_shareable(VALUE obj)
 {
-    ractor_warn_frozen_error_mark(obj);
+    rb_ractor_warn_frozen_error_mark(obj);
     return traverse_cont;
 }
 
@@ -1781,13 +1784,20 @@ rb_ractor_make_shareable(VALUE obj)
 
     if (rb_obj_traverse(obj, enter_func, null_leave, final_func, &chain, &exception)) {
         if (!exception) {
-            exception = rb_exc_new3(rb_eRactorError, rb_sprintf("can not make shareable object for %+"PRIsVALUE, obj));
+            if (ruby_ractor_warn_frozen_error) {
+                exception = rb_exc_new3(rb_eRactorError,
+                                        rb_sprintf("can not make shareable object for an instance of %"PRIsVALUE,
+                                                   rb_class_real(CLASS_OF(obj))));
+            }
+            else {
+                exception = rb_exc_new3(rb_eRactorError, rb_sprintf("can not make shareable object for %+"PRIsVALUE, obj));
+            }
         }
         // In Ractor.check_isolation mode downgrade to a :ractor_isolation
         // warning (with the chain inlined) so the sweep can keep going.
         // Outside that mode, attach the chain to @reference_chain and raise
         // exactly as before.
-        if (rb_thread_ractor_isolation_check_p()) {
+        if (rb_thread_ractor_isolation_check_p() || ruby_ractor_warn_frozen_error) {
             VALUE message = rb_obj_as_string(rb_funcall(exception, rb_intern("message"), 0));
             if (!NIL_P(chain)) {
                 rb_str_append(message, chain);
@@ -2699,9 +2709,14 @@ static VALUE
 ractor_shareable_proc(rb_execution_context_t *ec, VALUE replace_self, bool is_lambda)
 {
     if (!rb_ractor_shareable_p(replace_self)) {
-        // In check_isolation mode this only warns; fall through and try to
-        // make the proc shareable anyway so the sweep can keep going.
-        rb_ractor_isolation_violation("self should be shareable: %" PRIsVALUE, replace_self);
+        if (ruby_ractor_warn_frozen_error) {
+            rb_ractor_make_shareable(replace_self);
+        }
+        else {
+            // In check_isolation mode this only warns; fall through and try to
+            // make the proc shareable anyway so the sweep can keep going.
+            rb_ractor_isolation_violation("self should be shareable: %" PRIsVALUE, replace_self);
+        }
     }
     VALUE proc = is_lambda ? rb_block_lambda() : rb_block_proc();
     return rb_proc_ractor_make_shareable(rb_proc_dup(proc), replace_self);

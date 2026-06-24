@@ -637,6 +637,152 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  def test_warn_frozen_error_make_shareable_tolerates_unshareable_typed_data
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        h = Hash.new(Mutex.new)
+        assert_nothing_raised { Ractor.make_shareable(h) }
+        assert_equal false, h.frozen?
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_make_shareable_handles_proc_cycles
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        obj = Object.new
+        pr = proc { obj }
+        obj.instance_variable_set(:@proc, pr)
+
+        assert_nothing_raised { Ractor.make_shareable(obj) }
+        assert_same obj, pr.call
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_marks_shareable_proc_without_freezing
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        pr = Ractor.shareable_proc { :ok }
+
+        assert_equal false, Ractor.shareable?(pr)
+        assert_equal false, pr.frozen?
+        assert_equal :ok, pr.call
+
+        assert_warning(/would raise FrozenError.*Proc/) do
+          pr.instance_variable_set(:@mutated, true)
+        end
+        assert_equal true, pr.instance_variable_get(:@mutated)
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_marks_shareable_lambda_without_freezing
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        pr = Ractor.shareable_lambda { :ok }
+
+        assert_equal false, Ractor.shareable?(pr)
+        assert_equal false, pr.frozen?
+        assert_equal true, pr.lambda?
+        assert_equal :ok, pr.call
+
+        assert_warning(/would raise FrozenError.*Proc/) do
+          pr.instance_variable_set(:@mutated, true)
+        end
+        assert_equal true, pr.instance_variable_get(:@mutated)
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_preserves_shareable_proc_outer_variables
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        ary = []
+        pr = nil
+
+        assert_warning(/cannot make a shareable Proc because it can refer unshareable object.*variable 'ary'/) do
+          pr = Ractor.shareable_proc { ary << :called; ary }
+        end
+
+        assert_equal [:called], pr.call
+        assert_equal false, ary.frozen?
+        assert_warning(/would raise FrozenError.*Array/) do
+          ary << :mutated
+        end
+        assert_equal [:called, :mutated], ary
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_warns_but_preserves_reassigned_outer_variables
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        counter = 0
+        pr = nil
+
+        assert_warning(/can not make a Proc shareable because it accesses outer variables \(counter\)/) do
+          pr = Ractor.shareable_proc { counter += 1 }
+        end
+
+        assert_equal 1, pr.call
+        assert_equal 2, pr.call
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_marks_shareable_proc_self_without_freezing
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+        replacement_self = Object.new
+        nested = []
+        replacement_self.instance_variable_set(:@nested, nested)
+        pr = Ractor.shareable_proc(self: replacement_self) { self }
+
+        assert_same replacement_self, pr.call
+        assert_equal false, replacement_self.frozen?
+        assert_equal false, nested.frozen?
+
+        assert_warning(/would raise FrozenError.*Object/) do
+          replacement_self.instance_variable_set(:@mutated, true)
+        end
+        assert_equal true, replacement_self.instance_variable_get(:@mutated)
+        assert_warning(/would raise FrozenError.*Array/) do
+          nested << :mutated
+        end
+        assert_equal [:mutated], nested
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
   def test_warn_frozen_error_off_uses_normal_make_shareable_freezing
     assert_ractor(<<~'RUBY')
       old = Ractor.warn_frozen_error
@@ -646,6 +792,10 @@ class TestRactor < Test::Unit::TestCase
         Ractor.make_shareable(ary)
         assert_equal true, ary.frozen?
         assert_raise(FrozenError) { ary << :mutated }
+
+        pr = Ractor.shareable_proc { :ok }
+        assert_equal true, pr.frozen?
+        assert_raise(FrozenError) { pr.instance_variable_set(:@mutated, true) }
       ensure
         Ractor.warn_frozen_error = old
       end

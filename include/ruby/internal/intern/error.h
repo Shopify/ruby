@@ -202,7 +202,7 @@ RBIMPL_ATTR_NORETURN()
 void rb_error_frozen_object(VALUE what);
 
 /**
- * True once Ractor.warn_frozen_error has marked any objects whose would-be
+ * True once Ractor.warn_frozen_error has recorded any objects whose would-be
  * FrozenError should be reported as a warning instead.
  *
  * @internal
@@ -210,8 +210,8 @@ void rb_error_frozen_object(VALUE what);
 RUBY_EXTERN bool ruby_ractor_warn_frozen_error_objects_enabled;
 
 /**
- * Emits a warning and returns true if +obj+ was recorded by Ractor.make_shareable
- * while Ractor.warn_frozen_error was enabled.
+ * Emits a warning and returns true if +obj+ was recorded for Ractor
+ * shareability while Ractor.warn_frozen_error was enabled.
  *
  * @internal
  */

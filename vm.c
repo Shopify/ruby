@@ -1399,6 +1399,17 @@ NUM2ID(VALUE num)
         return (ID)NUM2ULONG(num);
 }
 
+static void
+proc_shareability_violation_str(VALUE msg, bool warn)
+{
+    if (warn) {
+        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, "%s", StringValueCStr(msg));
+    }
+    else {
+        rb_ractor_isolation_violation_str(msg);
+    }
+}
+
 static enum rb_id_table_iterator_result
 collect_outer_variable_names(ID id, VALUE val, void *ptr)
 {
@@ -1510,8 +1521,53 @@ proc_isolate_env(VALUE self, rb_proc_t *proc, VALUE read_only_variables)
     RB_OBJ_WRITTEN(self, Qundef, env);
 }
 
+static void
+proc_mark_outer_variables(const VALUE *src_ep, VALUE variables)
+{
+    if (!RTEST(variables)) return;
+
+    const rb_env_t *src_env = (rb_env_t *)VM_ENV_ENVVAL(src_ep);
+    VM_ASSERT(src_env->ep == src_ep);
+
+    for (int i=RARRAY_LENINT(variables)-1; i>=0; i--) {
+        ID id = NUM2ID(RARRAY_AREF(variables, i));
+
+        const struct rb_iseq_constant_body *body = ISEQ_BODY(src_env->iseq);
+        for (unsigned int j=0; j<body->local_table_size; j++) {
+            if (id == body->local_table[j]) {
+                if (body->lvar_states[j] == lvar_reassigned) {
+                    VALUE name = rb_id2str(id);
+                    VALUE msg = rb_sprintf("cannot make a shareable Proc because "
+                                           "the outer variable '%" PRIsVALUE "' may be reassigned.", name);
+                    proc_shareability_violation_str(msg, true);
+                }
+
+                VALUE v = src_env->env[j];
+                if (!rb_ractor_shareable_p(v)) {
+                    VALUE name = rb_id2str(id);
+                    VALUE msg = rb_sprintf("cannot make a shareable Proc because it can refer"
+                                           " unshareable object (an instance of %" PRIsVALUE ") from ",
+                                           rb_class_real(CLASS_OF(v)));
+                    if (name)
+                        rb_str_catf(msg, "variable '%" PRIsVALUE "'", name);
+                    else
+                        rb_str_cat_cstr(msg, "a hidden variable");
+                    proc_shareability_violation_str(msg, true);
+                    rb_ractor_make_shareable(v);
+                }
+                rb_ary_delete_at(variables, i);
+                break;
+            }
+        }
+    }
+
+    if (!VM_ENV_LOCAL_P(src_ep)) {
+        proc_mark_outer_variables(VM_ENV_PREV_EP(src_env->ep), variables);
+    }
+}
+
 static VALUE
-proc_shared_outer_variables(struct rb_id_table *outer_variables, bool isolate, const char *message)
+proc_shared_outer_variables(struct rb_id_table *outer_variables, bool isolate, const char *message, bool warn)
 {
     struct collect_outer_variable_name_data data = {
         .isolate = isolate,
@@ -1534,10 +1590,11 @@ proc_shared_outer_variables(struct rb_id_table *outer_variables, bool isolate, c
         }
         if (*sep == ',') rb_str_cat_cstr(str, ")");
         rb_str_cat_cstr(str, data.yield ? " and uses 'yield'." : ".");
-        rb_ractor_isolation_violation_str(str);
+        proc_shareability_violation_str(str, warn);
     }
     else if (data.yield) {
-        rb_ractor_isolation_violation("can not %s because it uses 'yield'.", message);
+        VALUE str = rb_sprintf("can not %s because it uses 'yield'.", message);
+        proc_shareability_violation_str(str, warn);
     }
 
     return data.read_only;
@@ -1559,7 +1616,7 @@ rb_proc_isolate_bang(VALUE self, VALUE replace_self)
         if (proc->block.type != block_type_iseq) rb_raise(rb_eRuntimeError, "not supported yet");
 
         if (ISEQ_BODY(iseq)->outer_variables) {
-            proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, true, "isolate a Proc");
+            proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, true, "isolate a Proc", false);
         }
 
         proc_isolate_env(self, proc, Qfalse);
@@ -1609,9 +1666,14 @@ rb_proc_ractor_make_shareable_continue(VALUE self, VALUE replace_self, VALUE *ch
         if (!RB_SPECIAL_CONST_P(block_self) &&
                 !RB_OBJ_SHAREABLE_P(block_self)) {
             if (!rb_ractor_shareable_p_continue(block_self, chain)) {
-                rb_ractor_error_chain_append(chain, "\n  from block's self (an instance of %"PRIsVALUE")",
-                                             rb_class_real(CLASS_OF(block_self)));
-                return false;
+                if (ruby_ractor_warn_frozen_error) {
+                    rb_ractor_make_shareable(block_self);
+                }
+                else {
+                    rb_ractor_error_chain_append(chain, "\n  from block's self (an instance of %"PRIsVALUE")",
+                                                 rb_class_real(CLASS_OF(block_self)));
+                    return false;
+                }
             }
         }
 
@@ -1619,25 +1681,46 @@ rb_proc_ractor_make_shareable_continue(VALUE self, VALUE replace_self, VALUE *ch
 
         if (ISEQ_BODY(iseq)->outer_variables) {
             read_only_variables =
-                proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, false, "make a Proc shareable");
+                proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, false, "make a Proc shareable", ruby_ractor_warn_frozen_error);
         }
 
-        proc_isolate_env(self, proc, read_only_variables);
-        proc->is_isolated = TRUE;
+        if (ruby_ractor_warn_frozen_error) {
+            proc_mark_outer_variables(proc->block.as.captured.ep, read_only_variables);
+        }
+        else {
+            proc_isolate_env(self, proc, read_only_variables);
+            proc->is_isolated = TRUE;
+        }
     }
     else {
         const struct rb_block *block = vm_proc_block(self);
-        if (block->type != block_type_symbol) rb_raise(rb_eRuntimeError, "not supported yet");
+        if (block->type != block_type_symbol) {
+            if (ruby_ractor_warn_frozen_error) {
+                rb_ractor_warn_frozen_error_mark(self);
+                return true;
+            }
+            rb_raise(rb_eRuntimeError, "not supported yet");
+        }
 
         VALUE proc_self = vm_block_self(block);
         if (!rb_ractor_shareable_p_continue(proc_self, chain)) {
-            rb_ractor_error_chain_append(chain, "\n  from proc's self (an instance of %"PRIsVALUE")",
-                                             rb_class_real(CLASS_OF(proc_self)));
-            return false;
+            if (ruby_ractor_warn_frozen_error) {
+                rb_ractor_make_shareable(proc_self);
+            }
+            else {
+                rb_ractor_error_chain_append(chain, "\n  from proc's self (an instance of %"PRIsVALUE")",
+                                                 rb_class_real(CLASS_OF(proc_self)));
+                return false;
+            }
         }
     }
 
-    RB_OBJ_SET_FROZEN_SHAREABLE(self);
+    if (ruby_ractor_warn_frozen_error) {
+        rb_ractor_warn_frozen_error_mark(self);
+    }
+    else {
+        RB_OBJ_SET_FROZEN_SHAREABLE(self);
+    }
     return true;
 }
 

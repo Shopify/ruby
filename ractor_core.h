@@ -167,14 +167,23 @@ st_table *rb_ractor_targeted_hooks(rb_ractor_t *cr);
  * gate site -- they just pay one extra LIKELY-false byte load. */
 RUBY_EXTERN bool ruby_ractor_isolation_check_enabled;
 
+/* Global opt-in used by Ractor.make_shareable, Ractor.shareable_proc, and
+ * Ractor.shareable_lambda to record would-be frozen objects and warn on later
+ * mutation instead of freezing them. */
+RUBY_EXTERN bool ruby_ractor_warn_frozen_error;
+
 /* True if the current thread has Ractor.check_isolation enabled.
  * Hot-path callers should NOT call this directly; go through
  * rb_ractor_isolation_check_active(). */
 bool rb_thread_ractor_isolation_check_p(void);
 
-/* True if obj was made warning-shareable by Ractor.make_shareable while
- * Ractor.warn_frozen_error was enabled. */
+/* True if obj was recorded by Ractor.make_shareable, Ractor.shareable_proc, or
+ * Ractor.shareable_lambda while Ractor.warn_frozen_error was enabled. */
 bool rb_ractor_warn_frozen_error_marked_p(VALUE obj);
+
+/* Record obj so future mutation attempts emit :ractor_isolation warnings
+ * instead of raising FrozenError. */
+void rb_ractor_warn_frozen_error_mark(VALUE obj);
 
 /* Report a Ractor isolation violation:
  *   - if Ractor.check_isolation is active on the current thread, emit a

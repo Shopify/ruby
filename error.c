@@ -228,8 +228,8 @@ rb_warning_category_enabled_p(rb_warning_category_t category)
  * +:ractor_isolation+ ::
  *   Ractor isolation violations reported by Ractor.check_isolation
  *   (downgraded from Ractor::IsolationError exceptions to warnings), and
- *   FrozenError warnings reported for objects passed to Ractor.make_shareable
- *   while Ractor.warn_frozen_error is enabled.
+ *   FrozenError warnings reported for objects that would be frozen for Ractor
+ *   shareability while Ractor.warn_frozen_error is enabled.
  */
 
 static VALUE
