@@ -3352,9 +3352,12 @@ pub(crate) mod hir_build_tests {
           Jump bb3(v4)
         bb3(v6:BasicObject):
           PatchPoint SingleRactorMode
-          v11:BasicObject = GetIvar v6, :@foo
+          v11:HeapBasicObject = GuardType v6, HeapBasicObject
+          v12:CShape = LoadField v11, :shape_id@0x1000
+          v13:CShape[0x1001] = GuardBitEquals v12, CShape(0x1001) recompile
+          v14:NilClass = Const Value(nil)
           CheckInterrupts
-          Return v11
+          Return v14
         ");
     }
 
@@ -3378,8 +3381,14 @@ pub(crate) mod hir_build_tests {
         bb3(v6:BasicObject):
           v10:Fixnum[1] = Const Value(1)
           PatchPoint SingleRactorMode
-          SetIvar v6, :@foo, v10
-          v15:HeapBasicObject = RefineType v6, HeapBasicObject
+          v14:HeapBasicObject = GuardType v6, HeapBasicObject
+          v15:CShape = LoadField v14, :shape_id@0x1000
+          v16:CShape[0x1001] = GuardBitEquals v15, CShape(0x1001) recompile
+          StoreField v14, :@foo@0x1002, v10
+          WriteBarrier v14, v10
+          v19:CShape[0x1003] = Const CShape(0x1003)
+          StoreField v14, :shape_id@0x1000, v19
+          v21:HeapBasicObject = RefineType v6, HeapBasicObject
           CheckInterrupts
           Return v10
         ");
@@ -4949,7 +4958,7 @@ pub(crate) mod hir_build_tests {
           CondBranch v47, bb8(), bb4(v18, v19, v20, v21, v34, v27)
         bb8():
           v50:Truthy = RefineType v33, Truthy
-          v54:BasicObject = InvokeBlock, v27 # SendFallbackReason: InvokeBlock: not yet specialized
+          v54:BasicObject = InvokeBlock v27 # SendFallbackReason: InvokeBlock: not yet specialized
           v57:BasicObject = InvokeBuiltin dir_s_close, v18, v27
           CheckInterrupts
           Return v54
@@ -5333,7 +5342,7 @@ pub(crate) mod hir_build_tests {
           v9:BasicObject = LoadArg :y@2
           Jump bb3(v7, v8, v9)
         bb3(v11:BasicObject, v12:BasicObject, v13:BasicObject):
-          v19:BasicObject = InvokeBlock, v12, v13 # SendFallbackReason: InvokeBlock: not yet specialized
+          v19:BasicObject = InvokeBlock v12, v13 # SendFallbackReason: InvokeBlock: not yet specialized
           CheckInterrupts
           Return v19
         ");
@@ -5616,7 +5625,7 @@ pub(crate) mod hir_build_tests {
           Return v48
         bb7(v67:BasicObject, v68:Fixnum):
           v72:BasicObject = InvokeBuiltin rb_jit_ary_at, v67, v68
-          v74:BasicObject = InvokeBlock, v72 # SendFallbackReason: InvokeBlock: not yet specialized
+          v74:BasicObject = InvokeBlock v72 # SendFallbackReason: InvokeBlock: not yet specialized
           v78:Fixnum = InvokeBuiltin rb_jit_fixnum_inc, v67, v68
           PatchPoint NoEPEscape(each)
           Jump bb8(v67, v78)

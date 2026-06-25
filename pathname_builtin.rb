@@ -293,10 +293,25 @@ class Pathname
     "#<#{self.class}:#{@path}>"
   end
 
-  # Creates a full path, including any intermediate directories that don't yet
-  # exist.
+  # :markup: markdown
   #
-  # See FileUtils.mkpath and FileUtils.mkdir_p
+  # call-seq:
+  #   mkpath(permissions = 0775) -> self
+  #
+  # Creates a directory at the path in `self`;
+  # creates intermediate directories as needed:
+  #
+  # ```ruby
+  # pn = Pathname('foo/bar/baz')
+  # pn.directory? # => false
+  # pn.mkpath     # Creates directories 'foo', 'foo/bar', 'foo/bar/baz'.
+  # pn.directory? # => true
+  # pn.rmtree     # Clean up.
+  # ```
+  #
+  # Directories are created with the given permissions;
+  # see {File Permissions}[rdoc-ref:File@File+Permissions].
+  # The permissions for already-existing directories are not changed.
   def mkpath(mode: nil)
     path = @path == '/' ? @path : @path.chomp('/')
 
@@ -1118,42 +1133,25 @@ class Pathname    # * File *
   # see [File System Timestamps](rdoc-ref:file/timestamps.md):
   #
   # ```ruby
-  # # Work in a temporary directory.
-  # Pathname.mktmpdir do |tmpdirpath|
-  #   # A subdirectory therein, and its Pathname.
-  #   dirpath = File.join(tmpdirpath, 'subdir')
-  #   dir_pn = Pathname(dirpath)
-  #   puts "Create directory; directory birthtime established."
-  #   dir_pn.mkdir
-  #   puts "  Directory birthtime: #{dir_pn.birthtime}"
-  #   sleep(1)
-  #
-  #   # A file in the subdirectory, and its Pathname.
-  #   filepath = File.join(dirpath, 't.txt')
-  #   file_pn = Pathname(filepath)
-  #   puts "Create file; file birthtime established; directory birthtime not updated."
-  #   file_pn.write('foo')
-  #   puts "  File birthtime:      #{file_pn.birthtime}"
-  #   puts "  Directory birthtime: #{dir_pn.birthtime}"
-  #   sleep(1)
-  #   puts "Write file; neither birthtime updated."
-  #   file_pn.write('bar')
-  #   puts "  File birthtime:      #{file_pn.birthtime}"
-  #   puts "  Directory birthtime: #{dir_pn.birthtime}"
-  # end
-  # ```
-  #
-  # Output:
-  #
-  # ```text
-  # Create directory; directory birthtime established.
-  #   Directory birthtime: 2026-05-14 23:41:12 +0100
-  # Create file; file birthtime established; directory birthtime not updated.
-  #   File birthtime:      2026-05-14 23:41:13 +0100
-  #   Directory birthtime: 2026-05-14 23:41:12 +0100
-  # Write file; neither birthtime updated.
-  #   File birthtime:      2026-05-14 23:41:13 +0100
-  #   Directory birthtime: 2026-05-14 23:41:12 +0100
+  # # A directory and its Pathname.
+  # dir_path = 'doc/foo'
+  # dir_pn = Pathname(dir_path)
+  # # Create directory; directory birthtime established.
+  # dir_pn.mkdir
+  # dir_pn.birthtime  # => 2026-06-16 17:06:10.779192552 -0500
+  # # A file therein and its Pathname.
+  # file_path = dir_pn.join('t.tmp')
+  # file_pn = Pathname(file_path)
+  # # Create file; file birthtime established; directory birthtime not updated.
+  # file_pn.write('foo')
+  # dir_pn.birthtime  # => 2026-06-16 17:06:10.779192552 -0500
+  # file_pn.birthtime # => 2026-06-16 17:07:59.339330622 -0500
+  # # Modify file; neither birthtime updated.
+  # file_pn.write('bar')
+  # dir_pn.birthtime  # => 2026-06-16 17:06:10.779192552 -0500
+  # file_pn.birthtime # => 2026-06-16 17:07:59.339330622 -0500
+  # # Clean up.
+  # dir_pn.rmtree
   # ```
   #
   def birthtime() File.birthtime(@path) end
@@ -1171,50 +1169,29 @@ class Pathname    # * File *
   # see {File System Timestamps}[rdoc-ref:file/timestamps.md]:
   #
   # ```ruby
-  # # Work in a temporary directory.
-  # Pathname.mktmpdir do |tmpdirpath|
-  #   # A subdirectory therein, and its Pathname.
-  #   dirpath = File.join(tmpdirpath, 'subdir')
-  #   dir_pn = Pathname(dirpath)
-  #   puts "Create directory; directory ctime established."
-  #   dir_pn.mkdir
-  #   puts "  Directory ctime: #{dir_pn.ctime}"
-  #   sleep(1)
-  #
-  #   # A file in the subdirectory, and its Pathname.
-  #   filepath = File.join(dirpath, 't.txt')
-  #   file_pn = Pathname(filepath)
-  #   puts "Create file; file ctime established; directory ctime updated."
-  #   file_pn.write('foo')
-  #   puts "  File ctime:      #{file_pn.ctime}"
-  #   puts "  Directory ctime: #{dir_pn.ctime}"
-  #   sleep(1)
-  #   puts "Write file; file ctime updated; directory ctime not updated."
-  #   file_pn.write('bar')
-  #   puts "  File ctime:      #{file_pn.ctime}"
-  #   puts "  Directory ctime: #{dir_pn.ctime}"
-  #   sleep(1)
-  #   puts "Read file; neither ctime not updated."
-  #   file_pn.read
-  #   puts "  File ctime:      #{file_pn.ctime}"
-  #   puts "  Directory ctime: #{dir_pn.ctime}"
-  # end
-  # ```
-  #
-  # Output:
-  #
-  # ```text
-  # Create directory; directory ctime established.
-  #   Directory ctime: 2026-05-20 14:05:05 -0500
-  # Create file; file ctime established; directory ctime updated.
-  #   File ctime:      2026-05-20 14:05:06 -0500
-  #   Directory ctime: 2026-05-20 14:05:06 -0500
-  # Write file; file ctime updated; directory ctime not updated.
-  #   File ctime:      2026-05-20 14:05:07 -0500
-  #   Directory ctime: 2026-05-20 14:05:06 -0500
-  # Read file; neither ctime not updated.
-  #   File ctime:      2026-05-20 14:05:07 -0500
-  #   Directory ctime: 2026-05-20 14:05:06 -0500
+  # # A directory and its Pathname.
+  # dir_path = 'doc/foo'
+  # dir_pn = Pathname(dir_path)
+  # # Create directory; directory ctime established.
+  # dir_pn.mkdir
+  # dir_pn.ctime  # => 2026-06-16 16:44:15.86720572 -0500
+  # # A file therein and its Pathname.
+  # file_path = dir_pn.join('t.tmp')
+  # file_pn = Pathname(file_path)
+  # # Create file; file ctime established; directory ctime updated.
+  # file_pn.write('foo')
+  # file_pn.ctime # => 2026-06-16 16:46:00.734974872 -0500
+  # dir_pn.ctime  # => 2026-06-16 16:46:00.734974872 -0500
+  # # Write file; file ctime updated; directory ctime not updated.
+  # file_pn.write('bar')
+  # file_pn.ctime # => 2026-06-16 16:49:11.421204188 -0500
+  # dir_pn.ctime  # => 2026-06-16 16:46:00.734974872 -0500
+  # # Read file; neither ctime updated.
+  # file_pn.read
+  # file_pn.ctime # => 2026-06-16 16:49:11.421204188 -0500
+  # dir_pn.ctime  # => 2026-06-16 16:46:00.734974872 -0500
+  # # Clean up.
+  # dir_pn.rmtree
   # ```
   #
   def ctime() File.ctime(@path) end

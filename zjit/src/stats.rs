@@ -318,15 +318,22 @@ make_counters! {
         setivar_fallback_shape_transition,
         setivar_fallback_new_shape_complex,
         setivar_fallback_new_shape_needs_extension,
+        setivar_fallback_no_side_exits,
     }
 
     // Ivar fallback counters that are summed as dynamic_getivar_count
     dynamic_getivar {
         // getivar_fallback_: Fallback reasons for dynamic getivar instructions
         getivar_fallback_not_monomorphic,
+        getivar_fallback_megamorphic,
+        getivar_fallback_skewed_megamorphic,
+        getivar_fallback_polymorphic,
+        getivar_fallback_no_profile_missing_ic,
+        getivar_fallback_no_profile,
         getivar_fallback_immediate,
         getivar_fallback_not_t_object,
         getivar_fallback_complex,
+        getivar_fallback_no_side_exits,
     }
 
     // Ivar fallback counters that are summed as dynamic_definedivar_count
