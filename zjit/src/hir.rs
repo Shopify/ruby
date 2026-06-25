@@ -5105,8 +5105,20 @@ impl Function {
             // Reload everything when working with an escaped environment
             &mut (0..state.locals.len())
         } else {
+            let params = unsafe { iseq.params() };
+            let block_param_local_idx = if params.flags.has_block() != 0 {
+                Some(params.block_start)
+            } else {
+                None
+            };
             // When not escaped, only reload the ones syntactically written to
-            &mut (0..state.locals.len()).filter(|&local_idx| {
+            &mut (0..state.locals.len()).filter(move |&local_idx| {
+                if block_param_local_idx.and_then(|idx| idx.try_into().ok()).is_some_and(|idx: usize| idx == local_idx) {
+                    // An ostensibly read of the the block param, through `getblockparam` can
+                    // write to the local slot for it. TODO(alan): no reload when outer blocker
+                    // param not referenced in block.
+                    return true;
+                }
                 let id = unsafe { rb_zjit_local_id(iseq, local_idx.try_into().unwrap()) };
                 unsafe { rb_zjit_iseq_writes_outer_local_p(blockiseq, id) }
             })
