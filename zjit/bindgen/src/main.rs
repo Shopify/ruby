@@ -297,7 +297,7 @@ fn main() {
         .allowlist_function("rb_zjit_iseq_inspect")
         .allowlist_function("rb_zjit_iseq_insn_set")
         .allowlist_function("rb_zjit_local_id")
-        .allowlist_function("rb_zjit_iseq_writes_outer_local_p")
+        .allowlist_function("rb_id_table_lookup")
         .allowlist_function("rb_set_cfp_(pc|sp)")
         .allowlist_function("rb_c_method_tracing_currently_enabled")
         .allowlist_function("rb_zjit_method_tracing_currently_enabled")
@@ -450,6 +450,9 @@ fn main() {
         .blocklist_type("VALUE")
         .blocklist_type("ID")
         .blocklist_type("rb_iseq_constant_body")
+
+        // We only need id_table as an opaque pointer to pass to its APIs
+        .opaque_type("rb_id_table")
 
         // Avoid binding to stuff we don't use
         .blocklist_item("rb_thread_struct.*")

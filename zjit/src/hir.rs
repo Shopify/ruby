@@ -5058,21 +5058,26 @@ impl Function {
             &mut (0..state.locals.len())
         } else {
             let params = unsafe { iseq.params() };
-            let block_param_local_idx = if params.flags.has_block() != 0 {
-                Some(params.block_start)
+            let block_param_local_idx: Option<usize> = if params.flags.has_block() != 0 {
+                params.block_start.try_into().ok()
             } else {
                 None
             };
-            // When not escaped, only reload the ones syntactically written to
+            let outer_variables = unsafe { blockiseq.outer_variables() };
+            // When not escaped, only reload the locals the block can have modified.
             &mut (0..state.locals.len()).filter(move |&local_idx| {
-                if block_param_local_idx.and_then(|idx| idx.try_into().ok()).is_some_and(|idx: usize| idx == local_idx) {
-                    // An ostensibly read of the the block param, through `getblockparam` can
-                    // write to the local slot for it. TODO(alan): no reload when outer blocker
-                    // param not referenced in block.
-                    return true;
-                }
                 let id = unsafe { rb_zjit_local_id(iseq, local_idx.try_into().unwrap()) };
-                unsafe { rb_zjit_iseq_writes_outer_local_p(blockiseq, id) }
+                let access = outer_variables.local_access(id);
+                if block_param_local_idx == Some(local_idx) {
+                    // The block param slot is special: `getblockparam` is recorded as a
+                    // read, but it materializes the captured block into this slot. So
+                    // reload it whenever the block references it at all (read or write),
+                    // not just on a setlocal. When the block never references it, the
+                    // slot can't have changed, so skip the reload.
+                    access.is_some()
+                } else {
+                    access == Some(OuterLocalAccess::ReadWrite)
+                }
             })
         };
         let mut base: Option<InsnId> = None;
