@@ -1196,7 +1196,37 @@ class Pathname    # * File *
   #
   def ctime() File.ctime(@path) end
 
-  # See <tt>File.mtime</tt>.  Returns last modification time.
+  # :markup: markdown
+  #
+  # call-seq:
+  #   mtime -> time
+  #
+  # Returns a Time object containing the time of the most recent
+  # modification to the entry represented by `self`;
+  # see {File System Timestamps}[rdoc-ref:file/timestamps.md]:
+  #
+  # ```ruby
+  # # A directory and its Pathname.
+  # dir_path = 'doc/foo'
+  # dir_pn = Pathname(dir_path)
+  # # Create directory; directory mtime established.
+  # dir_pn.mkdir
+  # dir_pn.mtime  # => 2026-06-28 16:38:02.675780521 -0500
+  # # A file therein and its Pathname.
+  # file_path = dir_pn.join('t.tmp')
+  # file_pn = Pathname(file_path)
+  # # Create file; file mtime established; directory mtime updated.
+  # file_pn.write('foo')
+  # dir_pn.mtime  # => 2026-06-28 16:41:23.107750483 -0500
+  # file_pn.mtime # => 2026-06-28 16:41:23.107750483 -0500
+  # # Modify file; file mtime updated; directory mtime unchanged.
+  # file_pn.write('bar')
+  # dir_pn.mtime  # => 2026-06-28 16:41:23.107750483 -0500
+  # file_pn.mtime # => 2026-06-28 16:42:48.869163049 -0500
+  # # Clean up.
+  # dir_pn.rmtree
+  # ```
+  #
   def mtime() File.mtime(@path) end
 
 
@@ -1421,7 +1451,23 @@ class Pathname    # * File *
     File.open(@path, ...)
   end
 
-  # See <tt>File.readlink</tt>.  Read symbolic link.
+  # :markup: markdown
+  #
+  # call-seq:
+  #   readlink -> new_pathname
+  #
+  # Returns a new pathname containing the string path to the entry referenced by `self`:
+  #
+  # ```ruby
+  # # Create Pathnames.
+  # file_pn = Pathname('doc/extension.rdoc') # => #<Pathname:doc/extension.rdoc>
+  # target_pn = Pathname('..').join(file_pn) # => #<Pathname:../doc/extension.rdoc>
+  # link_pn = Pathname('lib/u.tmp')          # => #<Pathname:lib/u.tmp>
+  # link_pn.make_symlink(target_pn)
+  # link_pn.readlink                         # => #<Pathname:../doc/extension.rdoc>
+  # link_pn.delete
+  # ```
+  #
   def readlink() self.class.new(File.readlink(@path)) end
 
   # See <tt>File.rename</tt>.  Rename the file.
@@ -1457,7 +1503,25 @@ class Pathname    # * File *
   #
   def lstat() File.lstat(@path) end
 
-  # See <tt>File.symlink</tt>.  Creates a symbolic link.
+  # :markup: markdown
+  #
+  # call-seq:
+  #   make_symlink(path) -> 0
+  #
+  # Creates a symbolic link at the path in `self` to the entry at `path`:
+  #
+  # ```ruby
+  # # Create Pathnames.
+  # file_pn = Pathname('doc/extension.rdoc') # => #<Pathname:doc/extension.rdoc>
+  # target_pn = Pathname('..').join(file_pn) # => #<Pathname:../doc/extension.rdoc>
+  # link_pn = Pathname('lib/u.tmp')          # => #<Pathname:lib/u.tmp>
+  # # Create link and verify.
+  # link_pn.make_symlink(target_pn)
+  # file_pn.read == link_pn.read             # => true
+  # link_pn.delete                           # Clean up.
+  # ```
+  #
+  # See also: #read, #readlink, #symlink?.
   def make_symlink(old) File.symlink(old, @path) end
 
   # See <tt>File.truncate</tt>.  Truncate the file to +length+ bytes.
@@ -1844,11 +1908,28 @@ class Pathname    # * FileTest *
 
   # See <tt>FileTest.size?</tt>.
   def size?() FileTest.size?(@path) end
-
   # See <tt>FileTest.sticky?</tt>.
   def sticky?() FileTest.sticky?(@path) end
 
-  # See <tt>FileTest.symlink?</tt>.
+  # :markup: markdown
+  #
+  # call-seq:
+  #   symlink? -> true or false
+  #
+  # Returns whether the entry at the path in `self` is a symbolic link:
+  #
+  # ```ruby
+  # # Create Pathnames.
+  # file_pn = Pathname('doc/extension.rdoc') # => #<Pathname:doc/extension.rdoc>
+  # target_pn = Pathname('..').join(file_pn) # => #<Pathname:../doc/extension.rdoc>
+  # link_pn = Pathname('lib/u.tmp')          # => #<Pathname:lib/u.tmp>
+  # link_pn.symlink?                         # => false
+  # # Create link.
+  # link_pn.make_symlink(target_pn)
+  # link_pn.symlink?                         # => true
+  # link_pn.delete                           # Clean up.
+  # ```
+  #
   def symlink?() FileTest.symlink?(@path) end
 
   # See <tt>FileTest.writable?</tt>.
