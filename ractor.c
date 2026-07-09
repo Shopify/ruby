@@ -1866,6 +1866,13 @@ shareable_p_enter(VALUE obj, struct obj_traverse_data *data)
     if (RB_OBJ_SHAREABLE_P(obj)) {
         return traverse_skip;
     }
+    else if (rb_ractor_warn_frozen_error_marked_p(obj)) {
+        // In Ractor.warn_frozen_error mode, Ractor.make_shareable records
+        // objects (and their graph) without freezing or flagging them
+        // shareable. Treat such objects as shareable here so that
+        // check_isolation is consistent with make_shareable.
+        return traverse_skip;
+    }
     else if (RB_TYPE_P(obj, T_CLASS)  ||
              RB_TYPE_P(obj, T_MODULE) ||
              RB_TYPE_P(obj, T_ICLASS)) {
