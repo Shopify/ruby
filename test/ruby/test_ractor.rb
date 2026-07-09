@@ -783,6 +783,96 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  def test_warn_frozen_error_runs_custom_freeze_side_effects_without_freezing
+    # Real Ractor.make_shareable freezes objects, which runs any user-defined
+    # #freeze. Some classes rely on that to migrate mutable state into
+    # Ractor-local storage on freeze (e.g. ActiveSupport::CachingKeyGenerator).
+    # Warn mode must not freeze, but it must still run #freeze for its side
+    # effects, otherwise those objects never set themselves up and emit
+    # spurious FrozenError warnings even though they are Ractor-safe.
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+
+        klass = Class.new do
+          def initialize
+            @cache = {}
+            @ractor_key = nil
+          end
+
+          def freeze
+            @ractor_key = "_klass_cache_#{object_id}".to_sym
+            Ractor[@ractor_key] = @cache
+            @cache = nil
+            super
+          end
+
+          def store(k, v)
+            cache[k] = v
+          end
+
+          private
+
+          def cache
+            @cache || (Ractor[@ractor_key] ||= {})
+          end
+        end
+
+        obj = klass.new
+        Ractor.make_shareable(obj)
+
+        # #freeze ran (state migrated) but the object was not actually frozen.
+        assert_equal false, obj.frozen?
+        assert_nil obj.instance_variable_get(:@cache)
+        refute_nil obj.instance_variable_get(:@ractor_key)
+
+        # The migrated-away cache is not part of the object graph any more, so
+        # it was never marked: writing to it must NOT warn.
+        assert_warning("") do
+          obj.store(:a, 1)
+        end
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
+  def test_warn_frozen_error_custom_freeze_calling_make_shareable_on_self
+    # A #freeze that re-enters Ractor.make_shareable(self) must not recurse
+    # forever: in real mode the object would already be frozen/shareable and be
+    # skipped, but in warn mode it never freezes, so make_shareable relies on an
+    # explicit in-flight guard to break the recursion.
+    assert_ractor(<<~'RUBY')
+      old = Ractor.warn_frozen_error
+      begin
+        Ractor.warn_frozen_error = true
+
+        klass = Class.new do
+          attr_reader :froze
+          def freeze
+            @froze = true
+            Ractor.make_shareable(self)
+            super
+          end
+        end
+
+        obj = klass.new
+        assert_nothing_raised do
+          Ractor.make_shareable(obj)
+        end
+        assert_equal true, obj.froze
+        assert_equal false, obj.frozen?
+
+        assert_warning(/would raise FrozenError/) do
+          obj.instance_variable_set(:@mutated, true)
+        end
+      ensure
+        Ractor.warn_frozen_error = old
+      end
+    RUBY
+  end
+
   def test_warn_frozen_error_off_uses_normal_make_shareable_freezing
     assert_ractor(<<~'RUBY')
       old = Ractor.warn_frozen_error

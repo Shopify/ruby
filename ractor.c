@@ -18,6 +18,7 @@
 #include "internal/struct.h"
 #include "internal/st.h"
 #include "internal/thread.h"
+#include "internal/vm.h"
 #include "variable.h"
 #include "yjit.h"
 #include "zjit.h"
@@ -1290,6 +1291,37 @@ rb_ractor_warn_frozen_error_mark(VALUE obj)
     ruby_ractor_warn_frozen_error_objects_enabled = true;
 }
 
+/* Set while we invoke a user-defined #freeze during warn-mode make_shareable.
+ * rb_obj_freeze() checks this and records the object for mutation warnings
+ * instead of actually freezing it (see object.c). */
+bool ruby_ractor_warn_freeze_as_mark = false;
+
+/* Objects whose #freeze is currently being invoked by warn-mode make_shareable.
+ * Used to break recursion when an object's #freeze calls Ractor.make_shareable
+ * on itself (in real mode the object would already be frozen/shareable and be
+ * skipped; in warn mode it never freezes, so we need an explicit guard). */
+static VALUE ractor_warn_freeze_inflight = Qnil;
+
+static VALUE
+ractor_warn_freeze_inflight_hash(void)
+{
+    if (NIL_P(ractor_warn_freeze_inflight)) {
+        ractor_warn_freeze_inflight = rb_ident_hash_new();
+        rb_obj_hide(ractor_warn_freeze_inflight);
+        rb_gc_register_mark_object(ractor_warn_freeze_inflight);
+    }
+    return ractor_warn_freeze_inflight;
+}
+
+static bool
+ractor_warn_freeze_inflight_p(VALUE obj)
+{
+    if (NIL_P(ractor_warn_freeze_inflight)) {
+        return false;
+    }
+    return RTEST(rb_hash_lookup2(ractor_warn_freeze_inflight, obj, Qfalse));
+}
+
 /// traverse function
 
 // 2: stop search
@@ -1710,6 +1742,34 @@ make_shareable_warn_check_shareable(VALUE obj, struct obj_traverse_data *data)
     }
     else if (rb_ractor_warn_frozen_error_marked_p(obj)) {
         return traverse_skip;
+    }
+    else if (ractor_warn_freeze_inflight_p(obj)) {
+        /* We are already inside this object's #freeze (reached again via a
+         * re-entrant Ractor.make_shareable). Skip to break the recursion; the
+         * outer traversal will finish walking its children. */
+        return traverse_skip;
+    }
+
+    /* Real Ractor.make_shareable freezes objects, which runs any user-defined
+     * #freeze and lets classes migrate mutable state into Ractor-local storage
+     * (e.g. ActiveSupport::CachingKeyGenerator). Warn mode must not freeze, so
+     * we invoke #freeze here for its side effects while rb_obj_freeze is
+     * intercepted (ruby_ractor_warn_freeze_as_mark) to only record the object.
+     * Running #freeze *before* marking obj means #freeze's own setup writes are
+     * not reported, and running it *before* descending means state it moves out
+     * of the object graph is neither walked nor marked -- so it stops the
+     * spurious warnings without ever freezing anything. */
+    if (BUILTIN_TYPE(obj) == T_OBJECT &&
+            !RB_OBJ_FROZEN_RAW(obj) &&
+            !rb_method_basic_definition_p(CLASS_OF(obj), idFreeze)) {
+        struct rescue_freeze_data rescue_freeze_data = { 0 };
+        bool prev = ruby_ractor_warn_freeze_as_mark;
+
+        rb_hash_aset(ractor_warn_freeze_inflight_hash(), obj, Qtrue);
+        ruby_ractor_warn_freeze_as_mark = true;
+        rb_rescue(try_freeze, obj, rescue_freeze, (VALUE)&rescue_freeze_data);
+        ruby_ractor_warn_freeze_as_mark = prev;
+        rb_hash_delete(ractor_warn_freeze_inflight_hash(), obj);
     }
 
     /* Mark on entry, not as a finalizer, so recursive warning-mode

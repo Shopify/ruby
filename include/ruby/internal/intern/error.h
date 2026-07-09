@@ -210,12 +210,30 @@ void rb_error_frozen_object(VALUE what);
 RUBY_EXTERN bool ruby_ractor_warn_frozen_error_objects_enabled;
 
 /**
+ * True while Ractor.make_shareable (under Ractor.warn_frozen_error) is running
+ * an object's user-defined #freeze for its side effects. While set, rb_obj_freeze
+ * records the object for mutation warnings instead of actually freezing it, so
+ * the program can keep running and reporting warnings end to end.
+ *
+ * @internal
+ */
+RUBY_EXTERN bool ruby_ractor_warn_freeze_as_mark;
+
+/**
  * Emits a warning and returns true if +obj+ was recorded for Ractor
  * shareability while Ractor.warn_frozen_error was enabled.
  *
  * @internal
  */
 bool rb_ractor_warn_frozen_error_warn(VALUE obj);
+
+/**
+ * Records +obj+ so that subsequent mutations are reported as would-be
+ * FrozenError warnings under Ractor.warn_frozen_error, without freezing it.
+ *
+ * @internal
+ */
+void rb_ractor_warn_frozen_error_mark(VALUE obj);
 
 /**
  * Queries  if the  passed  object is  frozen.

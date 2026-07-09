@@ -1375,6 +1375,14 @@ rb_obj_dummy1(VALUE _x, VALUE _y)
 VALUE
 rb_obj_freeze(VALUE obj)
 {
+    if (RB_UNLIKELY(ruby_ractor_warn_freeze_as_mark) && !SPECIAL_CONST_P(obj)) {
+        /* Ractor.warn_frozen_error mode is invoking this object's #freeze for
+         * its Ractor setup side effects. We must not actually freeze it, so a
+         * full request can keep running and reporting warnings; just record it
+         * so later mutations are reported as would-be FrozenError. */
+        rb_ractor_warn_frozen_error_mark(obj);
+        return obj;
+    }
     if (!OBJ_FROZEN(obj)) {
         OBJ_FREEZE(obj);
         if (SPECIAL_CONST_P(obj)) {
