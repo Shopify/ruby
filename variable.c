@@ -1201,17 +1201,24 @@ rb_alias_variable(ID name1, ID name2)
 static void
 IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(VALUE obj, ID id)
 {
-    if (UNLIKELY(rb_ractor_isolation_check_active())) {
-        if (rb_is_instance_id(id)) { // check only normal ivars
-            /* Pass rb_class_path() rather than the class itself to avoid
-             * marking the class as shared while building the message. */
-            rb_ractor_isolation_violation("can not set instance variables of classes/modules by non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")", rb_id2str(id), rb_class_path(obj));
-        }
+    if (rb_is_instance_id(id) && // check only normal ivars
+        UNLIKELY(!rb_class_owned_p(obj))) {
+        /* Pass rb_class_path() rather than the class itself to avoid
+         * marking the class as shared while building the message. */
+        rb_ractor_isolation_violation("can not set instance variables of classes/modules created by another Ractor (%"PRIsVALUE" from %"PRIsVALUE")", rb_id2str(id), rb_class_path(obj));
     }
 }
 
+// Class variables are shared across the whole inheritance chain (and their
+// storage location can even migrate over time), so no single owner Ractor can
+// be defined for them. They are not covered by the class ownership
+// relaxation: only the main Ractor can set them, and non-shareable values can
+// only be read from the main Ractor, as before. Note that the ownership
+// *restriction* still applies on top of this: rb_cvar_set() additionally
+// checks that the class the variable is actually written into is owned, so
+// class fields keep a single writer Ractor.
 static void
-CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(VALUE klass, ID id)
+cvar_set_ractor_check(VALUE klass, ID id)
 {
     if (UNLIKELY(rb_ractor_isolation_check_active())) {
         /* See comment on the instance-variable warning below for why we
@@ -1241,6 +1248,12 @@ ivar_ractor_check(VALUE obj, ID id)
         UNLIKELY(rb_ractor_isolation_check_active()) &&
         UNLIKELY(rb_ractor_shareable_p(obj))) {
 
+        if (RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE)) {
+            // classes/modules are checked by their owner Ractor
+            // (IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR, rb_class_owned_p) at each
+            // read/write site instead
+            return;
+        }
         rb_ractor_isolation_violation("can not access instance variables of shareable objects from non-main Ractors");
     }
 }
@@ -1474,7 +1487,7 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
             VALUE val = rb_ivar_lookup(RCLASS_WRITABLE_FIELDS_OBJ(obj), id, undef);
             if (val != undef &&
                     rb_is_instance_id(id) &&
-                    UNLIKELY(rb_ractor_isolation_check_active())) {
+                    UNLIKELY(!rb_class_owned_p(obj))) {
                 VALUE chain = Qnil;
                 if (!rb_ractor_shareable_p_continue(val, &chain)) {
                     /* Use rb_class_path() (pure C, reads the internal name
@@ -1486,7 +1499,7 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
                      * the warning emission re-triggers the same ivar access,
                      * recursing until the stack overflows. */
                     rb_ractor_isolation_violation_with_chain(chain,
-                            "can not get unshareable values from instance variables of classes/modules from non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")",
+                            "can not get unshareable values from instance variables of classes/modules created by another Ractor (%"PRIsVALUE" from %"PRIsVALUE")",
                             rb_id2str(id), rb_class_path(obj));
                 }
             }
@@ -1551,9 +1564,9 @@ rb_ivar_get_at(VALUE obj, attr_index_t index, ID id)
             VALUE fields_obj = RCLASS_WRITABLE_FIELDS_OBJ(obj);
             VALUE val = rb_imemo_fields_ptr(fields_obj)[index];
 
-            if (UNLIKELY(rb_ractor_isolation_check_active()) && !rb_ractor_shareable_p(val)) {
+            if (UNLIKELY(!rb_class_owned_p(obj)) && !rb_ractor_shareable_p(val)) {
                 rb_ractor_isolation_violation(
-                        "can not get unshareable values from instance variables of classes/modules from non-main Ractors");
+                        "can not get unshareable values from instance variables of classes/modules created by another Ractor");
             }
 
             return val;
@@ -3040,6 +3053,8 @@ rb_autoload_str(VALUE module, ID name, VALUE feature)
         rb_raise(rb_eNameError, "autoload must be constant name: %"PRIsVALUE"", QUOTE_ID(name));
     }
 
+    rb_class_owner_check(module);
+
     Check_Type(feature, T_STRING);
     if (!RSTRING_LEN(feature)) {
         rb_raise(rb_eArgError, "empty feature name");
@@ -3460,11 +3475,11 @@ rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
     VALUE found_in;
     VALUE c = rb_const_search(klass, id, exclude, recurse, visibility, &found_in);
     if (!UNDEF_P(c)) {
-        if (UNLIKELY(rb_ractor_isolation_check_active())) {
+        if (UNLIKELY(!rb_class_owned_p(found_in))) {
             VALUE chain = Qnil;
             if (!rb_ractor_shareable_p_continue(c, &chain)) {
                 rb_ractor_isolation_violation_with_chain(chain,
-                        "can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" by non-main Ractor.",
+                        "can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" of a class/module created by another Ractor.",
                         rb_class_path(found_in), rb_id2str(id));
             }
         }
@@ -3677,6 +3692,7 @@ rb_const_remove(VALUE mod, ID id)
     rb_const_entry_t *ce;
 
     rb_check_frozen(mod);
+    rb_class_owner_check(mod);
 
     ce = rb_const_lookup(mod, id);
 
@@ -3973,8 +3989,8 @@ const_set(VALUE klass, ID id, VALUE val)
                  QUOTE_ID(id));
     }
 
-    if (rb_ractor_isolation_check_active() && !rb_ractor_shareable_p(val)) {
-        rb_ractor_isolation_violation("can not set constants with non-shareable objects by non-main Ractors");
+    if (UNLIKELY(!rb_class_owned_p(klass))) {
+        rb_ractor_isolation_violation("can not set constants of classes/modules created by another Ractor");
     }
 
     check_before_mod_set(klass, id, val, "constant");
@@ -4307,7 +4323,9 @@ cvar_overtaken(VALUE front, VALUE target, ID id)
                        ID2SYM(id), rb_class_name(original_module(front)),
                        rb_class_name(original_module(target)));
         }
-        if (BUILTIN_TYPE(front) == T_CLASS) {
+        if (BUILTIN_TYPE(front) == T_CLASS && rb_class_owned_p(front)) {
+            // Removing the duplicated entry is just clean-up; skip it when
+            // `front` is owned by another Ractor (its owner will clean it up).
             rb_ivar_delete(front, id, Qundef);
         }
     }
@@ -4342,7 +4360,7 @@ find_cvar(VALUE klass, VALUE * front, VALUE * target, ID id)
 void
 rb_cvar_set(VALUE klass, ID id, VALUE val)
 {
-    CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(klass, id);
+    cvar_set_ractor_check(klass, id);
 
     VALUE tmp, front = 0, target = 0;
 
@@ -4358,6 +4376,10 @@ rb_cvar_set(VALUE klass, ID id, VALUE val)
     if (RB_TYPE_P(target, T_ICLASS)) {
         target = RBASIC(target)->klass;
     }
+    // cvars are outside the ownership relaxation, but a write still must not
+    // cross the ownership boundary (e.g. main writing into another Ractor's
+    // class), so that class fields keep a single writer Ractor.
+    rb_class_owner_check(target);
     check_before_mod_set(target, id, val, "class variable");
 
     bool new_cvar = rb_class_ivar_set(target, id, val);

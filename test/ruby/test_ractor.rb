@@ -432,7 +432,7 @@ class TestRactor < Test::Unit::TestCase
       end
       $check_isolation_gvar = "global"
 
-      assert_warning(%r{instance variables of classes/modules from non-main Ractors}) do
+      assert_warning(%r{instance variables of classes/modules created by another Ractor}) do
         Ractor.check_isolation { CheckIsolationFixture.instance_variable_get(:@ivar) }
       end
       assert_warning(/can not read non-shareable class variable @@cvar from non-main Ractors/) do
@@ -444,7 +444,7 @@ class TestRactor < Test::Unit::TestCase
       assert_warning(/can not access global variable \$check_isolation_gvar from non-main Ractor/) do
         Ractor.check_isolation { $check_isolation_gvar }
       end
-      assert_warning(%r{can not set instance variables of classes/modules by non-main Ractors}) do
+      assert_warning(%r{can not set instance variables of classes/modules created by another Ractor}) do
         Ractor.check_isolation { CheckIsolationFixture.instance_variable_set(:@ivar, "new") }
       end
     RUBY
