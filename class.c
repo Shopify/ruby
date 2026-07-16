@@ -736,7 +736,11 @@ void
 rb_class_owner_check(VALUE klass)
 {
     if (UNLIKELY(!rb_class_owned_p(klass))) {
-        rb_raise(rb_eRactorIsolationError,
+        // Route through rb_ractor_isolation_violation so that under
+        // Ractor.check_isolation this is downgraded to a :ractor_isolation
+        // warning (and execution continues) instead of raising a hard
+        // Ractor::IsolationError. In a real non-main Ractor it still raises.
+        rb_ractor_isolation_violation(
                  "can not modify %"PRIsVALUE" because it is created by another Ractor",
                  rb_class_path(klass));
     }
