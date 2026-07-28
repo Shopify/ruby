@@ -2736,6 +2736,20 @@ unsafe extern "C" {
     fn rb_simple_iseq_p(iseq: IseqPtr) -> bool;
 }
 
+/// Returned by [`Function::insn`] for chaining after the operands of the instruction are resolved
+/// using union-find.
+pub struct ResolvedInsn(InsnId);
+
+impl ResolvedInsn {
+    pub fn insn(self, f: &Function) -> &Insn {
+        &f.insns[self.0.0]
+    }
+
+    pub fn insn_mut(self, f: &mut Function) -> &mut Insn {
+        &mut f.insns[self.0.0]
+    }
+}
+
 /// Return the ISEQ's return value if it consists of one simple instruction and leave.
 fn iseq_get_return_value(iseq: IseqPtr, captured_opnd: Option<InsnId>, ci_flags: u32) -> Option<IseqReturn> {
     // Expect only two instructions and one possible operand
@@ -3151,39 +3165,17 @@ impl Function {
         result
     }
 
-    /// Make the operands of the instruction at `find(insn_id)` point to the current representative
-    /// of each operand.
-    ///
-    /// Meant to be used in tandem with [`Function::insn`]. Example:
-    ///
-    /// ```rust
-    /// func.resolve(insn_id);
-    /// match func.insn(insn_id) {
-    ///   ...
-    /// }
-    /// ```
-    pub fn resolve(&mut self, insn_id: InsnId) {
+    /// Return a reference to the instruction at `insn_id` (after resolving via union-find).
+    /// Assumes the operands are resolved through union-find already. Use [`Function::resolve`] to
+    /// resolve operands before calling this.
+    #[must_use]
+    pub fn resolve(&mut self, insn_id: InsnId) -> ResolvedInsn {
         let union_find = self.union_find.borrow();
         let insn_id = union_find.find_const(insn_id);
         self.insns[insn_id.0].for_each_operand_mut(&mut |operand: &mut InsnId| {
             *operand = union_find.find_const(*operand);
         });
-    }
-
-    /// Return a mutable reference to the instruction at `insn_id` (after resolving via
-    /// union-find). Assumes the operands are resolved through union-find already. Use
-    /// [`Function::resolve`] to resolve operands before calling this.
-    pub fn insn_mut(&mut self, insn_id: InsnId) -> &mut Insn {
-        let insn_id = self.union_find.borrow().find_const(insn_id);
-        &mut self.insns[insn_id.0]
-    }
-
-    /// Return a reference to the instruction at `insn_id` (after resolving via union-find).
-    /// Assumes the operands are resolved through union-find already. Use [`Function::resolve`] to
-    /// resolve operands before calling this.
-    pub fn insn(&self, insn_id: InsnId) -> &Insn {
-        let insn_id = self.union_find.borrow().find_const(insn_id);
-        &self.insns[insn_id.0]
+        ResolvedInsn(insn_id)
     }
 
     /// Update DynamicSendReason for the instruction at insn_id
@@ -5704,8 +5696,7 @@ impl Function {
             let old_insns = std::mem::take(&mut self.blocks[block.0].insns);
             assert!(self.blocks[block.0].insns.is_empty());
             for insn_id in old_insns {
-                self.resolve(insn_id);
-                match self.insn(insn_id) {
+                match self.resolve(insn_id).insn(self) {
                     &Insn::Send { state, reason: SendFallbackReason::SendNoProfiles, .. } => {
                         self.push_insn(block, Insn::SideExit { state, reason: Box::new(SideExitReason::NoProfileSend), recompile: Some(Recompile) });
                         // SideExit is a terminator; don't add remaining instructions
@@ -5725,8 +5716,7 @@ impl Function {
             let old_insns = std::mem::take(&mut self.blocks[block.0].insns);
             let mut new_insns = vec![];
             for insn_id in old_insns {
-                self.resolve(insn_id);
-                let replacement_insn: InsnId = match self.insn(insn_id) {
+                let replacement_insn: InsnId = match self.resolve(insn_id).insn(self) {
                     &Insn::StoreField { recv, offset, val, .. } => {
                         let key = (self.chase_insn(recv), offset);
                         let heap_entry = compile_time_heap.get(&key).copied();
@@ -5751,8 +5741,7 @@ impl Function {
                                 // type than the cached entry (`CPtr` vs `BasicObject`). While the loaded value would be the same in either case, the
                                 // difference in associated type causes type checking to fail. Consequently, we conservatively retain the duplicate `LoadField`.
                                 // The `optimize_load_store_does_not_alias_loads_with_incompatible_return_types` test checks the problematic case.
-                                self.resolve(cached_insn);
-                                let can_forward_cached_insn = match self.insn(cached_insn) {
+                                let can_forward_cached_insn = match self.resolve(cached_insn).insn(self) {
                                     Insn::LoadField { return_type : cached_return_type,.. } => cached_return_type.is_subtype(return_type),
                                     _ => true
                                 };
@@ -5875,8 +5864,7 @@ impl Function {
             let old_insns = std::mem::take(&mut self.blocks[block.0].insns);
             let mut new_insns = vec![];
             for insn_id in old_insns {
-                self.resolve(insn_id);
-                let replacement_id = match self.insn(insn_id) {
+                let replacement_id = match self.resolve(insn_id).insn(self) {
                     &Insn::GuardType { val, guard_type, .. } if self.is_a(val, guard_type) => {
                         self.make_equal_to(insn_id, val);
                         // Don't bother re-inferring the type of val; we already know it.
@@ -6144,7 +6132,7 @@ impl Function {
                         self.new_insn(Insn::Const { val: Const::CBool(true) })
                     }
                     &Insn::Test { val: test_val } => {
-                        if let &Insn::BoxBool { val: bool_val } = self.insn(test_val) {
+                        if let &Insn::BoxBool { val: bool_val } = self.resolve(test_val).insn(self) {
                             self.make_equal_to(insn_id, bool_val);
                             continue;
                         } else {
@@ -6209,8 +6197,7 @@ impl Function {
     fn absorb_dst_block(&mut self, num_in_edges: &[u32], block: BlockId) -> bool {
         let Some(&terminator_id) = self.blocks[block.0].insns.last()
             else { return false };
-        self.resolve(terminator_id);
-        let &mut Insn::Jump(ref mut edge) = self.insn_mut(terminator_id)
+        let &mut Insn::Jump(ref mut edge) = self.resolve(terminator_id).insn_mut(self)
             else { return false };
         if edge.target == block {
             // Can't absorb self
@@ -6280,9 +6267,9 @@ impl Function {
             let insns = std::mem::take(&mut self.blocks[block_id.0].insns);
             let mut new_insns = Vec::with_capacity(insns.len());
             for insn_id in insns {
-                let insn = self.insn(insn_id);
+                let insn = self.resolve(insn_id).insn(self);
                 if let Insn::PatchPoint { invariant, .. } = insn {
-                    if !seen.insert(invariant) {
+                    if !seen.insert(*invariant) {
                         continue;
                     }
                 } else if insn.effects_of().write_bits().overlaps(abstract_heaps::PatchPoint) {
