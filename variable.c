@@ -1552,8 +1552,17 @@ rb_ivar_get_at(VALUE obj, attr_index_t index, ID id)
             VALUE val = rb_imemo_fields_ptr(fields_obj)[index];
 
             if (UNLIKELY(rb_ractor_isolation_check_active()) && !rb_ractor_shareable_p(val)) {
+                /* Use rb_class_path() (pure C, reads the internal name
+                 * slot) rather than passing `obj` through %PRIsVALUE.
+                 * %PRIsVALUE calls `to_s` on its argument, and if `obj`
+                 * is a module/class that delegates `to_s` through
+                 * method_missing to an internal proxy (e.g.
+                 * ActiveSupport::Deprecation::DeprecatedConstantProxy),
+                 * the warning emission re-triggers the same ivar access,
+                 * recursing until the stack overflows. */
                 rb_ractor_isolation_violation(
-                        "can not get unshareable values from instance variables of classes/modules from non-main Ractors");
+                        "can not get unshareable values from instance variables of classes/modules from non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")",
+                        rb_id2str(id), rb_class_path(obj));
             }
 
             return val;
