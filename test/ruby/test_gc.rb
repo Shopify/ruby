@@ -221,6 +221,39 @@ class TestGc < Test::Unit::TestCase
     end
   end
 
+  def test_stat_global_gc
+    stat = GC.stat
+    %i[global_gc_count global_gc_time_taken
+       global_gc_trigger_shareable_count global_gc_trigger_zombie_count
+       global_gc_trigger_explicit_count global_gc_trigger_compact_count].each do |k|
+      assert_kind_of(Integer, stat[k], "GC.stat missing or non-integer key #{k}")
+    end
+
+    # The per-trigger counts sum to the total global GC count.
+    triggers = %i[shareable zombie explicit compact].sum do |t|
+      GC.stat(:"global_gc_trigger_#{t}_count")
+    end
+    assert_equal GC.stat(:global_gc_count), triggers
+    assert_operator GC.stat(:global_gc_time_taken), :>=, 0
+  end
+
+  def test_stat_global_gc_explicit_trigger
+    assert_separately([], __FILE__, __LINE__, <<~RUBY, timeout: 60)
+      omit "requires Ractor" unless defined?(Ractor)
+
+      # A second live Ractor makes this a multi-objspace process, so a full
+      # GC.start runs a global GC (global_gc_trigger_explicit_count).
+      r = Ractor.new { Ractor.receive }
+      before = GC.stat(:global_gc_count)
+      before_explicit = GC.stat(:global_gc_trigger_explicit_count)
+      GC.start
+      assert_operator GC.stat(:global_gc_count), :>, before
+      assert_operator GC.stat(:global_gc_trigger_explicit_count), :>, before_explicit
+      r.send(true)
+      r.value
+    RUBY
+  end
+
   def test_stat_heap
     omit 'stress' if GC.stress
 

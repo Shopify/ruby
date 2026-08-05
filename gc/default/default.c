@@ -766,7 +766,19 @@ typedef struct rb_objspace {
 /* The one VM-global GC structure; for now it only holds the page pool.  Page bodies are
  * carved out of large mmap arenas and reused via a process-wide freelist (per-page
  * mmap/munmap would serialize on the kernel's mmap_lock).  Leaf lock: no alloc, no GC. */
-typedef struct rb_global_objspace {
+typedef struct rb_global_objspace rb_global_objspace_t;
+
+/* Why a global (stop-the-world, cross-objspace) GC was started.  Counted per
+ * trigger in global_gc.trigger_counts and exposed by GC.stat. */
+enum global_gc_trigger {
+    global_gc_trigger_shareable, /* per-objspace shareable_objects crossed its limit */
+    global_gc_trigger_zombie,    /* zombie objspace pages crossed the reclamation threshold */
+    global_gc_trigger_explicit,  /* GC.start full mark on a multi-objspace process */
+    global_gc_trigger_compact,   /* GC.compact or autocompact-driven compaction */
+    global_gc_trigger_count
+};
+
+struct rb_global_objspace {
     struct {
         rb_nativethread_lock_t lock;
         struct heap_page_body *freelist; /* bodies to reuse; the next pointer lives in the body */
@@ -807,6 +819,9 @@ typedef struct rb_global_objspace {
         bool compacting;
         struct rb_objspace **objspaces;
         size_t n_objspaces, objspaces_capa;
+        size_t count;                          /* total global GCs started */
+        unsigned long long time_ns;            /* accumulated wall time of global GCs */
+        size_t trigger_counts[global_gc_trigger_count];
     } global_gc;
 
     /* Index of every objspace's heap pages, ordered by body address.  Writers (page
@@ -817,7 +832,7 @@ typedef struct rb_global_objspace {
         size_t n_pages, capa;
         uintptr_t lomem, himem;
     } page_index;
-} rb_global_objspace_t;
+};
 
 static rb_global_objspace_t rb_global_objspace_instance;
 static rb_global_objspace_t *global_objspace = NULL;
@@ -7859,23 +7874,29 @@ gc_reset_malloc_info(rb_objspace_t *objspace, bool full_mark)
 #endif
 }
 
-static void gc_start_global(rb_objspace_t *driver, bool compact);
+static void gc_start_global(rb_objspace_t *driver, bool compact, enum global_gc_trigger trigger);
 
 /* Decide whether this collection has to be global.  A local GC can reclaim neither
  * shareable objects nor zombie objspaces, so once those grow past their limits only a
  * global GC makes progress.  All inputs belong to this objspace. */
 static bool
-gc_need_global_p(rb_objspace_t *objspace)
+gc_need_global_p(rb_objspace_t *objspace, enum global_gc_trigger *trigger)
 {
     if (rb_gc_single_objspace_p()) return false;
-    if (objspace->shareable_objects > objspace->shareable_objects_limit) return true;
+    if (objspace->shareable_objects > objspace->shareable_objects_limit) {
+        *trigger = global_gc_trigger_shareable;
+        return true;
+    }
     /* A zombie's garbage only a global cycle reclaims, but what survived the last one
      * is live data, so retrigger only once TRIGGER more pages accumulate on top of it.
      * Otherwise one live-heavy unjoined zombie turns every GC stop-the-world forever. */
     {
         size_t zp = rb_gc_vm_zombie_total_pages();
         size_t base = global_objspace->zombie_pages_survivors < zp ? global_objspace->zombie_pages_survivors : zp;
-        if (zp - base >= ZOMBIE_PAGES_TRIGGER) return true;
+        if (zp - base >= ZOMBIE_PAGES_TRIGGER) {
+            *trigger = global_gc_trigger_zombie;
+            return true;
+        }
     }
     return false;
 }
@@ -7912,9 +7933,12 @@ gc_start_body(rb_objspace_t *objspace, unsigned int reason, bool allow_global)
      * allocation slow path, or an allocation-driven workload slips past every threshold
      * (only a global cycle reclaims dead shareable objects and zombie pages).  The
      * exception is the retire GC, which never promotes: a Ractor's death must not STW. */
-    if (allow_global && gc_need_global_p(objspace)) {
-        gc_start_global(objspace, false);
-        return TRUE;
+    if (allow_global) {
+        enum global_gc_trigger trigger;
+        if (gc_need_global_p(objspace, &trigger)) {
+            gc_start_global(objspace, false, trigger);
+            return TRUE;
+        }
     }
 
     rb_gc_initialize_vm_context(&objspace->vm_context);
@@ -8629,11 +8653,12 @@ gc_global_mark_generic_fields(rb_objspace_t *driver)
 /* Two Ractors choosing a global GC at once are serialized by the barrier in gc_enter and
  * simply run two cycles back to back.  The second is wasted work, not an error. */
 static void
-gc_start_global(rb_objspace_t *driver, bool compact)
+gc_start_global(rb_objspace_t *driver, bool compact, enum global_gc_trigger trigger)
 {
     unsigned int lock_lev;
     gc_enter(driver, gc_enter_event_global, &lock_lev);
 
+    rb_hrtime_t global_gc_start = rb_hrtime_now();
     GC_ASSERT(is_mark_stack_empty(&driver->mark_stack));
 
     gc_global_snapshot_objspaces();
@@ -8831,6 +8856,10 @@ gc_start_global(rb_objspace_t *driver, bool compact)
         objspace->shareable_objects_limit = new_limit;
     }
     driver->profile.count++;
+
+    global_objspace->global_gc.count++;
+    global_objspace->global_gc.trigger_counts[trigger]++;
+    global_objspace->global_gc.time_ns += elapsed_hrtime_from(global_gc_start);
 
     /* step 10 */
     for (size_t i = 0; i < global_objspace->global_gc.n_objspaces; i++) {
@@ -9121,7 +9150,9 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
      * collector that reclaims shareable and cross-objspace garbage.  It stops the world,
      * so auto_compact is honoured here too (mirroring full mark x autocompact locally). */
     if (!rb_gc_single_objspace_p() && (reason & GPR_FLAG_FULL_MARK)) {
-        gc_start_global(objspace, compact || ruby_enable_autocompact);
+        bool do_compact = compact || ruby_enable_autocompact;
+        gc_start_global(objspace, do_compact,
+                do_compact ? global_gc_trigger_compact : global_gc_trigger_explicit);
     }
     else {
         garbage_collect(objspace, reason);
@@ -9796,6 +9827,12 @@ enum gc_stat_sym {
     gc_stat_sym_minor_gc_count,
     gc_stat_sym_major_gc_count,
     gc_stat_sym_compact_count,
+    gc_stat_sym_global_gc_count,
+    gc_stat_sym_global_gc_time_taken,
+    gc_stat_sym_global_gc_trigger_shareable_count,
+    gc_stat_sym_global_gc_trigger_zombie_count,
+    gc_stat_sym_global_gc_trigger_explicit_count,
+    gc_stat_sym_global_gc_trigger_compact_count,
     gc_stat_sym_read_barrier_faults,
     gc_stat_sym_total_moved_objects,
     gc_stat_sym_remembered_wb_unprotected_objects,
@@ -9847,6 +9884,12 @@ setup_gc_stat_symbols(void)
         S(malloc_increase_bytes_limit);
         S(minor_gc_count);
         S(major_gc_count);
+        S(global_gc_count);
+        S(global_gc_time_taken);
+        S(global_gc_trigger_shareable_count);
+        S(global_gc_trigger_zombie_count);
+        S(global_gc_trigger_explicit_count);
+        S(global_gc_trigger_compact_count);
         S(compact_count);
         S(read_barrier_faults);
         S(total_moved_objects);
@@ -9933,6 +9976,12 @@ rb_gc_impl_stat(void *objspace_ptr, VALUE hash_or_sym)
     SET(minor_gc_count, objspace->profile.minor_gc_count);
     SET(major_gc_count, objspace->profile.major_gc_count);
     SET(compact_count, objspace->profile.compact_count);
+    SET(global_gc_count, global_objspace->global_gc.count);
+    SET64(global_gc_time_taken, ns_to_ms(global_objspace->global_gc.time_ns));
+    SET(global_gc_trigger_shareable_count, global_objspace->global_gc.trigger_counts[global_gc_trigger_shareable]);
+    SET(global_gc_trigger_zombie_count, global_objspace->global_gc.trigger_counts[global_gc_trigger_zombie]);
+    SET(global_gc_trigger_explicit_count, global_objspace->global_gc.trigger_counts[global_gc_trigger_explicit]);
+    SET(global_gc_trigger_compact_count, global_objspace->global_gc.trigger_counts[global_gc_trigger_compact]);
     SET(read_barrier_faults, objspace->profile.read_barrier_faults);
     SET(total_moved_objects, objspace->rcompactor.total_moved);
     SET(remembered_wb_unprotected_objects, objspace->rgengc.uncollectible_wb_unprotected_objects);
