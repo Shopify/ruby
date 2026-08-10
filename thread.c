@@ -596,7 +596,26 @@ thread_do_start_proc(rb_thread_t *th)
         VALUE self = rb_ractor_self(th->ractor);
         th->thgroup = th->ractor->thgroup_default = rb_obj_alloc(cThGroup);
 
-        VM_ASSERT(FIXNUM_P(args));
+        if (!FIXNUM_P(args)) {
+            /* Isolation-check ractor (see thread_create_core): the block is not
+             * isolated and args were passed by reference as a real Array, so
+             * invoke the proc directly without going through the mailbox. Keep
+             * the proc's own self so closures over the enclosing scope keep
+             * working, mirroring the old inline Ractor.check_isolation block. */
+            args_len = RARRAY_LENINT(args);
+            args_ptr = ALLOCA_N(VALUE, args_len);
+            MEMCPY((VALUE *)args_ptr, RARRAY_CONST_PTR(args), VALUE, args_len);
+            th->invoke_arg.proc.args = Qnil;
+            vm_check_ints_blocking(th->ec);
+
+            return rb_vm_invoke_proc(
+                th->ec, proc,
+                args_len, args_ptr,
+                th->invoke_arg.proc.kw_splat,
+                VM_BLOCK_HANDLER_NONE
+            );
+        }
+
         args_len = FIX2INT(args);
         args_ptr = ALLOCA_N(VALUE, args_len);
         rb_ractor_receive_parameters(th->ec, th->ractor, args_len, (VALUE *)args_ptr);
@@ -825,6 +844,12 @@ struct thread_create_params {
     // for ractor
     rb_ractor_t *g;
 
+    // When creating a ractor, run it as an isolation-check ractor: a real
+    // non-main ractor whose block is NOT isolated and whose args are passed
+    // by reference, with Ractor isolation checks forced on (violations become
+    // :ractor_isolation warnings). See Ractor.check_isolation_ractor.
+    bool ractor_isolation_check;
+
     // for func
     VALUE (*fn)(void *);
 };
@@ -863,10 +888,29 @@ thread_create_core(VALUE thval, struct thread_create_params *params)
         th->ractor = params->g;
         th->ec->ractor_id = rb_ractor_id(th->ractor);
         th->ractor->threads.main = th;
-        th->invoke_arg.proc.proc = rb_proc_isolate_bang(params->proc, Qnil);
-        th->invoke_arg.proc.args = INT2FIX(RARRAY_LENINT(params->args));
         th->invoke_arg.proc.kw_splat = rb_keyword_given_p();
-        rb_ractor_send_parameters(ec, params->g, params->args);
+        if (params->ractor_isolation_check) {
+            /* Isolation-check ractor: a *real* non-main ractor (so Ractor.main?
+             * is false, Ractor.current is genuine, it has its own mailbox), but
+             * the block is NOT isolated and args are passed by reference. This
+             * is safe because the launching ractor blocks on the result and
+             * threads within a ractor share the GVL, so no two ractors execute
+             * Ruby concurrently. Isolation violations are downgraded to
+             * :ractor_isolation warnings via th->ractor_isolation_check below.
+             * thread_do_start_proc() detects this path by args being a real
+             * Array rather than the FIXNUM parameter count. */
+            /* Report -- as warnings -- the Proc-isolation violations that
+             * Ractor.new would raise (outer-variable capture, 'yield'), then
+             * keep the closure intact so the block still runs by reference. */
+            rb_proc_ractor_check_isolation_warn(params->proc);
+            th->invoke_arg.proc.proc = params->proc;
+            th->invoke_arg.proc.args = params->args;
+        }
+        else {
+            th->invoke_arg.proc.proc = rb_proc_isolate_bang(params->proc, Qnil);
+            th->invoke_arg.proc.args = INT2FIX(RARRAY_LENINT(params->args));
+            rb_ractor_send_parameters(ec, params->g, params->args);
+        }
         break;
 
       case thread_invoke_type_func:
@@ -886,6 +930,9 @@ thread_create_core(VALUE thval, struct thread_create_params *params)
      * also see the violations as :ractor_isolation warnings rather than
      * raising at the first access. */
     th->ractor_isolation_check = current_th->ractor_isolation_check;
+    if (params->type == thread_invoke_type_ractor_proc && params->ractor_isolation_check) {
+        th->ractor_isolation_check = 1;
+    }
 
     th->pending_interrupt_queue = rb_ary_hidden_new(0);
     th->pending_interrupt_queue_checked = 0;
@@ -1030,6 +1077,19 @@ rb_thread_create_ractor(rb_ractor_t *r, VALUE args, VALUE proc)
         .g = r,
         .args = args,
         .proc = proc,
+    };
+    return thread_create_core(rb_thread_alloc(rb_cThread), &params);
+}
+
+VALUE
+rb_thread_create_isolation_check_ractor(rb_ractor_t *r, VALUE args, VALUE proc)
+{
+    struct thread_create_params params = {
+        .type = thread_invoke_type_ractor_proc,
+        .g = r,
+        .args = args,
+        .proc = proc,
+        .ractor_isolation_check = true,
     };
     return thread_create_core(rb_thread_alloc(rb_cThread), &params);
 }

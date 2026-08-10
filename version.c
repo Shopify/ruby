@@ -190,6 +190,11 @@ Init_version(void)
 
 int ruby_mn_threads_enabled;
 
+/* Set at boot (see ruby_mn_threads_params) when RUBY_RACTOR_EXCLUSIVE is
+ * truthy: the M:N scheduler runs with a single shared native thread so at
+ * most one thread executes Ruby VM-wide. Backs Ractor.exclusive_ractors?. */
+int ruby_ractor_exclusive_enabled;
+
 #ifndef RB_DEFAULT_PARSER
 #define RB_DEFAULT_PARSER RB_DEFAULT_PARSER_PRISM
 #endif

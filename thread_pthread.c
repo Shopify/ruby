@@ -1783,17 +1783,38 @@ Init_native_thread(rb_thread_t *main_th)
 
 extern int ruby_mn_threads_enabled;
 
+// Set at boot when RUBY_RACTOR_EXCLUSIVE is truthy. In this mode the M:N
+// scheduler is enabled with exactly one shared native thread
+// (max_cpu == 1), so at most one thread runs Ruby VM-wide at any instant
+// -- a global GVL that still hands off on blocking. This gives
+// Ractor.check_isolation_ractor its "blocks all other Ractors while running"
+// guarantee: the special (non-main) Ractor runs exclusively, yet blocking
+// operations (e.g. dispatching work back to the main Ractor) still hand the
+// single run slot over so there is no deadlock. It must be decided at boot
+// because dedicated native threads are assigned during VM init.
+extern int ruby_ractor_exclusive_enabled;
+
+static bool
+ractor_exclusive_env_p(void)
+{
+    const char *cstr = getenv("RUBY_RACTOR_EXCLUSIVE");
+    return cstr && atoi(cstr) > 0;
+}
+
 void
 ruby_mn_threads_params(void)
 {
     rb_vm_t *vm = GET_VM();
     rb_ractor_t *main_ractor = GET_RACTOR();
 
+    bool exclusive = USE_MN_THREADS && ractor_exclusive_env_p();
+
     const char *mn_threads_cstr = getenv("RUBY_MN_THREADS");
     bool enable_mn_threads = false;
 
-    if (USE_MN_THREADS && mn_threads_cstr && (enable_mn_threads = atoi(mn_threads_cstr) > 0)) {
+    if (USE_MN_THREADS && ((mn_threads_cstr && (enable_mn_threads = atoi(mn_threads_cstr) > 0)) || exclusive)) {
         // enabled
+        enable_mn_threads = true;
         ruby_mn_threads_enabled = 1;
     }
     main_ractor->threads.sched.enable_mn_threads = enable_mn_threads;
@@ -1807,6 +1828,12 @@ ruby_mn_threads_params(void)
         if (given_max_cpu > 0) {
             max_cpu = given_max_cpu;
         }
+    }
+
+    // Exclusive mode pins the whole VM to a single shared native thread.
+    if (exclusive) {
+        max_cpu = 1;
+        ruby_ractor_exclusive_enabled = 1;
     }
 
     vm->ractor.sched.max_cpu = max_cpu;

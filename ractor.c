@@ -570,7 +570,7 @@ rb_ractor_main_setup(rb_vm_t *vm, rb_ractor_t *r, rb_thread_t *th)
 }
 
 static VALUE
-ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block)
+ractor_create0(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block, bool isolation_check)
 {
     VALUE rv = ractor_alloc(self);
     rb_ractor_t *r = RACTOR_PTR(rv);
@@ -585,10 +585,21 @@ ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VAL
 
     rb_yjit_before_ractor_spawn();
     rb_zjit_before_ractor_spawn();
-    rb_thread_create_ractor(r, args, block);
+    if (isolation_check) {
+        rb_thread_create_isolation_check_ractor(r, args, block);
+    }
+    else {
+        rb_thread_create_ractor(r, args, block);
+    }
 
     RB_GC_GUARD(rv);
     return rv;
+}
+
+static VALUE
+ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block)
+{
+    return ractor_create0(ec, self, loc, name, args, block, false);
 }
 
 #if 0
@@ -3122,6 +3133,48 @@ static VALUE
 ractor_check_isolation_p(rb_execution_context_t *ec, VALUE self)
 {
     return rb_thread_ractor_isolation_check_p() ? Qtrue : Qfalse;
+}
+
+// Ractor.check_isolation_ractor(*args) { |*args| ... }
+//
+// Like Ractor.check_isolation, but runs the block inside a *real* non-main
+// Ractor instead of simulating one on the current (main) thread. That fixes
+// the biggest shortcoming of the inline mode: code gated on Ractor.main? /
+// Ractor.current now takes the same branch it would in a production worker
+// Ractor, because the block genuinely runs in a non-main Ractor.
+//
+// The block is NOT isolated and args are passed by reference (see
+// thread_create_core): this is safe because the launching Ractor blocks on
+// the result, and threads within a Ractor share the GVL, so no two Ractors
+// execute Ruby concurrently. Any isolation violation is downgraded to a
+// :ractor_isolation warning rather than raised.
+//
+// This returns the freshly created Ractor; the Ruby wrapper waits on #value.
+// True when the VM was booted in exclusive mode (RUBY_RACTOR_EXCLUSIVE=1):
+// a single shared native thread, so at most one thread runs Ruby VM-wide and
+// Ractor.check_isolation_ractor's block runs with all other Ractors blocked.
+extern int ruby_ractor_exclusive_enabled;
+
+static VALUE
+ractor_exclusive_ractors_p(rb_execution_context_t *ec, VALUE self)
+{
+    return ruby_ractor_exclusive_enabled ? Qtrue : Qfalse;
+}
+
+static VALUE
+ractor_check_isolation_ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block)
+{
+    // Same VM transitions as Ractor.check_isolation: force multi-ractor mode
+    // (one-way) and enable the per-thread isolation-check consultation. The
+    // new Ractor is genuinely non-main, so its accesses already route through
+    // the multi-ractor slow paths; flipping these here keeps behaviour
+    // consistent when check_isolation_ractor is the first thing called.
+    if (ruby_single_main_ractor != NULL) {
+        cancel_single_ractor_mode();
+    }
+    ruby_ractor_isolation_check_enabled = true;
+
+    return ractor_create0(ec, self, loc, name, args, block, true);
 }
 
 static VALUE

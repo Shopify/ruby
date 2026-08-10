@@ -569,6 +569,83 @@ class Ractor
     Primitive.ractor_check_isolation_p
   end
 
+  # Returns true when the VM was booted in exclusive mode, i.e. with the M:N
+  # scheduler pinned to a single shared native thread so that at most one
+  # thread runs Ruby VM-wide at any instant.
+  #
+  # This is what gives Ractor.check_isolation_ractor its guarantee that no
+  # other \Ractor runs while the special \Ractor is running (blocking
+  # operations still hand the single run slot over, so dispatching work back
+  # to the main \Ractor does not deadlock).
+  #
+  # Enable it by booting Ruby with the +RUBY_RACTOR_EXCLUSIVE=1+ environment
+  # variable set. It must be set at boot because dedicated native threads are
+  # assigned during VM initialization.
+  def self.exclusive_ractors?
+    Primitive.ractor_exclusive_ractors_p
+  end
+
+  # call-seq:
+  #   Ractor.check_isolation_ractor(*args) {|*args| ... } -> result of block
+  #
+  # Like Ractor.check_isolation, but runs the block inside a *real* non-main
+  # \Ractor rather than simulating one on the current (main) thread.
+  #
+  # This fixes the main shortcoming of Ractor.check_isolation: because the
+  # inline form keeps running on the main \Ractor, any library code gated on
+  # +Ractor.main?+ or +Ractor.current+ takes the main-Ractor branch, which is
+  # the opposite of what would happen in a production worker \Ractor. Under
+  # +check_isolation_ractor+ the block genuinely runs in a non-main \Ractor,
+  # so +Ractor.main?+ is +false+, +Ractor.current+ is a real \Ractor with its
+  # own default port, and those branches behave as they would in production.
+  #
+  # Unlike Ractor.new, the block is NOT isolated and +args+ are passed by
+  # reference (not copied or moved): the block can freely close over outer
+  # variables and touch non-shareable state. Every isolation violation is
+  # downgraded to a +:ractor_isolation+ category warning instead of raising
+  # +Ractor::IsolationError+.
+  #
+  # Touching non-shareable state by reference is only race-free if no other
+  # \Ractor runs while the isolation-check \Ractor does. That guarantee holds
+  # when the VM is booted with +RUBY_RACTOR_EXCLUSIVE=1+ (see
+  # Ractor.exclusive_ractors?): the M:N scheduler is pinned to a single shared
+  # native thread, so at most one thread runs Ruby VM-wide and all other
+  # Ractors are blocked while this one runs. If the VM was not booted that way,
+  # a one-time warning is emitted, because other Ractors can then run in
+  # parallel and non-shareable state may be raced on.
+  #
+  # Crucially this is not a stop-the-world barrier: blocking operations still
+  # hand the single run slot over. So work correctly offloaded to the main
+  # \Ractor (for example via the ractor-dispatch gem) keeps working -- the
+  # calling \Ractor blocks on the reply, letting the main \Ractor run and
+  # service the request, without deadlocking.
+  #
+  # The block's value is returned to the caller by reference, and an exception
+  # raised in the block is re-raised in the caller.
+  #
+  # As with Ractor.check_isolation, the VM is switched into multi-ractor mode
+  # (one-way) the first time this is called.
+  #
+  #   Ractor.check_isolation_ractor do
+  #     Ractor.main?                          # => false
+  #     SomeClass.some_unshareable_constant   # => warning, not exception
+  #   end
+  def self.check_isolation_ractor(*args, name: nil, &block)
+    b = block # TODO: builtin bug
+    raise ArgumentError, "must be called with a block" unless block
+    unless exclusive_ractors? || defined?(@check_isolation_ractor_warned)
+      @check_isolation_ractor_warned = true
+      Kernel.warn("Ractor.check_isolation_ractor: other Ractors can run in parallel " \
+                  "with the isolation-check Ractor. Boot with RUBY_RACTOR_EXCLUSIVE=1 to " \
+                  "run it exclusively (no other Ractor runs while it does).",
+                  uplevel: 1)
+    end
+    loc = caller_locations(1, 1).first
+    loc = "#{loc.path}:#{loc.lineno}"
+    r = Primitive.ractor_check_isolation_ractor_create(loc, name, args, b)
+    r.value
+  end
+
   # call-seq:
   #   Ractor.warn_frozen_error -> true or false
   #   Ractor.warn_frozen_error? -> true or false

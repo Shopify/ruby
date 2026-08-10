@@ -137,6 +137,7 @@ void rb_ractor_receive_parameters(rb_execution_context_t *ec, rb_ractor_t *g, in
 void rb_ractor_send_parameters(rb_execution_context_t *ec, rb_ractor_t *g, VALUE args);
 
 VALUE rb_thread_create_ractor(rb_ractor_t *g, VALUE args, VALUE proc); // defined in thread.c
+VALUE rb_thread_create_isolation_check_ractor(rb_ractor_t *g, VALUE args, VALUE proc); // defined in thread.c
 
 int rb_ractor_living_thread_num(const rb_ractor_t *);
 VALUE rb_ractor_thread_list(void);

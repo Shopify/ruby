@@ -1636,6 +1636,26 @@ rb_proc_isolate(VALUE self)
     return dst;
 }
 
+// For Ractor.check_isolation_ractor: report -- as :ractor_isolation warnings --
+// the Proc-isolation violations that Ractor.new would raise at construction
+// (accessing outer variables, using 'yield'), WITHOUT actually isolating the
+// Proc. The closure is left intact so the block still runs with its captured
+// state by reference; we only want to surface the violation, not change
+// behaviour. Mirrors the "warn instead of raise, then continue as if it had
+// succeeded" contract of check_isolation.
+void
+rb_proc_ractor_check_isolation_warn(VALUE self)
+{
+    const rb_iseq_t *iseq = vm_proc_iseq(self);
+
+    if (iseq) {
+        rb_proc_t *proc = (rb_proc_t *)RTYPEDDATA_DATA(self);
+        if (proc->block.type == block_type_iseq && ISEQ_BODY(iseq)->outer_variables) {
+            proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, true, "isolate a Proc", true);
+        }
+    }
+}
+
 VALUE
 rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
 {
@@ -1717,6 +1737,14 @@ rb_proc_ractor_make_shareable_continue(VALUE self, VALUE replace_self, VALUE *ch
 
     if (ruby_ractor_warn_frozen_error) {
         rb_ractor_warn_frozen_error_mark(self);
+        // Also set the FL_SHAREABLE flag (without freezing). warn_frozen_error
+        // mode does not isolate/freeze the Proc, so it would otherwise only be
+        // recognized as shareable via the identity-hash mark -- which is lost
+        // when the Proc is duped (e.g. by define_method). The flag survives dup
+        // and keeps the VM's fast-path shareability checks (Ractor message
+        // passing, bmethod calls from another Ractor) working, so a Proc made
+        // shareable via Ractor.shareable_proc stays callable cross-Ractor.
+        RB_OBJ_SET_SHAREABLE(self);
     }
     else {
         RB_OBJ_SET_FROZEN_SHAREABLE(self);

@@ -785,6 +785,20 @@ ractor_prepare_payload(rb_execution_context_t *ec, VALUE obj, enum ractor_basket
             *ptype = basket_type_ref;
             return obj;
         }
+        else if (rb_thread_ractor_isolation_check_p()) {
+            // Under Ractor.check_isolation, don't copy non-shareable messages.
+            // Copying can fail outright (e.g. Procs -> "can not copy Proc
+            // object"), which would abort a real-Ractor sweep at the first
+            // Ractor::Dispatch call. Exclusive mode (RUBY_RACTOR_EXCLUSIVE)
+            // guarantees no other Ractor runs concurrently, so passing the
+            // original object by reference is safe; warn and continue.
+            rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
+                             "can not copy an unshareable %"PRIsVALUE" across Ractors; "
+                             "passing by reference under Ractor.check_isolation",
+                             rb_class_of(obj));
+            *ptype = basket_type_ref;
+            return obj;
+        }
         else {
             *ptype = basket_type_copy;
             return ractor_copy(obj);

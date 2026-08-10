@@ -564,6 +564,199 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  # Ractor.check_isolation_ractor { ... } runs the block in a *real* non-main
+  # Ractor (so Ractor.main? / Ractor.current reflect a worker), while still
+  # downgrading isolation violations to warnings.
+  # ignore_stderr on these: without RUBY_RACTOR_EXCLUSIVE=1 check_isolation_ractor
+  # prints a one-time advisory warning that other Ractors can run in parallel.
+  def test_check_isolation_ractor_runs_in_a_non_main_ractor
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      main, current_is_main = Ractor.check_isolation_ractor do
+        [Ractor.main?, Ractor.current == Ractor.main]
+      end
+      assert_equal false, main
+      assert_equal false, current_is_main
+    RUBY
+  end
+
+  def test_check_isolation_ractor_enables_the_check_inside
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      assert_equal true, Ractor.check_isolation_ractor { Ractor.check_isolation? }
+      assert_equal false, Ractor.check_isolation?
+    RUBY
+  end
+
+  def test_check_isolation_ractor_returns_the_block_value_by_reference
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      obj = Object.new
+      assert_same obj, Ractor.check_isolation_ractor { obj }
+    RUBY
+  end
+
+  def test_check_isolation_ractor_passes_args_and_closes_over_outer_variables
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      outer = [1, 2, 3] # unshareable, captured by reference
+      arg = Object.new
+      same_arg, same_outer = Ractor.check_isolation_ractor(arg) do |a|
+        [a.equal?(arg), outer.equal?(outer)]
+      end
+      assert_equal true, same_arg
+      assert_equal true, same_outer
+    RUBY
+  end
+
+  def test_check_isolation_ractor_requires_a_block
+    assert_ractor(<<~'RUBY')
+      assert_raise(ArgumentError) { Ractor.check_isolation_ractor }
+    RUBY
+  end
+
+  def test_check_isolation_ractor_warns_instead_of_raising
+    # The violation is emitted from inside the worker Ractor, so it can't be
+    # observed with assert_warning (which captures the main Ractor's $stderr).
+    # Instead capture it via a Warning interceptor that appends to a queue.
+    # ignore_stderr: reading the (non-shareable) capture queue back on the main
+    # Ractor emits its own :ractor_isolation warning to stderr.
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      class CheckIsolationRactorFixture
+        @ivar = "ivar" # not shareable
+      end
+      # Shareable capture queue in a constant so the interceptor is callable
+      # from the worker Ractor. Guard against re-entrancy: anything the handler
+      # touches could itself emit a :ractor_isolation warning.
+      CAPTURED_WARNINGS = Thread::Queue.new
+      module CaptureIsolationWarnings
+        def warn(msg, category: nil)
+          if category == :ractor_isolation && !Thread.current[:capturing_iso]
+            Thread.current[:capturing_iso] = true
+            begin
+              CAPTURED_WARNINGS << msg
+            ensure
+              Thread.current[:capturing_iso] = false
+            end
+            return nil
+          end
+          super
+        end
+      end
+      Warning.singleton_class.prepend(CaptureIsolationWarnings)
+      Ractor.check_isolation_ractor { CheckIsolationRactorFixture.instance_variable_get(:@ivar) }
+      assert_operator CAPTURED_WARNINGS.size, :>=, 1
+      assert_match(%r{instance variables of classes/modules from non-main Ractors}, CAPTURED_WARNINGS.pop)
+    RUBY
+  end
+
+  # Ractor.new raises at construction when the block captures outer variables;
+  # check_isolation_ractor reports it as a warning but still runs the block
+  # (keeping the closure by reference), matching "warn instead of raise".
+  def test_check_isolation_ractor_warns_on_outer_variable_capture
+    # ignore_stderr: the non-exclusive advisory warning also goes to stderr.
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      captured = []
+      warnings = Thread::Queue.new
+      module CaptureOuterVarWarnings
+        def warn(msg, category: nil)
+          if category == :ractor_isolation && !Thread.current[:in_warn]
+            Thread.current[:in_warn] = true
+            begin; WARN_Q << msg; ensure; Thread.current[:in_warn] = false; end
+            return nil
+          end
+          super
+        end
+      end
+      WARN_Q = warnings
+      Warning.singleton_class.prepend(CaptureOuterVarWarnings)
+
+      result = Ractor.check_isolation_ractor { captured << :ran; captured }
+      assert_same captured, result          # closure kept by reference, block ran
+      assert_equal [:ran], captured
+      refute_predicate warnings, :empty?     # ...but the violation was reported
+      assert_match(/can not isolate a Proc because it accesses outer variables \(captured\)/, warnings.pop)
+    RUBY
+  end
+
+  def test_check_isolation_ractor_reraises_block_exceptions
+    # ignore_stderr: the worker Ractor reports the unhandled exception on its
+    # own thread (report_on_exception), exactly like a plain Ractor.new would;
+    # the value is still re-raised as a Ractor::RemoteError in the caller.
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      assert_raise(Ractor::RemoteError) do
+        Ractor.check_isolation_ractor { raise "boom" }
+      end
+    RUBY
+  end
+
+  # A worker Ractor can dispatch work back to the main Ractor and block on the
+  # reply without deadlocking: the caller blocks on #value, letting the main
+  # Ractor's threads run and service the request. This is the pattern the
+  # ractor-dispatch gem relies on.
+  def test_check_isolation_ractor_allows_dispatch_to_main
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      main_port = Ractor::Port.new
+      Thread.new do
+        callable, reply = main_port.receive
+        reply << callable.call
+      end
+
+      value = Ractor.check_isolation_ractor do
+        reply = Ractor::Port.new
+        main_port << [Ractor.shareable_proc { 40 + 2 }, reply]
+        reply.receive
+      end
+      assert_equal 42, value
+    RUBY
+  end
+
+  def test_exclusive_ractors_predicate_reflects_boot_flag
+    assert_equal false, Ractor.exclusive_ractors?
+    assert_separately([{"RUBY_RACTOR_EXCLUSIVE" => "1"}], <<~'RUBY')
+      assert_equal true, Ractor.exclusive_ractors?
+    RUBY
+  end
+
+  # Under RUBY_RACTOR_EXCLUSIVE=1 the VM runs a single shared native thread, so
+  # while the isolation-check Ractor is busy on the CPU, NO other Ractor (not
+  # even a thread on the main Ractor) makes progress. Blocking still hands the
+  # run slot over, which is what keeps dispatch-to-main from deadlocking.
+  def test_check_isolation_ractor_blocks_other_ractors_when_exclusive
+    assert_separately([{"RUBY_RACTOR_EXCLUSIVE" => "1"}, "-W:no-experimental"], <<~'RUBY', timeout: 30)
+      Warning[:ractor_isolation] = false
+      assert_equal true, Ractor.exclusive_ractors?
+
+      report = Ractor::Port.new
+      # A background thread on the MAIN Ractor reporting timestamps for ~3s.
+      Thread.new do
+        t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        loop do
+          now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          break if now - t0 > 3.0
+          report << now
+          sleep 0.01
+        end
+        report << :done
+      end
+
+      # The isolation-check Ractor busy-loops (never blocking) for 1s.
+      start, finish = Ractor.check_isolation_ractor do
+        t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        x = 0
+        x += 1 while Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0 < 1.0
+        [t0, Process.clock_gettime(Process::CLOCK_MONOTONIC)]
+      end
+
+      stamps = []
+      loop do
+        m = report.receive
+        break if m == :done
+        stamps << m
+      end
+      during = stamps.count { |t| t >= start && t <= finish }
+      assert_equal 0, during,
+        "expected no other Ractor to run during the exclusive isolation-check Ractor, " \
+        "but observed #{during} ticks in its #{'%.2f' % (finish - start)}s busy window"
+    RUBY
+  end
+
   def test_warn_frozen_error_marks_make_shareable_objects_without_freezing
     assert_ractor(<<~'RUBY')
       old = Ractor.warn_frozen_error
