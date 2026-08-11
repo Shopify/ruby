@@ -628,6 +628,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::ArrayDup { val, state } => gen_array_dup(jit, asm, function, *val, opnd!(val), &function.frame_state(*state)),
         Insn::AdjustBounds { index, length } => gen_adjust_bounds(asm, opnd!(index), opnd!(length)),
         Insn::ArrayAref { array, index, .. } => gen_array_aref(asm, opnd!(array), opnd!(index)),
+        Insn::ArrayArefOrNil { array, index } => gen_array_aref_or_nil(jit, asm, opnd!(array), opnd!(index)),
         Insn::ArrayAset { array, index, val } => {
             no_output!(gen_array_aset(asm, opnd!(array), opnd!(index), opnd!(val)))
         }
@@ -638,6 +639,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::StringCopy { val, chilled, state } => gen_string_copy(jit, asm, function, *val, opnd!(val), *chilled, &function.frame_state(*state)),
         Insn::StringConcat { strings, state } => gen_string_concat(jit, asm, function, opnds!(strings), &function.frame_state(*state)),
         &Insn::StringGetbyte { string, index } => gen_string_getbyte(asm, opnd!(string), opnd!(index)),
+        &Insn::StringGetbyteOrNil { string, index } => gen_string_getbyte_or_nil(jit, asm, opnd!(string), opnd!(index)),
         Insn::StringSetbyteFixnum { string, index, value } => gen_string_setbyte_fixnum(asm, opnd!(string), opnd!(index), opnd!(value)),
         Insn::StringAppend { recv, other, state } => gen_string_append(jit, asm, function, opnd!(recv), opnd!(other), &function.frame_state(*state)),
         Insn::StringAppendCodepoint { recv, other, state } => gen_string_append_codepoint(jit, asm, function, opnd!(recv), opnd!(other), &function.frame_state(*state)),
@@ -2215,6 +2217,69 @@ fn gen_array_aref(
     let elem_offset = asm.lshift(unboxed_idx, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
     let elem_ptr = asm.add(array_ptr, elem_offset);
     asm.load(Opnd::mem(VALUE_BITS, elem_ptr, 0))
+}
+
+/// Compile array access (`array[index]`) where `index` is a raw (unboxed)
+/// C long that may be negative or out of bounds. Out-of-bounds reads yield
+/// nil instead of side-exiting, matching rb_ary_entry semantics.
+fn gen_array_aref_or_nil(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    array: Opnd,
+    index: Opnd,
+) -> lir::Opnd {
+    asm_comment!(asm, "ArrayArefOrNil");
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+
+    let load_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_edge = |v| Target::Block(Box::new(lir::BranchEdge {
+        target: result_block,
+        args: vec![v],
+    }));
+
+    let idx = asm.load_mem(index);
+    let array = asm.load_mem(array);
+    let length = gen_array_length(asm, array);
+    let array_ptr = gen_array_ptr(asm, array);
+
+    // Adjust a negative index by the length, as in gen_adjust_bounds
+    let adjusted = asm.add(idx, length);
+    asm.test(idx, idx);
+    let adjusted = asm.csel_l(adjusted, idx);
+
+    // In bounds iff (u64)adjusted < (u64)length; this single unsigned
+    // comparison covers both negative-out-of-range and past-the-end indices.
+    asm.cmp(adjusted, length);
+    asm.jb(Target::Block(Box::new(lir::BranchEdge {
+        target: load_block,
+        args: vec![array_ptr, adjusted],
+    })));
+
+    // Out of bounds: nil
+    asm.jmp(result_edge(Qnil.into()));
+
+    // In bounds: load the element
+    asm.set_current_block(load_block);
+    let label = jit.get_label(asm, load_block, hir_block_id);
+    asm.write_label(label);
+    let array_ptr = asm.new_block_param(VALUE_BITS);
+    asm.current_block().add_parameter(array_ptr);
+    let adjusted = asm.new_block_param(VALUE_BITS);
+    asm.current_block().add_parameter(adjusted);
+    let elem_offset = asm.lshift(adjusted, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
+    let elem_ptr = asm.add(array_ptr, elem_offset);
+    let elem = asm.load(Opnd::mem(VALUE_BITS, elem_ptr, 0));
+    asm.jmp(result_edge(elem));
+
+    // Join block
+    asm.set_current_block(result_block);
+    let label = jit.get_label(asm, result_block, hir_block_id);
+    asm.write_label(label);
+    let param = asm.new_block_param(VALUE_BITS);
+    asm.current_block().add_parameter(param);
+    param
 }
 
 fn gen_array_aset(
@@ -4068,6 +4133,77 @@ fn gen_string_getbyte(asm: &mut Assembler, string: Opnd, index: Opnd) -> Opnd {
     // TODO(max): Use SIB indexing here once the backend supports it
     let string_ptr = asm.add(string_ptr, index);
     let byte = asm.load(Opnd::mem(8, string_ptr, 0));
+    tag_byte(asm, byte)
+}
+
+/// Compile byte access (`string.getbyte(index)`) where `index` is a raw
+/// (unboxed) C long that may be negative or out of bounds. Out-of-bounds
+/// reads yield nil instead of side-exiting, matching rb_str_getbyte semantics.
+fn gen_string_getbyte_or_nil(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    string: Opnd,
+    index: Opnd,
+) -> lir::Opnd {
+    asm_comment!(asm, "StringGetbyteOrNil");
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+
+    let load_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_edge = |v| Target::Block(Box::new(lir::BranchEdge {
+        target: result_block,
+        args: vec![v],
+    }));
+
+    let idx = asm.load_mem(index);
+    let string_reg = asm.load_mem(string);
+    // struct RString stores `len` at a fixed offset for both embedded and
+    // heap strings, so this is a plain load (unlike RArray).
+    let length = asm.load(Opnd::mem(VALUE_BITS, string_reg, RUBY_OFFSET_RSTRING_LEN));
+    let string_ptr = get_string_ptr(asm, string);
+
+    // Adjust a negative index by the length, as in gen_adjust_bounds
+    let adjusted = asm.add(idx, length);
+    asm.test(idx, idx);
+    let adjusted = asm.csel_l(adjusted, idx);
+
+    // In bounds iff (u64)adjusted < (u64)length; this single unsigned
+    // comparison covers both negative-out-of-range and past-the-end indices.
+    asm.cmp(adjusted, length);
+    asm.jb(Target::Block(Box::new(lir::BranchEdge {
+        target: load_block,
+        args: vec![string_ptr, adjusted],
+    })));
+
+    // Out of bounds: nil
+    asm.jmp(result_edge(Qnil.into()));
+
+    // In bounds: load the byte
+    asm.set_current_block(load_block);
+    let label = jit.get_label(asm, load_block, hir_block_id);
+    asm.write_label(label);
+    let string_ptr = asm.new_block_param(VALUE_BITS);
+    asm.current_block().add_parameter(string_ptr);
+    let adjusted = asm.new_block_param(VALUE_BITS);
+    asm.current_block().add_parameter(adjusted);
+    // TODO(max): Use SIB indexing here once the backend supports it
+    let byte_ptr = asm.add(string_ptr, adjusted);
+    let byte = asm.load(Opnd::mem(8, byte_ptr, 0));
+    let byte = tag_byte(asm, byte);
+    asm.jmp(result_edge(byte));
+
+    // Join block
+    asm.set_current_block(result_block);
+    let label = jit.get_label(asm, result_block, hir_block_id);
+    asm.write_label(label);
+    let param = asm.new_block_param(VALUE_BITS);
+    asm.current_block().add_parameter(param);
+    param
+}
+
+/// Zero-extend a byte loaded from a string and tag it as a Fixnum
+fn tag_byte(asm: &mut Assembler, byte: Opnd) -> Opnd {
     // Zero-extend the byte to 64 bits
     let byte = byte.with_num_bits(64);
     let byte = asm.and(byte, 0xFF.into());

@@ -980,6 +980,10 @@ pub enum Insn {
     StringConcat { strings: Vec<InsnId>, state: InsnId },
     /// Call rb_str_getbyte with known-Fixnum index
     StringGetbyte { string: InsnId, index: InsnId },
+    /// Load the byte at `index` (a raw, unboxed C `long`, possibly negative or
+    /// out of bounds). Returns the byte as a tagged Fixnum, or `nil` when out
+    /// of bounds. Unlike [`Insn::StringGetbyte`], never side-exits.
+    StringGetbyteOrNil { string: InsnId, index: InsnId },
     StringSetbyteFixnum { string: InsnId, index: InsnId, value: InsnId },
     StringAppend { recv: InsnId, other: InsnId, state: InsnId },
     StringAppendCodepoint { recv: InsnId, other: InsnId, state: InsnId },
@@ -1013,6 +1017,10 @@ pub enum Insn {
     /// Push `val` onto `array`, where `array` is already `Array`.
     ArrayPush { array: InsnId, val: InsnId, state: InsnId },
     ArrayAref { array: InsnId, index: InsnId },
+    /// Array access where `index` is a raw (unboxed) C `long`, possibly negative
+    /// or out of bounds. Returns the element, or `nil` when out of bounds.
+    /// Unlike [`Insn::ArrayAref`], never side-exits.
+    ArrayArefOrNil { array: InsnId, index: InsnId },
     ArrayAset { array: InsnId, index: InsnId, val: InsnId },
     ArrayPop { array: InsnId, state: InsnId },
     /// Return the length of the array as a C `long` ([`types::CInt64`])
@@ -1393,7 +1401,7 @@ macro_rules! for_each_operand_impl {
                 $visit_many!(strings);
                 $visit_one!(*state);
             }
-            Insn::StringGetbyte { string, index } => {
+            Insn::StringGetbyte { string, index } | Insn::StringGetbyteOrNil { string, index } => {
                 $visit_one!(*string);
                 $visit_one!(*index);
             }
@@ -1506,7 +1514,7 @@ macro_rules! for_each_operand_impl {
                 $visit_one!(*val);
                 $visit_one!(*state);
             }
-            Insn::ArrayAref { array, index } => {
+            Insn::ArrayAref { array, index } | Insn::ArrayArefOrNil { array, index } => {
                 $visit_one!(*array);
                 $visit_one!(*index);
             }
@@ -1723,6 +1731,7 @@ impl Insn {
             Insn::StringIntern { .. } => effects::Any,
             Insn::StringConcat { .. } => effects::Any,
             Insn::StringGetbyte { .. } => Effect::read_write(abstract_heaps::Other, abstract_heaps::Empty),
+            Insn::StringGetbyteOrNil { .. } => Effect::read_write(abstract_heaps::Other, abstract_heaps::Empty),
             Insn::StringSetbyteFixnum { .. } => effects::Any,
             Insn::StringAppend { .. } => effects::Any,
             Insn::StringAppendCodepoint { .. } => effects::Any,
@@ -1754,6 +1763,7 @@ impl Insn {
             Insn::ArrayExtend { .. } => effects::Any,
             Insn::ArrayPush { .. } => effects::Any,
             Insn::ArrayAref { ..  } => effects::Any,
+            Insn::ArrayArefOrNil { .. } => effects::Any,
             Insn::ArrayAset { .. } => effects::Any,
             Insn::ArrayPop { ..  } => effects::Any,
             Insn::ArrayLength { .. } => Effect::write(abstract_heaps::Empty),
@@ -2037,6 +2047,9 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
             Insn::ArrayAref { array, index, .. } => {
                 write!(f, "ArrayAref {array}, {index}")
             }
+            Insn::ArrayArefOrNil { array, index, .. } => {
+                write!(f, "ArrayArefOrNil {array}, {index}")
+            }
             Insn::ArrayAset { array, index, val, ..} => {
                 write!(f, "ArrayAset {array}, {index}, {val}")
             }
@@ -2117,6 +2130,9 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
             }
             Insn::StringGetbyte { string, index, .. } => {
                 write!(f, "StringGetbyte {string}, {index}")
+            }
+            Insn::StringGetbyteOrNil { string, index, .. } => {
+                write!(f, "StringGetbyteOrNil {string}, {index}")
             }
             Insn::StringSetbyteFixnum { string, index, value, .. } => {
                 write!(f, "StringSetbyteFixnum {string}, {index}, {value}")
@@ -3386,6 +3402,7 @@ impl Function {
             Insn::StringIntern { .. } => types::Symbol,
             Insn::StringConcat { .. } => types::StringExact,
             Insn::StringGetbyte { .. } => types::Fixnum,
+            Insn::StringGetbyteOrNil { .. } => types::Fixnum.union(types::NilClass),
             Insn::StringSetbyteFixnum { .. } => types::Fixnum,
             Insn::StringAppend { .. } => types::StringExact,
             Insn::StringAppendCodepoint { .. } => types::StringExact,
@@ -3394,6 +3411,7 @@ impl Function {
             Insn::NewArray { .. } => types::ArrayExact,
             Insn::ArrayDup { .. } => types::ArrayExact,
             Insn::ArrayAref { .. } => types::BasicObject,
+            Insn::ArrayArefOrNil { .. } => types::BasicObject,
             Insn::ArrayPop { .. } => types::BasicObject,
             Insn::ArrayLength { .. } => types::CInt64,
             Insn::AdjustBounds { .. } => types::CInt64,
@@ -6326,7 +6344,7 @@ impl Function {
                             _ => None,
                         })
                     }
-                    &Insn::ArrayAref { array, index }
+                    &Insn::ArrayAref { array, index } | &Insn::ArrayArefOrNil { array, index }
                         if self.type_of(array).ruby_object_known()
                             && self.type_of(index).is_subtype(types::CInt64) => {
                         let array_obj = self.type_of(array).ruby_object().unwrap();
@@ -7157,7 +7175,7 @@ impl Function {
             | Insn::ArrayLength { array, .. } => {
                 self.assert_subtype(insn_id, array, types::Array)
             }
-            Insn::ArrayAref { array, index } => {
+            Insn::ArrayAref { array, index } | Insn::ArrayArefOrNil { array, index } => {
                 self.assert_subtype(insn_id, array, types::Array)?;
                 self.assert_subtype(insn_id, index, types::CInt64)
             }
@@ -7300,7 +7318,7 @@ impl Function {
                 self.assert_subtype(insn_id, left, types::CInt64)?;
                 self.assert_subtype(insn_id, right, types::CInt64)
             },
-            Insn::StringGetbyte { string, index } => {
+            Insn::StringGetbyte { string, index } | Insn::StringGetbyteOrNil { string, index } => {
                 self.assert_subtype(insn_id, string, types::String)?;
                 self.assert_subtype(insn_id, index, types::CInt64)
             },
