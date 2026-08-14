@@ -1444,24 +1444,37 @@ compact_after_delete(VALUE hash)
     }
 }
 
-static VALUE
-hash_alloc_flags(VALUE klass, VALUE flags, VALUE ifnone, bool st)
+static inline size_t
+hash_slot_size(size_t capa, bool frozen)
 {
-    const VALUE wb = (RGENGC_WB_PROTECTED_HASH ? FL_WB_PROTECTED : 0);
-    const size_t size = sizeof(struct RHash) + (st ? sizeof(st_table) : sizeof(ar_table));
+    if (capa > RHASH_AR_TABLE_MAX_SIZE) {
+        return sizeof(struct RHash) + sizeof(st_table);
+    }
 
-    NEWOBJ_OF(hash, struct RHash, klass, T_HASH | wb | flags, size, 0);
+    // If the hash is immutable, we can allocate a slot with exactly as much space as needed.
+    if (frozen) {
+        return sizeof(struct RHash) + offsetof(ar_table, pairs) + capa * sizeof(ar_table_pair);
+    }
 
-    RHASH_SET_IFNONE((VALUE)hash, ifnone);
+    return sizeof(struct RHash) + sizeof(ar_table);
+}
 
-    return (VALUE)hash;
+static VALUE
+hash_alloc_capa(VALUE klass, VALUE flags, VALUE ifnone, size_t size, bool frozen)
+{
+    NEWOBJ_OF(h, struct RHash, klass, T_HASH | flags, hash_slot_size(size, frozen), NULL);
+    VALUE hash = (VALUE)h;
+    rb_hash_set_ifnone(hash, ifnone);
+    if (size > RHASH_AR_TABLE_MAX_SIZE) {
+        hash_st_table_init(hash, &objhash, size);
+    }
+    return hash;
 }
 
 static VALUE
 hash_alloc(VALUE klass)
 {
-    /* Allocate to be able to fit both st_table and ar_table. */
-    return hash_alloc_flags(klass, 0, Qnil, sizeof(st_table) > sizeof(ar_table));
+    return hash_alloc_capa(klass, 0, Qnil, 0, false);
 }
 
 static VALUE
@@ -1490,20 +1503,13 @@ copy_compare_by_id(VALUE hash, VALUE basis)
 VALUE
 rb_hash_new_with_size(st_index_t size)
 {
-    bool st = size > RHASH_AR_TABLE_MAX_SIZE;
-    VALUE ret = hash_alloc_flags(rb_cHash, 0, Qnil, st);
-
-    if (st) {
-        hash_st_table_init(ret, &objhash, size);
-    }
-
-    return ret;
+    return hash_alloc_capa(rb_cHash, 0, Qnil, size, false);
 }
 
 VALUE
 rb_hash_new_with_size_and_type(VALUE klass, st_index_t size, const struct st_hash_type *type)
 {
-    VALUE ret = hash_alloc_flags(klass, 0, Qnil, true);
+    VALUE ret = hash_alloc_capa(klass, 0, Qnil, size, true);
     hash_st_table_init(ret, type, size);
     return ret;
 }
@@ -1511,24 +1517,13 @@ rb_hash_new_with_size_and_type(VALUE klass, st_index_t size, const struct st_has
 VALUE
 rb_hash_new_capa(long capa)
 {
-    return rb_hash_new_with_size((st_index_t)capa);
+    return hash_alloc_capa(rb_cHash, 0, Qnil, capa, false);
 }
 
 VALUE
 rb_hash_alloc_fixed_size(VALUE klass, st_index_t size)
 {
-    VALUE ret;
-    if (size > RHASH_AR_TABLE_MAX_SIZE) {
-        ret = hash_alloc_flags(klass, 0, Qnil, true);
-        hash_st_table_init(ret, &objhash, size);
-    }
-    else {
-        size_t slot_size = sizeof(struct RHash) + offsetof(ar_table, pairs) + size * sizeof(ar_table_pair);
-        ret = rb_wb_protected_newobj_of(GET_EC(), klass, T_HASH, 0, slot_size);
-    }
-
-    RHASH_SET_IFNONE(ret, Qnil);
-    return ret;
+    return hash_alloc_capa(klass, 0, Qnil, size, true);
 }
 
 static VALUE
@@ -1540,8 +1535,6 @@ hash_copy(VALUE ret, VALUE hash)
         }
         else {
             st_table *tab = RHASH_ST_TABLE(ret);
-            st_init_existing_table_with_size(tab, &objhash, RHASH_AR_TABLE_SIZE(hash));
-
             int bound = RHASH_AR_TABLE_BOUND(hash);
             for (int i = 0; i < bound; i++) {
                 if (ar_cleared_entry(hash, i)) continue;
@@ -1567,7 +1560,7 @@ hash_copy(VALUE ret, VALUE hash)
 static VALUE
 hash_dup_with_compare_by_id(VALUE hash)
 {
-    VALUE dup = hash_alloc_flags(rb_cHash, 0, Qnil, RHASH_ST_TABLE_P(hash));
+    VALUE dup = hash_alloc_capa(rb_cHash, 0, Qnil, RHASH_SIZE(hash), false);
     if (RHASH_ST_TABLE_P(hash)) {
         RHASH_SET_ST_FLAG(dup);
     }
@@ -1581,8 +1574,8 @@ hash_dup_with_compare_by_id(VALUE hash)
 static VALUE
 hash_dup(VALUE hash, VALUE klass, VALUE flags)
 {
-    return hash_copy(hash_alloc_flags(klass, flags, RHASH_IFNONE(hash), !RHASH_EMPTY_P(hash) && RHASH_ST_TABLE_P(hash)),
-                     hash);
+    VALUE dup = hash_alloc_capa(klass, flags, RHASH_IFNONE(hash), RHASH_SIZE(hash), false);
+    return hash_copy(dup, hash);
 }
 
 VALUE
@@ -3016,9 +3009,16 @@ rb_hash_replace(VALUE hash, VALUE hash2)
 
     if (RHASH_AR_TABLE_P(hash)) {
         hash_ar_free_and_clear_table(hash);
+        if (RHASH_SIZE(hash2) > RHASH_AR_TABLE_MAX_SIZE) {
+            RHASH_SET_ST_FLAG(hash);
+        }
     }
     else {
         hash_st_free_and_clear_table(hash);
+    }
+
+    if (RHASH_ST_TABLE_P(hash)) {
+        st_init_existing_table_with_size(RHASH_ST_TABLE(hash), &objhash, RHASH_SIZE(hash2));
     }
 
     hash_copy(hash, hash2);
