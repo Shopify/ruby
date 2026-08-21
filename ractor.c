@@ -1642,7 +1642,9 @@ static VALUE
 rescue_freeze(VALUE data, VALUE freeze_exception)
 {
     struct rescue_freeze_data *rescue_freeze_data = (struct rescue_freeze_data *)data;
-    VALUE exception = rb_exc_new3(rb_eRactorError, rb_str_new_cstr("raised calling #freeze"));
+    VALUE exception_class = rb_obj_is_kind_of(freeze_exception, rb_eRactorIsolationError) ?
+        rb_eRactorIsolationError : rb_eRactorError;
+    VALUE exception = rb_exc_new3(exception_class, rb_str_new_cstr("raised calling #freeze"));
     rb_ivar_set(exception, rb_intern("cause"), freeze_exception);
     rescue_freeze_data->exception = exception;
     return Qfalse;
