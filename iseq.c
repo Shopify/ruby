@@ -417,20 +417,20 @@ rb_iseq_mark_and_move(rb_iseq_t *iseq, bool reference_updating)
 
         if (reference_updating) {
 #if USE_YJIT
-            rb_yjit_iseq_update_references(iseq);
+            if (rb_yjit_enabled_p) rb_yjit_iseq_update_references(iseq);
 #endif
 #if USE_ZJIT
-            rb_zjit_iseq_update_references(body->zjit_payload);
+            if (rb_zjit_enabled_p) rb_zjit_iseq_update_references(body->jit_payload);
 #endif
         }
         else {
             // TODO: check jit payload
             if (!rb_gc_checking_shareable()) {
 #if USE_YJIT
-                rb_yjit_iseq_mark(body->yjit_payload);
+                if (rb_yjit_enabled_p) rb_yjit_iseq_mark(body->jit_payload);
 #endif
 #if USE_ZJIT
-                rb_zjit_iseq_mark(body->zjit_payload);
+                if (rb_zjit_enabled_p) rb_zjit_iseq_mark(body->jit_payload);
 #endif
             }
         }
