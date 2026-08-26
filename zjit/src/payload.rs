@@ -81,7 +81,7 @@ pub fn get_or_create_iseq_payload_ptr(iseq: IseqPtr) -> *mut IseqPayload {
     type VoidPtr = *mut c_void;
 
     unsafe {
-        let payload = rb_iseq_get_zjit_payload(iseq);
+        let payload = rb_iseq_get_jit_payload(iseq);
         if payload.is_null() {
             // Allocate a new payload with Box and transfer ownership to the GC.
             // We drop the payload with Box::from_raw when the GC frees the ISEQ and calls us.
@@ -90,7 +90,7 @@ pub fn get_or_create_iseq_payload_ptr(iseq: IseqPtr) -> *mut IseqPayload {
             let iseq_size = get_iseq_encoded_size(iseq);
             let new_payload = IseqPayload::new(iseq_size);
             let new_payload = Box::into_raw(Box::new(new_payload));
-            rb_iseq_set_zjit_payload(iseq, new_payload as VoidPtr);
+            rb_iseq_set_jit_payload(iseq, new_payload as VoidPtr);
 
             new_payload
         } else {
