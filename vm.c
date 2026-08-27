@@ -1126,8 +1126,8 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
     // This is done before creating the imemo_env because VM_STACK_ENV_WRITE
     // below leaves the on-stack ep in a state that is unsafe to GC.
     if (VM_FRAME_RUBYFRAME_P(cfp)) {
-        rb_yjit_invalidate_ep_is_bp(cfp->iseq);
-        rb_zjit_invalidate_no_ep_escape(cfp->iseq);
+        if (rb_yjit_enabled_p) rb_yjit_invalidate_ep_is_bp(cfp->iseq);
+        if (rb_zjit_enabled_p) rb_zjit_invalidate_no_ep_escape(cfp->iseq);
     }
 
     /*
