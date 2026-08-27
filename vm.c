@@ -1131,8 +1131,8 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
     // are no longer useful and can slow down Ractors.
     if (VM_FRAME_RUBYFRAME_P(cfp) &&
         !rbimpl_atomic_load(&ISEQ_BODY(cfp->iseq)->jit_ep_escape_recorded, RBIMPL_ATOMIC_RELAXED)) {
-        rb_yjit_invalidate_ep_is_bp(cfp->iseq);
-        rb_zjit_invalidate_no_ep_escape(cfp->iseq);
+        if (rb_yjit_enabled_p) rb_yjit_invalidate_ep_is_bp(cfp->iseq);
+        if (rb_zjit_enabled_p) rb_zjit_invalidate_no_ep_escape(cfp->iseq);
     }
 
     /*
