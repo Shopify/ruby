@@ -11,6 +11,7 @@
 
 #if USE_ZJIT
 extern void *rb_zjit_entry;
+extern bool rb_zjit_compiling_p;
 extern uint64_t rb_zjit_call_threshold;
 extern uint64_t rb_zjit_profile_threshold;
 void rb_zjit_compile_iseq(const rb_iseq_t *iseq, bool jit_exception);
@@ -30,6 +31,7 @@ void rb_zjit_tracing_invalidate_all(void);
 void rb_zjit_invalidate_no_singleton_class(VALUE klass);
 #else
 #define rb_zjit_entry 0
+#define rb_zjit_compiling_p false
 static inline void rb_zjit_compile_iseq(const rb_iseq_t *iseq, bool jit_exception) {}
 static inline void rb_zjit_profile_insn(uint32_t insn, rb_execution_context_t *ec) {}
 static inline void rb_zjit_profile_enable(const rb_iseq_t *iseq) {}
