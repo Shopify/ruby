@@ -1144,7 +1144,7 @@ vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_
                         else {
                             if (UNLIKELY(!rb_ractor_main_p())) {
                                 if (!rb_ractor_shareable_p(val)) {
-                                    rb_raise(rb_eRactorIsolationError,
+                                    rb_ractor_isolation_violation(
                                              "can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" by non-main ractor.", rb_class_path(klass), rb_id2str(id));
                                 }
                             }
@@ -1262,6 +1262,9 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 // and modules. So we can skip locking.
                 // Second, other ractors need to check the shareability of the
                 // values returned from the class ivars.
+                //
+                // Ractor.check_isolation also routes here so the isolation
+                // checks in the general path get a chance to fire.
 
                 if (default_value == Qundef) { // defined?
                     return rb_ivar_defined(obj, id) ? Qtrue : Qundef;
@@ -1429,6 +1432,8 @@ static VALUE
 vm_setivar_class(VALUE obj, VALUE val, rb_setivar_cache cache)
 {
     if (UNLIKELY(!rb_ractor_main_p())) {
+        // Bail out of the inline cache fast path so the slow path can run
+        // the isolation check (also fires under Ractor.check_isolation).
         return Qundef;
     }
 
@@ -3545,9 +3550,21 @@ vm_call_iseq_setup_tailcall(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 static void
 ractor_unsafe_check(void)
 {
-    if (!rb_ractor_main_p()) {
-        rb_raise(rb_eRactorUnsafeError, "ractor unsafe method called from not main ractor");
+    if (LIKELY(rb_ractor_main_p())) return;
+
+    if (rb_ractor_isolation_check_p()) {
+        // Ractor.check_isolation: downgrade to a :ractor_isolation warning so
+        // the sweep can keep going. We deliberately route through the same
+        // category as the IsolationError downgrades because from the caller's
+        // point of view both mean "this code would not work in a Ractor".
+        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
+                         "ractor unsafe method called from not main ractor");
+        return;
     }
+
+    // Real non-main Ractor: preserve the existing UnsafeError behaviour so
+    // user code that rescues Ractor::UnsafeError specifically keeps working.
+    rb_raise(rb_eRactorUnsafeError, "ractor unsafe method called from not main ractor");
 }
 
 static VALUE
@@ -4105,6 +4122,36 @@ vm_call_attrset(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_c
     return vm_call_attrset_direct(ec, cfp, calling->cc, calling->recv);
 }
 
+// True if a bmethod's Proc may not be invoked from the current Ractor: it is
+// not shareable and was defined in a different Ractor.
+static inline bool
+vm_bmethod_proc_uncallable_p(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme, VALUE procv)
+{
+    return !RB_OBJ_SHAREABLE_P(procv) &&
+        cme->def->body.bmethod.defined_ractor_id != rb_ec_ractor_id(ec);
+}
+
+// A method defined with a genuinely non-shareable Proc (e.g. define_method with
+// a Proc capturing unshareable state) can normally only be called from the
+// Ractor that defined it; calling it elsewhere raises. Under
+// Ractor.check_isolation we downgrade that to a :ractor_isolation warning and
+// fall through to invoke it anyway. RUBY_RACTOR_EXCLUSIVE makes this
+// race-free; without that scheduler mode the public wrapper emits an advisory.
+// Continuing lets a real-Ractor sweep collect the violations that follow
+// instead of dying on the first bmethod call.
+static void
+vm_bmethod_unshareable_proc_violation(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme)
+{
+    if (rb_ractor_isolation_check_p()) {
+        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
+                         "can not call method %"PRIsVALUE" defined with an un-shareable Proc from a different Ractor",
+                         rb_id2str(cme->called_id));
+    }
+    else {
+        rb_raise(rb_eRuntimeError, "defined with an un-shareable Proc in a different Ractor");
+    }
+}
+
 static inline VALUE
 vm_call_bmethod_body(rb_execution_context_t *ec, struct rb_calling_info *calling, const VALUE *argv)
 {
@@ -4114,9 +4161,8 @@ vm_call_bmethod_body(rb_execution_context_t *ec, struct rb_calling_info *calling
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     VALUE procv = cme->def->body.bmethod.proc;
 
-    if (!RB_OBJ_SHAREABLE_P(procv) &&
-        cme->def->body.bmethod.defined_ractor_id != rb_ec_ractor_id(ec)) {
-        rb_raise(rb_eRuntimeError, "defined with an un-shareable Proc in a different Ractor");
+    if (vm_bmethod_proc_uncallable_p(ec, cme, procv)) {
+        vm_bmethod_unshareable_proc_violation(ec, cme);
     }
 
     /* control block frame */
@@ -4137,9 +4183,8 @@ vm_call_iseq_bmethod(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     VALUE procv = cme->def->body.bmethod.proc;
 
-    if (!RB_OBJ_SHAREABLE_P(procv) &&
-        cme->def->body.bmethod.defined_ractor_id != rb_ec_ractor_id(ec)) {
-        rb_raise(rb_eRuntimeError, "defined with an un-shareable Proc in a different Ractor");
+    if (vm_bmethod_proc_uncallable_p(ec, cme, procv)) {
+        vm_bmethod_unshareable_proc_violation(ec, cme);
     }
 
     rb_proc_t *proc;

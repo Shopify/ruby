@@ -798,6 +798,380 @@ class TestRactor < Test::Unit::TestCase
     end
   end
 
+  def test_check_isolation_runs_in_a_non_main_ractor
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      result = Ractor.check_isolation(name: "isolation check") do
+        [Ractor.main?, Ractor.current == Ractor.main, Ractor.current.name]
+      end
+      assert_equal [false, false, "isolation check"], result
+    RUBY
+  end
+
+  def test_check_isolation_returns_the_block_value_by_reference
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      obj = Object.new
+      assert_same obj, Ractor.check_isolation { obj }
+    RUBY
+  end
+
+  def test_check_isolation_passes_args_and_closes_over_outer_variables
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      outer = [1, 2, 3]
+      arg = Object.new
+      returned_arg, returned_outer = Ractor.check_isolation(arg) do |a|
+        [a, outer]
+      end
+      assert_same arg, returned_arg
+      assert_same outer, returned_outer
+    RUBY
+  end
+
+  def test_check_isolation_handles_large_argument_lists_without_using_the_native_stack
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      marker = Object.new
+      args = Array.new(200_000, marker)
+      length, first, last = Ractor.check_isolation(*args) do |*values|
+        [values.length, values.first, values.last]
+      end
+      assert_equal 200_000, length
+      assert_same marker, first
+      assert_same marker, last
+    RUBY
+  end
+
+  def test_check_isolation_requires_a_block
+    assert_ractor(<<~'RUBY')
+      assert_raise(ArgumentError) { Ractor.check_isolation }
+    RUBY
+  end
+
+  def test_check_isolation_make_shareable_warns_and_continues_for_files
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      file = File.open(IO::NULL)
+      begin
+        result = Ractor.check_isolation(file) do |f|
+          Ractor.make_shareable(f)
+          :completed
+        end
+        assert_equal :completed, result
+        refute Ractor.shareable?(file)
+      ensure
+        file.close
+      end
+    RUBY
+  end
+
+  def test_check_isolation_warns_instead_of_raising
+    # Warnings originate in the special Ractor, so capture them with a
+    # shareable queue rather than replacing the main Ractor's $stderr.
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      class CheckIsolationFixture
+        @ivar = "ivar"
+        @@cvar = [1, 2, 3]
+        MUTABLE = "mutable"
+      end
+      $check_isolation_global = "global"
+      ISOLATION_WARNINGS = Thread::Queue.new
+      module CaptureIsolationWarnings
+        def warn(message, category: nil)
+          if category == :ractor_isolation && !Thread.current[:capturing_isolation]
+            Thread.current[:capturing_isolation] = true
+            begin
+              ISOLATION_WARNINGS << Ractor.make_shareable(message)
+            ensure
+              Thread.current[:capturing_isolation] = false
+            end
+            return nil
+          end
+          super
+        end
+      end
+      Warning.singleton_class.prepend(CaptureIsolationWarnings)
+      require "etc"
+
+      h = Hash.new(Mutex.new)
+      result = Ractor.check_isolation do
+        CheckIsolationFixture.instance_variable_get(:@ivar)
+        CheckIsolationFixture.class_variable_get(:@@cvar)
+        3.times { CheckIsolationFixture::MUTABLE } # exercise the constant cache
+        $check_isolation_global
+        CheckIsolationFixture.instance_variable_set(:@ivar, "new")
+        Ractor.make_shareable(h)
+        Etc.passwd
+        Thread.new { CheckIsolationFixture::MUTABLE }.join
+        :completed
+      end
+      assert_equal :completed, result
+
+      messages = []
+      messages << ISOLATION_WARNINGS.pop until ISOLATION_WARNINGS.empty?
+      combined = messages.join("\n")
+      assert_match(/instance variables of classes\/modules from non-main Ractors/, combined)
+      assert_match(/non-shareable class variable @@cvar/, combined)
+      assert_match(/non-shareable objects in constant CheckIsolationFixture::MUTABLE/, combined)
+      assert_match(/global variable \$check_isolation_global/, combined)
+      assert_match(/set instance variables of classes\/modules/, combined)
+      assert_match(/can not make shareable object/, combined)
+      assert_match(/ractor unsafe method called from not main ractor/, combined)
+    RUBY
+  end
+
+  def test_check_isolation_warns_on_outer_variable_capture
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      captured = []
+      OUTER_VARIABLE_WARNINGS = Thread::Queue.new
+      module CaptureOuterVariableWarnings
+        def warn(message, category: nil)
+          if category == :ractor_isolation
+            OUTER_VARIABLE_WARNINGS << Ractor.make_shareable(message)
+            return nil
+          end
+          super
+        end
+      end
+      Warning.singleton_class.prepend(CaptureOuterVariableWarnings)
+
+      result = Ractor.check_isolation { captured << :ran; captured }
+      assert_same captured, result
+      assert_equal [:ran], captured
+      messages = []
+      messages << OUTER_VARIABLE_WARNINGS.pop until OUTER_VARIABLE_WARNINGS.empty?
+      assert_match(/can not isolate a Proc because it accesses outer variables \(captured\)/,
+                   messages.join("\n"))
+    RUBY
+  end
+
+  def test_check_isolation_does_not_mark_an_invalid_proc_shareable
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      captured = []
+      callable = Ractor.check_isolation do
+        Ractor.shareable_proc { captured << :called; captured }
+      end
+
+      refute Ractor.shareable?(callable)
+      refute callable.frozen?
+      assert_same captured, callable.call
+      assert_equal [:called], captured
+    RUBY
+  end
+
+  def test_check_isolation_warns_and_executes_captured_define_method
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      captured = []
+      klass = Class.new
+      klass.define_method(:capture) { captured << :called; captured }
+      BMETHOD_WARNINGS = Thread::Queue.new
+      module CaptureBmethodWarnings
+        def warn(message, category: nil)
+          if category == :ractor_isolation && !Thread.current[:capturing_bmethod_warning]
+            Thread.current[:capturing_bmethod_warning] = true
+            begin
+              BMETHOD_WARNINGS << Ractor.make_shareable(message)
+            ensure
+              Thread.current[:capturing_bmethod_warning] = false
+            end
+            return nil
+          end
+          super
+        end
+      end
+      Warning.singleton_class.prepend(CaptureBmethodWarnings)
+
+      result = Ractor.check_isolation(klass) { |k| k.new.capture }
+      assert_same captured, result
+      assert_equal [:called], captured
+      messages = []
+      messages << BMETHOD_WARNINGS.pop until BMETHOD_WARNINGS.empty?
+      assert_match(/can not call method capture defined with an un-shareable Proc/,
+                   messages.join("\n"))
+    RUBY
+  end
+
+  def test_check_isolation_is_active_in_child_threads
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      class CheckIsolationChildThreadFixture
+        VALUE = []
+      end
+      CHILD_THREAD_WARNINGS = Thread::Queue.new
+      module CaptureChildThreadWarnings
+        def warn(message, category: nil)
+          if category == :ractor_isolation && !Thread.current[:capturing_child_thread_warning]
+            Thread.current[:capturing_child_thread_warning] = true
+            begin
+              CHILD_THREAD_WARNINGS << Ractor.make_shareable(message)
+            ensure
+              Thread.current[:capturing_child_thread_warning] = false
+            end
+            return nil
+          end
+          super
+        end
+      end
+      Warning.singleton_class.prepend(CaptureChildThreadWarnings)
+
+      value = Ractor.check_isolation do
+        Thread.new { CheckIsolationChildThreadFixture::VALUE }.value
+      end
+      assert_same CheckIsolationChildThreadFixture::VALUE, value
+      messages = []
+      messages << CHILD_THREAD_WARNINGS.pop until CHILD_THREAD_WARNINGS.empty?
+      assert_match(/non-shareable objects in constant CheckIsolationChildThreadFixture::VALUE/,
+                   messages.join("\n"))
+    RUBY
+  end
+
+  def test_ractor_new_still_enforces_isolation_after_check_isolation
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      nested_result = Ractor.check_isolation do
+        captured = Object.new
+        error = assert_raise(Ractor::IsolationError) do
+          Ractor.new { captured }
+        end
+        error.class
+      end
+      assert_equal Ractor::IsolationError, nested_result
+
+      captured = Object.new
+      assert_raise(Ractor::IsolationError) do
+        Ractor.new { captured }
+      end
+    RUBY
+  end
+
+  def test_check_isolation_warns_for_finalizers_on_foreign_objects
+    omit 'per-Ractor objspace semantics of the default GC' unless GC.config[:implementation] == 'default'
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      object = Object.new
+      finalizer = proc {}
+      FINALIZER_WARNINGS = Thread::Queue.new
+      module CaptureFinalizerWarnings
+        def warn(message, category: nil)
+          if category == :ractor_isolation && !Thread.current[:capturing_finalizer_warning]
+            Thread.current[:capturing_finalizer_warning] = true
+            begin
+              FINALIZER_WARNINGS << Ractor.make_shareable(message)
+            ensure
+              Thread.current[:capturing_finalizer_warning] = false
+            end
+            return nil
+          end
+          super
+        end
+      end
+      Warning.singleton_class.prepend(CaptureFinalizerWarnings)
+
+      defined, undefined = Ractor.check_isolation do
+        [ObjectSpace.define_finalizer(object, finalizer),
+         ObjectSpace.undefine_finalizer(object)]
+      end
+      assert_same finalizer, defined[1]
+      assert_same object, undefined
+
+      messages = []
+      messages << FINALIZER_WARNINGS.pop until FINALIZER_WARNINGS.empty?
+      combined = messages.join("\n")
+      assert_match(/can not define a finalizer for an object of another Ractor/, combined)
+      assert_match(/can not undefine a finalizer of an object of another Ractor/, combined)
+    RUBY
+  end
+
+  def test_check_isolation_reraises_block_exceptions
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      error = assert_raise(Ractor::RemoteError) do
+        Ractor.check_isolation { raise "boom" }
+      end
+      assert_equal "boom", error.cause.message
+    RUBY
+  end
+
+  def test_check_isolation_allows_dispatch_to_main
+    assert_ractor(<<~'RUBY', ignore_stderr: true)
+      main_port = Ractor::Port.new
+      Thread.new do
+        callable, reply = main_port.receive
+        reply << callable.call
+      end
+
+      value = Ractor.check_isolation do
+        reply = Ractor::Port.new
+        main_port << [Ractor.shareable_proc { 40 + 2 }, reply]
+        reply.receive
+      end
+      assert_equal 42, value
+    RUBY
+  end
+
+  def test_check_isolation_emits_nonexclusive_advisory_once
+    assert_ractor(<<~'RUBY')
+      assert_warning(/Ractor.check_isolation: other Ractors can run in parallel/) do
+        Ractor.check_isolation { :first }
+      end
+      assert_no_warning(/other Ractors can run in parallel/) do
+        Ractor.check_isolation { :second }
+      end
+    RUBY
+  end
+
+  def test_check_isolation_first_called_from_an_ordinary_ractor
+    assert_ractor(<<~'RUBY')
+      ADVISORY_WARNINGS = Ractor::Port.new
+      module CaptureCheckIsolationAdvisory
+        def warn(message, **kwargs)
+          if message.include?("Ractor.check_isolation: other Ractors can run in parallel")
+            ADVISORY_WARNINGS << message
+            return nil
+          end
+          super
+        end
+      end
+      Warning.singleton_class.prepend(CaptureCheckIsolationAdvisory)
+
+      result = Ractor.new { Ractor.check_isolation { :ok } }.value
+
+      assert_equal :ok, result
+      assert_match(/Ractor.check_isolation: other Ractors can run in parallel/,
+                   ADVISORY_WARNINGS.receive)
+    RUBY
+  end
+
+  def test_check_isolation_blocks_other_ractors_in_exclusive_mode
+    assert_separately([{"RUBY_RACTOR_EXCLUSIVE" => "1"}, "-W:no-experimental"], <<~'RUBY', timeout: 30)
+      omit "M:N scheduling is not supported by this build" unless RUBY_DESCRIPTION.include?("+MN")
+
+      Warning[:ractor_isolation] = false
+      report = Ractor::Port.new
+      Thread.new do
+        report << :ready
+        t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        loop do
+          now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          break if now - t0 > 3.0
+          report << now
+          sleep 0.01
+        end
+        report << :done
+      end
+      assert_equal :ready, report.receive
+
+      start, finish = Ractor.check_isolation do
+        t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        x = 0
+        x += 1 while Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0 < 1.0
+        [t0, Process.clock_gettime(Process::CLOCK_MONOTONIC)]
+      end
+
+      stamps = []
+      loop do
+        message = report.receive
+        break if message == :done
+        stamps << message
+      end
+      during = stamps.count { |time| time >= start && time <= finish }
+      assert_equal 0, during,
+        "expected no other Ractor to run during exclusive isolation check, observed #{during} ticks"
+    RUBY
+  end
+
   def assert_make_shareable(obj)
     refute Ractor.shareable?(obj), "object was already shareable"
     Ractor.make_shareable(obj)

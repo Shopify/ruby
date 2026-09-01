@@ -56,9 +56,13 @@ typedef enum {
     /** Warning is for checking unused block strictly */
     RB_WARN_CATEGORY_STRICT_UNUSED_BLOCK,
 
+    /** Warning is for Ractor isolation violations reported by Ractor.check_isolation. */
+    RB_WARN_CATEGORY_RACTOR_ISOLATION,
+
     RB_WARN_CATEGORY_DEFAULT_BITS = (
         (1U << RB_WARN_CATEGORY_DEPRECATED) |
         (1U << RB_WARN_CATEGORY_EXPERIMENTAL) |
+        (1U << RB_WARN_CATEGORY_RACTOR_ISOLATION) |
         0),
 
     RB_WARN_CATEGORY_ALL_BITS = (
@@ -66,6 +70,7 @@ typedef enum {
         (1U << RB_WARN_CATEGORY_EXPERIMENTAL) |
         (1U << RB_WARN_CATEGORY_PERFORMANCE) |
         (1U << RB_WARN_CATEGORY_STRICT_UNUSED_BLOCK) |
+        (1U << RB_WARN_CATEGORY_RACTOR_ISOLATION) |
         0)
 } rb_warning_category_t;
 
