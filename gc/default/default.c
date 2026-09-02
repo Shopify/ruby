@@ -9655,6 +9655,11 @@ objspace_absorb(rb_objspace_t *dst, rb_objspace_t *src)
         heap_pages_free_unused_pages(objspace);
     }
 
+    /* A dead Ractor's teardown just piled bodies into the pool; reclaim now
+     * rather than waiting for the next major GC.  Absorb holds the VM lock
+     * but no barrier; page_pool_reclaim is self-locking. */
+    page_pool_reclaim(global_objspace);
+
     global_objspace->during_absorb = prev_absorb;
 }
 
