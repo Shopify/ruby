@@ -4273,6 +4273,40 @@ objspace_free_slots(rb_objspace_t *objspace)
     return objspace_available_slots(objspace) - objspace_live_slots(objspace) - total_final_slots_count(objspace);
 }
 
+/* Post-sweep mirror of gc_marks_finish's freeable_pages computation, for the
+ * global GC where marked_slots is not per-objspace.  Empty pages are already
+ * detached from the heaps here, so fold them back in at the average
+ * slots-per-page. */
+static size_t
+objspace_post_sweep_freeable_pages(rb_objspace_t *objspace)
+{
+    size_t empty_pages = objspace->empty_pages_count;
+    if (empty_pages == 0) return 0;
+
+    size_t eden_slots = objspace_available_slots(objspace);
+    size_t eden_pages = heap_eden_total_pages(objspace);
+    if (eden_pages == 0) return empty_pages;  /* no attached pages: nothing to protect */
+
+    size_t avg_slots = eden_slots / eden_pages;
+    size_t total_slots = eden_slots + empty_pages * avg_slots;
+    size_t free_slots = objspace_free_slots(objspace) + empty_pages * avg_slots;
+
+    const unsigned long ractor_cnt = rb_gc_vm_ractor_count();
+    const unsigned long r_mul = ractor_cnt > 8 ? 8 : ractor_cnt;
+    size_t max_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_max_ratio);
+    size_t total_init_slots = 0;
+    for (int i = 0; i < HEAP_COUNT; i++) {
+        total_init_slots += (gc_params.heap_init_bytes / heaps[i].slot_size) * r_mul;
+    }
+    if (max_free_slots < total_init_slots) max_free_slots = total_init_slots;
+
+    if (free_slots <= max_free_slots) return 0;
+
+    size_t excess_slots = free_slots - max_free_slots;
+    size_t freeable = excess_slots * (eden_pages + empty_pages) / total_slots;
+    return freeable < empty_pages ? freeable : empty_pages;
+}
+
 static void
 gc_setup_mark_bits(struct heap_page *page)
 {
@@ -9123,6 +9157,15 @@ gc_start_global(rb_objspace_t *driver, unsigned int reason, bool compact, bool a
         }
     }
 
+    /* gc_marks_finish never runs in a global GC, so freeable_pages is a stale
+     * leftover from the last local cycle.  Zero it so the settle's and step 9's
+     * gc_sweep_finish drains are no-ops; the authoritative drain runs post-sweep
+     * below with final counts.  (The gc_marks_finish fraction is unusable here:
+     * marked_slots is not per-objspace during a global GC.) */
+    for (size_t i = 0; i < global_objspace->global_gc.n_objspaces; i++) {
+        global_objspace->global_gc.objspaces[i]->heap_pages.freeable_pages = 0;
+    }
+
     /* step 3: settle every lazy sweep so the mark bits' meaning is fixed before the clear
      * below.  (during_gc is a macro over the local "objspace".)  rb_gc_get_ec() resolves
      * through objspace->vm_context during a GC, so initialize it for all: the driver
@@ -9302,6 +9345,17 @@ gc_start_global(rb_objspace_t *driver, unsigned int reason, bool compact, bool a
         }
     }
     global_objspace->global_gc.compacting = false;
+
+    /* Post-sweep 65%-mirror drain: now that final counts are known, compute each
+     * objspace's freeable_pages from post-sweep totals and release the excess
+     * empty pages back to the pool, then run a single reclaim for all of them
+     * while the world is stopped. */
+    for (size_t i = 0; i < global_objspace->global_gc.n_objspaces; i++) {
+        rb_objspace_t *os = global_objspace->global_gc.objspaces[i];
+        os->heap_pages.freeable_pages = objspace_post_sweep_freeable_pages(os);
+        heap_pages_free_unused_pages(os);
+    }
+    page_pool_reclaim(global_objspace);
 
     /* A global GC never calls gc_marks_finish, which budgets heap growth
      * (allocatable_bytes).  An objspace still full after the global sweep (materializing
