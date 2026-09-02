@@ -5164,9 +5164,10 @@ gc_sweep_finish(rb_objspace_t *objspace)
 
     gc_prof_set_heap_info(objspace);
     heap_pages_free_unused_pages(objspace);
-    if (rb_gc_single_objspace_p() && is_full_marking(objspace)) {
+    if (is_full_marking(objspace) && !objspace->flags.during_global_gc) {
         /* gc_marks_finish retains ~2/3 of empty pages in objspace->empty_pages for reuse,
-         * only the excess reaches the pool. */
+         * only the excess reaches the pool.  A global GC suppresses this per-objspace
+         * reclaim; gc_start_global runs a single reclaim after its sweep instead. */
         page_pool_reclaim(global_objspace);
     }
 
