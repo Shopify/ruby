@@ -1463,8 +1463,19 @@ collect_outer_variable_names(ID id, VALUE val, void *ptr)
     return ID_TABLE_CONTINUE;
 }
 
+static void
+proc_isolation_violation_str(VALUE message, bool warn)
+{
+    if (warn) {
+        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, "%s", StringValueCStr(message));
+    }
+    else {
+        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+    }
+}
+
 static const rb_env_t *
-env_copy(const VALUE *src_ep, VALUE read_only_variables)
+env_copy(const VALUE *src_ep, VALUE read_only_variables, bool warn, bool *valid)
 {
     const rb_env_t *src_env = (rb_env_t *)VM_ENV_ENVVAL(src_ep);
     VM_ASSERT(src_env->ep == src_ep);
@@ -1504,20 +1515,30 @@ env_copy(const VALUE *src_ep, VALUE read_only_variables)
                         VALUE name = rb_id2str(id);
                         VALUE msg = rb_sprintf("cannot make a shareable Proc because "
                                                "the outer variable '%" PRIsVALUE "' may be reassigned.", name);
-                        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, msg));
+                        proc_isolation_violation_str(msg, warn);
+                        *valid = false;
                     }
 
                     // check shareable
                     VALUE v = src_env->env[j];
                     if (!rb_ractor_shareable_p(v)) {
                         VALUE name = rb_id2str(id);
-                        VALUE msg = rb_sprintf("cannot make a shareable Proc because it can refer"
-                                               " unshareable object %+" PRIsVALUE " from ", v);
+                        VALUE msg;
+                        if (warn) {
+                            msg = rb_sprintf("cannot make a shareable Proc because it can refer "
+                                             "an unshareable object of class %+" PRIsVALUE " from ",
+                                             rb_class_of(v));
+                        }
+                        else {
+                            msg = rb_sprintf("cannot make a shareable Proc because it can refer"
+                                             " unshareable object %+" PRIsVALUE " from ", v);
+                        }
                         if (name)
                             rb_str_catf(msg, "variable '%" PRIsVALUE "'", name);
                         else
                             rb_str_cat_cstr(msg, "a hidden variable");
-                        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, msg));
+                        proc_isolation_violation_str(msg, warn);
+                        *valid = false;
                     }
                     RB_OBJ_WRITE((VALUE)copied_env, &env_body[j], v);
                     rb_ary_delete_at(read_only_variables, i);
@@ -1529,7 +1550,7 @@ env_copy(const VALUE *src_ep, VALUE read_only_variables)
 
     if (!VM_ENV_LOCAL_P(src_ep)) {
         const VALUE *prev_ep = VM_ENV_PREV_EP(src_env->ep);
-        const rb_env_t *new_prev_env = env_copy(prev_ep, read_only_variables);
+        const rb_env_t *new_prev_env = env_copy(prev_ep, read_only_variables, warn, valid);
         ep[VM_ENV_DATA_INDEX_SPECVAL] = VM_GUARDED_PREV_EP(new_prev_env->ep);
         RB_OBJ_WRITTEN(copied_env, Qundef, new_prev_env);
         VM_ENV_FLAGS_UNSET(ep, VM_ENV_FLAG_LOCAL);
@@ -1538,21 +1559,26 @@ env_copy(const VALUE *src_ep, VALUE read_only_variables)
         ep[VM_ENV_DATA_INDEX_SPECVAL] = VM_BLOCK_HANDLER_NONE;
     }
 
-    RB_OBJ_SET_SHAREABLE((VALUE)copied_env);
+    if (*valid) {
+        RB_OBJ_SET_SHAREABLE((VALUE)copied_env);
+    }
     return copied_env;
 }
 
-static void
-proc_isolate_env(VALUE self, rb_proc_t *proc, VALUE read_only_variables)
+static bool
+proc_isolate_env(VALUE self, rb_proc_t *proc, VALUE read_only_variables, bool warn, bool valid)
 {
     const struct rb_captured_block *captured = &proc->block.as.captured;
-    const rb_env_t *env = env_copy(captured->ep, read_only_variables);
+    const rb_env_t *env = env_copy(captured->ep, read_only_variables, warn, &valid);
+    if (!valid) return false;
+
     *((const VALUE **)&proc->block.as.captured.ep) = env->ep;
     RB_OBJ_WRITTEN(self, Qundef, env);
+    return true;
 }
 
 static VALUE
-proc_shared_outer_variables(struct rb_id_table *outer_variables, bool isolate, const char *message)
+proc_shared_outer_variables(struct rb_id_table *outer_variables, bool isolate, const char *message, bool warn, bool *valid)
 {
     struct collect_outer_variable_name_data data = {
         .isolate = isolate,
@@ -1575,10 +1601,13 @@ proc_shared_outer_variables(struct rb_id_table *outer_variables, bool isolate, c
         }
         if (*sep == ',') rb_str_cat_cstr(str, ")");
         rb_str_cat_cstr(str, data.yield ? " and uses 'yield'." : ".");
-        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, str));
+        proc_isolation_violation_str(str, warn);
+        if (valid) *valid = false;
     }
     else if (data.yield) {
-        rb_raise(rb_eRactorIsolationError, "can not %s because it uses 'yield'.", message);
+        VALUE str = rb_sprintf("can not %s because it uses 'yield'.", message);
+        proc_isolation_violation_str(str, warn);
+        if (valid) *valid = false;
     }
 
     return data.read_only;
@@ -1600,10 +1629,10 @@ rb_proc_isolate_bang(VALUE self, VALUE replace_self)
         }
 
         if (ISEQ_BODY(iseq)->outer_variables) {
-            proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, true, "isolate a Proc");
+            proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, true, "isolate a Proc", false, NULL);
         }
 
-        proc_isolate_env(self, proc, Qfalse);
+        if (!proc_isolate_env(self, proc, Qfalse, false, true)) return self;
         proc->header.is_isolated = TRUE;
         RB_OBJ_WRITE(self, &proc->block.as.captured.self, Qnil);
     }
@@ -1620,34 +1649,52 @@ rb_proc_isolate(VALUE self)
     return dst;
 }
 
+/* Report the Proc-isolation checks performed by Ractor.new without mutating
+ * the Proc, so Ractor.check_isolation can execute the original closure. */
+void
+rb_proc_check_isolation_warn(VALUE self)
+{
+    const rb_iseq_t *iseq = vm_proc_iseq(self);
+
+    if (iseq) {
+        rb_proc_t *proc = (rb_proc_t *)RTYPEDDATA_DATA(self);
+        if (proc->block.type == block_type_iseq && ISEQ_BODY(iseq)->outer_variables) {
+            proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, true, "isolate a Proc", true, NULL);
+        }
+    }
+}
+
 VALUE
 rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
 {
     const rb_iseq_t *iseq = vm_proc_iseq(self);
+    bool warn = rb_ractor_isolation_check_p();
 
     if (iseq) {
         rb_proc_t *proc = (rb_proc_t *)RTYPEDDATA_DATA(self);
 
         if (proc->block.type != block_type_iseq) rb_raise(rb_eRuntimeError, "not supported yet");
 
-        if (!UNDEF_P(replace_self)) {
-            RB_OBJ_WRITE(self, &proc->block.as.captured.self, replace_self);
-        }
-
-        if (!rb_ractor_shareable_p(vm_block_self(&proc->block))) {
-            rb_raise(rb_eRactorIsolationError,
-                     "Proc's self is not shareable: %" PRIsVALUE,
-                     self);
+        bool valid = true;
+        VALUE proc_self = UNDEF_P(replace_self) ? vm_block_self(&proc->block) : replace_self;
+        if (!rb_ractor_shareable_p(proc_self)) {
+            VALUE message = rb_sprintf("Proc's self is not shareable: %" PRIsVALUE, self);
+            proc_isolation_violation_str(message, warn);
+            valid = false;
         }
 
         VALUE read_only_variables = Qfalse;
 
         if (ISEQ_BODY(iseq)->outer_variables) {
             read_only_variables =
-                proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, false, "make a Proc shareable");
+                proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, false,
+                                            "make a Proc shareable", warn, &valid);
         }
 
-        proc_isolate_env(self, proc, read_only_variables);
+        if (!proc_isolate_env(self, proc, read_only_variables, warn, valid)) return self;
+        if (!UNDEF_P(replace_self)) {
+            RB_OBJ_WRITE(self, &proc->block.as.captured.self, replace_self);
+        }
         proc->header.is_isolated = TRUE;
     }
     else {
@@ -1656,9 +1703,9 @@ rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
 
         VALUE proc_self = vm_block_self(block);
         if (!rb_ractor_shareable_p(proc_self)) {
-            rb_raise(rb_eRactorIsolationError,
-                     "Proc's self is not shareable: %" PRIsVALUE,
-                     self);
+            VALUE message = rb_sprintf("Proc's self is not shareable: %" PRIsVALUE, self);
+            proc_isolation_violation_str(message, warn);
+            if (warn) return self;
         }
     }
 

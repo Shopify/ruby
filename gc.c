@@ -2097,6 +2097,12 @@ rb_undefine_finalizer(VALUE obj)
 {
     rb_check_frozen(obj);
 
+    if (rb_gc_obj_foreign_p(obj)) {
+        rb_ractor_isolation_violation(
+            "can not undefine a finalizer of an object of another Ractor");
+        return obj;
+    }
+
     rb_gc_impl_undefine_finalizer(rb_gc_get_objspace(), obj);
 
     return obj;
@@ -2217,7 +2223,13 @@ rb_define_finalizer(VALUE obj, VALUE block)
     should_be_finalizable(obj);
     should_be_callable(block);
 
-    block = rb_gc_impl_define_finalizer(rb_gc_get_objspace(), obj, block);
+    if (rb_gc_obj_foreign_p(obj)) {
+        rb_ractor_isolation_violation(
+            "can not define a finalizer for an object of another Ractor");
+    }
+    else {
+        block = rb_gc_impl_define_finalizer(rb_gc_get_objspace(), obj, block);
+    }
 
     block = rb_ary_new3(2, INT2FIX(0), block);
     OBJ_FREEZE(block);

@@ -1793,18 +1793,28 @@ thread_sched_atfork(struct rb_thread_sched *sched)
 #endif
 
 extern int ruby_mn_threads_enabled;
+extern int ruby_ractor_exclusive_enabled;
+
+static bool
+ractor_exclusive_env_p(void)
+{
+    const char *cstr = getenv("RUBY_RACTOR_EXCLUSIVE");
+    return cstr && atoi(cstr) > 0;
+}
 
 void
 ruby_mn_threads_params(void)
 {
     rb_vm_t *vm = GET_VM();
     rb_ractor_t *main_ractor = GET_RACTOR();
+    bool exclusive = USE_MN_THREADS && ractor_exclusive_env_p();
 
     const char *mn_threads_cstr = getenv("RUBY_MN_THREADS");
     bool enable_mn_threads = false;
 
-    if (USE_MN_THREADS && mn_threads_cstr && (enable_mn_threads = atoi(mn_threads_cstr) > 0)) {
+    if (USE_MN_THREADS && ((mn_threads_cstr && (enable_mn_threads = atoi(mn_threads_cstr) > 0)) || exclusive)) {
         // enabled
+        enable_mn_threads = true;
         ruby_mn_threads_enabled = 1;
     }
     main_ractor->threads.sched.enable_mn_threads = enable_mn_threads;
@@ -1817,6 +1827,13 @@ ruby_mn_threads_params(void)
         if (given_max_cpu > 0) {
             max_cpu = given_max_cpu;
         }
+    }
+
+    /* One shared native thread acts as a VM-wide GVL while still handing the
+     * run slot to another Ractor when the current one blocks. */
+    if (exclusive) {
+        max_cpu = 1;
+        ruby_ractor_exclusive_enabled = 1;
     }
 
     vm->ractor.sched.max_cpu = max_cpu;

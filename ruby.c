@@ -402,6 +402,7 @@ usage(const char *name, int help, int highlight, int columns)
         M("experimental", "", "Experimental features."),
         M("performance",  "", "Performance issues."),
         M("strict_unused_block", "", "Warning unused block strictly"),
+        M("ractor_isolation", "", "Ractor isolation violations."),
     };
     int i;
     const char *sb = highlight ? esc_standout+1 : esc_none;
@@ -1269,6 +1270,9 @@ proc_W_option(ruby_cmdline_options_t *opt, const char *s, int *warning)
         }
         else if (NAME_MATCH_P("strict_unused_block", s, len)) {
             bits = 1U << RB_WARN_CATEGORY_STRICT_UNUSED_BLOCK;
+        }
+        else if (NAME_MATCH_P("ractor_isolation", s, len)) {
+            bits = 1U << RB_WARN_CATEGORY_RACTOR_ISOLATION;
         }
         else {
             rb_warn("unknown warning category: '%s'", s);

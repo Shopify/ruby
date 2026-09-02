@@ -5,6 +5,7 @@
 #include "ruby/ractor.h"
 #include "ruby/re.h"
 #include "ruby/thread_native.h"
+#include "ruby_atomic.h"
 #include "vm_core.h"
 #include "vm_sync.h"
 #include "ractor_core.h"
@@ -840,11 +841,12 @@ rb_ractor_main_setup(rb_vm_t *vm, rb_ractor_t *r, rb_thread_t *th)
 }
 
 static VALUE
-ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block)
+ractor_create0(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block, bool isolation_check)
 {
     VALUE rv = ractor_alloc(self);
     rb_ractor_t *r = RACTOR_PTR(rv);
     ractor_init(r, name, loc);
+    r->isolation_check = isolation_check;
 
     r->pub.id = ractor_next_id();
     RUBY_DEBUG_LOG("r:%u", r->pub.id);
@@ -861,6 +863,12 @@ ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VAL
 
     RB_GC_GUARD(rv);
     return rv;
+}
+
+static VALUE
+ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block)
+{
+    return ractor_create0(ec, self, loc, name, args, block, false);
 }
 
 #if 0
@@ -1850,6 +1858,12 @@ make_shareable_check_shareable(VALUE obj)
     }
     else if (!allow_frozen_shareable_p(obj)) {
         if (!RB_TYPE_P(obj, T_DATA)) {
+            if (rb_ractor_isolation_check_p()) {
+                rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
+                                 "can not make shareable object of class %+"PRIsVALUE,
+                                 rb_class_of(obj));
+                return traverse_stop;
+            }
             rb_raise(rb_eRactorError,
                      "can not make shareable object for %+"PRIsVALUE, obj);
         }
@@ -1859,6 +1873,12 @@ make_shareable_check_shareable(VALUE obj)
                 RB_OBJ_SET_SHAREABLE(obj);
                 return traverse_skip;
             }
+            else if (rb_ractor_isolation_check_p()) {
+                rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
+                                 "can not make shareable object of class %+"PRIsVALUE
+                                 " because it refers unshareable objects", rb_class_of(obj));
+                return traverse_stop;
+            }
             else {
                 rb_raise(rb_eRactorError,
                          "can not make shareable object for %+"PRIsVALUE" because it refers unshareable objects", obj);
@@ -1866,7 +1886,13 @@ make_shareable_check_shareable(VALUE obj)
         }
         else if (rb_obj_is_proc(obj)) {
             rb_proc_ractor_make_shareable(obj, Qundef);
-            return traverse_cont;
+            return rb_ractor_shareable_p(obj) ? traverse_cont : traverse_stop;
+        }
+        else if (rb_ractor_isolation_check_p()) {
+            rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
+                             "can not make shareable object of class %+"PRIsVALUE,
+                             rb_class_of(obj));
+            return traverse_stop;
         }
         else {
             rb_raise(rb_eRactorError, "can not make shareable object for %+"PRIsVALUE, obj);
@@ -1930,9 +1956,10 @@ VALUE
 rb_ractor_ensure_shareable(VALUE obj, VALUE name)
 {
     if (!rb_ractor_shareable_p(obj)) {
-        VALUE message = rb_sprintf("cannot assign unshareable object to %"PRIsVALUE,
-                                   name);
-        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+        rb_ractor_isolation_violation("cannot assign unshareable object to %"PRIsVALUE, name);
+        // In check_isolation mode the violation only warned: return obj as-is
+        // so the caller can keep going. The caller's invariant ("this is now
+        // shareable") will be wrong, which is exactly the bug we want surfaced.
     }
     return obj;
 }
@@ -1941,7 +1968,7 @@ void
 rb_ractor_ensure_main_ractor(const char *msg)
 {
     if (!rb_ractor_main_p()) {
-        rb_raise(rb_eRactorIsolationError, "%s", msg);
+        rb_ractor_isolation_violation("%s", msg);
     }
 }
 
@@ -3783,13 +3810,11 @@ ractor_local_value_store_if_absent(rb_execution_context_t *ec, VALUE self, VALUE
 static VALUE
 ractor_shareable_proc(rb_execution_context_t *ec, VALUE replace_self, bool is_lambda)
 {
-    if (!rb_ractor_shareable_p(replace_self)) {
-        rb_raise(rb_eRactorIsolationError, "self should be shareable: %" PRIsVALUE, replace_self);
+    if (!rb_ractor_shareable_p(replace_self) && !rb_ractor_isolation_check_p()) {
+        rb_ractor_isolation_violation("self should be shareable: %" PRIsVALUE, replace_self);
     }
-    else {
-        VALUE proc = is_lambda ? rb_block_lambda() : rb_block_proc();
-        return rb_proc_ractor_make_shareable(rb_proc_dup(proc), replace_self);
-    }
+    VALUE proc = is_lambda ? rb_block_lambda() : rb_block_proc();
+    return rb_proc_ractor_make_shareable(rb_proc_dup(proc), replace_self);
 }
 
 // Ractor#require
@@ -3999,6 +4024,72 @@ rb_ractor_autoload_load(VALUE module, ID name)
     else {
         return result;
     }
+}
+
+// =============================================================================
+// Ractor.check_isolation { ... }
+//
+// A development/debugging mode: the block runs in a genuine non-main Ractor,
+// without isolating its Proc or copying its arguments. Violations are
+// downgraded from Ractor::IsolationError to :ractor_isolation category warnings
+// so the program can keep running and report more than the first violation.
+//
+// As a side effect (matches Ractor semantics), the VM is switched into
+// multi-ractor mode the first time check_isolation is enabled. Multi-ractor
+// mode cannot be turned off again, so the VM keeps paying that overhead for
+// the rest of the process lifetime.
+// =============================================================================
+
+bool
+rb_ractor_isolation_check_p(void)
+{
+    rb_execution_context_t *ec = rb_current_ec_noinline();
+    if (!ec) return false;
+    rb_ractor_t *r = rb_ec_ractor_ptr(ec);
+    return r && r->isolation_check;
+}
+
+void
+rb_ractor_isolation_violation_str(VALUE message)
+{
+    if (rb_ractor_isolation_check_p()) {
+        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, "%s", StringValueCStr(message));
+        return;
+    }
+
+    rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+}
+
+void
+rb_ractor_isolation_violation(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    VALUE message = rb_vsprintf(fmt, args);
+    va_end(args);
+
+    rb_ractor_isolation_violation_str(message);
+}
+
+/* Set during native-thread scheduler initialization; see thread_sched.c. */
+extern int ruby_ractor_exclusive_enabled;
+
+static rb_atomic_t ractor_check_isolation_advisory_emitted;
+
+/* Return true to exactly one caller when nonexclusive mode needs its advisory.
+ * This state cannot live on Ractor itself: setting a class/module ivar from an
+ * ordinary non-main Ractor is itself an isolation violation. */
+static VALUE
+ractor_check_isolation_warn_p(rb_execution_context_t *ec, VALUE self)
+{
+    if (ruby_ractor_exclusive_enabled) return Qfalse;
+    return RBOOL(ATOMIC_EXCHANGE(ractor_check_isolation_advisory_emitted, 1) == 0);
+}
+
+static VALUE
+ractor_check_isolation_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block)
+{
+    return ractor_create0(ec, self, loc, name, args, block, true);
 }
 
 #include "ractor.rbinc"

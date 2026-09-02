@@ -538,6 +538,46 @@ class Ractor
     }
   end
 
+  # call-seq:
+  #   Ractor.check_isolation(*args, name: nil) {|*args| ... } -> result of block
+  #
+  # Runs the block in a genuine non-main \Ractor while downgrading isolation
+  # violations to +:ractor_isolation+ category warnings. Unlike +Ractor.new+,
+  # the block is not isolated and its arguments are passed by reference, so it
+  # can close over and inspect existing non-shareable application state.
+  #
+  # The block therefore observes production worker-Ractor behavior:
+  # +Ractor.main?+ is false and +Ractor.current+ is the newly created \Ractor.
+  # Its return value is delivered through +Ractor#value+, and exceptions are
+  # re-raised there as for an ordinary \Ractor.
+  #
+  # On builds with M:N scheduling, booting with +RUBY_RACTOR_EXCLUSIVE=1+
+  # limits the scheduler to one shared native thread. This prevents simultaneous
+  # Ruby execution on shared native threads, but does not make the block atomic:
+  # blocking operations can hand the run slot to another \Ractor, and dedicated
+  # native threads are not covered. Without that mode, this method emits a
+  # one-time advisory because other \Ractors may run in parallel.
+  #
+  # Calling this method switches the VM into multi-Ractor mode permanently.
+  # Suppress isolation warnings with +Warning[:ractor_isolation] = false+ or
+  # +-W:no-ractor_isolation+.
+  def self.check_isolation(*args, name: nil, &block)
+    b = block # TODO: builtin bug
+    raise ArgumentError, "must be called with a block" unless block
+
+    if Primitive.ractor_check_isolation_warn_p
+      Kernel.warn("Ractor.check_isolation: other Ractors can run in parallel " \
+                  "with the isolation-check Ractor. On builds with M:N scheduling, " \
+                  "RUBY_RACTOR_EXCLUSIVE=1 prevents simultaneous Ruby execution on " \
+                  "shared native threads.", uplevel: 1)
+    end
+
+    loc = caller_locations(1, 1).first
+    loc = "#{loc.path}:#{loc.lineno}"
+    Primitive.ractor_check_isolation_create(loc, name, args, b).value
+  end
+
+
   # internal method
   def self._require feature # :nodoc:
     if main?

@@ -4109,7 +4109,7 @@ rb_pid_t
 rb_fork_ruby(int *status)
 {
     if (UNLIKELY(!rb_ractor_main_p())) {
-        rb_raise(rb_eRactorIsolationError, "can not fork from non-main Ractors");
+        rb_ractor_isolation_violation("can not fork from non-main Ractors");
     }
 
     struct rb_process_status child = {.status = 0};
