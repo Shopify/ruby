@@ -327,6 +327,8 @@ class TestGc < Test::Unit::TestCase
 
       stat = GC.stat
       assert_operator stat[:page_pool_discarded_pages], :<=, stat[:page_pool_total_pages]
+      # Free bodies in the pool can never exceed the total pages ever retained.
+      assert_operator stat[:page_pool_free_pages], :<=, stat[:page_pool_total_pages]
       assert_operator stat[:page_pool_arenas], :>=, 0 # arenas is always 0 if doesn't have mmap
     RUBY
   end
