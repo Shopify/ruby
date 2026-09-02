@@ -12,8 +12,8 @@
 #if USE_ZJIT
 extern void *rb_zjit_entry;
 extern bool rb_zjit_compiling_p;
-extern uint64_t rb_zjit_call_threshold;
-extern uint64_t rb_zjit_profile_threshold;
+extern unsigned int rb_zjit_call_threshold;
+extern unsigned int rb_zjit_profile_threshold;
 void rb_zjit_compile_iseq(const rb_iseq_t *iseq, bool jit_exception);
 void rb_zjit_profile_insn(uint32_t insn, rb_execution_context_t *ec);
 void rb_zjit_profile_enable(const rb_iseq_t *iseq);
