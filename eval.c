@@ -30,6 +30,7 @@
 #include "internal/object.h"
 #include "internal/thread.h"
 #include "internal/variable.h"
+#include "internal/vm.h"
 #include "ruby/fiber/scheduler.h"
 #include "iseq.h"
 #include "probes.h"
@@ -1311,8 +1312,8 @@ rb_mod_include(int argc, VALUE *argv, VALUE module)
         }
     }
     while (argc--) {
-        rb_funcall(argv[argc], id_append_features, 1, module);
-        rb_funcall(argv[argc], id_included, 1, module);
+        rb_funcallv_uncached(argv[argc], id_append_features, 1, &module);
+        rb_funcallv_uncached(argv[argc], id_included, 1, &module);
     }
     return module;
 }
@@ -1368,8 +1369,8 @@ rb_mod_prepend(int argc, VALUE *argv, VALUE module)
         }
     }
     while (argc--) {
-        rb_funcall(argv[argc], id_prepend_features, 1, module);
-        rb_funcall(argv[argc], id_prepended, 1, module);
+        rb_funcallv_uncached(argv[argc], id_prepend_features, 1, &module);
+        rb_funcallv_uncached(argv[argc], id_prepended, 1, &module);
     }
     return module;
 }
@@ -1949,8 +1950,8 @@ rb_obj_extend(int argc, VALUE *argv, VALUE obj)
         }
     }
     while (argc--) {
-        rb_funcall(argv[argc], id_extend_object, 1, obj);
-        rb_funcall(argv[argc], id_extended, 1, obj);
+        rb_funcallv_uncached(argv[argc], id_extend_object, 1, &obj);
+        rb_funcallv_uncached(argv[argc], id_extended, 1, &obj);
     }
     return obj;
 }

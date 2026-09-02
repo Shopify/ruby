@@ -28,6 +28,7 @@
 #include "internal/object.h"
 #include "internal/string.h"
 #include "internal/variable.h"
+#include "internal/vm.h"
 #include "ruby/st.h"
 #include "vm_core.h"
 #include "ruby/ractor.h"
@@ -1472,7 +1473,7 @@ rb_class_inherited(VALUE super, VALUE klass)
     ID inherited;
     if (!super) super = rb_cObject;
     CONST_ID(inherited, "inherited");
-    return rb_funcall(super, inherited, 1, klass);
+    return rb_funcallv_uncached(super, inherited, 1, &klass);
 }
 
 VALUE
