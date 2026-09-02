@@ -2647,8 +2647,9 @@ page_pool_release(struct heap_page_body *body, struct page_arena *arena)
     }
 }
 
-/* Allow the OS to reclaim pool memory. Runs only at major GC in single-objspace mode
- * (see gc_sweep_finish).
+/* Allow the OS to reclaim pool memory. Runs at any local major GC (see
+ * gc_sweep_finish), once after a global GC's sweep (see gc_start_global), and
+ * after a dead Ractor's objspace is absorbed (see objspace_absorb).
  *
  * Step A: madvise cold bodies, sparing the first OS page (which holds the in-body
  * freelist link).
