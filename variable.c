@@ -33,6 +33,7 @@
 #include "internal/symbol.h"
 #include "internal/thread.h"
 #include "internal/variable.h"
+#include "internal/vm.h"
 #include "ruby/encoding.h"
 #include "ruby/st.h"
 #include "ruby/util.h"
@@ -3907,8 +3908,8 @@ static void
 const_added(VALUE klass, ID const_name)
 {
     if (GET_VM()->running) {
-        VALUE name = ID2SYM(const_name);
-        rb_funcallv(klass, idConst_added, 1, &name);
+        VALUE arg = ID2SYM(const_name);
+        rb_funcallv_uncached(klass, idConst_added, 1, &arg);
     }
 }
 
