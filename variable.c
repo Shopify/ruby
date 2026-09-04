@@ -1216,20 +1216,7 @@ CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(VALUE klass, ID id)
     if (UNLIKELY(rb_ractor_isolation_check_active())) {
         /* See comment on the instance-variable warning below for why we
          * pass rb_class_path() rather than the class itself. */
-        rb_ractor_isolation_violation("can not set class variables from non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")", rb_id2str(id), rb_class_path(klass));
-    }
-}
-
-static void
-cvar_read_ractor_check(VALUE klass, ID id, VALUE val)
-{
-    if (UNLIKELY(rb_ractor_isolation_check_active())) {
-        VALUE chain = Qnil;
-        if (!rb_ractor_shareable_p_continue(val, &chain)) {
-            rb_ractor_isolation_violation_with_chain(chain,
-                    "can not read non-shareable class variable %"PRIsVALUE" from non-main Ractors (%"PRIsVALUE")",
-                    rb_id2str(id), rb_class_path(klass));
-        }
+        rb_ractor_isolation_violation("can not access class variables from non-main Ractors (%"PRIsVALUE" from %"PRIsVALUE")", rb_id2str(id), rb_class_path(klass));
     }
 }
 
@@ -4330,6 +4317,7 @@ cvar_overtaken(VALUE front, VALUE target, ID id)
     }
 
 #define CVAR_LOOKUP(v,r) do {\
+    CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(klass, id); \
     if (cvar_lookup_at(klass, id, (v))) {r;}\
     CVAR_FOREACH_ANCESTORS(klass, v, r);\
 } while(0)
@@ -4351,8 +4339,6 @@ find_cvar(VALUE klass, VALUE * front, VALUE * target, ID id)
 void
 rb_cvar_set(VALUE klass, ID id, VALUE val)
 {
-    CVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(klass, id);
-
     VALUE tmp, front = 0, target = 0;
 
     tmp = klass;
@@ -4427,7 +4413,6 @@ rb_cvar_find(VALUE klass, ID id, VALUE *front)
                           klass, ID2SYM(id));
     }
     cvar_overtaken(*front, target, id);
-    cvar_read_ractor_check(klass, id, value);
     return (VALUE)value;
 }
 
