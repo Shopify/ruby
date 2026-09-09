@@ -4,6 +4,7 @@
 
 mod calls;
 mod objects;
+mod strings;
 mod gc_fastpath;
 mod frame;
 
@@ -644,15 +645,15 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::ArrayLength { array } => objects::gen_array_length(asm, opnd!(array)),
         Insn::ObjectAlloc { val, state } => objects::gen_object_alloc(jit, asm, function, opnd!(val), &function.frame_state(*state)),
         &Insn::ObjectAllocClass { class, state } => objects::gen_object_alloc_class(jit, asm, function, class, &function.frame_state(state)),
-        Insn::StringCopy { val, chilled, state } => gen_string_copy(jit, asm, function, *val, opnd!(val), *chilled, &function.frame_state(*state)),
-        Insn::StringConcat { strings, state } => gen_string_concat(jit, asm, function, opnds!(strings), &function.frame_state(*state)),
-        &Insn::StringGetbyte { string, index } => gen_string_getbyte(asm, opnd!(string), opnd!(index)),
-        Insn::StringSetbyteFixnum { string, index, value } => gen_string_setbyte_fixnum(asm, opnd!(string), opnd!(index), opnd!(value)),
-        Insn::StringAppend { recv, other, state } => gen_string_append(jit, asm, function, opnd!(recv), opnd!(other), &function.frame_state(*state)),
-        Insn::StringAppendCodepoint { recv, other, state } => gen_string_append_codepoint(jit, asm, function, opnd!(recv), opnd!(other), &function.frame_state(*state)),
-        Insn::StringEqual { left, right } => gen_string_equal(asm, opnd!(left), opnd!(right)),
-        Insn::StringIntern { val, state } => gen_intern(asm, opnd!(val), &function.frame_state(*state)),
-        Insn::ToRegexp { opt, values, state } => gen_toregexp(jit, asm, function, *opt, opnds!(values), &function.frame_state(*state)),
+        Insn::StringCopy { val, chilled, state } => strings::gen_string_copy(jit, asm, function, *val, opnd!(val), *chilled, &function.frame_state(*state)),
+        Insn::StringConcat { strings: values, state } => strings::gen_string_concat(jit, asm, function, opnds!(values), &function.frame_state(*state)),
+        &Insn::StringGetbyte { string, index } => strings::gen_string_getbyte(asm, opnd!(string), opnd!(index)),
+        Insn::StringSetbyteFixnum { string, index, value } => strings::gen_string_setbyte_fixnum(asm, opnd!(string), opnd!(index), opnd!(value)),
+        Insn::StringAppend { recv, other, state } => strings::gen_string_append(jit, asm, function, opnd!(recv), opnd!(other), &function.frame_state(*state)),
+        Insn::StringAppendCodepoint { recv, other, state } => strings::gen_string_append_codepoint(jit, asm, function, opnd!(recv), opnd!(other), &function.frame_state(*state)),
+        Insn::StringEqual { left, right } => strings::gen_string_equal(asm, opnd!(left), opnd!(right)),
+        Insn::StringIntern { val, state } => strings::gen_intern(asm, opnd!(val), &function.frame_state(*state)),
+        Insn::ToRegexp { opt, values, state } => strings::gen_toregexp(jit, asm, function, *opt, opnds!(values), &function.frame_state(*state)),
         Insn::Param => unreachable!("block.insns should not have Insn::Param"),
         Insn::LoadArg { .. } => return, // compiled in the LoadArg pre-pass above
         Insn::Snapshot { .. } => return, // we don't need to do anything for this instruction at the moment
@@ -762,7 +763,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::FixnumBitCheck { val, index } => gen_fixnum_bit_check(asm, opnd!(val), *index),
         Insn::SideExit { state, reason, recompile } => no_output!(gen_side_exit(jit, asm, function, reason, *recompile, &function.frame_state(*state))),
         Insn::PutSpecialObject { value_type, state } => gen_putspecialobject(jit, asm, function, *value_type, &function.frame_state(*state)),
-        Insn::AnyToString { val, state } => gen_anytostring(asm, opnd!(val), &function.frame_state(*state)),
+        Insn::AnyToString { val, state } => strings::gen_anytostring(asm, opnd!(val), &function.frame_state(*state)),
         Insn::Defined { op_type, obj, pushval, v, lep_level, state } => gen_defined(jit, asm, function, *op_type, *obj, *pushval, opnd!(v), *lep_level, &function.frame_state(*state)),
         Insn::CheckMatch { target, pattern, flag, state } => gen_checkmatch(jit, asm, function, opnd!(target), opnd!(pattern), *flag, &function.frame_state(*state)),
         Insn::GetSpecialSymbol { symbol_type, state } => gen_getspecial_symbol(asm, *symbol_type, &function.frame_state(*state)),
