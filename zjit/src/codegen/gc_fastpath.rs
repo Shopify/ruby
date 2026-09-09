@@ -8,7 +8,8 @@ use crate::cruby::{
     rb_gc_zjit_mmtk_new_obj_fastpath as RbGcZjitMmtkNewObjFastpath,
 };
 use crate::hir::{FrameState, Function, Invariant};
-use super::{JITState, gen_patch_point};
+use super::{JITState};
+use super::guards::gen_patch_point;
 
 impl Clone for RbGcZjitDefaultNewObjFastpath {
     fn clone(&self) -> Self { *self }

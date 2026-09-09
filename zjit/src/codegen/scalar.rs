@@ -4,7 +4,8 @@ use crate::backend::lir::{self, asm_ccall, Assembler, Opnd};
 use crate::cruby::*;
 use crate::hir::{FrameState, Function};
 use crate::hir::SideExitReason::*;
-use super::{side_exit, gen_prepare_leaf_call_with_gc, JITState};
+use super::{gen_prepare_leaf_call_with_gc, JITState};
+use super::guards::side_exit;
 
 pub(super) fn gen_unbox_fixnum(asm: &mut Assembler, val: Opnd) -> Opnd {
     asm.rshift(val, Opnd::UImm(1))

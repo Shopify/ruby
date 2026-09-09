@@ -1,6 +1,6 @@
 use crate::asm::{CodeBlock, Label};
 use crate::asm::arm64::*;
-use crate::codegen::split_patch_point;
+use crate::codegen::guards::split_patch_point;
 use crate::cruby::*;
 use crate::backend::lir::*;
 use crate::options::asm_dump;

@@ -11,7 +11,8 @@ use crate::options::InlineDepth;
 use crate::stats::Counter;
 use crate::cast::IntoUsize;
 
-use super::{gen_incr_counter, side_exit, JITEntry, JITFrame, JITState, PC_POISON};
+use super::{gen_incr_counter, JITEntry, JITFrame, JITState, PC_POISON};
+use super::guards::side_exit;
 use crate::cruby::IseqAccess;
 use crate::cruby::zjit_jit_frame;
 

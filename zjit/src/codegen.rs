@@ -7,6 +7,7 @@ mod objects;
 mod strings;
 mod scalar;
 mod runtime;
+pub(crate) mod guards;
 mod gc_fastpath;
 mod frame;
 
@@ -16,11 +17,6 @@ use std::ffi::{c_long, c_void};
 use std::slice;
 
 use crate::backend::current::ALLOC_REGS;
-use crate::invariants::{
-    track_bop_assumption, track_cme_assumption, track_no_ep_escape_assumption, track_no_trace_point_assumption,
-    track_single_ractor_assumption, track_stable_constant_names_assumption, track_no_singleton_class_assumption,
-    track_root_box_assumption, track_no_newobj_hook_assumption
-};
 use crate::gc::append_gc_offsets;
 use crate::payload::{IseqCodePtrs, IseqStatus, IseqVersion, IseqVersionRef, JITFrame, get_or_create_iseq_payload};
 use crate::profile::reset_profiles_remaining;
@@ -29,10 +25,10 @@ use crate::state::{rb_zjit_compiling_p, ZJITState};
 use crate::stats::{CompileError, exit_counter_for_compile_error, incr_counter, incr_counter_by, send_fallback_counter, send_fallback_counter_for_method_type, send_fallback_counter_for_super_method_type, send_fallback_counter_ptr_for_opcode, send_fallback_counter_for_optimized_method_type};
 use crate::stats::{counter_ptr, with_time_stat, trace_compile_phase, Counter, Counter::{compile_time_ns, exit_compile_error}};
 use crate::{asm::CodeBlock, cruby::*, options::debug, virtualmem::CodePtr};
-use crate::backend::lir::{self, Assembler, CArgLocation, C_ARG_OPNDS, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, NATIVE_STACK_PTR, Opnd, SP, SideExit, SideExitRecompile, SideExitTarget, StackMap, Target, asm_ccall, asm_comment};
-use crate::hir::{self, iseq_to_hir, BlockId, Invariant, SideExitReason::{self, *}};
-use crate::hir::{BlockHandler, CCallVariadicData, CCallWithFrameData, Const, FrameState, Function, Insn, InsnId, Recompile, SendDirectData, SendFallbackReason, qualified_method_name};
-use crate::hir_type::{types, Type};
+use crate::backend::lir::{self, Assembler, CArgLocation, C_ARG_OPNDS, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, NATIVE_STACK_PTR, Opnd, SP, Target, asm_ccall, asm_comment};
+use crate::hir::{iseq_to_hir, BlockId};
+use crate::hir::{BlockHandler, CCallVariadicData, CCallWithFrameData, Const, FrameState, Function, Insn, InsnId, SendDirectData, SendFallbackReason, qualified_method_name};
+use crate::hir_type::types;
 use crate::options::{get_option, InlineDepth, DEFAULT_MAX_VERSIONS};
 use crate::cast::IntoUsize;
 use frame::{ControlFrame, build_stack_map, cfp_jit_return_for_depth, gen_entry_point, gen_prepare_fallback_call, gen_prepare_leaf_call_with_gc, gen_prepare_non_leaf_call, gen_push_frame, gen_return, gen_save_sp, gen_spill_locals, gen_spill_stack, gen_stack_overflow_check, gen_throw, gen_write_jit_frame, jit_frame_for_state, jit_frame_slot_offset};
@@ -547,6 +543,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                     }
                 }
 
+
             }
             // Blocks should always end with control flow
             assert!(asm.current_block().insns.last().unwrap().is_terminator());
@@ -720,7 +717,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         }
         &Insn::FixnumMod { left, right, state } => scalar::gen_fixnum_mod(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(state)),
         &Insn::FixnumAref { recv, index } => scalar::gen_fixnum_aref(asm, opnd!(recv), opnd!(index)),
-        &Insn::IsMethodCfunc { val, cd, cfunc, state } => gen_is_method_cfunc(asm, opnd!(val), cd, cfunc, &function.frame_state(state)),
+        &Insn::IsMethodCfunc { val, cd, cfunc, state } => guards::gen_is_method_cfunc(asm, opnd!(val), cd, cfunc, &function.frame_state(state)),
         &Insn::IsBitEqual { left, right } => scalar::gen_is_bit_equal(asm, opnd!(left), opnd!(right)),
         &Insn::IsBitNotEqual { left, right } => scalar::gen_is_bit_not_equal(asm, opnd!(left), opnd!(right)),
         &Insn::BoxBool { val } => scalar::gen_box_bool(asm, opnd!(val)),
@@ -730,18 +727,18 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::RefineType { val, .. } => opnd!(val),
         Insn::HasType { val, expected } => {
             let val_type = function.type_of(*val);
-            gen_has_type(jit, asm, opnd!(val), val_type, *expected)
+            guards::gen_has_type(jit, asm, opnd!(val), val_type, *expected)
         }
         &Insn::GuardType { val, guard_type, state, recompile } => {
             let val_type = function.type_of(val);
-            gen_guard_type(jit, asm, function, opnd!(val), val_type, guard_type, recompile, &function.frame_state(state))
+            guards::gen_guard_type(jit, asm, function, opnd!(val), val_type, guard_type, recompile, &function.frame_state(state))
         }
-        &Insn::GuardBitEquals { val, expected, ref reason, state, recompile } => gen_guard_bit_equals(jit, asm, function, opnd!(val), expected, **reason, recompile, &function.frame_state(state)),
-        &Insn::GuardAnyBitSet { val, mask, ref reason, state, recompile, .. } => gen_guard_any_bit_set(jit, asm, function, opnd!(val), mask, **reason, recompile, &function.frame_state(state)),
-        &Insn::GuardNoBitsSet { val, mask, ref reason, state, .. } => gen_guard_no_bits_set(jit, asm, function, opnd!(val), mask, **reason, &function.frame_state(state)),
-        &Insn::GuardLess { left, right, ref reason, state } => gen_guard_less(jit, asm, function, opnd!(left), opnd!(right), **reason, &function.frame_state(state)),
-        &Insn::GuardGreaterEq { left, right, state, .. } => gen_guard_greater_eq(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(state)),
-        Insn::PatchPoint { invariant, state } => no_output!(gen_patch_point(jit, asm, function, invariant, &function.frame_state(*state))),
+        &Insn::GuardBitEquals { val, expected, ref reason, state, recompile } => guards::gen_guard_bit_equals(jit, asm, function, opnd!(val), expected, **reason, recompile, &function.frame_state(state)),
+        &Insn::GuardAnyBitSet { val, mask, ref reason, state, recompile, .. } => guards::gen_guard_any_bit_set(jit, asm, function, opnd!(val), mask, **reason, recompile, &function.frame_state(state)),
+        &Insn::GuardNoBitsSet { val, mask, ref reason, state, .. } => guards::gen_guard_no_bits_set(jit, asm, function, opnd!(val), mask, **reason, &function.frame_state(state)),
+        &Insn::GuardLess { left, right, ref reason, state } => guards::gen_guard_less(jit, asm, function, opnd!(left), opnd!(right), **reason, &function.frame_state(state)),
+        &Insn::GuardGreaterEq { left, right, state, .. } => guards::gen_guard_greater_eq(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(state)),
+        Insn::PatchPoint { invariant, state } => no_output!(guards::gen_patch_point(jit, asm, function, invariant, &function.frame_state(*state))),
         Insn::CCall { cfunc, recv, args, name, owner, return_type: _, elidable: _ } => calls::gen_ccall(asm, *cfunc, *name, *owner, opnd!(recv), opnds!(args)),
         Insn::CCallWithFrame(insn) => {
             let CCallWithFrameData { cfunc, recv, name, args, cme, state, block, .. } = &**insn;
@@ -763,7 +760,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::SetClassVar { id, val, ic, state } => no_output!(runtime::gen_setclassvar(jit, asm, function, *id, opnd!(val), *ic, &function.frame_state(*state))),
         Insn::SetIvar { self_val, id, ic, val, state } => no_output!(runtime::gen_setivar(jit, asm, function, opnd!(self_val), *id, *ic, opnd!(val), &function.frame_state(*state))),
         Insn::FixnumBitCheck { val, index } => scalar::gen_fixnum_bit_check(asm, opnd!(val), *index),
-        Insn::SideExit { state, reason, recompile } => no_output!(gen_side_exit(jit, asm, function, reason, *recompile, &function.frame_state(*state))),
+        Insn::SideExit { state, reason, recompile } => no_output!(guards::gen_side_exit(jit, asm, function, reason, *recompile, &function.frame_state(*state))),
         Insn::PutSpecialObject { value_type, state } => runtime::gen_putspecialobject(jit, asm, function, *value_type, &function.frame_state(*state)),
         Insn::AnyToString { val, state } => strings::gen_anytostring(asm, opnd!(val), &function.frame_state(*state)),
         Insn::Defined { op_type, obj, pushval, v, lep_level, state } => runtime::gen_defined(jit, asm, function, *op_type, *obj, *pushval, opnd!(v), *lep_level, &function.frame_state(*state)),
@@ -796,7 +793,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::ArrayPackBuffer { elements, fmt, buffer, state } => objects::gen_array_pack_buffer(jit, asm, function, opnds!(elements), opnd!(fmt), (*buffer).map(|buffer| opnd!(buffer)), &function.frame_state(*state)),
         &Insn::DupArrayInclude { ary, target, state } => objects::gen_dup_array_include(jit, asm, function, ary, opnd!(target), &function.frame_state(state)),
         Insn::ArrayHash { elements, state } => gen_opt_newarray_hash(jit, asm, function, opnds!(elements), &function.frame_state(*state)),
-        &Insn::IsA { val, class } => gen_is_a(jit, asm, opnd!(val), opnd!(class)),
+        &Insn::IsA { val, class } => guards::gen_is_a(jit, asm, opnd!(val), opnd!(class)),
         &Insn::ArrayMax { ref elements, state } => objects::gen_array_max(jit, asm, function, opnds!(elements), &function.frame_state(state)),
         &Insn::ArrayMin { ref elements, state } => objects::gen_array_min(jit, asm, function, opnds!(elements), &function.frame_state(state)),
         &Insn::Throw { throw_state, val, state } => no_output!(gen_throw(jit, asm, function, throw_state, opnd!(val), &function.frame_state(state))),
@@ -810,90 +807,6 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
     jit.opnds[insn_id] = Some(out_opnd);
 
 }
-
-fn gen_guard_less(jit: &mut JITState, asm: &mut Assembler, function: &Function, left: Opnd, right: Opnd, reason: SideExitReason, state: &FrameState) -> Opnd {
-    asm.cmp(left, right);
-    asm.jge(jit, side_exit(jit, function, state, reason));
-    left
-}
-
-fn gen_guard_greater_eq(jit: &mut JITState, asm: &mut Assembler, function: &Function, left: Opnd, right: Opnd, state: &FrameState) -> Opnd {
-    asm.cmp(left, right);
-    asm.jl(jit, side_exit(jit, function, state, SideExitReason::GuardGreaterEq));
-    left
-}
-
-
-
-
-/// Record a patch point that should be invalidated on a given invariant
-fn gen_patch_point(jit: &mut JITState, asm: &mut Assembler, function: &Function, invariant: &Invariant, state: &FrameState) {
-    let invariant = *invariant;
-    let exit = build_side_exit(jit, function, state);
-
-    // Let compile_exits compile a side exit. Let scratch_split lower it with split_patch_point.
-    asm.patch_point(Target::SideExit(Box::new(SideExitTarget { exit, reason: PatchPoint(invariant) })), invariant, jit.version);
-}
-
-/// This is used by scratch_split to lower PatchPoint into PatchPointPad and PosMarker.
-/// It's called at scratch_split so that we can use the Label after side-exit deduplication in compile_exits.
-pub fn split_patch_point(asm: &mut Assembler, target: &Target, invariant: Invariant, version: IseqVersionRef) {
-    let Target::Label(exit_label) = *target else {
-        unreachable!("PatchPoint's target should have been lowered to Target::Label by compile_exits: {target:?}");
-    };
-
-    // Fill nop instructions if the last patch point is too close.
-    asm.patch_point_pad();
-
-    // Remember the current address as a patch point
-    asm.pos_marker(move |code_ptr, cb| {
-        let side_exit_ptr = cb.resolve_label(exit_label);
-        match invariant {
-            Invariant::BOPRedefined { klass, bop } => {
-                track_bop_assumption(klass, bop, code_ptr, side_exit_ptr, version);
-            }
-            Invariant::MethodRedefined { klass: _, method: _, cme } => {
-                track_cme_assumption(cme, code_ptr, side_exit_ptr, version);
-            }
-            Invariant::StableConstantNames { idlist } => {
-                track_stable_constant_names_assumption(idlist, code_ptr, side_exit_ptr, version);
-            }
-            Invariant::NoTracePoint => {
-                track_no_trace_point_assumption(code_ptr, side_exit_ptr, version);
-            }
-            Invariant::NoNewObjHook => {
-                track_no_newobj_hook_assumption(code_ptr, side_exit_ptr, version);
-            }
-            Invariant::NoEPEscape(iseq) => {
-                track_no_ep_escape_assumption(iseq, code_ptr, side_exit_ptr, version);
-            }
-            Invariant::SingleRactorMode => {
-                track_single_ractor_assumption(code_ptr, side_exit_ptr, version);
-            }
-            Invariant::NoSingletonClass { klass } => {
-                track_no_singleton_class_assumption(klass, code_ptr, side_exit_ptr, version);
-            }
-            Invariant::RootBoxOnly => {
-                track_root_box_assumption(code_ptr, side_exit_ptr, version);
-            }
-        }
-    });
-}
-
-
-
-
-
-
-/// Side-exit into the interpreter
-fn gen_side_exit(jit: &mut JITState, asm: &mut Assembler, function: &Function, reason: &SideExitReason, recompile: Option<Recompile>, state: &FrameState) {
-    asm.jmp(side_exit_with_recompile(jit, function, state, *reason, recompile));
-}
-
-
-
-
-
 
 /// Compile an interpreter entry block to be inserted into an ISEQ
 fn gen_entry_prologue(asm: &mut Assembler) {
@@ -989,310 +902,8 @@ fn gen_opt_newarray_hash(
     )
 }
 
-fn gen_is_a(jit: &mut JITState, asm: &mut Assembler, obj: Opnd, class: Opnd) -> lir::Opnd {
-    let builtin_type = match class {
-        Opnd::Value(value) if value == unsafe { rb_cString } => Some(RUBY_T_STRING),
-        Opnd::Value(value) if value == unsafe { rb_cArray } => Some(RUBY_T_ARRAY),
-        Opnd::Value(value) if value == unsafe { rb_cHash } => Some(RUBY_T_HASH),
-        _ => None
-    };
-
-    if let Some(builtin_type) = builtin_type {
-        asm_comment!(asm, "IsA by matching builtin type");
-        let hir_block_id = asm.current_block().hir_block_id;
-        let rpo_idx = asm.current_block().rpo_index;
-
-        // Create a result block that all paths converge to
-        let result_block = asm.new_block(hir_block_id, false, rpo_idx);
-        let result_edge = |v| Target::Block(Box::new(lir::BranchEdge {
-            target: result_block,
-            args: vec![v],
-        }));
-
-        let val = asm.load_mem(obj);
-
-        // Immediate -> definitely not String/Array/Hash
-        asm.test(val, Opnd::UImm(RUBY_IMMEDIATE_MASK as u64));
-        asm.jnz(jit, result_edge(Qfalse.into()));
-
-        // Qfalse -> definitely not String/Array/Hash
-        asm.cmp(val, Qfalse.into());
-        asm.je(jit, result_edge(Qfalse.into()));
-
-        // Heap object -> check builtin type
-        let flags = asm.load(Opnd::mem(VALUE_BITS, val, RUBY_OFFSET_RBASIC_FLAGS));
-        let obj_builtin_type = asm.and(flags, Opnd::UImm(RUBY_T_MASK as u64));
-        asm.cmp(obj_builtin_type, Opnd::UImm(builtin_type as u64));
-        let result = asm.csel_e(Qtrue.into(), Qfalse.into());
-        asm.jmp(result_edge(result));
-
-        // Result block -- receives the value via block parameter (phi node)
-        asm.set_current_block(result_block);
-        let label = jit.get_label(asm, result_block, hir_block_id);
-        asm.write_label(label);
-        let param = asm.new_block_param(VALUE_BITS);
-        asm.current_block().add_parameter(param);
-        param
-    } else {
-        asm_ccall!(asm, rb_obj_is_kind_of, obj, class)
-    }
-}
 
 
-
-fn gen_is_method_cfunc(asm: &mut Assembler, val: lir::Opnd, cd: *const rb_call_data, cfunc: *const u8, state: &FrameState) -> lir::Opnd {
-    unsafe extern "C" {
-        fn rb_vm_method_cfunc_is(iseq: IseqPtr, cd: *const rb_call_data, recv: VALUE, cfunc: *const u8) -> VALUE;
-    }
-    asm_ccall!(asm, rb_vm_method_cfunc_is, VALUE::from(state.iseq).into(), Opnd::const_ptr(cd), val, Opnd::const_ptr(cfunc))
-}
-
-
-
-/// Evaluate if a value is truthy
-/// Produces a CBool type (0 or 1)
-/// In Ruby, only nil and false are falsy
-/// Everything else evaluates to true
-
-fn gen_has_type(jit: &mut JITState, asm: &mut Assembler, val: lir::Opnd, val_type: Type, ty: Type) -> lir::Opnd {
-    if ty.is_subtype(types::Fixnum) {
-        asm.test(val, Opnd::UImm(RUBY_FIXNUM_FLAG as u64));
-        asm.csel_nz(Opnd::Imm(1), Opnd::Imm(0))
-    } else if ty.is_subtype(types::Flonum) {
-        // Flonum: (val & RUBY_FLONUM_MASK) == RUBY_FLONUM_FLAG
-        let masked = asm.and(val, Opnd::UImm(RUBY_FLONUM_MASK as u64));
-        asm.cmp(masked, Opnd::UImm(RUBY_FLONUM_FLAG as u64));
-        asm.csel_e(Opnd::Imm(1), Opnd::Imm(0))
-    } else if ty.is_subtype(types::StaticSymbol) {
-        // Static symbols have (val & 0xff) == RUBY_SYMBOL_FLAG
-        // Use 8-bit comparison like YJIT does.
-        // If `val` is a constant (rare but possible), put it in a register to allow masking.
-        let val = asm.load_imm(val);
-        asm.cmp(val.with_num_bits(8), Opnd::UImm(RUBY_SYMBOL_FLAG as u64));
-        asm.csel_e(Opnd::Imm(1), Opnd::Imm(0))
-    } else if ty.is_subtype(types::NilClass) {
-        asm.cmp(val, Qnil.into());
-        asm.csel_e(Opnd::Imm(1), Opnd::Imm(0))
-    } else if ty.is_subtype(types::TrueClass) {
-        asm.cmp(val, Qtrue.into());
-        asm.csel_e(Opnd::Imm(1), Opnd::Imm(0))
-    } else if ty.is_subtype(types::FalseClass) {
-        asm.cmp(val, Qfalse.into());
-        asm.csel_e(Opnd::Imm(1), Opnd::Imm(0))
-    } else if ty.is_immediate() {
-        // All immediate types' guard should have been handled above
-        panic!("unexpected immediate guard type: {ty}");
-    } else if let Some(expected_class) = ty.runtime_exact_ruby_class() {
-        let hir_block_id = asm.current_block().hir_block_id;
-        let rpo_idx = asm.current_block().rpo_index;
-
-        // Create a result block that all paths converge to
-        let result_block = asm.new_block(hir_block_id, false, rpo_idx);
-        let result_edge = |v| Target::Block(Box::new(lir::BranchEdge {
-            target: result_block,
-            args: vec![v],
-        }));
-
-        // If val isn't in a register, load it to use it as the base of Opnd::mem later.
-        // TODO: Max thinks codegen should not care about the shapes of the operands except to create them. (Shopify/ruby#685)
-        let val = asm.load_mem(val);
-
-        let is_known_heap_basic_object = val_type.is_subtype(types::HeapBasicObject);
-        if !is_known_heap_basic_object {
-            // Immediate -> definitely not the class
-            asm.test(val, (RUBY_IMMEDIATE_MASK as u64).into());
-            asm.jnz(jit, result_edge(Opnd::Imm(0)));
-
-            // Qfalse -> definitely not the class
-            asm.cmp(val, Qfalse.into());
-            asm.je(jit, result_edge(Opnd::Imm(0)));
-        }
-
-        // Heap object -> check klass field
-        let klass = asm.load(Opnd::mem(64, val, RUBY_OFFSET_RBASIC_KLASS));
-        asm.cmp(klass, Opnd::Value(expected_class));
-        let result = asm.csel_e(Opnd::UImm(1), Opnd::Imm(0));
-        asm.jmp(result_edge(result));
-
-        // Result block -- receives the value via block parameter (phi node)
-        asm.set_current_block(result_block);
-        let label = jit.get_label(asm, result_block, hir_block_id);
-        asm.write_label(label);
-        let param = asm.new_block_param(VALUE_BITS);
-        asm.current_block().add_parameter(param);
-        param
-    } else if let Some(builtin_type) = ty.builtin_type_equivalent() {
-        let hir_block_id = asm.current_block().hir_block_id;
-        let rpo_idx = asm.current_block().rpo_index;
-
-        // Create a result block that all paths converge to
-        let result_block = asm.new_block(hir_block_id, false, rpo_idx);
-        let result_edge = |v| Target::Block(Box::new(lir::BranchEdge {
-            target: result_block,
-            args: vec![v],
-        }));
-
-        // If val isn't in a register, load it to use it as the base of Opnd::mem later.
-        let val = asm.load_mem(val);
-
-        let is_known_heap_basic_object = val_type.is_subtype(types::HeapBasicObject);
-        if !is_known_heap_basic_object {
-            // Immediate -> definitely not the class
-            asm.test(val, (RUBY_IMMEDIATE_MASK as u64).into());
-            asm.jnz(jit, result_edge(Opnd::Imm(0)));
-
-            // Qfalse -> definitely not the class
-            asm.cmp(val, Qfalse.into());
-            asm.je(jit, result_edge(Opnd::Imm(0)));
-        }
-
-        // Heap object
-        // Mask and check the builtin type
-        let flags = asm.load(Opnd::mem(VALUE_BITS, val, RUBY_OFFSET_RBASIC_FLAGS));
-        let tag   = asm.and(flags, Opnd::UImm(RUBY_T_MASK as u64));
-        asm.cmp(tag, Opnd::UImm(builtin_type as u64));
-        let result = asm.csel_e(Opnd::UImm(1), Opnd::Imm(0));
-        asm.jmp(result_edge(result));
-
-        // Result block -- receives the value via block parameter (phi node)
-        asm.set_current_block(result_block);
-        let label = jit.get_label(asm, result_block, hir_block_id);
-        asm.write_label(label);
-        let param = asm.new_block_param(VALUE_BITS);
-        asm.current_block().add_parameter(param);
-        param
-    } else {
-        unimplemented!("unsupported type: {ty}");
-    }
-}
-
-/// Compile a type check with a side exit
-fn gen_guard_type(jit: &mut JITState, asm: &mut Assembler, function: &Function, val: lir::Opnd, val_type: Type, guard_type: Type, recompile: Option<Recompile>, state: &FrameState) -> lir::Opnd {
-    let is_known_heap_basic_object = val_type.is_subtype(types::HeapBasicObject);
-    gen_incr_counter(asm, Counter::guard_type_count);
-    if guard_type.is_subtype(types::Fixnum) {
-        asm.test(val, Opnd::UImm(RUBY_FIXNUM_FLAG as u64));
-        asm.jz(jit, side_exit_with_recompile(jit, function, state, GuardType(guard_type), recompile));
-    } else if guard_type.is_subtype(types::Flonum) {
-        // Flonum: (val & RUBY_FLONUM_MASK) == RUBY_FLONUM_FLAG
-        let masked = asm.and(val, Opnd::UImm(RUBY_FLONUM_MASK as u64));
-        asm.cmp(masked, Opnd::UImm(RUBY_FLONUM_FLAG as u64));
-        asm.jne(jit, side_exit_with_recompile(jit, function, state, GuardType(guard_type), recompile));
-    } else if guard_type.is_subtype(types::StaticSymbol) {
-        // Static symbols have (val & 0xff) == RUBY_SYMBOL_FLAG
-        // Use 8-bit comparison like YJIT does.
-        // If `val` is a constant (rare but possible), put it in a register to allow masking.
-        let val = asm.load_imm(val);
-        asm.cmp(val.with_num_bits(8), Opnd::UImm(RUBY_SYMBOL_FLAG as u64));
-        asm.jne(jit, side_exit_with_recompile(jit, function, state, GuardType(guard_type), recompile));
-    } else if guard_type.is_subtype(types::NilClass) {
-        asm.cmp(val, Qnil.into());
-        asm.jne(jit, side_exit_with_recompile(jit, function, state, GuardType(guard_type), recompile));
-    } else if guard_type.is_subtype(types::TrueClass) {
-        asm.cmp(val, Qtrue.into());
-        asm.jne(jit, side_exit_with_recompile(jit, function, state, GuardType(guard_type), recompile));
-    } else if guard_type.is_subtype(types::FalseClass) {
-        asm.cmp(val, Qfalse.into());
-        asm.jne(jit, side_exit_with_recompile(jit, function, state, GuardType(guard_type), recompile));
-    } else if guard_type.is_immediate() {
-        // All immediate types' guard should have been handled above
-        panic!("unexpected immediate guard type: {guard_type}");
-    } else if let Some(expected_class) = guard_type.runtime_exact_ruby_class() {
-        asm_comment!(asm, "guard exact class for non-immediate types");
-
-        // If val isn't in a register, load it to use it as the base of Opnd::mem later.
-        // TODO: Max thinks codegen should not care about the shapes of the operands except to create them. (Shopify/ruby#685)
-        let val = asm.load_mem(val);
-
-        let side_exit = side_exit_with_recompile(jit, function, state, GuardType(guard_type), recompile);
-        if !is_known_heap_basic_object {
-            // Check if it's a special constant
-            asm.test(val, (RUBY_IMMEDIATE_MASK as u64).into());
-            asm.jnz(jit, side_exit.clone());
-
-            // Check if it's false
-            asm.cmp(val, Qfalse.into());
-            asm.je(jit, side_exit.clone());
-        }
-
-        // Load the class from the object's klass field
-        let klass = asm.load(Opnd::mem(64, val, RUBY_OFFSET_RBASIC_KLASS));
-
-        asm.cmp(klass, Opnd::Value(expected_class));
-        asm.jne(jit, side_exit);
-    } else if let Some(builtin_type) = guard_type.builtin_type_equivalent() {
-        let side = side_exit_with_recompile(jit, function, state, GuardType(guard_type), recompile);
-
-        if !is_known_heap_basic_object {
-            // Check special constant
-            asm.test(val, Opnd::UImm(RUBY_IMMEDIATE_MASK as u64));
-            asm.jnz(jit, side.clone());
-
-            // Check false
-            asm.cmp(val, Qfalse.into());
-            asm.je(jit, side.clone());
-        }
-
-        // Mask and check the builtin type
-        let val = asm.load_mem(val);
-        let flags = asm.load(Opnd::mem(VALUE_BITS, val, RUBY_OFFSET_RBASIC_FLAGS));
-        let tag   = asm.and(flags, Opnd::UImm(RUBY_T_MASK as u64));
-        asm.cmp(tag, Opnd::UImm(builtin_type as u64));
-        asm.jne(jit, side);
-    } else if guard_type.bit_equal(types::HeapBasicObject) {
-        let side_exit = side_exit_with_recompile(jit, function, state, GuardType(guard_type), recompile);
-        asm.cmp(val, Opnd::Value(Qfalse));
-        asm.je(jit, side_exit.clone());
-        asm.test(val, (RUBY_IMMEDIATE_MASK as u64).into());
-        asm.jnz(jit, side_exit);
-    } else {
-        unimplemented!("unsupported type: {guard_type}");
-    }
-    val
-}
-
-/// Compile an identity check with a side exit
-fn gen_guard_bit_equals(jit: &mut JITState, asm: &mut Assembler, function: &Function, val: lir::Opnd, expected: hir::Const, reason: SideExitReason, recompile: Option<Recompile>, state: &FrameState) -> lir::Opnd {
-    if matches!(reason, SideExitReason::GuardShape(_) ) {
-        gen_incr_counter(asm, Counter::guard_shape_count);
-    }
-    let expected_opnd: Opnd = match expected {
-        hir::Const::Value(v) => { Opnd::Value(v) }
-        hir::Const::CInt64(v) => { v.into() }
-        hir::Const::CPtr(v) => { Opnd::const_ptr(v) }
-        hir::Const::CShape(v) => { Opnd::UImm(v.0 as u64) }
-        _ => panic!("gen_guard_bit_equals: unexpected hir::Const {expected:?}"),
-    };
-    asm.cmp(val, expected_opnd);
-    asm.jnz(jit, side_exit_with_recompile(jit, function, state, reason, recompile));
-    val
-}
-
-fn mask_to_opnd(mask: hir::Const) -> Option<Opnd> {
-    match mask {
-        hir::Const::CUInt8(v) => Some(Opnd::UImm(v as u64)),
-        hir::Const::CUInt16(v) => Some(Opnd::UImm(v as u64)),
-        hir::Const::CUInt32(v) => Some(Opnd::UImm(v as u64)),
-        hir::Const::CUInt64(v) => Some(Opnd::UImm(v)),
-        _ => None
-    }
-}
-
-/// Compile a bitmask check with a side exit if none of the masked bits are not set
-fn gen_guard_any_bit_set(jit: &mut JITState, asm: &mut Assembler, function: &Function, val: lir::Opnd, mask: hir::Const, reason: SideExitReason, recompile: Option<Recompile>, state: &FrameState) -> lir::Opnd {
-    let mask_opnd = mask_to_opnd(mask).unwrap_or_else(|| panic!("gen_guard_any_bit_set: unexpected hir::Const {mask:?}"));
-    asm.test(val, mask_opnd);
-    asm.jz(jit, side_exit_with_recompile(jit, function, state, reason, recompile));
-    val
-}
-
-/// Compile a bitmask check with a side exit if any of the masked bits are set
-fn gen_guard_no_bits_set(jit: &mut JITState, asm: &mut Assembler, function: &Function, val: lir::Opnd, mask: hir::Const, reason: SideExitReason, state: &FrameState) -> lir::Opnd {
-    let mask_opnd = mask_to_opnd(mask).unwrap_or_else(|| panic!("gen_guard_no_bits_set: unexpected hir::Const {mask:?}"));
-    asm.test(val, mask_opnd);
-    asm.jnz(jit, side_exit(jit, function, state, reason));
-    val
-}
 
 /// Generate code that records unoptimized C functions if --zjit-stats is enabled
 fn gen_incr_counter_ptr(asm: &mut Assembler, counter_ptr: *mut u64) {
@@ -1415,56 +1026,7 @@ fn compile_iseq(iseq: IseqPtr) -> Result<Function, CompileError> {
     Ok(function)
 }
 
-/// Build a Target::SideExit
-fn side_exit(jit: &JITState, function: &Function, state: &FrameState, reason: SideExitReason) -> Target {
-    let exit = build_side_exit(jit, function, state);
-    Target::SideExit(Box::new(SideExitTarget { exit, reason }))
-}
 
-/// Build a Target::SideExit that optionally triggers exit_recompile on the exit path.
-fn side_exit_with_recompile(jit: &JITState, function: &Function, state: &FrameState, reason: SideExitReason, recompile: Option<Recompile>) -> Target {
-    let mut exit = build_side_exit(jit, function, state);
-    exit.recompile = recompile.map(|_| SideExitRecompile {
-        compiled_iseq: Opnd::Value(VALUE::from(jit.iseq())),
-        frame_iseq: Opnd::Value(VALUE::from(state.iseq)),
-        insn_idx: state.insn_idx() as u32,
-    });
-    Target::SideExit(Box::new(SideExitTarget { exit, reason }))
-}
-
-/// Build a side-exit context
-fn build_side_exit(jit: &JITState, function: &Function, state: &FrameState) -> SideExit {
-    let mut stack = Vec::new();
-    for &insn_id in state.stack() {
-        stack.push(jit.get_opnd(insn_id));
-    }
-
-    let mut locals = Vec::new();
-    for &insn_id in state.locals() {
-        locals.push(jit.get_opnd(insn_id));
-    }
-
-    SideExit{
-        pc: Opnd::const_ptr(state.pc),
-        stack,
-        locals,
-        iseq: state.iseq,
-        stack_map: build_caller_stack_map(jit, function, state),
-        recompile: None,
-    }
-}
-
-fn build_caller_stack_map(jit: &JITState, function: &Function, state: &FrameState) -> Option<StackMap> {
-    let caller = state.caller()?;
-    let caller_state = function.frame_state(caller);
-    let stack_map = build_stack_map(jit, function, &caller_state);
-    if stack_map.is_empty() {
-        return None;
-    }
-
-    let jit_frame = jit_frame_for_state(&caller_state, stack_map.len());
-    Some(StackMap::new(stack_map, jit_frame, caller_state.depth))
-}
 
 #[cfg(target_arch = "x86_64")]
 macro_rules! c_callable {

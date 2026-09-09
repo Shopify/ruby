@@ -2,7 +2,7 @@ use std::mem;
 
 use crate::asm::*;
 use crate::asm::x86_64::*;
-use crate::codegen::split_patch_point;
+use crate::codegen::guards::split_patch_point;
 use crate::stats::{CompileError, trace_compile_phase};
 use crate::virtualmem::CodePtr;
 use crate::cruby::*;
