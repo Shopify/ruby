@@ -8,11 +8,9 @@ use crate::hir::{FieldName, FrameState, Function, SpecialBackrefSymbol, SpecialO
 use crate::hir::SideExitReason;
 use crate::hir_type::Type;
 use crate::stats::Counter;
-use super::{
-    JITState, gen_incr_counter, gen_prepare_leaf_call_with_gc, gen_prepare_non_leaf_call,
-    side_exit,
-};
+use super::{JITState, gen_incr_counter, gen_prepare_leaf_call_with_gc, gen_prepare_non_leaf_call};
 use super::calls::gen_trace_fallback;
+use super::guards::side_exit;
 
 pub(super) fn gen_get_ep(asm: &mut Assembler, level: u32) -> Opnd {
     // Load environment pointer EP from CFP into a register
