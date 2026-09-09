@@ -6445,6 +6445,67 @@ impl Function {
     }
 
 
+    fn optimize_load_aaron(&mut self) {
+        for block in self.reverse_post_order() {
+            let mut compile_time_heap: HashMap<InsnId, usize>  = HashMap::new();
+            let old_insns = std::mem::take(&mut self.blocks[block].insns);
+            let mut new_insns = Vec::with_capacity(old_insns.len());
+            for insn_id in old_insns {
+                let replacement_insn: InsnId = match self.resolve(insn_id).insn(self) {
+                    Insn::NewArray { elements, .. } => {
+                        compile_time_heap.insert(self.find_id(insn_id), elements.len());
+                        insn_id
+                    },
+                    Insn::ArrayLength { array, .. } => {
+                        if let Some(size) = compile_time_heap.get(&self.find_id(*array)) {
+                            let new_insn_id = self.new_insn(Insn::Const { val: Const::CInt64(*size as i64) });
+                            self.insn_types[new_insn_id] = self.infer_type(new_insn_id);
+                            new_insns.push(self.new_insn(Insn::IncrCounter(Counter::aaron_length_count)));
+                            self.make_equal_to(insn_id, new_insn_id);
+                            new_insn_id
+                        } else {
+                            insn_id
+                        }
+                    },
+                    Insn::ArrayAref { array, index } => {
+                        if let Some(size) = compile_time_heap.get(&self.find_id(*array)) {
+                            let size = *size;
+                            let array = *array;
+
+                            if let Insn::Const { val: Const::CInt64(index_const) } = self.resolve(*index).insn(self) {
+                                let index_const = *index_const;
+                                if index_const >= 0 && index_const < size as i64 {
+                                    if let Insn::NewArray { elements, .. } = self.resolve(array).insn(self) {
+                                        let new_insn_id = elements[index_const as usize];
+                                        self.make_equal_to(insn_id, new_insn_id);
+                                        self.new_insn(Insn::IncrCounter(Counter::aaron_count))
+                                    } else {
+                                        insn_id
+                                    }
+                                } else {
+                                    insn_id
+                                }
+                            } else {
+                                insn_id
+                            }
+                        } else {
+                            insn_id
+                        }
+                    },
+                    insn => {
+                        if insn.effects_of().includes(Effect::write(abstract_heaps::Memory)) {
+                            compile_time_heap.clear();
+                        }
+                        insn_id
+                    }
+                };
+
+                new_insns.push(replacement_insn);
+            }
+            self.blocks[block].insns = new_insns;
+        }
+    }
+
     fn optimize_load_store(&mut self) {
         for block in self.reverse_post_order() {
             let mut compile_time_heap: HashMap<(InsnId, i32), InsnId>  = HashMap::new();
@@ -7429,6 +7490,7 @@ impl Function {
             // End strength reduction bucket
             (inline_methods) => { Counter::compile_hir_inline_methods_time_ns };
             (remove_trivial_block_params) => { Counter::compile_hir_remove_trivial_block_params_time_ns };
+            (optimize_load_aaron) => { Counter::compile_hir_optimize_load_store_time_ns };
             (optimize_load_store) => { Counter::compile_hir_optimize_load_store_time_ns };
             (canonicalize) => { Counter::compile_hir_canonicalize_time_ns };
             (fold_constants) => { Counter::compile_hir_fold_constants_time_ns };
@@ -7481,6 +7543,7 @@ impl Function {
             };
             run_pass!(convert_no_profile_sends);
             run_pass!(remove_trivial_block_params);
+            run_pass!(optimize_load_aaron);
             run_pass!(optimize_load_store);
             run_pass!(canonicalize);
             run_pass!(fold_constants);
