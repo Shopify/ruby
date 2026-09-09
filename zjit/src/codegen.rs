@@ -2,6 +2,7 @@
 
 #![allow(clippy::let_and_return)]
 
+mod calls;
 mod gc_fastpath;
 mod frame;
 
@@ -690,31 +691,31 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::Param => unreachable!("block.insns should not have Insn::Param"),
         Insn::LoadArg { .. } => return Ok(()), // compiled in the LoadArg pre-pass above
         Insn::Snapshot { .. } => return Ok(()), // we don't need to do anything for this instruction at the moment
-        &Insn::Send { cd, block: None, state, reason, .. } => gen_send_without_block(jit, asm, function, cd, &function.frame_state(state), reason),
-        &Insn::Send { cd, block: Some(BlockHandler::BlockIseq(blockiseq)), state, reason, .. } => gen_send(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
-        &Insn::Send { cd, block: Some(BlockHandler::BlockArg), state, reason, .. } => gen_send(jit, asm, function, cd, std::ptr::null(), &function.frame_state(state), reason),
-        &Insn::SendForward { cd, blockiseq, state, reason, .. } => gen_send_forward(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
+        &Insn::Send { cd, block: None, state, reason, .. } => calls::gen_send_without_block(jit, asm, function, cd, &function.frame_state(state), reason),
+        &Insn::Send { cd, block: Some(BlockHandler::BlockIseq(blockiseq)), state, reason, .. } => calls::gen_send(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
+        &Insn::Send { cd, block: Some(BlockHandler::BlockArg), state, reason, .. } => calls::gen_send(jit, asm, function, cd, std::ptr::null(), &function.frame_state(state), reason),
+        &Insn::SendForward { cd, blockiseq, state, reason, .. } => calls::gen_send_forward(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
         Insn::SendDirect(insn) => {
             let SendDirectData { cd, cme, iseq, recv, args, kw_bits, jit_entry_idx, block, state, .. } = &**insn;
-            gen_send_iseq_direct(
+            calls::gen_send_iseq_direct(
                 cb, jit, asm,
                 function, *cd, *cme, *iseq, opnd!(recv), opnds!(args),
                 *kw_bits, *jit_entry_idx, &function.frame_state(*state), *block,
             )
         }
         Insn::PushInlineFrame { cme, iseq, recv, num_args, blockiseq, state, .. } => {
-            no_output!(gen_push_inline_frame(jit, asm, function, *cme, *iseq, opnd!(recv), *num_args, &function.frame_state(*state), *blockiseq))
+            no_output!(calls::gen_push_inline_frame(jit, asm, function, *cme, *iseq, opnd!(recv), *num_args, &function.frame_state(*state), *blockiseq))
         },
         Insn::PopInlineFrame { iseq, argc, state } => {
-            no_output!(frame::gen_pop_inline_frame(asm, *iseq, *argc, &function.frame_state(*state)))
+            no_output!(frame::calls::gen_pop_inline_frame(asm, *iseq, *argc, &function.frame_state(*state)))
         },
-        &Insn::InvokeSuper { cd, blockiseq, state, reason, .. } => gen_invokesuper(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
-        &Insn::InvokeSuperForward { cd, blockiseq, state, reason, .. } => gen_invokesuperforward(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
-        &Insn::InvokeBlock { cd, state, reason, .. } => gen_invokeblock(jit, asm, function, cd, &function.frame_state(state), reason),
-        Insn::InvokeBlockIfunc { cd, block_handler, args, state, .. } => gen_invokeblock_ifunc(jit, asm, function, *cd, opnd!(block_handler), opnds!(args), &function.frame_state(*state)),
-        Insn::InvokeProc { recv, args, state, kw_splat } => gen_invokeproc(jit, asm, function, opnd!(recv), opnds!(args), *kw_splat, &function.frame_state(*state)),
-        Insn::InvokeBuiltin { bf, leaf, args, state, .. } => gen_invokebuiltin(jit, asm, function, &function.frame_state(*state), unsafe { &**bf }, *leaf, opnds!(args)),
-        Insn::InvokeBlockIseqDirect { iseq, captured, args, state } => gen_invoke_block_iseq_direct(cb, jit, asm, function, *iseq, opnd!(captured), opnds!(args), &function.frame_state(*state)),
+        &Insn::InvokeSuper { cd, blockiseq, state, reason, .. } => calls::gen_invokesuper(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
+        &Insn::InvokeSuperForward { cd, blockiseq, state, reason, .. } => calls::gen_invokesuperforward(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
+        &Insn::InvokeBlock { cd, state, reason, .. } => calls::gen_invokeblock(jit, asm, function, cd, &function.frame_state(state), reason),
+        Insn::InvokeBlockIfunc { cd, block_handler, args, state, .. } => calls::gen_invokeblock_ifunc(jit, asm, function, *cd, opnd!(block_handler), opnds!(args), &function.frame_state(*state)),
+        Insn::InvokeProc { recv, args, state, kw_splat } => calls::gen_invokeproc(jit, asm, function, opnd!(recv), opnds!(args), *kw_splat, &function.frame_state(*state)),
+        Insn::InvokeBuiltin { bf, leaf, args, state, .. } => calls::gen_invokebuiltin(jit, asm, function, &function.frame_state(*state), unsafe { &**bf }, *leaf, opnds!(args)),
+        Insn::InvokeBlockIseqDirect { iseq, captured, args, state } => calls::gen_invoke_block_iseq_direct(cb, jit, asm, function, *iseq, opnd!(captured), opnds!(args), &function.frame_state(*state)),
         &Insn::EntryPoint { jit_entry_idx } => no_output!(frame::gen_entry_point(jit, asm, jit_entry_idx)),
         Insn::Return { val } => no_output!(frame::gen_return(asm, opnd!(val))),
         Insn::FixnumAdd { left, right, state } => gen_fixnum_add(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
@@ -773,14 +774,14 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         &Insn::GuardLess { left, right, ref reason, state } => gen_guard_less(jit, asm, function, opnd!(left), opnd!(right), **reason, &function.frame_state(state)),
         &Insn::GuardGreaterEq { left, right, state, .. } => gen_guard_greater_eq(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(state)),
         Insn::PatchPoint { invariant, state } => no_output!(gen_patch_point(jit, asm, function, invariant, &function.frame_state(*state))),
-        Insn::CCall { cfunc, recv, args, name, owner, return_type: _, elidable: _ } => gen_ccall(asm, *cfunc, *name, *owner, opnd!(recv), opnds!(args)),
+        Insn::CCall { cfunc, recv, args, name, owner, return_type: _, elidable: _ } => calls::gen_ccall(asm, *cfunc, *name, *owner, opnd!(recv), opnds!(args)),
         Insn::CCallWithFrame(insn) => {
             let CCallWithFrameData { cfunc, recv, name, args, cme, state, block, .. } = &**insn;
-            gen_ccall_with_frame(jit, asm, function, *cfunc, *name, opnd!(recv), opnds!(args), *cme, *block, &function.frame_state(*state))
+            calls::gen_ccall_with_frame(jit, asm, function, *cfunc, *name, opnd!(recv), opnds!(args), *cme, *block, &function.frame_state(*state))
         }
         Insn::CCallVariadic(insn) => {
             let CCallVariadicData { cfunc, recv, name, args, cme, state, block, .. } = &**insn;
-            gen_ccall_variadic(jit, asm, function, *cfunc, *name, opnd!(recv), opnds!(args), *cme, *block, &function.frame_state(*state))
+            calls::gen_ccall_variadic(jit, asm, function, *cfunc, *name, opnd!(recv), opnds!(args), *cme, *block, &function.frame_state(*state))
         }
         Insn::GetIvar { self_val, id, ic, state } => gen_getivar(asm, opnd!(self_val), *id, *ic, &function.frame_state(*state)),
         Insn::SetGlobal { id, val, state } => no_output!(gen_setglobal(jit, asm, function, *id, opnd!(val), &function.frame_state(*state))),
@@ -994,20 +995,6 @@ fn gen_fixnum_bit_check(asm: &mut Assembler, val: Opnd, index: u8) -> Opnd {
     asm.csel_z(Qtrue.into(), Qfalse.into())
 }
 
-fn gen_invokebuiltin(jit: &JITState, asm: &mut Assembler, function: &Function, state: &FrameState, bf: &rb_builtin_function, leaf: bool, args: Vec<Opnd>) -> lir::Opnd {
-    if leaf {
-        frame::gen_prepare_leaf_call_with_gc(asm, state);
-    } else {
-        // Anything can happen inside builtin functions
-        frame::gen_prepare_non_leaf_call(jit, asm, function, state);
-    }
-
-    let mut cargs = vec![EC];
-    cargs.extend(args);
-
-    asm.count_call_to(unsafe { std::ffi::CStr::from_ptr(bf.name).to_str().unwrap() });
-    asm.ccall(bf.func_ptr as *const u8, cargs)
-}
 
 /// Record a patch point that should be invalidated on a given invariant
 fn gen_patch_point(jit: &mut JITState, asm: &mut Assembler, function: &Function, invariant: &Invariant, state: &FrameState) {
@@ -1063,98 +1050,9 @@ pub fn split_patch_point(asm: &mut Assembler, target: &Target, invariant: Invari
     });
 }
 
-/// Generate code for a C function call that pushes a frame
-fn gen_ccall_with_frame(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cfunc: *const u8,
-    name: ID,
-    recv: Opnd,
-    args: Vec<Opnd>,
-    cme: *const rb_callable_method_entry_t,
-    block: Option<BlockHandler>,
-    state: &FrameState,
-) -> lir::Opnd {
-    gen_incr_counter(asm, Counter::non_variadic_cfunc_optimized_send_count);
-    let args_with_recv_len = args.len() + 1;
-    let prepared_frame = frame::gen_prepare_cfunc_call(jit, asm, function, state, args_with_recv_len);
-
-    let block_handler_specval = if let Some(BlockHandler::BlockIseq(block_iseq)) = block {
-        gen_block_handler_specval(asm, block_iseq)
-    } else {
-        VM_BLOCK_HANDLER_NONE.into()
-    };
-
-    let entered_frame = frame::gen_push_cfunc_frame(asm, prepared_frame, state, recv, cme, block_handler_specval);
-
-    let mut cfunc_args = vec![recv];
-    cfunc_args.extend(args);
-    asm.count_call_to_with(|| qualified_method_name(unsafe { (*cme).owner }, name));
-    let result = asm.ccall(cfunc, cfunc_args);
-
-    frame::gen_pop_cfunc_frame(asm, entered_frame);
-
-    result
-}
-
-/// Lowering for [`Insn::CCall`]. This is a low-level raw call that doesn't know
-/// anything about the callee, so handling for e.g. GC safety is dealt with elsewhere.
-fn gen_ccall(asm: &mut Assembler, cfunc: *const u8, name: ID, owner: VALUE, recv: Opnd, args: Vec<Opnd>) -> lir::Opnd {
-    let mut cfunc_args = vec![recv];
-    cfunc_args.extend(args);
-    asm.count_call_to_with(|| if owner == Qnil { name.contents_lossy().to_string() } else { qualified_method_name(owner, name) });
-    asm.ccall(cfunc, cfunc_args)
-}
-
-// Change cfp->block_code in the current frame. See vm_caller_setup_arg_block().
-// VM_CFP_TO_CAPTURED_BLOCK then turns &cfp->self into a block handler.
-// rb_captured_block->code.iseq aliases with cfp->block_code.
-fn gen_block_handler_specval(asm: &mut Assembler, blockiseq: IseqPtr) -> lir::Opnd {
-    asm.store(Opnd::mem(VALUE_BITS, CFP, RUBY_OFFSET_CFP_BLOCK_CODE), VALUE::from(blockiseq).into());
-    let cfp_self_addr = asm.lea(Opnd::mem(VALUE_BITS, CFP, RUBY_OFFSET_CFP_SELF));
-    asm.or(cfp_self_addr, Opnd::Imm(1))
-}
-
-/// Generate code for a variadic C function call
-/// func(int argc, VALUE *argv, VALUE recv)
-fn gen_ccall_variadic(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cfunc: *const u8,
-    name: ID,
-    recv: Opnd,
-    args: Vec<Opnd>,
-    cme: *const rb_callable_method_entry_t,
-    block: Option<BlockHandler>,
-    state: &FrameState,
-) -> lir::Opnd {
-    gen_incr_counter(asm, Counter::variadic_cfunc_optimized_send_count);
-    let args_with_recv_len = args.len() + 1;
-
-    let prepared_frame = frame::gen_prepare_cfunc_call(jit, asm, function, state, args_with_recv_len);
-
-    let block_handler_specval = if let Some(BlockHandler::BlockIseq(blockiseq)) = block {
-        gen_block_handler_specval(asm, blockiseq)
-    } else {
-        VM_BLOCK_HANDLER_NONE.into()
-    };
-
-    let entered_frame = frame::gen_push_cfunc_frame(asm, prepared_frame, state, recv, cme, block_handler_specval);
-
-    let argv_ptr = gen_push_opnds(jit, asm, &args);
-    asm.count_call_to_with(|| qualified_method_name(unsafe { (*cme).owner }, name));
-    let result = asm.ccall(cfunc, vec![args.len().into(), argv_ptr, recv]);
-
-    frame::gen_pop_cfunc_frame(asm, entered_frame);
-
-    result
-}
-
 /// Emit an uncached instance variable lookup
 fn gen_getivar(asm: &mut Assembler, recv: Opnd, id: ID, ic: *const iseq_inline_iv_cache_entry, state: &FrameState) -> Opnd {
-    gen_trace_fallback(asm, "getivar");
+    calls::gen_trace_fallback(asm, "getivar");
     if ic.is_null() {
         asm_ccall!(asm, rb_ivar_get, recv, id.0.into())
     } else {
@@ -1165,7 +1063,7 @@ fn gen_getivar(asm: &mut Assembler, recv: Opnd, id: ID, ic: *const iseq_inline_i
 
 /// Emit an uncached instance variable store
 fn gen_setivar(jit: &mut JITState, asm: &mut Assembler, function: &Function, recv: Opnd, id: ID, ic: *const iseq_inline_iv_cache_entry, val: Opnd, state: &FrameState) {
-    gen_trace_fallback(asm, "setivar");
+    calls::gen_trace_fallback(asm, "setivar");
     // Setting an ivar can raise FrozenError, so we need proper frame state for exception handling.
     frame::gen_prepare_non_leaf_call(jit, asm, function, state);
     if ic.is_null() {
@@ -1475,506 +1373,6 @@ fn gen_param(asm: &mut Assembler, _idx: usize) -> lir::Opnd {
     let vreg = asm.new_block_param(VALUE_BITS);
     asm.current_block().add_parameter(vreg);
     vreg
-}
-
-fn gen_trace_fallback(asm: &mut Assembler, reason: &str) {
-    if !get_option!(trace_fallbacks) {
-        return;
-    }
-    let reason_cstr = std::ffi::CString::new(reason.to_string())
-        .unwrap_or_else(|_| std::ffi::CString::new("unknown").unwrap());
-    let reason_ptr = reason_cstr.into_raw() as *const u8;
-    use crate::state::rb_zjit_record_fallback_stack;
-    asm_ccall!(asm, rb_zjit_record_fallback_stack, Opnd::const_ptr(reason_ptr));
-}
-
-fn gen_trace_send_fallback(asm: &mut Assembler, reason: &SendFallbackReason) {
-    if !get_option!(trace_fallbacks) {
-        return;
-    }
-    gen_trace_fallback(asm, &format!("{reason}"));
-}
-
-/// Compile a dynamic dispatch with block
-fn gen_send(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cd: *const rb_call_data,
-    blockiseq: IseqPtr,
-    state: &FrameState,
-    reason: SendFallbackReason,
-) -> lir::Opnd {
-    gen_incr_send_fallback_counter(asm, reason);
-    gen_trace_send_fallback(asm, &reason);
-
-    frame::gen_prepare_fallback_call(jit, asm, function, state);
-    asm_comment!(asm, "call #{} with dynamic dispatch", ruby_call_method_name(cd));
-    unsafe extern "C" {
-        fn rb_vm_send(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
-    }
-    asm_ccall!(
-        asm,
-        rb_vm_send,
-        EC, CFP, Opnd::const_ptr(cd), VALUE::from(blockiseq).into()
-    )
-}
-
-/// Compile a dynamic dispatch with `...`
-fn gen_send_forward(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cd: *const rb_call_data,
-    blockiseq: IseqPtr,
-    state: &FrameState,
-    reason: SendFallbackReason,
-) -> lir::Opnd {
-    gen_incr_send_fallback_counter(asm, reason);
-    gen_trace_send_fallback(asm, &reason);
-
-    frame::gen_prepare_fallback_call(jit, asm, function, state);
-
-    asm_comment!(asm, "call #{} with dynamic dispatch", ruby_call_method_name(cd));
-    unsafe extern "C" {
-        fn rb_vm_sendforward(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
-    }
-    asm_ccall!(
-        asm,
-        rb_vm_sendforward,
-        EC, CFP, Opnd::const_ptr(cd), VALUE::from(blockiseq).into()
-    )
-}
-
-/// Compile a dynamic dispatch without block
-fn gen_send_without_block(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cd: *const rb_call_data,
-    state: &FrameState,
-    reason: SendFallbackReason,
-) -> lir::Opnd {
-    gen_incr_send_fallback_counter(asm, reason);
-    gen_trace_send_fallback(asm, &reason);
-
-    frame::gen_prepare_fallback_call(jit, asm, function, state);
-    asm_comment!(asm, "call #{} with dynamic dispatch", ruby_call_method_name(cd));
-    unsafe extern "C" {
-        fn rb_vm_opt_send_without_block(ec: EcPtr, cfp: CfpPtr, cd: VALUE) -> VALUE;
-    }
-    asm_ccall!(
-        asm,
-        rb_vm_opt_send_without_block,
-        EC, CFP, Opnd::const_ptr(cd)
-    )
-}
-
-/// Push an interpreter frame for an inlined callee. This is the same as the frame push
-/// portion of gen_send_iseq_direct, but without the native call to the callee. Control
-/// falls through to the next instruction (the inlined callee body).
-fn gen_push_inline_frame(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cme: *const rb_callable_method_entry_t,
-    iseq: IseqPtr,
-    recv: Opnd,
-    num_args: u16,
-    state: &FrameState,
-    blockiseq: Option<IseqPtr>,
-) {
-    frame::gen_iseq_stack_overflow_check(jit, asm, function, state, iseq, 0);
-
-    let prepared_frame = frame::gen_prepare_inline_frame(jit, asm, state, num_args.to_usize());
-
-    // This mirrors vm_caller_setup_arg_block() for the `blockiseq != NULL` case.
-    // The HIR specialization guards ensure we will only reach here for literal blocks,
-    // not &block forwarding, &:foo, etc. These are rejected in `type_specialize` by
-    // `unspecializable_call_type`.
-    let block_handler_specval = blockiseq.map(|b| gen_block_handler_specval(asm, b));
-
-    let callee_is_bmethod = VM_METHOD_TYPE_BMETHOD == unsafe { get_cme_def_type(cme) };
-
-    let (frame_type, specval) = if callee_is_bmethod {
-        // Extract EP from the Proc instance
-        let procv = unsafe { rb_get_def_bmethod_proc((*cme).def) };
-        let proc = unsafe { rb_jit_get_proc_ptr(procv) };
-        let proc_block = unsafe { (*proc).block.as_ref() };
-        let capture = unsafe { proc_block.as_.captured.as_ref() };
-        let bmethod_frame_type = VM_FRAME_MAGIC_BLOCK | VM_FRAME_FLAG_BMETHOD | VM_FRAME_FLAG_LAMBDA;
-        // Tag the captured EP like VM_GUARDED_PREV_EP() in vm_call_iseq_bmethod()
-        let bmethod_specval = (capture.ep.addr() | 1).into();
-        (bmethod_frame_type, bmethod_specval)
-    } else {
-        let specval = block_handler_specval.unwrap_or_else(|| VM_BLOCK_HANDLER_NONE.into());
-        (VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, specval)
-    };
-
-    // The callee's hidden `kw_bits` local does not need a runtime store here:
-    // the inliner aliases the local to a `Const::Value` carrying the
-    // compile-time bitmask, so `checkkeyword` lowers to a constant
-    // `FixnumBitCheck` rather than a memory load. On a side exit out of the
-    // inlined body, FrameState materialization writes the local back to the
-    // callee frame from that constant, and on the no-side-exit path nothing
-    // reads the slot before `gen_pop_inline_frame` tears down the frame.
-    // (The non-inlined `gen_send_iseq_direct` path still emits its own store
-    // because the callee's separate JIT entry reads it from memory.)
-
-    frame::gen_push_inline_frame(asm, prepared_frame, state, frame::IseqFrame::new(
-        recv,
-        iseq,
-        cme,
-        frame_type,
-        specval,
-        0,
-    ));
-
-}
-
-/// Compile a direct call to an ISEQ method.
-/// If `block` is present, its handler becomes the new frame's specval.
-/// Otherwise, the frame uses `VM_BLOCK_HANDLER_NONE`.
-fn gen_send_iseq_direct(
-    cb: &mut CodeBlock,
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cd: *const rb_call_data,
-    cme: *const rb_callable_method_entry_t,
-    iseq: IseqPtr,
-    recv: Opnd,
-    args: Vec<Opnd>,
-    kw_bits: u32,
-    jit_entry_idx: u16,
-    state: &FrameState,
-    block: Option<BlockHandler>,
-) -> lir::Opnd {
-    gen_incr_counter(asm, Counter::iseq_optimized_send_count);
-
-    // The ISEQ of `def foo(...)` takes only 1 parameter for the forwarded callinfo, but the callee
-    // frame's local_size is increased by the callinfo's argc (see vm_call_iseq_forwardable()) to
-    // keep the caller's arguments as part of the callee's extra locals.
-    let forwarding = unsafe { rb_get_iseq_flags_forwardable(iseq) };
-    let forwarded_argc = if forwarding { args.len() } else { 0 };
-    // Bake the callinfo as a GC offset since a non-packed (`vm_ci_packed_p`) callinfo is a movable imemo_callinfo.
-    let forwarded_ci = Opnd::Value(unsafe { (*cd).ci }.into());
-    frame::gen_iseq_stack_overflow_check(jit, asm, function, state, iseq, forwarded_argc);
-
-    let prepared_frame = frame::gen_prepare_iseq_method_call(jit, asm, function, state, args.len());
-
-    // This mirrors vm_caller_setup_arg_block() for the `blockiseq != NULL` case.
-    // The HIR specialization guards ensure we only reach this path for literal blocks.
-    // `unspecializable_call_type` rejects &block forwarding and &:symbol arguments.
-    let block_handler_specval = block.map(|bh| match bh { BlockHandler::BlockIseq(b) => gen_block_handler_specval(asm, b), BlockHandler::BlockArg => unreachable!("BlockArg in gen_send_iseq_direct") });
-
-    let callee_is_bmethod = VM_METHOD_TYPE_BMETHOD == unsafe { get_cme_def_type(cme) };
-
-    let (frame_type, specval) = if callee_is_bmethod {
-        // Extract EP from the Proc instance
-        let procv = unsafe { rb_get_def_bmethod_proc((*cme).def) };
-        let proc = unsafe { rb_jit_get_proc_ptr(procv) };
-        let proc_block = unsafe { (*proc).block.as_ref() };
-        let capture = unsafe { proc_block.as_.captured.as_ref() };
-        let bmethod_frame_type = VM_FRAME_MAGIC_BLOCK | VM_FRAME_FLAG_BMETHOD | VM_FRAME_FLAG_LAMBDA;
-        // Tag the captured EP like VM_GUARDED_PREV_EP() in vm_call_iseq_bmethod()
-        let bmethod_specval = (capture.ep.addr() | 1).into();
-        (bmethod_frame_type, bmethod_specval)
-    } else {
-        let specval = block_handler_specval.unwrap_or_else(|| VM_BLOCK_HANDLER_NONE.into());
-        (VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, specval)
-    };
-
-    // Set up the new frame
-    // TODO: Lazily materialize caller frames on side exits or when needed
-    let pending_frame = frame::gen_push_iseq_frame(asm, prepared_frame, state, frame::IseqFrame::new(
-        recv,
-        iseq,
-        cme,
-        frame_type,
-        specval,
-        forwarded_argc,
-    ));
-
-    // Write "keyword_bits" to the callee's frame if the callee accepts keywords.
-    // This is a synthetic local/parameter that the callee reads via checkkeyword to determine
-    // which optional keyword arguments need their defaults evaluated.
-    // We write this to the local table slot at bits_start so that:
-    // 1. The interpreter can read it via checkkeyword if we side-exit
-    // 2. The JIT entry can read it from the callee frame slot
-    if unsafe { rb_get_iseq_flags_has_kw(iseq) } {
-        let keyword = unsafe { rb_get_iseq_body_param_keyword(iseq) };
-        let bits_start = unsafe { (*keyword).bits_start } as usize;
-        let unspecified_bits = VALUE::fixnum_from_usize(kw_bits as usize);
-        let bits_offset = (state.stack().len() - args.len() + bits_start) * SIZEOF_VALUE;
-        asm_comment!(asm, "write keyword bits to callee frame");
-        asm.store(Opnd::mem(64, SP, bits_offset as i32), unspecified_bits.into());
-    }
-
-    // A forwardable callee reads its arguments out of the VM stack using memcpy on rb_vm_sendforward
-    // (see vm_adjust_stack_forwarding()), so we write these stack slots before the call. The callinfo
-    // goes into the `...` local, which sits directly above them.
-    if forwarding {
-        asm_comment!(asm, "copy forwarded arguments to callee frame");
-        let locals_base = state.stack().len() - args.len();
-        for (idx, &arg) in args.iter().enumerate() {
-            asm.store(Opnd::mem(64, SP, ((locals_base + idx) * SIZEOF_VALUE) as i32), arg);
-        }
-        // The `...` local on top of the above argument is a method parameter of the callee, so
-        // the callee will spill the callinfo passed as part of `c_args` into the `...` local.
-    }
-
-    let entered_frame = frame::gen_enter_iseq_frame(asm, pending_frame);
-
-    let params = unsafe { iseq.params() };
-
-    // The JIT entry point expects a block handler argument when the ISEQ has &block.
-    // HIR does not use this parameter. Runtime operations read specval from the VM frame.
-    // TODO: Remove the unused HIR parameter, or pass specval through c_args.
-    // See https://github.com/ruby/ruby/pull/15911#discussion_r2710544982
-    let needs_block = params.flags.has_block() != 0;
-
-    // Set up arguments
-    let mut c_args = Vec::with_capacity({
-        // This is a heuristic to avoid re-allocation, not necessary for correctness
-        1 /* recv */ + args.len() + if needs_block { 1 } else { 0 }
-    });
-    c_args.push(recv);
-    if forwarding {
-        // The JIT entry of a forwardable ISEQ takes exactly one parameter, the `...` local.
-        // The forwarded arguments were written to the VM stack slots above.
-        c_args.push(forwarded_ci);
-    } else {
-        c_args.extend(&args);
-    }
-    if needs_block {
-        if callee_is_bmethod {
-            // For bmethods, specval is the captured EP, not the block handler.
-            // The block param needs nil (no block) or a Proc value.
-            assert!(block_handler_specval.is_none(), "at the moment, HIR builder never emits a direct send for a to-bmethod send-with-literal-block");
-            c_args.push(Qnil.into());
-        } else {
-            c_args.push(specval);
-        }
-    }
-
-    // Make a method call. The target address will be rewritten once compiled.
-    let call_argc = if forwarding { 1 } else { args.len() };
-    let iseq_call = IseqCall::new(iseq, jit_entry_idx, call_argc.try_into().expect("checked in HIR"));
-    let dummy_ptr = cb.get_write_ptr().raw_ptr(cb);
-    jit.iseq_calls.push(iseq_call.clone());
-    let ret = asm.ccall_with_iseq_call(dummy_ptr, c_args, &iseq_call);
-
-    // If a callee side-exits, i.e. returns Qundef, propagate the return value to the caller.
-    // The caller will side-exit the callee into the interpreter.
-    // TODO: Let side exit code pop all JIT frames to optimize away this cmp + je.
-    asm_comment!(asm, "side-exit if callee side-exits");
-    asm.cmp(ret, Qundef.into());
-    // Restore the C stack pointer on exit
-    asm.je(jit, ZJITState::get_exit_trampoline().into());
-
-    frame::gen_restore_iseq_frame(asm, entered_frame);
-
-    ret
-}
-
-/// Compile for invokeblock
-fn gen_invokeblock(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cd: *const rb_call_data,
-    state: &FrameState,
-    reason: SendFallbackReason,
-) -> lir::Opnd {
-    gen_incr_send_fallback_counter(asm, reason);
-    gen_trace_send_fallback(asm, &reason);
-
-    frame::gen_prepare_fallback_call(jit, asm, function, state);
-
-    asm_comment!(asm, "call invokeblock");
-    unsafe extern "C" {
-        fn rb_vm_invokeblock(ec: EcPtr, cfp: CfpPtr, cd: VALUE) -> VALUE;
-    }
-    asm_ccall!(
-        asm,
-        rb_vm_invokeblock,
-        EC, CFP, Opnd::const_ptr(cd)
-    )
-}
-
-/// Compile invokeblock for IFUNC block handlers.
-/// Calls rb_vm_yield_with_cfunc directly.
-fn gen_invokeblock_ifunc(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cd: *const rb_call_data,
-    block_handler: Opnd,
-    args: Vec<Opnd>,
-    state: &FrameState,
-) -> lir::Opnd {
-    let _ = cd; // cd is not needed for the direct call
-
-    frame::gen_prepare_fallback_call(jit, asm, function, state);
-
-    // Push args to memory so we can pass argv pointer
-    let argv_ptr = gen_push_opnds(jit, asm, &args);
-
-    // Untag the block handler to get the captured block pointer
-    // captured = block_handler & ~0x3
-    asm_comment!(asm, "untag block handler to get captured block");
-    let captured = asm.and(block_handler, Opnd::Imm(!0x3i64));
-
-    asm_comment!(asm, "call rb_vm_yield_with_cfunc");
-    unsafe extern "C" {
-        fn rb_vm_yield_with_cfunc(
-            ec: EcPtr,
-            captured: VALUE,
-            argc: i32,
-            argv: *const VALUE,
-        ) -> VALUE;
-    }
-    asm_ccall!(asm, rb_vm_yield_with_cfunc, EC, captured, (args.len() as i64).into(), argv_ptr)
-}
-
-fn gen_invokeproc(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    recv: Opnd,
-    args: Vec<Opnd>,
-    kw_splat: bool,
-    state: &FrameState,
-) -> lir::Opnd {
-    frame::gen_prepare_fallback_call(jit, asm, function, state);
-
-    asm_comment!(asm, "call invokeproc");
-
-    let argv_ptr = gen_push_opnds(jit, asm, &args);
-    let kw_splat_opnd = Opnd::Imm(i64::from(kw_splat));
-    asm_ccall!(
-        asm,
-        rb_optimized_call,
-        recv,
-        EC,
-        args.len().into(),
-        argv_ptr,
-        kw_splat_opnd,
-        VM_BLOCK_HANDLER_NONE.into()
-    )
-}
-
-/// Compile `yield`. Inlines the block ISEQ frame like `invokeblock` instead of calling vm_yield.
-/// The block handler is read from the enclosing frame's LEP (`level` hops up), guarded to be the
-/// comptime-known ISEQ block, and its frame is pushed here before jumping to the block's JIT entry.
-/// On a guard miss, side-exit and recompile. The HIR gate ensures the block is simple + lead-only
-/// + non-throwing.
-fn gen_invoke_block_iseq_direct(
-    cb: &mut CodeBlock,
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    block_iseq: IseqPtr,
-    captured: Opnd,
-    args: Vec<Opnd>,
-    state: &FrameState,
-) -> lir::Opnd {
-    gen_incr_counter(asm, Counter::block_iseq_direct_optimized_send_count);
-
-    frame::gen_iseq_stack_overflow_check(jit, asm, function, state, block_iseq, 0);
-
-    // `captured` is the guarded `struct rb_captured_block *` (block handler with the ISEQ tag
-    // masked off). The HIR builder loaded it from the LEP and guarded the tag + iseq identity.
-    // TODO: During inlining, captured->self can be known. It should be put into HIR.
-    let captured_self = asm.load(Opnd::mem(64, captured, 0)); // captured->self
-    // TODO: During inlining, captured->ep can sometimes also be known.
-    let captured_ep = asm.load(Opnd::mem(64, captured, SIZEOF_VALUE_I32)); // captured->ep
-    // specval = VM_GUARDED_PREV_EP(captured->ep) = captured->ep | 0x01
-    let specval = asm.or(captured_ep, Opnd::Imm(0x1));
-
-    let prepared_frame = frame::gen_prepare_iseq_block_call(jit, asm, function, state, args.len());
-
-    let pending_frame = frame::gen_push_iseq_frame(asm, prepared_frame, state, frame::IseqFrame::new(
-        captured_self,
-        block_iseq,
-        std::ptr::null(),
-        VM_FRAME_MAGIC_BLOCK,
-        specval,
-        0,
-    ));
-
-    let entered_frame = frame::gen_enter_iseq_frame(asm, pending_frame);
-
-    // JIT-to-JIT convention: self as c_args[0], then positional args. The block is
-    // gated to simple + lead-only + exact arity, so there are no optionals/kw/block.
-    let mut c_args = Vec::with_capacity(1 + args.len());
-    c_args.push(captured_self);
-    c_args.extend(&args);
-
-    let iseq_call = IseqCall::new(block_iseq, 0, args.len().try_into().expect("checked in HIR"));
-    let dummy_ptr = cb.get_write_ptr().raw_ptr(cb);
-    jit.iseq_calls.push(iseq_call.clone());
-    let ret = asm.ccall_with_iseq_call(dummy_ptr, c_args, &iseq_call);
-
-    // If the callee side-exits (returns Qundef), propagate to the caller.
-    asm_comment!(asm, "side-exit if callee side-exits");
-    asm.cmp(ret, Qundef.into());
-    asm.je(jit, ZJITState::get_exit_trampoline().into());
-
-    frame::gen_restore_iseq_frame(asm, entered_frame);
-
-    ret
-}
-
-/// Compile a dynamic dispatch for `super`
-fn gen_invokesuper(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cd: *const rb_call_data,
-    blockiseq: IseqPtr,
-    state: &FrameState,
-    reason: SendFallbackReason,
-) -> lir::Opnd {
-    gen_incr_send_fallback_counter(asm, reason);
-    gen_trace_send_fallback(asm, &reason);
-
-    frame::gen_prepare_fallback_call(jit, asm, function, state);
-    asm_comment!(asm, "call super with dynamic dispatch");
-    unsafe extern "C" {
-        fn rb_vm_invokesuper(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
-    }
-    asm_ccall!(
-        asm,
-        rb_vm_invokesuper,
-        EC, CFP, Opnd::const_ptr(cd), VALUE::from(blockiseq).into()
-    )
-}
-
-/// Compile a dynamic dispatch for `super` with `...`
-fn gen_invokesuperforward(
-    jit: &mut JITState,
-    asm: &mut Assembler,
-    function: &Function,
-    cd: *const rb_call_data,
-    blockiseq: IseqPtr,
-    state: &FrameState,
-    reason: SendFallbackReason,
-) -> lir::Opnd {
-    gen_incr_send_fallback_counter(asm, reason);
-    gen_trace_send_fallback(asm, &reason);
-
-    frame::gen_prepare_fallback_call(jit, asm, function, state);
-    asm_comment!(asm, "call super with dynamic dispatch (forwarding)");
-    unsafe extern "C" {
-        fn rb_vm_invokesuperforward(ec: EcPtr, cfp: CfpPtr, cd: VALUE, blockiseq: IseqPtr) -> VALUE;
-    }
-    asm_ccall!(
-        asm,
-        rb_vm_invokesuperforward,
-        EC, CFP, Opnd::const_ptr(cd), VALUE::from(blockiseq).into()
-    )
 }
 
 const STR_INLINE_STORE_MAX_BYTES: usize = 128;
