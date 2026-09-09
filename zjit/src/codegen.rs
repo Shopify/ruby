@@ -5,6 +5,7 @@
 mod calls;
 mod objects;
 mod strings;
+mod scalar;
 mod gc_fastpath;
 mod frame;
 
@@ -684,47 +685,47 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::InvokeBlockIseqDirect { iseq, captured, args, state } => calls::gen_invoke_block_iseq_direct(cb, jit, asm, function, *iseq, opnd!(captured), opnds!(args), &function.frame_state(*state)),
         &Insn::EntryPoint { jit_entry_idx } => no_output!(gen_entry_point(jit, asm, jit_entry_idx)),
         Insn::Return { val } => no_output!(gen_return(asm, opnd!(val))),
-        Insn::FixnumAdd { left, right, state } => gen_fixnum_add(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
-        Insn::FixnumSub { left, right, state } => gen_fixnum_sub(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
-        Insn::FixnumMult { left, right, state } => gen_fixnum_mult(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
-        Insn::FixnumDiv { left, right, state } => gen_fixnum_div(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
-        Insn::FloatAdd { recv, other, state } => gen_float_add(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
-        Insn::FloatSub { recv, other, state } => gen_float_sub(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
-        Insn::FloatMul { recv, other, state } => gen_float_mul(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
-        Insn::FloatDiv { recv, other, state } => gen_float_div(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
-        Insn::FloatToInt { recv, state } => gen_float_to_int(asm, opnd!(recv), &function.frame_state(*state)),
-        Insn::FixnumEq { left, right } => gen_fixnum_eq(asm, opnd!(left), opnd!(right)),
-        Insn::FixnumNeq { left, right } => gen_fixnum_neq(asm, opnd!(left), opnd!(right)),
-        Insn::FixnumLt { left, right } => gen_fixnum_lt(asm, opnd!(left), opnd!(right)),
-        Insn::FixnumLe { left, right } => gen_fixnum_le(asm, opnd!(left), opnd!(right)),
-        Insn::FixnumGt { left, right } => gen_fixnum_gt(asm, opnd!(left), opnd!(right)),
-        Insn::FixnumGe { left, right } => gen_fixnum_ge(asm, opnd!(left), opnd!(right)),
-        Insn::FixnumAnd { left, right } => gen_fixnum_and(asm, opnd!(left), opnd!(right)),
-        Insn::FixnumOr { left, right } => gen_fixnum_or(asm, opnd!(left), opnd!(right)),
-        Insn::FixnumXor { left, right } => gen_fixnum_xor(asm, opnd!(left), opnd!(right)),
+        Insn::FixnumAdd { left, right, state } => scalar::gen_fixnum_add(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
+        Insn::FixnumSub { left, right, state } => scalar::gen_fixnum_sub(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
+        Insn::FixnumMult { left, right, state } => scalar::gen_fixnum_mult(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
+        Insn::FixnumDiv { left, right, state } => scalar::gen_fixnum_div(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
+        Insn::FloatAdd { recv, other, state } => scalar::gen_float_add(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
+        Insn::FloatSub { recv, other, state } => scalar::gen_float_sub(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
+        Insn::FloatMul { recv, other, state } => scalar::gen_float_mul(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
+        Insn::FloatDiv { recv, other, state } => scalar::gen_float_div(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
+        Insn::FloatToInt { recv, state } => scalar::gen_float_to_int(asm, opnd!(recv), &function.frame_state(*state)),
+        Insn::FixnumEq { left, right } => scalar::gen_fixnum_eq(asm, opnd!(left), opnd!(right)),
+        Insn::FixnumNeq { left, right } => scalar::gen_fixnum_neq(asm, opnd!(left), opnd!(right)),
+        Insn::FixnumLt { left, right } => scalar::gen_fixnum_lt(asm, opnd!(left), opnd!(right)),
+        Insn::FixnumLe { left, right } => scalar::gen_fixnum_le(asm, opnd!(left), opnd!(right)),
+        Insn::FixnumGt { left, right } => scalar::gen_fixnum_gt(asm, opnd!(left), opnd!(right)),
+        Insn::FixnumGe { left, right } => scalar::gen_fixnum_ge(asm, opnd!(left), opnd!(right)),
+        Insn::FixnumAnd { left, right } => scalar::gen_fixnum_and(asm, opnd!(left), opnd!(right)),
+        Insn::FixnumOr { left, right } => scalar::gen_fixnum_or(asm, opnd!(left), opnd!(right)),
+        Insn::FixnumXor { left, right } => scalar::gen_fixnum_xor(asm, opnd!(left), opnd!(right)),
         Insn::IntAnd { left, right } => asm.and(opnd!(left), opnd!(right)),
-        Insn::IntOr { left, right } => gen_int_or(asm, opnd!(left), opnd!(right)),
+        Insn::IntOr { left, right } => scalar::gen_int_or(asm, opnd!(left), opnd!(right)),
         &Insn::FixnumLShift { left, right, state } => {
             // We only create FixnumLShift when we know the shift amount statically and it's in [0,
             // 63].
             let shift_amount = function.type_of(right).fixnum_value().unwrap() as u64;
-            gen_fixnum_lshift(jit, asm, function, opnd!(left), shift_amount, &function.frame_state(state))
+            scalar::gen_fixnum_lshift(jit, asm, function, opnd!(left), shift_amount, &function.frame_state(state))
         }
         &Insn::FixnumRShift { left, right } => {
             // We only create FixnumRShift when we know the shift amount statically and it's in [0,
             // 63].
             let shift_amount = function.type_of(right).fixnum_value().unwrap() as u64;
-            gen_fixnum_rshift(asm, opnd!(left), shift_amount)
+            scalar::gen_fixnum_rshift(asm, opnd!(left), shift_amount)
         }
-        &Insn::FixnumMod { left, right, state } => gen_fixnum_mod(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(state)),
-        &Insn::FixnumAref { recv, index } => gen_fixnum_aref(asm, opnd!(recv), opnd!(index)),
+        &Insn::FixnumMod { left, right, state } => scalar::gen_fixnum_mod(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(state)),
+        &Insn::FixnumAref { recv, index } => scalar::gen_fixnum_aref(asm, opnd!(recv), opnd!(index)),
         &Insn::IsMethodCfunc { val, cd, cfunc, state } => gen_is_method_cfunc(asm, opnd!(val), cd, cfunc, &function.frame_state(state)),
-        &Insn::IsBitEqual { left, right } => gen_is_bit_equal(asm, opnd!(left), opnd!(right)),
-        &Insn::IsBitNotEqual { left, right } => gen_is_bit_not_equal(asm, opnd!(left), opnd!(right)),
-        &Insn::BoxBool { val } => gen_box_bool(asm, opnd!(val)),
-        &Insn::BoxFixnum { val, state } => gen_box_fixnum(jit, asm, function, opnd!(val), &function.frame_state(state)),
-        &Insn::UnboxFixnum { val } => gen_unbox_fixnum(asm, opnd!(val)),
-        Insn::Test { val } => gen_test(asm, opnd!(val)),
+        &Insn::IsBitEqual { left, right } => scalar::gen_is_bit_equal(asm, opnd!(left), opnd!(right)),
+        &Insn::IsBitNotEqual { left, right } => scalar::gen_is_bit_not_equal(asm, opnd!(left), opnd!(right)),
+        &Insn::BoxBool { val } => scalar::gen_box_bool(asm, opnd!(val)),
+        &Insn::BoxFixnum { val, state } => scalar::gen_box_fixnum(jit, asm, function, opnd!(val), &function.frame_state(state)),
+        &Insn::UnboxFixnum { val } => scalar::gen_unbox_fixnum(asm, opnd!(val)),
+        Insn::Test { val } => scalar::gen_test(asm, opnd!(val)),
         Insn::RefineType { val, .. } => opnd!(val),
         Insn::HasType { val, expected } => {
             let val_type = function.type_of(*val);
@@ -760,7 +761,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::GetClassVar { id, ic, state } => gen_getclassvar(jit, asm, function, *id, *ic, &function.frame_state(*state)),
         Insn::SetClassVar { id, val, ic, state } => no_output!(gen_setclassvar(jit, asm, function, *id, opnd!(val), *ic, &function.frame_state(*state))),
         Insn::SetIvar { self_val, id, ic, val, state } => no_output!(gen_setivar(jit, asm, function, opnd!(self_val), *id, *ic, opnd!(val), &function.frame_state(*state))),
-        Insn::FixnumBitCheck { val, index } => gen_fixnum_bit_check(asm, opnd!(val), *index),
+        Insn::FixnumBitCheck { val, index } => scalar::gen_fixnum_bit_check(asm, opnd!(val), *index),
         Insn::SideExit { state, reason, recompile } => no_output!(gen_side_exit(jit, asm, function, reason, *recompile, &function.frame_state(*state))),
         Insn::PutSpecialObject { value_type, state } => gen_putspecialobject(jit, asm, function, *value_type, &function.frame_state(*state)),
         Insn::AnyToString { val, state } => strings::gen_anytostring(asm, opnd!(val), &function.frame_state(*state)),
