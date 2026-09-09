@@ -1529,7 +1529,8 @@ hash_slot_size(size_t capa, bool frozen)
 static VALUE
 hash_alloc_raw(VALUE klass, VALUE flags, VALUE ifnone, size_t size, bool frozen)
 {
-    NEWOBJ_OF(h, struct RHash, klass, T_HASH | flags, hash_slot_size(size, frozen), NULL);
+    const VALUE wb = (RGENGC_WB_PROTECTED_HASH ? FL_WB_PROTECTED : 0);
+    NEWOBJ_OF(h, struct RHash, klass, T_HASH | wb | flags, hash_slot_size(size, frozen), NULL);
     VALUE hash = (VALUE)h;
     rb_hash_set_ifnone(hash, ifnone);
 
