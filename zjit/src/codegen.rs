@@ -9,14 +9,13 @@ mod scalar;
 mod runtime;
 pub(crate) mod guards;
 mod gc_fastpath;
+pub(crate) mod trampolines;
 mod frame;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::ffi::{c_long, c_void};
 use std::slice;
-
-use crate::backend::current::ALLOC_REGS;
 use crate::gc::append_gc_offsets;
 use crate::payload::{IseqCodePtrs, IseqStatus, IseqVersion, IseqVersionRef, JITFrame, get_or_create_iseq_payload};
 use crate::profile::reset_profiles_remaining;
@@ -25,7 +24,7 @@ use crate::state::{rb_zjit_compiling_p, ZJITState};
 use crate::stats::{CompileError, exit_counter_for_compile_error, incr_counter, incr_counter_by, send_fallback_counter, send_fallback_counter_for_method_type, send_fallback_counter_for_super_method_type, send_fallback_counter_ptr_for_opcode, send_fallback_counter_for_optimized_method_type};
 use crate::stats::{counter_ptr, with_time_stat, trace_compile_phase, Counter, Counter::{compile_time_ns, exit_compile_error}};
 use crate::{asm::CodeBlock, cruby::*, options::debug, virtualmem::CodePtr};
-use crate::backend::lir::{self, Assembler, CArgLocation, C_ARG_OPNDS, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, NATIVE_STACK_PTR, Opnd, SP, Target, asm_ccall, asm_comment};
+use crate::backend::lir::{self, Assembler, CArgLocation, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, NATIVE_STACK_PTR, Opnd, SP, Target, asm_ccall, asm_comment};
 use crate::hir::{iseq_to_hir, BlockId};
 use crate::hir::{BlockHandler, CCallVariadicData, CCallWithFrameData, Const, FrameState, Function, Insn, InsnId, SendDirectData, SendFallbackReason, qualified_method_name};
 use crate::hir_type::types;
@@ -315,29 +314,6 @@ pub fn gen_iseq_call(cb: &mut CodeBlock, iseq_call: &IseqCallRef) -> Result<(), 
         });
         Ok(())
     })
-}
-
-/// Compile a shared JIT entry trampoline
-pub fn gen_entry_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
-    // Set up registers for CFP, EC, SP, and basic block arguments
-    let mut asm = Assembler::new();
-    asm.new_block_without_id("gen_entry_trampoline");
-    gen_entry_prologue(&mut asm);
-
-    // Jump to the first block using a call instruction. This trampoline is used
-    // as rb_zjit_func_t in jit_exec(), which takes (EC, CFP, rb_jit_func_t).
-    // So C_ARG_OPNDS[2] is rb_jit_func_t, which is (EC, CFP) -> VALUE.
-    let out = asm.ccall_reg(C_ARG_OPNDS[2], VALUE_BITS);
-
-    // Restore registers for CFP, EC, and SP after use
-    asm_comment!(asm, "return to the interpreter");
-    asm.frame_teardown(lir::JIT_PRESERVED_REGS);
-    asm.cret(out);
-
-    let (code_ptr, gc_offsets) = asm.compile(cb)?;
-    assert!(gc_offsets.is_empty());
-    perf::register_current_code_range(cb, "entry trampoline", code_ptr);
-    Ok(code_ptr)
 }
 
 /// Compile an ISEQ into machine code if not compiled yet
@@ -808,20 +784,6 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
 
 }
 
-/// Compile an interpreter entry block to be inserted into an ISEQ
-fn gen_entry_prologue(asm: &mut Assembler) {
-    asm_comment!(asm, "ZJIT entry trampoline");
-    // Save the registers we'll use for CFP, EP, SP
-    asm.frame_setup(lir::JIT_PRESERVED_REGS);
-
-    // EC and CFP are passed as arguments
-    asm.mov(EC, C_ARG_OPNDS[0]);
-    asm.mov(CFP, C_ARG_OPNDS[1]);
-
-    // Load the current SP from the CFP into REG_SP
-    asm.mov(SP, Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SP));
-}
-
 /// Compile a new array instruction
 fn gen_new_array(
     jit: &mut JITState,
@@ -1108,7 +1070,7 @@ c_callable! {
     /// This function is expected to be called repeatedly when ZJIT fails to compile the stub.
     /// We should be able to compile most (if not all) function stubs by side-exiting at unsupported
     /// instructions, so this should be used primarily for cb.has_dropped_bytes() situations.
-    fn function_stub_hit(iseq_call_ptr: *const c_void, cfp: CfpPtr, sp: *mut VALUE, ec: EcPtr) -> *const u8 {
+    pub(crate) fn function_stub_hit(iseq_call_ptr: *const c_void, cfp: CfpPtr, sp: *mut VALUE, ec: EcPtr) -> *const u8 {
         // Make sure cfp is ready to be scanned by other Ractors and GC before taking the barrier
         {
             unsafe { Rc::increment_strong_count(iseq_call_ptr as *const IseqCall); }
@@ -1335,134 +1297,6 @@ fn gen_function_stub(cb: &mut CodeBlock, iseq_call: IseqCallRef) -> Result<CodeP
     })
 }
 
-/// Generate a trampoline that is used when a function stub is called.
-/// See [gen_function_stub] for how it's used.
-pub fn gen_function_stub_hit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
-    let (mut asm, scratch_reg) = Assembler::new_with_scratch_reg();
-    asm.new_block_without_id("function_stub_hit_trampoline");
-    asm_comment!(asm, "function_stub_hit trampoline");
-
-    asm.cpop_into(scratch_reg);
-
-    // Maintain alignment for x86_64, and set up a frame for arm64 properly
-    asm.frame_setup(&[]);
-
-    asm_comment!(asm, "preserve argument registers");
-
-    for pair in ALLOC_REGS.chunks(2) {
-        match *pair {
-            [reg0, reg1] => {
-                asm.cpush_pair(Opnd::Reg(reg0), Opnd::Reg(reg1));
-            }
-            [reg] => {
-                asm.cpush(Opnd::Reg(reg));
-            }
-            _ => unreachable!("chunks(2)")
-        }
-    }
-    if cfg!(target_arch = "x86_64") && ALLOC_REGS.len() % 2 == 1 {
-        asm.cpush(Opnd::Reg(ALLOC_REGS[0])); // maintain alignment for x86_64
-    }
-
-    // We can't directly pass the scratch register in to the ccall because
-    // we're going to have parallel move automatically handle coping registers
-    // in to the C calling convention and the parallel move algorithm needs
-    // a scratch register to break any cycles.  If we use the scratch register
-    // as a C call parameter, then parallel move wouldn't be able to break
-    // cycles without clobbering something
-    asm.mov(C_ARG_OPNDS[0], scratch_reg);
-    // Compile the stubbed ISEQ
-    let jump_addr = asm_ccall!(asm, function_stub_hit, C_ARG_OPNDS[0], CFP, SP, EC);
-    asm.mov(scratch_reg, jump_addr);
-
-    asm_comment!(asm, "restore argument registers");
-    if cfg!(target_arch = "x86_64") && ALLOC_REGS.len() % 2 == 1 {
-        asm.cpop_into(Opnd::Reg(ALLOC_REGS[0]));
-    }
-
-    for pair in ALLOC_REGS.chunks(2).rev() {
-        match *pair {
-            [reg] => {
-                asm.cpop_into(Opnd::Reg(reg));
-            }
-            [reg0, reg1] => {
-                asm.cpop_pair_into(Opnd::Reg(reg1), Opnd::Reg(reg0));
-            }
-            _ => unreachable!("chunks(2)")
-        }
-    }
-
-    // Discard the current frame since the JIT function will set it up again
-    asm.frame_teardown(&[]);
-
-    // Jump to scratch_reg so that cpop_into() doesn't clobber it
-    asm.jmp_opnd(scratch_reg);
-
-    asm.compile(cb).map(|(code_ptr, gc_offsets)| {
-        assert_eq!(gc_offsets.len(), 0);
-        perf::register_current_code_range(cb, "function_stub_hit trampoline", code_ptr);
-        code_ptr
-    })
-}
-
-/// Generate a trampoline that is used when a function exits without restoring PC and the stack
-pub fn gen_exit_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError> {
-    let mut asm = Assembler::new();
-    asm.new_block_without_id("exit_trampoline");
-
-    asm_comment!(asm, "side-exit trampoline");
-    asm.frame_teardown(&[]); // matching the setup in gen_entry_point()
-    asm.cret(Qundef.into());
-
-    asm.compile(cb).map(|(code_ptr, gc_offsets)| {
-        assert_eq!(gc_offsets.len(), 0);
-        perf::register_current_code_range(cb, "exit trampoline", code_ptr);
-        code_ptr
-    })
-}
-
-/// Generate a trampoline that materializes ZJIT frames before unwinding native frames.
-pub fn gen_materialize_exit_trampoline(cb: &mut CodeBlock, exit_trampoline: CodePtr) -> Result<CodePtr, CompileError> {
-    unsafe extern "C" {
-        fn rb_zjit_materialize_frames(ec: EcPtr, cfp: CfpPtr);
-    }
-
-    let mut asm = Assembler::new();
-    asm.new_block_without_id("materialize_exit_trampoline");
-
-    asm_comment!(asm, "clear JITFrame materialized by exit code");
-    asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN), 0.into());
-    // Clear cfp->block_code since it may have been left uninitialized by JITFrame mechanisms.
-    // Zero is the right value because we're dealing with the top most frame.
-    // Non-zero values are only set before pushing a frame.
-    asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_BLOCK_CODE), 0.into());
-
-    asm_comment!(asm, "materialize ZJIT frames");
-    asm_ccall!(asm, rb_zjit_materialize_frames, EC, CFP);
-    asm.jmp(Target::CodePtr(exit_trampoline));
-
-    asm.compile(cb).map(|(code_ptr, gc_offsets)| {
-        assert_eq!(gc_offsets.len(), 0);
-        perf::register_current_code_range(cb, "materialize_exit trampoline", code_ptr);
-        code_ptr
-    })
-}
-
-/// Generate a trampoline that increments exit_compilation_failure and jumps to materialize_exit_trampoline.
-pub fn gen_materialize_exit_trampoline_with_counter(cb: &mut CodeBlock, materialize_exit_trampoline: CodePtr) -> Result<CodePtr, CompileError> {
-    let mut asm = Assembler::new();
-    asm.new_block_without_id("materialize_exit_trampoline_with_counter");
-
-    asm_comment!(asm, "function stub exit trampoline");
-    gen_incr_counter(&mut asm, exit_compile_error);
-    asm.jmp(Target::CodePtr(materialize_exit_trampoline));
-
-    asm.compile(cb).map(|(code_ptr, gc_offsets)| {
-        assert_eq!(gc_offsets.len(), 0);
-        perf::register_current_code_range(cb, "materialize_exit_with_counter trampoline", code_ptr);
-        code_ptr
-    })
-}
 
 /// Reserve native stack space and write operands into it.
 fn gen_push_opnds(jit: &JITState, asm: &mut Assembler, opnds: &[Opnd]) -> lir::Opnd {
