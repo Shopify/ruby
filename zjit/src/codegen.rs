@@ -3,6 +3,7 @@
 #![allow(clippy::let_and_return)]
 
 mod calls;
+mod objects;
 mod gc_fastpath;
 mod frame;
 
@@ -629,20 +630,20 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::NewArray { elements, state } => gen_new_array(jit, asm, function, opnds!(elements), &function.frame_state(*state)),
         Insn::NewHash { elements, state } => {
             let sym_keys = elements.iter().step_by(2).all(|&key| function.type_of(key).is_subtype(types::Symbol));
-            gen_new_hash(jit, asm, function, opnds!(elements), sym_keys, &function.frame_state(*state))
+            objects::gen_new_hash(jit, asm, function, opnds!(elements), sym_keys, &function.frame_state(*state))
         }
-        Insn::NewRange { low, high, flag, state } => gen_new_range(jit, asm, function, opnd!(low), opnd!(high), *flag, &function.frame_state(*state)),
-        Insn::NewRangeFixnum { low, high, flag, state } => gen_new_range_fixnum(jit, asm, function, opnd!(low), opnd!(high), *flag, &function.frame_state(*state)),
-        Insn::ArrayDup { val, state } => gen_array_dup(jit, asm, function, *val, opnd!(val), &function.frame_state(*state)),
+        Insn::NewRange { low, high, flag, state } => objects::gen_new_range(jit, asm, function, opnd!(low), opnd!(high), *flag, &function.frame_state(*state)),
+        Insn::NewRangeFixnum { low, high, flag, state } => objects::gen_new_range_fixnum(jit, asm, function, opnd!(low), opnd!(high), *flag, &function.frame_state(*state)),
+        Insn::ArrayDup { val, state } => objects::gen_array_dup(jit, asm, function, *val, opnd!(val), &function.frame_state(*state)),
         Insn::AdjustBounds { index, length } => gen_adjust_bounds(asm, opnd!(index), opnd!(length)),
-        Insn::ArrayAref { array, index, .. } => gen_array_aref(asm, opnd!(array), opnd!(index)),
+        Insn::ArrayAref { array, index, .. } => objects::gen_array_aref(asm, opnd!(array), opnd!(index)),
         Insn::ArrayAset { array, index, val } => {
-            no_output!(gen_array_aset(asm, opnd!(array), opnd!(index), opnd!(val)))
+            no_output!(objects::gen_array_aset(asm, opnd!(array), opnd!(index), opnd!(val)))
         }
-        Insn::ArrayPop { array, state } => gen_array_pop(asm, opnd!(array), &function.frame_state(*state)),
-        Insn::ArrayLength { array } => gen_array_length(asm, opnd!(array)),
-        Insn::ObjectAlloc { val, state } => gen_object_alloc(jit, asm, function, opnd!(val), &function.frame_state(*state)),
-        &Insn::ObjectAllocClass { class, state } => gen_object_alloc_class(jit, asm, function, class, &function.frame_state(state)),
+        Insn::ArrayPop { array, state } => objects::gen_array_pop(asm, opnd!(array), &function.frame_state(*state)),
+        Insn::ArrayLength { array } => objects::gen_array_length(asm, opnd!(array)),
+        Insn::ObjectAlloc { val, state } => objects::gen_object_alloc(jit, asm, function, opnd!(val), &function.frame_state(*state)),
+        &Insn::ObjectAllocClass { class, state } => objects::gen_object_alloc_class(jit, asm, function, class, &function.frame_state(state)),
         Insn::StringCopy { val, chilled, state } => gen_string_copy(jit, asm, function, *val, opnd!(val), *chilled, &function.frame_state(*state)),
         Insn::StringConcat { strings, state } => gen_string_concat(jit, asm, function, opnds!(strings), &function.frame_state(*state)),
         &Insn::StringGetbyte { string, index } => gen_string_getbyte(asm, opnd!(string), opnd!(index)),
@@ -771,14 +772,14 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         &Insn::CheckInterrupts { state } => no_output!(gen_check_interrupts(jit, asm, function, &function.frame_state(state))),
         Insn::BreakPoint => no_output!(asm.breakpoint()),
         Insn::Unreachable => no_output!(asm.abort()),
-        &Insn::HashDup { val, state } => { gen_hash_dup(jit, asm, function, val, opnd!(val), &function.frame_state(state)) },
-        &Insn::HashAref { hash, key, state } => { gen_hash_aref(jit, asm, function, opnd!(hash), opnd!(key), &function.frame_state(state)) },
-        &Insn::HashAset { hash, key, val, state } => { no_output!(gen_hash_aset(jit, asm, function, opnd!(hash), opnd!(key), opnd!(val), &function.frame_state(state))) },
-        &Insn::ArrayPush { array, val, state } => { no_output!(gen_array_push(asm, opnd!(array), opnd!(val), &function.frame_state(state))) },
-        &Insn::ToNewArray { val, state } => { gen_to_new_array(jit, asm, function, opnd!(val), &function.frame_state(state)) },
-        &Insn::ToArray { val, state } => { gen_to_array(jit, asm, function, opnd!(val), &function.frame_state(state)) },
+        &Insn::HashDup { val, state } => { objects::gen_hash_dup(jit, asm, function, val, opnd!(val), &function.frame_state(state)) },
+        &Insn::HashAref { hash, key, state } => { objects::gen_hash_aref(jit, asm, function, opnd!(hash), opnd!(key), &function.frame_state(state)) },
+        &Insn::HashAset { hash, key, val, state } => { no_output!(objects::gen_hash_aset(jit, asm, function, opnd!(hash), opnd!(key), opnd!(val), &function.frame_state(state))) },
+        &Insn::ArrayPush { array, val, state } => { no_output!(objects::gen_array_push(asm, opnd!(array), opnd!(val), &function.frame_state(state))) },
+        &Insn::ToNewArray { val, state } => { objects::gen_to_new_array(jit, asm, function, opnd!(val), &function.frame_state(state)) },
+        &Insn::ToArray { val, state } => { objects::gen_to_array(jit, asm, function, opnd!(val), &function.frame_state(state)) },
         &Insn::DefinedIvar { self_val, id, pushval, .. } => { gen_defined_ivar(asm, opnd!(self_val), id, pushval) },
-        &Insn::ArrayExtend { left, right, state } => { no_output!(gen_array_extend(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(state))) },
+        &Insn::ArrayExtend { left, right, state } => { no_output!(objects::gen_array_extend(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(state))) },
         Insn::LoadPC => gen_load_pc(asm),
         Insn::LoadEC => gen_load_ec(),
         Insn::LoadSP => gen_load_sp(),
@@ -788,13 +789,13 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         &Insn::StoreField { recv, id, offset, val, num_bits } => no_output!(gen_store_field(asm, opnd!(recv), id, offset, opnd!(val), num_bits)),
         &Insn::WriteBarrier { recv, val } => no_output!(gen_write_barrier(jit, asm, opnd!(recv), opnd!(val), function.type_of(val))),
         &Insn::IsBlockGiven { block_handler } => gen_is_block_given(asm, opnd!(block_handler)),
-        Insn::ArrayInclude { elements, target, state } => gen_array_include(jit, asm, function, opnds!(elements), opnd!(target), &function.frame_state(*state)),
-        Insn::ArrayPackBuffer { elements, fmt, buffer, state } => gen_array_pack_buffer(jit, asm, function, opnds!(elements), opnd!(fmt), (*buffer).map(|buffer| opnd!(buffer)), &function.frame_state(*state)),
-        &Insn::DupArrayInclude { ary, target, state } => gen_dup_array_include(jit, asm, function, ary, opnd!(target), &function.frame_state(state)),
+        Insn::ArrayInclude { elements, target, state } => objects::gen_array_include(jit, asm, function, opnds!(elements), opnd!(target), &function.frame_state(*state)),
+        Insn::ArrayPackBuffer { elements, fmt, buffer, state } => objects::gen_array_pack_buffer(jit, asm, function, opnds!(elements), opnd!(fmt), (*buffer).map(|buffer| opnd!(buffer)), &function.frame_state(*state)),
+        &Insn::DupArrayInclude { ary, target, state } => objects::gen_dup_array_include(jit, asm, function, ary, opnd!(target), &function.frame_state(state)),
         Insn::ArrayHash { elements, state } => gen_opt_newarray_hash(jit, asm, function, opnds!(elements), &function.frame_state(*state)),
         &Insn::IsA { val, class } => gen_is_a(jit, asm, opnd!(val), opnd!(class)),
-        &Insn::ArrayMax { ref elements, state } => gen_array_max(jit, asm, function, opnds!(elements), &function.frame_state(state)),
-        &Insn::ArrayMin { ref elements, state } => gen_array_min(jit, asm, function, opnds!(elements), &function.frame_state(state)),
+        &Insn::ArrayMax { ref elements, state } => objects::gen_array_max(jit, asm, function, opnds!(elements), &function.frame_state(state)),
+        &Insn::ArrayMin { ref elements, state } => objects::gen_array_min(jit, asm, function, opnds!(elements), &function.frame_state(state)),
         &Insn::Throw { throw_state, val, state } => no_output!(gen_throw(jit, asm, function, throw_state, opnd!(val), &function.frame_state(state))),
         &Insn::CondBranch { .. }
         | &Insn::Jump { .. } | Insn::Entries { .. } => unreachable!(),
