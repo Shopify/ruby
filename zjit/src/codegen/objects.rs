@@ -344,6 +344,7 @@ pub(super) fn gen_new_hash(
         gc_fastpath::gc_fastpath_new_obj(jit, asm, function, state, alloc_size, flags.into(), klass,
             |asm, hash| {
                 asm.store(Opnd::mem(VALUE_BITS, hash, RUBY_OFFSET_RHASH_IFNONE), Qnil.into());
+                asm.store(Opnd::mem(VALUE_BITS, hash, RUBY_OFFSET_RHASH_AR_HINT), Opnd::UImm(0));
             },
             |asm| {
                 asm_ccall!(asm, rb_hash_new,)
@@ -363,6 +364,7 @@ pub(super) fn gen_new_hash(
             gc_fastpath::gc_fastpath_new_obj(jit, asm, function, state, alloc_size, flags.into(), klass,
                 |asm, hash| {
                     asm.store(Opnd::mem(VALUE_BITS, hash, RUBY_OFFSET_RHASH_IFNONE), Qnil.into());
+                    asm.store(Opnd::mem(VALUE_BITS, hash, RUBY_OFFSET_RHASH_AR_HINT), Opnd::UImm(0));
                 },
                 |asm| {
                     asm_ccall!(asm, rb_hash_new_capa, num_pairs.into())
