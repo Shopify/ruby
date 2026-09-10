@@ -442,7 +442,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
             hir_to_lir[block_id] = Some(lir_block_id);
         }
 
-        // Compile each basic block
+        // Lower each HIR basic block to LIR
         for &block_id in reverse_post_order.iter() {
             // Skip the entries superblock -- it's an internal CFG artifact
             if block_id == function.entries_block { continue; }
@@ -462,7 +462,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                 iseq_get_location(iseq, block.insn_idx),
             );
 
-            // Compile all parameters
+            // Lower all parameters
             for (idx, &insn_id) in block.params().enumerate() {
                 let insn_id = function.find_id(insn_id);
                 // Param does not have operands, so fake a ResolvedInsnId.
@@ -474,8 +474,8 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                 }
             }
 
-            // In JIT entry blocks, compile LoadArg instructions before other instructions
-            // so that calling convention registers are reserved early, like Param.
+            // In JIT entry blocks, lower LoadArg instructions before other instructions.
+            // This order reserves calling convention registers early, like Param.
             if function.is_entry_block(block_id) {
                 for &insn_id in block.insns() {
                     let insn_id = function.find_id(insn_id);
@@ -486,7 +486,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                 }
             }
 
-            // Compile all instructions
+            // Lower all HIR instructions to LIR
             for (insn_idx, &insn_id) in block.insns().enumerate() {
                 let insn = function.find(insn_id);
                 let symbol_range = perf::hir_symbol_range_start(&mut asm, &insn);
@@ -528,7 +528,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                         Ok(())
                     },
                     _ => {
-                        gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn)
+                        lower_insn(cb, &mut jit, &mut asm, function, insn_id, &insn)
                     }
                 };
 
@@ -588,8 +588,8 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
     })
 }
 
-/// Compile an instruction
-fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, function: &Function, insn_id: InsnId, insn: &Insn) -> Result<(), InsnId> {
+/// Lower one HIR instruction to LIR.
+fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, function: &Function, insn_id: InsnId, insn: &Insn) -> Result<(), InsnId> {
     // Convert InsnId to lir::Opnd
     macro_rules! opnd {
         ($insn_id:ident) => {
@@ -629,7 +629,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
             gen_const_uint32(val.0)
         }
         &Insn::Const { val: Const::CBool(val) } => Opnd::UImm(val.into()),
-        Insn::Const { .. } => panic!("Unexpected Const in gen_insn: {insn}"),
+        Insn::Const { .. } => panic!("Unexpected Const in lower_insn: {insn}"),
         Insn::NewArray { elements, state } => gen_new_array(jit, asm, function, opnds!(elements), &function.frame_state(*state)),
         Insn::NewHash { elements, state } => {
             let sym_keys = elements.iter().step_by(2).all(|&key| function.type_of(key).is_subtype(types::Symbol));
