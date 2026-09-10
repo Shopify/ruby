@@ -16,7 +16,7 @@ use crate::invariants::{
     track_root_box_assumption, track_no_newobj_hook_assumption
 };
 use crate::gc::append_gc_offsets;
-use crate::payload::{ExceptionEntry, IseqCodePtrs, IseqStatus, IseqVersion, IseqVersionRef, JITFrame, get_or_create_iseq_payload};
+use crate::payload::{ExceptionEntry, ExceptionEntrySpec, IseqCodePtrs, IseqStatus, IseqVersion, IseqVersionRef, JITFrame, get_or_create_iseq_payload};
 use crate::profile::reset_profiles_remaining;
 use crate::state::{rb_zjit_compiling_p, ZJITState};
 use crate::stats::{CompileError, exit_counter_for_compile_error, exit_counter_for_unhandled_hir_insn, incr_counter, incr_counter_by, send_fallback_counter, send_fallback_counter_for_method_type, send_fallback_counter_for_super_method_type, send_fallback_counter_ptr_for_opcode, send_fallback_counter_for_optimized_method_type};
@@ -56,6 +56,8 @@ struct JITState {
 
     /// JIT entry point for the `iseq`
     jit_entries: Vec<Rc<RefCell<JITEntry>>>,
+    /// Exception-handler entries, keyed by bytecode instruction index.
+    exception_entries: Vec<(u16, Rc<Cell<Option<CodePtr>>>)>,
 
     /// ISEQ calls that need to be compiled later
     iseq_calls: Vec<IseqCallRef>,
@@ -76,6 +78,7 @@ impl JITState {
             opnds: vec![None; num_insns],
             labels: vec![None; num_blocks],
             jit_entries: Vec::default(),
+            exception_entries: Vec::default(),
             iseq_calls: Vec::default(),
             jit_frame_size,
         }
@@ -291,7 +294,8 @@ fn gen_exception_entry_target_for_current_frame(
     let stack_size = unsafe { get_cfp_sp(cfp).offset_from(rb_vm_base_ptr(cfp)) };
     let stack_size = u8::try_from(stack_size).map_err(|_| CompileError::IseqStackTooLarge)?;
 
-    let target = match gen_exception_iseq_body(cb, iseq, insn_idx, stack_size) {
+    let entry = capture_exception_entry(iseq, cfp, insn_idx, stack_size);
+    let target = match gen_exception_iseq_body(cb, iseq, entry) {
         Ok(code_ptr) => code_ptr,
         Err(err) => {
             if ZJITState::assert_compiles_enabled() {
@@ -311,28 +315,74 @@ fn gen_exception_entry_target_for_current_frame(
     Ok((insn_idx, target))
 }
 
+/// Capture the types at an exception-handler entry.
+fn capture_exception_entry(iseq: IseqPtr, cfp: CfpPtr, insn_idx: u16, stack_size: u8) -> ExceptionEntrySpec {
+    let ep = unsafe { get_cfp_ep(cfp) };
+    let local_size = unsafe { get_iseq_body_local_table_size(iseq) }.to_usize();
+    let mut value_types = Vec::with_capacity(local_size + usize::from(stack_size));
+    for local_idx in 0..local_size {
+        let ep_offset = local_idx_to_ep_offset(iseq, local_idx) as isize;
+        let value = unsafe { ep.offset(-ep_offset).read() };
+        value_types.push(exception_entry_value_type(value));
+    }
+    let base_ptr = unsafe { rb_vm_base_ptr(cfp) };
+    for stack_idx in 0..usize::from(stack_size) {
+        let value = unsafe { base_ptr.add(stack_idx).read() };
+        value_types.push(exception_entry_value_type(value));
+    }
+    ExceptionEntrySpec { insn_idx, stack_size, value_types }
+}
+
+/// Return a useful type that `GuardType` can check without retaining the observed object.
+fn exception_entry_value_type(value: VALUE) -> Type {
+    if value == Qundef || (!value.special_const_p() && value.builtin_type() == RUBY_T_IMEMO) {
+        return types::BasicObject;
+    }
+    let value_type = Type::from_value(value).unspecialized();
+    if value_type.is_immediate()
+        || value_type.runtime_exact_ruby_class().is_some()
+        || value_type.builtin_type_equivalent().is_some()
+    {
+        value_type
+    } else {
+        types::HeapBasicObject
+    }
+}
+
 /// Compile or reuse the handler body for one bytecode instruction.
 fn gen_exception_iseq_body(
     cb: &mut CodeBlock,
     iseq: IseqPtr,
-    insn_idx: u16,
-    stack_size: u8,
+    current_entry: ExceptionEntrySpec,
 ) -> Result<CodePtr, CompileError> {
-    if let Some(entry) = get_or_create_iseq_payload(iseq)
-        .exception_entries
-        .iter()
-        .rev()
-        .find(|entry| entry.insn_idx == insn_idx)
-    {
+    let insn_idx = current_entry.insn_idx;
+    let payload = get_or_create_iseq_payload(iseq);
+    if let Some(entry) = payload.exception_entries.iter().rev().find(|entry| entry.spec.insn_idx == insn_idx) {
         match &unsafe { entry.version.as_ref() }.status {
-            IseqStatus::Compiled(code_ptrs) => return Ok(code_ptrs.start_ptr),
+            IseqStatus::Compiled(_) => {
+                return Ok(entry.target.expect("compiled exception entry should have a target"));
+            }
             IseqStatus::CantCompile(err) => return Err(err.clone()),
             IseqStatus::NotCompiled | IseqStatus::Invalidated => {}
         }
     }
 
-    let entry_version_count = get_or_create_iseq_payload(iseq).exception_entries.iter()
-        .filter(|entry| entry.insn_idx == insn_idx).count();
+    let mut observed_entries = Vec::new();
+    for entry in payload.exception_entries.iter().rev() {
+        if !observed_entries.iter().any(|observed: &ExceptionEntrySpec| observed.insn_idx == entry.spec.insn_idx) {
+            observed_entries.push(entry.spec.clone());
+        }
+    }
+    if let Some(entry) = observed_entries.iter_mut().find(|entry| entry.insn_idx == insn_idx) {
+        *entry = current_entry.clone();
+    } else {
+        observed_entries.push(current_entry.clone());
+    }
+    observed_entries.sort_unstable_by_key(|entry| entry.insn_idx);
+
+    let first_insn_idx = observed_entries[0].insn_idx;
+    let entry_version_count = payload.exception_entries.iter()
+        .filter(|entry| entry.spec.insn_idx == first_insn_idx).count();
     if entry_version_count >= max_iseq_versions() {
         return Err(CompileError::IseqVersionLimitReached);
     }
@@ -340,27 +390,48 @@ fn gen_exception_iseq_body(
     let mut version = IseqVersion::new(iseq);
     let code_ptrs = (|| {
         let function = crate::stats::with_time_stat(Counter::compile_hir_time_ns, || {
-            compile_iseq(iseq, Some((insn_idx, stack_size)))
+            compile_iseq(iseq, Some(&observed_entries))
         })?;
         if entry_version_count + 1 < max_iseq_versions() {
             reset_profiles_remaining(iseq);
         }
         gen_iseq_body(cb, iseq, version, Some(&function))
     })();
-    let result = match &code_ptrs {
+    match code_ptrs {
         Ok(code_ptrs) => {
+            let target = code_ptrs.exception_entry_ptrs.iter()
+                .find_map(|(entry_idx, target)| (*entry_idx == insn_idx).then_some(*target))
+                .expect("generated exception entry should have a target");
             unsafe { version.as_mut() }.status = IseqStatus::Compiled(code_ptrs.clone());
             incr_counter!(compiled_iseq_count);
-            Ok(code_ptrs.start_ptr)
+
+            let payload = get_or_create_iseq_payload(iseq);
+            for entry_spec in &observed_entries {
+                let entry_target = code_ptrs.exception_entry_ptrs.iter()
+                    .find_map(|(target_idx, target)| (*target_idx == entry_spec.insn_idx).then_some(*target))
+                    .expect("generated exception entry should have a target");
+                payload.exception_entries.push(ExceptionEntry {
+                    spec: entry_spec.clone(),
+                    target: Some(entry_target),
+                    version,
+                });
+            }
+            for &(entry_idx, entry_target) in &code_ptrs.exception_entry_ptrs {
+                retarget_exception_entry_guards(cb, iseq, entry_idx, entry_target);
+            }
+            Ok(target)
         }
         Err(err) => {
             unsafe { version.as_mut() }.status = IseqStatus::CantCompile(err.clone());
             incr_counter!(failed_iseq_count);
-            Err(err.clone())
+            get_or_create_iseq_payload(iseq).exception_entries.push(ExceptionEntry {
+                spec: current_entry,
+                target: None,
+                version,
+            });
+            Err(err)
         }
-    };
-    get_or_create_iseq_payload(iseq).exception_entries.push(ExceptionEntry { insn_idx, version });
-    result
+    }
 }
 
 /// Generate one PC check in the jit_exception dispatch chain.
@@ -371,7 +442,7 @@ fn gen_exception_entry_guard(
     target: CodePtr,
     previous_entry: Option<&ExceptionEntryGuard>,
 ) -> Result<CodePtr, CompileError> {
-    let entry = ExceptionEntryGuard::new();
+    let entry = ExceptionEntryGuard::new(insn_idx);
     let stub_ptr = gen_exception_entry_stub(cb, &entry)?;
     let mut asm = Assembler::new();
     asm.new_block_without_id("exception_entry_guard");
@@ -386,7 +457,11 @@ fn gen_exception_entry_guard(
     asm.push_insn(lir::Insn::Jne(stub_ptr.into()));
     let end_entry = entry.clone();
     asm.pos_marker(move |code_ptr, _| end_entry.end_addr.set(Some(code_ptr)));
+    let target_start_entry = entry.clone();
+    asm.pos_marker(move |code_ptr, _| target_start_entry.target_start_addr.set(Some(code_ptr)));
     asm.jmp(target.into());
+    let target_end_entry = entry.clone();
+    asm.pos_marker_at_block_end(move |code_ptr, _| target_end_entry.target_end_addr.set(Some(code_ptr)));
 
     let (entry_ptr, gc_offsets) = asm.compile(cb)?;
     assert!(gc_offsets.is_empty());
@@ -395,6 +470,17 @@ fn gen_exception_entry_guard(
         previous_entry.regenerate(cb, entry_ptr);
     }
     Ok(entry_ptr)
+}
+
+/// Retarget existing guards for one exception-handler PC.
+fn retarget_exception_entry_guards(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: u16, target: CodePtr) {
+    let guards: Vec<_> = get_or_create_iseq_payload(iseq).exception_entry_guards.iter()
+        .filter(|guard| guard.insn_idx == insn_idx)
+        .cloned()
+        .collect();
+    for guard in guards {
+        guard.retarget(cb, target);
+    }
 }
 
 /// Invalidate an ISEQ version and allow it to be recompiled on the next call.
@@ -810,7 +896,10 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
         let jit_entry_ptrs = jit.jit_entries.iter().map(|jit_entry|
             jit_entry.borrow().start_addr.get().expect("start_addr should have been set by pos_marker in gen_entry_point")
         ).collect();
-        (IseqCodePtrs { start_ptr, jit_entry_ptrs }, gc_offsets, jit.iseq_calls)
+        let exception_entry_ptrs = jit.exception_entries.iter().map(|(insn_idx, start_addr)| {
+            (*insn_idx, start_addr.get().expect("start_addr should have been set by pos_marker in gen_exception_entry_point"))
+        }).collect();
+        (IseqCodePtrs { start_ptr, jit_entry_ptrs, exception_entry_ptrs }, gc_offsets, jit.iseq_calls)
     })
 }
 
@@ -2955,6 +3044,9 @@ fn gen_entry_point(jit: &mut JITState, asm: &mut Assembler, jit_entry_idx: Optio
 
 /// Compile a frame setup for entry from jit_exec_exception().
 fn gen_exception_entry_point(jit: &mut JITState, asm: &mut Assembler, insn_idx: u16, stack_size: u8) {
+    let start_addr = Rc::new(Cell::new(None));
+    jit.exception_entries.push((insn_idx, start_addr.clone()));
+    asm.pos_marker(move |code_ptr, _| start_addr.set(Some(code_ptr)));
     let pc = unsafe { rb_iseq_pc_at_idx(jit.iseq(), insn_idx.into()) };
     gen_frame_entry_point(jit, asm, pc);
 
@@ -3844,7 +3936,7 @@ fn gen_stack_overflow_check(jit: &mut JITState, asm: &mut Assembler, function: &
 }
 
 /// Convert an ISEQ into High-level IR.
-fn compile_iseq(iseq: IseqPtr, exception_entry: Option<(u16, u8)>) -> Result<Function, CompileError> {
+fn compile_iseq(iseq: IseqPtr, exception_entries: Option<&[ExceptionEntrySpec]>) -> Result<Function, CompileError> {
     // Convert ZJIT instructions back to bare instructions
     unsafe { crate::cruby::rb_zjit_profile_disable(iseq) };
 
@@ -3857,8 +3949,8 @@ fn compile_iseq(iseq: IseqPtr, exception_entry: Option<(u16, u8)>) -> Result<Fun
     }
 
     let function = trace_compile_phase("build_hir", || {
-        crate::stats::with_time_stat(Counter::compile_hir_build_time_ns, || match exception_entry {
-            Some((insn_idx, stack_size)) => iseq_to_hir_exception(iseq, insn_idx, stack_size),
+        crate::stats::with_time_stat(Counter::compile_hir_build_time_ns, || match exception_entries {
+            Some(entries) => iseq_to_hir_exception(iseq, entries),
             None => iseq_to_hir(iseq),
         })
     });
@@ -3874,7 +3966,7 @@ fn compile_iseq(iseq: IseqPtr, exception_entry: Option<(u16, u8)>) -> Result<Fun
     }
     function.dump_hir();
     let non_final_version = get_or_create_iseq_payload(iseq).versions.len() + 1 < max_iseq_versions();
-    if exception_entry.is_none() && non_final_version {
+    if exception_entries.is_none() && non_final_version {
         reset_profiles_remaining(iseq);
     }
     Ok(function)
@@ -4715,18 +4807,24 @@ impl JITEntry {
 /// A patchable PC guard in the jit_exception dispatch chain.
 #[derive(Debug)]
 pub struct ExceptionEntryGuard {
+    insn_idx: u16,
     start_addr: Cell<Option<CodePtr>>,
     end_addr: Cell<Option<CodePtr>>,
+    target_start_addr: Cell<Option<CodePtr>>,
+    target_end_addr: Cell<Option<CodePtr>>,
     next_entry: Cell<Option<CodePtr>>,
 }
 
 pub type ExceptionEntryGuardRef = Rc<ExceptionEntryGuard>;
 
 impl ExceptionEntryGuard {
-    fn new() -> ExceptionEntryGuardRef {
+    fn new(insn_idx: u16) -> ExceptionEntryGuardRef {
         Rc::new(ExceptionEntryGuard {
+            insn_idx,
             start_addr: Cell::new(None),
             end_addr: Cell::new(None),
+            target_start_addr: Cell::new(None),
+            target_end_addr: Cell::new(None),
             next_entry: Cell::new(None),
         })
     }
@@ -4740,6 +4838,16 @@ impl ExceptionEntryGuard {
             assert_eq!(self.end_addr.get().unwrap(), cb.get_write_ptr());
         });
         self.next_entry.set(Some(next_entry));
+    }
+
+    fn retarget(&self, cb: &mut CodeBlock, target: CodePtr) {
+        cb.with_write_ptr(self.target_start_addr.get().expect("expected a target start address"), |cb| {
+            let mut asm = Assembler::new();
+            asm.new_block_without_id("retarget_exception_entry_guard");
+            asm.jmp(target.into());
+            asm.compile(cb).unwrap();
+            assert_eq!(self.target_end_addr.get().unwrap(), cb.get_write_ptr());
+        });
     }
 }
 

@@ -7999,7 +7999,8 @@ fn test_inlined_method_with_rescue_caught_in_caller() {
 #[test]
 fn test_inlined_method_with_ensure_runs_on_propagation() {
     with_inlining(|| {
-        assert_snapshot!(assert_inlines(r##"
+        // The newly compiled ensure and rescue entries can exit on code without profiles.
+        assert_snapshot!(assert_inlines_allowing_exits(r##"
             $log = []
             def callee(x)
               begin
