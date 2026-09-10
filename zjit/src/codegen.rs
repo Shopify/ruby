@@ -526,7 +526,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                         assert!(insn_idx == block.insns().len() - 1, "Jump must be the last instruction in HIR block");
                     },
                     _ => {
-                        lower_insn(cb, &mut jit, &mut asm, function, insn_id, &insn)
+                        insn.lower_to_lir(cb, &mut jit, &mut asm, function, insn_id)
                     }
                 };
 
@@ -571,6 +571,14 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
         ).collect();
         (IseqCodePtrs { start_ptr, jit_entry_ptrs }, gc_offsets, jit.iseq_calls)
     })
+}
+
+// Keep the backend-specific implementation in `codegen` while exposing it as HIR behavior.
+impl Insn {
+    #[inline(always)]
+    fn lower_to_lir(&self, cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, function: &Function, insn_id: InsnId) {
+        lower_insn(cb, jit, asm, function, insn_id, self);
+    }
 }
 
 /// Lower one HIR instruction to LIR.
