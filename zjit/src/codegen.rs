@@ -542,7 +542,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                         Ok(())
                     },
                     _ => {
-                        gen_insn(cb, &mut jit, &mut asm, function, insn_id, &insn)
+                        insn.lower_to_lir(cb, &mut jit, &mut asm, function, insn_id)
                     }
                 };
 
@@ -600,6 +600,22 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
         ).collect();
         (IseqCodePtrs { start_ptr, jit_entry_ptrs }, gc_offsets, jit.iseq_calls)
     })
+}
+
+// Keep the backend-specific implementation in `codegen` while exposing it as HIR behavior.
+impl Insn {
+    #[inline(always)]
+    fn lower_to_lir(&self, cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, function: &Function, insn_id: InsnId) {
+        lower_insn(cb, jit, asm, function, insn_id, self);
+    }
+}
+
+// Keep the backend-specific implementation in `codegen` while exposing it as HIR behavior.
+impl Insn {
+    #[inline(always)]
+    fn lower_to_lir(&self, cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, function: &Function, insn_id: InsnId) {
+        gen_insn(cb, jit, asm, function, insn_id, self);
+    }
 }
 
 /// Compile an instruction

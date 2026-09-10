@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{gen_insn, JITState};
+use super::JITState;
 use crate::asm::CodeBlock;
 use crate::backend::lir::Assembler;
 use crate::codegen::max_iseq_versions;
@@ -204,7 +204,7 @@ fn test_breakpoint_hir_codegen() {
     asm.new_block_without_id("test");
     let mut cb = CodeBlock::new_dummy();
 
-    gen_insn(&mut cb, &mut jit, &mut asm, &function, breakpoint, &function.find(breakpoint)).unwrap();
+    function.find(breakpoint).lower_to_lir(&mut cb, &mut jit, &mut asm, &function, breakpoint).unwrap();
     asm.compile_with_num_regs(&mut cb, 0);
 
     #[cfg(target_arch = "x86_64")]
