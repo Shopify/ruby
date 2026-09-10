@@ -201,7 +201,6 @@ make_counters! {
         exit_unhandled_block_arg,
         exit_block_arg_not_nil,
         exit_unknown_special_variable,
-        exit_unhandled_hir_insn,
         exit_unhandled_yarv_insn,
         exit_fixnum_add_overflow,
         exit_fixnum_sub_overflow,
@@ -372,10 +371,6 @@ make_counters! {
     compile_error_validation_duplicate_instruction,
     compile_error_validation_type_check_failure,
     compile_error_validation_misc_validation_error,
-
-    // unhandled_hir_insn_: Unhandled HIR instructions
-    unhandled_hir_insn_invokebuiltin,
-    unhandled_hir_insn_unknown,
 
     // The number of times YARV instructions are executed on JIT code
     zjit_insn_count,
@@ -586,15 +581,6 @@ pub fn exit_counter_for_compile_error(compile_error: &CompileError) -> Counter {
     }
 }
 
-pub fn exit_counter_for_unhandled_hir_insn(insn: &crate::hir::Insn) -> Counter {
-    use crate::hir::Insn::*;
-    use crate::stats::Counter::*;
-    match insn {
-        InvokeBuiltin { .. } => unhandled_hir_insn_invokebuiltin,
-        _                    => unhandled_hir_insn_unknown,
-    }
-}
-
 pub fn side_exit_counter(reason: crate::hir::SideExitReason) -> Counter {
     use crate::hir::SideExitReason::*;
     use crate::hir::CallType::*;
@@ -613,9 +599,6 @@ pub fn side_exit_counter(reason: crate::hir::SideExitReason) -> Counter {
         UnhandledCallType(Splat)      => exit_unhandled_splat,
         UnhandledCallType(Kwarg)      => exit_unhandled_kwarg,
         UnknownSpecialVariable(_)     => exit_unknown_special_variable,
-        UnhandledHIRThrow             => exit_unhandled_hir_insn,
-        UnhandledHIRInvokeBuiltin     => exit_unhandled_hir_insn,
-        UnhandledHIRUnknown(_)        => exit_unhandled_hir_insn,
         UnhandledYARVInsn(_)          => exit_unhandled_yarv_insn,
         UnhandledBlockArg             => exit_unhandled_block_arg,
         BlockArgNotNil                => exit_block_arg_not_nil,
