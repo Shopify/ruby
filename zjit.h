@@ -107,6 +107,7 @@ ZJIT_STACK_MAP_BASE_PTR_STACK_SIZE(VALUE entry)
 }
 
 extern void *rb_zjit_entry;
+extern const void *rb_zjit_exception_entry;
 extern bool rb_zjit_compiling_p;
 extern const zjit_jit_frame_t rb_zjit_c_frame;
 extern unsigned int rb_zjit_call_threshold;
