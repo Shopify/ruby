@@ -85,7 +85,7 @@ fn test_breakpoint_hir_codegen() {
     asm.new_block_without_id("test");
     let mut cb = CodeBlock::new_dummy();
 
-    lower_insn(&mut cb, &mut jit, &mut asm, &function, breakpoint, &function.find(breakpoint)).unwrap();
+    lower_insn(&mut cb, &mut jit, &mut asm, &function, breakpoint, &function.find(breakpoint));
     asm.compile_with_num_regs(&mut cb, 0);
 
     #[cfg(target_arch = "x86_64")]

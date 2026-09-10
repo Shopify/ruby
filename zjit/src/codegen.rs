@@ -20,7 +20,7 @@ use crate::payload::{IseqCodePtrs, IseqStatus, IseqVersion, IseqVersionRef, JITF
 use crate::profile::reset_profiles_remaining;
 use crate::perf;
 use crate::state::{rb_zjit_compiling_p, ZJITState};
-use crate::stats::{CompileError, exit_counter_for_compile_error, exit_counter_for_unhandled_hir_insn, incr_counter, incr_counter_by, send_fallback_counter, send_fallback_counter_for_method_type, send_fallback_counter_for_super_method_type, send_fallback_counter_ptr_for_opcode, send_fallback_counter_for_optimized_method_type};
+use crate::stats::{CompileError, exit_counter_for_compile_error, incr_counter, incr_counter_by, send_fallback_counter, send_fallback_counter_for_method_type, send_fallback_counter_for_super_method_type, send_fallback_counter_ptr_for_opcode, send_fallback_counter_for_optimized_method_type};
 use crate::stats::{counter_ptr, with_time_stat, trace_compile_phase, Counter, Counter::{compile_time_ns, exit_compile_error}};
 use crate::{asm::CodeBlock, cruby::*, options::debug, virtualmem::CodePtr};
 use crate::backend::lir::{self, Assembler, CArgLocation, C_ARG_OPNDS, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, NATIVE_STACK_PTR, Opnd, SP, SideExit, SideExitRecompile, SideExitTarget, StackMap, StackMapEntry, Target, asm_ccall, asm_comment};
@@ -491,7 +491,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                 let insn = function.find(insn_id);
                 let symbol_range = perf::hir_symbol_range_start(&mut asm, &insn);
 
-                let result = match &insn {
+                match &insn {
                     Insn::CondBranch { val, if_true, if_false } => {
                         let val_opnd = jit.get_opnd(*val);
                         let true_target = hir_to_lir[if_true.target].unwrap();
@@ -512,7 +512,6 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                         asm.jmp(Target::Block(Box::new(false_branch)));
 
                         assert!(asm.current_block().insns.last().unwrap().is_terminator());
-                        Ok(())
                     }
                     Insn::Jump(target) => {
                         let lir_target = hir_to_lir[target.target].unwrap();
@@ -525,7 +524,6 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
 
                         // Jump should always be the last instruction in an HIR block
                         assert!(insn_idx == block.insns().len() - 1, "Jump must be the last instruction in HIR block");
-                        Ok(())
                     },
                     _ => {
                         lower_insn(cb, &mut jit, &mut asm, function, insn_id, &insn)
@@ -534,7 +532,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
 
                 // Close the current perf range for the HIR instruction.
                 if let Some(symbol_range) = &symbol_range {
-                    if result.is_ok() && insn.is_terminator() {
+                    if insn.is_terminator() {
                         assert!(asm.current_block().insns.last().is_some_and(|insn| insn.is_terminator()));
                         perf::symbol_range_end_at_block_end(&mut asm, symbol_range);
                     } else {
@@ -542,19 +540,6 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                     }
                 }
 
-                if let Err(last_snapshot) = result {
-                    debug!("ZJIT: gen_function: Failed to compile insn: {insn_id} {insn}. Generating side-exit.");
-                    gen_incr_counter(&mut asm, exit_counter_for_unhandled_hir_insn(&insn));
-                    let reason = match insn {
-                        Insn::InvokeBuiltin { .. } => SideExitReason::UnhandledHIRInvokeBuiltin,
-                        _                          => SideExitReason::UnhandledHIRUnknown(insn_id),
-                    };
-                    gen_side_exit(&mut jit, &mut asm, function, &reason, None, &function.frame_state(last_snapshot));
-                    // Don't bother generating code after a side-exit. We won't run it.
-                    // TODO(max): Generate ud2 or equivalent.
-                    break;
-                };
-                // It's fine; we generated the instruction
             }
             // Blocks should always end with control flow
             assert!(asm.current_block().insns.last().unwrap().is_terminator());
@@ -589,7 +574,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
 }
 
 /// Lower one HIR instruction to LIR.
-fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, function: &Function, insn_id: InsnId, insn: &Insn) -> Result<(), InsnId> {
+fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, function: &Function, insn_id: InsnId, insn: &Insn) {
     // Convert InsnId to lir::Opnd
     macro_rules! opnd {
         ($insn_id:ident) => {
@@ -607,7 +592,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
 
     macro_rules! no_output {
         ($call:expr) => {
-            { let () = $call; return Ok(()); }
+            { let () = $call; return; }
         };
     }
 
@@ -616,7 +601,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
     }
 
     let out_opnd = match insn {
-        Insn::Comment { .. } => return Ok(()), // comment instruction, no code generation
+        Insn::Comment { .. } => return, // comment instruction, no code generation
         &Insn::Const { val: Const::Value(val) } => gen_const_value(val),
         &Insn::Const { val: Const::CPtr(val) } => gen_const_cptr(val),
         &Insn::Const { val: Const::CInt64(val) } => gen_const_long(val),
@@ -657,8 +642,8 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::StringIntern { val, state } => gen_intern(asm, opnd!(val), &function.frame_state(*state)),
         Insn::ToRegexp { opt, values, state } => gen_toregexp(jit, asm, function, *opt, opnds!(values), &function.frame_state(*state)),
         Insn::Param => unreachable!("block.insns should not have Insn::Param"),
-        Insn::LoadArg { .. } => return Ok(()), // compiled in the LoadArg pre-pass above
-        Insn::Snapshot { .. } => return Ok(()), // we don't need to do anything for this instruction at the moment
+        Insn::LoadArg { .. } => return, // compiled in the LoadArg pre-pass above
+        Insn::Snapshot { .. } => return, // we don't need to do anything for this instruction at the moment
         &Insn::Send { cd, block: None, state, reason, .. } => gen_send_without_block(jit, asm, function, cd, &function.frame_state(state), reason),
         &Insn::Send { cd, block: Some(BlockHandler::BlockIseq(blockiseq)), state, reason, .. } => gen_send(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
         &Insn::Send { cd, block: Some(BlockHandler::BlockArg), state, reason, .. } => gen_send(jit, asm, function, cd, std::ptr::null(), &function.frame_state(state), reason),
@@ -809,7 +794,6 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
     // If the instruction has an output, remember it in jit.opnds
     jit.opnds[insn_id] = Some(out_opnd);
 
-    Ok(())
 }
 
 // Get EP at `level` from CFP
