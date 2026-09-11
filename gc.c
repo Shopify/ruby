@@ -3811,8 +3811,14 @@ rb_gc_zjit_new_obj_fastpath(size_t alloc_size, VALUE flags, VALUE klass, struct 
 const uintptr_t *
 rb_gc_zjit_incremental_marking_ptr(void)
 {
+#if defined(RUBY_ASAN_ENABLED)
+    (void)rb_gc_impl_zjit_incremental_marking_ptr;
+    return NULL;
+#else
     return rb_gc_impl_zjit_incremental_marking_ptr(rb_gc_get_objspace());
+#endif
 }
+
 
 void
 rb_gc_register_mark_object(VALUE obj)

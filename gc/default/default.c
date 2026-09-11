@@ -3268,8 +3268,14 @@ rb_gc_impl_zjit_new_obj_fastpath(void *objspace_ptr, size_t alloc_size, VALUE fl
 const uintptr_t *
 rb_gc_impl_zjit_incremental_marking_ptr(void *objspace_ptr)
 {
+#if USE_ZJIT && !RGENGC_CHECK_MODE
     return &zjit_during_incremental_marking;
+#else
+    (void)objspace_ptr;
+    return NULL;
+#endif
 }
+
 
 NOINLINE(static VALUE newobj_refill(rb_objspace_t *objspace, size_t heap_idx));
 

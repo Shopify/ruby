@@ -8240,6 +8240,66 @@ fn test_regression_gc_stress_with_lazy_block_code() {
     "#), @":ok");
 }
 
+#[test]
+fn test_write_barrier_inline_fastpath() {
+    crate::options::enable_zjit_stats();
+    set_call_threshold(1);
+    eval("nil"); // Initialize ZJITState before reading the counters.
+    assert_snapshot!(inspect(r#"
+        class WriteBarrierInlineTest
+          def initialize
+            @value = nil
+          end
+
+          def write(value)
+            @value = value
+          end
+        end
+
+        $write_barrier_old_receiver = WriteBarrierInlineTest.new
+        $write_barrier_old_value = Object.new
+        100.times { WriteBarrierInlineTest.new.write(Object.new) }
+        3.times { GC.start }
+        :ok
+    "#), @":ok");
+
+    let counters = || {
+        let counters = crate::state::ZJITState::get_counters();
+        (
+            counters.write_barrier_inline_skipped_count,
+            counters.write_barrier_call_count,
+        )
+    };
+
+    let before = counters();
+    eval("$write_barrier_old_receiver.write($write_barrier_old_value)");
+    let after = counters();
+    assert_eq!(
+        after,
+        (before.0 + 1, before.1),
+        "expected an old-to-old write to use the inline skip path"
+    );
+
+    let before = counters();
+    eval("$write_barrier_old_receiver.write(Object.new)");
+    let after = counters();
+    assert_eq!(
+        after,
+        (before.0, before.1 + 1),
+        "expected an old-to-young write to call the GC"
+    );
+
+    eval("$write_barrier_young_receiver = WriteBarrierInlineTest.new");
+    let before = counters();
+    eval("$write_barrier_young_receiver.write($write_barrier_old_value)");
+    let after = counters();
+    assert_eq!(
+        after,
+        (before.0 + 1, before.1),
+        "expected a young receiver to use the inline skip path"
+    );
+}
+
 // Hash recursion uses catch/throw internally. The target frame remains in JIT
 // code after the caught throw, so longjmp must not materialize and detach it
 // before a callee side exit uses its updated PC and stack map.

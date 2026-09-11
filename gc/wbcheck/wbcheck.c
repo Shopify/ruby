@@ -505,6 +505,13 @@ rb_gc_impl_zjit_new_obj_fastpath(void *objspace_ptr, size_t alloc_size, VALUE fl
     return false;
 }
 
+const uintptr_t *
+rb_gc_impl_zjit_incremental_marking_ptr(void *objspace_ptr)
+{
+    (void)objspace_ptr;
+    return NULL;
+}
+
 void
 rb_gc_impl_set_params(void *objspace_ptr)
 {
