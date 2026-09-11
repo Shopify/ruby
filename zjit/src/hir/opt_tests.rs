@@ -27,6 +27,31 @@ mod hir_opt_tests {
     }
 
     #[test]
+    fn test_yield_without_profile_uses_runtime_iseq_dispatch() {
+        eval("
+            def test
+              yield 1
+            end
+        ");
+        assert_snapshot!(hir_string("test"), @"
+        fn test@<compiled>:3:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          Jump bb3(v1)
+        bb2():
+          EntryPoint JIT(0)
+          v4:BasicObject = LoadArg :self@0
+          Jump bb3(v4)
+        bb3(v6:BasicObject):
+          v10:Fixnum[1] = Const Value(1)
+          v12:BasicObject = InvokeBlockIseqRuntime level:0 v10
+          CheckInterrupts
+          Return v12
+        ");
+    }
+
+    #[test]
     fn test_fold_iftrue_away() {
         eval("
             def test

@@ -700,6 +700,65 @@ fn test_yield_megamorphic_mixed_block_handlers() {
 }
 
 #[test]
+fn test_yield_unprofiled_iseq_blocks_use_runtime_fastpath() {
+    rb_zjit_prepare_options();
+    let old_call_threshold = unsafe { crate::options::rb_zjit_call_threshold };
+    let old_stats = get_option!(stats);
+    set_call_threshold(1);
+    unsafe { crate::options::OPTIONS.as_mut().unwrap().stats = true; }
+
+    eval("
+        def yield0 = yield
+        def yield1 = yield(1)
+        def yield2 = yield(1, 2)
+        def zero = yield0 { 10 }
+        def one = yield1 { |x| x + 1 }
+        def two = yield2 { |x, y| x + y }
+        zero; one; two
+    ");
+
+    let counters = crate::state::ZJITState::get_counters();
+    let fastpath_count = counters.invokeblock_iseq_runtime_fastpath_count;
+    let fallback_count = counters.invokeblock_iseq_runtime_fallback_count;
+    assert_snapshot!(assert_compiles_allowing_exits("[zero, one, two]"), @"[10, 2, 3]");
+    assert!(counters.invokeblock_iseq_runtime_fastpath_count > fastpath_count,
+        "expected an unprofiled ISEQ block yield to use the runtime fast path");
+    assert_eq!(counters.invokeblock_iseq_runtime_fallback_count, fallback_count,
+        "expected compiled matching ISEQ blocks to avoid the VM yield fallback");
+
+    unsafe { crate::options::OPTIONS.as_mut().unwrap().stats = old_stats; }
+    set_call_threshold(old_call_threshold);
+}
+
+#[test]
+fn test_yield_runtime_iseq_dispatch_falls_back_for_complex_blocks() {
+    set_call_threshold(1);
+    eval("
+        def yield_one = yield([1, 2])
+        def yield_two = yield(1, 2)
+        def mismatch = yield_two { |a| a }
+        def destructure = yield_one { |a, b| a + b }
+        def optional = yield_one { |a = 5| a }
+        PROC_BLOCK = proc { |x| x * 2 }
+        LAMBDA_BLOCK = ->(x) { x * 2 }
+        def via_proc = yield_one(&PROC_BLOCK)
+        def via_lambda = yield_two(&LAMBDA_BLOCK)
+        def breaking = yield_one { break 4 }
+        mismatch; destructure; optional; via_proc
+        begin via_lambda; rescue ArgumentError; :arity end
+        breaking
+    ");
+    assert_snapshot!(assert_compiles_allowing_exits("[
+        mismatch,
+        destructure,
+        optional,
+        via_proc,
+        begin via_lambda; rescue ArgumentError; :arity end,
+        breaking,
+    ]"), @"[1, 3, [1, 2], [1, 2, 1, 2], :arity, 4]");
+}
+
+#[test]
 fn test_yield_inline_invocation_with_args() {
     // Plain yield with two args to a matching-arity block inlines and returns correctly.
     set_call_threshold(2);
