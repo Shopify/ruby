@@ -91,10 +91,15 @@ pub extern "C" fn incr_iseq_counter(idx: usize) {
 }
 
 /// YJIT exit counts for each instruction type.
-/// Note that `VM_INSTRUCTION_SIZE` is an upper bound and the actual number
-/// of VM opcodes may be different in the build. See [`rb_vm_instruction_size()`]
-const VM_INSTRUCTION_SIZE_USIZE: usize = VM_INSTRUCTION_SIZE as usize;
-static mut EXIT_OP_COUNT: [u64; VM_INSTRUCTION_SIZE_USIZE] = [0; VM_INSTRUCTION_SIZE_USIZE];
+///
+/// The instruction count depends on the enabled JITs. Initialize this table
+/// after CRuby generates the final instruction set.
+static mut EXIT_OP_COUNT: Option<Vec<u64>> = None;
+
+/// Allocate exit counters for every instruction in this Ruby build.
+pub fn init_exit_op_counts() {
+    unsafe { EXIT_OP_COUNT = Some(vec![0; rb_vm_instruction_size() as usize]); }
+}
 
 /// Global state needed for collecting backtraces of exits
 pub struct YjitExitLocations {
@@ -817,10 +822,11 @@ fn rb_yjit_gen_stats_dict(key: VALUE) -> VALUE {
         // For each entry in exit_op_count, add a stats entry with key "exit_INSTRUCTION_NAME"
         // and the value is the count of side exits for that instruction.
         use crate::utils::IntoUsize;
+        let exit_op_count = EXIT_OP_COUNT.as_ref().expect("exit op counts initialized with YJIT");
         for op_idx in 0..rb_vm_instruction_size().as_usize() {
             let op_name = insn_name(op_idx);
             let key_string = "exit_".to_owned() + &op_name;
-            let count = EXIT_OP_COUNT[op_idx];
+            let count = exit_op_count[op_idx];
             side_exits += count;
             set_stat_usize!(hash, &key_string, count as usize);
         }
@@ -1030,7 +1036,9 @@ pub extern "C" fn rb_yjit_record_exit_stack(exit_pc: *const VALUE)
 #[no_mangle]
 pub extern "C" fn rb_yjit_reset_stats_bang(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
     unsafe {
-        EXIT_OP_COUNT = [0; VM_INSTRUCTION_SIZE_USIZE];
+        if let Some(exit_op_count) = EXIT_OP_COUNT.as_mut() {
+            exit_op_count.fill(0);
+        }
         COUNTERS = Counters::default();
     }
 
@@ -1055,7 +1063,7 @@ pub extern "C" fn rb_yjit_count_side_exit_op(exit_pc: *const VALUE) -> *const VA
         let opcode = rb_vm_insn_addr2opcode((*exit_pc).as_ptr());
 
         // Increment the exit op count for this opcode
-        EXIT_OP_COUNT[opcode as usize] += 1;
+        EXIT_OP_COUNT.as_mut().expect("exit op counts initialized with YJIT")[opcode as usize] += 1;
     };
 
     // This function must return exit_pc!

@@ -172,6 +172,15 @@ fn loop_osr_allowed(iseq: IseqPtr) -> bool {
 fn profile_insn(bare_opcode: ruby_vminsn_type, ec: EcPtr) -> rb_jit_func_t {
     let profiler = Profiler::new(ec);
     let loop_target = taken_loop_target(bare_opcode, &profiler);
+
+    // The common hot-backedge path must only look up the entry. Recompiling an
+    // ISEQ that already has this entry creates needless compiler work.
+    if let Some(loop_target) = loop_target {
+        if let Some(entry) = osr_entry(profiler.iseq, loop_target) {
+            return Some(entry);
+        }
+    }
+
     let compile_osr = {
         let payload = get_or_create_iseq_payload(profiler.iseq);
         if let Some(loop_target) = loop_target {

@@ -3,9 +3,7 @@ use crate::core::*;
 use crate::cruby::*;
 use crate::invariants::*;
 use crate::options::*;
-use crate::stats::YjitExitLocations;
-use crate::stats::incr_counter;
-use crate::stats::with_compile_time;
+use crate::stats::{incr_counter, init_exit_op_counts, with_compile_time, YjitExitLocations};
 
 use std::os::raw::{c_char, c_int};
 use std::time::Instant;
@@ -87,6 +85,7 @@ fn yjit_init() {
     let result = std::panic::catch_unwind(|| {
         Invariants::init();
         CodegenGlobals::init();
+        init_exit_op_counts();
         YjitExitLocations::init();
         ids::init();
 
