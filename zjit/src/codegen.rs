@@ -1423,35 +1423,82 @@ fn gen_store_field(asm: &mut Assembler, recv: Opnd, id: FieldName, offset: i32, 
 }
 
 fn gen_write_barrier(jit: &mut JITState, asm: &mut Assembler, recv: Opnd, val: Opnd, val_type: Type) {
-    // See RB_OBJ_WRITE/rb_obj_write: it's just assignment and rb_obj_written().
-    // rb_obj_written() does: if (!RB_SPECIAL_CONST_P(val)) { rb_gc_writebarrier(recv, val); }
-    if !val_type.is_immediate() {
-        asm_comment!(asm, "Write barrier");
-        let recv = asm.load_mem(recv);
-
-        // Create a result block that all paths converge to
-        let hir_block_id = asm.current_block().hir_block_id;
-        let rpo_idx = asm.current_block().rpo_index;
-        let result_block = asm.new_block(hir_block_id, false, rpo_idx);
-        let result_edge = Target::Block(Box::new(lir::BranchEdge { target: result_block, args: vec![] }));
-
-        // If non-false immediate, don't fire write barrier
-        asm.test(val, Opnd::UImm(RUBY_IMMEDIATE_MASK as u64));
-        asm.jnz(jit, result_edge.clone());
-
-        // If false, don't fire write barrier
-        asm.cmp(val, Qfalse.into());
-        asm.je(jit, result_edge.clone());
-
-        // Heap object; fire the write barrier
-        asm_ccall!(asm, rb_gc_writebarrier, recv, val);
-        asm.jmp(result_edge);
-
-        // Join block
-        asm.set_current_block(result_block);
-        let label = jit.get_label(asm, result_block, hir_block_id);
-        asm.write_label(label);
+    // See RB_OBJ_WRITE/rb_obj_write: it is assignment and rb_obj_written().
+    // rb_obj_written() calls rb_gc_writebarrier() only for heap values.
+    if val_type.is_immediate() {
+        return;
     }
+
+    asm_comment!(asm, "Write barrier");
+    let recv = asm.load_mem(recv);
+
+    // Create blocks for the two observable paths and their join.
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+    let immediate_skip_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let inline_skip_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let call_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let immediate_skip_edge = Target::Block(Box::new(lir::BranchEdge { target: immediate_skip_block, args: vec![] }));
+    let inline_skip_edge = Target::Block(Box::new(lir::BranchEdge { target: inline_skip_block, args: vec![] }));
+    let call_edge = Target::Block(Box::new(lir::BranchEdge { target: call_block, args: vec![] }));
+    let result_edge = Target::Block(Box::new(lir::BranchEdge { target: result_block, args: vec![] }));
+
+    // Do not read RBasic.flags until val is known to be a heap object.
+    asm.test(val, Opnd::UImm(RUBY_IMMEDIATE_MASK as u64));
+    asm.jnz(jit, immediate_skip_edge.clone());
+    asm.cmp(val, Qfalse.into());
+    asm.je(jit, immediate_skip_edge);
+    let val = asm.load_mem(val);
+
+    if let Some((gc_flags_offset, incremental_marking_mask)) = gc_fastpath::default_write_barrier_fastpath() {
+        // Incremental marking needs the full tri-color barrier. This flag is local to
+        // the current Ractor's objspace, so do not use the compiler's objspace.
+        let thread = asm.load(Opnd::mem(64, EC, RUBY_OFFSET_EC_THREAD_PTR as i32));
+        let ractor = asm.load(Opnd::mem(64, thread, RUBY_OFFSET_THREAD_RACTOR as i32));
+        let ractor_objspace_offset = unsafe { rb_zjit_runtime_offsets.ractor_objspace };
+        let objspace = asm.load(Opnd::mem(64, ractor, ractor_objspace_offset));
+        asm.test(Opnd::mem(32, objspace, gc_flags_offset), Opnd::UImm(incremental_marking_mask));
+        asm.jnz(jit, call_edge.clone());
+
+        // Shareable objects can belong to another objspace. Their barrier records
+        // shareable-to-unshareable edges, and their promoted bits are not safe here.
+        let recv_flags = asm.load(Opnd::mem(VALUE_BITS, recv, RUBY_OFFSET_RBASIC_FLAGS));
+        asm.test(recv_flags, Opnd::UImm(RUBY_FL_SHAREABLE as u64));
+        asm.jnz(jit, call_edge.clone());
+        asm.test(recv_flags, Opnd::UImm(RUBY_FL_PROMOTED as u64));
+        asm.jz(jit, inline_skip_edge.clone());
+
+        let val_flags = asm.load(Opnd::mem(VALUE_BITS, val, RUBY_OFFSET_RBASIC_FLAGS));
+        asm.test(val_flags, Opnd::UImm(RUBY_FL_SHAREABLE as u64));
+        asm.jnz(jit, call_edge.clone());
+        asm.test(val_flags, Opnd::UImm(RUBY_FL_PROMOTED as u64));
+        asm.jnz(jit, inline_skip_edge);
+    }
+
+    asm.jmp(call_edge);
+
+    asm.set_current_block(immediate_skip_block);
+    let label = jit.get_label(asm, immediate_skip_block, hir_block_id);
+    asm.write_label(label);
+    asm.jmp(result_edge.clone());
+
+    asm.set_current_block(inline_skip_block);
+    let label = jit.get_label(asm, inline_skip_block, hir_block_id);
+    asm.write_label(label);
+    gen_incr_counter(asm, Counter::write_barrier_inline_skipped_count);
+    asm.jmp(result_edge.clone());
+
+    asm.set_current_block(call_block);
+    let label = jit.get_label(asm, call_block, hir_block_id);
+    asm.write_label(label);
+    gen_incr_counter(asm, Counter::write_barrier_call_count);
+    asm_ccall!(asm, rb_gc_writebarrier, recv, val);
+    asm.jmp(result_edge);
+
+    asm.set_current_block(result_block);
+    let label = jit.get_label(asm, result_block, hir_block_id);
+    asm.write_label(label);
 }
 
 /// Compile an interpreter entry block to be inserted into an ISEQ

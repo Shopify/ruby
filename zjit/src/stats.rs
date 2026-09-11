@@ -468,6 +468,10 @@ make_counters! {
     load_field_count,
     store_field_count,
 
+    // Write-barrier paths selected by generated code.
+    write_barrier_inline_skipped_count,
+    write_barrier_call_count,
+
     invokeblock_handler_monomorphic_iseq,
     invokeblock_handler_monomorphic_ifunc,
     invokeblock_handler_monomorphic_other,

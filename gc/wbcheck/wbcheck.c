@@ -505,6 +505,15 @@ rb_gc_impl_zjit_new_obj_fastpath(void *objspace_ptr, size_t alloc_size, VALUE fl
     return false;
 }
 
+bool
+rb_gc_impl_zjit_write_barrier_fastpath(void *objspace_ptr, size_t *flags_offset, size_t *incremental_marking_mask)
+{
+    (void)objspace_ptr;
+    (void)flags_offset;
+    (void)incremental_marking_mask;
+    return false;
+}
+
 void
 rb_gc_impl_set_params(void *objspace_ptr)
 {

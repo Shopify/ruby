@@ -40,7 +40,19 @@ unsafe extern "C" {
         fastpath: *mut RbGcZjitFastpath,
     ) -> bool;
 
+    fn rb_gc_zjit_write_barrier_fastpath(flags_offset: *mut usize, incremental_marking_mask: *mut usize) -> bool;
+
     fn rb_zjit_newobj_hook_enabled_p() -> bool;
+}
+
+pub(super) fn default_write_barrier_fastpath() -> Option<(i32, u64)> {
+    let mut flags_offset = 0;
+    let mut incremental_marking_mask = 0;
+    if unsafe { rb_gc_zjit_write_barrier_fastpath(&mut flags_offset, &mut incremental_marking_mask) } {
+        i32::try_from(flags_offset).ok().map(|flags_offset| (flags_offset, incremental_marking_mask as u64))
+    } else {
+        None
+    }
 }
 
 enum PreparedNewObjFastpath {

@@ -89,6 +89,10 @@ GC_IMPL_FN VALUE rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE k
  * generated instruction sequence; see zjit/src/gc_fastpath.rs.
  */
 GC_IMPL_FN bool rb_gc_impl_zjit_new_obj_fastpath(void *objspace_ptr, size_t alloc_size, VALUE flags, VALUE klass, struct rb_gc_zjit_fastpath *fastpath);
+/* Return metadata for ZJIT's default-GC write-barrier fast path. The GC owns
+ * the layout behind the returned offsets and mask. Returns false when ZJIT must
+ * use the regular write barrier. */
+GC_IMPL_FN bool rb_gc_impl_zjit_write_barrier_fastpath(void *objspace_ptr, size_t *flags_offset, size_t *incremental_marking_mask);
 GC_IMPL_FN size_t rb_gc_impl_obj_slot_size(VALUE obj);
 GC_IMPL_FN size_t rb_gc_impl_size_slot_size(void *objspace_ptr, size_t size);
 GC_IMPL_FN bool rb_gc_impl_size_allocatable_p(size_t size);

@@ -8268,6 +8268,35 @@ fn test_regression_gc_stress_with_lazy_block_code() {
     "#), @":ok");
 }
 
+#[test]
+fn test_write_barrier_inline_fastpath() {
+    crate::options::enable_zjit_stats();
+    set_call_threshold(1);
+    eval("nil"); // Initialize ZJITState before reading the counters.
+    let skipped_before = crate::state::ZJITState::get_counters().write_barrier_inline_skipped_count;
+    let called_before = crate::state::ZJITState::get_counters().write_barrier_call_count;
+
+    assert_snapshot!(inspect(r#"
+        class WriteBarrierInlineTest
+          def write(value)
+            @value = value
+          end
+        end
+
+        receiver = WriteBarrierInlineTest.new
+        100.times { receiver.write(Object.new) }
+        old_receiver = WriteBarrierInlineTest.new
+        3.times { GC.start }
+        100.times { old_receiver.write(Object.new) }
+        :ok
+    "#), @":ok");
+
+    let skipped_after = crate::state::ZJITState::get_counters().write_barrier_inline_skipped_count;
+    let called_after = crate::state::ZJITState::get_counters().write_barrier_call_count;
+    assert!(skipped_after > skipped_before, "expected a generated write barrier to use the inline skip path");
+    assert!(called_after > called_before, "expected an old-to-young write barrier to call the GC");
+}
+
 // Hash recursion uses catch/throw internally. The target frame remains in JIT
 // code after the caught throw, so longjmp must not materialize and detach it
 // before a callee side exit uses its updated PC and stack map.
