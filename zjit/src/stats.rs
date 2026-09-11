@@ -221,6 +221,7 @@ make_counters! {
         exit_guard_super_method_entry,
         exit_patchpoint_bop_redefined,
         exit_patchpoint_method_redefined,
+        exit_patchpoint_callee_return_type,
         exit_patchpoint_stable_constant_names,
         exit_patchpoint_no_tracepoint,
         exit_patchpoint_no_newobj_hook,
@@ -463,6 +464,8 @@ make_counters! {
 
     // The number of times we ran a dynamic check
     guard_type_count,
+    // The number of direct ISEQ calls with a specialized return type.
+    send_direct_return_type_known_count,
     guard_shape_count,
 
     load_field_count,
@@ -639,6 +642,8 @@ pub fn side_exit_counter(reason: crate::hir::SideExitReason) -> Counter {
                                       => exit_patchpoint_bop_redefined,
         PatchPoint(Invariant::MethodRedefined { .. })
                                       => exit_patchpoint_method_redefined,
+        PatchPoint(Invariant::CalleeReturnType(_))
+                                      => exit_patchpoint_callee_return_type,
         PatchPoint(Invariant::StableConstantNames { .. })
                                       => exit_patchpoint_stable_constant_names,
         PatchPoint(Invariant::NoTracePoint)

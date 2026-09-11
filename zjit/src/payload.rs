@@ -1,9 +1,9 @@
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use crate::codegen::IseqCallRef;
+use crate::hir_type::Type;
 use crate::stats::CompileError;
-use crate::{cruby::*, profile::IseqProfile, virtualmem::CodePtr};
-use crate::options::get_option;
+use crate::{cruby::*, options::get_option, profile::IseqProfile, virtualmem::CodePtr};
 
 pub use crate::jit_frame::JITFrame;
 
@@ -55,6 +55,11 @@ pub struct IseqVersion {
     /// Compilation status of the ISEQ. It has the JIT code address of the first block if Compiled.
     pub status: IseqStatus,
 
+    /// Union of every optimized HIR return value type for this version.
+    ///
+    /// The type has no object specialization. It can therefore outlive a moving GC cycle.
+    pub return_type: Option<Type>,
+
     /// GC offsets of the JIT code. These are the addresses of objects that need to be marked.
     pub gc_offsets: Vec<CodePtr>,
 
@@ -63,6 +68,9 @@ pub struct IseqVersion {
 
     /// JIT-to-JIT calls to the ISEQ. The IseqPayload's ISEQ is the callee of it.
     pub incoming: Vec<IseqCallRef>,
+
+    /// Caller versions that use this version's published return type.
+    pub return_type_dependents: Vec<IseqVersionRef>,
 }
 
 /// We use a raw pointer instead of Rc to save space for refcount
@@ -81,7 +89,9 @@ impl IseqVersion {
             status: IseqStatus::NotCompiled,
             gc_offsets: vec![],
             outgoing: vec![],
+            return_type: None,
             incoming: vec![],
+            return_type_dependents: vec![],
         };
         let version_ptr = Box::into_raw(Box::new(version));
         NonNull::new(version_ptr).expect("no null from Box")

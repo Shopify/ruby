@@ -4230,7 +4230,7 @@ mod hir_opt_tests {
           v26:CInt64 = LoadField v25, :VM_ENV_DATA_INDEX_SPECVAL@0x1058
           v27:CInt64[-4] = Const CInt64(-4)
           v28:CInt64 = IntAnd v26, v27
-          v29:BasicObject = InvokeBlockIseqDirect (0x1060), v28
+          v29:Fixnum = InvokeBlockIseqDirect (0x1060), v28
           CheckInterrupts
           PopInlineFrame
           Return v29
@@ -4269,13 +4269,12 @@ mod hir_opt_tests {
           v34:CInt64 = LoadField v33, :VM_ENV_DATA_INDEX_SPECVAL@0x1058
           v35:CInt64[-4] = Const CInt64(-4)
           v36:CInt64 = IntAnd v34, v35
-          v37:BasicObject = InvokeBlockIseqDirect (0x1060), v36, v29, v31
+          v37:Fixnum = InvokeBlockIseqDirect (0x1060), v36, v29, v31
           PatchPoint MethodRedefined(Integer@0x1080, +@0x1088, cme:0x1090)
-          v52:Fixnum = GuardType v37, Fixnum
-          v53:Fixnum = FixnumAdd v11, v52
+          v52:Fixnum = FixnumAdd v11, v37
           CheckInterrupts
           PopInlineFrame
-          Return v53
+          Return v52
         ");
     }
 
@@ -4319,7 +4318,7 @@ mod hir_opt_tests {
           v32:CInt64 = IntAnd v27, v31
           v33:CPtr = LoadField v32, :code_iseq@0x1001
           v34:CPtr[CPtr(0x1002)] = GuardBitEquals v33, CPtr(0x1002) recompile
-          v35:BasicObject = InvokeBlockIseqDirect (0x1002), v32, v10, v12, v14, v16, v18, v20, v22, v24
+          v35:Fixnum = InvokeBlockIseqDirect (0x1002), v32, v10, v12, v14, v16, v18, v20, v22, v24
           CheckInterrupts
           Return v35
         ");
@@ -4362,7 +4361,7 @@ mod hir_opt_tests {
           v42:CInt64 = LoadField v41, :VM_ENV_DATA_INDEX_SPECVAL@0x1058
           v43:CInt64[-4] = Const CInt64(-4)
           v44:CInt64 = IntAnd v42, v43
-          v45:BasicObject = InvokeBlockIseqDirect (0x1060), v44, v25, v27, v29, v31, v33, v35, v37, v39
+          v45:Fixnum = InvokeBlockIseqDirect (0x1060), v44, v25, v27, v29, v31, v33, v35, v37, v39
           CheckInterrupts
           PopInlineFrame
           Return v45
@@ -4444,14 +4443,14 @@ mod hir_opt_tests {
           v24:CBool = IsBitEqual v22, v23
           CondBranch v24, bb7(), bb8()
         bb7():
-          v26:BasicObject = InvokeBlockIseqDirect (0x1002), v21, v10
+          v26:Fixnum = InvokeBlockIseqDirect (0x1002), v21, v10
           Jump bb4(v26)
         bb8():
           v28:CPtr[CPtr(0x1003)] = Const CPtr(0x1003)
           v29:CBool = IsBitEqual v22, v28
           CondBranch v29, bb9(), bb10()
         bb9():
-          v31:BasicObject = InvokeBlockIseqDirect (0x1003), v21, v10
+          v31:Fixnum = InvokeBlockIseqDirect (0x1003), v21, v10
           Jump bb4(v31)
         bb10():
           Jump bb6()
@@ -4509,14 +4508,14 @@ mod hir_opt_tests {
           v24:CBool = IsBitEqual v22, v23
           CondBranch v24, bb7(), bb8()
         bb7():
-          v26:BasicObject = InvokeBlockIseqDirect (0x1002), v21, v10
+          v26:Fixnum = InvokeBlockIseqDirect (0x1002), v21, v10
           Jump bb4(v26)
         bb8():
           v28:CPtr[CPtr(0x1003)] = Const CPtr(0x1003)
           v29:CBool = IsBitEqual v22, v28
           CondBranch v29, bb9(), bb10()
         bb9():
-          v31:BasicObject = InvokeBlockIseqDirect (0x1003), v21, v10
+          v31:Fixnum = InvokeBlockIseqDirect (0x1003), v21, v10
           Jump bb4(v31)
         bb10():
           Jump bb6()
@@ -4573,14 +4572,14 @@ mod hir_opt_tests {
           v24:CBool = IsBitEqual v22, v23
           CondBranch v24, bb7(), bb8()
         bb7():
-          v26:BasicObject = InvokeBlockIseqDirect (0x1002), v21, v10
+          v26:Fixnum = InvokeBlockIseqDirect (0x1002), v21, v10
           Jump bb4(v26)
         bb8():
           v28:CPtr[CPtr(0x1003)] = Const CPtr(0x1003)
           v29:CBool = IsBitEqual v22, v28
           CondBranch v29, bb9(), bb10()
         bb9():
-          v31:BasicObject = InvokeBlockIseqDirect (0x1003), v21, v10
+          v31:Fixnum = InvokeBlockIseqDirect (0x1003), v21, v10
           Jump bb4(v31)
         bb10():
           Jump bb6()
@@ -4638,7 +4637,7 @@ mod hir_opt_tests {
           v24:CBool = IsBitEqual v22, v23
           CondBranch v24, bb7(), bb8()
         bb7():
-          v26:BasicObject = InvokeBlockIseqDirect (0x1012), v21, v10
+          v26:Fixnum = InvokeBlockIseqDirect (0x1012), v21, v10
           Jump bb4(v26)
         bb8():
           Jump bb6()
@@ -4840,7 +4839,7 @@ mod hir_opt_tests {
           v39:CInt64 = LoadField v38, :VM_ENV_DATA_INDEX_SPECVAL@0x1090
           v40:CInt64[-4] = Const CInt64(-4)
           v41:CInt64 = IntAnd v39, v40
-          v42:BasicObject = InvokeBlockIseqDirect (0x1098), v41, v56
+          v42:Fixnum = InvokeBlockIseqDirect (0x1098), v41, v56
           CheckInterrupts
           PopInlineFrame
           Return v42
@@ -5355,13 +5354,13 @@ mod hir_opt_tests {
           v11:Fixnum[8] = Const Value(8)
           PatchPoint MethodRedefined(Object@0x1000, target@0x1008, cme:0x1010)
           v52:ObjectSubclass[class_exact*:Object@VALUE(0x1000)] = GuardType v6, ObjectSubclass[class_exact*:Object@VALUE(0x1000)] recompile
-          v53:BasicObject = SendDirect v52, 0x0, :target (0x1038), v11
+          v53:ArrayExact = SendDirect v52, 0x0, :target (0x1038), v11
           v16:Fixnum[10] = Const Value(10)
           v18:Fixnum[20] = Const Value(20)
           v20:Fixnum[30] = Const Value(30)
           v22:Fixnum[8] = Const Value(8)
           PatchPoint MethodRedefined(Object@0x1000, target@0x1008, cme:0x1010)
-          v56:BasicObject = SendDirect v52, 0x0, :target (0x1038), jit_entry_idx=3, v16, v18, v20, v22
+          v56:ArrayExact = SendDirect v52, 0x0, :target (0x1038), jit_entry_idx=3, v16, v18, v20, v22
           v27:Fixnum[10] = Const Value(10)
           v29:Fixnum[20] = Const Value(20)
           v31:Fixnum[30] = Const Value(30)
@@ -5371,7 +5370,7 @@ mod hir_opt_tests {
           v39:Fixnum[70] = Const Value(70)
           v41:Fixnum[80] = Const Value(80)
           PatchPoint MethodRedefined(Object@0x1000, target@0x1008, cme:0x1010)
-          v59:BasicObject = SendDirect v52, 0x0, :target (0x1038), jit_entry_idx=7, v27, v29, v31, v33, v35, v37, v39, v41
+          v59:ArrayExact = SendDirect v52, 0x0, :target (0x1038), jit_entry_idx=7, v27, v29, v31, v33, v35, v37, v39, v41
           v45:ArrayExact = NewArray v53, v56, v59
           CheckInterrupts
           Return v45
@@ -11316,7 +11315,7 @@ mod hir_opt_tests {
           v28:CInt64 = LoadField v27, :VM_ENV_DATA_INDEX_SPECVAL@0x1058
           v29:CInt64[-4] = Const CInt64(-4)
           v30:CInt64 = IntAnd v28, v29
-          v31:BasicObject = InvokeBlockIseqDirect (0x1060), v30, v25
+          v31:Fixnum = InvokeBlockIseqDirect (0x1060), v30, v25
           CheckInterrupts
           PopInlineFrame
           Return v31
@@ -15169,7 +15168,7 @@ mod hir_opt_tests {
           v52:CInt64 = LoadField v51, :VM_ENV_DATA_INDEX_SPECVAL@0x1098
           v53:CInt64[-4] = Const CInt64(-4)
           v54:CInt64 = IntAnd v52, v53
-          v55:BasicObject = InvokeBlockIseqDirect (0x10a0), v54, v69
+          v55:Fixnum = InvokeBlockIseqDirect (0x10a0), v54, v69
           CheckInterrupts
           PopInlineFrame
           PatchPoint NoEPEscape(test)
@@ -21034,6 +21033,96 @@ mod hir_opt_tests {
         result
     }
 
+    /// Compile without inlining so direct-call result types stay visible in HIR.
+    #[track_caller]
+    fn hir_string_without_inlining(method: &str) -> String {
+        let old_threshold = get_option!(inline_threshold);
+        unsafe { OPTIONS.as_mut().unwrap().inline_threshold = 0; }
+        let result = hir_string(method);
+        unsafe { OPTIONS.as_mut().unwrap().inline_threshold = old_threshold; }
+        result
+    }
+
+    #[test]
+    fn test_send_direct_uses_callee_return_type() {
+        enable_zjit_stats();
+        eval("
+            def return_type_fib(n)
+              return n if n < 2
+              return_type_fib(n - 1) + return_type_fib(n - 2)
+            end
+            return_type_fib(3)
+            return_type_fib(3)
+        ");
+        assert_snapshot!(hir_string_without_inlining("return_type_fib"), @"
+        fn return_type_fib@<compiled>:3:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          v2:CPtr = LoadSP
+          v3:BasicObject = LoadField v2, :n@0x1000
+          IncrCounterPtr
+          Jump bb3(v1, v3)
+        bb2():
+          EntryPoint JIT(0)
+          v7:BasicObject = LoadArg :self@0
+          v8:BasicObject = LoadArg :n@1
+          IncrCounterPtr
+          Jump bb3(v7, v8)
+        bb3(v11:BasicObject, v12:BasicObject):
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v19:Fixnum[2] = Const Value(2)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1008, <@0x1010, cme:0x1018)
+          v83:Fixnum = GuardType v12, Fixnum recompile
+          v84:BoolExact = FixnumLt v83, v19
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          v26:CBool = Test v84
+          CondBranch v26, bb5(), bb4()
+        bb5():
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          Return v83
+        bb4():
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v47:Fixnum[1] = Const Value(1)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1008, -@0x1040, cme:0x1048)
+          v89:Fixnum = FixnumSub v83, v47
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Object@0x1070, return_type_fib@0x1078, cme:0x1080)
+          v92:ObjectSubclass[class_exact*:Object@VALUE(0x1070)] = GuardType v11, ObjectSubclass[class_exact*:Object@VALUE(0x1070)] recompile
+          IncrCounter send_direct_return_type_known_count
+          v94:Fixnum = SendDirect v92, 0x0, :return_type_fib (0x10a8), v89
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          PatchPoint NoEPEscape(return_type_fib)
+          IncrCounter zjit_insn_count
+          v63:Fixnum[2] = Const Value(2)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1008, -@0x1040, cme:0x1048)
+          v98:Fixnum = FixnumSub v83, v63
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Object@0x1070, return_type_fib@0x1078, cme:0x1080)
+          IncrCounter send_direct_return_type_known_count
+          v103:Fixnum = SendDirect v92, 0x0, :return_type_fib (0x10a8), v98
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1008, +@0x10c8, cme:0x10d0)
+          v108:Fixnum = FixnumAdd v94, v103
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          Return v108
+        ");
+    }
+
     #[test]
     fn test_inline_method_with_send() {
         // The callee-internal `x + x` Send gets specialized to FixnumAdd because the callee's
@@ -22245,7 +22334,7 @@ mod hir_opt_tests {
           v35:CInt64 = LoadField v34, :VM_ENV_DATA_INDEX_SPECVAL@0x1060
           v36:CInt64[-4] = Const CInt64(-4)
           v37:CInt64 = IntAnd v35, v36
-          v38:BasicObject = InvokeBlockIseqDirect (0x1068), v37, v10
+          v38:Fixnum = InvokeBlockIseqDirect (0x1068), v37, v10
           CheckInterrupts
           PopInlineFrame
           PatchPoint NoEPEscape(test)

@@ -2,7 +2,7 @@
 
 use std::{collections::{HashMap, HashSet}, mem};
 
-use crate::{backend::lir::{Assembler, asm_comment}, cruby::{ID, IseqPtr, RedefinitionFlag, VALUE, iseq_name, rb_callable_method_entry_t, rb_gc_location, ruby_basic_operators, src_loc, with_vm_lock}, hir::Invariant, options::debug, state::{ZJITState, zjit_enabled_p, trace_invalidation}, virtualmem::CodePtr};
+use crate::{asm::CodeBlock, backend::lir::{Assembler, asm_comment}, cruby::{ID, IseqPtr, RedefinitionFlag, VALUE, iseq_name, rb_callable_method_entry_t, rb_gc_location, ruby_basic_operators, src_loc, with_vm_lock}, hir::Invariant, options::debug, state::{ZJITState, zjit_enabled_p, trace_invalidation}, virtualmem::CodePtr};
 use crate::payload::{IseqVersionRef, get_or_create_iseq_payload};
 use crate::codegen::invalidate_iseq_version;
 use crate::cruby::{rb_iseq_reset_jit_func, rb_jit_iseq_ep_escape_recorded_p, rb_jit_iseq_mark_ep_escape_recorded};
@@ -73,6 +73,9 @@ pub struct Invariants {
     /// Map from ISEQ that's assumed to not escape EP to a set of patch points
     no_ep_escape_iseq_patch_points: HashMap<IseqPtr, HashSet<PatchPoint>>,
 
+    /// Map from callee ISEQ to direct callers that use its return-type summary.
+    callee_return_type_iseq_patch_points: HashMap<IseqPtr, HashSet<PatchPoint>>,
+
     /// Map from a class and its associated basic operator to a set of patch points
     bop_patch_points: HashMap<(RedefinitionFlag, ruby_basic_operators), HashSet<PatchPoint>>,
 
@@ -106,6 +109,7 @@ impl Invariants {
     /// Update object references in Invariants
     pub fn update_references(&mut self) {
         self.update_no_ep_escape_iseq_patch_points();
+        self.update_callee_return_type_iseq_patch_points();
         self.update_cme_patch_points();
         self.update_no_singleton_class_patch_points();
     }
@@ -118,6 +122,7 @@ impl Invariants {
         // generated code referencing the ISEQ are unreachable. We mark the ISEQs baked into
         // generated code.
         self.no_ep_escape_iseq_patch_points.remove(&iseq);
+        self.callee_return_type_iseq_patch_points.remove(&iseq);
     }
 
     /// Forget a CME when freeing it. See [Self::forget_iseq] for reasoning.
@@ -140,6 +145,18 @@ impl Invariants {
             })
             .collect();
         self.no_ep_escape_iseq_patch_points = updated;
+    }
+
+    /// Update ISEQ references in `callee_return_type_iseq_patch_points`.
+    fn update_callee_return_type_iseq_patch_points(&mut self) {
+        let updated = std::mem::take(&mut self.callee_return_type_iseq_patch_points)
+            .into_iter()
+            .map(|(iseq, patch_points)| {
+                let new_iseq = unsafe { rb_gc_location(iseq.into()) };
+                (new_iseq.as_iseq(), patch_points)
+            })
+            .collect();
+        self.callee_return_type_iseq_patch_points = updated;
     }
 
     fn update_cme_patch_points(&mut self) {
@@ -268,6 +285,30 @@ pub fn track_no_ep_escape_assumption(
         side_exit_ptr,
         version,
     ));
+}
+
+/// Track a direct caller that uses an ISEQ return-type summary.
+pub fn track_callee_return_type_assumption(
+    iseq: IseqPtr,
+    patch_point_ptr: CodePtr,
+    side_exit_ptr: CodePtr,
+    version: IseqVersionRef,
+) {
+    let invariants = ZJITState::get_invariants();
+    invariants.callee_return_type_iseq_patch_points.entry(iseq).or_default().insert(PatchPoint::new(
+        patch_point_ptr,
+        side_exit_ptr,
+        version,
+    ));
+}
+
+/// Invalidate every direct caller that uses `iseq`'s return-type summary.
+pub fn invalidate_callee_return_type_assumptions(cb: &mut CodeBlock, iseq: IseqPtr) {
+    let invariants = ZJITState::get_invariants();
+    if let Some(patch_points) = invariants.callee_return_type_iseq_patch_points.remove(&iseq) {
+        debug!("Callee return type invalidated: {}", iseq_name(iseq));
+        compile_patch_points!(cb, patch_points, CalleeReturnType, "Callee return type invalidated: {}", iseq_name(iseq));
+    }
 }
 
 /// Returns true if a given ISEQ has previously escaped environment pointer.

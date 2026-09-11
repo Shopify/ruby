@@ -5183,6 +5183,42 @@ fn test_method_call() {
 }
 
 #[test]
+fn test_callee_return_type_invalidation() {
+    with_inlining_threshold(0, || {
+
+        eval(r#"
+            def return_type_inner(_value) = 1
+            def return_type_callee(value) = return_type_inner(value)
+            def return_type_caller(value)
+              result = return_type_callee(value)
+              result.is_a?(Integer) ? result + 1 : result
+            end
+
+            return_type_inner(1)
+            return_type_inner(1)
+            return_type_inner(1)
+            return_type_callee(1)
+            return_type_callee(1)
+            return_type_callee(1)
+            return_type_caller(1)
+            return_type_caller(1)
+            return_type_caller(1)
+        "#);
+
+        let callee_iseq = get_method_iseq("self", "return_type_callee");
+        let caller_iseq = get_method_iseq("self", "return_type_caller");
+        let caller_version = *get_or_create_iseq_payload(caller_iseq).versions.last().unwrap();
+        assert!(matches!(unsafe { caller_version.as_ref() }.status, IseqStatus::Compiled(_)));
+
+        eval(r#"def return_type_inner(_value) = "changed""#);
+
+        assert!(unsafe { get_or_create_iseq_payload(callee_iseq).versions.last().unwrap().as_ref() }.is_invalidated());
+        assert!(unsafe { caller_version.as_ref() }.is_invalidated());
+        assert_snapshot!(assert_compiles_allowing_exits("[return_type_caller(1), return_type_caller(1)]"), @"[\"changed\", \"changed\"]");
+    });
+}
+
+#[test]
 fn test_polymorphic_iseq_dispatch_same_site() {
     assert_snapshot!(inspect("
         class A; def foo = 1; end

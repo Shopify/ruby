@@ -9,7 +9,7 @@ use crate::{
     cast::IntoUsize, codegen::max_iseq_versions, cruby::*, invariants::{self, iseq_seen_ep_escape}, json::Json, options::{DumpHIR, InlineDepth, debug, get_option}, payload::get_or_create_iseq_payload, profile::reset_profiles_remaining, state::{self, ZJITState},
 };
 use std::{
-    cell::RefCell, collections::{HashMap, HashSet, VecDeque}, ffi::{c_void, c_uint, c_int, CStr}, fmt::Display, ptr, slice::Iter,
+    cell::{Cell, RefCell}, collections::{HashMap, HashSet, VecDeque}, ffi::{c_void, c_uint, c_int, CStr}, fmt::Display, ptr, slice::Iter,
     sync::atomic::Ordering,
 };
 use crate::hir_type::{Type, types};
@@ -43,6 +43,14 @@ macro_rules! hir_comment {
 pub(crate) use hir_comment;
 use crate::options::INLINE_BUDGET_UNLIMITED;
 
+
+/// Limit return-type precompilation to small direct callees.
+const RETURN_TYPE_SUMMARY_MAX_ISEQ_SIZE: usize = 100;
+
+thread_local! {
+    /// Prevent recursive summary compilation for recursive and mutually recursive callees.
+    static RETURN_TYPE_SUMMARY_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
 /// An index of an [`Insn`] in a [`Function`]. This is a popular
 /// type since this effectively acts as a pointer to an [`Insn`].
 /// See also: [`Function::find`].
@@ -212,6 +220,9 @@ pub enum Invariant {
         /// The callable method entry that we want to track
         cme: *const rb_callable_method_entry_t,
     },
+    /// The optimized return type of this ISEQ is used by a direct caller.
+    /// Invalidated whenever this ISEQ version becomes invalid.
+    CalleeReturnType(IseqPtr),
     /// A list of constant expression path segments that must have not been written to for the
     /// following code to be valid.
     StableConstantNames {
@@ -368,6 +379,7 @@ impl<'a> std::fmt::Display for InvariantPrinter<'a> {
             Invariant::NoTracePoint => write!(f, "NoTracePoint"),
             Invariant::NoNewObjHook => write!(f, "NoNewObjHook"),
             Invariant::NoEPEscape(iseq) => write!(f, "NoEPEscape({})", &iseq_name(iseq)),
+            Invariant::CalleeReturnType(iseq) => write!(f, "CalleeReturnType({})", &iseq_name(iseq)),
             Invariant::SingleRactorMode => write!(f, "SingleRactorMode"),
             Invariant::NoSingletonClass { klass } => {
                 let class_name = get_class_name(klass);
@@ -965,6 +977,7 @@ pub struct SendDirectData {
     pub args: Vec<InsnId>,
     pub kw_bits: u32,
     pub jit_entry_idx: u16,
+    pub return_type: Type,
     pub block: Option<BlockHandler>,
     pub state: InsnId,
 }
@@ -1230,6 +1243,7 @@ pub enum Insn {
         captured: InsnId,
         args: Vec<InsnId>,
         state: InsnId,
+        return_type: Type,
     },
 
     /// Optimized ISEQ call
@@ -2852,6 +2866,10 @@ pub struct Function {
     /// not count Snapshot, PatchPoint, etc.
     /// Currently updated by `infer_types` as a heuristic but that is not a guarantee.
     num_instructions: usize,
+    /// Cached summaries for uncompiled direct callees in this function.
+    return_type_summaries: HashMap<IseqPtr, Option<Type>>,
+    /// Compiled direct callees whose summaries type this function.
+    return_type_callees: Vec<IseqPtr>,
 }
 
 /// The kind of a value an ISEQ returns
@@ -3112,6 +3130,8 @@ impl Function {
             param_types: vec![],
             profiles: None,
             num_instructions: 0,
+            return_type_summaries: HashMap::new(),
+            return_type_callees: vec![],
         }
     }
 
@@ -3203,7 +3223,8 @@ impl Function {
         let ep = self.get_ep(block, level);
         let block_handler = self.load_ep_env_field(block, ep, FieldName::VM_ENV_DATA_INDEX_SPECVAL, VM_ENV_DATA_INDEX_SPECVAL, types::CInt64);
         let captured = self.untag_block_handler(block, block_handler);
-        self.push_insn(block, Insn::InvokeBlockIseqDirect { iseq: block_iseq, captured, args, state })
+        let return_type = self.return_type_for_direct_iseq(block, block_iseq, state);
+        self.push_insn(block, Insn::InvokeBlockIseqDirect { iseq: block_iseq, captured, args, state, return_type })
     }
 
     /// Dispatch `yield` to the profiled ISEQ blocks.
@@ -3237,7 +3258,8 @@ impl Function {
             let captured_iseq = self.load_captured_code_iseq(block, captured);
             self.push_insn(block, Insn::GuardBitEquals { val: captured_iseq, expected: Const::CPtr(block_iseq as *const u8), reason: Box::new(SideExitReason::InvokeBlockIseqChanged), state, recompile: Some(Recompile) });
 
-            let result = self.push_insn(block, Insn::InvokeBlockIseqDirect { iseq: block_iseq, captured, args, state });
+            let return_type = self.return_type_for_direct_iseq(block, block_iseq, state);
+            let result = self.push_insn(block, Insn::InvokeBlockIseqDirect { iseq: block_iseq, captured, args, state, return_type });
             return (block, result);
         }
 
@@ -3269,7 +3291,8 @@ impl Function {
                 if_true: BranchEdge { target: direct_block, args: vec![] },
                 if_false: BranchEdge { target: miss_block, args: vec![] },
             });
-            let direct_result = self.push_insn(direct_block, Insn::InvokeBlockIseqDirect { iseq: block_iseq, captured, args: args.clone(), state });
+            let return_type = self.return_type_for_direct_iseq(direct_block, block_iseq, state);
+            let direct_result = self.push_insn(direct_block, Insn::InvokeBlockIseqDirect { iseq: block_iseq, captured, args: args.clone(), state, return_type });
             self.push_insn(direct_block, Insn::Jump(BranchEdge { target: join_block, args: vec![direct_result] }));
             compare_block = miss_block;
         }
@@ -3473,6 +3496,87 @@ impl Function {
         if get_option!(stats) {
             self.push_insn(block, Insn::IncrCounter(counter));
         }
+    }
+
+    /// Return the union of all reachable optimized HIR return value types.
+    ///
+    /// Return values are Ruby VALUEs. Remove object specialization before storage because
+    /// a version outlives a moving GC cycle.
+    pub fn return_type(&self) -> Option<Type> {
+        let mut return_type = types::Empty;
+        for block in self.reverse_post_order() {
+            for &insn_id in &self.blocks[block].insns {
+                if let Insn::Return { val } = self.insns[insn_id] {
+                    return_type = return_type.union(self.type_of(val));
+                }
+            }
+        }
+        if return_type.bit_equal(types::Empty) || !return_type.is_subtype(types::BasicObject) {
+            None
+        } else {
+            Some(return_type.unspecialized())
+        }
+    }
+
+    /// Return compiled direct callees whose summaries type this function.
+    pub fn return_type_callees(&self) -> &[IseqPtr] {
+        &self.return_type_callees
+    }
+
+    /// Return an optimized callee summary and whether it needs an invalidation guard.
+    fn callee_return_type(&mut self, iseq: IseqPtr) -> Option<(Type, bool)> {
+        let payload = get_or_create_iseq_payload(iseq);
+        if let Some(version) = payload.versions.last() {
+            let version = unsafe { version.as_ref() };
+            if matches!(version.status, crate::payload::IseqStatus::Compiled(_)) {
+                return version.return_type.map(|return_type| (return_type, false));
+            }
+        }
+
+        // Precompile only the current ISEQ for direct recursion. A method-heavy workload
+        // otherwise compiles a second HIR function for every uncompiled callee.
+        if iseq != self.iseq {
+            return None;
+        }
+
+        if let Some(summary) = self.return_type_summaries.get(&iseq) {
+            return (*summary).map(|return_type| (return_type, true));
+        }
+
+        let summary = if unsafe { get_iseq_encoded_size(iseq) as usize } > RETURN_TYPE_SUMMARY_MAX_ISEQ_SIZE {
+            None
+        } else {
+            RETURN_TYPE_SUMMARY_ACTIVE.with(|active| {
+                if active.replace(true) {
+                    None
+                } else {
+                    let summary = iseq_to_hir(iseq).ok().and_then(|mut function| {
+                        function.optimize();
+                        function.return_type()
+                    });
+                    active.set(false);
+                    summary
+                }
+            })
+        };
+        self.return_type_summaries.insert(iseq, summary);
+        summary.map(|return_type| (return_type, true))
+    }
+
+    /// Type a direct ISEQ result and guard a speculative precompiled summary.
+    fn return_type_for_direct_iseq(&mut self, block: BlockId, iseq: IseqPtr, state: InsnId) -> Type {
+        let Some((return_type, requires_invalidation_guard)) = self.callee_return_type(iseq)
+            .filter(|(return_type, _)| !return_type.bit_equal(types::BasicObject)) else {
+            return types::BasicObject;
+        };
+
+        if requires_invalidation_guard {
+            self.push_insn(block, Insn::PatchPoint { invariant: Invariant::CalleeReturnType(iseq), state });
+        } else if !self.return_type_callees.contains(&iseq) {
+            self.return_type_callees.push(iseq);
+        }
+        self.count(block, Counter::send_direct_return_type_known_count);
+        return_type
     }
 
     /// Do a shallow look up of the instruction ID in the union-find. Does inspect or rewrite any
@@ -3684,7 +3788,7 @@ impl Function {
             Insn::FixnumLShift { .. } => types::Fixnum,
             Insn::FixnumRShift { .. } => types::Fixnum,
             Insn::PutSpecialObject { .. } => types::BasicObject,
-            Insn::SendDirect(_) => types::BasicObject,
+            Insn::SendDirect(insn) => insn.return_type,
             Insn::Send { .. } => types::BasicObject,
             Insn::SendForward { .. } => types::BasicObject,
             Insn::InvokeSuper { .. } => types::BasicObject,
@@ -3692,7 +3796,7 @@ impl Function {
             Insn::InvokeBlock { .. } => types::BasicObject,
             Insn::InvokeBlockIfunc { .. } => types::BasicObject,
             Insn::InvokeProc { .. } => types::BasicObject,
-            Insn::InvokeBlockIseqDirect { .. } => types::BasicObject,
+            Insn::InvokeBlockIseqDirect { return_type, .. } => *return_type,
             Insn::InvokeBuiltin { return_type, .. } => *return_type,
             Insn::Defined { pushval, .. } => Type::from_value(*pushval).union(types::NilClass),
             Insn::DefinedIvar { pushval, .. } => Type::from_value(*pushval).union(types::NilClass),
@@ -4821,7 +4925,8 @@ impl Function {
 
                             let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx } =
                                 self.emit_send_direct_args(block, call, &args, send_frame_state);
-                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: send_block })));
+                            let return_type = self.return_type_for_direct_iseq(block, iseq, state);
+                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: send_block, return_type })));
                             self.make_equal_to(insn_id, replacement);
                         } else if !has_block && def_type == VM_METHOD_TYPE_BMETHOD {
                             let procv = unsafe { rb_get_def_bmethod_proc((*cme).def) };
@@ -4862,7 +4967,8 @@ impl Function {
 
                             let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx } =
                                 self.emit_send_direct_args(block, call, &args, send_frame_state);
-                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: None })));
+                            let return_type = self.return_type_for_direct_iseq(block, iseq, state);
+                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: None, return_type })));
                             self.make_equal_to(insn_id, replacement);
                         } else if !has_block && def_type == VM_METHOD_TYPE_IVAR && args.is_empty() {
                             // Check if we're accessing ivars of a Class or Module object as they require single-ractor mode.
@@ -5396,6 +5502,7 @@ impl Function {
                             let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx } =
                                 self.emit_send_direct_args(block, call, &args, state);
                             // Use SendDirect with the super method's CME and ISEQ.
+                            let return_type = self.return_type_for_direct_iseq(block, super_iseq, state);
                             let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData {
                                 recv,
                                 cd,
@@ -5405,6 +5512,7 @@ impl Function {
                                 kw_bits,
                                 jit_entry_idx,
                                 state: send_state,
+                                return_type,
                                 block: None,
                             })));
                             self.make_equal_to(insn_id, replacement);

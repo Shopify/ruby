@@ -269,7 +269,17 @@ pub fn invalidate_iseq_version(cb: &mut CodeBlock, iseq: IseqPtr, version: &mut 
         unsafe { version.as_mut() }.status = IseqStatus::Invalidated;
         unsafe { rb_iseq_reset_jit_func(iseq) };
 
-        // Recompile JIT-to-JIT calls into the invalidated ISEQ
+        // Caller versions must not use a return type from this invalidated version.
+        let return_type_dependents = unsafe { version.as_ref() }.return_type_dependents.clone();
+        for mut dependent in return_type_dependents {
+            let caller_iseq = unsafe { dependent.as_ref() }.iseq;
+            invalidate_iseq_version(cb, caller_iseq, &mut dependent);
+        }
+
+        // A speculative precompiled summary has a patch-point dependency.
+        crate::invariants::invalidate_callee_return_type_assumptions(cb, iseq);
+
+        // Recompile JIT-to-JIT calls into the invalidated ISEQ.
         for incoming in unsafe { version.as_ref() }.incoming.iter() {
             if let Err(err) = gen_iseq_call(cb, incoming) {
                 debug!("{err:?}: gen_iseq_call failed during invalidation: {}", iseq_get_location(incoming.iseq.get(), 0));
@@ -387,6 +397,9 @@ fn gen_iseq_body(cb: &mut CodeBlock, iseq: IseqPtr, mut version: IseqVersionRef,
         None => &crate::stats::with_time_stat(Counter::compile_hir_time_ns, || compile_iseq(iseq))?,
     };
 
+    // The summary is visible only after `gen_iseq()` marks this version compiled.
+    unsafe { version.as_mut() }.return_type = function.return_type();
+
     // Compile the High-level IR
     let (iseq_code_ptrs, gc_offsets, iseq_calls) =
         trace_compile_phase("codegen", || {
@@ -404,10 +417,21 @@ fn gen_iseq_body(cb: &mut CodeBlock, iseq: IseqPtr, mut version: IseqVersionRef,
             Ok((iseq_code_ptrs, gc_offsets, iseq_calls))
         })?;
 
-    // Prepare for GC
-    unsafe { version.as_mut() }.outgoing.extend(iseq_calls);
-    append_gc_offsets(iseq, version, &gc_offsets);
-    Ok(iseq_code_ptrs)
+        // Keep callers that use a published return type linked to this callee version.
+        for &callee_iseq in function.return_type_callees() {
+            let callee_payload = get_or_create_iseq_payload(callee_iseq);
+            let callee_version = callee_payload.versions.last_mut().unwrap();
+            let callee_version = unsafe { callee_version.as_mut() };
+            debug_assert!(matches!(callee_version.status, IseqStatus::Compiled(_)));
+            if !callee_version.return_type_dependents.contains(&version) {
+                callee_version.return_type_dependents.push(version);
+            }
+        }
+
+        // Prepare for GC.
+        unsafe { version.as_mut() }.outgoing.extend(iseq_calls);
+        append_gc_offsets(iseq, version, &gc_offsets);
+        Ok(iseq_code_ptrs)
 }
 
 /// Compile a function
@@ -668,7 +692,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::InvokeBlockIfunc { cd, block_handler, args, state, .. } => gen_invokeblock_ifunc(jit, asm, function, *cd, opnd!(block_handler), opnds!(args), &function.frame_state(*state)),
         Insn::InvokeProc { recv, args, state, kw_splat } => gen_invokeproc(jit, asm, function, opnd!(recv), opnds!(args), *kw_splat, &function.frame_state(*state)),
         Insn::InvokeBuiltin { bf, leaf, args, state, .. } => gen_invokebuiltin(jit, asm, function, &function.frame_state(*state), unsafe { &**bf }, *leaf, opnds!(args)),
-        Insn::InvokeBlockIseqDirect { iseq, captured, args, state } => gen_invoke_block_iseq_direct(cb, jit, asm, function, *iseq, opnd!(captured), opnds!(args), &function.frame_state(*state)),
+        Insn::InvokeBlockIseqDirect { iseq, captured, args, state, .. } => gen_invoke_block_iseq_direct(cb, jit, asm, function, *iseq, opnd!(captured), opnds!(args), &function.frame_state(*state)),
         &Insn::EntryPoint { jit_entry_idx } => no_output!(gen_entry_point(jit, asm, jit_entry_idx)),
         Insn::Return { val } => no_output!(gen_return(asm, opnd!(val))),
         Insn::FixnumAdd { left, right, state } => gen_fixnum_add(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
@@ -1002,6 +1026,9 @@ pub fn split_patch_point(asm: &mut Assembler, target: &Target, invariant: Invari
             }
             Invariant::NoEPEscape(iseq) => {
                 track_no_ep_escape_assumption(iseq, code_ptr, side_exit_ptr, version);
+            }
+            Invariant::CalleeReturnType(iseq) => {
+                crate::invariants::track_callee_return_type_assumption(iseq, code_ptr, side_exit_ptr, version);
             }
             Invariant::SingleRactorMode => {
                 track_single_ractor_assumption(code_ptr, side_exit_ptr, version);
