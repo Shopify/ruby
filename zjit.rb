@@ -131,6 +131,8 @@ class << RubyVM::ZJIT
       :dynamic_send_count,
       :optimized_send_count,
       :iseq_optimized_send_count,
+      :send_blockarg_proc_direct_count,
+      :send_blockarg_symbol_direct_count,
       :inline_cfunc_optimized_send_count,
       :inline_iseq_optimized_send_count,
       :inline_method_count,

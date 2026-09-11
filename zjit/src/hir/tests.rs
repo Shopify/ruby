@@ -64,6 +64,7 @@ mod printer_tests {
                     return_type: types::Any,
                     elidable: false,
                     block: None,
+                    blockarg_state: None,
                 }))
             });
             let ccall_variadic = print_same_cfunc_twice(|| {
@@ -77,6 +78,7 @@ mod printer_tests {
                     return_type: types::Any,
                     elidable: false,
                     block: None,
+                    blockarg_state: None,
                 }))
             });
 

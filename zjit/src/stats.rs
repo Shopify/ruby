@@ -498,6 +498,9 @@ make_counters! {
     getblockparamproxy_handler_megamorphic,
     getblockparamproxy_handler_no_profiles,
 
+    send_blockarg_proc_direct_count,
+    send_blockarg_symbol_direct_count,
+
     total_native_stack_bytes,
 }
 

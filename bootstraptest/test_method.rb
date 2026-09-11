@@ -110,6 +110,41 @@ assert_equal '1',       %q(def m(x,y,&block) mm(x,y,&block) end
                            def mm(x,y) yield 1 end
                            m(7,7) {|a| a })
 
+assert_equal '[[true, 4], [true, 5], [true, 6], [true, 5], [true, "3"], ["1", "2"], false, :arity, :return_value]', %q{
+  def blockarg_target(value) = [block_given?, yield(value)]
+  def blockarg_wrap(&block) = blockarg_target(3, &block)
+  def blockarg_map(values, &block) = values.map(&block)
+  def blockarg_double(value) = value * 2
+  def blockarg_no_block = block_given?
+  def blockarg_without_value = yield
+  class BlockargToProc
+    def to_proc = proc { |value| value + 2 }
+  end
+  def blockarg_lambda_arity(block)
+    blockarg_without_value(&block)
+  rescue ArgumentError
+    :arity
+  end
+  def blockarg_return
+    blockarg_wrap { return :return_value }
+    :unreachable
+  end
+  proc_block = proc { |value| value + 1 }
+  lambda_block = ->(value) { value + 2 }
+  10.times do
+    raise unless blockarg_wrap(&proc_block) == [true, 4]
+    raise unless blockarg_wrap(&lambda_block) == [true, 5]
+    raise unless blockarg_target(3, &method(:blockarg_double)) == [true, 6]
+    raise unless blockarg_target(3, &BlockargToProc.new) == [true, 5]
+    raise unless blockarg_target(3, &:to_s) == [true, "3"]
+    raise unless blockarg_map([1, 2], &:to_s) == ["1", "2"]
+    raise unless blockarg_no_block(&nil) == false
+    raise unless blockarg_lambda_arity(lambda_block) == :arity
+  end
+  raise unless blockarg_return == :return_value
+  [[true, 4], [true, 5], [true, 6], [true, 5], [true, "3"], ["1", "2"], false, :arity, :return_value].inspect
+}
+
 # recursive call
 assert_equal '1',       %q(def m(n) n == 0 ? 1 : m(n-1) end; m(5))
 

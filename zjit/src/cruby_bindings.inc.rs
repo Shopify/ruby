@@ -2348,6 +2348,7 @@ unsafe extern "C" {
     pub static mut rb_cISeq: VALUE;
     pub static mut rb_cRubyVM: VALUE;
     pub static mut rb_mRubyVMFrozenCore: VALUE;
+    pub static mut rb_cProc: VALUE;
     pub static mut rb_block_param_proxy: VALUE;
     pub fn rb_vm_ep_local_ep(ep: *const VALUE) -> *const VALUE;
     pub fn rb_iseq_path(iseq: *const rb_iseq_t) -> VALUE;

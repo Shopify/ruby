@@ -1,0 +1,29 @@
+prelude: |
+  def inner
+    yield
+  end
+
+  def wrap(&block) = inner(&block)
+
+  def wrap_proc(block) = wrap(&block)
+
+  def each_values(ary, block) = ary.each(&block)
+
+  def map_values(ary) = ary.map(&:to_s)
+
+  def hash_each_values(hash, block) = hash.each(&block)
+
+  ary = %w[A B C D E F G H]
+  map_ary = ["A"]
+  hash = {a: 1, b: 2, c: 3, d: 4}
+  blk = proc { |value| value }
+benchmark:
+  vm_blockarg_iseq_proc: |
+    wrap_proc(blk)
+  vm_blockarg_cfunc_each_proc: |
+    each_values(ary, blk)
+  vm_blockarg_cfunc_map_symbol: |
+    map_values(map_ary)
+  vm_blockarg_hash_each_proc: |
+    hash_each_values(hash, blk)
+loop_count: 3000000

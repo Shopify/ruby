@@ -646,14 +646,15 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::Snapshot { .. } => return, // we don't need to do anything for this instruction at the moment
         &Insn::Send { cd, block: None, state, reason, .. } => gen_send_without_block(jit, asm, function, cd, &function.frame_state(state), reason),
         &Insn::Send { cd, block: Some(BlockHandler::BlockIseq(blockiseq)), state, reason, .. } => gen_send(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
-        &Insn::Send { cd, block: Some(BlockHandler::BlockArg), state, reason, .. } => gen_send(jit, asm, function, cd, std::ptr::null(), &function.frame_state(state), reason),
+        &Insn::Send { cd, block: Some(BlockHandler::BlockArg(_)), state, reason, .. } => gen_send(jit, asm, function, cd, std::ptr::null(), &function.frame_state(state), reason),
         &Insn::SendForward { cd, blockiseq, state, reason, .. } => gen_send_forward(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
         Insn::SendDirect(insn) => {
-            let SendDirectData { cme, iseq, recv, args, kw_bits, jit_entry_idx, block, state, .. } = &**insn;
+            let SendDirectData { cme, iseq, recv, args, kw_bits, jit_entry_idx, block, state, blockarg_state, .. } = &**insn;
             gen_send_iseq_direct(
                 cb, jit, asm,
                 function, *cme, *iseq, opnd!(recv), opnds!(args),
                 *kw_bits, *jit_entry_idx, &function.frame_state(*state), *block,
+                blockarg_state.map(|state| function.frame_state(state)),
             )
         }
         Insn::PushInlineFrame { cme, iseq, recv, num_args, blockiseq, state, .. } => {
@@ -729,12 +730,12 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::PatchPoint { invariant, state } => no_output!(gen_patch_point(jit, asm, function, invariant, &function.frame_state(*state))),
         Insn::CCall { cfunc, recv, args, name, owner, return_type: _, elidable: _ } => gen_ccall(asm, *cfunc, *name, *owner, opnd!(recv), opnds!(args)),
         Insn::CCallWithFrame(insn) => {
-            let CCallWithFrameData { cfunc, recv, name, args, cme, state, block, .. } = &**insn;
-            gen_ccall_with_frame(jit, asm, function, *cfunc, *name, opnd!(recv), opnds!(args), *cme, *block, &function.frame_state(*state))
+            let CCallWithFrameData { cfunc, recv, name, args, cme, state, block, blockarg_state, .. } = &**insn;
+            gen_ccall_with_frame(jit, asm, function, *cfunc, *name, opnd!(recv), opnds!(args), *cme, *block, &function.frame_state(*state), blockarg_state.map(|state| function.frame_state(state)))
         }
         Insn::CCallVariadic(insn) => {
-            let CCallVariadicData { cfunc, recv, name, args, cme, state, block, .. } = &**insn;
-            gen_ccall_variadic(jit, asm, function, *cfunc, *name, opnd!(recv), opnds!(args), *cme, *block, &function.frame_state(*state))
+            let CCallVariadicData { cfunc, recv, name, args, cme, state, block, blockarg_state, .. } = &**insn;
+            gen_ccall_variadic(jit, asm, function, *cfunc, *name, opnd!(recv), opnds!(args), *cme, *block, &function.frame_state(*state), blockarg_state.map(|state| function.frame_state(state)))
         }
         Insn::GetIvar { self_val, id, ic, state } => gen_getivar(asm, opnd!(self_val), *id, *ic, &function.frame_state(*state)),
         Insn::SetGlobal { id, val, state } => no_output!(gen_setglobal(jit, asm, function, *id, opnd!(val), &function.frame_state(*state))),
@@ -1028,9 +1029,13 @@ fn gen_ccall_with_frame(
     cme: *const rb_callable_method_entry_t,
     block: Option<BlockHandler>,
     state: &FrameState,
+    blockarg_state: Option<FrameState>,
 ) -> lir::Opnd {
     gen_incr_counter(asm, Counter::non_variadic_cfunc_optimized_send_count);
-    gen_stack_overflow_check(jit, asm, function, state, state.stack_size());
+
+    // Convert the block argument before this call publishes the callee state.
+    let block_handler_specval = gen_block_handler_specval(jit, asm, function, block, blockarg_state.as_ref());
+    gen_stack_overflow_check(jit, asm, function, blockarg_state.as_ref().unwrap_or(state), state.stack_size());
 
     let args_with_recv_len = args.len() + 1;
     let caller_stack_size = state.stack().len() - args_with_recv_len;
@@ -1041,17 +1046,6 @@ fn gen_ccall_with_frame(
     gen_save_sp(asm, caller_stack_size);
     gen_spill_stack(jit, asm, function, state);
     gen_spill_locals(jit, asm, state);
-
-    let block_handler_specval = if let Some(BlockHandler::BlockIseq(block_iseq)) = block {
-        // Change cfp->block_code in the current frame. See vm_caller_setup_arg_block().
-        // VM_CFP_TO_CAPTURED_BLOCK then turns &cfp->self into a block handler.
-        // rb_captured_block->code.iseq aliases with cfp->block_code.
-        asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_BLOCK_CODE), VALUE::from(block_iseq).into());
-        let cfp_self_addr = asm.lea(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF));
-        asm.or(cfp_self_addr, Opnd::Imm(1))
-    } else {
-        VM_BLOCK_HANDLER_NONE.into()
-    };
 
     gen_push_frame(asm, args_with_recv_len, state, ControlFrame {
         recv,
@@ -1098,10 +1092,51 @@ fn gen_ccall(asm: &mut Assembler, cfunc: *const u8, name: ID, owner: VALUE, recv
     asm.ccall(cfunc, cfunc_args)
 }
 
-// Change cfp->block_code in the current frame. See vm_caller_setup_arg_block().
-// VM_CFP_TO_CAPTURED_BLOCK then turns &cfp->self into a block handler.
+/// Create the block handler for a direct call.
+fn gen_block_handler_specval(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    function: &Function,
+    block: Option<BlockHandler>,
+    blockarg_state: Option<&FrameState>,
+) -> lir::Opnd {
+    match block {
+        Some(BlockHandler::BlockIseq(blockiseq)) => gen_literal_block_handler_specval(asm, blockiseq),
+        Some(BlockHandler::BlockArg(block_arg)) if function.type_of(block_arg).runtime_exact_ruby_class() == Some(unsafe { rb_cProc }) => {
+            jit.get_opnd(block_arg)
+        }
+        Some(BlockHandler::BlockArg(block_arg)) if function.type_of(block_arg).is_subtype(types::StaticSymbol) => {
+            // HIR keeps Symbol#to_proc basic with a MethodRedefined patch point.
+            gen_prepare_non_leaf_call(jit, asm, function, blockarg_state.expect("block argument needs its pre-send state"));
+            asm_ccall!(asm, rb_vm_block_handler_from_blockarg, CFP, jit.get_opnd(block_arg))
+        }
+        Some(BlockHandler::BlockArg(block_arg)) => {
+            let state = blockarg_state.expect("block argument needs its pre-send state");
+            let block_arg = jit.get_opnd(block_arg);
+            let side_exit = side_exit_with_recompile(jit, function, state, UnhandledBlockArg, Some(Recompile));
+
+            // A block proxy can become a Proc or nil after the block parameter
+            // changes. Other values can call Ruby through #to_proc, so exit before
+            // the direct send.
+            gen_prepare_non_leaf_call(jit, asm, function, state);
+            asm.cmp(block_arg, unsafe { rb_block_param_proxy }.into());
+            let is_proxy = asm.csel_e(Opnd::Imm(1), Opnd::Imm(0));
+            let is_proc = asm_ccall!(asm, rb_obj_is_proc, block_arg);
+            asm.cmp(block_arg, Qnil.into());
+            let is_nil = asm.csel_e(Opnd::Imm(1), Opnd::Imm(0));
+            let allowed = asm.or(is_proxy, is_proc);
+            let allowed = asm.or(allowed, is_nil);
+            asm.test(allowed, allowed);
+            asm.jz(jit, side_exit);
+
+            asm_ccall!(asm, rb_vm_block_handler_from_blockarg, CFP, block_arg)
+        }
+        None => VM_BLOCK_HANDLER_NONE.into(),
+    }
+}
+
 // rb_captured_block->code.iseq aliases with cfp->block_code.
-fn gen_block_handler_specval(asm: &mut Assembler, blockiseq: IseqPtr) -> lir::Opnd {
+fn gen_literal_block_handler_specval(asm: &mut Assembler, blockiseq: IseqPtr) -> lir::Opnd {
     asm.store(Opnd::mem(VALUE_BITS, CFP, RUBY_OFFSET_CFP_BLOCK_CODE), VALUE::from(blockiseq).into());
     let cfp_self_addr = asm.lea(Opnd::mem(VALUE_BITS, CFP, RUBY_OFFSET_CFP_SELF));
     asm.or(cfp_self_addr, Opnd::Imm(1))
@@ -1120,9 +1155,13 @@ fn gen_ccall_variadic(
     cme: *const rb_callable_method_entry_t,
     block: Option<BlockHandler>,
     state: &FrameState,
+    blockarg_state: Option<FrameState>,
 ) -> lir::Opnd {
     gen_incr_counter(asm, Counter::variadic_cfunc_optimized_send_count);
-    gen_stack_overflow_check(jit, asm, function, state, state.stack_size());
+
+    // Convert the block argument before this call publishes the callee state.
+    let block_handler_specval = gen_block_handler_specval(jit, asm, function, block, blockarg_state.as_ref());
+    gen_stack_overflow_check(jit, asm, function, blockarg_state.as_ref().unwrap_or(state), state.stack_size());
 
     let args_with_recv_len = args.len() + 1;
 
@@ -1136,12 +1175,6 @@ fn gen_ccall_variadic(
     gen_save_sp(asm, caller_stack_size);
     gen_spill_stack(jit, asm, function, state);
     gen_spill_locals(jit, asm, state);
-
-    let block_handler_specval = if let Some(BlockHandler::BlockIseq(blockiseq)) = block {
-        gen_block_handler_specval(asm, blockiseq)
-    } else {
-        VM_BLOCK_HANDLER_NONE.into()
-    };
 
     gen_push_frame(asm, args_with_recv_len, state, ControlFrame {
         recv,
@@ -1625,7 +1658,7 @@ fn gen_push_inline_frame(
     // The HIR specialization guards ensure we will only reach here for literal blocks,
     // not &block forwarding, &:foo, etc. These are rejected in `type_specialize` by
     // `unspecializable_call_type`.
-    let block_handler = blockiseq.map(|b| gen_block_handler_specval(asm, b));
+    let block_handler = blockiseq.map(|b| gen_literal_block_handler_specval(asm, b));
 
     let callee_is_bmethod = VM_METHOD_TYPE_BMETHOD == unsafe { get_cme_def_type(cme) };
 
@@ -1744,12 +1777,17 @@ fn gen_send_iseq_direct(
     jit_entry_idx: u16,
     state: &FrameState,
     block: Option<BlockHandler>,
+    blockarg_state: Option<FrameState>,
 ) -> lir::Opnd {
     gen_incr_counter(asm, Counter::iseq_optimized_send_count);
 
+    // Block argument conversion can call Ruby. It must use the pre-send state
+    // before the direct call removes the receiver and arguments from the stack.
+    let block_handler = gen_block_handler_specval(jit, asm, function, block, blockarg_state.as_ref());
+
     let local_size = unsafe { get_iseq_body_local_table_size(iseq) }.to_usize();
     let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(iseq) }.to_usize();
-    gen_stack_overflow_check(jit, asm, function, state, stack_growth);
+    gen_stack_overflow_check(jit, asm, function, blockarg_state.as_ref().unwrap_or(state), stack_growth);
 
     // Save cfp->pc and cfp->sp for the caller frame
     // Can't use gen_prepare_non_leaf_call because we need special SP math.
@@ -1761,11 +1799,6 @@ fn gen_send_iseq_direct(
     gen_spill_locals(jit, asm, state);
     asm.stack_map(stack_map, jit_frame, state.depth);
 
-    // This mirrors vm_caller_setup_arg_block() in for the `blockiseq != NULL` case.
-    // The HIR specialization guards ensure we will only reach here for literal blocks,
-    // not &block forwarding, &:foo, etc. Thise are rejected in `type_specialize` by
-    // `unspecializable_call_type`.
-    let block_handler = block.map(|bh| match bh { BlockHandler::BlockIseq(b) => gen_block_handler_specval(asm, b), BlockHandler::BlockArg => unreachable!("BlockArg in gen_send_iseq_direct") });
 
     let callee_is_bmethod = VM_METHOD_TYPE_BMETHOD == unsafe { get_cme_def_type(cme) };
 
@@ -1780,8 +1813,7 @@ fn gen_send_iseq_direct(
         let bmethod_specval = (capture.ep.addr() | 1).into();
         (bmethod_frame_type, bmethod_specval)
     } else {
-        let specval = block_handler.unwrap_or_else(|| VM_BLOCK_HANDLER_NONE.into());
-        (VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, specval)
+        (VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, block_handler)
     };
 
     // Set up the new frame
@@ -1838,7 +1870,7 @@ fn gen_send_iseq_direct(
         if callee_is_bmethod {
             // For bmethods, specval is the captured EP, not the block handler.
             // The block param needs nil (no block) or a Proc value.
-            assert!(block_handler.is_none(), "at the moment, HIR builder never emits a direct send for a to-bmethod send-with-literal-block");
+            assert!(block.is_none(), "at the moment, HIR builder never emits a direct send for a to-bmethod send-with-literal-block");
             c_args.push(Qnil.into());
         } else {
             c_args.push(specval);

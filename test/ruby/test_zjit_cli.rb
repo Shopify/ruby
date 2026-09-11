@@ -102,6 +102,31 @@ class TestZJITCLI < Test::Unit::TestCase
     }
   end
 
+  def test_blockarg_symbol_to_proc_redefinition
+    assert_runs '"new"', <<~RUBY, call_threshold: 2
+      def blockarg_redefinition_target
+        yield(:old)
+      end
+
+      def test
+        blockarg_redefinition_target(&:to_s)
+      end
+
+      3.times { raise unless test == "old" }
+
+      class Symbol
+        def to_proc
+          Object.send(:define_method, :blockarg_redefinition_target) do |&block|
+            block.call(:new)
+          end
+          proc { |value| value.to_s }
+        end
+      end
+
+      test
+    RUBY
+  end
+
   def test_enable_through_env
     child_env = {'RUBY_YJIT_ENABLE' => nil, 'RUBY_ZJIT_ENABLE' => '1'}
     assert_in_out_err([child_env, '-v'], '') do |stdout, stderr|
@@ -369,6 +394,57 @@ class TestZJITCLI < Test::Unit::TestCase
         klass.outer(i, :n)
       end
       :ok
+    RUBY
+  end
+
+  def test_direct_send_with_block_argument
+    assert_runs ':ok', <<~RUBY, call_threshold: 2
+      def target(value)
+        yield value
+      end
+
+      def forward(value, &block)
+        target(value, &block)
+      end
+
+      def map_values(values, &block)
+        values.map(&block)
+      end
+
+      def hash_each_values(values, block)
+        values.each(&block)
+      end
+
+      def each_until(&block)
+        [1, 2, 3].each(&block)
+        :after
+      end
+
+      def break_through_forward
+        each_until { |value| break :stopped if value == 2 }
+      end
+
+      def return_through_forward
+        forward(1) { return :returned }
+        :after
+      end
+
+      callable = Object.new
+      def callable.to_proc = proc { |value| value * 3 }
+      proc_block = proc { |value| value + 1 }
+
+      20.times do
+        raise unless forward(1, &proc_block) == 2
+        raise unless break_through_forward == :stopped
+        raise unless return_through_forward == :returned
+        raise unless forward(2, &:itself) == 2
+        raise unless forward(3, &callable) == 9
+        raise unless map_values(%w[A B], &:downcase) == %w[a b]
+        raise unless hash_each_values({a: 1}, callable) == {a: 1}
+      end
+
+      :ok
+
     RUBY
   end
 

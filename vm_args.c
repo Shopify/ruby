@@ -1124,43 +1124,47 @@ refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
     return rb_vm_call0(ec, obj, mid, argc, argv, me, kw_splat);
 }
 
+VALUE
+rb_vm_block_handler_from_blockarg(rb_control_frame_t *reg_cfp, VALUE block_code)
+{
+    if (NIL_P(block_code)) {
+        return VM_BLOCK_HANDLER_NONE;
+    }
+    else if (block_code == rb_block_param_proxy) {
+        return VM_CF_BLOCK_HANDLER(reg_cfp);
+    }
+    else if (SYMBOL_P(block_code) && rb_method_basic_definition_p(rb_cSymbol, idTo_proc)) {
+        const rb_cref_t *cref = vm_env_cref(reg_cfp->ep);
+        if (cref && !NIL_P(cref->refinements)) {
+            VALUE ref = cref->refinements;
+            VALUE func = rb_hash_lookup(ref, block_code);
+            if (NIL_P(func)) {
+                /* TODO: limit cached funcs */
+                VALUE callback_arg = rb_ary_hidden_new(2);
+                rb_ary_push(callback_arg, block_code);
+                rb_ary_push(callback_arg, ref);
+                OBJ_FREEZE(callback_arg);
+                func = rb_func_lambda_new(refine_sym_proc_call, callback_arg, 1, UNLIMITED_ARGUMENTS);
+                /* the table is frozen when it belongs to a Proc#refined memo; skip the cache then */
+                if (!OBJ_FROZEN(ref)) {
+                    rb_hash_aset(ref, block_code, func);
+                }
+            }
+            block_code = func;
+        }
+        return block_code;
+    }
+    else {
+        return vm_to_proc(block_code);
+    }
+}
+
 static VALUE
 vm_caller_setup_arg_block(const rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
                           const struct rb_callinfo *ci, const rb_iseq_t *blockiseq, const int is_super)
 {
     if (vm_ci_flag(ci) & VM_CALL_ARGS_BLOCKARG) {
-        VALUE block_code = *(--reg_cfp->sp);
-
-        if (NIL_P(block_code)) {
-            return VM_BLOCK_HANDLER_NONE;
-        }
-        else if (block_code == rb_block_param_proxy) {
-            return VM_CF_BLOCK_HANDLER(reg_cfp);
-        }
-        else if (SYMBOL_P(block_code) && rb_method_basic_definition_p(rb_cSymbol, idTo_proc)) {
-            const rb_cref_t *cref = vm_env_cref(reg_cfp->ep);
-            if (cref && !NIL_P(cref->refinements)) {
-                VALUE ref = cref->refinements;
-                VALUE func = rb_hash_lookup(ref, block_code);
-                if (NIL_P(func)) {
-                    /* TODO: limit cached funcs */
-                    VALUE callback_arg = rb_ary_hidden_new(2);
-                    rb_ary_push(callback_arg, block_code);
-                    rb_ary_push(callback_arg, ref);
-                    OBJ_FREEZE(callback_arg);
-                    func = rb_func_lambda_new(refine_sym_proc_call, callback_arg, 1, UNLIMITED_ARGUMENTS);
-                    /* the table is frozen when it belongs to a Proc#refined memo; skip the cache then */
-                    if (!OBJ_FROZEN(ref)) {
-                        rb_hash_aset(ref, block_code, func);
-                    }
-                }
-                block_code = func;
-            }
-            return block_code;
-        }
-        else {
-            return vm_to_proc(block_code);
-        }
+        return rb_vm_block_handler_from_blockarg(reg_cfp, *(--reg_cfp->sp));
     }
     else if (blockiseq != NULL) { /* likely */
         struct rb_captured_block *captured = VM_CFP_TO_CAPTURED_BLOCK(reg_cfp);

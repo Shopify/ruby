@@ -897,8 +897,8 @@ impl Display for SendFallbackReason {
 pub enum BlockHandler {
     /// Literal block ISEQ (e.g. `foo { ... }`)
     BlockIseq(IseqPtr),
-    /// Block arg passed via &proc (e.g. `foo(&block)`)
-    BlockArg,
+    /// Block arg passed via `&proc` (e.g. `foo(&block)`)
+    BlockArg(InsnId),
 }
 
 /// Identifier used by LoadField/StoreField/LoadArg for HIR dumps. Variants
@@ -953,6 +953,8 @@ pub struct CCallWithFrameData {
     pub return_type: Type,
     pub elidable: bool,
     pub block: Option<BlockHandler>,
+    /// The pre-send state for a block argument conversion.
+    pub blockarg_state: Option<InsnId>,
 }
 
 /// Payload of [`Insn::SendDirect`]. Boxed in the enum to keep `Insn` small.
@@ -967,6 +969,8 @@ pub struct SendDirectData {
     pub jit_entry_idx: u16,
     pub block: Option<BlockHandler>,
     pub state: InsnId,
+    /// The pre-send state for a block argument conversion.
+    pub blockarg_state: Option<InsnId>,
 }
 
 /// Payload of [`Insn::CCallVariadic`]. Boxed in the enum to keep `Insn` small.
@@ -981,6 +985,8 @@ pub struct CCallVariadicData {
     pub return_type: Type,
     pub elidable: bool,
     pub block: Option<BlockHandler>,
+    /// The pre-send state for a block argument conversion.
+    pub blockarg_state: Option<InsnId>,
 }
 
 /// An instruction in the SSA IR. The output of an instruction is referred to by the index of
@@ -1350,7 +1356,7 @@ pub enum Insn {
 /// `$visit_one` macro for a single InsnId field and `$visit_many` macro for a
 /// slice/Vec of InsnIds. Used by both `for_each_operand` and `for_each_operand_mut`.
 macro_rules! for_each_operand_impl {
-    ($self:expr, $visit_one:ident, $visit_many:ident) => {
+    ($self:expr, $visit_one:ident, $visit_many:ident, $visit_block:ident, $visit_optional:ident) => {
         match $self {
             Insn::Comment { .. }
             | Insn::Const { .. }
@@ -1587,16 +1593,22 @@ macro_rules! for_each_operand_impl {
             Insn::SendDirect(insn) => {
                 $visit_one!(insn.recv);
                 $visit_many!(insn.args);
+                $visit_block!(insn.block);
+                $visit_optional!(insn.blockarg_state);
                 $visit_one!(insn.state);
             }
             Insn::CCallWithFrame(insn) => {
                 $visit_one!(insn.recv);
                 $visit_many!(insn.args);
+                $visit_block!(insn.block);
+                $visit_optional!(insn.blockarg_state);
                 $visit_one!(insn.state);
             }
             Insn::CCallVariadic(insn) => {
                 $visit_one!(insn.recv);
                 $visit_many!(insn.args);
+                $visit_block!(insn.block);
+                $visit_optional!(insn.blockarg_state);
                 $visit_one!(insn.state);
             }
             Insn::InvokeBlock { args, state, .. } => {
@@ -1718,21 +1730,27 @@ impl Insn {
     pub fn for_each_operand(&self, mut f: impl FnMut(InsnId)) {
         macro_rules! visit_one { ($p:expr) => { f($p) }; }
         macro_rules! visit_many { ($s:expr) => { for id in ($s).iter() { f(*id) } }; }
-        for_each_operand_impl!(self, visit_one, visit_many);
+        macro_rules! visit_block { ($p:expr) => { if let Some(BlockHandler::BlockArg(id)) = $p { f(id) } }; }
+        macro_rules! visit_optional { ($p:expr) => { if let Some(id) = $p { f(id) } }; }
+        for_each_operand_impl!(self, visit_one, visit_many, visit_block, visit_optional);
     }
 
     /// Call `f` on a mutable reference to each operand (InsnId) of this instruction.
     pub fn for_each_operand_mut(&mut self, mut f: impl FnMut(&mut InsnId)) {
         macro_rules! visit_one { ($p:expr) => { f(&mut $p) }; }
         macro_rules! visit_many { ($s:expr) => { for id in ($s).iter_mut() { f(id) } }; }
-        for_each_operand_impl!(self, visit_one, visit_many);
+        macro_rules! visit_block { ($p:expr) => { if let Some(BlockHandler::BlockArg(id)) = &mut $p { f(id) } }; }
+        macro_rules! visit_optional { ($p:expr) => { if let Some(id) = &mut $p { f(id) } }; }
+        for_each_operand_impl!(self, visit_one, visit_many, visit_block, visit_optional);
     }
 
     /// Call `f` on each operand, short-circuiting on the first error.
     pub fn try_for_each_operand<E>(&self, mut f: impl FnMut(InsnId) -> Result<(), E>) -> Result<(), E> {
         macro_rules! visit_one { ($p:expr) => { f($p)? }; }
         macro_rules! visit_many { ($s:expr) => { for id in ($s).iter() { f(*id)? } }; }
-        for_each_operand_impl!(self, visit_one, visit_many);
+        macro_rules! visit_block { ($p:expr) => { if let Some(BlockHandler::BlockArg(id)) = $p { f(id)? } }; }
+        macro_rules! visit_optional { ($p:expr) => { if let Some(id) = $p { f(id)? } }; }
+        for_each_operand_impl!(self, visit_one, visit_many, visit_block, visit_optional);
         Ok(())
     }
 
@@ -2190,10 +2208,15 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
             Insn::CondBranch { val, if_true, if_false } => { write!(f, "CondBranch {val}, {if_true}, {if_false}") },
             Insn::SendDirect(insn) => {
                 let SendDirectData { recv, cme, iseq, args, block, jit_entry_idx, .. } = &**insn;
-                let blockiseq = block.map(|bh| match bh { BlockHandler::BlockIseq(iseq) => iseq, BlockHandler::BlockArg => unreachable!() });
-                let blockiseq_ptr = blockiseq.map_or(ptr::null(), |iseq| self.ptr_map.map_ptr(iseq));
                 let method_name = unsafe { (**cme).called_id };
-                write!(f, "SendDirect {recv}, {blockiseq_ptr:p}, :{method_name} ({:?})", self.ptr_map.map_ptr(*iseq))?;
+                match block {
+                    Some(BlockHandler::BlockIseq(blockiseq)) =>
+                        write!(f, "SendDirect {recv}, {:p}, :{method_name} ({:?})", self.ptr_map.map_ptr(*blockiseq), self.ptr_map.map_ptr(*iseq))?,
+                    Some(BlockHandler::BlockArg(block_arg)) =>
+                        write!(f, "SendDirect {recv}, &block {block_arg}, :{method_name} ({:?})", self.ptr_map.map_ptr(*iseq))?,
+                    None =>
+                        write!(f, "SendDirect {recv}, {:p}, :{method_name} ({:?})", ptr::null::<u8>(), self.ptr_map.map_ptr(*iseq))?,
+                }
                 if *jit_entry_idx != 0 {
                     write!(f, ", jit_entry_idx={jit_entry_idx}")?;
                 }
@@ -2216,7 +2239,7 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
                 match *block {
                     Some(BlockHandler::BlockIseq(blockiseq)) =>
                         write!(f, "Send {recv}, {:p}, :{}", self.ptr_map.map_ptr(blockiseq), ruby_call_method_name(*cd))?,
-                    Some(BlockHandler::BlockArg) =>
+                    Some(BlockHandler::BlockArg(_)) =>
                         write!(f, "Send {recv}, &block, :{}", ruby_call_method_name(*cd))?,
                     None =>
                         write!(f, "Send {recv}, :{}", ruby_call_method_name(*cd))?,
@@ -2357,8 +2380,8 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
                 match block {
                     Some(BlockHandler::BlockIseq(blockiseq)) =>
                         write!(f, ", block={:p}", self.ptr_map.map_ptr(*blockiseq))?,
-                    Some(BlockHandler::BlockArg) =>
-                        write!(f, ", block=&block")?,
+                    Some(BlockHandler::BlockArg(block_arg)) =>
+                        write!(f, ", block=&block {block_arg}")?,
                     None => {}
                 }
                 Ok(())
@@ -2654,13 +2677,10 @@ fn can_direct_send(iseq: *const rb_iseq_t, caller_args: &CallerArguments, has_bl
     let mut count_failure = |counter| complex_arg_counters.push(counter);
     let params = unsafe { iseq.params() };
 
-    let callee_has_block_param = 0 != params.flags.has_block();
     let caller_passes_block_arg = has_block && (caller_args.flags & VM_CALL_ARGS_BLOCKARG) != 0;
 
     use Counter::*;
     if 0 != params.flags.forwardable() { count_failure(complex_arg_pass_param_forwardable) }
-    if callee_has_block_param && caller_passes_block_arg
-                                       { count_failure(complex_arg_pass_param_block) }
     if 0 != params.flags.has_kwrest()  { count_failure(complex_arg_pass_param_kwrest) }
 
     // If the caller passes a block (literal or &block), we need to fall back to the
@@ -2848,6 +2868,9 @@ pub struct Function {
     /// fulfilling `(0..=opt_num)` optional parameters.
     jit_entry_blocks: Vec<BlockId>,
     profiles: Option<ProfileOracle>,
+    /// Values produced by `getblockparamproxy`. These values are safe for a
+    /// guarded direct block send even when the merged SSA type is BasicObject.
+    block_param_proxy_values: Vec<InsnId>,
     /// Rough estimate for the number of (actually executable) instructions in the function. Does
     /// not count Snapshot, PatchPoint, etc.
     /// Currently updated by `infer_types` as a heuristic but that is not a guarantee.
@@ -3109,6 +3132,7 @@ impl Function {
             entries_block: BlockId(0),
             entry_block: BlockId(1),
             jit_entry_blocks: vec![],
+            block_param_proxy_values: vec![],
             param_types: vec![],
             profiles: None,
             num_instructions: 0,
@@ -4590,6 +4614,9 @@ impl Function {
         let cd = data.cd;
         let state = data.state;
         let args = &data.args;
+        if matches!(data.block, Some(BlockHandler::BlockArg(_))) {
+            return self.push_insn(block, insn);
+        }
         // The trivial inliner runs first to handle simple cases (constant returns,
         // parameter returns, etc.) without frame push/pop overhead. The general
         // inliner then handles more complex methods that require full inlining.
@@ -4697,65 +4724,81 @@ impl Function {
                             def_type = unsafe { get_cme_def_type(cme) };
                         }
 
-                        // Check if we can optimize `foo(&block)` where block is nil to a send without block.
-                        // `state` keeps referring to the pre-send frame state (block arg still on the
-                        // stack). Any guard that side-exits before the call re-executes the `send` in
-                        // the interpreter, so it must reconstruct the stack with the block arg present.
-                        // Only the direct-send frame setup uses `send_frame_state`, which has the nil
-                        // block arg stripped from the stack.
+                        // The interpreter consumes a supported block argument before it sets up
+                        // the callee frame. Keep the original state for the conversion call and
+                        // create a state without the value for the direct callee frame.
                         let mut send_block = send_block;
                         let mut send_frame_state = state;
+                        let mut blockarg_state = None;
+                        let mut blockarg_to_proc_cme = None;
                         let mut args = match resolved.insn(self) {
                             Insn::Send { args, .. } => args.to_vec(),
                             _ => panic!("Expected Send instruction"),
                         };
-                        let mut stripped_nil_block = false;
-                        if send_block == Some(BlockHandler::BlockArg) && def_type == VM_METHOD_TYPE_ISEQ {
-                            // The block arg is the last element in args
-                            if let Some(&block_arg) = args.last() {
-                                let statically_nil = self.is_a(block_arg, types::NilClass);
-                                let profiled_nil = self.profiled_type_of_at(block_arg, state)
-                                    .map_or(false, |pt| pt.is_nil());
-                                if statically_nil || profiled_nil {
-                                    if !statically_nil {
-                                        // Guard needed when relying on profiled type. Uses the original
-                                        // `state` so a side exit re-executes the send with the block
-                                        // arg still on the VM stack.
-                                        //
-                                        // Recompile on exit so a site that starts seeing non-nil
-                                        // blocks re-profiles the block arg and drops this speculation
-                                        // (falling back to a dynamic send) instead of paying the guard
-                                        // side exit repeatedly. This matches the receiver GuardType
-                                        // below and the getblockparamproxy BlockParamProxyNotNil guard.
-                                        self.push_insn(block, Insn::GuardBitEquals {
-                                            val: block_arg,
-                                            expected: Const::Value(Qnil),
-                                            reason: Box::new(SideExitReason::BlockArgNotNil),
-                                            state,
-                                            recompile: Some(Recompile),
-                                        });
-                                    }
-                                    // Strip nil block arg and treat as no block
-                                    args = args[..args.len() - 1].to_vec();
-                                    send_block = None;
-                                    has_block = false;
-                                    stripped_nil_block = true;
-                                    // Frame state for the direct send only: the block arg is removed
-                                    // from the stack so the callee frame is laid out correctly.
-                                    let new_state = self.frame_state(state).with_replaced_args(&args, args.len() + 1);
-                                    send_frame_state = self.push_insn(block, Insn::Snapshot { state: Box::new(new_state) });
-                                } else {
-                                    // Can't prove block arg is nil
-                                    self.set_dynamic_send_reason(insn_id, SendBlockArgNotNil);
-                                    self.push_insn_id(block, insn_id); continue;
+                        if let Some(BlockHandler::BlockArg(_)) = send_block
+                            && (def_type == VM_METHOD_TYPE_ISEQ || def_type == VM_METHOD_TYPE_CFUNC)
+                        {
+                            let mut block_arg = *args.last().expect("block argument must be present");
+                            let original_block_arg = block_arg;
+                            let statically_nil = self.is_a(block_arg, types::NilClass);
+                            let profiled_type = self.profiled_type_of_at(block_arg, state);
+                            let profiled_nil = profiled_type.is_some_and(|pt| pt.is_nil());
+                            let mut consume_block_arg = false;
+                            if statically_nil || profiled_nil {
+                                if !statically_nil {
+                                    self.push_insn(block, Insn::GuardBitEquals {
+                                        val: block_arg,
+                                        expected: Const::Value(Qnil),
+                                        reason: Box::new(SideExitReason::BlockArgNotNil),
+                                        state,
+                                        recompile: Some(Recompile),
+                                    });
                                 }
+                                send_block = None;
+                                has_block = false;
+                                consume_block_arg = true;
+                            } else {
+                                let statically_block_param_proxy = self.type_of(block_arg).ruby_object().is_some_and(|value| value == unsafe { rb_block_param_proxy }) || self.block_param_proxy_values.contains(&block_arg);
+                                let statically_static_symbol = self.type_of(block_arg).is_subtype(types::StaticSymbol);
+                                let profiled_static_symbol = profiled_type.is_some_and(|pt| pt.is_static_symbol());
+                                if statically_block_param_proxy {
+                                    blockarg_state = Some(state);
+                                    consume_block_arg = true;
+                                } else if (statically_static_symbol || profiled_static_symbol)
+                                    && unsafe { rb_method_basic_definition_p(rb_cSymbol, ID!(to_proc)) } != 0
+                                {
+                                    if !statically_static_symbol {
+                                        block_arg = self.guard_type_recompile(block, block_arg, types::StaticSymbol, state, Recompile);
+                                        send_block = Some(BlockHandler::BlockArg(block_arg));
+                                    }
+                                    blockarg_to_proc_cme = Some(unsafe { rb_callable_method_entry(rb_cSymbol, ID!(to_proc)) });
+                                    self.count(block, Counter::send_blockarg_symbol_direct_count);
+                                    blockarg_state = Some(state);
+                                    consume_block_arg = true;
+                                } else if let Some(profiled_type) = profiled_type
+                                    && profiled_type.class() == unsafe { rb_cProc }
+                                {
+                                    self.count(block, Counter::send_blockarg_proc_direct_count);
+                                    block_arg = self.guard_type_recompile(block, block_arg, Type::from_profiled_type(profiled_type), state, Recompile);
+                                    send_block = Some(BlockHandler::BlockArg(block_arg));
+                                    blockarg_state = Some(state);
+                                    consume_block_arg = true;
+                                }
+                            }
+                            if consume_block_arg {
+                                let removed = args.pop();
+                                assert_eq!(removed, Some(original_block_arg), "block argument must be the final send operand");
+                                let new_state = self.frame_state(state).with_replaced_args(&args, args.len() + 1);
+                                send_frame_state = self.push_insn(block, Insn::Snapshot { state: Box::new(new_state) });
                             }
                         }
 
-                        // If the call site info indicates that the `Function` has overly complex arguments, then do not optimize into a `SendDirect`.
-                        // Optimized methods(`VM_METHOD_TYPE_OPTIMIZED`) and C methods handle their own argument constraints (e.g., kw_splat for Proc call).
-                        // Mask out ARGS_BLOCKARG only if we've already handled the nil block arg case above.
-                        let mut flags_for_check = if stripped_nil_block { flags & !VM_CALL_ARGS_BLOCKARG } else { flags };
+                        // The block argument has a dedicated runtime conversion path.
+                        let mut flags_for_check = if blockarg_state.is_some() || send_block.is_none() && (flags & VM_CALL_ARGS_BLOCKARG) != 0 {
+                            flags & !VM_CALL_ARGS_BLOCKARG
+                        } else {
+                            flags
+                        };
                         if def_type == VM_METHOD_TYPE_ISEQ {
                             // Caller splat specialization currently only supports ISEQ callees, so
                             // skip the generic splat rejection here and validate its profile below.
@@ -4810,18 +4853,26 @@ impl Function {
                                 self.count(block, Counter::caller_splat_optimized);
                             }
 
+                            if let Some(to_proc_cme) = blockarg_to_proc_cme {
+                                self.push_insn(block, Insn::PatchPoint {
+                                    invariant: Invariant::MethodRedefined { klass: unsafe { rb_cSymbol }, method: ID!(to_proc), cme: to_proc_cme },
+                                    state,
+                                });
+                            }
+
                             // Add PatchPoint for method redefinition
                             self.push_insn(block, Insn::PatchPoint { invariant: Invariant::MethodRedefined { klass, method: mid, cme }, state });
 
                             // Add GuardType for profiled receiver
                             if let Some(profiled_type) = profiled_type {
+
                                 recv = self.push_insn(block, Insn::GuardType { val: recv, guard_type: Type::from_profiled_type(profiled_type), state, recompile: Some(Recompile) });
                                 self.insn_types[recv] = self.infer_type(recv);
                             }
 
                             let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx } =
                                 self.emit_send_direct_args(block, call, &args, send_frame_state);
-                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: send_block })));
+                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: send_block, blockarg_state })));
                             self.make_equal_to(insn_id, replacement);
                         } else if !has_block && def_type == VM_METHOD_TYPE_BMETHOD {
                             let procv = unsafe { rb_get_def_bmethod_proc((*cme).def) };
@@ -4862,7 +4913,7 @@ impl Function {
 
                             let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx } =
                                 self.emit_send_direct_args(block, call, &args, send_frame_state);
-                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: None })));
+                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: None, blockarg_state: None })));
                             self.make_equal_to(insn_id, replacement);
                         } else if !has_block && def_type == VM_METHOD_TYPE_IVAR && args.is_empty() {
                             // Check if we're accessing ivars of a Class or Module object as they require single-ractor mode.
@@ -5020,6 +5071,9 @@ impl Function {
                                 send_block: Option<BlockHandler>,
                                 args: Vec<InsnId>,
                                 state: InsnId,
+                                direct_state: InsnId,
+                                blockarg_state: Option<InsnId>,
+                                blockarg_to_proc_cme: Option<*const rb_callable_method_entry_struct>,
                                 recv_class: VALUE,
                                 profiled_type: Option<ProfiledType>,
                                 cme: *const rb_callable_method_entry_struct,
@@ -5029,22 +5083,24 @@ impl Function {
                                 let method_id = unsafe { rb_vm_ci_mid(call_info) };
 
                                 let ci_flags = unsafe { vm_ci_flag(call_info) };
-                                // When seeing &block argument, fall back to dynamic dispatch for now
-                                // TODO: Support block forwarding
-                                if unspecializable_c_call_type(ci_flags) {
+                                if matches!(send_block, Some(BlockHandler::BlockArg(_))) && blockarg_state.is_none() {
+                                    fun.count_complex_call_features(block, ci_flags, state);
+                                    fun.set_dynamic_send_reason(send_insn_id, ComplexArgPass);
+                                    return Err(());
+                                }
+
+                                // A block argument uses its value to create the handler. It is not
+                                // part of the C function argument list.
+                                if unspecializable_c_call_type(ci_flags & !VM_CALL_ARGS_BLOCKARG) {
                                     // Only count features NOT already counted in type_specialize.
-                                    if !unspecializable_call_type(ci_flags) {
+                                    if !unspecializable_call_type(ci_flags & !VM_CALL_ARGS_BLOCKARG) {
                                         fun.count_complex_call_features(block, ci_flags, state);
                                     }
                                     fun.set_dynamic_send_reason(send_insn_id, ComplexArgPass);
                                     return Err(());
                                 }
 
-                                let blockiseq = match send_block {
-                                    Some(BlockHandler::BlockArg) => unreachable!("unsupported &block should have been filtered out"),
-                                    Some(BlockHandler::BlockIseq(blockiseq)) => Some(blockiseq),
-                                    None => None,
-                                };
+                                let has_block = send_block.is_some();
 
                                 let cfunc = unsafe { get_cme_def_body_cfunc(cme) };
                                 // Find the `argc` (arity) of the C method, which describes the parameters it expects
@@ -5059,10 +5115,7 @@ impl Function {
                                 }
                                 let props = props.unwrap_or_default();
                                 let return_type = props.return_type;
-                                let elidable = match blockiseq {
-                                    Some(_) => false, // Don't consider cfuncs with block arguments as elidable for now
-                                    None => props.elidable,
-                                };
+                                let elidable = if has_block { false } else { props.elidable };
 
                                 match cfunc_argc {
                                     0.. => {
@@ -5081,6 +5134,13 @@ impl Function {
                                         }
 
                                         // Commit to the replacement. Put PatchPoint.
+                                        if let Some(to_proc_cme) = blockarg_to_proc_cme {
+                                            fun.push_insn(block, Insn::PatchPoint {
+                                                invariant: Invariant::MethodRedefined { klass: unsafe { rb_cSymbol }, method: ID!(to_proc), cme: to_proc_cme },
+                                                state,
+                                            });
+                                        }
+
                                         fun.gen_patch_points_for_optimized_ccall(block, recv_class, method_id, cme, state);
 
                                         if let Some(profiled_type) = profiled_type {
@@ -5089,7 +5149,7 @@ impl Function {
                                         }
 
                                         // Try inlining the cfunc into HIR. Only inline if we don't have a block argument
-                                        if blockiseq.is_none() {
+                                        if !has_block {
                                             let tmp_block = fun.new_block(u32::MAX);
                                             if let Some(replacement) = (props.inline)(fun, tmp_block, recv, &args, state) {
                                                 // Copy contents of tmp_block to block
@@ -5128,10 +5188,11 @@ impl Function {
                                             args,
                                             cme,
                                             name,
-                                            state,
+                                            state: direct_state,
                                             return_type,
                                             elidable,
-                                            block: blockiseq.map(BlockHandler::BlockIseq),
+                                            block: send_block,
+                                            blockarg_state,
                                         })));
                                         fun.insn_types[ccall] = fun.infer_type(ccall);
                                         fun.make_equal_to(send_insn_id, ccall);
@@ -5148,6 +5209,13 @@ impl Function {
                                             return Err(());
                                         }
 
+                                        if let Some(to_proc_cme) = blockarg_to_proc_cme {
+                                            fun.push_insn(block, Insn::PatchPoint {
+                                                invariant: Invariant::MethodRedefined { klass: unsafe { rb_cSymbol }, method: ID!(to_proc), cme: to_proc_cme },
+                                                state,
+                                            });
+                                        }
+
                                         fun.gen_patch_points_for_optimized_ccall(block, recv_class, method_id, cme, state);
 
                                         if let Some(profiled_type) = profiled_type {
@@ -5156,7 +5224,7 @@ impl Function {
                                         }
 
                                         // Try inlining the cfunc into HIR. Only inline if we don't have a block argument
-                                        if blockiseq.is_none() {
+                                        if !has_block {
                                             let tmp_block = fun.new_block(u32::MAX);
                                             if let Some(replacement) = (props.inline)(fun, tmp_block, recv, &args, state) {
                                                 // Copy contents of tmp_block to block
@@ -5195,10 +5263,11 @@ impl Function {
                                             args,
                                             cme,
                                             name: method_id,
-                                            state,
+                                            state: direct_state,
                                             return_type,
                                             elidable,
-                                            block: blockiseq.map(BlockHandler::BlockIseq),
+                                            block: send_block,
+                                            blockarg_state,
                                         })));
                                         fun.insn_types[ccall] = fun.infer_type(ccall);
                                         fun.make_equal_to(send_insn_id, ccall);
@@ -5213,7 +5282,7 @@ impl Function {
                                 }
                             }
 
-                            if reduce_send_to_ccall(self, block, insn_id, recv, cd, send_block, args, state, klass, profiled_type, cme).is_ok() {
+                            if reduce_send_to_ccall(self, block, insn_id, recv, cd, send_block, args, state, send_frame_state, blockarg_state, blockarg_to_proc_cme, klass, profiled_type, cme).is_ok() {
                                 continue;
                             }
 
@@ -5406,6 +5475,7 @@ impl Function {
                                 jit_entry_idx,
                                 state: send_state,
                                 block: None,
+                                blockarg_state: None,
                             })));
                             self.make_equal_to(insn_id, replacement);
 
@@ -5472,6 +5542,7 @@ impl Function {
                                             return_type,
                                             elidable,
                                             block: None,
+                                            blockarg_state: None,
                                         })))
                                     };
                                     self.make_equal_to(insn_id, ccall);
@@ -5521,6 +5592,7 @@ impl Function {
                                             return_type,
                                             elidable,
                                             block: None,
+                                            blockarg_state: None,
                                         })))
                                     };
                                     self.make_equal_to(insn_id, ccall);
@@ -5679,14 +5751,13 @@ impl Function {
                 };
                 let SendDirectData { recv, cme, iseq, kw_bits, jit_entry_idx, block: call_block, state, .. } = **data;
                 let args_len = data.args.len();
-                // SendDirect invariant: block is either None or BlockIseq.
-                // BlockArg is rejected upstream during type specialization.
-                // TODO(max): If we accept BlockArg here, we need to change the folding of Defined
-                // in HIR construction for the defined opcode to check the send flags of the method
-                // being inlined, too.
+                if matches!(call_block, Some(BlockHandler::BlockArg(_))) {
+                    search_start = send_pos + 1;
+                    continue;
+                }
                 let blockiseq: Option<IseqPtr> = call_block.map(|bh| match bh {
                     BlockHandler::BlockIseq(bi) => bi,
-                    BlockHandler::BlockArg => unreachable!("BlockArg in SendDirect"),
+                    BlockHandler::BlockArg(_) => unreachable!(),
                 });
 
                 // Apply the cheap optimization heuristics (size, budget, denylist)
@@ -9681,6 +9752,7 @@ fn add_iseq_to_hir(
                     let join_block = fun.new_block(insn_idx);
                     let join_result = fun.push_insn(join_block, Insn::Param);
                     let join_local = if level == 0 { Some(fun.push_insn(join_block, Insn::Param)) } else { None };
+                    fun.block_param_proxy_values.push(join_result);
 
                     let ep = fun.get_ep(block, level);
                     let flags = fun.load_ep_flags(block, ep);
@@ -10198,7 +10270,7 @@ fn add_iseq_to_hir(
                     let block_handler = if !blockiseq.is_null() {
                         Some(BlockHandler::BlockIseq(blockiseq))
                     } else if block_arg {
-                        Some(BlockHandler::BlockArg)
+                        Some(BlockHandler::BlockArg(*args.last().expect("block argument must be present")))
                     } else {
                         None
                     };
