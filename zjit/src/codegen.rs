@@ -44,6 +44,14 @@ const PC_POISON: Option<*const VALUE> = if cfg!(feature = "runtime_checks") {
     None
 };
 
+
+/// VM-stack locals materialized in the current HIR block for one frame.
+struct SpilledFrameLocals {
+    iseq: IseqPtr,
+    depth: InlineDepth,
+    locals: Vec<Option<InsnId>>,
+}
+
 /// Ephemeral code generation state
 struct JITState {
     /// ISEQ version that is being compiled, which will be used by PatchPoint
@@ -61,12 +69,17 @@ struct JITState {
     /// ISEQ calls that need to be compiled later
     iseq_calls: Vec<IseqCallRef>,
 
+    /// VM-stack locals materialized in the current HIR block.
+    /// Resetting this state at block entry makes every CFG join conservative.
+    spilled_frame_locals: RefCell<Vec<SpilledFrameLocals>>,
+
     /// The number of native stack slots reserved for JITFrame, one per
     /// simultaneously live frame (`inlining_depth() + 1`), plus one shared slot
     /// for the saved SP register at the bottom. gen_write_jit_frame() and the
     /// inlined frame push write a JITFrame into the slot selected by the current
     /// frame's depth; gen_prepare_non_leaf_call() writes the SP slot.
     jit_frame_size: usize,
+
 }
 
 impl JITState {
@@ -78,6 +91,7 @@ impl JITState {
             labels: vec![None; num_blocks],
             jit_entries: Vec::default(),
             iseq_calls: Vec::default(),
+            spilled_frame_locals: RefCell::new(Vec::default()),
             jit_frame_size,
         }
     }
@@ -85,6 +99,11 @@ impl JITState {
     /// Retrieve the output of a given instruction that has been compiled
     fn get_opnd(&self, insn_id: InsnId) -> lir::Opnd {
         self.opnds[insn_id].unwrap_or_else(|| panic!("Failed to get_opnd({insn_id})"))
+    }
+
+    /// Forget local materializations before lowering a distinct HIR block.
+    fn reset_spilled_frame_locals(&self) {
+        self.spilled_frame_locals.borrow_mut().clear();
     }
 
     /// Get the ISEQ for the version currently being compiled.
@@ -451,6 +470,8 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
             let lir_block_id = hir_to_lir[block_id].unwrap();
             asm.set_current_block(lir_block_id);
 
+            jit.reset_spilled_frame_locals();
+
             // Write a label to jump to the basic block
             let label = jit.get_label(&mut asm, lir_block_id, block_id);
             asm.write_label(label);
@@ -741,7 +762,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::GetGlobal { id, state } => gen_getglobal(jit, asm, function, *id, &function.frame_state(*state)),
         &Insn::IsBlockParamModified { flags } => gen_is_block_param_modified(asm, opnd!(flags)),
         &Insn::GetBlockParam { ep_offset, level, state } => gen_getblockparam(jit, asm, function, ep_offset, level, &function.frame_state(state)),
-        &Insn::SetLocal { val, ep_offset, level, .. } => no_output!(gen_setlocal(asm, opnd!(val), function.type_of(val), ep_offset, level)),
+        &Insn::SetLocal { val, ep_offset, level, .. } => no_output!(gen_setlocal(jit, asm, opnd!(val), function.type_of(val), ep_offset, level)),
         Insn::GetConstant { klass, id, allow_nil, state } => gen_getconstant(jit, asm, function, opnd!(klass), *id, opnd!(allow_nil), &function.frame_state(*state)),
         Insn::GetConstantPath { ic, state } => gen_get_constant_path(jit, asm, function, *ic, &function.frame_state(*state)),
         Insn::GetClassVar { id, ic, state } => gen_getclassvar(jit, asm, function, *id, *ic, &function.frame_state(*state)),
@@ -853,10 +874,13 @@ fn gen_unbox_fixnum(asm: &mut Assembler, val: Opnd) -> Opnd {
 /// Set a local variable from a higher scope or the heap. `local_ep_offset` is in number of VALUEs.
 /// We generate this instruction with level=0 only when the local variable is on the heap, so we
 /// can't optimize the level=0 case using the SP register.
-fn gen_setlocal(asm: &mut Assembler, val: Opnd, val_type: Type, local_ep_offset: u32, level: u32) {
+fn gen_setlocal(jit: &JITState, asm: &mut Assembler, val: Opnd, val_type: Type, local_ep_offset: u32, level: u32) {
     let local_ep_offset = c_int::try_from(local_ep_offset).unwrap_or_else(|_| panic!("Could not convert local_ep_offset {local_ep_offset} to i32"));
     if level > 0 {
         gen_incr_counter(asm, Counter::vm_write_to_parent_iseq_local_count);
+        // An inlined child writes a parent frame directly. Its next materialization
+        // must not rely on a value cached before this write.
+        jit.reset_spilled_frame_locals();
     }
     let ep = gen_get_ep(asm, level);
 
@@ -3396,13 +3420,50 @@ fn gen_save_sp(asm: &mut Assembler, stack_size: usize) {
     asm.mov(cfp_sp, sp_addr);
 }
 
+
 /// Spill locals onto the stack.
+///
+/// We emit a store only when the slot does not already contain its current
+/// [`InsnId`]. This state is local to a HIR block, so block entries remain safe.
 fn gen_spill_locals(jit: &JITState, asm: &mut Assembler, state: &FrameState) {
-    // TODO: Avoid spilling locals that have been spilled before and not changed.
-    gen_incr_counter(asm, Counter::vm_write_locals_count);
-    asm_comment!(asm, "spill locals");
+    if state.locals().len() == 0 {
+        return;
+    }
+
+    let frame_idx = {
+        let mut spilled_frames = jit.spilled_frame_locals.borrow_mut();
+        spilled_frames.iter().position(|frame| frame.iseq == state.iseq && frame.depth == state.depth)
+            .unwrap_or_else(|| {
+                spilled_frames.push(SpilledFrameLocals {
+                    iseq: state.iseq,
+                    depth: state.depth,
+                    locals: vec![None; state.locals().len()],
+                });
+                spilled_frames.len() - 1
+            })
+    };
+
+    let mut wrote_locals = false;
     for (idx, &insn_id) in state.locals().enumerate() {
-        asm.mov(Opnd::mem(64, SP, (-local_idx_to_ep_offset(state.iseq, idx) - 1) * SIZEOF_VALUE_I32), jit.get_opnd(insn_id));
+        let opnd = jit.get_opnd(insn_id);
+        let mut spilled_frames = jit.spilled_frame_locals.borrow_mut();
+        let slot = &mut spilled_frames[frame_idx].locals[idx];
+        if *slot == Some(insn_id) {
+            continue;
+        }
+
+        if !wrote_locals {
+            gen_incr_counter(asm, Counter::vm_write_locals_count);
+            asm_comment!(asm, "spill locals");
+            wrote_locals = true;
+        }
+        asm.mov(Opnd::mem(64, SP, (-local_idx_to_ep_offset(state.iseq, idx) - 1) * SIZEOF_VALUE_I32), opnd);
+        *slot = Some(insn_id);
+    }
+
+    if !wrote_locals {
+        gen_incr_counter(asm, Counter::vm_write_locals_elided_count);
+        asm_comment!(asm, "elide unchanged locals");
     }
 }
 
@@ -3484,7 +3545,8 @@ fn gen_prepare_non_leaf_call(jit: &JITState, asm: &mut Assembler, function: &Fun
         stack_size: state.stack_size().try_into().expect("stack size overflow"),
     }];
     stack_map.extend(build_stack_map(jit, function, state));
-    let jit_frame = gen_prepare_call_with_gc(asm, state, false, stack_map.len());
+    let jit_frame = gen_write_jit_frame(asm, state, stack_map.len());
+    gen_save_sp(asm, state.stack_size());
 
     // NOTE(alan): This store can be done once per CFP switch, but analysis is required
     //             to avoid the store in functions that make no non-leaf call.

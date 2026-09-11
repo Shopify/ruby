@@ -6,7 +6,7 @@ use crate::backend::lir::Assembler;
 use crate::codegen::max_iseq_versions;
 use crate::cruby::*;
 use crate::hir::{Insn, iseq_to_hir};
-use crate::options::{get_option, rb_zjit_prepare_options, set_call_threshold, set_inline_threshold, set_max_versions, set_mem_bytes};
+use crate::options::{enable_zjit_stats, get_option, rb_zjit_prepare_options, set_call_threshold, set_inline_threshold, set_max_versions, set_mem_bytes};
 use crate::payload::IseqVersion;
 use crate::hir::tests::hir_build_tests::assert_contains_opcode;
 use crate::payload::*;
@@ -5219,6 +5219,35 @@ fn test_recursive_fib() {
         fib(0)
         [fib(0), fib(3), fib(4)]
     "), @"[0, 2, 3]");
+}
+
+#[test]
+fn test_elides_unchanged_local_spills() {
+    enable_zjit_stats();
+    let old_inline_threshold = get_option!(inline_threshold);
+    let old_call_threshold = unsafe { crate::options::rb_zjit_call_threshold };
+    set_inline_threshold(0);
+    set_call_threshold(1);
+    eval("nil"); // Boot the VM before ZJITState::get_counters().
+
+    let counters = crate::state::ZJITState::get_counters();
+    let writes_before = counters.vm_write_locals_count;
+    let elides_before = counters.vm_write_locals_elided_count;
+    let result = assert_compiles_allowing_exits("
+        def zjit_spill_elision_fib(n)
+          return n if n < 2
+          zjit_spill_elision_fib(n - 1) + zjit_spill_elision_fib(n - 2)
+        end
+        10.times { zjit_spill_elision_fib(15) }
+    ");
+
+    set_inline_threshold(old_inline_threshold);
+    set_call_threshold(old_call_threshold);
+    let writes = counters.vm_write_locals_count - writes_before;
+    let elides = counters.vm_write_locals_elided_count - elides_before;
+    assert_snapshot!(result, @"10");
+    assert!(writes > 0, "expected a local spill");
+    assert!(elides >= writes / 2, "expected the recursive calls to elide local spills");
 }
 
 #[test]
