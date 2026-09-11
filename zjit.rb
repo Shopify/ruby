@@ -192,6 +192,9 @@ class << RubyVM::ZJIT
       :zjit_alloc_bytes,
       :total_mem_bytes,
       :total_native_stack_bytes,
+      :caller_saved_reg_allocations,
+      :callee_saved_reg_allocations,
+
 
       :side_exit_count,
       :total_insn_count,

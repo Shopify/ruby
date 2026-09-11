@@ -499,6 +499,10 @@ make_counters! {
     getblockparamproxy_handler_no_profiles,
 
     total_native_stack_bytes,
+
+    // Register allocation classes.
+    caller_saved_reg_allocations,
+    callee_saved_reg_allocations,
 }
 
 /// Increase a counter by a specified amount

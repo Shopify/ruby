@@ -5169,6 +5169,23 @@ fn test_live_reg_past_ccall() {
 }
 
 #[test]
+fn test_many_live_regs_past_ccall() {
+    assert_snapshot!(inspect("
+        def test(a, b, c, d, e)
+          x0 = a + 1
+          x1 = b + 2
+          x2 = c + 3
+          x3 = d + 4
+          x4 = e + 5
+          [x0, x1, x2, x3, x4].length
+          x0 + x1 + x2 + x3 + x4
+        end
+        test(1, 2, 3, 4, 5)
+        test(1, 2, 3, 4, 5)
+    "), @"30");
+}
+
+#[test]
 fn test_method_call() {
     assert_snapshot!(inspect("
         def callee(a, b)

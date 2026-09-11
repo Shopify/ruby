@@ -253,9 +253,8 @@ pub use crate::backend::current::{
     EC, CFP, SP,
     NATIVE_BASE_PTR, NATIVE_STACK_PTR,
     C_ARG_OPNDS, C_RET_OPND,
+    JIT_PRESERVED_REGS,
 };
-
-pub static JIT_PRESERVED_REGS: &[Opnd] = &[CFP, SP, EC];
 
 /// Where the C calling convention passes an argument.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -841,10 +840,18 @@ pub enum Insn {
     CSelZ { truthy: Opnd, falsy: Opnd, out: Opnd },
 
     /// Set up the frame stack as necessary per the architecture.
-    FrameSetup { preserved: &'static [Opnd], slot_count: usize },
+    FrameSetup {
+        preserved: &'static [Opnd],
+        callee_saved: Vec<Opnd>,
+        slot_count: usize,
+    },
 
     /// Tear down the frame stack as necessary per the architecture.
-    FrameTeardown { preserved: &'static [Opnd], },
+    FrameTeardown {
+        preserved: &'static [Opnd],
+        callee_saved: Vec<Opnd>,
+        slot_count: usize,
+    },
 
     // Atomically increment a counter
     // Input: memory operand, increment value
@@ -1108,7 +1115,7 @@ macro_rules! for_each_operand_impl {
             // only iterate over preserved in the const iterator
             #[allow(unused_variables)]
             Insn::FrameSetup { preserved, .. } |
-            Insn::FrameTeardown { preserved } => {
+            Insn::FrameTeardown { preserved, .. } => {
             $(
                 visit_many!(preserved);
                 $const;
@@ -1695,17 +1702,30 @@ pub struct StackState {
     /// The maximum number of stack slots needed to capture side-exit stack-map
     /// operands that cannot be encoded directly.
     pub(crate) num_side_exit_stack_map_slots: usize,
+
+    /// The number of callee-saved registers stored below StackState slots.
+    callee_saved_slot_count: usize,
 }
 
 impl StackState {
     /// Initialize an empty stack state.
     fn new() -> Self {
-        StackState { stack_base_idx: 0, num_spill_slots: 0, num_side_exit_stack_map_slots: 0 }
+        StackState {
+            stack_base_idx: 0,
+            num_spill_slots: 0,
+            num_side_exit_stack_map_slots: 0,
+            callee_saved_slot_count: 0,
+        }
     }
 
     /// Initialize a stack state with a fixed number of reserved stack slots.
     fn new_with_stack_slots(stack_base_idx: usize) -> Self {
-        StackState { stack_base_idx, num_spill_slots: 0, num_side_exit_stack_map_slots: 0 }
+        StackState {
+            stack_base_idx,
+            num_spill_slots: 0,
+            num_side_exit_stack_map_slots: 0,
+            callee_saved_slot_count: 0,
+        }
     }
 
     /// Reserve native stack slots for JITFrame storage and stack-allocated operands.
@@ -1740,8 +1760,13 @@ impl StackState {
 
     /// Return a stack index for a register saved by handle_caller_saved_regs().
     fn stack_idx_for_caller_saved_reg(&self, caller_saved_reg_idx: usize) -> usize {
-        let frame_alignment_slots = self.stack_slot_count() % 2;
-        self.num_spill_slots + self.num_side_exit_stack_map_slots + frame_alignment_slots + caller_saved_reg_idx
+        let frame_alignment_slots =
+            (self.stack_slot_count() + self.callee_saved_slot_count) % 2;
+        self.callee_saved_slot_count
+            + self.num_spill_slots
+            + self.num_side_exit_stack_map_slots
+            + frame_alignment_slots
+            + caller_saved_reg_idx
     }
 
     /// Return a stack index reserved for side-exit stack-map register capture.
@@ -2274,6 +2299,16 @@ impl Assembler
     // `assigned` field.  The return value is the number of stack slots needed
     // for the spills.
     pub fn linear_scan(&self, intervals: &[Interval], regs: &RegPool) -> usize {
+        let ccall_positions: Vec<usize> = self.basic_blocks.iter()
+            .flat_map(|block| block.insns.iter().zip(block.insn_ids.iter()))
+            .filter_map(|(insn, insn_id)| {
+                matches!(insn, Insn::CCall { .. })
+                    .then_some(*insn_id)
+                    .flatten()
+                    .map(|insn_id| insn_id.0)
+            })
+            .collect();
+
         let num_registers = regs.num_allocatable();
 
         // `active`, `inactive`, and `unhandled` borrow the intervals they hold.
@@ -2377,12 +2412,22 @@ impl Assembler
                 }
             }
 
-            // Find a reg with the highest "free until use" point, then check if that "free until
-            // use" point is greater than or eq to than the current interval's end.  If it is, then
-            // we know the current interval can fit in the window this register is available.
-            let best_reg = (0..num_registers).rev()
-                .max_by_key(|&reg| free_registers[reg])
-                .filter(|&reg| free_registers[reg] >= cur_end);
+            // Prefer callee-saved registers for values that survive a C call.
+            // Other values use caller-saved registers and keep the JIT frame small.
+            let crosses_ccall = ccall_positions.iter().any(|&ccall_position| {
+                cur.covers(ccall_position) && !cur.born_at(ccall_position)
+            });
+            let find_best_register = |want_callee_saved| {
+                (0..num_registers).rev()
+                    .filter(|&reg| {
+                        crate::backend::current::is_callee_save_reg(regs.reg_at(reg))
+                            == want_callee_saved
+                    })
+                    .max_by_key(|&reg| free_registers[reg])
+                    .filter(|&reg| free_registers[reg] >= cur_end)
+            };
+            let best_reg = find_best_register(crosses_ccall)
+                .or_else(|| find_best_register(!crosses_ccall));
 
             match best_reg {
                 // We couldn't find a best register, so we need to spill
@@ -2436,6 +2481,47 @@ impl Assembler
         }
 
         num_stack_slots
+    }
+
+    /// Install the callee-saved registers that this frame uses after allocation.
+    pub fn set_callee_saved_regs(&mut self, intervals: &[Interval], regs: &RegPool, slot_count: usize) {
+        let callee_saved: Vec<Opnd> = crate::backend::current::CALLEE_SAVE_REGS.iter()
+            .copied()
+            .filter(|reg| intervals.iter().any(|interval| {
+                interval.assigned.get()
+                    .and_then(|allocation| allocation.assigned_reg(regs))
+                    .is_some_and(|assigned| assigned.reg_no == reg.reg_no)
+            }))
+            .map(Opnd::Reg)
+            .collect();
+
+        self.stack_state.callee_saved_slot_count = callee_saved.len();
+
+        if ZJITState::has_instance() {
+            let (caller_saved, callee_saved_count) = intervals.iter().fold((0, 0), |counts, interval| {
+                match interval.assigned.get().and_then(|allocation| allocation.assigned_reg(regs)) {
+                    Some(reg) if crate::backend::current::is_caller_save_reg(reg) => (counts.0 + 1, counts.1),
+                    Some(reg) if crate::backend::current::is_callee_save_reg(reg) => (counts.0, counts.1 + 1),
+                    _ => counts,
+                }
+            });
+            crate::stats::incr_counter_by(crate::stats::Counter::caller_saved_reg_allocations, caller_saved);
+            crate::stats::incr_counter_by(crate::stats::Counter::callee_saved_reg_allocations, callee_saved_count);
+        }
+
+        for block in &mut self.basic_blocks {
+            for insn in &mut block.insns {
+                match insn {
+                    Insn::FrameSetup { preserved, callee_saved: frame_regs, slot_count: frame_slots }
+                    | Insn::FrameTeardown { preserved, callee_saved: frame_regs, slot_count: frame_slots }
+                        if preserved.is_empty() && frame_regs.is_empty() => {
+                        *frame_regs = callee_saved.clone();
+                        *frame_slots = slot_count;
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     /// Resolve SSA block parameters by inserting sequentialized move instructions
@@ -2660,10 +2746,8 @@ impl Assembler
                         HashSet::default()
                     };
 
-                    // Find survivors: intervals that are live across this Call
-                    // instruction. We need to preserve the "surviving" registers
-                    // past the ccall, so we're going to push them all on the
-                    // stack, then pop after we make the ccall
+                    // Save caller-saved values that live across this CCall.
+                    // Stack-map values need stack copies even in callee-saved registers.
                     let out_vreg_id = out.is_vreg().then(|| out.vreg_idx());
                     debug_assert!(
                         out_vreg_id.is_none_or(|id| !intervals[id].has_bounds() || intervals[id].born_at(insn_number)),
@@ -2671,17 +2755,13 @@ impl Assembler
                     );
                     let survivors: Vec<VRegId> = intervals.iter()
                         .filter(|interval| {
-                            // We need to spill register intervals on this CCall in two cases:
-                            // 1) The VReg is live across the CCall. The VReg this CCall
-                            //    defines is not one of them: its range starts here, so it
-                            //    holds no value yet and there is nothing to preserve.
                             let live_across_call = Some(interval.vreg_id) != out_vreg_id
                                 && interval.covers(insn_number);
-
-                            // 2) The VReg is referenced by the stack map for the CCall
                             let stack_map_reg = stack_vreg_ids.contains(&interval.vreg_id);
-                            let is_register = interval.assigned.get().and_then(|alloc| alloc.alloc_pool_index(alloc_regs)).is_some();
-                            is_register && (live_across_call || stack_map_reg)
+                            let Some(allocation) = interval.assigned.get() else { return false; };
+                            let Some(reg) = allocation.assigned_reg(alloc_regs) else { return false; };
+                            let caller_saved = crate::backend::current::is_caller_save_reg(reg);
+                            (live_across_call && caller_saved) || stack_map_reg
                         })
                         .map(|interval| interval.vreg_id)
                         .collect();
@@ -3754,7 +3834,7 @@ impl fmt::Display for Assembler {
                         write!(f, "{}", insn.op())?;
 
                         // Show slot_count for FrameSetup
-                        if let Insn::FrameSetup { slot_count, preserved } = insn {
+                        if let Insn::FrameSetup { slot_count, preserved, .. } = insn {
                             write!(f, " {slot_count}")?;
                             if !preserved.is_empty() {
                                 write!(f, ",")?;
@@ -4101,13 +4181,21 @@ impl Assembler {
 
     pub fn frame_setup(&mut self, preserved_regs: &'static [Opnd]) {
         let slot_count = self.stack_state.stack_slot_count();
-        self.push_insn(Insn::FrameSetup { preserved: preserved_regs, slot_count });
+        self.push_insn(Insn::FrameSetup {
+            preserved: preserved_regs,
+            callee_saved: Vec::new(),
+            slot_count,
+        });
     }
 
-    /// The inverse of [Self::frame_setup] used before return. `reserve_bytes`
-    /// not necessary since we use a base pointer register.
+    /// The inverse of [Self::frame_setup] used before return.
     pub fn frame_teardown(&mut self, preserved_regs: &'static [Opnd]) {
-        self.push_insn(Insn::FrameTeardown { preserved: preserved_regs });
+        let slot_count = self.stack_state.stack_slot_count();
+        self.push_insn(Insn::FrameTeardown {
+            preserved: preserved_regs,
+            callee_saved: Vec::new(),
+            slot_count,
+        });
     }
 
     pub fn incr_counter(&mut self, mem: Opnd, value: Opnd) {
@@ -4912,6 +5000,53 @@ mod tests {
         assert_eq!(intervals[r13_idx].assigned.get(), Some(Allocation::Reg(2)));
         assert_eq!(intervals[r14_idx].assigned.get(), Some(Allocation::Reg(1)));
         assert_eq!(intervals[r15_idx].assigned.get(), Some(Allocation::Reg(2)));
+    }
+
+    #[test]
+    fn test_linear_scan_prefers_callee_saved_across_ccall() {
+        let mut asm = Assembler::new();
+        let block = asm.new_block(hir::BlockId(0), true, 0);
+        asm.set_current_block(block);
+        let entry = asm.new_label("entry");
+        asm.write_label(entry);
+
+        let short_lived = asm.new_vreg(64);
+        asm.push_insn(Insn::Load { opnd: 1.into(), out: short_lived });
+        let short_result = asm.new_vreg(64);
+        asm.push_insn(Insn::Add { left: short_lived, right: 1.into(), out: short_result });
+
+        let live_across_call = asm.new_vreg(64);
+        asm.push_insn(Insn::Load { opnd: 2.into(), out: live_across_call });
+        let call_result = asm.new_vreg(64);
+        asm.push_insn(Insn::CCall {
+            data: Box::new(CCallData {
+                opnds: vec![],
+                stack_map: None,
+                fptr: Opnd::UImm(0xF00),
+                start_marker: None,
+                end_marker: None,
+                out: call_result,
+            }),
+        });
+        let result = asm.new_vreg(64);
+        asm.push_insn(Insn::Add { left: live_across_call, right: call_result, out: result });
+        asm.push_insn(Insn::CRet(result));
+
+        let live_in = asm.analyze_liveness();
+        asm.number_instructions(0);
+        let intervals = asm.build_intervals(live_in);
+        let regs = RegPool::new(Assembler::get_alloc_regs());
+        asm.linear_scan(&intervals, &regs);
+
+        let short_reg = intervals[short_lived.vreg_idx()].assigned.get().unwrap().assigned_reg(&regs).unwrap();
+        let crossing_reg = intervals[live_across_call.vreg_idx()].assigned.get().unwrap().assigned_reg(&regs).unwrap();
+        assert!(crate::backend::current::is_caller_save_reg(short_reg));
+        assert!(crate::backend::current::is_callee_save_reg(crossing_reg));
+
+        asm.stack_state.num_spill_slots = 0;
+        asm.set_callee_saved_regs(&intervals, &regs, 0);
+        asm.handle_caller_saved_regs(&intervals, &regs, &[]);
+        assert!(asm.basic_blocks[block.0].insns.iter().all(|insn| !matches!(insn, Insn::CPushPair(..))));
     }
 
     #[test]

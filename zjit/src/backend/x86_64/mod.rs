@@ -89,18 +89,32 @@ impl From<&Opnd> for X86Opnd {
     }
 }
 
+/// Caller-saved registers that the allocator can use.
+pub const CALLER_SAVE_REGS: &[Reg] = &[
+    RDI_REG, RSI_REG, RDX_REG, RCX_REG, R8_REG, R9_REG, RAX_REG,
+];
+
+/// Callee-saved registers that are not reserved by ZJIT.
+pub const CALLEE_SAVE_REGS: &[Reg] = &[R14_REG, R15_REG];
+
+/// Registers that the entry trampoline preserves for all JIT code.
+pub const JIT_PRESERVED_REGS: &[Opnd] = &[
+    CFP, SP, EC, Opnd::Reg(R14_REG), Opnd::Reg(R15_REG),
+];
+
 /// List of registers that can be used for register allocation.
-/// This has the same number of registers for x86_64 and arm64.
 /// SCRATCH0_OPND is excluded.
 pub const ALLOC_REGS: &[Reg] = &[
-    RDI_REG,
-    RSI_REG,
-    RDX_REG,
-    RCX_REG,
-    R8_REG,
-    R9_REG,
-    RAX_REG,
+    RDI_REG, RSI_REG, RDX_REG, RCX_REG, R8_REG, R9_REG, RAX_REG, R14_REG, R15_REG,
 ];
+
+pub fn is_caller_save_reg(reg: Reg) -> bool {
+    CALLER_SAVE_REGS.iter().any(|candidate| candidate.reg_no == reg.reg_no)
+}
+
+pub fn is_callee_save_reg(reg: Reg) -> bool {
+    CALLEE_SAVE_REGS.iter().any(|candidate| candidate.reg_no == reg.reg_no)
+}
 
 /// Special scratch register for intermediate processing. It should be used only by
 /// [`Assembler::x86_scratch_split`] or [`Assembler::new_with_scratch_reg`].
@@ -131,9 +145,9 @@ impl Assembler {
         ALLOC_REGS.to_vec()
     }
 
-    /// Get a list of all of the caller-save registers
+    /// Get a list of allocator caller-saved registers.
     pub fn get_caller_save_regs() -> Vec<Reg> {
-        vec![RAX_REG, RCX_REG, RDX_REG, RSI_REG, RDI_REG, R8_REG, R9_REG, R10_REG, R11_REG]
+        CALLER_SAVE_REGS.to_vec()
     }
 
     /// How many bytes a call and a bare bones [Self::frame_setup] would change native SP
@@ -817,26 +831,34 @@ impl Assembler {
                     cb.write_byte(0);
                 },
 
-                // Set up RBP as frame pointer work with unwinding
-                // (e.g. with Linux `perf record --call-graph fp`)
-                // and to allow push and pops in the function.
-                &Insn::FrameSetup { preserved, mut slot_count } => {
-                    // Bump slot_count for alignment if necessary
+                // Set up RBP as a frame pointer for unwinding and stack access.
+                &Insn::FrameSetup { preserved, ref callee_saved, mut slot_count } => {
                     const { assert!(SIZEOF_VALUE == 8, "alignment logic relies on SIZEOF_VALUE == 8"); }
-                    let total_slots = 2 /* rbp and return address*/ + slot_count + preserved.len();
+                    debug_assert!(preserved.is_empty() || callee_saved.is_empty());
+                    let mut frame_slots = slot_count + callee_saved.len();
+                    let total_slots = 2 /* rbp and return address*/ + frame_slots + preserved.len();
                     if total_slots % 2 == 1 {
-                        slot_count += 1;
+                        frame_slots += 1;
                     }
                     push(cb, RBP);
                     mov(cb, RBP, RSP);
                     for reg in preserved {
                         push(cb, reg.into());
                     }
-                    if slot_count > 0 {
-                        sub(cb, RSP, uimm_opnd((slot_count * SIZEOF_VALUE) as u64));
+                    if frame_slots > 0 {
+                        sub(cb, RSP, uimm_opnd((frame_slots * SIZEOF_VALUE) as u64));
+                    }
+                    for (idx, reg) in callee_saved.iter().enumerate() {
+                        let offset = -((slot_count + idx + 1) as i32 * SIZEOF_VALUE_I32);
+                        mov(cb, mem_opnd(64, RBP, offset), (*reg).into());
                     }
                 }
-                &Insn::FrameTeardown { preserved } => {
+                &Insn::FrameTeardown { preserved, ref callee_saved, slot_count } => {
+                    debug_assert!(preserved.is_empty() || callee_saved.is_empty());
+                    for (idx, reg) in callee_saved.iter().enumerate() {
+                        let offset = -((slot_count + idx + 1) as i32 * SIZEOF_VALUE_I32);
+                        mov(cb, (*reg).into(), mem_opnd(64, RBP, offset));
+                    }
                     let mut preserved_offset = -8;
                     for reg in preserved {
                         mov(cb, reg.into(), mem_opnd(64, RBP, preserved_offset));
@@ -1194,39 +1216,33 @@ impl Assembler {
             asm.stack_state.num_spill_slots = num_stack_slots;
             asm.stack_state.num_side_exit_stack_map_slots = asm.side_exit_stack_map_slots(&intervals);
             let stack_slot_count = asm.stack_state.stack_slot_count();
-            if stack_slot_count > Self::MAX_FRAME_STACK_SLOTS {
-                return Err(CompileError::NativeStackTooLarge);
-            }
-
-            // Dump vreg-to-physical-register mapping if requested
+            trace_compile_phase("set_callee_saved_regs", || {
+                asm.set_callee_saved_regs(&intervals, &regs, stack_slot_count)
+            });
+            // Dump vreg-to-physical-register mapping if requested.
             if let Some(crate::options::Options { dump_lir: Some(dump_lirs), .. }) = unsafe { crate::options::OPTIONS.as_ref() } {
                 if dump_lirs.contains(&crate::options::DumpLIR::alloc_regs) {
                     println!("LIR live_intervals:\n{}", crate::backend::lir::debug_intervals(&asm, &intervals));
-
                     println!("VReg assignments:");
                     for (i, interval) in intervals.iter().enumerate() {
                         if let Some(alloc) = interval.assigned.get() {
                             let alloc_str = match alloc {
-                                Allocation::Reg(n) => format!("{}", regs.reg_at(n)),
-                                Allocation::Stack(n) => format!("Stack[{}]", n),
+                                Allocation::Reg(n) => {
+                                    let reg = regs.reg_at(n);
+                                    let class = if crate::backend::current::is_callee_save_reg(reg) {
+                                        "callee-saved"
+                                    } else {
+                                        "caller-saved"
+                                    };
+                                    format!("{reg} ({class})")
+                                }
+                                Allocation::Stack(n) => format!("Stack[{n}]"),
                             };
-                            println!("  v{} => {} (ranges: {})", i, alloc_str, interval.ranges_string());
+                            println!("  v{i} => {alloc_str} (ranges: {})", interval.ranges_string());
                         }
                     }
                 }
             }
-
-            // Update FrameSetup slot_count now that StackState knows the
-            // register allocator spill and side-exit capture counts.
-            trace_compile_phase("count_stack_slots", || {
-                for block in asm.basic_blocks.iter_mut() {
-                    for insn in block.insns.iter_mut() {
-                        if let Insn::FrameSetup { slot_count, .. } = insn {
-                            *slot_count = stack_slot_count;
-                        }
-                    }
-                }
-            });
 
             trace_compile_phase("resolve_ssa", || {
                 asm.handle_caller_saved_regs(&intervals, &regs, &C_ARG_REGREGS);
@@ -2292,15 +2308,34 @@ mod tests {
         0x4: push r13
         0x6: push rbx
         0x7: push r12
-        0x9: sub rsp, 8
-        0xd: mov r13, qword ptr [rbp - 8]
-        0x11: mov rbx, qword ptr [rbp - 0x10]
-        0x15: mov r12, qword ptr [rbp - 0x18]
-        0x19: mov rsp, rbp
-        0x1c: pop rbp
-        0x1d: ret
+        0x9: push r14
+        0xb: push r15
+        0xd: sub rsp, 8
+        0x11: mov r13, qword ptr [rbp - 8]
+        0x15: mov rbx, qword ptr [rbp - 0x10]
+        0x19: mov r12, qword ptr [rbp - 0x18]
+        0x1d: mov r14, qword ptr [rbp - 0x20]
+        0x21: mov r15, qword ptr [rbp - 0x28]
+        0x25: mov rsp, rbp
+        0x28: pop rbp
+        0x29: ret
         ");
-        assert_snapshot!(cb.hexdump(), @"554889e541555341544883ec084c8b6df8488b5df04c8b65e84889ec5dc3");
+        assert_snapshot!(cb.hexdump(), @"554889e54155534154415641574883ec084c8b6df8488b5df04c8b65e84c8b75e04c8b7dd84889ec5dc3");
+    }
+
+    #[test]
+    fn frame_setup_teardown_callee_saved_regs() {
+        let (mut asm, mut cb) = setup_asm();
+        let callee_saved = vec![Opnd::Reg(R14_REG), Opnd::Reg(R15_REG)];
+        asm.push_insn(Insn::FrameSetup { preserved: &[], callee_saved: callee_saved.clone(), slot_count: 3 });
+        asm.push_insn(Insn::FrameTeardown { preserved: &[], callee_saved, slot_count: 3 });
+        asm.compile_with_num_regs(&mut cb, 0);
+
+        let disasm = cb.disasm();
+        assert!(disasm.contains("mov qword ptr [rbp - 0x20], r14"));
+        assert!(disasm.contains("mov qword ptr [rbp - 0x28], r15"));
+        assert!(disasm.contains("mov r14, qword ptr [rbp - 0x20]"));
+        assert!(disasm.contains("mov r15, qword ptr [rbp - 0x28]"));
     }
 
     #[test]
