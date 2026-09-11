@@ -130,6 +130,10 @@ unsafe extern "C" {
     // (Range is 0x3000000000000001 to 0x4fffffffffffffff (1.7272337110188893E-77 to 2.3158417847463237E+77).
     pub fn rb_float_new(d: f64) -> VALUE;
 
+    pub fn rb_int_plus(x: VALUE, y: VALUE) -> VALUE;
+    pub fn rb_int_minus(x: VALUE, y: VALUE) -> VALUE;
+    pub fn rb_int_mul(x: VALUE, y: VALUE) -> VALUE;
+
     pub fn rb_hash_empty_p(hash: VALUE) -> VALUE;
     pub fn rb_ary_new_from_args(n: c_long, ...) -> VALUE;
     pub fn rb_str_setbyte(str: VALUE, index: VALUE, value: VALUE) -> VALUE;

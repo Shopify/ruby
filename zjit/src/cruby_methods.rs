@@ -664,19 +664,27 @@ fn try_inline_float_op(fun: &mut hir::Function, block: hir::BlockId, f: &dyn Fn(
     if !unsafe { rb_BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG) } {
         return None;
     }
-    // Receiver must be Flonum (cheap tag check: (val & 3) == 2).
-    // The other operand can be Flonum or Fixnum since rb_float_plus/minus/mul/div
-    // handle both via fast paths (FIXNUM_P check + cast to double).
-    // HeapFloat falls back to CCallWithFrame via the default Send path.
-    if fun.likely_a(recv, types::Flonum, state)
-        && (fun.likely_a(other, types::Flonum, state) || fun.likely_a(other, types::Fixnum, state))
-    {
-        let recv = coerce_float_op_operand(fun, block, recv, types::Flonum, state);
-        let other_type = if fun.likely_a(other, types::Flonum, state) { types::Flonum } else { types::Fixnum };
-        let other = coerce_float_op_operand(fun, block, other, other_type, state);
-        return Some(fun.push_insn(block, f(recv, other)));
-    }
-    None
+    // The receiver can be any Float. Codegen uses a Flonum fast path and
+    // sends HeapFloat operands to the C implementation.
+    let recv_type = if fun.likely_a(recv, types::Flonum, state) {
+        types::Flonum
+    } else if fun.likely_a(recv, types::Float, state) {
+        types::Float
+    } else {
+        return None;
+    };
+    let other_type = if fun.likely_a(other, types::Flonum, state) {
+        types::Flonum
+    } else if fun.likely_a(other, types::Float, state) {
+        types::Float
+    } else if fun.likely_a(other, types::Fixnum, state) {
+        types::Fixnum
+    } else {
+        return None;
+    };
+    let recv = coerce_float_op_operand(fun, block, recv, recv_type, state);
+    let other = coerce_float_op_operand(fun, block, other, other_type, state);
+    Some(fun.push_insn(block, f(recv, other)))
 }
 
 fn coerce_float_op_operand(fun: &mut hir::Function, block: hir::BlockId, val: hir::InsnId, guard_type: Type, state: hir::InsnId) -> hir::InsnId {
@@ -716,6 +724,18 @@ fn inline_float_to_i(fun: &mut hir::Function, block: hir::BlockId, recv: hir::In
     None
 }
 
+fn try_inline_fixnum_float_op(fun: &mut hir::Function, block: hir::BlockId, f: &dyn Fn(hir::InsnId, hir::InsnId) -> hir::Insn, bop: u32, recv: hir::InsnId, other: hir::InsnId, state: hir::InsnId) -> Option<hir::InsnId> {
+    if !unsafe { rb_BASIC_OP_UNREDEFINED_P(bop, INTEGER_REDEFINED_OP_FLAG) } {
+        return None;
+    }
+    if fun.likely_a(recv, types::Fixnum, state) && fun.likely_a(other, types::Flonum, state) {
+        let recv = coerce_float_op_operand(fun, block, recv, types::Fixnum, state);
+        let other = coerce_float_op_operand(fun, block, other, types::Flonum, state);
+        return Some(fun.push_insn(block, f(recv, other)));
+    }
+    None
+}
+
 fn try_inline_fixnum_op(fun: &mut hir::Function, block: hir::BlockId, f: &dyn Fn(hir::InsnId, hir::InsnId) -> hir::Insn, bop: u32, left: hir::InsnId, right: hir::InsnId, state: hir::InsnId) -> Option<hir::InsnId> {
     if !unsafe { rb_BASIC_OP_UNREDEFINED_P(bop, INTEGER_REDEFINED_OP_FLAG) } {
         // If the basic operation is already redefined, we cannot optimize it.
@@ -741,17 +761,20 @@ fn inline_integer_eq(fun: &mut hir::Function, block: hir::BlockId, recv: hir::In
 
 fn inline_integer_plus(fun: &mut hir::Function, block: hir::BlockId, recv: hir::InsnId, args: &[hir::InsnId], state: hir::InsnId) -> Option<hir::InsnId> {
     let &[other] = args else { return None; };
-    try_inline_fixnum_op(fun, block, &|left, right| hir::Insn::FixnumAdd { left, right, state }, BOP_PLUS, recv, other, state)
+    try_inline_fixnum_float_op(fun, block, &|recv, other| hir::Insn::FloatAdd { recv, other, state }, BOP_PLUS, recv, other, state)
+        .or_else(|| try_inline_fixnum_op(fun, block, &|left, right| hir::Insn::FixnumAdd { left, right, state }, BOP_PLUS, recv, other, state))
 }
 
 fn inline_integer_minus(fun: &mut hir::Function, block: hir::BlockId, recv: hir::InsnId, args: &[hir::InsnId], state: hir::InsnId) -> Option<hir::InsnId> {
     let &[other] = args else { return None; };
-    try_inline_fixnum_op(fun, block, &|left, right| hir::Insn::FixnumSub { left, right, state }, BOP_MINUS, recv, other, state)
+    try_inline_fixnum_float_op(fun, block, &|recv, other| hir::Insn::FloatSub { recv, other, state }, BOP_MINUS, recv, other, state)
+        .or_else(|| try_inline_fixnum_op(fun, block, &|left, right| hir::Insn::FixnumSub { left, right, state }, BOP_MINUS, recv, other, state))
 }
 
 fn inline_integer_mult(fun: &mut hir::Function, block: hir::BlockId, recv: hir::InsnId, args: &[hir::InsnId], state: hir::InsnId) -> Option<hir::InsnId> {
     let &[other] = args else { return None; };
-    try_inline_fixnum_op(fun, block, &|left, right| hir::Insn::FixnumMult { left, right, state }, BOP_MULT, recv, other, state)
+    try_inline_fixnum_float_op(fun, block, &|recv, other| hir::Insn::FloatMul { recv, other, state }, BOP_MULT, recv, other, state)
+        .or_else(|| try_inline_fixnum_op(fun, block, &|left, right| hir::Insn::FixnumMult { left, right, state }, BOP_MULT, recv, other, state))
 }
 
 fn inline_integer_div(fun: &mut hir::Function, block: hir::BlockId, recv: hir::InsnId, args: &[hir::InsnId], state: hir::InsnId) -> Option<hir::InsnId> {

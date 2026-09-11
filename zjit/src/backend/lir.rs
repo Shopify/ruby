@@ -761,6 +761,7 @@ pub struct PatchPointData {
     pub version: IseqVersionRef,
 }
 
+
 /// ZJIT Low-level IR instruction
 #[derive(Clone)]
 pub enum Insn {
@@ -845,6 +846,21 @@ pub enum Insn {
 
     /// Tear down the frame stack as necessary per the architecture.
     FrameTeardown { preserved: &'static [Opnd], },
+
+    /// Convert a signed 64-bit general-purpose value to a double.
+    F64FromI64 { opnd: Opnd, out: Opnd },
+
+    /// Add two double values.
+    F64Add { left: Opnd, right: Opnd, out: Opnd },
+
+    /// Subtract two double values.
+    F64Sub { left: Opnd, right: Opnd, out: Opnd },
+
+    /// Multiply two double values.
+    F64Mul { left: Opnd, right: Opnd, out: Opnd },
+
+    /// Divide two double values.
+    F64Div { left: Opnd, right: Opnd, out: Opnd },
 
     // Atomically increment a counter
     // Input: memory operand, increment value
@@ -1052,6 +1068,7 @@ macro_rules! for_each_operand_impl {
             Insn::CPopInto(opnd) |
             Insn::CPush(opnd) |
             Insn::CRet(opnd) |
+            Insn::F64FromI64 { opnd, .. } |
             Insn::JmpOpnd(opnd) |
             Insn::Lea { opnd, .. } |
             Insn::Load { opnd, .. } |
@@ -1076,7 +1093,17 @@ macro_rules! for_each_operand_impl {
             Insn::CSelLE { truthy: opnd0, falsy: opnd1, .. } |
             Insn::CSelNE { truthy: opnd0, falsy: opnd1, .. } |
             Insn::CSelNZ { truthy: opnd0, falsy: opnd1, .. } |
-            Insn::CSelZ { truthy: opnd0, falsy: opnd1, .. } |
+            Insn::CSelZ { truthy: opnd0, falsy: opnd1, .. } => {
+                visit_one!(opnd0);
+                visit_one!(opnd1);
+            }
+            Insn::F64Add { left, right, .. } |
+            Insn::F64Sub { left, right, .. } |
+            Insn::F64Mul { left, right, .. } |
+            Insn::F64Div { left, right, .. } => {
+                visit_one!(left);
+                visit_one!(right);
+            }
             Insn::IncrCounter { mem: opnd0, value: opnd1, .. } |
             Insn::LoadInto { dest: opnd0, opnd: opnd1 } |
             Insn::LShift { opnd: opnd0, shift: opnd1, .. } |
@@ -1207,6 +1234,11 @@ impl Insn {
             Insn::CSelZ { .. } => "CSelZ",
             Insn::FrameSetup { .. } => "FrameSetup",
             Insn::FrameTeardown { .. } => "FrameTeardown",
+            Insn::F64FromI64 { .. } => "F64FromI64",
+            Insn::F64Add { .. } => "F64Add",
+            Insn::F64Sub { .. } => "F64Sub",
+            Insn::F64Mul { .. } => "F64Mul",
+            Insn::F64Div { .. } => "F64Div",
             Insn::IncrCounter { .. } => "IncrCounter",
             Insn::Jbe(_) => "Jbe",
             Insn::Jb(_) => "Jb",
@@ -1261,8 +1293,13 @@ impl Insn {
             Insn::CSelLE { out, .. } |
             Insn::CSelNE { out, .. } |
             Insn::CSelNZ { out, .. } |
-            Insn::CSelZ { out, .. } |
-            Insn::Lea { out, .. } |
+            Insn::CSelZ { out, .. }
+            | Insn::F64FromI64 { out, .. }
+            | Insn::F64Add { out, .. }
+            | Insn::F64Sub { out, .. }
+            | Insn::F64Mul { out, .. }
+            | Insn::F64Div { out, .. }
+            | Insn::Lea { out, .. } |
             Insn::LeaJumpTarget { out, .. } |
             Insn::Load { out, .. } |
             Insn::LoadSExt { out, .. } |
@@ -1293,8 +1330,13 @@ impl Insn {
             Insn::CSelLE { out, .. } |
             Insn::CSelNE { out, .. } |
             Insn::CSelNZ { out, .. } |
-            Insn::CSelZ { out, .. } |
-            Insn::Lea { out, .. } |
+            Insn::CSelZ { out, .. }
+            | Insn::F64FromI64 { out, .. }
+            | Insn::F64Add { out, .. }
+            | Insn::F64Sub { out, .. }
+            | Insn::F64Mul { out, .. }
+            | Insn::F64Div { out, .. }
+            | Insn::Lea { out, .. } |
             Insn::LeaJumpTarget { out, .. } |
             Insn::Load { out, .. } |
             Insn::LoadSExt { out, .. } |
@@ -4096,6 +4138,41 @@ impl Assembler {
     pub fn csel_z(&mut self, truthy: Opnd, falsy: Opnd) -> Opnd {
         let out = self.new_vreg(Opnd::match_num_bits(&[truthy, falsy]));
         self.push_insn(Insn::CSelZ { truthy, falsy, out });
+        out
+    }
+
+    #[must_use]
+    pub fn f64_from_i64(&mut self, opnd: Opnd) -> Opnd {
+        let out = self.new_vreg(64);
+        self.push_insn(Insn::F64FromI64 { opnd, out });
+        out
+    }
+
+    #[must_use]
+    pub fn f64_add(&mut self, left: Opnd, right: Opnd) -> Opnd {
+        let out = self.new_vreg(64);
+        self.push_insn(Insn::F64Add { left, right, out });
+        out
+    }
+
+    #[must_use]
+    pub fn f64_sub(&mut self, left: Opnd, right: Opnd) -> Opnd {
+        let out = self.new_vreg(64);
+        self.push_insn(Insn::F64Sub { left, right, out });
+        out
+    }
+
+    #[must_use]
+    pub fn f64_mul(&mut self, left: Opnd, right: Opnd) -> Opnd {
+        let out = self.new_vreg(64);
+        self.push_insn(Insn::F64Mul { left, right, out });
+        out
+    }
+
+    #[must_use]
+    pub fn f64_div(&mut self, left: Opnd, right: Opnd) -> Opnd {
+        let out = self.new_vreg(64);
+        self.push_insn(Insn::F64Div { left, right, out });
         out
     }
 

@@ -8371,6 +8371,11 @@ fn test_float_arithmetic() {
     assert_snapshot!(assert_compiles_allowing_exits("def test = 3.5 - 2.0; test"), @"1.5");
     assert_snapshot!(assert_compiles_allowing_exits("def test = 5.0 / 2.0; test"), @"2.5");
     assert_snapshot!(assert_compiles_allowing_exits("def test = 1.5 * 3; test"), @"4.5"); // Float * Fixnum
+    assert_snapshot!(assert_compiles_allowing_exits("def test(a, b) = a + b; test(3, 1.5)"), @"4.5");
+    assert_snapshot!(assert_compiles_allowing_exits("def test(a, b) = a - b; test(3, 1.5)"), @"1.5");
+    assert_snapshot!(assert_compiles_allowing_exits("def test(a, b) = a * b; test(3, 1.5)"), @"4.5");
+    assert_snapshot!(assert_compiles_allowing_exits("def test = 1e70 * 1e10; test"), @"1.0000000000000001e+80");
+    assert_snapshot!(assert_compiles_allowing_exits("def test = -0.0 + 1.5; test"), @"1.5");
     assert_snapshot!(assert_compiles_allowing_exits("def test = (Float::NAN + 1.0).nan?; test"), @"true");
     assert_snapshot!(assert_compiles_allowing_exits("def test = Float::INFINITY * 2.0; test"), @"Infinity");
     assert_snapshot!(assert_compiles_allowing_exits("def test = 3.7.to_i; test"), @"3");

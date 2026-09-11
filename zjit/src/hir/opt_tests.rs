@@ -20547,6 +20547,37 @@ mod hir_opt_tests {
     }
 
     #[test]
+    fn test_fixnum_float_add_inline() {
+        eval(r#"
+            def test(a, b) = a + b
+            test(3, 1.5)
+        "#);
+        assert_snapshot!(hir_string("test"), @"
+        fn test@<compiled>:2:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          v2:CPtr = LoadSP
+          v3:BasicObject = LoadField v2, :a@0x1000
+          v4:BasicObject = LoadField v2, :b@0x1001
+          Jump bb3(v1, v3, v4)
+        bb2():
+          EntryPoint JIT(0)
+          v7:BasicObject = LoadArg :self@0
+          v8:BasicObject = LoadArg :a@1
+          v9:BasicObject = LoadArg :b@2
+          Jump bb3(v7, v8, v9)
+        bb3(v11:BasicObject, v12:BasicObject, v13:BasicObject):
+          PatchPoint MethodRedefined(Integer@0x1008, +@0x1010, cme:0x1018)
+          v28:Fixnum = GuardType v12, Fixnum recompile
+          v29:Flonum = GuardType v13, Flonum recompile
+          v30:Float = FloatAdd v28, v29
+          CheckInterrupts
+          Return v30
+        ");
+    }
+
+    #[test]
     fn test_float_mul_recompile_stops_inlining_heap_float() {
         set_max_versions(2);
         eval(r#"
@@ -20612,7 +20643,7 @@ mod hir_opt_tests {
     }
 
     #[test]
-    fn test_float_mul_recompile_stops_inlining_heap_float_receiver() {
+    fn test_float_mul_recompile_inlines_heap_float_receiver() {
         set_max_versions(2);
         eval(r#"
             def test_float_mul_recompile(a, b) = a * b
@@ -20627,11 +20658,11 @@ mod hir_opt_tests {
             30.times { test_float_mul_recompile(-0.0, 1.5) }
         "#);
 
-        // After recompiling, the HeapFloat arm of the polymorphic dispatch must
-        // not speculate on Flonum; it falls back to CCallWithFrame. The Flonum
-        // arm still inlines FloatMul, guarded on the Flonum-profiled argument.
+        // The HeapFloat arm remains inline. Codegen sends its values to the C
+        // implementation when they do not have a Flonum tag.
         let final_hir = hir_string("test_float_mul_recompile");
-        assert!(final_hir.contains("CCallWithFrame"), "{final_hir}");
+        assert!(final_hir.contains("FloatMul"), "{final_hir}");
+        assert!(!final_hir.contains("CCallWithFrame"), "{final_hir}");
         assert_snapshot!(format!("{intermediate_hir}\n{final_hir}"), @"
         fn test_float_mul_recompile@<compiled>:2:
         bb1():
@@ -20675,17 +20706,18 @@ mod hir_opt_tests {
         bb5():
           v24:HeapFloat = RefineType v12, HeapFloat
           PatchPoint MethodRedefined(Float@0x1008, *@0x1010, cme:0x1018)
-          v42:BasicObject = CCallWithFrame v24, :Float#*@0x1040, v13
-          Jump bb4(v42)
+          v42:Flonum = GuardType v13, Flonum recompile
+          v43:Float = FloatMul v24, v42
+          Jump bb4(v43)
         bb6():
           v27:CBool = HasType v12, Flonum
           CondBranch v27, bb7(), bb8()
         bb7():
           v30:Flonum = RefineType v12, Flonum
           PatchPoint MethodRedefined(Float@0x1008, *@0x1010, cme:0x1018)
-          v45:Flonum = GuardType v13, Flonum recompile
-          v46:Float = FloatMul v30, v45
-          Jump bb4(v46)
+          v46:Flonum = GuardType v13, Flonum recompile
+          v47:Float = FloatMul v30, v46
+          Jump bb4(v47)
         bb8():
           v33:BasicObject = Send v12, :*, v13 # SendFallbackReason: Send: polymorphic call site
           Jump bb4(v33)

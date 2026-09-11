@@ -615,6 +615,18 @@ impl Assembler {
                     }
                     asm.push_insn(insn);
                 },
+                Insn::F64FromI64 { opnd, .. } => {
+                    *opnd = split_load_operand(asm, *opnd);
+                    asm.push_insn(insn);
+                }
+                Insn::F64Add { left, right, .. }
+                | Insn::F64Sub { left, right, .. }
+                | Insn::F64Mul { left, right, .. }
+                | Insn::F64Div { left, right, .. } => {
+                    *left = split_load_operand(asm, *left);
+                    *right = split_load_operand(asm, *right);
+                    asm.push_insn(insn);
+                }
                 Insn::Mul { left, right, .. } => {
                     *left = split_load_operand(asm, *left);
                     *right = split_load_operand(asm, *right);
@@ -769,6 +781,28 @@ impl Assembler {
                         asm.store(mem_out, SCRATCH0_OPND);
                     }
                 }
+                Insn::F64FromI64 { opnd, out } => {
+                    *opnd = split_memory_read(asm, *opnd, SCRATCH0_OPND);
+                    let mem_out = split_memory_write(out, SCRATCH0_OPND);
+                    asm.push_insn(insn);
+                    if let Some(mem_out) = mem_out {
+                        let mem_out = split_stack_membase(asm, mem_out, SCRATCH1_OPND);
+                        asm.store(mem_out, SCRATCH0_OPND);
+                    }
+                }
+                Insn::F64Add { left, right, out }
+                | Insn::F64Sub { left, right, out }
+                | Insn::F64Mul { left, right, out }
+                | Insn::F64Div { left, right, out } => {
+                    *left = split_memory_read(asm, *left, SCRATCH0_OPND);
+                    *right = split_memory_read(asm, *right, SCRATCH1_OPND);
+                    let mem_out = split_memory_write(out, SCRATCH0_OPND);
+                    asm.push_insn(insn);
+                    if let Some(mem_out) = mem_out {
+                        let mem_out = split_stack_membase(asm, mem_out, SCRATCH1_OPND);
+                        asm.store(mem_out, SCRATCH0_OPND);
+                    }
+                }
                 Insn::Mul { left, right, out } => {
                     *left = split_memory_read(asm, *left, SCRATCH0_OPND);
                     *right = split_memory_read(asm, *right, SCRATCH1_OPND);
@@ -790,7 +824,8 @@ impl Assembler {
                     }
                 }
                 Insn::LShift { opnd, out, .. } |
-                Insn::RShift { opnd, out, .. } => {
+                Insn::RShift { opnd, out, .. } |
+                Insn::URShift { opnd, out, .. } => {
                     *opnd = split_memory_read(asm, *opnd, SCRATCH0_OPND);
                     let mem_out = split_memory_write(out, SCRATCH0_OPND);
 
@@ -1202,6 +1237,34 @@ impl Assembler {
                     // SP = X29 (frame pointer)
                     mov(cb, C_SP_REG, X29);
                     ldp_post(cb, X29, X30, A64Opnd::new_mem(128, C_SP_REG, 16));
+                }
+                Insn::F64FromI64 { opnd, out } => {
+                    f64_from_i64(cb, 0, opnd.into());
+                    fmov_from_freg(cb, out.into(), 0);
+                }
+                Insn::F64Add { left, right, out } => {
+                    fmov_to_freg(cb, 0, left.into());
+                    fmov_to_freg(cb, 1, right.into());
+                    fadd(cb, 0, 0, 1);
+                    fmov_from_freg(cb, out.into(), 0);
+                }
+                Insn::F64Sub { left, right, out } => {
+                    fmov_to_freg(cb, 0, left.into());
+                    fmov_to_freg(cb, 1, right.into());
+                    fsub(cb, 0, 0, 1);
+                    fmov_from_freg(cb, out.into(), 0);
+                }
+                Insn::F64Mul { left, right, out } => {
+                    fmov_to_freg(cb, 0, left.into());
+                    fmov_to_freg(cb, 1, right.into());
+                    fmul(cb, 0, 0, 1);
+                    fmov_from_freg(cb, out.into(), 0);
+                }
+                Insn::F64Div { left, right, out } => {
+                    fmov_to_freg(cb, 0, left.into());
+                    fmov_to_freg(cb, 1, right.into());
+                    fdiv(cb, 0, 0, 1);
+                    fmov_from_freg(cb, out.into(), 0);
                 }
                 Insn::Add { left, right, out } => {
                     // Usually, we issue ADDS, so you could branch on overflow, but ADDS with

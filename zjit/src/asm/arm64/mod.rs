@@ -78,6 +78,78 @@ pub fn add(cb: &mut CodeBlock, rd: A64Opnd, rn: A64Opnd, rm: A64Opnd) {
     cb.write_bytes(&bytes);
 }
 
+/// FMOV - move double bits from a general-purpose register into an FPR.
+pub fn fmov_to_freg(cb: &mut CodeBlock, rd: u8, rn: A64Opnd) {
+    let A64Opnd::Reg(rn) = rn else {
+        panic!("fmov_to_freg requires a general-purpose register source")
+    };
+    assert_eq!(
+        rn.num_bits, 64,
+        "fmov_to_freg requires a 64-bit source register"
+    );
+    assert!(rd < 32, "fmov_to_freg requires an FPR number below 32");
+
+    cb.write_bytes(&(0x9e67_0000_u32 | (u32::from(rn.reg_no) << 5) | u32::from(rd)).to_le_bytes());
+}
+
+/// FMOV - move double bits from an FPR into a general-purpose register.
+pub fn fmov_from_freg(cb: &mut CodeBlock, rd: A64Opnd, rn: u8) {
+    let A64Opnd::Reg(rd) = rd else {
+        panic!("fmov_from_freg requires a general-purpose register destination")
+    };
+    assert_eq!(
+        rd.num_bits, 64,
+        "fmov_from_freg requires a 64-bit destination register"
+    );
+    assert!(rn < 32, "fmov_from_freg requires an FPR number below 32");
+
+    cb.write_bytes(&(0x9e66_0000_u32 | (u32::from(rn) << 5) | u32::from(rd.reg_no)).to_le_bytes());
+}
+
+fn f64_binary(cb: &mut CodeBlock, opcode: u32, rd: u8, rn: u8, rm: u8) {
+    assert!(
+        rd < 32 && rn < 32 && rm < 32,
+        "FPR numbers must be below 32"
+    );
+    cb.write_bytes(
+        &(opcode | (u32::from(rm) << 16) | (u32::from(rn) << 5) | u32::from(rd)).to_le_bytes(),
+    );
+}
+
+/// FADD - add two double-precision FPR values.
+pub fn fadd(cb: &mut CodeBlock, rd: u8, rn: u8, rm: u8) {
+    f64_binary(cb, 0x1e60_2800, rd, rn, rm);
+}
+
+/// FSUB - subtract two double-precision FPR values.
+pub fn fsub(cb: &mut CodeBlock, rd: u8, rn: u8, rm: u8) {
+    f64_binary(cb, 0x1e60_3800, rd, rn, rm);
+}
+
+/// FMUL - multiply two double-precision FPR values.
+pub fn fmul(cb: &mut CodeBlock, rd: u8, rn: u8, rm: u8) {
+    f64_binary(cb, 0x1e60_0800, rd, rn, rm);
+}
+
+/// FDIV - divide two double-precision FPR values.
+pub fn fdiv(cb: &mut CodeBlock, rd: u8, rn: u8, rm: u8) {
+    f64_binary(cb, 0x1e60_1800, rd, rn, rm);
+}
+
+/// SCVTF - convert a signed 64-bit general-purpose register to a double FPR value.
+pub fn f64_from_i64(cb: &mut CodeBlock, rd: u8, rn: A64Opnd) {
+    let A64Opnd::Reg(rn) = rn else {
+        panic!("f64_from_i64 requires a general-purpose register source")
+    };
+    assert_eq!(
+        rn.num_bits, 64,
+        "f64_from_i64 requires a 64-bit source register"
+    );
+    assert!(rd < 32, "f64_from_i64 requires an FPR number below 32");
+
+    cb.write_bytes(&(0x9e62_0000_u32 | (u32::from(rn.reg_no) << 5) | u32::from(rd)).to_le_bytes());
+}
+
 /// Encode ADD (extended register)
 ///
 /// <https://developer.arm.com/documentation/ddi0602/2023-09/Base-Instructions/ADD--extended-register---Add--extended-register-->
@@ -1759,6 +1831,29 @@ mod tests {
         let cb = compile(nop);
         assert_disasm_snapshot!(cb.disasm(), @"  0x0: nop");
         assert_snapshot!(cb.hexdump(), @"1f2003d5");
+    }
+
+    #[test]
+    fn test_f64_arithmetic() {
+        let cb = compile(|cb| {
+            fmov_to_freg(cb, 0, X0);
+            fmov_from_freg(cb, X1, 0);
+            fadd(cb, 0, 0, 1);
+            fsub(cb, 1, 1, 0);
+            fmul(cb, 0, 0, 1);
+            fdiv(cb, 1, 1, 0);
+            f64_from_i64(cb, 0, X0);
+        });
+        assert_disasm_snapshot!(cb.disasm(), @"
+          0x0: fmov d0, x0
+          0x4: fmov x1, d0
+          0x8: fadd d0, d0, d1
+          0xc: fsub d1, d1, d0
+          0x10: fmul d0, d0, d1
+          0x14: fdiv d1, d1, d0
+          0x18: scvtf d0, x0
+        ");
+        assert_snapshot!(cb.hexdump(), @"0000679e0100669e0028611e2138601e0008611e2118601e0000629e");
     }
 
     #[test]

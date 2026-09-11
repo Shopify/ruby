@@ -78,6 +78,39 @@ fn test_add() {
 }
 
 #[test]
+fn test_f64_arithmetic() {
+    let cb1 = compile(|cb| fmov_to_xmm(cb, 0, RAX));
+    let cb2 = compile(|cb| fmov_from_xmm(cb, RCX, 0));
+    let cb3 = compile(|cb| fadd(cb, 0, 1));
+    let cb4 = compile(|cb| fsub(cb, 1, 0));
+    let cb5 = compile(|cb| fmul(cb, 0, 1));
+    let cb6 = compile(|cb| fdiv(cb, 1, 0));
+    let cb7 = compile(|cb| f64_from_i64(cb, 1, RDX));
+    let cb8 = compile(|cb| fmov_to_xmm(cb, 9, R8));
+
+    assert_disasm_snapshot!(disasms!(cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8), @"
+    0x0: movq xmm0, rax
+    0x0: movq rcx, xmm0
+    0x0: addsd xmm0, xmm1
+    0x0: subsd xmm1, xmm0
+    0x0: mulsd xmm0, xmm1
+    0x0: divsd xmm1, xmm0
+    0x0: cvtsi2sd xmm1, rdx
+    0x0: movq xmm9, r8
+    ");
+
+    assert_snapshot!(hexdumps!(cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8), @"
+    66480f6ec0
+    66480f7ec1
+    f20f58c1
+    f20f5cc8
+    f20f59c1
+    f20f5ec8
+    f2480f2aca
+    664d0f6ec8
+    ");
+}
+
 fn test_add_unsigned() {
     // ADD r/m8, imm8
     let cb1 = compile(|cb| add(cb, R8B, uimm_opnd(1)));

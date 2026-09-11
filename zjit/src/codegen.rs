@@ -675,10 +675,10 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::FixnumSub { left, right, state } => gen_fixnum_sub(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
         Insn::FixnumMult { left, right, state } => gen_fixnum_mult(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
         Insn::FixnumDiv { left, right, state } => gen_fixnum_div(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
-        Insn::FloatAdd { recv, other, state } => gen_float_add(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
-        Insn::FloatSub { recv, other, state } => gen_float_sub(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
-        Insn::FloatMul { recv, other, state } => gen_float_mul(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
-        Insn::FloatDiv { recv, other, state } => gen_float_div(asm, opnd!(recv), opnd!(other), &function.frame_state(*state)),
+        Insn::FloatAdd { recv, other, state } => gen_float_arith(jit, asm, opnd!(recv), opnd!(other), function.type_of(*recv).is_subtype(types::Fixnum), function.type_of(*other).is_subtype(types::Fixnum), function.type_of(*recv).is_subtype(types::Flonum), function.type_of(*other).is_subtype(types::Flonum), &function.frame_state(*state), FloatArithOp::Add),
+        Insn::FloatSub { recv, other, state } => gen_float_arith(jit, asm, opnd!(recv), opnd!(other), function.type_of(*recv).is_subtype(types::Fixnum), function.type_of(*other).is_subtype(types::Fixnum), function.type_of(*recv).is_subtype(types::Flonum), function.type_of(*other).is_subtype(types::Flonum), &function.frame_state(*state), FloatArithOp::Sub),
+        Insn::FloatMul { recv, other, state } => gen_float_arith(jit, asm, opnd!(recv), opnd!(other), function.type_of(*recv).is_subtype(types::Fixnum), function.type_of(*other).is_subtype(types::Fixnum), function.type_of(*recv).is_subtype(types::Flonum), function.type_of(*other).is_subtype(types::Flonum), &function.frame_state(*state), FloatArithOp::Mul),
+        Insn::FloatDiv { recv, other, state } => gen_float_arith(jit, asm, opnd!(recv), opnd!(other), function.type_of(*recv).is_subtype(types::Fixnum), function.type_of(*other).is_subtype(types::Fixnum), function.type_of(*recv).is_subtype(types::Flonum), function.type_of(*other).is_subtype(types::Flonum), &function.frame_state(*state), FloatArithOp::Div),
         Insn::FloatToInt { recv, state } => gen_float_to_int(asm, opnd!(recv), &function.frame_state(*state)),
         Insn::FixnumEq { left, right } => gen_fixnum_eq(asm, opnd!(left), opnd!(right)),
         Insn::FixnumNeq { left, right } => gen_fixnum_neq(asm, opnd!(left), opnd!(right)),
@@ -2802,28 +2802,132 @@ fn gen_fixnum_div(jit: &mut JITState, asm: &mut Assembler, function: &Function, 
     asm_ccall!(asm, rb_jit_fix_div_fix, left, right)
 }
 
-/// Compile Float + Float
-fn gen_float_add(asm: &mut Assembler, recv: lir::Opnd, other: lir::Opnd, state: &FrameState) -> lir::Opnd {
-    gen_prepare_leaf_call_with_gc(asm, state);
-    asm_ccall!(asm, rb_float_plus, recv, other)
+#[derive(Clone, Copy)]
+enum FloatArithOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
 }
 
-/// Compile Float - Float
-fn gen_float_sub(asm: &mut Assembler, recv: lir::Opnd, other: lir::Opnd, state: &FrameState) -> lir::Opnd {
-    gen_prepare_leaf_call_with_gc(asm, state);
-    asm_ccall!(asm, rb_float_minus, recv, other)
+fn gen_float_arith_operand(asm: &mut Assembler, val: lir::Opnd, is_fixnum: bool) -> lir::Opnd {
+    if is_fixnum {
+        let untagged = asm.rshift(val, Opnd::UImm(1));
+        return asm.f64_from_i64(untagged);
+    }
+
+    let sign = asm.urshift(val, Opnd::UImm(63));
+    let restored_exponent_bit = asm.sub(Opnd::UImm(2), sign);
+    let without_tag = asm.and(val, Opnd::Imm(-4));
+    let encoded = asm.or(restored_exponent_bit, without_tag);
+    let right_shifted = asm.urshift(encoded, Opnd::UImm(3));
+    let left_shifted = asm.lshift(encoded, Opnd::UImm(61));
+    let decoded = asm.or(right_shifted, left_shifted);
+
+    // The Flonum representation has a special immediate for +0.0.
+    asm.cmp(val, Opnd::UImm(0x8000_0000_0000_0002));
+    asm.csel_e(Opnd::UImm(0), decoded)
 }
 
-/// Compile Float * Float
-fn gen_float_mul(asm: &mut Assembler, recv: lir::Opnd, other: lir::Opnd, state: &FrameState) -> lir::Opnd {
-    gen_prepare_leaf_call_with_gc(asm, state);
-    asm_ccall!(asm, rb_float_mul, recv, other)
+fn gen_float_arith_ccall(asm: &mut Assembler, op: FloatArithOp, left: lir::Opnd, right: lir::Opnd, left_is_fixnum: bool) -> lir::Opnd {
+    match (op, left_is_fixnum) {
+        (FloatArithOp::Add, false) => asm_ccall!(asm, rb_float_plus, left, right),
+        (FloatArithOp::Sub, false) => asm_ccall!(asm, rb_float_minus, left, right),
+        (FloatArithOp::Mul, false) => asm_ccall!(asm, rb_float_mul, left, right),
+        (FloatArithOp::Div, false) => asm_ccall!(asm, rb_float_div, left, right),
+        (FloatArithOp::Add, true) => asm_ccall!(asm, rb_int_plus, left, right),
+        (FloatArithOp::Sub, true) => asm_ccall!(asm, rb_int_minus, left, right),
+        (FloatArithOp::Mul, true) => asm_ccall!(asm, rb_int_mul, left, right),
+        (FloatArithOp::Div, true) => unreachable!("Integer division is not lowered as FloatDiv"),
+    }
 }
 
-/// Compile Float / Float
-fn gen_float_div(asm: &mut Assembler, recv: lir::Opnd, other: lir::Opnd, state: &FrameState) -> lir::Opnd {
+/// Compile arithmetic for Flonum operands, with an inline flonum result fast path.
+fn gen_float_arith(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    left: lir::Opnd,
+    right: lir::Opnd,
+    left_is_fixnum: bool,
+    right_is_fixnum: bool,
+    left_is_flonum: bool,
+    right_is_flonum: bool,
+    state: &FrameState,
+    op: FloatArithOp,
+) -> lir::Opnd {
+    const FLONUM_ZERO: u64 = 0x8000_0000_0000_0002;
+    const NON_FLONUM_VALUE: u64 = 0x3000_0000_0000_0000;
+
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+    let heap_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let zero_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let heap_edge = Target::Block(Box::new(lir::BranchEdge { target: heap_block, args: vec![] }));
+
+    if !left_is_fixnum && !left_is_flonum {
+        let tag = asm.and(left, Opnd::UImm(3));
+        asm.cmp(tag, Opnd::UImm(2));
+        asm.jne(jit, heap_edge.clone());
+    }
+    if !right_is_fixnum && !right_is_flonum {
+        let tag = asm.and(right, Opnd::UImm(3));
+        asm.cmp(tag, Opnd::UImm(2));
+        asm.jne(jit, heap_edge.clone());
+    }
+    let zero_edge = Target::Block(Box::new(lir::BranchEdge { target: zero_block, args: vec![] }));
+    let result_edge = |value| Target::Block(Box::new(lir::BranchEdge { target: result_block, args: vec![value] }));
+
+    let left_f64 = gen_float_arith_operand(asm, left, left_is_fixnum);
+    let right_f64 = gen_float_arith_operand(asm, right, right_is_fixnum);
+    let bits = match op {
+        FloatArithOp::Add => asm.f64_add(left_f64, right_f64),
+        FloatArithOp::Sub => asm.f64_sub(left_f64, right_f64),
+        FloatArithOp::Mul => asm.f64_mul(left_f64, right_f64),
+        FloatArithOp::Div => asm.f64_div(left_f64, right_f64),
+    };
+
+    // rb_float_new_inline encodes +0.0 with a dedicated Flonum value.
+    asm.cmp(bits, Opnd::UImm(0));
+    asm.je(jit, zero_edge);
+
+    let shifted_exponent = asm.urshift(bits, Opnd::UImm(60));
+    let exponent_bits = asm.and(shifted_exponent, Opnd::UImm(7));
+    let shifted_range = asm.sub(exponent_bits, Opnd::UImm(3));
+    let flonum_range = asm.and(shifted_range, Opnd::Imm(-2));
+    asm.cmp(flonum_range, Opnd::UImm(0));
+    asm.jne(jit, heap_edge.clone());
+    asm.cmp(bits, Opnd::UImm(NON_FLONUM_VALUE));
+    asm.je(jit, heap_edge);
+
+    let left_rotated = asm.lshift(bits, Opnd::UImm(3));
+    let right_rotated = asm.urshift(bits, Opnd::UImm(61));
+    let rotated = asm.or(left_rotated, right_rotated);
+    let tagged = asm.and(rotated, Opnd::Imm(-2));
+    let flonum = asm.or(tagged, Opnd::UImm(2));
+    gen_incr_counter(asm, Counter::float_arith_inline_count);
+    asm.jmp(result_edge(flonum));
+
+    asm.set_current_block(zero_block);
+    let zero_label = jit.get_label(asm, zero_block, hir_block_id);
+    asm.write_label(zero_label);
+    gen_incr_counter(asm, Counter::float_arith_inline_count);
+    asm.jmp(result_edge(Opnd::UImm(FLONUM_ZERO)));
+
+    asm.set_current_block(heap_block);
+    let heap_label = jit.get_label(asm, heap_block, hir_block_id);
+    asm.write_label(heap_label);
+    gen_incr_counter(asm, Counter::float_arith_heap_fallback_count);
     gen_prepare_leaf_call_with_gc(asm, state);
-    asm_ccall!(asm, rb_float_div, recv, other)
+    let heap_result = gen_float_arith_ccall(asm, op, left, right, left_is_fixnum);
+    asm.jmp(result_edge(heap_result));
+
+    asm.set_current_block(result_block);
+    let result_label = jit.get_label(asm, result_block, hir_block_id);
+    asm.write_label(result_label);
+    let param = asm.new_block_param(VALUE_BITS);
+    asm.current_block().add_parameter(param);
+    param
 }
 
 /// Compile Float#to_i (truncate to integer)

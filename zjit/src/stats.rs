@@ -468,6 +468,10 @@ make_counters! {
     load_field_count,
     store_field_count,
 
+    // Float arithmetic paths in compiled code.
+    float_arith_inline_count,
+    float_arith_heap_fallback_count,
+
     invokeblock_handler_monomorphic_iseq,
     invokeblock_handler_monomorphic_ifunc,
     invokeblock_handler_monomorphic_other,

@@ -138,6 +138,8 @@ class << RubyVM::ZJIT
       :non_variadic_cfunc_optimized_send_count,
       :variadic_cfunc_optimized_send_count,
       :caller_splat_optimized,
+      :float_arith_inline_count,
+      :float_arith_heap_fallback_count,
     ], buf:, stats:, right_align: true, base: :send_count)
     print_counters([
       :dynamic_setivar_count,

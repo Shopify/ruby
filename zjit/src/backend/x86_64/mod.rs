@@ -846,6 +846,34 @@ impl Assembler {
                     pop(cb, RBP);
                 }
 
+                Insn::F64FromI64 { opnd, out } => {
+                    f64_from_i64(cb, 0, opnd.into());
+                    fmov_from_xmm(cb, out.into(), 0);
+                }
+                Insn::F64Add { left, right, out } => {
+                    fmov_to_xmm(cb, 0, left.into());
+                    fmov_to_xmm(cb, 1, right.into());
+                    fadd(cb, 0, 1);
+                    fmov_from_xmm(cb, out.into(), 0);
+                }
+                Insn::F64Sub { left, right, out } => {
+                    fmov_to_xmm(cb, 0, left.into());
+                    fmov_to_xmm(cb, 1, right.into());
+                    fsub(cb, 0, 1);
+                    fmov_from_xmm(cb, out.into(), 0);
+                }
+                Insn::F64Mul { left, right, out } => {
+                    fmov_to_xmm(cb, 0, left.into());
+                    fmov_to_xmm(cb, 1, right.into());
+                    fmul(cb, 0, 1);
+                    fmov_from_xmm(cb, out.into(), 0);
+                }
+                Insn::F64Div { left, right, out } => {
+                    fmov_to_xmm(cb, 0, left.into());
+                    fmov_to_xmm(cb, 1, right.into());
+                    fdiv(cb, 0, 1);
+                    fmov_from_xmm(cb, out.into(), 0);
+                }
                 Insn::Add { left, right, .. } => {
                     add(cb, left.into(), right.into());
                 },

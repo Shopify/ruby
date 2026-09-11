@@ -495,6 +495,59 @@ fn write_rm(cb: &mut CodeBlock, sz_pref: bool, rex_w: bool, r_opnd: X86Opnd, rm_
     };
 }
 
+fn xmm_opnd(xmm: u8) -> X86Opnd {
+    assert!(xmm < 16, "XMM register numbers must be below 16");
+    X86Opnd::Reg(X86Reg { num_bits: 64, reg_type: RegType::GP, reg_no: xmm })
+}
+
+/// MOVQ - move double bits from a general-purpose register into an XMM register.
+pub fn fmov_to_xmm(cb: &mut CodeBlock, dst: u8, src: X86Opnd) {
+    assert_eq!(src.num_bits(), 64, "fmov_to_xmm requires a 64-bit source");
+    cb.write_byte(0x66);
+    write_rm(cb, false, true, xmm_opnd(dst), src, None, &[0x0f, 0x6e]);
+}
+
+/// MOVQ - move double bits from an XMM register into a general-purpose register.
+pub fn fmov_from_xmm(cb: &mut CodeBlock, dst: X86Opnd, src: u8) {
+    assert_eq!(dst.num_bits(), 64, "fmov_from_xmm requires a 64-bit destination");
+    cb.write_byte(0x66);
+    write_rm(cb, false, true, xmm_opnd(src), dst, None, &[0x0f, 0x7e]);
+}
+
+fn f64_binary(cb: &mut CodeBlock, opcode: u8, dst: u8, src: u8) {
+    cb.write_byte(0xf2);
+    write_rm(cb, false, false, xmm_opnd(dst), xmm_opnd(src), None, &[0x0f, opcode]);
+}
+
+/// ADDSD - add two double-precision XMM values.
+pub fn fadd(cb: &mut CodeBlock, dst: u8, src: u8) {
+    f64_binary(cb, 0x58, dst, src);
+}
+
+/// SUBSD - subtract two double-precision XMM values.
+pub fn fsub(cb: &mut CodeBlock, dst: u8, src: u8) {
+    f64_binary(cb, 0x5c, dst, src);
+}
+
+/// MULSD - multiply two double-precision XMM values.
+pub fn fmul(cb: &mut CodeBlock, dst: u8, src: u8) {
+    f64_binary(cb, 0x59, dst, src);
+}
+
+/// DIVSD - divide two double-precision XMM values.
+pub fn fdiv(cb: &mut CodeBlock, dst: u8, src: u8) {
+    f64_binary(cb, 0x5e, dst, src);
+}
+
+/// CVTSI2SD - convert a signed 64-bit general-purpose register to a double XMM value.
+pub fn f64_from_i64(cb: &mut CodeBlock, dst: u8, src: X86Opnd) {
+    assert_eq!(src.num_bits(), 64, "f64_from_i64 requires a 64-bit source");
+    assert!(dst < 16, "f64_from_i64 requires an XMM register number below 16");
+
+    cb.write_byte(0xf2);
+    write_rm(cb, false, true, xmm_opnd(dst), src, None, &[0x0f, 0x2a]);
+}
+
 // Encode a mul-like single-operand RM instruction
 fn write_rm_unary(cb: &mut CodeBlock, op_mem_reg_8: u8, op_mem_reg_pref: u8, op_ext: Option<u8>, opnd: X86Opnd) {
     assert!(matches!(opnd, X86Opnd::Reg(_) | X86Opnd::Mem(_)));

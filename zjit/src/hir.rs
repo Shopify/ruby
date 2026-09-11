@@ -1290,7 +1290,7 @@ pub enum Insn {
     FixnumLShift { left: InsnId, right: InsnId, state: InsnId },
     FixnumRShift { left: InsnId, right: InsnId },
 
-    /// Float arithmetic: delegates to rb_float_plus/minus/mul/div with GC preparation
+    /// Float and Fixnum arithmetic, with Float operands.
     FloatAdd  { recv: InsnId, other: InsnId, state: InsnId },
     FloatSub  { recv: InsnId, other: InsnId, state: InsnId },
     FloatMul  { recv: InsnId, other: InsnId, state: InsnId },
@@ -7945,12 +7945,14 @@ impl Function {
             }
             Insn::FloatAdd { recv, other, .. }
             | Insn::FloatSub { recv, other, .. }
-            | Insn::FloatMul { recv, other, .. }
-            | Insn::FloatDiv { recv, other, .. }
-            => {
-                self.assert_subtype(insn_id, recv, types::Flonum)?;
-                // other can be Flonum or Fixnum (rb_float_plus etc. handle both)
-                self.assert_subtype(insn_id, other, types::Flonum.union(types::Fixnum))
+            | Insn::FloatMul { recv, other, .. } => {
+                let float_or_fixnum = types::Float.union(types::Fixnum);
+                self.assert_subtype(insn_id, recv, float_or_fixnum)?;
+                self.assert_subtype(insn_id, other, float_or_fixnum)
+            }
+            Insn::FloatDiv { recv, other, .. } => {
+                self.assert_subtype(insn_id, recv, types::Float)?;
+                self.assert_subtype(insn_id, other, types::Float.union(types::Fixnum))
             }
             Insn::FloatToInt { recv, .. } => {
                 self.assert_subtype(insn_id, recv, types::Flonum)
