@@ -111,8 +111,9 @@ extern bool rb_zjit_compiling_p;
 extern const zjit_jit_frame_t rb_zjit_c_frame;
 extern unsigned int rb_zjit_call_threshold;
 extern unsigned int rb_zjit_profile_threshold;
+extern unsigned int rb_zjit_loop_threshold;
 void rb_zjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec, bool jit_exception);
-void rb_zjit_profile_insn(uint32_t insn, rb_execution_context_t *ec);
+rb_jit_func_t rb_zjit_profile_insn(uint32_t insn, rb_execution_context_t *ec);
 void rb_zjit_profile_enable(const rb_iseq_t *iseq);
 void rb_zjit_bop_redefined(int redefined_flag, enum ruby_basic_operators bop);
 void rb_zjit_cme_invalidate(const rb_callable_method_entry_t *cme);
@@ -150,6 +151,17 @@ bool rb_zjit_newobj_hook_enabled_p(void);
 // instead of a heap-allocated JITFrame pointer.
 #define ZJIT_JIT_RETURN_C_FRAME 0x1
 
+// Native frame pointers are aligned. Bit 1 marks an ISEQ entered through loop
+// OSR. Keep cfp->_iseq valid because C helpers can read it while JIT code runs.
+#define ZJIT_JIT_RETURN_OSR_TAG 0x2
+#define ZJIT_JIT_RETURN_UNTAG(jit_return) ((void *)((VALUE)(jit_return) & ~(VALUE)ZJIT_JIT_RETURN_OSR_TAG))
+
+static inline bool
+CFP_ZJIT_OSR_P(const rb_control_frame_t *cfp)
+{
+    return ((VALUE)cfp->jit_return & ZJIT_JIT_RETURN_OSR_TAG) != 0;
+}
+
 static inline const zjit_jit_frame_t *
 CFP_ZJIT_FRAME(const rb_control_frame_t *cfp)
 {
@@ -166,14 +178,14 @@ CFP_ZJIT_FRAME(const rb_control_frame_t *cfp)
         // must track where execution currently is, later gen_save_pc_for_gc() calls
         // rewrite the slot with the live PC as execution advances through the frame,
         // before any non-leaf C call.
-        return (const zjit_jit_frame_t *)((VALUE *)cfp->jit_return)[-1];
+        return (const zjit_jit_frame_t *)((VALUE *)ZJIT_JIT_RETURN_UNTAG(cfp->jit_return))[-1];
     }
 }
 #else
 #define rb_zjit_entry 0
 #define rb_zjit_compiling_p false
 static inline void rb_zjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec, bool jit_exception) {}
-static inline void rb_zjit_profile_insn(uint32_t insn, rb_execution_context_t *ec) {}
+static inline rb_jit_func_t rb_zjit_profile_insn(uint32_t insn, rb_execution_context_t *ec) { return NULL; }
 static inline void rb_zjit_profile_enable(const rb_iseq_t *iseq) {}
 static inline void rb_zjit_bop_redefined(int redefined_flag, enum ruby_basic_operators bop) {}
 static inline void rb_zjit_cme_invalidate(const rb_callable_method_entry_t *cme) {}

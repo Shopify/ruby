@@ -560,6 +560,12 @@ zjit_compile(rb_execution_context_t *ec)
     if (body->jit_entry == NULL && rb_zjit_compiling_p) {
         body->jit_entry_calls++;
 
+        // Start profiling on the first entry when loop OSR is enabled. This records
+        // the operand types that the OSR compilation needs before its threshold.
+        if (body->jit_entry_calls == 1 && rb_zjit_loop_threshold != 0) {
+            rb_zjit_profile_enable(iseq);
+        }
+
         // At profile-threshold, rewrite some of the YARV instructions
         // to zjit_* instructions to profile these instructions.
         if (body->jit_entry_calls == rb_zjit_profile_threshold) {
@@ -2957,7 +2963,7 @@ zjit_materialize_frames(const rb_execution_context_t *ec, rb_control_frame_t *cf
                         // It's an offset from NATIVE_BASE_PTR, which is copied into
                         // cfp->jit_return, to the encoded stack slot.
                         stack--;
-                        *stack = ((VALUE *)cfp->jit_return)[-(ssize_t)ZJIT_STACK_MAP_VREG_INDEX(entry)];
+                        *stack = ((VALUE *)ZJIT_JIT_RETURN_UNTAG(cfp->jit_return))[-(ssize_t)ZJIT_STACK_MAP_VREG_INDEX(entry)];
                     }
                     else if (ZJIT_STACK_MAP_SKIP_P(entry)) {
                         stack -= ZJIT_STACK_MAP_SKIP_SIZE(entry);
@@ -2965,7 +2971,7 @@ zjit_materialize_frames(const rb_execution_context_t *ec, rb_control_frame_t *cf
                     else if (ZJIT_STACK_MAP_BASE_PTR_P(entry)) {
                         // This has to be the first code to align the write cursor for other entries
                         RUBY_ASSERT_ALWAYS(0 == i, "base_ptr stack map code only makes sense at 0");
-                        VALUE *base_ptr = (VALUE *)((VALUE *)cfp->jit_return)[-(ssize_t)ZJIT_STACK_MAP_BASE_PTR_SLOT_INDEX(entry)];
+                        VALUE *base_ptr = (VALUE *)((VALUE *)ZJIT_JIT_RETURN_UNTAG(cfp->jit_return))[-(ssize_t)ZJIT_STACK_MAP_BASE_PTR_SLOT_INDEX(entry)];
                         stack = base_ptr + ZJIT_STACK_MAP_BASE_PTR_STACK_SIZE(entry);
                     }
                     else {
@@ -3216,6 +3222,11 @@ rb_iseq_eval(const rb_iseq_t *iseq, const rb_box_t *box)
 {
     rb_execution_context_t *ec = GET_EC();
     VALUE val;
+#if USE_ZJIT
+    if (rb_zjit_enabled_p && rb_zjit_loop_threshold != 0) {
+        rb_zjit_profile_enable(iseq);
+    }
+#endif
     vm_set_top_stack(ec, iseq, box);
     val = vm_exec(ec);
     return val;
@@ -3226,6 +3237,11 @@ rb_iseq_eval_main(const rb_iseq_t *iseq)
 {
     rb_execution_context_t *ec = GET_EC();
     VALUE val;
+#if USE_ZJIT
+    if (rb_zjit_enabled_p && rb_zjit_loop_threshold != 0) {
+        rb_zjit_profile_enable(iseq);
+    }
+#endif
     vm_set_main_stack(ec, iseq);
     val = vm_exec(ec);
     return val;

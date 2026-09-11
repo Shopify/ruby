@@ -147,6 +147,13 @@ class << RubyVM::ZJIT
       :compiled_iseq_count,
       :compiled_side_exit_count,
       :failed_iseq_count,
+      :osr_compile_count,
+      :osr_entry_count,
+      :osr_rejected_non_empty_stack,
+      :osr_rejected_ep_escaped,
+      :osr_rejected_rescue_or_ensure,
+      :osr_rejected_tracing,
+
 
       :compile_time_ns,
       :compile_side_exit_time_ns,

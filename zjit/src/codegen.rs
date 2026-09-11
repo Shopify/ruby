@@ -58,6 +58,9 @@ struct JITState {
     /// JIT entry point for the `iseq`
     jit_entries: Vec<Rc<RefCell<JITEntry>>>,
 
+    /// Loop OSR entry points for the ISEQ.
+    osr_entries: Vec<Rc<RefCell<OSREntry>>>,
+
     /// ISEQ calls that need to be compiled later
     iseq_calls: Vec<IseqCallRef>,
 
@@ -67,18 +70,27 @@ struct JITState {
     /// inlined frame push write a JITFrame into the slot selected by the current
     /// frame's depth; gen_prepare_non_leaf_call() writes the SP slot.
     jit_frame_size: usize,
+    has_osr_entries: bool,
 }
 
 impl JITState {
     /// Create a new JITState instance
-    fn new(version: IseqVersionRef, num_insns: usize, num_blocks: usize, jit_frame_size: usize) -> Self {
+    fn new(
+        version: IseqVersionRef,
+        num_insns: usize,
+        num_blocks: usize,
+        jit_frame_size: usize,
+        has_osr_entries: bool,
+    ) -> Self {
         JITState {
             version,
             opnds: vec![None; num_insns],
             labels: vec![None; num_blocks],
             jit_entries: Vec::default(),
+            osr_entries: Vec::default(),
             iseq_calls: Vec::default(),
             jit_frame_size,
+            has_osr_entries,
         }
     }
 
@@ -336,14 +348,14 @@ pub fn gen_entry_trampoline(cb: &mut CodeBlock) -> Result<CodePtr, CompileError>
     perf::register_current_code_range(cb, "entry trampoline", code_ptr);
     Ok(code_ptr)
 }
-
-/// Compile an ISEQ into machine code if not compiled yet
+/// Compile an ISEQ into machine code if not compiled yet.
 fn gen_iseq(cb: &mut CodeBlock, iseq: IseqPtr, function: Option<&Function>) -> Result<IseqCodePtrs, CompileError> {
-    // Return an existing pointer if it's already compiled
     let payload = get_or_create_iseq_payload(iseq);
     let last_status = payload.versions.last().map(|version| &unsafe { version.as_ref() }.status);
     match last_status {
-        Some(IseqStatus::Compiled(code_ptrs)) => return Ok(code_ptrs.clone()),
+        Some(IseqStatus::Compiled(code_ptrs)) if payload.loop_osr_headers.iter().all(|loop_header| {
+            code_ptrs.osr_entry_ptrs.iter().any(|(insn_idx, _)| insn_idx == loop_header)
+        }) => return Ok(code_ptrs.clone()),
         Some(IseqStatus::CantCompile(err)) => return Err(err.clone()),
         _ => {},
     }
@@ -424,7 +436,13 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
         // One more slot below those holds the saved SP register that stack maps
         // are anchored on (see base_ptr_slot_offset()).
         let jit_frame_size = function.inlining_depth() + 2;
-        let mut jit = JITState::new(version, function.num_insns(), function.num_blocks(), jit_frame_size);
+        let mut jit = JITState::new(
+            version,
+            function.num_insns(),
+            function.num_blocks(),
+            jit_frame_size,
+            function.has_osr_entries(),
+        );
         let mut asm = Assembler::new_with_stack_slots(jit_frame_size);
 
         // Mapping from HIR block IDs to LIR block IDs.
@@ -489,6 +507,14 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
             // Lower all HIR instructions to LIR
             for (insn_idx, &insn_id) in block.insns().enumerate() {
                 let insn = function.find(insn_id);
+                let return_state = if matches!(insn, Insn::Return { .. }) {
+                    block.insns().take(insn_idx).rev().find_map(|&snapshot_id| match function.find_ref(snapshot_id) {
+                        Insn::Snapshot { state } => Some(state.as_ref()),
+                        _ => None,
+                    })
+                } else {
+                    None
+                };
                 let symbol_range = perf::hir_symbol_range_start(&mut asm, &insn);
 
                 match &insn {
@@ -526,7 +552,7 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
                         assert!(insn_idx == block.insns().len() - 1, "Jump must be the last instruction in HIR block");
                     },
                     _ => {
-                        lower_insn(cb, &mut jit, &mut asm, function, insn_id, &insn)
+                        lower_insn(cb, &mut jit, &mut asm, function, insn_id, &insn, return_state)
                     }
                 };
 
@@ -563,18 +589,31 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
         }
     }
     result.map(|(start_ptr, gc_offsets)| {
-        // Make sure jit_entry_ptrs can be used as a parallel vector to jit_entry_insns()
+        // Make sure jit_entry_ptrs can be used as a parallel vector to jit_entry_insns().
         jit.jit_entries.sort_by_key(|jit_entry| jit_entry.borrow().jit_entry_idx);
-
         let jit_entry_ptrs = jit.jit_entries.iter().map(|jit_entry|
             jit_entry.borrow().start_addr.get().expect("start_addr should have been set by pos_marker in gen_entry_point")
         ).collect();
-        (IseqCodePtrs { start_ptr, jit_entry_ptrs }, gc_offsets, jit.iseq_calls)
+
+        jit.osr_entries.sort_by_key(|osr_entry| osr_entry.borrow().insn_idx);
+        let osr_entry_ptrs = jit.osr_entries.iter().map(|osr_entry| {
+            let osr_entry = osr_entry.borrow();
+            (osr_entry.insn_idx, osr_entry.start_addr.get().expect("start_addr should have been set by pos_marker in gen_entry_point"))
+        }).collect();
+        (IseqCodePtrs { start_ptr, jit_entry_ptrs, osr_entry_ptrs }, gc_offsets, jit.iseq_calls)
     })
 }
 
 /// Lower one HIR instruction to LIR.
-fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, function: &Function, insn_id: InsnId, insn: &Insn) {
+fn lower_insn(
+    cb: &mut CodeBlock,
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    function: &Function,
+    insn_id: InsnId,
+    insn: &Insn,
+    return_state: Option<&FrameState>,
+) {
     // Convert InsnId to lir::Opnd
     macro_rules! opnd {
         ($insn_id:ident) => {
@@ -589,7 +628,6 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
             }
         };
     }
-
     macro_rules! no_output {
         ($call:expr) => {
             { let () = $call; return; }
@@ -669,8 +707,8 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::InvokeProc { recv, args, state, kw_splat } => gen_invokeproc(jit, asm, function, opnd!(recv), opnds!(args), *kw_splat, &function.frame_state(*state)),
         Insn::InvokeBuiltin { bf, leaf, args, state, .. } => gen_invokebuiltin(jit, asm, function, &function.frame_state(*state), unsafe { &**bf }, *leaf, opnds!(args)),
         Insn::InvokeBlockIseqDirect { iseq, captured, args, state } => gen_invoke_block_iseq_direct(cb, jit, asm, function, *iseq, opnd!(captured), opnds!(args), &function.frame_state(*state)),
-        &Insn::EntryPoint { jit_entry_idx } => no_output!(gen_entry_point(jit, asm, jit_entry_idx)),
-        Insn::Return { val } => no_output!(gen_return(asm, opnd!(val))),
+        &Insn::EntryPoint { jit_entry_idx, osr_entry_insn_idx } => no_output!(gen_entry_point(jit, asm, jit_entry_idx, osr_entry_insn_idx)),
+        Insn::Return { val } => no_output!(gen_return(jit, asm, return_state.expect("Return needs a preceding FrameState"), opnd!(val))),
         Insn::FixnumAdd { left, right, state } => gen_fixnum_add(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
         Insn::FixnumSub { left, right, state } => gen_fixnum_sub(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
         Insn::FixnumMult { left, right, state } => gen_fixnum_mult(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
@@ -2688,7 +2726,10 @@ fn gen_object_alloc_class(jit: &mut JITState, asm: &mut Assembler, function: &Fu
 /// Map an entry point to the bytecode PC used by its initial JITFrame.
 /// JIT call entries use `opt_table[jit_entry_idx]`; the interpreter entry uses
 /// `opt_table.last()` for the fall-through path where all optionals are filled.
-fn entry_pc(iseq: IseqPtr, jit_entry_idx: Option<usize>) -> *const VALUE {
+fn entry_pc(iseq: IseqPtr, jit_entry_idx: Option<usize>, osr_entry_insn_idx: Option<YarvInsnIdx>) -> *const VALUE {
+    if let Some(insn_idx) = osr_entry_insn_idx {
+        return unsafe { rb_iseq_pc_at_idx(iseq, insn_idx.try_into().unwrap()) };
+    }
     let params = unsafe { iseq.params() };
     let opt_table = params.opt_table_slice();
     let entry_idx = jit_entry_idx.unwrap_or_else(|| opt_table.len() - 1);
@@ -2698,8 +2739,14 @@ fn entry_pc(iseq: IseqPtr, jit_entry_idx: Option<usize>) -> *const VALUE {
     unsafe { rb_iseq_pc_at_idx(iseq, entry_insn_idx) }
 }
 
-/// Compile a frame setup. If jit_entry_idx is Some, remember the address of it as a JIT entry.
-fn gen_entry_point(jit: &mut JITState, asm: &mut Assembler, jit_entry_idx: Option<usize>) {
+/// Compile a frame setup. A JIT or OSR entry records its native address.
+fn gen_entry_point(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    jit_entry_idx: Option<usize>,
+    osr_entry_insn_idx: Option<YarvInsnIdx>,
+) {
+    assert!(jit_entry_idx.is_none() || osr_entry_insn_idx.is_none());
     if let Some(jit_entry_idx) = jit_entry_idx {
         let jit_entry = JITEntry::new(jit_entry_idx);
         jit.jit_entries.push(jit_entry.clone());
@@ -2707,14 +2754,27 @@ fn gen_entry_point(jit: &mut JITState, asm: &mut Assembler, jit_entry_idx: Optio
             jit_entry.borrow_mut().start_addr.set(Some(code_ptr));
         });
     }
+    if let Some(insn_idx) = osr_entry_insn_idx {
+        let osr_entry = OSREntry::new(insn_idx);
+        jit.osr_entries.push(osr_entry.clone());
+        asm.pos_marker(move |code_ptr, _| {
+            osr_entry.borrow_mut().start_addr.set(Some(code_ptr));
+        });
+    }
     asm.frame_setup(&[]);
 
     // Publish a valid entry JITFrame before setting cfp->jit_return. The entry point is
     // always the top-level frame (depth 0). Inlined frames get their own deeper
     // slots in gen_push_inline_frame().
-    let jit_frame = JITFrame::new_iseq(entry_pc(jit.iseq(), jit_entry_idx), jit.iseq(), 0);
+    let jit_frame = JITFrame::new_iseq(entry_pc(jit.iseq(), jit_entry_idx, osr_entry_insn_idx), jit.iseq(), 0);
     asm.mov(Opnd::mem(64, NATIVE_BASE_PTR, -SIZEOF_VALUE_I32), Opnd::const_ptr(jit_frame));
-    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN), NATIVE_BASE_PTR);
+    let jit_return = if osr_entry_insn_idx.is_some() {
+        // Keep cfp->_iseq valid. C helpers can access it before a side exit.
+        asm.add(NATIVE_BASE_PTR, (ZJIT_JIT_RETURN_OSR_TAG as i64).into())
+    } else {
+        NATIVE_BASE_PTR
+    };
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN), jit_return);
 
     // Direct JIT-to-JIT callers switch the CFP register before calling this entry
     // point, but they leave ec->cfp pointing at the caller until cfp->jit_return
@@ -2722,8 +2782,36 @@ fn gen_entry_point(jit: &mut JITState, asm: &mut Assembler, jit_entry_idx: Optio
     asm.mov(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
 }
 
-/// Compile code that exits from JIT code with a return value
-fn gen_return(asm: &mut Assembler, val: lir::Opnd) {
+/// Compile a return from an ISEQ entered through loop OSR.
+fn gen_osr_return(jit: &JITState, asm: &mut Assembler, state: &FrameState, val: lir::Opnd) {
+    asm_comment!(asm, "return to the interpreter from loop OSR");
+    gen_spill_locals(jit, asm, state);
+    asm.load_into(C_RET_OPND, val);
+    asm.mov(Opnd::mem(64, SP, 0), C_RET_OPND);
+    gen_save_sp(asm, 1);
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_PC), Opnd::const_ptr(state.pc as *const u8));
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_ISEQ), VALUE::from(state.iseq).into());
+    // Use the regular exit trampoline. It clears transient JIT frame data and
+    // restores the interpreter state after the native frame is gone.
+    asm.jmp(Target::CodePtr(ZJITState::get_materialize_exit_trampoline()));
+}
+
+/// Compile code that exits from JIT code with a return value.
+fn gen_return(jit: &mut JITState, asm: &mut Assembler, state: &FrameState, val: lir::Opnd) {
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+    let osr_return_block = jit.has_osr_entries.then(|| {
+        asm.new_block(hir_block_id, false, rpo_idx)
+    });
+    if let Some(osr_return_block) = osr_return_block {
+        let osr_return_edge = Target::Block(Box::new(lir::BranchEdge { target: osr_return_block, args: vec![] }));
+        // OSR entries retain their CFP. The jit_return tag survives JITFrame updates.
+        asm.test(
+            Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN),
+            (ZJIT_JIT_RETURN_OSR_TAG as u64).into(),
+        );
+        asm.jnz(jit, osr_return_edge);
+    }
     // Pop the current frame (ec->cfp++)
     // Note: the return PC is already in the previous CFP
     asm_comment!(asm, "pop stack frame");
@@ -2738,6 +2826,13 @@ fn gen_return(asm: &mut Assembler, val: lir::Opnd) {
     // Return from the function
     asm.frame_teardown(&[]); // matching the setup in gen_entry_point()
     asm.cret(C_RET_OPND);
+
+    if let Some(osr_return_block) = osr_return_block {
+        asm.set_current_block(osr_return_block);
+        let label = jit.get_label(asm, osr_return_block, hir_block_id);
+        asm.write_label(label);
+        gen_osr_return(jit, asm, state, val);
+    }
 }
 
 fn gen_throw(jit: &mut JITState, asm: &mut Assembler, function: &Function, throw_state: u32, val: lir::Opnd, state: &FrameState) {
@@ -4327,6 +4422,24 @@ impl JITEntry {
             start_addr: Cell::new(None),
         };
         Rc::new(RefCell::new(jit_entry))
+    }
+}
+
+/// Store info about a loop OSR entry point.
+pub struct OSREntry {
+    /// ISEQ instruction index for the loop header.
+    insn_idx: YarvInsnIdx,
+    /// Position where the entry point starts.
+    start_addr: Cell<Option<CodePtr>>,
+}
+
+impl OSREntry {
+    /// Allocate a new OSREntry.
+    fn new(insn_idx: YarvInsnIdx) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(OSREntry {
+            insn_idx,
+            start_addr: Cell::new(None),
+        }))
     }
 }
 

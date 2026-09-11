@@ -353,6 +353,7 @@ fn main() {
         .allowlist_var("ZJIT_STACK_MAP_BASE_PTR_SIZE_SHIFT")
         .allowlist_var("ZJIT_STACK_MAP_BASE_PTR_INDEX_MASK")
         .allowlist_var("ZJIT_JIT_RETURN_C_FRAME")
+        .allowlist_var("ZJIT_JIT_RETURN_OSR_TAG")
         .allowlist_function("rb_assert_holding_vm_lock")
         .allowlist_function("rb_jit_shape_complex_p")
         .allowlist_function("rb_jit_multi_ractor_p")

@@ -416,6 +416,7 @@ vm_push_frame(rb_execution_context_t *ec,
         .jit_return = NULL,
     };
 
+
     /* Ensure the initialization of `*cfp` above never gets reordered with the update of `ec->cfp` below.
     This is a no-op in all cases we've looked at (https://godbolt.org/z/3oxd1446K), but should guarantee it for all
     future/untested compilers/platforms. */

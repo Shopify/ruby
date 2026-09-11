@@ -102,6 +102,133 @@ class TestZJITCLI < Test::Unit::TestCase
     }
   end
 
+  def test_loop_osr_is_disabled_by_default
+    assert_runs '[4950, 0, 0]', <<~RUBY, call_threshold: 10_000, stats: :quiet
+      def loop_sum(n)
+        i = 0
+        total = 0
+        while i < n
+          total += i
+          i += 1
+        end
+        total
+      end
+
+      result = loop_sum(100)
+      [result, RubyVM::ZJIT.stats[:osr_compile_count], RubyVM::ZJIT.stats[:osr_entry_count]]
+    RUBY
+  end
+
+  def test_loop_osr
+    assert_runs '[4950, 1, 1]', <<~RUBY, call_threshold: 10_000, stats: :quiet, extra_args: ['--zjit-loop-threshold=2']
+      def loop_sum(n)
+        i = 0
+        total = 0
+        while i < n
+          total += i
+          i += 1
+        end
+        total
+      end
+
+      result = loop_sum(100)
+      [result, RubyVM::ZJIT.stats[:osr_compile_count], RubyVM::ZJIT.stats[:osr_entry_count]]
+    RUBY
+  end
+
+  def test_main_loop_osr
+    out, err, status = eval_with_jit(<<~RUBY, call_threshold: 10_000, stats: :quiet, extra_args: ['--zjit-loop-threshold=2'])
+      i = 0
+      total = 0
+      while i < 100
+        total += i
+        i += 1
+      end
+      p [total, RubyVM::ZJIT.stats[:osr_compile_count], RubyVM::ZJIT.stats[:osr_entry_count]]
+    RUBY
+    assert_success(out, err, status)
+    assert_equal("[4950, 1, 1]\n", out)
+  end
+
+  def test_loop_osr_with_stats_output
+    out, err, status = eval_with_jit(<<~RUBY, call_threshold: 10_000, stats: true, extra_args: ['--zjit-loop-threshold=2'])
+      i = 0
+      i += 1 while i < 100
+      puts i
+    RUBY
+    assert_success(out, err, status)
+    assert_equal("100\n", out)
+    assert_include(err, "***ZJIT: Printing ZJIT statistics on exit***")
+  end
+
+
+  def test_loop_osr_handles_control_flow_and_exception
+    assert_runs '[11, 10, true, true]', <<~RUBY, call_threshold: 10_000, stats: :quiet, extra_args: ['--zjit-loop-threshold=2']
+      def control_flow
+        i = 0
+        redo_once = true
+        while i < 20
+          i += 1
+          if redo_once
+            redo_once = false
+            redo
+          end
+          next if i.even?
+          break if i > 9
+        end
+        i
+      end
+
+      def raising
+        i = 0
+        begin
+          while i < 20
+            i += 1
+            raise 'done' if i == 10
+          end
+        rescue RuntimeError
+          i
+        end
+      end
+
+      [control_flow, raising, RubyVM::ZJIT.stats[:osr_compile_count] >= 2, RubyVM::ZJIT.stats[:osr_entry_count] >= 2]
+    RUBY
+  end
+
+  def test_loop_osr_rejects_escaped_environment
+    assert_runs '[20, 20, true, true, true]', <<~RUBY, call_threshold: 10_000, stats: :quiet, extra_args: ['--zjit-loop-threshold=2']
+      def escaped
+        state = binding
+        i = 0
+        while i < 20
+          i += 1
+        end
+        [i, state.local_variable_get(:i)]
+      end
+
+      result, bound_i = escaped
+      [result, bound_i, RubyVM::ZJIT.stats[:osr_compile_count].zero?, RubyVM::ZJIT.stats[:osr_entry_count].zero?, RubyVM::ZJIT.stats[:osr_rejected_ep_escaped] > 0]
+    RUBY
+  end
+
+  def test_loop_osr_rejects_tracing
+    assert_runs '[20, true, true, true]', <<~RUBY, call_threshold: 10_000, stats: :quiet, extra_args: ['--zjit-loop-threshold=2']
+      def traced
+        i = 0
+        while i < 20
+          i += 1
+        end
+        i
+      end
+
+      trace = TracePoint.new(:line) {}
+      trace.enable
+      result = traced
+      trace.disable
+      [result, RubyVM::ZJIT.stats[:osr_compile_count].zero?, RubyVM::ZJIT.stats[:osr_entry_count].zero?, RubyVM::ZJIT.stats[:osr_rejected_tracing] > 0]
+    RUBY
+  end
+
   def test_enable_through_env
     child_env = {'RUBY_YJIT_ENABLE' => nil, 'RUBY_ZJIT_ENABLE' => '1'}
     assert_in_out_err([child_env, '-v'], '') do |stdout, stderr|

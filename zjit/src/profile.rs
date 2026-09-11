@@ -4,12 +4,13 @@
 #![allow(non_upper_case_globals)]
 
 use std::collections::HashMap;
-use crate::{cruby::*, payload::get_or_create_iseq_payload, options::{get_option, NumProfiles}};
+use crate::{codegen::rb_zjit_iseq_gen_entry_point, cruby::*, invariants::iseq_seen_ep_escape, payload::{IseqStatus, get_or_create_iseq_payload}, options::{get_option, NumProfiles}, state::ZJITState};
 use crate::distribution::{Distribution, DistributionSummary};
+use crate::stats::{incr_counter, with_time_stat};
 use crate::stats::Counter::profile_time_ns;
-use crate::stats::with_time_stat;
 
 /// Ephemeral state for profiling runtime information
+#[derive(Clone, Copy)]
 struct Profiler {
     cfp: CfpPtr,
     iseq: IseqPtr,
@@ -51,11 +52,12 @@ impl Profiler {
 }
 
 /// API called from zjit_* instruction. opcode is the bare (non-zjit_*) instruction.
+/// A non-null result is a loop OSR entry for the taken branch.
 #[unsafe(no_mangle)]
-pub extern "C" fn rb_zjit_profile_insn(bare_opcode: u32, ec: EcPtr) {
+pub extern "C" fn rb_zjit_profile_insn(bare_opcode: u32, ec: EcPtr) -> rb_jit_func_t {
     with_vm_lock(src_loc!(), || {
-        with_time_stat(profile_time_ns, || profile_insn(bare_opcode as ruby_vminsn_type, ec));
-    });
+        with_time_stat(profile_time_ns, || profile_insn(bare_opcode as ruby_vminsn_type, ec))
+    })
 }
 
 /// Profile a YARV instruction
@@ -109,18 +111,96 @@ fn profile_insn_sample(
     true
 }
 
-/// Profile a YARV instruction
-fn profile_insn(bare_opcode: ruby_vminsn_type, ec: EcPtr) {
-    let profiler = &mut Profiler::new(ec);
-    let profile = &mut get_or_create_iseq_payload(profiler.iseq).profile;
-    let _ = profile_insn_sample(bare_opcode, profiler, profile);
-
-    // Once we profile the instruction enough times, we stop profiling it.
-    let entry = profile.entry_mut(profiler.insn_idx);
-    entry.profiles_remaining = entry.profiles_remaining.saturating_sub(1);
-    if entry.profiles_remaining == 0 {
-        unsafe { rb_zjit_iseq_insn_set(profiler.iseq, profiler.insn_idx as u32, bare_opcode); }
+/// Return the loop header for a taken backwards branch.
+fn taken_loop_target(bare_opcode: ruby_vminsn_type, profiler: &Profiler) -> Option<YarvInsnIdx> {
+    let offset = profiler.insn_opnd(0).as_i64();
+    if offset >= 0 {
+        return None;
     }
+    let taken = match bare_opcode {
+        YARVINSN_jump => true,
+        YARVINSN_branchif => {
+            let val = profiler.peek_at_stack(0);
+            val != Qfalse && !val.nil_p()
+        }
+        YARVINSN_branchunless => {
+            let val = profiler.peek_at_stack(0);
+            val == Qfalse || val.nil_p()
+        }
+        YARVINSN_branchnil => profiler.peek_at_stack(0).nil_p(),
+        _ => false,
+    };
+    if taken {
+        Some(((profiler.insn_idx + insn_len(bare_opcode as usize) as usize) as isize + offset as isize) as usize)
+    } else {
+        None
+    }
+}
+
+/// Return the generated OSR entry for a loop header.
+fn osr_entry(iseq: IseqPtr, loop_header: YarvInsnIdx) -> rb_jit_func_t {
+    let payload = get_or_create_iseq_payload(iseq);
+    let Some(version) = payload.versions.last() else { return None };
+    let IseqStatus::Compiled(code_ptrs) = &unsafe { version.as_ref() }.status else { return None };
+    let Some((_, code_ptr)) = code_ptrs.osr_entry_ptrs.iter().find(|(insn_idx, _)| *insn_idx == loop_header) else {
+        return None;
+    };
+    let raw_ptr = code_ptr.raw_ptr(ZJITState::get_code_block());
+    Some(unsafe { std::mem::transmute(raw_ptr) })
+}
+/// Report whether an ISEQ can use an interpreter loop OSR entry.
+fn loop_osr_allowed(iseq: IseqPtr) -> bool {
+    // The main ISEQ uses TOPLEVEL_BINDING as its outer EP. That implementation
+    // detail is not a user-visible escaped EP, so it can safely use OSR.
+    let iseq_type = unsafe { get_iseq_body_type(iseq) };
+    if iseq_type != ISEQ_TYPE_MAIN && iseq_seen_ep_escape(iseq) {
+        incr_counter!(osr_rejected_ep_escaped);
+        return false;
+    }
+    if matches!(unsafe { get_iseq_body_type(iseq) }, ISEQ_TYPE_RESCUE | ISEQ_TYPE_ENSURE) {
+        incr_counter!(osr_rejected_rescue_or_ensure);
+        return false;
+    }
+    if unsafe { rb_zjit_iseq_tracing_currently_enabled() } {
+        incr_counter!(osr_rejected_tracing);
+        return false;
+    }
+    true
+}
+
+/// Profile a YARV instruction and compile an OSR entry at the loop threshold.
+fn profile_insn(bare_opcode: ruby_vminsn_type, ec: EcPtr) -> rb_jit_func_t {
+    let profiler = Profiler::new(ec);
+    let loop_target = taken_loop_target(bare_opcode, &profiler);
+    let compile_osr = {
+        let payload = get_or_create_iseq_payload(profiler.iseq);
+        if let Some(loop_target) = loop_target {
+            let crossed_threshold = payload.profile.record_loop_backedge(loop_target);
+            if !crossed_threshold || payload.rejected_loop_osr_headers.contains(&loop_target) {
+                false
+            } else if loop_osr_allowed(profiler.iseq) {
+                payload.loop_osr_headers.insert(loop_target);
+                incr_counter!(osr_compile_count);
+                true
+            } else {
+                false
+            }
+        } else {
+            let profile = &mut payload.profile;
+            let mut profiler = profiler;
+            let _ = profile_insn_sample(bare_opcode, &mut profiler, profile);
+            let entry = profile.entry_mut(profiler.insn_idx);
+            entry.profiles_remaining = entry.profiles_remaining.saturating_sub(1);
+            if entry.profiles_remaining == 0 {
+                unsafe { rb_zjit_iseq_insn_set(profiler.iseq, profiler.insn_idx as u32, bare_opcode); }
+            }
+            false
+        }
+    };
+    if compile_osr {
+        rb_zjit_iseq_gen_entry_point(profiler.iseq, ec, false);
+    }
+    loop_target.and_then(|loop_target| osr_entry(profiler.iseq, loop_target))
 }
 
 /// Reset existing profile counters and install profiling instructions throughout an ISEQ.
@@ -425,6 +505,9 @@ pub struct IseqProfile {
 
     /// Observed lengths of caller splat arrays for call instructions.
     splat_lengths: HashMap<YarvInsnIdx, SplatLengthDistribution>,
+
+    /// Number of taken backedges for each loop header.
+    loop_backedges: HashMap<YarvInsnIdx, u32>,
 }
 
 impl IseqProfile {
@@ -433,6 +516,7 @@ impl IseqProfile {
             entries: Vec::new(),
             super_cme: HashMap::new(),
             splat_lengths: HashMap::new(),
+            loop_backedges: HashMap::new(),
         }
     }
 
@@ -450,6 +534,14 @@ impl IseqProfile {
                 &mut self.entries[i]
             }
         }
+    }
+
+    /// Record a taken loop backedge and report each threshold crossing.
+    fn record_loop_backedge(&mut self, loop_header: YarvInsnIdx) -> bool {
+        let counter = self.loop_backedges.entry(loop_header).or_default();
+        *counter = counter.saturating_add(1);
+        let threshold = unsafe { crate::options::rb_zjit_loop_threshold };
+        threshold != 0 && *counter % threshold == 0
     }
 
     /// Get a profile entry for the given instruction index (read-only).

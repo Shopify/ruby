@@ -241,6 +241,7 @@ pub const ZJIT_STACK_MAP_SHIFT: u32 = 8;
 pub const ZJIT_STACK_MAP_BASE_PTR_SIZE_SHIFT: u32 = 32;
 pub const ZJIT_STACK_MAP_BASE_PTR_INDEX_MASK: u32 = 16777215;
 pub const ZJIT_JIT_RETURN_C_FRAME: u32 = 1;
+pub const ZJIT_JIT_RETURN_OSR_TAG: u32 = 2;
 pub const RB_GC_ZJIT_FASTPATH_DATA_WORDS: u32 = 19;
 pub type rb_alloc_func_t = ::std::option::Option<unsafe extern "C" fn(klass: VALUE) -> VALUE>;
 pub const RUBY_Qfalse: ruby_special_consts = 0;

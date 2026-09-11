@@ -1262,8 +1262,12 @@ pub enum Insn {
         return_type: Type,  // BasicObject for unannotated builtins
     },
 
-    /// Set up frame. Remember the address as the JIT entry for the insn_idx in `jit_entry_insns()[jit_entry_idx]`.
-    EntryPoint { jit_entry_idx: Option<usize> },
+    /// Set up a frame. `jit_entry_idx` identifies a direct call entry. `osr_entry_insn_idx`
+    /// identifies an interpreter loop entry. Only one of these fields is set.
+    EntryPoint {
+        jit_entry_idx: Option<usize>,
+        osr_entry_insn_idx: Option<YarvInsnIdx>,
+    },
     /// Control flow instructions
     Return { val: InsnId },
     /// Non-local control flow. See the throw YARV instruction
@@ -2276,8 +2280,10 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
                 write_separated!(f, ", ", ", ", args);
                 Ok(())
             }
-            &Insn::EntryPoint { jit_entry_idx: Some(idx) } => write!(f, "EntryPoint JIT({idx})"),
-            &Insn::EntryPoint { jit_entry_idx: None } => write!(f, "EntryPoint interpreter"),
+            &Insn::EntryPoint { jit_entry_idx: Some(idx), osr_entry_insn_idx: None } => write!(f, "EntryPoint JIT({idx})"),
+            &Insn::EntryPoint { jit_entry_idx: None, osr_entry_insn_idx: Some(insn_idx) } => write!(f, "EntryPoint OSR({insn_idx})"),
+            &Insn::EntryPoint { jit_entry_idx: None, osr_entry_insn_idx: None } => write!(f, "EntryPoint interpreter"),
+            Insn::EntryPoint { .. } => unreachable!("EntryPoint cannot be both JIT and OSR"),
             Insn::Return { val } => { write!(f, "Return {val}") }
             Insn::FixnumAdd  { left, right, .. } => { write!(f, "FixnumAdd {left}, {right}") },
             Insn::FixnumSub  { left, right, .. } => { write!(f, "FixnumSub {left}, {right}") },
@@ -2847,6 +2853,9 @@ pub struct Function {
     /// Entry block for JIT-to-JIT calls. Length will be `opt_num+1`, for callers
     /// fulfilling `(0..=opt_num)` optional parameters.
     jit_entry_blocks: Vec<BlockId>,
+    /// Entry blocks for interpreter loop on-stack replacement. Each item holds
+    /// the loop header instruction index and the entry block for that header.
+    osr_entry_blocks: Vec<(YarvInsnIdx, BlockId)>,
     profiles: Option<ProfileOracle>,
     /// Rough estimate for the number of (actually executable) instructions in the function. Does
     /// not count Snapshot, PatchPoint, etc.
@@ -3109,6 +3118,7 @@ impl Function {
             entries_block: BlockId(0),
             entry_block: BlockId(1),
             jit_entry_blocks: vec![],
+            osr_entry_blocks: vec![],
             param_types: vec![],
             profiles: None,
             num_instructions: 0,
@@ -7226,15 +7236,21 @@ impl Function {
         }
     }
 
-    /// Return a list that has entry_block and then jit_entry_blocks
+    /// Return all callable entries in stable code generation order.
     fn entry_blocks(&self) -> Vec<BlockId> {
         let mut entry_blocks = self.jit_entry_blocks.clone();
+        entry_blocks.extend(self.osr_entry_blocks.iter().map(|(_, block)| *block));
         entry_blocks.insert(0, self.entry_block);
         entry_blocks
     }
+    pub(crate) fn has_osr_entries(&self) -> bool {
+        !self.osr_entry_blocks.is_empty()
+    }
+
 
     pub fn is_entry_block(&self, block_id: BlockId) -> bool {
         self.entry_block == block_id || self.jit_entry_blocks.contains(&block_id)
+            || self.osr_entry_blocks.iter().any(|(_, entry_block)| *entry_block == block_id)
     }
 
     /// Populate the entries superblock with an Entries instruction targeting all entry blocks.
@@ -8473,12 +8489,14 @@ fn insn_idx_at_offset(idx: u32, offset: i64) -> u32 {
 
 struct BytecodeInfo {
     jump_targets: Vec<u32>,
+    loop_headers: Vec<u32>,
 }
 
 fn compute_bytecode_info(iseq: *const rb_iseq_t, opt_table: &[u32]) -> BytecodeInfo {
     let iseq_size = unsafe { get_iseq_encoded_size(iseq) };
     let mut insn_idx = 0;
     let mut jump_targets: HashSet<u32> = opt_table.iter().copied().collect();
+    let mut loop_headers = HashSet::new();
     while insn_idx < iseq_size {
         // Get the current pc and opcode
         let pc = unsafe { rb_iseq_pc_at_idx(iseq, insn_idx) };
@@ -8499,7 +8517,12 @@ fn compute_bytecode_info(iseq: *const rb_iseq_t, opt_table: &[u32]) -> BytecodeI
             YARVINSN_branchunless | YARVINSN_jump | YARVINSN_branchif | YARVINSN_branchnil
             | YARVINSN_branchunless_without_ints | YARVINSN_jump_without_ints | YARVINSN_branchif_without_ints | YARVINSN_branchnil_without_ints => {
                 let offset = get_arg(pc, 0).as_i64();
-                jump_targets.insert(insn_idx_at_offset(insn_idx, offset));
+                let target = insn_idx_at_offset(insn_idx, offset);
+                jump_targets.insert(target);
+                if offset < 0 && matches!(opcode,
+                    YARVINSN_branchunless | YARVINSN_jump | YARVINSN_branchif | YARVINSN_branchnil) {
+                    loop_headers.insert(target);
+                }
             }
             YARVINSN_opt_new => {
                 let offset = get_arg(pc, 1).as_i64();
@@ -8513,9 +8536,11 @@ fn compute_bytecode_info(iseq: *const rb_iseq_t, opt_table: &[u32]) -> BytecodeI
             _ => {}
         }
     }
-    let mut result = jump_targets.into_iter().collect::<Vec<_>>();
-    result.sort();
-    BytecodeInfo { jump_targets: result }
+    let mut jump_targets = jump_targets.into_iter().collect::<Vec<_>>();
+    jump_targets.sort();
+    let mut loop_headers = loop_headers.into_iter().collect::<Vec<_>>();
+    loop_headers.sort();
+    BytecodeInfo { jump_targets, loop_headers }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -8764,6 +8789,7 @@ fn add_iseq_to_hir(
     mode: AddIseqMode,
 ) -> Result<AddIseqResult, ParseError> {
     let payload = get_or_create_iseq_payload(iseq);
+    let requested_loop_headers = payload.loop_osr_headers.clone();
     let mut profiles = ProfileOracle::new();
 
     // Build the initial FrameState for a block being translated. In inlined
@@ -8795,8 +8821,7 @@ fn add_iseq_to_hir(
         .get(jit_entry_start..)
         .expect("JIT entry index must be within the callee opt table")
         .iter().copied().map(VALUE::as_u32).collect::<Vec<_>>();
-    let BytecodeInfo { jump_targets } = compute_bytecode_info(iseq, &jit_entry_insns);
-
+    let BytecodeInfo { jump_targets, loop_headers } = compute_bytecode_info(iseq, &jit_entry_insns);
     let compile_jit_entries = matches!(mode, AddIseqMode::Standalone) && iseq_supports_jit_entry(iseq);
 
     // Make all empty basic blocks. The ordering of the BBs matters for getting fallthrough jumps
@@ -8860,6 +8885,9 @@ fn add_iseq_to_hir(
     // Iteratively fill out basic blocks using a queue.
     // TODO(max): Basic block arguments at edges
     let mut queue = VecDeque::new();
+    // Loop OSR is safe only when the loop header has no operand stack values.
+    // The entry rebuilds locals from EP and does not rebuild an operand stack.
+    let mut supported_loop_headers = HashSet::new();
     for &insn_idx in jit_entry_insns.iter() {
         queue.push_back((new_frame_state(mode, iseq), insn_idx_to_block[&insn_idx], /*insn_idx=*/insn_idx, /*local_inval=*/false));
     }
@@ -8868,6 +8896,9 @@ fn add_iseq_to_hir(
     let mut visited = HashSet::new();
     let iseq_size = unsafe { get_iseq_encoded_size(iseq) };
     while let Some((incoming_state, mut block, mut insn_idx, mut local_inval)) = queue.pop_front() {
+        if loop_headers.contains(&insn_idx) && incoming_state.stack_size() == 0 {
+            supported_loop_headers.insert(insn_idx);
+        }
         // Compile each block only once
         if visited.contains(&block) { continue; }
         visited.insert(block);
@@ -10763,7 +10794,29 @@ fn add_iseq_to_hir(
             }
         }
     }
+    if matches!(mode, AddIseqMode::Standalone) {
+        for &insn_idx in &loop_headers {
+            let insn_idx = insn_idx as YarvInsnIdx;
+            if requested_loop_headers.contains(&insn_idx) && !supported_loop_headers.contains(&(insn_idx as u32)) {
+                payload.loop_osr_headers.remove(&insn_idx);
+                payload.rejected_loop_osr_headers.insert(insn_idx);
+                incr_counter!(osr_rejected_non_empty_stack);
+            }
+        }
+    }
 
+    if matches!(mode, AddIseqMode::Standalone) {
+        // Make one native entry for each loop header that receives an empty stack.
+        for &insn_idx in &loop_headers {
+            if !requested_loop_headers.contains(&(insn_idx as YarvInsnIdx)) || !supported_loop_headers.contains(&insn_idx) {
+                continue;
+            }
+            let target_block = insn_idx_to_block[&insn_idx];
+            let osr_entry_block = fun.new_block(insn_idx);
+            fun.osr_entry_blocks.push((insn_idx as YarvInsnIdx, osr_entry_block));
+            compile_osr_entry_block(fun, osr_entry_block, insn_idx as YarvInsnIdx, target_block);
+        }
+    }
     if matches!(mode, AddIseqMode::Standalone) {
         // Populate the entries superblock with an Entries instruction targeting all entry blocks
         fun.seal_entries();
@@ -10836,7 +10889,7 @@ fn compile_entry_block(fun: &mut Function, jit_entry_insns: &[u32], insn_idx_to_
 /// Compile initial locals for an entry_block for the interpreter
 fn compile_entry_state(fun: &mut Function) -> (InsnId, FrameState) {
     let entry_block = fun.entry_block;
-    fun.push_insn(entry_block, Insn::EntryPoint { jit_entry_idx: None });
+    fun.push_insn(entry_block, Insn::EntryPoint { jit_entry_idx: None, osr_entry_insn_idx: None });
 
     let iseq = fun.iseq;
     let params = unsafe { iseq.params() };
@@ -10879,7 +10932,7 @@ fn compile_entry_state(fun: &mut Function) -> (InsnId, FrameState) {
 /// Compile a jit_entry_block
 fn compile_jit_entry_block(fun: &mut Function, jit_entry_idx: usize, target_block: BlockId) {
     let jit_entry_block = fun.jit_entry_blocks[jit_entry_idx];
-    fun.push_insn(jit_entry_block, Insn::EntryPoint { jit_entry_idx: Some(jit_entry_idx) });
+    fun.push_insn(jit_entry_block, Insn::EntryPoint { jit_entry_idx: Some(jit_entry_idx), osr_entry_insn_idx: None });
 
     // Prepare entry_state with basic block params
     let (self_param, entry_state) = compile_jit_entry_state(fun, jit_entry_block, jit_entry_idx);
@@ -10889,6 +10942,38 @@ fn compile_jit_entry_block(fun: &mut Function, jit_entry_idx: usize, target_bloc
     }
     // Jump to target_block
     fun.push_insn(jit_entry_block, Insn::Jump(BranchEdge { target: target_block, args: entry_state.as_args(self_param) }));
+}
+
+/// Compile a loop OSR entry. The interpreter has already consumed the branch
+/// condition, so the target block starts with an empty operand stack.
+fn compile_osr_entry_block(fun: &mut Function, osr_entry_block: BlockId, insn_idx: YarvInsnIdx, target_block: BlockId) {
+    fun.push_insn(osr_entry_block, Insn::EntryPoint { jit_entry_idx: None, osr_entry_insn_idx: Some(insn_idx) });
+    if get_option!(stats) {
+        fun.push_insn(osr_entry_block, Insn::IncrCounter(Counter::osr_entry_count));
+    }
+
+    let iseq = fun.iseq;
+    let self_param = fun.load_self(osr_entry_block);
+    let ep = fun.get_ep(osr_entry_block, 0);
+    let mut entry_state = FrameState::new(iseq);
+    for local_idx in 0..num_locals(iseq) {
+        let ep_offset = local_idx_to_ep_offset(iseq, local_idx);
+        let ep_offset = u32::try_from(ep_offset)
+            .unwrap_or_else(|_| panic!("Could not convert ep_offset {ep_offset} to u32"));
+        let local = fun.get_local_from_ep(
+            osr_entry_block,
+            iseq,
+            ep,
+            ep_offset,
+            0,
+            types::BasicObject,
+        );
+        entry_state.locals.push(local);
+    }
+    fun.push_insn(osr_entry_block, Insn::Jump(BranchEdge {
+        target: target_block,
+        args: entry_state.as_args(self_param),
+    }));
 }
 
 /// Compile params and initial locals for a jit_entry_block

@@ -387,6 +387,33 @@ pub(crate) mod hir_build_tests {
     }
 
     #[test]
+    fn test_loop_osr_entry() {
+        eval("
+            def test(limit)
+              i = 0
+              total = 0
+              while i < limit
+                i += 1
+                total += i
+              end
+              total
+            end
+        ");
+        let iseq = crate::cruby::with_rubyvm(|| get_method_iseq("self", "test"));
+        let header = compute_bytecode_info(iseq, &[]).loop_headers[0];
+        get_or_create_iseq_payload(iseq).loop_osr_headers.insert(header as YarvInsnIdx);
+
+        let function = iseq_to_hir(iseq).unwrap();
+        assert_eq!(function.osr_entry_blocks.len(), 1);
+        let (entry_idx, entry_block) = function.osr_entry_blocks[0];
+        assert_eq!(entry_idx, header as YarvInsnIdx);
+        assert!(matches!(
+            function.find_ref(*function.block(entry_block).insns().next().unwrap()),
+            Insn::EntryPoint { jit_entry_idx: None, osr_entry_insn_idx: Some(idx) } if *idx == header as YarvInsnIdx
+        ));
+    }
+
+    #[test]
     fn test_compile_optional() {
         eval("def test(x=1) = 123");
         assert_snapshot!(hir_string("test"), @"

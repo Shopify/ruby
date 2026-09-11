@@ -156,6 +156,12 @@ make_counters! {
     default {
         compiled_iseq_count,
         failed_iseq_count,
+        osr_compile_count,
+        osr_entry_count,
+        osr_rejected_non_empty_stack,
+        osr_rejected_ep_escaped,
+        osr_rejected_rescue_or_ensure,
+        osr_rejected_tracing,
         jit_frame_heap_bytes,
         skipped_native_stack_full,
 

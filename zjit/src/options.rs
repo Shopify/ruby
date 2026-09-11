@@ -27,6 +27,11 @@ pub type NumProfiles = u16;
 pub const DEFAULT_CALL_THRESHOLD: CallThreshold = 30;
 pub type CallThreshold = u32;
 
+/// Default --zjit-loop-threshold. A zero value disables loop OSR until it
+/// passes the full suite on supported platforms.
+pub const DEFAULT_LOOP_THRESHOLD: LoopThreshold = 0;
+pub type LoopThreshold = u32;
+
 /// Default --zjit-inline-threshold
 /// TODO (nirvdrum 2026-06-25): 30 has proven to work well with ruby-bench, but we should finely
 /// tune across more workloads.
@@ -62,6 +67,11 @@ pub static mut rb_zjit_profile_threshold: CallThreshold = DEFAULT_CALL_THRESHOLD
 #[unsafe(no_mangle)]
 #[allow(non_upper_case_globals)]
 pub static mut rb_zjit_call_threshold: CallThreshold = DEFAULT_CALL_THRESHOLD;
+
+/// Number of loop backedges to trigger loop OSR in vm.c.
+#[unsafe(no_mangle)]
+#[allow(non_upper_case_globals)]
+pub static mut rb_zjit_loop_threshold: LoopThreshold = DEFAULT_LOOP_THRESHOLD;
 
 /// ZJIT command-line options. This is set before rb_zjit_init() sets
 /// ZJITState so that we can query some options while loading builtins.
@@ -237,6 +247,8 @@ pub const ZJIT_OPTIONS: &[(&str, &str)] = &[
                      "Max amount of memory that ZJIT can use in MiB (default: 128)."),
     ("--zjit-call-threshold=num",
                      "Number of calls to trigger JIT (default: 30)."),
+    ("--zjit-loop-threshold=num",
+                     "Number of loop backedges to trigger JIT (default: 0, disabled)."),
     ("--zjit-num-profiles=num",
                      "Number of profiled calls before JIT (default: 5)."),
     ("--zjit-stats-quiet",
@@ -431,6 +443,11 @@ fn parse_option(str_ptr: *const std::os::raw::c_char) -> Option<()> {
                 unsafe { rb_zjit_call_threshold = n; }
                 update_profile_threshold();
             },
+            Err(_) => return None,
+        },
+
+        ("loop-threshold", _) => match opt_val.parse() {
+            Ok(n) => unsafe { rb_zjit_loop_threshold = n; },
             Err(_) => return None,
         },
 
@@ -675,6 +692,12 @@ pub fn set_call_threshold(call_threshold: CallThreshold) {
     unsafe { rb_zjit_call_threshold = call_threshold; }
     rb_zjit_prepare_options();
     update_profile_threshold();
+}
+
+/// Update --zjit-loop-threshold for testing
+#[cfg(test)]
+pub fn set_loop_threshold(loop_threshold: LoopThreshold) {
+    unsafe { rb_zjit_loop_threshold = loop_threshold; }
 }
 
 /// Update --zjit-max-versions for testing

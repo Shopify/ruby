@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use crate::codegen::IseqCallRef;
@@ -25,6 +26,10 @@ pub struct IseqPayload {
     /// `BasicObject`) when the owner is unknown.
     /// See [`crate::cruby::iseq_self_is_heap_object`].
     pub self_is_heap_object: bool,
+    /// Loop headers that need an interpreter OSR entry in the next version.
+    pub loop_osr_headers: HashSet<YarvInsnIdx>,
+    /// Loop headers that cannot use OSR because the header stack is non-empty.
+    pub rejected_loop_osr_headers: HashSet<YarvInsnIdx>,
 }
 
 impl IseqPayload {
@@ -34,6 +39,8 @@ impl IseqPayload {
             versions: vec![],
             was_invalidated_for_singleton_class_creation: false,
             self_is_heap_object: false,
+            loop_osr_headers: HashSet::new(),
+            rejected_loop_osr_headers: HashSet::new(),
         }
     }
 
@@ -95,6 +102,8 @@ pub struct IseqCodePtrs {
     pub start_ptr: CodePtr,
     /// Entries for JIT-to-JIT calls
     pub jit_entry_ptrs: Vec<CodePtr>,
+    /// Entries for interpreter loop on-stack replacement, indexed by loop header.
+    pub osr_entry_ptrs: Vec<(YarvInsnIdx, CodePtr)>,
 }
 
 #[derive(Debug, PartialEq)]

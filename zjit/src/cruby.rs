@@ -1258,7 +1258,7 @@ pub use manual_defs::*;
 pub mod test_utils {
     use std::{ptr::null, sync::Once};
 
-    use crate::{options::{DEFAULT_CALL_THRESHOLD, rb_zjit_call_threshold, rb_zjit_prepare_options, set_call_threshold}, state::{ZJITState, rb_zjit_compiling_p, rb_zjit_entry}};
+    use crate::{options::{DEFAULT_CALL_THRESHOLD, rb_zjit_call_threshold, rb_zjit_prepare_options, set_call_threshold, set_loop_threshold}, state::{ZJITState, rb_zjit_compiling_p, rb_zjit_entry}};
 
     use super::*;
 
@@ -1287,6 +1287,11 @@ pub mod test_utils {
             if rb_zjit_call_threshold == DEFAULT_CALL_THRESHOLD {
                 set_call_threshold(2);
             }
+
+            // Rust tests lower the call threshold globally. Keep loop OSR off
+            // unless a test enables it explicitly, so unrelated helpers do not
+            // compile while they execute the test harness itself.
+            set_loop_threshold(0);
 
             // Pass command line options so the VM loads core library methods defined in
             // ruby such as from `kernel.rb`.

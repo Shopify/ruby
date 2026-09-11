@@ -16,6 +16,7 @@
 uint64_t rb_vm_insn_count = 0;
 #endif
 
+
 #if VM_COLLECT_USAGE_DETAILS
 static void vm_analysis_insn(int insn);
 #endif

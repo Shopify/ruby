@@ -4,7 +4,32 @@
 INSN_ENTRY(<%= insn.name %>)
 {
     START_OF_ORIGINAL_INSN(<%= insn.name %>);
+% if %w[jump branchif branchunless branchnil].include?(insn.jump_destination)
+    rb_jit_func_t osr_entry = rb_zjit_profile_insn(BIN(<%= insn.jump_destination %>), ec);
+    if (osr_entry) {
+        RUBY_VM_CHECK_INTS(ec);
+% if %w[branchif branchunless branchnil].include?(insn.jump_destination)
+        reg_cfp->sp--;
+% end
+        rb_zjit_func_t zjit_entry = (rb_zjit_func_t)rb_zjit_entry;
+        VALUE osr_result = zjit_entry(ec, reg_cfp, osr_entry);
+#if OPT_CALL_THREADED_CODE
+        if (UNDEF_P(osr_result)) {
+            return ec->cfp;
+        }
+        rb_ec_thread_ptr(ec)->retval = osr_result;
+        return NULL;
+#else
+        if (UNDEF_P(osr_result)) {
+            RESTORE_REGS();
+            NEXT_INSN();
+        }
+        return osr_result;
+#endif
+    }
+% else
     rb_zjit_profile_insn(BIN(<%= insn.jump_destination %>), ec);
+% end
     DISPATCH_ORIGINAL_INSN(<%= insn.jump_destination %>);
     END_INSN(<%= insn.name %>);
 }

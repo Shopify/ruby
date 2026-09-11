@@ -6,7 +6,7 @@ use crate::backend::lir::Assembler;
 use crate::codegen::max_iseq_versions;
 use crate::cruby::*;
 use crate::hir::{Insn, iseq_to_hir};
-use crate::options::{get_option, rb_zjit_prepare_options, set_call_threshold, set_inline_threshold, set_max_versions, set_mem_bytes};
+use crate::options::{get_option, rb_zjit_prepare_options, set_call_threshold, set_inline_threshold, set_loop_threshold, set_max_versions, set_mem_bytes};
 use crate::payload::IseqVersion;
 use crate::hir::tests::hir_build_tests::assert_contains_opcode;
 use crate::payload::*;
@@ -80,12 +80,13 @@ fn test_breakpoint_hir_codegen() {
         function.num_insns(),
         function.num_blocks(),
         0,
+        false,
     );
     let mut asm = Assembler::new();
     asm.new_block_without_id("test");
     let mut cb = CodeBlock::new_dummy();
 
-    lower_insn(&mut cb, &mut jit, &mut asm, &function, breakpoint, &function.find(breakpoint));
+    lower_insn(&mut cb, &mut jit, &mut asm, &function, breakpoint, &function.find(breakpoint), None);
     asm.compile_with_num_regs(&mut cb, 0);
 
     #[cfg(target_arch = "x86_64")]
@@ -8441,4 +8442,68 @@ fn test_forward_fallback_with_lightweight_frame_reads_cfp() {
       end
       :done
     "#), @":done");
+}
+
+#[test]
+fn test_loop_osr_compiles_and_enters_jit() {
+    crate::options::enable_zjit_stats();
+    eval("nil"); // boot the VM before ZJITState access
+    let old_call_threshold = unsafe { crate::options::rb_zjit_call_threshold };
+    let old_loop_threshold = unsafe { crate::options::rb_zjit_loop_threshold };
+    set_call_threshold(3);
+    set_loop_threshold(2);
+
+    let counters = crate::state::ZJITState::get_counters();
+    let osr_compile_count_before = counters.osr_compile_count;
+    let osr_entry_count_before = counters.osr_entry_count;
+    let result = assert_compiles(r#"
+        def test_loop_osr_compiles_and_enters_jit
+            i = 0
+            sum = 0
+            while i < 20
+                sum += i
+                i += 1
+            end
+            sum
+        end
+
+        test_loop_osr_compiles_and_enters_jit
+    "#);
+
+    set_call_threshold(old_call_threshold);
+    set_loop_threshold(old_loop_threshold);
+
+    assert_eq!(result, "190");
+    assert!(counters.osr_compile_count > osr_compile_count_before, "expected loop OSR to compile the ISEQ");
+    assert!(counters.osr_entry_count > osr_entry_count_before, "expected execution to enter loop OSR code");
+}
+
+#[test]
+fn test_main_loop_osr_compiles_and_enters_jit() {
+    crate::options::enable_zjit_stats();
+    eval("nil"); // boot the VM before ZJITState access
+    let old_call_threshold = unsafe { crate::options::rb_zjit_call_threshold };
+    let old_loop_threshold = unsafe { crate::options::rb_zjit_loop_threshold };
+    set_call_threshold(3);
+    set_loop_threshold(2);
+
+    let counters = crate::state::ZJITState::get_counters();
+    let osr_compile_count_before = counters.osr_compile_count;
+    let osr_entry_count_before = counters.osr_entry_count;
+    let result = assert_compiles_allowing_exits(r#"
+        i = 0
+        sum = 0
+        while i < 20
+            sum += i
+            i += 1
+        end
+        sum
+    "#);
+
+    set_call_threshold(old_call_threshold);
+    set_loop_threshold(old_loop_threshold);
+
+    assert_eq!(result, "190");
+    assert!(counters.osr_compile_count > osr_compile_count_before, "expected loop OSR to compile the main ISEQ");
+    assert!(counters.osr_entry_count > osr_entry_count_before, "expected execution to enter main loop OSR code");
 }
