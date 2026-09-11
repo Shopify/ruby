@@ -16,7 +16,7 @@ use crate::invariants::{
     track_root_box_assumption, track_no_newobj_hook_assumption
 };
 use crate::gc::append_gc_offsets;
-use crate::payload::{IseqCodePtrs, IseqStatus, IseqVersion, IseqVersionRef, JITFrame, get_or_create_iseq_payload};
+use crate::payload::{BlockIseqJitEntry, IseqCodePtrs, IseqPayload, IseqStatus, IseqVersion, IseqVersionRef, JITFrame, get_or_create_iseq_payload};
 use crate::profile::reset_profiles_remaining;
 use crate::perf;
 use crate::state::{rb_zjit_compiling_p, ZJITState};
@@ -231,6 +231,7 @@ pub extern "C" fn rb_zjit_iseq_gen_entry_point(iseq: IseqPtr, ec: EcPtr, jit_exc
     })
 }
 
+
 /// Compile an entry point for a given ISEQ
 fn gen_iseq_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, jit_exception: bool) -> Result<CodePtr, CompileError> {
     // We don't support exception handlers yet
@@ -267,6 +268,9 @@ pub fn invalidate_iseq_version(cb: &mut CodeBlock, iseq: IseqPtr, version: &mut 
         && payload.versions.len() < max_iseq_versions()
     {
         unsafe { version.as_mut() }.status = IseqStatus::Invalidated;
+        // Dynamic ISEQ block calls read this entry without a C call. Clear it before the VM
+        // invalidates the regular entry, so they cannot enter this invalidated version.
+        payload.block_iseq_jit_entry.entry = std::ptr::null();
         unsafe { rb_iseq_reset_jit_func(iseq) };
 
         // Recompile JIT-to-JIT calls into the invalidated ISEQ
@@ -363,6 +367,12 @@ fn gen_iseq(cb: &mut CodeBlock, iseq: IseqPtr, function: Option<&Function>) -> R
     match &code_ptrs {
         Ok(code_ptrs) => {
             unsafe { version.as_mut() }.status = IseqStatus::Compiled(code_ptrs.clone());
+            let entry = if !block_iseq_may_throw(iseq) {
+                code_ptrs.jit_entry_ptrs.first().map(|entry| entry.raw_ptr(cb)).unwrap_or(std::ptr::null())
+            } else {
+                std::ptr::null()
+            };
+            payload.block_iseq_jit_entry.entry = entry;
             incr_counter!(compiled_iseq_count);
         }
         Err(err) => {
@@ -669,6 +679,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         Insn::InvokeProc { recv, args, state, kw_splat } => gen_invokeproc(jit, asm, function, opnd!(recv), opnds!(args), *kw_splat, &function.frame_state(*state)),
         Insn::InvokeBuiltin { bf, leaf, args, state, .. } => gen_invokebuiltin(jit, asm, function, &function.frame_state(*state), unsafe { &**bf }, *leaf, opnds!(args)),
         Insn::InvokeBlockIseqDirect { iseq, captured, args, state } => gen_invoke_block_iseq_direct(cb, jit, asm, function, *iseq, opnd!(captured), opnds!(args), &function.frame_state(*state)),
+        Insn::InvokeBlockIseqRuntime { cd, args, lep_level, state } => gen_invoke_block_iseq_runtime(jit, asm, function, *cd, opnds!(args), *lep_level, &function.frame_state(*state)),
         &Insn::EntryPoint { jit_entry_idx } => no_output!(gen_entry_point(jit, asm, jit_entry_idx)),
         Insn::Return { val } => no_output!(gen_return(asm, opnd!(val))),
         Insn::FixnumAdd { left, right, state } => gen_fixnum_add(jit, asm, function, opnd!(left), opnd!(right), &function.frame_state(*state)),
@@ -2031,6 +2042,136 @@ fn gen_invoke_block_iseq_direct(
     asm.mov(SP, new_sp);
 
     ret
+}
+
+/// Compile `yield` with an ISEQ block handler that is known only at runtime.
+///
+/// This avoids materializing the caller frame before `rb_vm_invokeblock` when the handler and
+/// callee pass the runtime checks. Blocks with complex parameters, no direct JIT entry, or
+/// `throw` instructions retain the generic VM path.
+fn gen_invoke_block_iseq_runtime(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    function: &Function,
+    cd: *const rb_call_data,
+    args: Vec<Opnd>,
+    lep_level: u32,
+    state: &FrameState,
+) -> lir::Opnd {
+    // The indirect JIT call reserves one C argument register for its entry address. The generic
+    // VM path handles wider yields.
+    if args.len() + 2 > C_ARG_OPNDS.len() {
+        gen_incr_counter(asm, Counter::invokeblock_iseq_runtime_fallback_count);
+        return gen_invokeblock(jit, asm, function, cd, state, hir::SendFallbackReason::InvokeBlockNotSpecialized);
+    }
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+    let direct_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let fallback_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let direct_edge = Target::Block(Box::new(lir::BranchEdge { target: direct_block, args: vec![] }));
+    let fallback_edge = Target::Block(Box::new(lir::BranchEdge { target: fallback_block, args: vec![] }));
+    let result_edge = |result| Target::Block(Box::new(lir::BranchEdge {
+        target: result_block,
+        args: vec![result],
+    }));
+
+    let lep = gen_get_ep(asm, lep_level);
+    let block_handler = asm.load(Opnd::mem(64, lep, SIZEOF_VALUE_I32 * VM_ENV_DATA_INDEX_SPECVAL));
+    let tag = asm.and(block_handler, Opnd::UImm(0x3));
+    asm.cmp(tag, Opnd::UImm(0x1));
+    asm.je(jit, direct_edge);
+    asm.jmp(fallback_edge.clone());
+
+    asm.set_current_block(direct_block);
+    let label = jit.get_label(asm, direct_block, hir_block_id);
+    asm.write_label(label);
+
+    let captured = asm.and(block_handler, Opnd::Imm(!0x3));
+    let code_offset: i32 = std::mem::offset_of!(rb_captured_block, code).try_into().unwrap();
+    let iseq = asm.load(Opnd::mem(64, captured, code_offset));
+    let body = asm.load(Opnd::mem(64, iseq, RUBY_OFFSET_ISEQ_BODY));
+    let param_flags = asm.load(Opnd::mem(64, body, RUBY_OFFSET_ISEQ_BODY_PARAM_FLAGS));
+
+    // Match rb_simple_iseq_p(). The remaining rules are exact arity and the no-auto-splat case.
+    const COMPLEX_PARAM_FLAGS: u64 =
+        (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 8) | (1 << 13) | (1 << 14);
+    let complex_flags = asm.and(param_flags, Opnd::UImm(COMPLEX_PARAM_FLAGS));
+    asm.test(complex_flags, complex_flags);
+    asm.jnz(jit, fallback_edge.clone());
+    let lead_num = asm.load(Opnd::mem(64, body, RUBY_OFFSET_ISEQ_BODY_PARAM_LEAD_NUM));
+    let lead_num = asm.and(lead_num, Opnd::UImm(u32::MAX as u64));
+    asm.cmp(lead_num, Opnd::UImm(args.len() as u64));
+    asm.jne(jit, fallback_edge.clone());
+    if args.len() == 1 {
+        let ambiguous_param0 = asm.and(param_flags, Opnd::UImm(1 << 7));
+        asm.test(ambiguous_param0, ambiguous_param0);
+        asm.jz(jit, fallback_edge.clone());
+    }
+
+    // The payload publishes the direct entry only after compilation. It is cleared before
+    // invalidation, and blocks with `throw` never publish an entry.
+    let payload = asm.load(Opnd::mem(64, body, RUBY_OFFSET_ISEQ_BODY_JIT_PAYLOAD));
+    asm.test(payload, payload);
+    asm.jz(jit, fallback_edge.clone());
+    let entry_offset: i32 = (std::mem::offset_of!(IseqPayload, block_iseq_jit_entry) +
+        std::mem::offset_of!(BlockIseqJitEntry, entry)).try_into().unwrap();
+    let jit_entry = asm.load(Opnd::mem(64, payload, entry_offset));
+    asm.test(jit_entry, jit_entry);
+    asm.jz(jit, fallback_edge.clone());
+
+    gen_incr_counter(asm, Counter::invokeblock_iseq_runtime_fastpath_count);
+    let local_size = asm.load(Opnd::mem(64, body, RUBY_OFFSET_ISEQ_BODY_LOCAL_TABLE_SIZE));
+    let local_size = asm.and(local_size, Opnd::UImm(u32::MAX as u64));
+    let stack_max = asm.load(Opnd::mem(64, body, RUBY_OFFSET_ISEQ_BODY_STACK_MAX));
+    let stack_max = asm.and(stack_max, Opnd::UImm(u32::MAX as u64));
+    let stack_growth = asm.add(local_size, stack_max);
+    let stack_growth = asm.add(stack_growth, Opnd::UImm(state.stack_size() as u64));
+    gen_stack_overflow_check_runtime(jit, asm, function, state, stack_growth);
+
+    let stack_size = state.stack().len() - args.len();
+    let stack_map = build_stack_map(jit, function, &state.with_stack_size(stack_size));
+    let jit_frame = gen_write_jit_frame(asm, state, stack_map.len());
+    gen_save_sp(asm, stack_size);
+    gen_spill_locals(jit, asm, state);
+    asm.stack_map(stack_map, jit_frame, state.depth);
+
+    let (sp_offset, new_cfp, captured_self) = gen_push_block_frame_runtime(asm, captured, &args, stack_size, local_size);
+
+    asm_comment!(asm, "switch to new SP register");
+    let new_sp = asm.add(SP, sp_offset);
+    asm.mov(SP, new_sp);
+
+    asm_comment!(asm, "switch to new CFP");
+    asm.mov(CFP, new_cfp);
+    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+
+    // JIT entries use the C calling convention: captured self, then the yielded arguments.
+    let mut c_args = Vec::with_capacity(2 + args.len());
+    c_args.push(captured_self);
+    c_args.extend(&args);
+    let fptr = C_ARG_OPNDS[c_args.len()];
+    c_args.push(jit_entry);
+    let direct_result = asm.ccall_reg_with_args(fptr, c_args, VALUE_BITS);
+    asm.cmp(direct_result, Qundef.into());
+    asm.je(jit, ZJITState::get_exit_trampoline().into());
+    let new_sp = asm.sub(SP, sp_offset);
+    asm.mov(SP, new_sp);
+    asm.jmp(result_edge(direct_result));
+
+    asm.set_current_block(fallback_block);
+    let label = jit.get_label(asm, fallback_block, hir_block_id);
+    asm.write_label(label);
+    gen_incr_counter(asm, Counter::invokeblock_iseq_runtime_fallback_count);
+    let fallback_result = gen_invokeblock(jit, asm, function, cd, state, hir::SendFallbackReason::InvokeBlockNotSpecialized);
+    asm.jmp(result_edge(fallback_result));
+
+    asm.set_current_block(result_block);
+    let label = jit.get_label(asm, result_block, hir_block_id);
+    asm.write_label(label);
+    let result = asm.new_block_param(VALUE_BITS);
+    asm.current_block().add_parameter(result);
+    result
 }
 
 /// Compile a dynamic dispatch for `super`
@@ -3572,6 +3713,42 @@ fn gen_push_frame(asm: &mut Assembler, argc: usize, state: &FrameState, frame: C
     asm.mov(cfp_opnd(RUBY_OFFSET_CFP_EP), ep);
 }
 
+/// Push an ISEQ block frame when the callee ISEQ and local-table size are runtime values.
+/// Returns the byte offset from the caller SP to the callee SP.
+fn gen_push_block_frame_runtime(
+    asm: &mut Assembler,
+    captured: Opnd,
+    args: &[Opnd],
+    stack_size: usize,
+    local_size: Opnd,
+) -> (Opnd, Opnd, Opnd) {
+    for (idx, &arg) in args.iter().enumerate() {
+        let offset = (stack_size + idx) * SIZEOF_VALUE;
+        asm.store(Opnd::mem(64, SP, offset.try_into().unwrap()), arg);
+    }
+
+    let local_bytes = asm.lshift(local_size, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
+    let ep_offset = (stack_size + VM_ENV_DATA_SIZE.to_usize() - 1) * SIZEOF_VALUE;
+    let ep_offset = asm.add(local_bytes, ep_offset.into());
+    let ep = asm.add(SP, ep_offset);
+    let captured_self = asm.load(Opnd::mem(64, captured, 0));
+    let captured_ep = asm.load(Opnd::mem(64, captured, SIZEOF_VALUE_I32));
+    let specval = asm.or(captured_ep, Opnd::Imm(0x1));
+
+    asm_comment!(asm, "push runtime block frame");
+    asm.store(Opnd::mem(64, ep, -2 * SIZEOF_VALUE_I32), 0.into());
+    asm.store(Opnd::mem(64, ep, -SIZEOF_VALUE_I32), specval);
+    asm.store(Opnd::mem(64, ep, 0), VM_FRAME_MAGIC_BLOCK.into());
+
+    let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
+    asm.store(Opnd::mem(64, new_cfp, RUBY_OFFSET_CFP_BLOCK_CODE), 0.into());
+    asm.store(Opnd::mem(64, new_cfp, RUBY_OFFSET_CFP_SELF), captured_self);
+    asm.store(Opnd::mem(64, new_cfp, RUBY_OFFSET_CFP_EP), ep);
+
+    let sp_offset = asm.add(local_bytes, ((stack_size + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE).into());
+    (sp_offset, new_cfp, captured_self)
+}
+
 /// Stack overflow check: fails if CFP<=SP at any point in the callee.
 fn gen_stack_overflow_check(jit: &mut JITState, asm: &mut Assembler, function: &Function, state: &FrameState, stack_growth: usize) {
     asm_comment!(asm, "stack overflow check");
@@ -3581,6 +3758,23 @@ fn gen_stack_overflow_check(jit: &mut JITState, asm: &mut Assembler, function: &
     let cfp_growth = 2 * (RUBY_SIZEOF_CONTROL_FRAME / SIZEOF_VALUE);
     let peak_offset = (cfp_growth + stack_growth) * SIZEOF_VALUE;
     let stack_limit = asm.lea(Opnd::mem(64, SP, peak_offset as i32));
+    asm.cmp(CFP, stack_limit);
+    asm.jbe(jit, side_exit(jit, function, state, StackOverflow));
+}
+
+/// Runtime-size stack overflow check for a direct ISEQ block call.
+fn gen_stack_overflow_check_runtime(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    function: &Function,
+    state: &FrameState,
+    stack_growth: Opnd,
+) {
+    const { assert!(RUBY_SIZEOF_CONTROL_FRAME % SIZEOF_VALUE == 0, "sizeof(rb_control_frame_t) is a multiple of sizeof(VALUE)"); }
+    let cfp_growth = 2 * (RUBY_SIZEOF_CONTROL_FRAME / SIZEOF_VALUE);
+    let peak_slots = asm.add(stack_growth, cfp_growth.into());
+    let peak_bytes = asm.lshift(peak_slots, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
+    let stack_limit = asm.add(SP, peak_bytes);
     asm.cmp(CFP, stack_limit);
     asm.jbe(jit, side_exit(jit, function, state, StackOverflow));
 }

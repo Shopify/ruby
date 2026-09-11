@@ -1232,6 +1232,16 @@ pub enum Insn {
         state: InsnId,
     },
 
+    /// Fast-path `yield` when an ISEQ block is available only at runtime. Codegen checks the
+    /// block handler, callee parameters, and JIT entry before pushing the block frame.
+    InvokeBlockIseqRuntime {
+        cd: *const rb_call_data,
+        args: Vec<InsnId>,
+        /// Number of enclosing EP links from the current frame to the yielding frame.
+        lep_level: u32,
+        state: InsnId,
+    },
+
     /// Optimized ISEQ call
     SendDirect(Box<SendDirectData>),
 
@@ -1608,6 +1618,10 @@ macro_rules! for_each_operand_impl {
                 $visit_many!(args);
                 $visit_one!(*state);
             }
+            Insn::InvokeBlockIseqRuntime { args, state, .. } => {
+                $visit_many!(args);
+                $visit_one!(*state);
+            }
             Insn::InvokeBlockIfunc { block_handler, args, state, .. } => {
                 $visit_one!(*block_handler);
                 $visit_many!(args);
@@ -1927,7 +1941,7 @@ impl Insn {
             Insn::IncrCounterPtr { .. } => Effect::read_write(abstract_heaps::Empty, abstract_heaps::Stats),
             Insn::CheckInterrupts { .. } => Effect::read_write(abstract_heaps::InterruptFlag, abstract_heaps::Control),
             Insn::InvokeProc { .. } => effects::Any,
-            Insn::InvokeBlockIseqDirect { .. } => effects::Any,
+            Insn::InvokeBlockIseqDirect { .. } | Insn::InvokeBlockIseqRuntime { .. } => effects::Any,
             Insn::RefineType { .. } => effects::Empty,
             Insn::HasType { expected, .. }
                 => Effect::read_write(
@@ -2265,6 +2279,11 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
             Insn::InvokeBlockIseqDirect { iseq, captured, args, .. } => {
                 write!(f, "InvokeBlockIseqDirect ({:?}), {captured}", self.ptr_map.map_ptr(*iseq))?;
                 write_separated!(f, ", ", ", ", args);
+                Ok(())
+            }
+            Insn::InvokeBlockIseqRuntime { args, lep_level, .. } => {
+                write!(f, "InvokeBlockIseqRuntime level:{lep_level}")?;
+                write_separated!(f, " ", ", ", args);
                 Ok(())
             }
             Insn::InvokeBuiltin { bf, args, leaf, .. } => {
@@ -3692,7 +3711,7 @@ impl Function {
             Insn::InvokeBlock { .. } => types::BasicObject,
             Insn::InvokeBlockIfunc { .. } => types::BasicObject,
             Insn::InvokeProc { .. } => types::BasicObject,
-            Insn::InvokeBlockIseqDirect { .. } => types::BasicObject,
+            Insn::InvokeBlockIseqDirect { .. } | Insn::InvokeBlockIseqRuntime { .. } => types::BasicObject,
             Insn::InvokeBuiltin { return_type, .. } => *return_type,
             Insn::Defined { pushval, .. } => Type::from_value(*pushval).union(types::NilClass),
             Insn::DefinedIvar { pushval, .. } => Type::from_value(*pushval).union(types::NilClass),
@@ -7809,6 +7828,7 @@ impl Function {
             // Instructions with a Vec of Ruby objects
             Insn::InvokeBlock { ref args, .. }
             | Insn::InvokeBlockIseqDirect { ref args, .. }
+            | Insn::InvokeBlockIseqRuntime { ref args, .. }
             | Insn::InvokeBlockIfunc { ref args, .. }
             | Insn::NewArray { elements: ref args, .. }
             | Insn::ArrayHash { elements: ref args, .. }
@@ -10390,6 +10410,7 @@ fn add_iseq_to_hir(
                         // Continue compilation from the block the dispatch ended in
                         block = continue_block;
                         result
+
                     } else if is_ifunc {
                         // Load the block handler from the current frame's LEP. In inlined
                         // code, the function ISEQ is the caller while `exit_state.iseq` is the
@@ -10435,6 +10456,9 @@ fn add_iseq_to_hir(
                         // Continue compilation from the join block
                         block = join_block;
                         join_param
+                    } else if can_direct_invoke_block(flags) {
+                        let lep_level = get_lvar_level(exit_state.iseq);
+                        fun.push_insn(block, Insn::InvokeBlockIseqRuntime { cd, args, lep_level, state: exit_id })
                     } else {
                         fun.push_insn(block, Insn::InvokeBlock { cd, args, state: exit_id, reason: fallback_reason })
                     };

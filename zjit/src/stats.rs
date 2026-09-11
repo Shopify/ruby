@@ -475,6 +475,9 @@ make_counters! {
     invokeblock_handler_megamorphic,
     invokeblock_handler_no_profiles,
 
+    invokeblock_iseq_runtime_fastpath_count,
+    invokeblock_iseq_runtime_fallback_count,
+
     // HIR-level method inliner counters. Most rejection counters are incremented
     // once per SendDirect the inliner considers. inline_reject_budget_exceeded may
     // be incremented only once, rather than once per SendDirect, if the caller

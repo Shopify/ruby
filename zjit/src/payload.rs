@@ -7,9 +7,22 @@ use crate::options::get_option;
 
 pub use crate::jit_frame::JITFrame;
 
+/// Data used by JIT code for direct calls to a block ISEQ.
+///
+/// The entry is null while the ISEQ has no direct JIT entry. Invalidation clears it before
+/// the VM resets `jit_entry`, so runtime block calls cannot enter an invalidated version.
+#[repr(C)]
+#[derive(Debug)]
+pub struct BlockIseqJitEntry {
+    pub entry: *const u8,
+}
+
 /// This is all the data ZJIT stores on an ISEQ. We mark objects in this struct on GC.
+#[repr(C)]
 #[derive(Debug)]
 pub struct IseqPayload {
+    /// Direct entry for a runtime-selected ISEQ block.
+    pub block_iseq_jit_entry: BlockIseqJitEntry,
     /// Type information of YARV instruction operands
     pub profile: IseqProfile,
     /// JIT code versions. Different versions should have different assumptions.
@@ -30,6 +43,7 @@ pub struct IseqPayload {
 impl IseqPayload {
     fn new() -> Self {
         Self {
+            block_iseq_jit_entry: BlockIseqJitEntry { entry: std::ptr::null() },
             profile: IseqProfile::new(),
             versions: vec![],
             was_invalidated_for_singleton_class_creation: false,

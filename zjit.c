@@ -37,6 +37,7 @@ STATIC_ASSERT(pointer_tagging_scheme, USE_FLONUM);
 enum zjit_struct_offsets {
     ISEQ_BODY_OFFSET_PARAM = offsetof(struct rb_iseq_constant_body, param),
     ISEQ_BODY_OFFSET_OUTER_VARIABLES = offsetof(struct rb_iseq_constant_body, outer_variables),
+    ISEQ_BODY_OFFSET_JIT_ENTRY = offsetof(struct rb_iseq_constant_body, jit_entry),
     RUBY_OFFSET_THREAD_RACTOR = offsetof(rb_thread_t, ractor),
 };
 
@@ -128,6 +129,7 @@ void *rb_zjit_reserve_low_addr_space(size_t size) { return NULL; }
 
 void rb_zjit_profile_disable(const rb_iseq_t *iseq);
 int rb_zjit_insn_to_bare_insn(int insn);
+bool rb_simple_iseq_p(const rb_iseq_t *iseq);
 
 void
 rb_zjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec, bool jit_exception)
@@ -192,6 +194,7 @@ rb_zjit_insn_to_bare_insn(int insn)
 {
     return vm_zjit_insn_to_bare_insn(insn);
 }
+
 
 // Update a YARV instruction to a given opcode (to disable ZJIT profiling).
 void

@@ -3963,6 +3963,18 @@ impl Assembler {
         out
     }
 
+    /// Call a function stored in a register with arguments in the C calling convention.
+    ///
+    /// The caller must include the target address as the final argument and use that argument
+    /// register as `fptr`. The callee ignores that trailing argument.
+    pub fn ccall_reg_with_args(&mut self, fptr: Opnd, opnds: Vec<Opnd>, num_bits: u8) -> Opnd {
+        assert!(matches!(fptr, Opnd::Reg(_)), "ccall_reg_with_args must be called with Opnd::Reg: {fptr:?}");
+        let out = self.new_vreg(num_bits);
+        let stack_map = self.stack_map.take();
+        self.push_insn(Insn::CCall { data: Box::new(CCallData { opnds, stack_map, fptr, start_marker: None, end_marker: None, out }) });
+        out
+    }
+
     /// Call a C function with PosMarkers. This is used for recording the start and end
     /// addresses of the C call and rewriting it with a different function address later.
     pub fn ccall_with_pos_markers(

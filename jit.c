@@ -61,6 +61,14 @@ enum jit_bindgen_constants {
     RUBY_OFFSET_EC_INTERRUPT_MASK = offsetof(rb_execution_context_t, interrupt_mask),
     RUBY_OFFSET_EC_THREAD_PTR = offsetof(rb_execution_context_t, thread_ptr),
     RUBY_OFFSET_EC_RACTOR_ID = offsetof(rb_execution_context_t, ractor_id),
+
+    // Field offsets for runtime ISEQ block calls
+    RUBY_OFFSET_ISEQ_BODY = offsetof(struct rb_iseq_struct, body),
+    RUBY_OFFSET_ISEQ_BODY_PARAM_FLAGS = offsetof(struct rb_iseq_constant_body, param.flags),
+    RUBY_OFFSET_ISEQ_BODY_PARAM_LEAD_NUM = offsetof(struct rb_iseq_constant_body, param.lead_num),
+    RUBY_OFFSET_ISEQ_BODY_LOCAL_TABLE_SIZE = offsetof(struct rb_iseq_constant_body, local_table_size),
+    RUBY_OFFSET_ISEQ_BODY_STACK_MAX = offsetof(struct rb_iseq_constant_body, stack_max),
+    RUBY_OFFSET_ISEQ_BODY_JIT_PAYLOAD = offsetof(struct rb_iseq_constant_body, jit_payload),
 };
 
 // Manually bound in rust since this is out-of-range of `int`,
