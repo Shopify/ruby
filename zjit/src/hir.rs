@@ -7867,7 +7867,7 @@ impl Function {
                 self.assert_subtype(insn_id, index, types::CInt64)
             }
             Insn::ArrayAset { array, index, .. } => {
-                self.assert_subtype(insn_id, array, types::ArrayExact)?;
+                self.assert_subtype(insn_id, array, types::Array)?;
                 self.assert_subtype(insn_id, index, types::CInt64)
             }
             Insn::AdjustBounds { index, length } => {

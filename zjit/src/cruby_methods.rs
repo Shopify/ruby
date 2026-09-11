@@ -397,10 +397,10 @@ fn inline_array_aref(fun: &mut hir::Function, block: hir::BlockId, recv: hir::In
 
 fn inline_array_aset(fun: &mut hir::Function, block: hir::BlockId, recv: hir::InsnId, args: &[hir::InsnId], state: hir::InsnId) -> Option<hir::InsnId> {
     if let &[index, val] = args {
-        if fun.likely_a(recv, types::ArrayExact, state)
+        if fun.likely_a(recv, types::Array, state)
             && fun.likely_a(index, types::Fixnum, state)
         {
-            let recv = fun.coerce_to(block, recv, types::ArrayExact, state);
+            let recv = fun.coerce_to(block, recv, types::Array, state);
             let index = fun.coerce_to(block, index, types::Fixnum, state);
             fun.guard_not_frozen(block, recv, state);
             fun.guard_not_shared(block, recv, state);

@@ -468,6 +468,10 @@ make_counters! {
     load_field_count,
     store_field_count,
 
+    // Array#<< and Array#push paths generated from ArrayPush HIR.
+    array_push_inline_count,
+    array_push_fallback_count,
+
     invokeblock_handler_monomorphic_iseq,
     invokeblock_handler_monomorphic_ifunc,
     invokeblock_handler_monomorphic_other,

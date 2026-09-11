@@ -4812,7 +4812,55 @@ fn test_array_fixnum_aset_array_subclass() {
         test(MyArray.new, 0)
     ");
     assert_contains_opcode("test", YARVINSN_opt_aset);
-    assert_snapshot!(assert_compiles("arr = MyArray.new; test(arr, 0); arr[0]"), @"7");
+    assert_snapshot!(assert_compiles("arr = MyArray[0]; test(arr, 0); arr[0]"), @"7");
+}
+
+#[test]
+fn test_array_push_fast_paths() {
+    crate::options::enable_zjit_stats();
+    set_call_threshold(2);
+    eval("def test(arr, val) = arr << val; array = []; test(array, 0); test(array, 1)");
+    assert_contains_opcode("test", YARVINSN_opt_ltlt);
+
+    let counters = crate::state::ZJITState::get_counters();
+    let inline_before = counters.array_push_inline_count;
+    let fallback_before = counters.array_push_fallback_count;
+    assert_snapshot!(assert_compiles("
+        array = []
+        test(array, 1)
+        test(array, 2)
+        test(array, 3)
+        test(array, 4)
+        test(array, 5)
+        test(array, 6)
+        shared = array[1, 3]
+        test(shared, :shared)
+        [array, shared]
+    "), @"[[1, 2, 3, 4, 5, 6], [2, 3, 4, :shared]]");
+    assert!(counters.array_push_inline_count > inline_before,
+        "expected the ArrayPush inline counter to increase");
+    assert!(counters.array_push_fallback_count > fallback_before,
+        "expected the ArrayPush fallback counter to increase");
+}
+
+#[test]
+fn test_array_push_write_barrier_gc_stress() {
+    eval("def test(arr, val) = arr << val");
+    assert_contains_opcode("test", YARVINSN_opt_ltlt);
+    assert_snapshot!(assert_compiles_allowing_exits(r#"
+        begin
+          GC.stress = true
+          array = []
+          first = Object.new
+          test(array, first)
+          test(array, Object.new)
+          test(array, Object.new)
+          test(array, Object.new)
+          [array.length, array[0].equal?(first), array[3].nil?]
+        ensure
+          GC.stress = false
+        end
+    "#), @"[4, true, false]");
 }
 
 #[test]

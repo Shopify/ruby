@@ -763,7 +763,7 @@ fn lower_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, funct
         &Insn::HashDup { val, state } => { gen_hash_dup(jit, asm, function, val, opnd!(val), &function.frame_state(state)) },
         &Insn::HashAref { hash, key, state } => { gen_hash_aref(jit, asm, function, opnd!(hash), opnd!(key), &function.frame_state(state)) },
         &Insn::HashAset { hash, key, val, state } => { no_output!(gen_hash_aset(jit, asm, function, opnd!(hash), opnd!(key), opnd!(val), &function.frame_state(state))) },
-        &Insn::ArrayPush { array, val, state } => { no_output!(gen_array_push(asm, opnd!(array), opnd!(val), &function.frame_state(state))) },
+        &Insn::ArrayPush { array, val, state } => { no_output!(gen_array_push(jit, asm, opnd!(array), opnd!(val), function.type_of(val), &function.frame_state(state))) },
         &Insn::ToNewArray { val, state } => { gen_to_new_array(jit, asm, function, opnd!(val), &function.frame_state(state)) },
         &Insn::ToArray { val, state } => { gen_to_array(jit, asm, function, opnd!(val), &function.frame_state(state)) },
         &Insn::DefinedIvar { self_val, id, pushval, .. } => { gen_defined_ivar(asm, opnd!(self_val), id, pushval) },
@@ -1354,9 +1354,74 @@ fn gen_hash_aset(jit: &mut JITState, asm: &mut Assembler, function: &Function, h
     asm_ccall!(asm, rb_hash_aset, hash, key, val);
 }
 
-fn gen_array_push(asm: &mut Assembler, array: Opnd, val: Opnd, state: &FrameState) {
+fn gen_array_push(jit: &mut JITState, asm: &mut Assembler, array: Opnd, val: Opnd, val_type: Type, state: &FrameState) {
+    let array = asm.load_mem(array);
+    let flags = asm.load(Opnd::mem(VALUE_BITS, array, RUBY_OFFSET_RBASIC_FLAGS));
+
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+    let embedded_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let fallback_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let embedded_edge = Target::Block(Box::new(lir::BranchEdge { target: embedded_block, args: vec![] }));
+    let fallback_edge = Target::Block(Box::new(lir::BranchEdge { target: fallback_block, args: vec![] }));
+    let result_edge = Target::Block(Box::new(lir::BranchEdge { target: result_block, args: vec![] }));
+
+    asm.test(flags, (RARRAY_EMBED_FLAG as u64).into());
+    asm.jnz(jit, embedded_edge);
+
+    // A shared root stores its reference count, not its capacity, in aux.capa.
+    asm.test(flags, ((RUBY_ELTS_SHARED | RUBY_FL_USER12) as u64).into());
+    asm.jnz(jit, fallback_edge.clone());
+    let len = asm.load(Opnd::mem(c_long::BITS as u8, array, RUBY_OFFSET_RARRAY_AS_HEAP_LEN));
+    let capacity = asm.load(Opnd::mem(c_long::BITS as u8, array, RUBY_OFFSET_RARRAY_AS_HEAP_AUX_CAPA));
+    asm.cmp(len, capacity);
+    asm.jge(jit, fallback_edge.clone());
+
+    let ptr = asm.load(Opnd::mem(usize::BITS as u8, array, RUBY_OFFSET_RARRAY_AS_HEAP_PTR));
+    let offset = asm.lshift(len, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
+    let elem_ptr = asm.add(ptr, offset);
+    asm.store(Opnd::mem(VALUE_BITS, elem_ptr, 0), val);
+    let new_len = asm.add(len, Opnd::UImm(1));
+    asm.store(Opnd::mem(c_long::BITS as u8, array, RUBY_OFFSET_RARRAY_AS_HEAP_LEN), new_len);
+    gen_incr_counter(asm, Counter::array_push_inline_count);
+    gen_write_barrier(jit, asm, array, val, val_type);
+    asm.jmp(result_edge.clone());
+
+    asm.set_current_block(embedded_block);
+    let label = jit.get_label(asm, embedded_block, hir_block_id);
+    asm.write_label(label);
+
+    let len = asm.and(flags, (RARRAY_EMBED_LEN_MASK as u64).into());
+    let len = asm.rshift(len, Opnd::UImm(RARRAY_EMBED_LEN_SHIFT as u64));
+    // The upper 32 bits of flags hold the Shape ID. Its capacity field gives
+    // the number of VALUE slots after RBasic, which is the embedded capacity.
+    let capacity = asm.and(flags, ((SHAPE_ID_CAPACITY_MASK as u64) << 32).into());
+    let capacity = asm.rshift(capacity, Opnd::UImm(32 + 19));
+    asm.cmp(len, capacity);
+    asm.jge(jit, fallback_edge.clone());
+
+    let elements = asm.lea(Opnd::mem(VALUE_BITS, array, RUBY_OFFSET_RARRAY_AS_ARY));
+    let offset = asm.lshift(len, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
+    let elem_ptr = asm.add(elements, offset);
+    asm.store(Opnd::mem(VALUE_BITS, elem_ptr, 0), val);
+    let new_flags = asm.add(flags, Opnd::UImm(1 << RARRAY_EMBED_LEN_SHIFT));
+    asm.store(Opnd::mem(VALUE_BITS, array, RUBY_OFFSET_RBASIC_FLAGS), new_flags);
+    gen_incr_counter(asm, Counter::array_push_inline_count);
+    gen_write_barrier(jit, asm, array, val, val_type);
+    asm.jmp(result_edge.clone());
+
+    asm.set_current_block(fallback_block);
+    let label = jit.get_label(asm, fallback_block, hir_block_id);
+    asm.write_label(label);
+    gen_incr_counter(asm, Counter::array_push_fallback_count);
     gen_prepare_leaf_call_with_gc(asm, state);
     asm_ccall!(asm, rb_ary_push, array, val);
+    asm.jmp(result_edge);
+
+    asm.set_current_block(result_block);
+    let label = jit.get_label(asm, result_block, hir_block_id);
+    asm.write_label(label);
 }
 
 fn gen_to_new_array(jit: &mut JITState, asm: &mut Assembler, function: &Function, val: Opnd, state: &FrameState) -> lir::Opnd {

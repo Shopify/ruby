@@ -12661,7 +12661,18 @@ mod hir_opt_tests {
           PatchPoint NoSingletonClass(MyArray@0x1008)
           PatchPoint MethodRedefined(MyArray@0x1008, []=@0x1010, cme:0x1018)
           v37:ArraySubclass[class_exact:MyArray] = GuardType v14, ArraySubclass[class_exact:MyArray] recompile
-          v38:BasicObject = CCallVariadic v37, :Array#[]=@0x1040, v15, v16
+          v38:Fixnum = GuardType v15, Fixnum
+          v39:CUInt64 = LoadField v37, :RBASIC_FLAGS@0x1040
+          v40:CUInt64 = GuardNoBitsSet v39, RUBY_FL_FREEZE=CUInt64(2048)
+          v42:CUInt64 = GuardNoBitsSet v40, RUBY_ELTS_SHARED=CUInt64(4096)
+          v43:CInt64 = UnboxFixnum v38
+          v44:CInt64 = ArrayLength v37
+          v45:CInt64 = GuardLess v43, v44
+          v46:CInt64 = AdjustBounds v45, v44
+          v47:CInt64[0] = Const CInt64(0)
+          v48:CInt64 = GuardGreaterEq v46, v47
+          ArrayAset v37, v48, v16
+          WriteBarrier v37, v16
           CheckInterrupts
           Return v16
         ");
