@@ -22855,4 +22855,344 @@ mod hir_opt_tests {
           Return v37
         ");
     }
+
+    #[test]
+    fn test_specialize_kernel_send_known_symbol() {
+        enable_zjit_stats();
+        set_call_threshold(2);
+        eval("
+            class KernelSendTarget
+              private def private_target(x) = x + 1
+              def target(x) = x + 2
+
+              def constant_send = send(:target, 3)
+              def profiled_send(name) = send(name, 3)
+              def private_send = send(:private_target, 3)
+              def private_public_send = public_send(:private_target, 3)
+            end
+
+            target = KernelSendTarget.new
+            raise unless target.constant_send == 5
+            raise unless target.profiled_send(:target) == 5
+            raise unless target.private_send == 4
+            begin
+              target.private_public_send
+              raise 'public_send called a private method'
+            rescue NoMethodError
+            end
+        ");
+
+        assert_snapshot!(hir_string_proc("KernelSendTarget.instance_method(:constant_send)"), @"
+        fn constant_send@<compiled>:6:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          IncrCounterPtr
+          Jump bb3(v1)
+        bb2():
+          EntryPoint JIT(0)
+          v5:BasicObject = LoadArg :self@0
+          IncrCounterPtr
+          Jump bb3(v5)
+        bb3(v8:BasicObject):
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v15:StaticSymbol[:target] = Const Value(VALUE(0x1000))
+          IncrCounter zjit_insn_count
+          v18:Fixnum[3] = Const Value(3)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(KernelSendTarget@0x1008, send@0x1010, cme:0x1018)
+          PatchPoint NoSingletonClass(KernelSendTarget@0x1008)
+          PatchPoint MethodRedefined(KernelSendTarget@0x1008, target@0x1040, cme:0x1048)
+          v32:ObjectSubclass[class_exact:KernelSendTarget] = GuardType v8, ObjectSubclass[class_exact:KernelSendTarget] recompile
+          PushInlineFrame :target, v32 (0x1070), num_args=1
+          IncrCounter inline_iseq_optimized_send_count
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v44:Fixnum[2] = Const Value(2)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1090, +@0x1098, cme:0x10a0)
+          v64:Fixnum[5] = Const Value(5)
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          PopInlineFrame
+          IncrCounter send_kernel_send_specialized_count
+          IncrCounter zjit_insn_count
+          Return v64
+        ");
+        assert_snapshot!(hir_string_proc("KernelSendTarget.instance_method(:profiled_send)"), @"
+        fn profiled_send@<compiled>:7:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          v2:CPtr = LoadSP
+          v3:BasicObject = LoadField v2, :name@0x1000
+          IncrCounterPtr
+          Jump bb3(v1, v3)
+        bb2():
+          EntryPoint JIT(0)
+          v7:BasicObject = LoadArg :self@0
+          v8:BasicObject = LoadArg :name@1
+          IncrCounterPtr
+          Jump bb3(v7, v8)
+        bb3(v11:BasicObject, v12:BasicObject):
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v21:Fixnum[3] = Const Value(3)
+          IncrCounter zjit_insn_count
+          v31:StaticSymbol[:target] = GuardBitEquals v12, Value(VALUE(0x1008)) recompile
+          PatchPoint MethodRedefined(KernelSendTarget@0x1010, send@0x1018, cme:0x1020)
+          PatchPoint NoSingletonClass(KernelSendTarget@0x1010)
+          PatchPoint MethodRedefined(KernelSendTarget@0x1010, target@0x1048, cme:0x1050)
+          v36:ObjectSubclass[class_exact:KernelSendTarget] = GuardType v11, ObjectSubclass[class_exact:KernelSendTarget] recompile
+          PushInlineFrame :target, v36 (0x1078), num_args=1
+          IncrCounter inline_iseq_optimized_send_count
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v48:Fixnum[2] = Const Value(2)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1098, +@0x10a0, cme:0x10a8)
+          v68:Fixnum[5] = Const Value(5)
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          PopInlineFrame
+          IncrCounter send_kernel_send_specialized_count
+          IncrCounter zjit_insn_count
+          Return v68
+        ");
+        assert_snapshot!(hir_string_proc("KernelSendTarget.instance_method(:private_send)"), @"
+        fn private_send@<compiled>:8:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          IncrCounterPtr
+          Jump bb3(v1)
+        bb2():
+          EntryPoint JIT(0)
+          v5:BasicObject = LoadArg :self@0
+          IncrCounterPtr
+          Jump bb3(v5)
+        bb3(v8:BasicObject):
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v15:StaticSymbol[:private_target] = Const Value(VALUE(0x1000))
+          IncrCounter zjit_insn_count
+          v18:Fixnum[3] = Const Value(3)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(KernelSendTarget@0x1008, send@0x1010, cme:0x1018)
+          PatchPoint NoSingletonClass(KernelSendTarget@0x1008)
+          PatchPoint MethodRedefined(KernelSendTarget@0x1008, private_target@0x1040, cme:0x1048)
+          v32:ObjectSubclass[class_exact:KernelSendTarget] = GuardType v8, ObjectSubclass[class_exact:KernelSendTarget] recompile
+          PushInlineFrame :private_target, v32 (0x1070), num_args=1
+          IncrCounter inline_iseq_optimized_send_count
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v44:Fixnum[1] = Const Value(1)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1090, +@0x1098, cme:0x10a0)
+          v64:Fixnum[4] = Const Value(4)
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          PopInlineFrame
+          IncrCounter send_kernel_send_specialized_count
+          IncrCounter zjit_insn_count
+          Return v64
+        ");
+        assert_snapshot!(hir_string_proc("KernelSendTarget.instance_method(:private_public_send)"), @"
+        fn private_public_send@<compiled>:9:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          IncrCounterPtr
+          Jump bb3(v1)
+        bb2():
+          EntryPoint JIT(0)
+          v5:BasicObject = LoadArg :self@0
+          IncrCounterPtr
+          Jump bb3(v5)
+        bb3(v8:BasicObject):
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v15:StaticSymbol[:private_target] = Const Value(VALUE(0x1000))
+          IncrCounter zjit_insn_count
+          v18:Fixnum[3] = Const Value(3)
+          IncrCounter zjit_insn_count
+          v21:BasicObject = Send v8, :public_send, v15, v18 # SendFallbackReason: Send: method private or protected and no FCALL
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          Return v21
+        ");
+    }
+
+    #[test]
+    fn test_specialize_basic_object_send_known_symbol() {
+        enable_zjit_stats();
+        set_call_threshold(2);
+        eval("
+            class BasicObjectSendTarget
+              def target(x) = x + 2
+              def double_underscore_send = __send__(:target, 3)
+            end
+
+            raise unless BasicObjectSendTarget.new.double_underscore_send == 5
+        ");
+        assert_snapshot!(hir_string_proc("BasicObjectSendTarget.instance_method(:double_underscore_send)"), @"
+        fn double_underscore_send@<compiled>:4:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          IncrCounterPtr
+          Jump bb3(v1)
+        bb2():
+          EntryPoint JIT(0)
+          v5:BasicObject = LoadArg :self@0
+          IncrCounterPtr
+          Jump bb3(v5)
+        bb3(v8:BasicObject):
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v15:StaticSymbol[:target] = Const Value(VALUE(0x1000))
+          IncrCounter zjit_insn_count
+          v18:Fixnum[3] = Const Value(3)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(BasicObjectSendTarget@0x1008, __send__@0x1010, cme:0x1018)
+          PatchPoint NoSingletonClass(BasicObjectSendTarget@0x1008)
+          PatchPoint MethodRedefined(BasicObjectSendTarget@0x1008, target@0x1040, cme:0x1048)
+          v32:ObjectSubclass[class_exact:BasicObjectSendTarget] = GuardType v8, ObjectSubclass[class_exact:BasicObjectSendTarget] recompile
+          PushInlineFrame :target, v32 (0x1070), num_args=1
+          IncrCounter inline_iseq_optimized_send_count
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v44:Fixnum[2] = Const Value(2)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1090, +@0x1098, cme:0x10a0)
+          v64:Fixnum[5] = Const Value(5)
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          PopInlineFrame
+          IncrCounter send_kernel_send_specialized_count
+          IncrCounter zjit_insn_count
+          Return v64
+        ");
+    }
+
+
+    #[test]
+    fn test_specialize_kernel_send_profiled_symbols() {
+        enable_zjit_stats();
+        set_call_threshold(2);
+        eval("
+            class KernelSendProfiledTargets
+              def first(x) = x + 1
+              def second(x) = x + 2
+              def call(name) = send(name, 3)
+            end
+
+            target = KernelSendProfiledTargets.new
+            3.times do
+              raise unless target.call(:first) == 4
+              raise unless target.call(:second) == 5
+            end
+        ");
+        assert_snapshot!(hir_string_proc("KernelSendProfiledTargets.instance_method(:call)"), @"
+        fn call@<compiled>:5:
+        bb1():
+          EntryPoint interpreter
+          v1:HeapBasicObject = LoadSelf
+          v2:CPtr = LoadSP
+          v3:BasicObject = LoadField v2, :name@0x1000
+          IncrCounterPtr
+          Jump bb3(v1, v3)
+        bb2():
+          EntryPoint JIT(0)
+          v7:HeapBasicObject = LoadArg :self@0
+          v8:BasicObject = LoadArg :name@1
+          IncrCounterPtr
+          Jump bb3(v7, v8)
+        bb3(v11:HeapBasicObject, v12:BasicObject):
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v21:Fixnum[3] = Const Value(3)
+          IncrCounter zjit_insn_count
+          v32:StaticSymbol[:second] = Const Value(VALUE(0x1008))
+          v33:CBool = IsBitEqual v12, v32
+          CondBranch v33, bb6(), bb7()
+        bb6():
+          PatchPoint MethodRedefined(KernelSendProfiledTargets@0x1010, send@0x1018, cme:0x1020)
+          PatchPoint NoSingletonClass(KernelSendProfiledTargets@0x1010)
+          PatchPoint MethodRedefined(KernelSendProfiledTargets@0x1010, second@0x1048, cme:0x1050)
+          v51:ObjectSubclass[class_exact:KernelSendProfiledTargets] = GuardType v11, ObjectSubclass[class_exact:KernelSendProfiledTargets] recompile
+          PushInlineFrame :second, v51 (0x1078), num_args=1
+          IncrCounter inline_iseq_optimized_send_count
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v70:Fixnum[2] = Const Value(2)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1098, +@0x10a0, cme:0x10a8)
+          v119:Fixnum[5] = Const Value(5)
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          PopInlineFrame
+          IncrCounter send_kernel_send_specialized_count
+          Jump bb4(v119)
+        bb7():
+          v38:StaticSymbol[:first] = Const Value(VALUE(0x10d0))
+          v39:CBool = IsBitEqual v12, v38
+          CondBranch v39, bb8(), bb5()
+        bb8():
+          PatchPoint MethodRedefined(KernelSendProfiledTargets@0x1010, send@0x1018, cme:0x1020)
+          PatchPoint NoSingletonClass(KernelSendProfiledTargets@0x1010)
+          PatchPoint MethodRedefined(KernelSendProfiledTargets@0x1010, first@0x10d8, cme:0x10e0)
+          v58:ObjectSubclass[class_exact:KernelSendProfiledTargets] = GuardType v11, ObjectSubclass[class_exact:KernelSendProfiledTargets] recompile
+          PushInlineFrame :first, v58 (0x1108), num_args=1
+          IncrCounter inline_iseq_optimized_send_count
+          IncrCounter zjit_insn_count
+          IncrCounter zjit_insn_count
+          v94:Fixnum[1] = Const Value(1)
+          IncrCounter zjit_insn_count
+          PatchPoint MethodRedefined(Integer@0x1098, +@0x10a0, cme:0x10a8)
+          v120:Fixnum[4] = Const Value(4)
+          IncrCounter inline_cfunc_optimized_send_count
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          PopInlineFrame
+          IncrCounter send_kernel_send_specialized_count
+          Jump bb4(v120)
+        bb4(v31:Fixnum):
+          IncrCounter zjit_insn_count
+          CheckInterrupts
+          Return v31
+        bb5():
+          SideExit NoProfileSend recompile
+        ");
+    }
+
+
+
+    #[test]
+    fn test_kernel_send_redefinition_invalidates_specialization() {
+        set_call_threshold(2);
+        let result = eval("
+            class KernelSendRedefinition
+              def target = 1
+              def call_target = send(:target)
+            end
+
+            target = KernelSendRedefinition.new
+            raise unless target.call_target == 1
+            raise unless target.call_target == 1
+            class KernelSendRedefinition
+              def send(*) = 2
+            end
+            target.call_target
+        ");
+        assert_eq!(VALUE::fixnum_from_usize(2), result);
+    }
 }

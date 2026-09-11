@@ -172,6 +172,10 @@ unsafe extern "C" {
         arity: c_int,
     );
     pub fn rb_vm_objtostring(reg_cfp: CfpPtr, recv: VALUE, cd: *const rb_call_data) -> VALUE;
+    pub fn rb_zjit_cme_is_public_send(me: *const rb_callable_method_entry_t) -> bool;
+    pub fn rb_zjit_cme_is_kernel_send(me: *const rb_callable_method_entry_t) -> bool;
+    pub fn rb_zjit_send_like_call_p(recv: VALUE, mid: ID) -> bool;
+    pub fn rb_zjit_send_method_id(method_name: VALUE) -> ID;
 }
 
 // Renames
@@ -265,7 +269,7 @@ pub struct rb_iseq_constant_body {
 /// that this is a handle. Sometimes the C code briefly uses VALUE as
 /// an unsigned integer type and don't necessarily store valid handles but
 /// thankfully those cases are rare and don't cross the FFI boundary.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Hash)]
 #[repr(transparent)] // same size and alignment as simply `usize`
 pub struct VALUE(pub usize);
 

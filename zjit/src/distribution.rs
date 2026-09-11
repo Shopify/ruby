@@ -75,14 +75,14 @@ enum DistributionKind {
 pub struct DistributionSummary<T: Copy + PartialEq + Default + std::fmt::Debug, const N: usize> {
     kind: DistributionKind,
     buckets: [T; N],
-    // TODO(max): Determine if we need some notion of stability
+    num_buckets: usize,
 }
 
 const SKEW_THRESHOLD: f64 = 0.75;
 
 impl<T: Copy + PartialEq + Default + std::fmt::Debug, const N: usize> DistributionSummary<T, N> {
     pub fn empty() -> Self {
-        Self { kind: DistributionKind::Empty, buckets: [Default::default(); N] }
+        Self { kind: DistributionKind::Empty, buckets: [Default::default(); N], num_buckets: 0 }
     }
 
     pub fn new(dist: &Distribution<T, N>) -> Self {
@@ -113,7 +113,8 @@ impl<T: Copy + PartialEq + Default + std::fmt::Debug, const N: usize> Distributi
                 DistributionKind::Megamorphic
             }
         };
-        Self { kind, buckets: dist.buckets }
+        let num_buckets = dist.counts.iter().take_while(|&&count| count > 0).count();
+        Self { kind, buckets: dist.buckets, num_buckets }
     }
 
     pub fn is_monomorphic(&self) -> bool {
@@ -143,6 +144,10 @@ impl<T: Copy + PartialEq + Default + std::fmt::Debug, const N: usize> Distributi
 
     pub fn buckets(&self) -> &[T] {
         &self.buckets
+    }
+
+    pub fn each_item(&self) -> impl Iterator<Item = T> + '_ {
+        self.buckets[..self.num_buckets].iter().copied()
     }
 }
 

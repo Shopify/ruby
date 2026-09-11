@@ -143,6 +143,10 @@ bool rb_zjit_hash_dup_can_fastpath(VALUE hash, size_t *alloc_size_out, VALUE *fl
 void rb_zjit_range_new_fastpath(bool exclude_end, size_t *alloc_size_out, VALUE *flags_out);
 void rb_zjit_array_new_fastpath(size_t *alloc_size_out, VALUE *flags_out);
 bool rb_zjit_newobj_hook_enabled_p(void);
+bool rb_zjit_cme_is_public_send(const rb_callable_method_entry_t *cme);
+bool rb_zjit_cme_is_kernel_send(const rb_callable_method_entry_t *cme);
+bool rb_zjit_send_like_call_p(VALUE recv, ID mid);
+ID rb_zjit_send_method_id(VALUE method_name);
 
 // Special value for cfp->jit_return that means "this is a C method frame, use
 // rb_zjit_c_frame as the JITFrame". We don't control the native stack layout
@@ -177,6 +181,10 @@ static inline void rb_zjit_profile_insn(uint32_t insn, rb_execution_context_t *e
 static inline void rb_zjit_profile_enable(const rb_iseq_t *iseq) {}
 static inline void rb_zjit_bop_redefined(int redefined_flag, enum ruby_basic_operators bop) {}
 static inline void rb_zjit_cme_invalidate(const rb_callable_method_entry_t *cme) {}
+static inline bool rb_zjit_cme_is_public_send(const rb_callable_method_entry_t *cme) { return false; }
+static inline bool rb_zjit_cme_is_kernel_send(const rb_callable_method_entry_t *cme) { return false; }
+static inline bool rb_zjit_send_like_call_p(VALUE recv, ID mid) { return false; }
+static inline ID rb_zjit_send_method_id(VALUE method_name) { return 0; }
 static inline void rb_zjit_invalidate_no_ep_escape(const rb_iseq_t *iseq) {}
 static inline void rb_zjit_constant_state_changed(ID id) {}
 static inline void rb_zjit_invalidate_single_ractor(void) {}

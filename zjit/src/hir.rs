@@ -15,7 +15,7 @@ use std::{
 use crate::hir_type::{Type, types};
 use crate::hir_effect::{Effect, abstract_heaps, effects};
 use crate::bitset::BitSet;
-use crate::profile::{ProfiledType, SplatLength, TypeDistributionSummary};
+use crate::profile::{ProfiledType, SEND_SYMBOL_DISTRIBUTION_SIZE, SplatLength, TypeDistributionSummary};
 use crate::stats::{Counter, incr_counter};
 use SendFallbackReason::*;
 
@@ -644,6 +644,7 @@ pub enum SideExitReason {
     GuardLess,
     GuardGreaterEq,
     GuardSuperMethodEntry,
+    KernelSendSymbolChanged,
     PatchPoint(Invariant),
     CalleeSideExit,
     Interrupt,
@@ -792,6 +793,10 @@ pub enum SendFallbackReason {
     SendNoProfiles,
     SendCfuncVariadic,
     SendCfuncArrayVariadic,
+    SendKernelSendNoSymbol,
+    SendKernelSendSymbolNoProfile,
+    SendKernelSendSymbolPolymorphic,
+    SendKernelSendTargetNotFound,
     SendNotOptimizedMethodType(MethodType),
     SendNotOptimizedNeedPermission,
     /// The block argument is not nil, so we can't optimize to SendWithoutBlockDirect
@@ -865,6 +870,10 @@ impl Display for SendFallbackReason {
             SendNoProfiles => write!(f, "Send: no profile data available"),
             SendCfuncVariadic => write!(f, "Send: C function is variadic"),
             SendCfuncArrayVariadic => write!(f, "Send: C function expects array variadic"),
+            SendKernelSendNoSymbol => write!(f, "send: method name is not a known Symbol"),
+            SendKernelSendSymbolNoProfile => write!(f, "send: no Symbol value profile"),
+            SendKernelSendSymbolPolymorphic => write!(f, "send: polymorphic Symbol value profile"),
+            SendKernelSendTargetNotFound => write!(f, "send: target method cannot be found"),
             SendNotOptimizedMethodType(method_type) => write!(f, "Send: unsupported method type {:?}", method_type),
             SendBlockArgNotNil => write!(f, "Send: block argument is not nil"),
             ObjToStringNotString => write!(f, "ObjToString: result is not a string"),
@@ -4629,12 +4638,282 @@ impl Function {
         }
     }
 
+    /// Select a method name for a Kernel send-like call.
+    fn kernel_send_target(&self, args: &[InsnId], state: InsnId) -> Result<(ID, Option<VALUE>), SendFallbackReason> {
+        let Some(&method_name) = args.first() else {
+            return Err(SendKernelSendNoSymbol);
+        };
+        if let Some(method_name) = self.type_of(method_name).ruby_object() {
+            let target_mid = unsafe { rb_zjit_send_method_id(method_name) };
+            return if target_mid.0 != 0 { Ok((target_mid, None)) } else { Err(SendKernelSendNoSymbol) };
+        }
+        if self.policy.no_side_exits {
+            return Err(SendKernelSendSymbolNoProfile);
+        }
+        let frame_state = self.frame_state_ref(state);
+        let Some(summary) = get_or_create_iseq_payload(frame_state.iseq).profile
+            .get_send_symbol_summary(frame_state.insn_idx) else {
+            return Err(SendKernelSendSymbolNoProfile);
+        };
+        if !summary.is_monomorphic() {
+            return Err(SendKernelSendSymbolPolymorphic);
+        }
+        let symbol = summary.bucket(0);
+        let target_mid = unsafe { rb_zjit_send_method_id(symbol) };
+        if target_mid.0 == 0 {
+            return Err(SendKernelSendNoSymbol);
+        }
+        Ok((target_mid, Some(symbol)))
+    }
+
+    /// Return the bounded set of profiled Symbol names for a send-like call.
+    fn profiled_kernel_send_symbols(&self, state: InsnId) -> Result<Vec<VALUE>, SendFallbackReason> {
+        let frame_state = self.frame_state_ref(state);
+        let Some(summary) = get_or_create_iseq_payload(frame_state.iseq).profile
+            .get_send_symbol_summary(frame_state.insn_idx) else {
+            return Err(SendKernelSendSymbolNoProfile);
+        };
+        if summary.is_monomorphic() {
+            return if self.policy.no_side_exits {
+                Ok(vec![summary.bucket(0)])
+            } else {
+                Err(SendKernelSendSymbolPolymorphic)
+            };
+        }
+        if !(summary.is_polymorphic() || summary.is_skewed_polymorphic()
+            || summary.is_megamorphic() || summary.is_skewed_megamorphic()) {
+            return Err(SendKernelSendSymbolPolymorphic);
+        }
+        let symbols = summary.each_item()
+            .filter(|symbol| symbol.static_sym_p()).take(SEND_SYMBOL_DISTRIBUTION_SIZE).collect::<Vec<_>>();
+        if symbols.len() < 2 {
+            return Err(SendKernelSendSymbolPolymorphic);
+        }
+        Ok(symbols)
+    }
+    /// Return profiled targets for a pure splat send-like call.
+    fn profiled_kernel_send_splat_targets(&self, state: InsnId) -> Result<Vec<(VALUE, SplatLength)>, SendFallbackReason> {
+        let frame_state = self.frame_state_ref(state);
+        let Some(summary) = get_or_create_iseq_payload(frame_state.iseq).profile
+            .get_send_splat_target_summary(frame_state.insn_idx) else {
+            return Err(SendKernelSendSymbolNoProfile);
+        };
+        let targets = summary.each_item()
+            .filter(|(symbol, length)| symbol.static_sym_p() && *length != 0)
+            .take(SEND_SYMBOL_DISTRIBUTION_SIZE).collect::<Vec<_>>();
+        if targets.is_empty() {
+            return Err(SendKernelSendSymbolNoProfile);
+        }
+        Ok(targets)
+    }
+
+    /// Emit a direct ISEQ target for a profiled pure splat send-like call.
+    fn try_emit_profiled_kernel_send_splat_direct(
+        &mut self, block: BlockId, recv: InsnId, cd: *const rb_call_data,
+        source_mid: ID, source_cme: *const rb_callable_method_entry_t, klass: VALUE,
+        profiled_type: Option<ProfiledType>, is_public_send: bool, array: InsnId,
+        symbol: VALUE, length: SplatLength, state: InsnId,
+    ) -> Result<InsnId, SendFallbackReason> {
+        let target_mid = unsafe { rb_zjit_send_method_id(symbol) };
+        if target_mid.0 == 0 { return Err(SendKernelSendNoSymbol); }
+        let ci = unsafe { (*cd).ci };
+        let mut target_cme = unsafe { rb_callable_method_entry(klass, target_mid) };
+        if target_cme.is_null() { return Err(SendKernelSendTargetNotFound); }
+        target_cme = unsafe { rb_check_overloaded_cme(target_cme, ci) };
+        let target_flags = if is_public_send {
+            (unsafe { rb_vm_ci_flag(ci) }) & !(VM_CALL_FCALL | VM_CALL_OPT_SEND | VM_CALL_ARGS_SPLAT)
+        } else {
+            (unsafe { rb_vm_ci_flag(ci) } & !(VM_CALL_OPT_SEND | VM_CALL_ARGS_SPLAT)) | VM_CALL_FCALL
+        };
+        let target_visibility = unsafe { METHOD_ENTRY_VISI(target_cme) };
+        match (target_visibility, target_flags & VM_CALL_FCALL != 0) {
+            (METHOD_VISI_PUBLIC, _) | (METHOD_VISI_PRIVATE, true) | (METHOD_VISI_PROTECTED, true) => {}
+            _ => return Err(SendNotOptimizedNeedPermission),
+        }
+        let mut target_def_type = unsafe { get_cme_def_type(target_cme) };
+        while target_def_type == VM_METHOD_TYPE_ALIAS {
+            target_cme = unsafe { rb_aliased_callable_method_entry(target_cme) };
+            target_def_type = unsafe { get_cme_def_type(target_cme) };
+        }
+        if target_def_type == VM_METHOD_TYPE_MISSING || target_def_type == VM_METHOD_TYPE_UNDEF {
+            return Err(SendKernelSendTargetNotFound);
+        }
+        if target_def_type != VM_METHOD_TYPE_ISEQ {
+            return Err(SendNotOptimizedMethodType(MethodType::from(target_def_type)));
+        }
+        let mut args = Vec::with_capacity((length - 1) as usize);
+        for index in 1..length {
+            let index = self.push_insn(block, Insn::Const { val: Const::CInt64(i64::from(index)) });
+            args.push(self.push_insn(block, Insn::ArrayAref { array, index }));
+        }
+        let iseq = unsafe { get_def_iseq_ptr((*target_cme).def) };
+        let caller_args = CallerArguments {
+            original: &args, flags: target_flags, kwarg: std::ptr::null(), kwarg_count: 0, splat_arg_idx: None,
+        };
+        let call = self.build_send_direct_args(&caller_args, None, iseq, false)
+            .map_err(|failure| failure.reason)?;
+        if !self.assume_no_singleton_classes(block, klass, state) {
+            return Err(SingletonClassSeen);
+        }
+        self.push_insn(block, Insn::PatchPoint {
+            invariant: Invariant::MethodRedefined { klass, method: source_mid, cme: source_cme }, state,
+        });
+        self.push_insn(block, Insn::PatchPoint {
+            invariant: Invariant::MethodRedefined { klass, method: target_mid, cme: target_cme }, state,
+        });
+        self.count(block, Counter::send_kernel_send_specialized_count);
+        let recv = if let Some(profiled_type) = profiled_type {
+            self.guard_type_recompile(block, recv, Type::from_profiled_type(profiled_type), state, Recompile)
+        } else { recv };
+        let new_state = self.frame_state(state).with_replaced_args(&args, 1);
+        let send_state = self.push_insn(block, Insn::Snapshot { state: Box::new(new_state) });
+        let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx } =
+            self.emit_send_direct_args(block, call, &args, send_state);
+        Ok(self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData {
+            recv, cd, cme: target_cme, iseq, args: send_args, kw_bits, jit_entry_idx,
+            state: send_state, block: None,
+        }))))
+    }
+
+
+    /// Dispatch a profiled send method name to independently specialized Send instructions.
+    fn dispatch_profiled_kernel_send(
+        &mut self, mut block: BlockId, insn_id: InsnId, recv: InsnId, cd: *const rb_call_data,
+        send_block: Option<BlockHandler>, args: &[InsnId], state: InsnId,
+        caller_splat_length: Option<SplatLength>, reason: SendFallbackReason, symbols: &[VALUE],
+    ) -> BlockId {
+        let insn_idx = self.frame_state_ref(state).insn_idx as u32;
+        let edge = |target| BranchEdge { target, args: vec![] };
+        let join_block = self.new_block(insn_idx);
+        let result = self.push_insn(join_block, Insn::Param);
+        let fallback_block = self.new_block(insn_idx);
+        for &symbol in symbols {
+            let specialized_block = self.new_block(insn_idx);
+            let expected = self.push_insn(block, Insn::Const { val: Const::Value(symbol) });
+            let matches = self.push_insn(block, Insn::IsBitEqual { left: args[0], right: expected });
+            let next_block = if symbol == *symbols.last().unwrap() {
+                fallback_block
+            } else {
+                self.new_block(insn_idx)
+            };
+            self.push_insn(block, Insn::CondBranch {
+                val: matches, if_true: edge(specialized_block), if_false: edge(next_block),
+            });
+            block = next_block;
+            let method_name = self.push_insn(specialized_block, Insn::RefineType {
+                val: args[0], new_type: Type::from_value(symbol),
+            });
+            let mut specialized_args = args.to_vec();
+            specialized_args[0] = method_name;
+            let specialized_send = self.push_insn(specialized_block, Insn::Send {
+                recv, cd, block: send_block, args: specialized_args, caller_splat_length, state, reason,
+            });
+            self.push_insn(specialized_block, Insn::Jump(BranchEdge {
+                target: join_block, args: vec![specialized_send],
+            }));
+        }
+        let fallback_send = self.push_insn(fallback_block, Insn::Send {
+            recv, cd, block: send_block, args: args.to_vec(), caller_splat_length, state,
+            reason: SendNoProfiles,
+        });
+        self.push_insn(fallback_block, Insn::Jump(BranchEdge {
+            target: join_block, args: vec![fallback_send],
+        }));
+        self.make_equal_to(insn_id, result);
+        join_block
+    }
+    /// Dispatch a pure splat send-like call to profiled direct ISEQ targets.
+    fn dispatch_profiled_kernel_send_splat(
+        &mut self, mut block: BlockId, insn_id: InsnId, recv: InsnId, cd: *const rb_call_data,
+        source_mid: ID, source_cme: *const rb_callable_method_entry_t, klass: VALUE,
+        profiled_type: Option<ProfiledType>, is_public_send: bool, args: &[InsnId],
+        state: InsnId, targets: &[(VALUE, SplatLength)],
+    ) -> BlockId {
+        let insn_idx = self.frame_state_ref(state).insn_idx as u32;
+        let edge = |target| BranchEdge { target, args: vec![] };
+        let array = self.guard_type_recompile(block, args[0], types::Array, state, Recompile);
+        let actual_length = self.push_insn(block, Insn::ArrayLength { array });
+        if targets.len() == 1 {
+            let (symbol, length) = targets[0];
+            self.push_insn(block, Insn::GuardBitEquals {
+                val: actual_length, expected: Const::CInt64(i64::from(length)),
+                reason: Box::new(SideExitReason::KernelSendSymbolChanged), state,
+                recompile: Some(Recompile),
+            });
+            let zero = self.push_insn(block, Insn::Const { val: Const::CInt64(0) });
+            let actual_symbol = self.push_insn(block, Insn::ArrayAref { array, index: zero });
+            self.push_insn(block, Insn::GuardBitEquals {
+                val: actual_symbol, expected: Const::Value(symbol),
+                reason: Box::new(SideExitReason::KernelSendSymbolChanged), state,
+                recompile: Some(Recompile),
+            });
+            let value = match self.try_emit_profiled_kernel_send_splat_direct(
+                block, recv, cd, source_mid, source_cme, klass, profiled_type,
+                is_public_send, array, symbol, length, state,
+            ) {
+                Ok(value) => value,
+                Err(_) => self.push_insn(block, Insn::Send {
+                    recv, cd, block: None, args: args.to_vec(), caller_splat_length: None, state,
+                    reason: SendKernelSendSymbolPolymorphic,
+                }),
+            };
+            self.make_equal_to(insn_id, value);
+            return block;
+        }
+        let join_block = self.new_block(insn_idx);
+        let result = self.push_insn(join_block, Insn::Param);
+        let fallback_block = self.new_block(insn_idx);
+        for (index, &(symbol, length)) in targets.iter().enumerate() {
+            let expected_length = self.push_insn(block, Insn::Const { val: Const::CInt64(i64::from(length)) });
+            let length_matches = self.push_insn(block, Insn::IsBitEqual { left: actual_length, right: expected_length });
+            let method_block = self.new_block(insn_idx);
+            let next_block = if index + 1 == targets.len() { fallback_block } else { self.new_block(insn_idx) };
+            self.push_insn(block, Insn::CondBranch {
+                val: length_matches, if_true: edge(method_block), if_false: edge(next_block),
+            });
+            block = next_block;
+            let zero = self.push_insn(method_block, Insn::Const { val: Const::CInt64(0) });
+            let actual_symbol = self.push_insn(method_block, Insn::ArrayAref { array, index: zero });
+            let expected_symbol = self.push_insn(method_block, Insn::Const { val: Const::Value(symbol) });
+            let symbol_matches = self.push_insn(method_block, Insn::IsBitEqual { left: actual_symbol, right: expected_symbol });
+            let direct_block = self.new_block(insn_idx);
+            self.push_insn(method_block, Insn::CondBranch {
+                val: symbol_matches, if_true: edge(direct_block), if_false: edge(next_block),
+            });
+            let value = match self.try_emit_profiled_kernel_send_splat_direct(
+                direct_block, recv, cd, source_mid, source_cme, klass, profiled_type,
+                is_public_send, array, symbol, length, state,
+            ) {
+                Ok(value) => value,
+                Err(_) => self.push_insn(direct_block, Insn::Send {
+                    recv, cd, block: None, args: args.to_vec(), caller_splat_length: None, state,
+                    reason: SendKernelSendSymbolPolymorphic,
+                }),
+            };
+            self.push_insn(direct_block, Insn::Jump(BranchEdge {
+                target: join_block, args: vec![value],
+            }));
+        }
+        let fallback = self.push_insn(fallback_block, Insn::Send {
+            recv, cd, block: None, args: args.to_vec(), caller_splat_length: None, state,
+            reason: SendNoProfiles,
+        });
+        self.push_insn(fallback_block, Insn::Jump(BranchEdge {
+            target: join_block, args: vec![fallback],
+        }));
+        self.make_equal_to(insn_id, result);
+        join_block
+    }
+
+
     /// Rewrite eligible Send opcodes into SendDirect
     /// opcodes if we know the target ISEQ statically. This removes run-time method lookups and
     /// opens the door for inlining.
     /// Also try and inline constant caches, specialize object allocations, and more.
-    fn type_specialize(&mut self) {
-        for block in self.reverse_post_order() {
+    fn type_specialize(&mut self) -> bool {
+        let mut created_profiled_kernel_send_dispatch = false;
+        for original_block in self.reverse_post_order() {
+            let mut block = original_block;
             let old_insns = std::mem::take(&mut self.blocks[block].insns);
             assert!(self.blocks[block].insns.is_empty());
             for insn_id in old_insns {
@@ -4644,7 +4923,11 @@ impl Function {
                         self.try_rewrite_freeze(block, insn_id, recv, state),
                     &Insn::Send { recv, block: None, ref args, state, cd, .. } if ruby_call_method_id(cd) == ID!(minusat) && args.is_empty() =>
                         self.try_rewrite_uminus(block, insn_id, recv, state),
-                    &Insn::Send { mut recv, cd, state, block: send_block, caller_splat_length, .. } => {
+                    &Insn::Send { mut recv, cd, state, block: send_block, caller_splat_length, reason, .. } => {
+                        if matches!(reason, SendNoProfiles) && !self.policy.no_side_exits {
+                            self.push_insn_id(block, insn_id);
+                            continue;
+                        }
                         let mut has_block = send_block.is_some();
                         let (klass, profiled_type) = match self.resolve_receiver_type(recv, self.type_of(recv), state) {
                             ReceiverTypeResolution::StaticallyKnown { class } => (class, None),
@@ -4664,14 +4947,15 @@ impl Function {
                             ReceiverTypeResolution::NoProfile => {
                                 self.set_dynamic_send_reason(insn_id, SendNoProfiles);
                                 self.push_insn_id(block, insn_id);
+
                                 continue;
                             }
                         };
                         let ci = unsafe { (*cd).ci }; // info about the call site
 
-                        let flags = unsafe { rb_vm_ci_flag(ci) };
+                        let mut flags = unsafe { rb_vm_ci_flag(ci) };
 
-                        let mid = unsafe { vm_ci_mid(ci) };
+                        let mut mid = unsafe { vm_ci_mid(ci) };
                         // Do method lookup
                         let mut cme = unsafe { rb_callable_method_entry(klass, mid) };
                         if cme.is_null() {
@@ -4709,6 +4993,97 @@ impl Function {
                             Insn::Send { args, .. } => args.to_vec(),
                             _ => panic!("Expected Send instruction"),
                         };
+                        let mut kernel_send_specialized = false;
+                        let is_kernel_send = unsafe { rb_zjit_cme_is_kernel_send(cme) };
+                        let is_public_send = unsafe { rb_zjit_cme_is_public_send(cme) };
+                        if !has_block && (is_kernel_send || is_public_send)
+                            && flags & VM_CALL_ARGS_SPLAT != 0
+                            && flags & (VM_CALL_ARGS_BLOCKARG | VM_CALL_KW_SPLAT | VM_CALL_KWARG) == 0
+                            && args.len() == 1
+                            && !matches!(reason, SendKernelSendSymbolPolymorphic) {
+                            if let Ok(targets) = self.profiled_kernel_send_splat_targets(state) {
+                                block = self.dispatch_profiled_kernel_send_splat(
+                                    block, insn_id, recv, cd, mid, cme, klass, profiled_type,
+                                    is_public_send, &args, state, &targets,
+                                );
+                                created_profiled_kernel_send_dispatch = true;
+                                continue;
+                            }
+                        }
+                        if !has_block && (is_kernel_send || is_public_send)
+                            && flags & VM_CALL_ARGS_SPLAT == 0 && !args.is_empty()
+                            && self.type_of(args[0]).ruby_object().is_none()
+                            && !matches!(reason, SendKernelSendSymbolPolymorphic) {
+                            if let Ok(symbols) = self.profiled_kernel_send_symbols(state) {
+                                block = self.dispatch_profiled_kernel_send(
+                                    block, insn_id, recv, cd, send_block, &args, state,
+                                    caller_splat_length, reason, &symbols,
+                                );
+                                created_profiled_kernel_send_dispatch = true;
+                                continue;
+                            }
+                        }
+                        if !has_block && (is_kernel_send || is_public_send) {
+                            let (target_mid, guard_symbol) = match self.kernel_send_target(&args, state) {
+                                Ok(target) => target,
+                                Err(reason) => {
+                                    self.set_dynamic_send_reason(insn_id, reason);
+                                    self.push_insn_id(block, insn_id); continue;
+                                }
+                            };
+                            let source_mid = mid;
+                            let source_cme = cme;
+                            let mut target_cme = unsafe { rb_callable_method_entry(klass, target_mid) };
+                            if target_cme.is_null() {
+                                self.set_dynamic_send_reason(insn_id, SendKernelSendTargetNotFound);
+                                self.push_insn_id(block, insn_id); continue;
+                            }
+                            target_cme = unsafe { rb_check_overloaded_cme(target_cme, ci) };
+                            let target_flags = if is_public_send {
+                                flags & !(VM_CALL_FCALL | VM_CALL_OPT_SEND)
+                            } else {
+                                (flags & !VM_CALL_OPT_SEND) | VM_CALL_FCALL
+                            };
+                            let target_visibility = unsafe { METHOD_ENTRY_VISI(target_cme) };
+                            match (target_visibility, target_flags & VM_CALL_FCALL != 0) {
+                                (METHOD_VISI_PUBLIC, _) | (METHOD_VISI_PRIVATE, true) | (METHOD_VISI_PROTECTED, true) => {}
+                                _ => {
+                                    self.set_dynamic_send_reason(insn_id, SendNotOptimizedNeedPermission);
+                                    self.push_insn_id(block, insn_id); continue;
+                                }
+                            }
+                            let mut target_def_type = unsafe { get_cme_def_type(target_cme) };
+                            while target_def_type == VM_METHOD_TYPE_ALIAS {
+                                target_cme = unsafe { rb_aliased_callable_method_entry(target_cme) };
+                                target_def_type = unsafe { get_cme_def_type(target_cme) };
+                            }
+                            if target_def_type == VM_METHOD_TYPE_MISSING || target_def_type == VM_METHOD_TYPE_UNDEF {
+                                self.set_dynamic_send_reason(insn_id, SendKernelSendTargetNotFound);
+                                self.push_insn_id(block, insn_id); continue;
+                            }
+                            if let Some(symbol) = guard_symbol {
+                                self.push_insn(block, Insn::GuardBitEquals {
+                                    val: args[0],
+                                    expected: Const::Value(symbol),
+                                    reason: Box::new(SideExitReason::KernelSendSymbolChanged),
+                                    state,
+                                    recompile: Some(Recompile),
+                                });
+                            }
+                            self.push_insn(block, Insn::PatchPoint {
+                                invariant: Invariant::MethodRedefined { klass, method: source_mid, cme: source_cme },
+                                state,
+                            });
+                            let original_args_len = args.len();
+                            args = args[1..].to_vec();
+                            let new_state = self.frame_state(send_frame_state).with_replaced_args(&args, original_args_len);
+                            send_frame_state = self.push_insn(block, Insn::Snapshot { state: Box::new(new_state) });
+                            flags = target_flags;
+                            mid = target_mid;
+                            cme = target_cme;
+                            def_type = target_def_type;
+                            kernel_send_specialized = true;
+                        }
                         let mut stripped_nil_block = false;
                         if send_block == Some(BlockHandler::BlockArg) && def_type == VM_METHOD_TYPE_ISEQ {
                             // The block arg is the last element in args
@@ -4823,6 +5198,9 @@ impl Function {
                                 self.emit_send_direct_args(block, call, &args, send_frame_state);
                             let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: send_block })));
                             self.make_equal_to(insn_id, replacement);
+                            if kernel_send_specialized {
+                                self.count(block, Counter::send_kernel_send_specialized_count);
+                            }
                         } else if !has_block && def_type == VM_METHOD_TYPE_BMETHOD {
                             let procv = unsafe { rb_get_def_bmethod_proc((*cme).def) };
                             let proc = unsafe { rb_jit_get_proc_ptr(procv) };
@@ -5546,6 +5924,7 @@ impl Function {
             }
         }
         crate::stats::trace_compile_phase("infer_types", || self.infer_types());
+        created_profiled_kernel_send_dispatch
     }
 
     /// Check whether a callee ISEQ can be inlined.
@@ -7468,7 +7847,7 @@ impl Function {
         let inline_max_iterations = get_option!(inline_max_iterations);
         for iteration in 0..=inline_max_iterations {
             // Function is assumed to have types inferred already
-            run_pass!(type_specialize);
+            let did_type_specialize = run_pass!(type_specialize);
             // Cap inlining at inline_max_iterations passes; the trailing iteration (see above)
             // runs the rest of the pipeline with inlining off.
             let did_inline = if iteration < inline_max_iterations {
@@ -7487,7 +7866,7 @@ impl Function {
             run_pass!(eliminate_empty_inline_frames);
             run_pass!(eliminate_dead_code);
 
-            if !did_inline {
+            if !did_inline && !did_type_specialize {
                 break;
             }
         }

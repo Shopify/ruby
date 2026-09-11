@@ -1354,6 +1354,48 @@ rb_f_public_send(int argc, VALUE *argv, VALUE recv)
     return send_internal_kw(argc, argv, recv, CALL_PUBLIC);
 }
 
+#if USE_ZJIT
+bool
+rb_zjit_cme_is_public_send(const rb_callable_method_entry_t *cme)
+{
+    return cme != NULL
+        && cme->def->type == VM_METHOD_TYPE_CFUNC
+        && cme->def->body.cfunc.func == (rb_cfunc_t)rb_f_public_send;
+}
+
+bool
+rb_zjit_cme_is_kernel_send(const rb_callable_method_entry_t *cme)
+{
+    return cme != NULL
+        && ((cme->def->type == VM_METHOD_TYPE_OPTIMIZED
+             && cme->def->body.optimized.type == OPTIMIZED_METHOD_TYPE_SEND)
+            || (cme->def->type == VM_METHOD_TYPE_CFUNC
+                && cme->def->body.cfunc.func == (rb_cfunc_t)rb_f_send));
+}
+
+bool
+rb_zjit_send_like_call_p(VALUE recv, ID mid)
+{
+    const rb_callable_method_entry_t *cme = rb_callable_method_entry(CLASS_OF(recv), mid);
+    while (cme != NULL && cme->def->type == VM_METHOD_TYPE_ALIAS) {
+        cme = rb_aliased_callable_method_entry(cme);
+    }
+    return rb_zjit_cme_is_kernel_send(cme) || rb_zjit_cme_is_public_send(cme);
+}
+
+ID
+rb_zjit_send_method_id(VALUE method_name)
+{
+    if (SYMBOL_P(method_name)) {
+        return SYM2ID(method_name);
+    }
+    if (RB_TYPE_P(method_name, T_STRING) && OBJ_FROZEN_RAW(method_name)) {
+        return rb_check_id(&method_name);
+    }
+    return 0;
+}
+#endif
+
 /* yield */
 
 static inline VALUE

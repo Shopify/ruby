@@ -252,6 +252,7 @@ make_counters! {
         exit_send_while_tracing,
         exit_invokeblock_not_ifunc,
         exit_once_not_done,
+        exit_kernel_send_symbol_changed,
     }
 
     // Send fallback counters that are summed as dynamic_send_count
@@ -300,6 +301,10 @@ make_counters! {
         send_fallback_invokesuperforward_not_specialized,
         send_fallback_single_ractor_mode_required,
         send_fallback_uncategorized,
+        send_fallback_kernel_send_no_symbol,
+        send_fallback_kernel_send_symbol_no_profile,
+        send_fallback_kernel_send_symbol_polymorphic,
+        send_fallback_kernel_send_target_not_found,
     }
 
     // Optimized send counters that are summed as optimized_send_count
@@ -310,6 +315,7 @@ make_counters! {
         non_variadic_cfunc_optimized_send_count,
         variadic_cfunc_optimized_send_count,
         block_iseq_direct_optimized_send_count,
+        send_kernel_send_specialized_count,
     }
 
     // Ivar fallback counters that are summed as dynamic_setivar_count
@@ -659,6 +665,7 @@ pub fn side_exit_counter(reason: crate::hir::SideExitReason) -> Counter {
         NoProfileSetIvar              => exit_no_profile_setivar,
         InvokeBlockNotIfunc           => exit_invokeblock_not_ifunc,
         OnceNotDone                   => exit_once_not_done,
+        KernelSendSymbolChanged       => exit_kernel_send_symbol_changed,
     }
 }
 
@@ -687,6 +694,10 @@ pub fn send_fallback_counter(reason: crate::hir::SendFallbackReason) -> Counter 
         SendNoProfiles                            => send_fallback_send_no_profiles,
         SendCfuncVariadic                         => send_fallback_send_cfunc_variadic,
         SendCfuncArrayVariadic                    => send_fallback_send_cfunc_array_variadic,
+        SendKernelSendNoSymbol                     => send_fallback_kernel_send_no_symbol,
+        SendKernelSendSymbolNoProfile              => send_fallback_kernel_send_symbol_no_profile,
+        SendKernelSendSymbolPolymorphic            => send_fallback_kernel_send_symbol_polymorphic,
+        SendKernelSendTargetNotFound               => send_fallback_kernel_send_target_not_found,
         ComplexArgPass                            => send_fallback_one_or_more_complex_arg_pass,
         UnexpectedKeywordArgs                     => send_fallback_unexpected_keyword_args,
         SingletonClassSeen                        => send_fallback_singleton_class_seen,

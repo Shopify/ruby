@@ -2,13 +2,32 @@ prelude: |
   class C
     def m
     end
+
+    def foo(value)
+      value
+    end
+
+    def bar(value)
+      value
+    end
+
+    def baz(value)
+      value
+    end
   end
 
   o = C.new
   m = :m
+  names = [:foo, :bar, :baz]
+  index = 0
 benchmark:
   vm_send: |
     o.__send__ :m
   vm_send_var: |
     o.__send__ m
+  vm_send_symbol_constant_arg: |
+    o.send(:foo, 1)
+  vm_send_symbol_polymorphic_arg: |
+    index += 1
+    o.send(names[index % names.length], 1)
 loop_count: 6000000

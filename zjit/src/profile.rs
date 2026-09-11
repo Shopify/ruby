@@ -101,6 +101,7 @@ fn profile_insn_sample(
             // Profile all the arguments and self (+1).
             profile_operands(profiler, profile, argc + 1);
             profile_splat_length(profiler, profile, unsafe { (*cd).ci });
+            profile_send_symbol(profiler, profile, cd);
         }
         YARVINSN_splatkw => profile_operands(profiler, profile, 2),
         _ => return false,
@@ -120,6 +121,59 @@ fn profile_insn(bare_opcode: ruby_vminsn_type, ec: EcPtr) {
     entry.profiles_remaining = entry.profiles_remaining.saturating_sub(1);
     if entry.profiles_remaining == 0 {
         unsafe { rb_zjit_iseq_insn_set(profiler.iseq, profiler.insn_idx as u32, bare_opcode); }
+    }
+}
+
+/// Profile a Symbol method name at send-like call sites.
+fn profile_send_symbol(
+    profiler: &mut Profiler,
+    profile: &mut IseqProfile,
+    cd: *const rb_call_data,
+) {
+    let ci = unsafe { (*cd).ci };
+    let flags = unsafe { rb_vm_ci_flag(ci) };
+    let mid = unsafe { rb_vm_ci_mid(ci) };
+    let argc = num_arguments_on_stack(cd);
+    if argc == 0 {
+        return;
+    }
+    let recv = profiler.peek_at_stack(argc as isize);
+    if !unsafe { rb_zjit_send_like_call_p(recv, mid) } {
+        return;
+    }
+
+    if flags & VM_CALL_ARGS_SPLAT != 0 {
+        if argc != 1 || flags & (VM_CALL_ARGS_BLOCKARG | VM_CALL_KW_SPLAT) != 0 {
+            return;
+        }
+        let array = profiler.peek_at_stack(0);
+        if !unsafe { RB_TYPE_P(array, RUBY_T_ARRAY) } {
+            return;
+        }
+        let Some(length) = SplatLength::try_from(unsafe { rb_jit_array_len(array) }).ok() else {
+            return;
+        };
+        if length == 0 {
+            return;
+        }
+        let symbol = unsafe { rb_yarv_ary_entry_internal(array, 0) };
+        if symbol.symbol_p() {
+            VALUE::from(profiler.iseq).write_barrier(symbol);
+            profile.send_splat_targets
+                .entry(profiler.insn_idx)
+                .or_insert_with(SendSplatTargetDistribution::new)
+                .observe((symbol, length));
+        }
+        return;
+    }
+
+    let symbol = profiler.peek_at_stack((argc - 1) as isize);
+    if symbol.symbol_p() {
+        VALUE::from(profiler.iseq).write_barrier(symbol);
+        profile.send_symbols
+            .entry(profiler.insn_idx)
+            .or_insert_with(SendSymbolDistribution::new)
+            .observe(symbol);
     }
 }
 
@@ -156,6 +210,22 @@ pub type SplatLength = u32;
 pub type SplatLengthDistribution = Distribution<Option<SplatLength>, DISTRIBUTION_SIZE>;
 
 pub type SplatLengthDistributionSummary = DistributionSummary<Option<SplatLength>, DISTRIBUTION_SIZE>;
+
+/// Retain all hot names in high-cardinality dispatch sites.
+pub const SEND_SYMBOL_DISTRIBUTION_SIZE: usize = 64;
+
+/// Symbol values observed as the first argument of send-like calls.
+pub type SendSymbolDistribution = Distribution<VALUE, SEND_SYMBOL_DISTRIBUTION_SIZE>;
+
+/// Summary of Symbol values observed at a send-like call site.
+pub type SendSymbolDistributionSummary = DistributionSummary<VALUE, SEND_SYMBOL_DISTRIBUTION_SIZE>;
+
+/// Symbol method names and array lengths for pure splat send-like calls.
+pub type SendSplatTargetDistribution = Distribution<(VALUE, SplatLength), SEND_SYMBOL_DISTRIBUTION_SIZE>;
+
+/// Summary of Symbol method names and array lengths for pure splat send-like calls.
+pub type SendSplatTargetDistributionSummary = DistributionSummary<(VALUE, SplatLength), SEND_SYMBOL_DISTRIBUTION_SIZE>;
+
 
 /// Profile the Type of top-`n` stack operands
 fn profile_operands(profiler: &mut Profiler, profile: &mut IseqProfile, n: usize) {
@@ -425,6 +495,13 @@ pub struct IseqProfile {
 
     /// Observed lengths of caller splat arrays for call instructions.
     splat_lengths: HashMap<YarvInsnIdx, SplatLengthDistribution>,
+
+    /// Symbol method names observed as the first argument of send-like calls.
+    send_symbols: HashMap<YarvInsnIdx, SendSymbolDistribution>,
+
+
+    /// Symbol method names and array lengths for pure splat send-like calls.
+    send_splat_targets: HashMap<YarvInsnIdx, SendSplatTargetDistribution>,
 }
 
 impl IseqProfile {
@@ -433,6 +510,8 @@ impl IseqProfile {
             entries: Vec::new(),
             super_cme: HashMap::new(),
             splat_lengths: HashMap::new(),
+            send_symbols: HashMap::new(),
+            send_splat_targets: HashMap::new(),
         }
     }
 
@@ -474,6 +553,15 @@ impl IseqProfile {
             .map(SplatLengthDistributionSummary::new)
     }
 
+    pub fn get_send_symbol_summary(&self, insn_idx: YarvInsnIdx) -> Option<SendSymbolDistributionSummary> {
+        self.send_symbols.get(&insn_idx).map(SendSymbolDistributionSummary::new)
+    }
+
+    pub fn get_send_splat_target_summary(&self, insn_idx: YarvInsnIdx) -> Option<SendSplatTargetDistributionSummary> {
+        self.send_splat_targets.get(&insn_idx).map(SendSplatTargetDistributionSummary::new)
+    }
+
+
     pub fn get_super_method_entry(&self, insn_idx: YarvInsnIdx) -> Option<*const rb_callable_method_entry_t> {
         let Some(entry) = self.super_cme.get(&insn_idx) else { return None };
         let summary = TypeDistributionSummary::new(entry);
@@ -501,6 +589,19 @@ impl IseqProfile {
                 callback(profiled_type.class)
             }
         }
+
+        for symbols in self.send_symbols.values() {
+            for symbol in symbols.each_item() {
+                callback(symbol);
+            }
+        }
+
+        for targets in self.send_splat_targets.values() {
+            for (symbol, _) in targets.each_item() {
+                callback(symbol);
+            }
+        }
+
     }
 
     /// Run a given callback with a mutable reference to every object in IseqProfile.
@@ -520,6 +621,19 @@ impl IseqProfile {
                 callback(&mut profiled_type.class)
             }
         }
+
+        for symbols in self.send_symbols.values_mut() {
+            for symbol in symbols.each_item_mut() {
+                callback(symbol);
+            }
+        }
+
+        for targets in self.send_splat_targets.values_mut() {
+            for (symbol, _) in targets.each_item_mut() {
+                callback(symbol);
+            }
+        }
+
     }
 }
 
