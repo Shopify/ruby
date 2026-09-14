@@ -3949,11 +3949,26 @@ rb_hash_set_pair(VALUE hash, VALUE arg)
     rb_hash_aset(hash, RARRAY_AREF(pair, 0), RARRAY_AREF(pair, 1));
     return hash;
 }
+VALUE
+rb_hash_set_pair_yield(VALUE hash, int argc, const VALUE *argv)
+{
+    struct rb_vm_pair_result pair;
+    VALUE result = rb_yield_values2_pair(argc, argv, &pair);
+
+    if (pair.completed) {
+        rb_hash_aset(hash, pair.key, pair.value);
+        return hash;
+    }
+    return rb_hash_set_pair(hash, result);
+}
+
 
 static int
 to_h_i(VALUE key, VALUE value, VALUE hash)
 {
-    rb_hash_set_pair(hash, rb_yield_values(2, key, value));
+    VALUE argv[2] = { key, value };
+    rb_hash_set_pair_yield(hash, 2, argv);
+
     return ST_CONTINUE;
 }
 

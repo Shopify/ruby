@@ -3312,17 +3312,36 @@ rb_ary_to_h(VALUE ary)
 
     for (i=0; i<RARRAY_LEN(ary); i++) {
         const VALUE e = rb_ary_elt(ary, i);
-        const VALUE elt = block_given ? rb_yield_force_blockarg(e) : e;
-        const VALUE key_value_pair = rb_check_array_type(elt);
-        if (NIL_P(key_value_pair)) {
-            rb_raise(rb_eTypeError, "wrong element type %"PRIsVALUE" at %ld (expected array)",
-                     rb_obj_class(elt), i);
+        if (block_given) {
+            struct rb_vm_pair_result pair;
+            const VALUE elt = rb_yield_force_blockarg_pair(e, &pair);
+            if (pair.completed) {
+                rb_hash_aset(hash, pair.key, pair.value);
+                continue;
+            }
+            const VALUE key_value_pair = rb_check_array_type(elt);
+            if (NIL_P(key_value_pair)) {
+                rb_raise(rb_eTypeError, "wrong element type %"PRIsVALUE" at %ld (expected array)",
+                         rb_obj_class(elt), i);
+            }
+            if (RARRAY_LEN(key_value_pair) != 2) {
+                rb_raise(rb_eArgError, "wrong array length at %ld (expected 2, was %ld)",
+                    i, RARRAY_LEN(key_value_pair));
+            }
+            rb_hash_aset(hash, RARRAY_AREF(key_value_pair, 0), RARRAY_AREF(key_value_pair, 1));
         }
-        if (RARRAY_LEN(key_value_pair) != 2) {
-            rb_raise(rb_eArgError, "wrong array length at %ld (expected 2, was %ld)",
-                i, RARRAY_LEN(key_value_pair));
+        else {
+            const VALUE key_value_pair = rb_check_array_type(e);
+            if (NIL_P(key_value_pair)) {
+                rb_raise(rb_eTypeError, "wrong element type %"PRIsVALUE" at %ld (expected array)",
+                         rb_obj_class(e), i);
+            }
+            if (RARRAY_LEN(key_value_pair) != 2) {
+                rb_raise(rb_eArgError, "wrong array length at %ld (expected 2, was %ld)",
+                    i, RARRAY_LEN(key_value_pair));
+            }
+            rb_hash_aset(hash, RARRAY_AREF(key_value_pair, 0), RARRAY_AREF(key_value_pair, 1));
         }
-        rb_hash_aset(hash, RARRAY_AREF(key_value_pair, 0), RARRAY_AREF(key_value_pair, 1));
     }
     return hash;
 }

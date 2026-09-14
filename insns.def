@@ -453,7 +453,12 @@ newarray
 (VALUE val)
 // attr rb_snum_t sp_inc = 1 - (rb_snum_t)num;
 {
-    val = rb_ec_ary_new_from_values(ec, num, STACK_ADDR_FROM_TOP(num));
+    if (num == 2 && rb_vm_try_return_pair(ec, GET_CFP(), TOPN(1), TOPN(0))) {
+        val = Qnil;
+    }
+    else {
+        val = rb_ec_ary_new_from_values(ec, num, STACK_ADDR_FROM_TOP(num));
+    }
 }
 
 /* push hash onto array unless the hash is empty (as empty keyword
@@ -477,8 +482,14 @@ duparray
 ()
 (VALUE val)
 {
-    RUBY_DTRACE_CREATE_HOOK(ARRAY, RARRAY_LEN(ary));
-    val = rb_ary_resurrect(ary);
+    if (RARRAY_LEN(ary) == 2 &&
+        rb_vm_try_return_pair(ec, GET_CFP(), RARRAY_AREF(ary, 0), RARRAY_AREF(ary, 1))) {
+        val = Qnil;
+    }
+    else {
+        RUBY_DTRACE_CREATE_HOOK(ARRAY, RARRAY_LEN(ary));
+        val = rb_ary_resurrect(ary);
+    }
 }
 
 /* dup hash */

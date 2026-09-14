@@ -2129,6 +2129,17 @@ class TestArray < Test::Unit::TestCase
     assert_equal "wrong array length at 2 (expected 2, was 1)", e.message
   end
 
+  def test_to_h_block_tracepoint
+    returns = []
+    trace = TracePoint.new(:b_return) { |event| returns << event.return_value }
+
+    trace.enable do
+      [1].to_h { [:key, :value] }
+    end
+
+    assert_equal([[:key, :value], {key: :value}], returns)
+  end
+
   def test_min
     assert_equal(3, [3].min)
     assert_equal(1, [1, 2, 3, 1, 2].min)

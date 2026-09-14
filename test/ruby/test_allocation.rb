@@ -102,6 +102,15 @@ class TestAllocation < Test::Unit::TestCase
     end
   end
 
+  class ArrayToH < self
+    def test_block_pair
+      check_allocations(<<~RUBY)
+        check_allocations(0, 1, "array1.to_h {|x| [x, x]}")
+      RUBY
+    end
+  end
+
+
   class MethodCall < self
     def block
       ''

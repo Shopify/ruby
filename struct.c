@@ -1090,10 +1090,14 @@ rb_struct_to_h(VALUE s)
 
     for (i=0; i<RSTRUCT_LEN_RAW(s); i++) {
         VALUE k = rb_ary_entry(members, i), v = RSTRUCT_GET_RAW(s, i);
-        if (block_given)
-            rb_hash_set_pair(h, rb_yield_values(2, k, v));
-        else
+        if (block_given) {
+            VALUE argv[2] = { k, v };
+            rb_hash_set_pair_yield(h, 2, argv);
+        }
+        else {
             rb_hash_aset(h, k, v);
+        }
+
     }
     return h;
 }

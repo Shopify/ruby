@@ -766,7 +766,8 @@ enum_to_h_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, hash))
 static VALUE
 enum_to_h_ii(RB_BLOCK_CALL_FUNC_ARGLIST(i, hash))
 {
-    return rb_hash_set_pair(hash, rb_yield_values2(argc, argv));
+    return rb_hash_set_pair_yield(hash, argc, argv);
+
 }
 
 /*
