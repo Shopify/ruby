@@ -668,6 +668,8 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::NewRange { low, high, flag, state } => gen_new_range(jit, asm, function, opnd!(low), opnd!(high), *flag, &function.frame_state(*state)),
         Insn::NewRangeFixnum { low, high, flag, state } => gen_new_range_fixnum(jit, asm, function, opnd!(low), opnd!(high), *flag, &function.frame_state(*state)),
         Insn::ArrayDup { val, state } => gen_array_dup(jit, asm, function, *val, opnd!(val), &function.frame_state(*state)),
+        Insn::TryReturnPair { key, value } => asm.ccall(rb_vm_try_return_pair as *const u8, vec![EC, CFP, opnd!(key), opnd!(value)]),
+
         Insn::AdjustBounds { index, length } => gen_adjust_bounds(asm, opnd!(index), opnd!(length)),
         Insn::ArrayAref { array, index, .. } => gen_array_aref(asm, opnd!(array), opnd!(index)),
         Insn::ArrayAset { array, index, val } => {

@@ -4895,6 +4895,18 @@ fn test_new_array_nonempty() {
 }
 
 #[test]
+fn test_array_to_h_block_pair() {
+    eval("
+        def test(array)
+            array.to_h { |item| [item, item + 1] }
+        end
+    ");
+    assert_contains_opcode("test", YARVINSN_send);
+    assert_snapshot!(assert_compiles("[test([1]), test([1]), test([1])]"), @"[{1 => 2}, {1 => 2}, {1 => 2}]");
+}
+
+
+#[test]
 fn test_new_array_order() {
     assert_snapshot!(inspect("
         def a = 3

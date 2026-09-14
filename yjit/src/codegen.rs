@@ -1793,6 +1793,22 @@ fn gen_newarray(
     asm: &mut Assembler,
 ) -> Option<CodegenStatus> {
     let n = jit.get_arg(0).as_u32();
+    let next_insn_idx = jit.next_insn_idx();
+    let can_try_return_pair = n == 2 &&
+        unsafe { get_iseq_body_type(jit.iseq) == ISEQ_TYPE_BLOCK } &&
+        u32::from(next_insn_idx) < unsafe { get_iseq_encoded_size(jit.iseq) } &&
+        unsafe { rb_iseq_opcode_at_pc(jit.iseq, rb_iseq_pc_at_idx(jit.iseq, next_insn_idx.into())) as u32 == YARVINSN_leave };
+
+    if can_try_return_pair {
+        let fallback = asm.new_label("to_h_pair_fallback");
+        let key = asm.stack_opnd(1);
+        let value = asm.stack_opnd(0);
+        let completed = asm.ccall(rb_vm_try_return_pair as *const u8, vec![EC, CFP, key, value]);
+        asm.test(completed, Opnd::UImm(1));
+        asm.jz(fallback);
+        gen_leave_with_value(asm, Qnil.into());
+        asm.write_label(fallback);
+    }
 
     // Save the PC and SP because we are allocating
     jit_prepare_call_with_gc(jit, asm);
@@ -1829,6 +1845,22 @@ fn gen_duparray(
     asm: &mut Assembler,
 ) -> Option<CodegenStatus> {
     let ary = jit.get_arg(0);
+    let next_insn_idx = jit.next_insn_idx();
+    let can_try_return_pair = unsafe { rb_jit_array_len(ary) == 2 } &&
+        unsafe { get_iseq_body_type(jit.iseq) == ISEQ_TYPE_BLOCK } &&
+        u32::from(next_insn_idx) < unsafe { get_iseq_encoded_size(jit.iseq) } &&
+        unsafe { rb_iseq_opcode_at_pc(jit.iseq, rb_iseq_pc_at_idx(jit.iseq, next_insn_idx.into())) as u32 == YARVINSN_leave };
+
+    if can_try_return_pair {
+        let fallback = asm.new_label("to_h_pair_fallback");
+        let key = unsafe { rb_ary_entry(ary, 0) };
+        let value = unsafe { rb_ary_entry(ary, 1) };
+        let completed = asm.ccall(rb_vm_try_return_pair as *const u8, vec![EC, CFP, key.into(), value.into()]);
+        asm.test(completed, Opnd::UImm(1));
+        asm.jz(fallback);
+        gen_leave_with_value(asm, Qnil.into());
+        asm.write_label(fallback);
+    }
 
     // Save the PC and SP because we are allocating
     jit_prepare_call_with_gc(jit, asm);
@@ -10137,39 +10169,25 @@ fn gen_invokesuper_specialized(
     }
 }
 
-fn gen_leave(
-    _jit: &mut JITState,
-    asm: &mut Assembler,
-) -> Option<CodegenStatus> {
-    // Only the return value should be on the stack
-    assert_eq!(1, asm.ctx.get_stack_size(), "leave instruction expects stack size 1, but was: {}", asm.ctx.get_stack_size());
-
-    // Check for interrupts
-    gen_check_ints(asm, Counter::leave_se_interrupt);
-
-    // Pop the current frame (ec->cfp++)
-    // Note: the return PC is already in the previous CFP
+fn gen_leave_with_value(asm: &mut Assembler, value: Opnd) {
     asm_comment!(asm, "pop stack frame");
     let incr_cfp = asm.add(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
     asm.mov(CFP, incr_cfp);
     asm.mov(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP as i32), CFP);
-
-    // Load the return value
-    let retval_opnd = asm.stack_pop(1);
-
-    // Move the return value into the C return register
-    asm.mov(C_RET_OPND, retval_opnd);
-
-    // Jump to the JIT return address on the frame that was just popped.
-    // There are a few possible jump targets:
-    //   - gen_leave_exit() and gen_leave_exception(), for C callers
-    //   - Return context set up by gen_send_iseq()
-    // We don't write the return value to stack memory like the interpreter here.
-    // Each jump target do it as necessary.
+    asm.mov(C_RET_OPND, value);
     let offset_to_jit_return =
         -(RUBY_SIZEOF_CONTROL_FRAME as i32) + RUBY_OFFSET_CFP_JIT_RETURN;
     asm.jmp_opnd(Opnd::mem(64, CFP, offset_to_jit_return));
+}
 
+fn gen_leave(
+    _jit: &mut JITState,
+    asm: &mut Assembler,
+) -> Option<CodegenStatus> {
+    assert_eq!(1, asm.ctx.get_stack_size(), "leave instruction expects stack size 1, but was: {}", asm.ctx.get_stack_size());
+    gen_check_ints(asm, Counter::leave_se_interrupt);
+    let retval_opnd = asm.stack_pop(1);
+    gen_leave_with_value(asm, retval_opnd);
     Some(EndBlock)
 }
 

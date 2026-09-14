@@ -2358,6 +2358,13 @@ unsafe extern "C" {
     pub fn rb_vm_frame_method_entry(
         cfp: *const rb_control_frame_t,
     ) -> *const rb_callable_method_entry_t;
+    pub fn rb_vm_try_return_pair(
+        ec: *mut rb_execution_context_t,
+        cfp: *mut rb_control_frame_struct,
+        key: VALUE,
+        value: VALUE,
+    ) -> bool;
+
     pub fn rb_const_lookup(klass: VALUE, id: ID) -> *mut rb_const_entry_t;
     pub fn rb_ivar_get_at_no_ractor_check(obj: VALUE, index: attr_index_t) -> VALUE;
     pub fn rb_gvar_get(arg1: ID) -> VALUE;

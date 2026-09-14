@@ -68,6 +68,8 @@ bool ruby_vm_during_cleanup = false;
 VALUE rb_str_concat_literals(size_t, const VALUE*);
 
 VALUE vm_exec(rb_execution_context_t *);
+static VALUE vm_exec_with_pair(rb_execution_context_t *ec, struct rb_vm_pair_result *pair);
+
 
 extern const char *const rb_debug_counter_names[];
 
@@ -1843,12 +1845,15 @@ invoke_bmethod(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE self, co
 ALWAYS_INLINE(static VALUE
               invoke_iseq_block_from_c(rb_execution_context_t *ec, const struct rb_captured_block *captured,
                                        VALUE self, int argc, const VALUE *argv, int kw_splat, VALUE passed_block_handler,
-                                       const rb_cref_t *cref, int is_lambda, const rb_callable_method_entry_t *me));
+                                       const rb_cref_t *cref, int is_lambda, const rb_callable_method_entry_t *me,
+                                       struct rb_vm_pair_result *pair));
 
 static inline VALUE
 invoke_iseq_block_from_c(rb_execution_context_t *ec, const struct rb_captured_block *captured,
                          VALUE self, int argc, const VALUE *argv, int kw_splat, VALUE passed_block_handler,
-                         const rb_cref_t *cref, int is_lambda, const rb_callable_method_entry_t *me)
+                         const rb_cref_t *cref, int is_lambda, const rb_callable_method_entry_t *me,
+                         struct rb_vm_pair_result *pair)
+
 {
     const rb_iseq_t *iseq = rb_iseq_check(captured->code.iseq);
     int opt_pc;
@@ -1890,14 +1895,16 @@ invoke_iseq_block_from_c(rb_execution_context_t *ec, const struct rb_captured_bl
         invoke_bmethod(ec, iseq, self, captured, me, type, opt_pc);
     }
 
-    return vm_exec(ec);
+    return vm_exec_with_pair(ec, pair);
+
 }
 
 static VALUE
 invoke_block_from_c_bh(rb_execution_context_t *ec, VALUE block_handler,
                        int argc, const VALUE *argv,
                        int kw_splat, VALUE passed_block_handler, const rb_cref_t *cref,
-                       int is_lambda, int force_blockarg)
+                       int is_lambda, int force_blockarg, struct rb_vm_pair_result *pair)
+
 {
   again:
     switch (vm_block_handler_type(block_handler)) {
@@ -1906,7 +1913,8 @@ invoke_block_from_c_bh(rb_execution_context_t *ec, VALUE block_handler,
             const struct rb_captured_block *captured = VM_BH_TO_ISEQ_BLOCK(block_handler);
             return invoke_iseq_block_from_c(ec, captured, captured->self,
                                             argc, argv, kw_splat, passed_block_handler,
-                                            cref, is_lambda, NULL);
+                                            cref, is_lambda, NULL, pair);
+
         }
       case block_handler_type_ifunc:
         return vm_yield_with_cfunc(ec, VM_BH_TO_IFUNC_BLOCK(block_handler),
@@ -1949,7 +1957,8 @@ vm_yield_with_cref(rb_execution_context_t *ec, int argc, const VALUE *argv, int 
 {
     return invoke_block_from_c_bh(ec, check_block_handler(ec),
                                   argc, argv, kw_splat, VM_BLOCK_HANDLER_NONE,
-                                  cref, is_lambda, FALSE);
+                                  cref, is_lambda, FALSE, NULL);
+
 }
 
 static VALUE
@@ -1963,15 +1972,31 @@ vm_yield_with_block(rb_execution_context_t *ec, int argc, const VALUE *argv, VAL
 {
     return invoke_block_from_c_bh(ec, check_block_handler(ec),
                                   argc, argv, kw_splat, block_handler,
-                                  NULL, FALSE, FALSE);
+                                  NULL, FALSE, FALSE, NULL);
+
 }
 
 static VALUE
 vm_yield_force_blockarg(rb_execution_context_t *ec, VALUE args)
 {
     return invoke_block_from_c_bh(ec, check_block_handler(ec), 1, &args,
-                                  RB_NO_KEYWORDS, VM_BLOCK_HANDLER_NONE, NULL, FALSE, TRUE);
+                                  RB_NO_KEYWORDS, VM_BLOCK_HANDLER_NONE, NULL, FALSE, TRUE, NULL);
+
 }
+static VALUE
+vm_yield_pair(rb_execution_context_t *ec, int argc, const VALUE *argv,
+              int force_blockarg, struct rb_vm_pair_result *pair)
+{
+    pair->cfp = NULL;
+    pair->key = Qnil;
+    pair->value = Qnil;
+    pair->completed = false;
+
+    return invoke_block_from_c_bh(ec, check_block_handler(ec), argc, argv,
+                                  RB_NO_KEYWORDS, VM_BLOCK_HANDLER_NONE, NULL, FALSE,
+                                  force_blockarg, pair);
+}
+
 
 ALWAYS_INLINE(static VALUE
               invoke_block_from_c_proc(rb_execution_context_t *ec, const rb_proc_t *proc,
@@ -1992,7 +2017,8 @@ invoke_block_from_c_proc(rb_execution_context_t *ec, const rb_proc_t *proc,
   again:
     switch (vm_block_type(block)) {
       case block_type_iseq:
-        return invoke_iseq_block_from_c(ec, &block->as.captured, self, argc, argv, kw_splat, passed_block_handler, cref, is_lambda, me);
+        return invoke_iseq_block_from_c(ec, &block->as.captured, self, argc, argv, kw_splat, passed_block_handler, cref, is_lambda, me, NULL);
+
       case block_type_ifunc:
         if (kw_splat == 1) {
             VALUE keyword_hash = argv[argc-1];
@@ -2855,14 +2881,18 @@ vm_exec_bottom_rescue(void *context)
 }
 #endif
 
-VALUE
-vm_exec(rb_execution_context_t *ec)
+static VALUE
+vm_exec_with_pair(rb_execution_context_t *ec, struct rb_vm_pair_result *pair)
+
 {
     VALUE result = Qundef;
 
     EC_PUSH_TAG(ec);
 
     _tag.retval = Qnil;
+    _tag.pair_result = pair;
+    if (pair) pair->cfp = ec->cfp;
+
 
 #if defined(__wasm__) && !defined(__EMSCRIPTEN__)
     struct rb_vm_exec_context ctx = {
@@ -2895,6 +2925,12 @@ vm_exec(rb_execution_context_t *ec)
     EC_POP_TAG();
     return result;
 }
+VALUE
+vm_exec(rb_execution_context_t *ec)
+{
+    return vm_exec_with_pair(ec, NULL);
+}
+
 
 static inline VALUE
 vm_exec_loop(rb_execution_context_t *ec, enum ruby_tag_type state,

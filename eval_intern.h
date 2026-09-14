@@ -103,6 +103,7 @@ extern int select_large_fdset(int, fd_set *, fd_set *, fd_set *, struct timeval 
   _tag.tag = Qundef; \
   _tag.prev = _ec->tag; \
   _tag.lock_rec = rb_ec_vm_lock_rec(_ec); \
+  _tag.pair_result = NULL; \
   EC_SAVE_TAG_CFP(_tag, _ec); \
   rb_vm_tag_jmpbuf_init(&_tag.buf); \
 

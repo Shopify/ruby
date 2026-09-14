@@ -1034,6 +1034,8 @@ pub enum Insn {
     NewRange { low: InsnId, high: InsnId, flag: RangeType, state: InsnId },
     NewRangeFixnum { low: InsnId, high: InsnId, flag: RangeType, state: InsnId },
     ArrayDup { val: InsnId, state: InsnId },
+    TryReturnPair { key: InsnId, value: InsnId },
+
     ArrayHash { elements: Vec<InsnId>, state: InsnId },
     ArrayMax { elements: Vec<InsnId>, state: InsnId },
     ArrayMin { elements: Vec<InsnId>, state: InsnId },
@@ -1541,6 +1543,11 @@ macro_rules! for_each_operand_impl {
                 $visit_many!(true_args);
                 $visit_many!(false_args);
             }
+            Insn::TryReturnPair { key, value } => {
+                $visit_one!(*key);
+                $visit_one!(*value);
+            }
+
             Insn::ArrayDup { val, state }
             | Insn::Throw { val, state, .. }
             | Insn::HashDup { val, state } => {
@@ -1787,6 +1794,8 @@ impl Insn {
             Insn::NewRange { .. } => effects::Any,
             Insn::NewRangeFixnum { .. } => allocates,
             Insn::ArrayDup { .. } => allocates,
+            Insn::TryReturnPair { .. } => effects::Any,
+
             Insn::ArrayHash { .. } => effects::Any,
             Insn::ArrayMax { .. } => effects::Any,
             Insn::ArrayMin { .. } => effects::Any,
@@ -2143,6 +2152,8 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
                 write!(f, "DupArrayInclude {} | {}", ary.print(self.ptr_map), target)
             }
             Insn::ArrayDup { val, .. } => { write!(f, "ArrayDup {val}") }
+            Insn::TryReturnPair { key, value } => { write!(f, "TryReturnPair {key}, {value}") }
+
             Insn::HashDup { val, .. } => { write!(f, "HashDup {val}") }
             Insn::HashAref { hash, key, .. } => { write!(f, "HashAref {hash}, {key}")}
             Insn::HashAset { hash, key, val, .. } => { write!(f, "HashAset {hash}, {key}, {val}")}
@@ -3674,6 +3685,8 @@ impl Function {
             Insn::ToRegexp { .. } => types::RegexpExact,
             Insn::NewArray { .. } => types::ArrayExact,
             Insn::ArrayDup { .. } => types::ArrayExact,
+            Insn::TryReturnPair { .. } => types::CBool,
+
             Insn::ArrayAref { .. } => types::BasicObject,
             Insn::ArrayPop { .. } => types::BasicObject,
             Insn::ArrayLength { .. } => types::CInt64,
@@ -7807,6 +7820,7 @@ impl Function {
             Insn::SetIvar { self_val: left, val: right, .. }
             | Insn::NewRange { low: left, high: right, .. }
             | Insn::CheckMatch { target: left, pattern: right, .. }
+            | Insn::TryReturnPair { key: left, value: right }
             | Insn::WriteBarrier { recv: left, val: right } => {
                 self.assert_subtype(insn_id, left, types::RubyValue)?;
                 self.assert_subtype(insn_id, right, types::RubyValue)
@@ -9110,9 +9124,32 @@ fn add_iseq_to_hir(
                 }
                 YARVINSN_newarray => {
                     let count = get_arg(pc, 0).as_usize();
+                    let can_try_return_pair = matches!(mode, AddIseqMode::Standalone) &&
+                        count == 2 &&
+                        unsafe { get_iseq_body_type(iseq) == ISEQ_TYPE_BLOCK } &&
+                        insn_idx < iseq_size &&
+                        unsafe { rb_iseq_opcode_at_pc(iseq, rb_iseq_pc_at_idx(iseq, insn_idx)) as u32 == YARVINSN_leave };
                     let elements = state.stack_pop_n(count)?;
-                    state.stack_push(fun.push_insn(block, Insn::NewArray { elements, state: exit_id }));
+                    if can_try_return_pair {
+                        let return_block = fun.new_block(insn_idx);
+                        let fallback_block = fun.new_block(insn_idx);
+                        let returned = fun.push_insn(block, Insn::TryReturnPair { key: elements[0], value: elements[1] });
+                        fun.push_insn(block, Insn::CondBranch {
+                            val: returned,
+                            if_true: BranchEdge { target: return_block, args: vec![] },
+                            if_false: BranchEdge { target: fallback_block, args: vec![] },
+                        });
+                        let nil = fun.push_insn(return_block, Insn::Const { val: Const::Value(Qnil) });
+                        fun.push_insn(return_block, Insn::Return { val: nil });
+                        block = fallback_block;
+                        let fallback_state = fun.push_insn(block, Insn::Snapshot { state: Box::new(exit_state.clone()) });
+                        state.stack_push(fun.push_insn(block, Insn::NewArray { elements, state: fallback_state }));
+                    }
+                    else {
+                        state.stack_push(fun.push_insn(block, Insn::NewArray { elements, state: exit_id }));
+                    }
                 }
+
                 YARVINSN_opt_newarray_send => {
                     let count = get_arg(pc, 0).as_usize();
                     let method = get_arg(pc, 1).as_u32();
@@ -9158,10 +9195,37 @@ fn add_iseq_to_hir(
                     state.stack_push(fun.push_insn(block, insn));
                 }
                 YARVINSN_duparray => {
-                    let val = fun.push_insn(block, Insn::Const { val: Const::Value(get_arg(pc, 0)) });
-                    let insn_id = fun.push_insn(block, Insn::ArrayDup { val, state: exit_id });
-                    state.stack_push(insn_id);
+                    let ary = get_arg(pc, 0);
+                    let can_try_return_pair = matches!(mode, AddIseqMode::Standalone) &&
+                        unsafe { get_iseq_body_type(iseq) == ISEQ_TYPE_BLOCK } &&
+                        unsafe { rb_jit_array_len(ary) == 2 } &&
+                        insn_idx < iseq_size &&
+                        unsafe { rb_iseq_opcode_at_pc(iseq, rb_iseq_pc_at_idx(iseq, insn_idx)) as u32 == YARVINSN_leave };
+                    if can_try_return_pair {
+                        let return_block = fun.new_block(insn_idx);
+                        let fallback_block = fun.new_block(insn_idx);
+                        let key = fun.push_insn(block, Insn::Const { val: Const::Value(unsafe { rb_ary_entry(ary, 0) }) });
+                        let value = fun.push_insn(block, Insn::Const { val: Const::Value(unsafe { rb_ary_entry(ary, 1) }) });
+                        let returned = fun.push_insn(block, Insn::TryReturnPair { key, value });
+                        fun.push_insn(block, Insn::CondBranch {
+                            val: returned,
+                            if_true: BranchEdge { target: return_block, args: vec![] },
+                            if_false: BranchEdge { target: fallback_block, args: vec![] },
+                        });
+                        let nil = fun.push_insn(return_block, Insn::Const { val: Const::Value(Qnil) });
+                        fun.push_insn(return_block, Insn::Return { val: nil });
+                        block = fallback_block;
+                        let fallback_state = fun.push_insn(block, Insn::Snapshot { state: Box::new(exit_state.clone()) });
+                        let val = fun.push_insn(block, Insn::Const { val: Const::Value(ary) });
+                        state.stack_push(fun.push_insn(block, Insn::ArrayDup { val, state: fallback_state }));
+                    }
+                    else {
+                        let val = fun.push_insn(block, Insn::Const { val: Const::Value(ary) });
+                        let insn_id = fun.push_insn(block, Insn::ArrayDup { val, state: exit_id });
+                        state.stack_push(insn_id);
+                    }
                 }
+
                 YARVINSN_opt_duparray_send => {
                     let ary = get_arg(pc, 0);
                     let method_id = get_arg(pc, 1).as_u64();

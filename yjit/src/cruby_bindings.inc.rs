@@ -1210,6 +1210,13 @@ extern "C" {
     pub fn rb_vm_frame_method_entry(
         cfp: *const rb_control_frame_t,
     ) -> *const rb_callable_method_entry_t;
+    pub fn rb_vm_try_return_pair(
+        ec: *mut rb_execution_context_t,
+        cfp: *mut rb_control_frame_struct,
+        key: VALUE,
+        value: VALUE,
+    ) -> bool;
+
     pub fn rb_ivar_get_at(obj: VALUE, index: attr_index_t, id: ID) -> VALUE;
     pub fn rb_ivar_get_at_no_ractor_check(obj: VALUE, index: attr_index_t) -> VALUE;
     pub fn rb_gvar_get(arg1: ID) -> VALUE;
@@ -1267,6 +1274,8 @@ extern "C" {
     pub fn rb_vm_base_ptr(cfp: *mut rb_control_frame_struct) -> *mut VALUE;
     pub fn rb_str_neq_internal(str1: VALUE, str2: VALUE) -> VALUE;
     pub fn rb_ary_unshift_m(argc: ::std::os::raw::c_int, argv: *mut VALUE, ary: VALUE) -> VALUE;
+    pub fn rb_ary_entry(ary: VALUE, off: ::std::os::raw::c_long) -> VALUE;
+
     pub fn rb_yjit_rb_ary_subseq_length(ary: VALUE, beg: ::std::os::raw::c_long) -> VALUE;
     pub fn rb_yjit_splat_varg_checks(
         sp: *mut VALUE,

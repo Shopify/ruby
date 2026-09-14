@@ -28,6 +28,13 @@ struct rb_cref_struct;                  /* in method.h */
 struct rb_execution_context_struct;     /* in vm_core.h */
 struct rb_control_frame_struct;         /* in vm_core.h */
 struct rb_callinfo;                     /* in vm_core.h */
+struct rb_vm_pair_result {
+    struct rb_control_frame_struct *cfp;
+    volatile VALUE key;
+    volatile VALUE value;
+    bool completed;
+};
+
 
 enum method_missing_reason {
     MISSING_NOENTRY   = 0x00,
@@ -73,6 +80,14 @@ VALUE rb_check_funcall_basic_kw(VALUE, ID, VALUE, int, const VALUE*, int);
 VALUE rb_yield_1(VALUE val);
 VALUE rb_ec_yield(struct rb_execution_context_struct *ec, VALUE val);
 VALUE rb_yield_force_blockarg(VALUE values);
+VALUE rb_yield_values2_pair(int argc, const VALUE *argv,
+                            struct rb_vm_pair_result *pair);
+VALUE rb_yield_force_blockarg_pair(VALUE value,
+                                   struct rb_vm_pair_result *pair);
+bool rb_vm_try_return_pair(struct rb_execution_context_struct *ec,
+                           struct rb_control_frame_struct *cfp,
+                           VALUE key, VALUE value);
+
 VALUE rb_lambda_call(VALUE obj, ID mid, int argc, const VALUE *argv,
                      rb_block_call_func_t bl_proc, int min_argc, int max_argc,
                      VALUE data2);

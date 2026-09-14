@@ -118,6 +118,9 @@ fn main() {
         .allowlist_function("rb_yjit_rb_ary_subseq_length")
         .allowlist_function("rb_ec_ary_new_from_values")
         .allowlist_function("rb_ary_tmp_new_from_values")
+        .allowlist_function("rb_ary_entry")
+        .allowlist_function("rb_vm_try_return_pair")
+
         .allowlist_function("rb_class_attached_object")
         .allowlist_function("rb_singleton_class")
         .allowlist_function("rb_class_get_superclass")
@@ -426,6 +429,7 @@ fn main() {
         assert!(bindings_string.contains(needle), "no line to replace: {needle}");
         bindings_string = bindings_string.replace(needle, replacement);
     }
+
 
     // Write out to file
     let mut out_path: PathBuf = src_root;

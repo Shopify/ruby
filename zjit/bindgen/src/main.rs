@@ -124,6 +124,8 @@ fn main() {
         .allowlist_function("rb_zjit_hash_dup_can_fastpath")
         .allowlist_function("rb_zjit_range_new_fastpath")
 
+        .allowlist_function("rb_vm_try_return_pair")
+
         // For crashing
         .allowlist_function("rb_bug")
 
@@ -518,6 +520,8 @@ fn main() {
         assert!(bindings_string.contains(needle), "no line to replace: {needle}");
         bindings_string = bindings_string.replace(needle, replacement);
     }
+
+
 
     // Write out to file
     let mut out_path: PathBuf = src_root;

@@ -441,6 +441,28 @@ rb_vm_pop_frame_no_int(rb_execution_context_t *ec)
 
     ec->cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
 }
+bool
+rb_vm_try_return_pair(rb_execution_context_t *ec, rb_control_frame_t *cfp,
+                      VALUE key, VALUE value)
+{
+    struct rb_vm_pair_result *pair;
+
+    if (!ec->tag || !(pair = ec->tag->pair_result) ||
+        pair->cfp != cfp || cfp != ec->cfp || pair->completed ||
+        !VM_FRAME_FINISHED_P(cfp) ||
+        rb_ec_ractor_hooks(ec)->events != 0 ||
+        rb_vm_global_hooks(ec)->events != 0 ||
+        rb_ractor_targeted_hooks_cnt(rb_ec_ractor_ptr(ec)) != 0 ||
+        RUBY_VM_INTERRUPTED_ANY(ec)) {
+        return false;
+    }
+
+    pair->key = key;
+    pair->value = value;
+    pair->completed = true;
+    return true;
+}
+
 
 /* return TRUE if the frame is finished */
 static inline int

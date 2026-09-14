@@ -224,6 +224,17 @@ class TestYJIT < Test::Unit::TestCase
     assert_compiles('[1,1+1,3,4,5,6]', insns: %i[newarray opt_plus], result: [1, 2, 3, 4, 5, 6])
   end
 
+  def test_array_to_h_block_pair
+    assert_compiles(<<~RUBY, insns: %i[newarray], result: [{ 1 => 2 }, { 1 => 2 }])
+      def to_h_pair(array)
+        array.to_h { |item| [item, item + 1] }
+      end
+
+      [to_h_pair([1]), to_h_pair([1])]
+    RUBY
+  end
+
+
   def test_compile_opt_duparray
     assert_compiles('[1]', insns: %i[duparray], result: [1])
     assert_compiles('[1, 2, 3]', insns: %i[duparray], result: [1, 2, 3])

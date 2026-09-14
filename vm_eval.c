@@ -21,6 +21,8 @@ static inline VALUE vm_yield_with_cref(rb_execution_context_t *ec, int argc, con
 static inline VALUE vm_yield(rb_execution_context_t *ec, int argc, const VALUE *argv, int kw_splat);
 static inline VALUE vm_yield_with_block(rb_execution_context_t *ec, int argc, const VALUE *argv, VALUE block_handler, int kw_splat);
 static inline VALUE vm_yield_force_blockarg(rb_execution_context_t *ec, VALUE args);
+static VALUE vm_yield_pair(rb_execution_context_t *ec, int argc, const VALUE *argv, int force_blockarg, struct rb_vm_pair_result *pair);
+
 VALUE vm_exec(rb_execution_context_t *ec);
 static void vm_set_eval_stack(rb_execution_context_t * th, const rb_iseq_t *iseq, const rb_cref_t *cref, const struct rb_block *base_block);
 static int vm_collect_local_variables_in_heap(const VALUE *dfp, const struct local_var_list *vars);
@@ -1462,6 +1464,18 @@ rb_yield_force_blockarg(VALUE values)
 {
     return vm_yield_force_blockarg(GET_EC(), values);
 }
+VALUE
+rb_yield_values2_pair(int argc, const VALUE *argv, struct rb_vm_pair_result *pair)
+{
+    return vm_yield_pair(GET_EC(), argc, argv, FALSE, pair);
+}
+
+VALUE
+rb_yield_force_blockarg_pair(VALUE value, struct rb_vm_pair_result *pair)
+{
+    return vm_yield_pair(GET_EC(), 1, &value, TRUE, pair);
+}
+
 
 VALUE
 rb_yield_block(RB_BLOCK_CALL_FUNC_ARGLIST(val, arg))
