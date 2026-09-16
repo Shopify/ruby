@@ -782,7 +782,7 @@ typedef struct rb_objspace {
 typedef struct rb_global_objspace {
     struct {
         rb_nativethread_lock_t lock;
-        size_t free_count_total;        /* Σ arena->free_count; maintained under lock for GC.stat page_pool_free_pages */
+        size_t free_count_total;        /* sum of arena->free_count, maintained under lock for GC.stat page_pool_free_pages */
         size_t os_page_size;             /* sysconf(_SC_PAGE_SIZE), cached at init */
         /* List of mmap'd memory regions (arenas) for page bodies. */
         struct page_arena {
@@ -4274,10 +4274,35 @@ objspace_free_slots(rb_objspace_t *objspace)
     return objspace_available_slots(objspace) - objspace_live_slots(objspace) - total_final_slots_count(objspace);
 }
 
-/* Post-sweep mirror of gc_marks_finish's freeable_pages computation, for the
- * global GC where marked_slots is not per-objspace.  Empty pages are already
- * detached from the heaps here, so fold them back in at the average
- * slots-per-page. */
+/* How many of `pages` (covering `total_slots`, of which `free_slots` are free) may be
+ * released.  The policy -- how much may stay free before a page is surplus -- is shared
+ * by gc_marks_finish, which passes its pre-sweep prediction, and the global GC, which
+ * passes post-sweep truth (see objspace_post_sweep_freeable_pages).  Approximates using
+ * the average slots-per-page across all heaps. */
+static size_t
+objspace_freeable_pages(rb_objspace_t *objspace, size_t total_slots, size_t free_slots, size_t pages)
+{
+    GC_ASSERT(free_slots <= total_slots);
+
+    /* No Ractor-count multiplier: the initial size is per objspace and only this
+     * objspace's own Ractor allocates from it (gc_sweep_finish_heap's floor likewise). */
+    size_t max_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_max_ratio);
+    size_t total_init_slots = 0;
+    for (int i = 0; i < HEAP_COUNT; i++) {
+        total_init_slots += objspace_heap_init_bytes(objspace) / heaps[i].slot_size;
+    }
+    if (max_free_slots < total_init_slots) max_free_slots = total_init_slots;
+
+    if (free_slots <= max_free_slots) return 0;
+
+    return pages > 0 ? (free_slots - max_free_slots) * pages / total_slots : 0;
+}
+
+/* Post-sweep mirror of gc_marks_finish's freeable_pages computation, for the global GC.
+ * It runs after the sweep for two reasons: marked_slots is not per-objspace there (every
+ * mark lands on the driver, so the pre-sweep prediction is unusable), and compaction runs
+ * after marking and is what empties most pages.  Empty pages are already detached from
+ * the heaps here, so fold them back in at the average slots-per-page. */
 static size_t
 objspace_post_sweep_freeable_pages(rb_objspace_t *objspace)
 {
@@ -4292,19 +4317,8 @@ objspace_post_sweep_freeable_pages(rb_objspace_t *objspace)
     size_t total_slots = eden_slots + empty_pages * avg_slots;
     size_t free_slots = objspace_free_slots(objspace) + empty_pages * avg_slots;
 
-    const unsigned long ractor_cnt = rb_gc_vm_ractor_count();
-    const unsigned long r_mul = ractor_cnt > 8 ? 8 : ractor_cnt;
-    size_t max_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_max_ratio);
-    size_t total_init_slots = 0;
-    for (int i = 0; i < HEAP_COUNT; i++) {
-        total_init_slots += (gc_params.heap_init_bytes / heaps[i].slot_size) * r_mul;
-    }
-    if (max_free_slots < total_init_slots) max_free_slots = total_init_slots;
-
-    if (free_slots <= max_free_slots) return 0;
-
-    size_t excess_slots = free_slots - max_free_slots;
-    size_t freeable = excess_slots * (eden_pages + empty_pages) / total_slots;
+    size_t freeable = objspace_freeable_pages(objspace, total_slots, free_slots,
+                                              eden_pages + empty_pages);
     return freeable < empty_pages ? freeable : empty_pages;
 }
 
@@ -7182,45 +7196,19 @@ gc_marks_finish(rb_objspace_t *objspace)
 #endif
 
     {
-        /* Only this objspace's own Ractor allocates from it.  The main objspace
-         * keeps the VM-wide count it has used since before per-Ractor GC. */
-        const unsigned long ractor_cnt = objspace == global_objspace->main_objspace
-            ? rb_gc_vm_ractor_count() : 1;
-        const unsigned long r_mul = ractor_cnt > 8 ? 8 : ractor_cnt; // upto 8
-
         size_t total_slots = objspace_available_slots(objspace);
         size_t sweep_slots = total_slots - objspace->marked_slots; /* will be swept slots */
-        size_t max_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_max_ratio);
         size_t min_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_min_ratio);
-        if (min_free_slots < gc_params.heap_free_slots * r_mul) {
-            min_free_slots = gc_params.heap_free_slots * r_mul;
+        if (min_free_slots < gc_params.heap_free_slots) {
+            min_free_slots = gc_params.heap_free_slots;
         }
 
         int full_marking = is_full_marking(objspace);
 
         GC_ASSERT(objspace_available_slots(objspace) >= objspace->marked_slots);
 
-        /* Setup freeable slots. */
-        size_t total_init_slots = 0;
-        for (int i = 0; i < HEAP_COUNT; i++) {
-            total_init_slots += (objspace_heap_init_bytes(objspace) / heaps[i].slot_size) * r_mul;
-        }
-
-        if (max_free_slots < total_init_slots) {
-            max_free_slots = total_init_slots;
-        }
-
-        /* Approximate freeable pages using the average slots-per-pages across all heaps */
-        if (sweep_slots > max_free_slots) {
-            size_t excess_slots = sweep_slots - max_free_slots;
-            size_t total_heap_pages = heap_eden_total_pages(objspace);
-            heap_pages_freeable_pages = total_heap_pages > 0
-                ? excess_slots * total_heap_pages / total_slots
-                : 0;
-        }
-        else {
-            heap_pages_freeable_pages = 0;
-        }
+        heap_pages_freeable_pages = objspace_freeable_pages(objspace, total_slots, sweep_slots,
+                                                            heap_eden_total_pages(objspace));
 
         if (objspace->heap_pages.allocatable_bytes == 0 && sweep_slots < min_free_slots) {
             if (!full_marking && sweep_slots < min_free_slots * 7 / 8) {
