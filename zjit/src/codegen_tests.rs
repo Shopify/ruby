@@ -108,11 +108,11 @@ fn test_cfunc_frame_preserves_caller_pc() {
         let state = function.reverse_post_order().into_iter().find_map(|block_id| {
             function.block(block_id).insns().find_map(|&insn_id| {
                 match function.find(insn_id) {
-                    Insn::Snapshot { state } => Some(*state),
+                    Insn::Snapshot { state } if state.stack_size() == 0 => Some(*state),
                     _ => None,
                 }
             })
-        }).unwrap().without_stack();
+        }).unwrap();
         let pc = unsafe { rb_iseq_pc_at_idx(iseq, 0) };
         let mut frames: [rb_control_frame_t; 2] = unsafe { std::mem::zeroed() };
         frames[1].pc = pc;
@@ -123,7 +123,7 @@ fn test_cfunc_frame_preserves_caller_pc() {
         let mut asm = Assembler::new();
         asm.new_block_without_id("test");
         asm.frame_setup(&[CFP, EC, SP]);
-        asm.mov(CFP, Opnd::const_ptr(&frames[1]));
+        asm.mov(CFP, Opnd::const_ptr(unsafe { frames.as_mut_ptr().add(1) }));
         asm.mov(SP, Opnd::const_ptr(stack.as_mut_ptr()));
         asm.mov(EC, Opnd::const_ptr(ec_slots.as_mut_ptr()));
         super::frame::gen_push_cfunc_frame(&mut asm, 0, &state, Qnil.into(), std::ptr::null(), VM_BLOCK_HANDLER_NONE.into());
@@ -147,8 +147,8 @@ fn test_iseq_frame_stays_unpublished_until_entry() {
         use crate::backend::lir::{C_RET_OPND, CFP, EC, Opnd, SP};
 
         let mut frames: [rb_control_frame_t; 2] = unsafe { std::mem::zeroed() };
-        let caller = &mut frames[1] as CfpPtr;
-        let callee = &mut frames[0] as CfpPtr;
+        let callee = frames.as_mut_ptr();
+        let caller = unsafe { callee.add(1) };
         const CFP_SLOT: usize = RUBY_OFFSET_EC_CFP as usize / std::mem::size_of::<CfpPtr>();
         let mut ec_slots = [std::ptr::null_mut(); CFP_SLOT + 1];
         ec_slots[CFP_SLOT] = caller;

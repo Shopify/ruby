@@ -127,21 +127,11 @@ fn gen_write_jit_frame(asm: &mut Assembler, state: &FrameState, stack_map_size: 
 
 /// Prepare a leaf C call that may allocate but cannot call arbitrary Ruby methods.
 pub(super) fn gen_prepare_leaf_call_with_gc(asm: &mut Assembler, state: &FrameState) {
-    // In gen_prepare_call_with_gc(), we update cfp->sp for leaf calls too.
-    //
-    // Here, cfp->sp may be pointing to either of the following:
-    //   1. cfp->sp for a past frame, which gen_push_frame() skips to initialize
-    //   2. cfp->sp set by gen_prepare_non_leaf_call() for the current frame
-    //
-    // When (1), to avoid marking dead objects, we need to set cfp->sp for the current frame.
-    // When (2), setting cfp->sp at gen_push_frame() and not updating cfp->sp here could lead to
-    // keeping objects longer than it should, so we set cfp->sp at every call of this function.
-    //
-    // We use state.without_stack() to pass stack_size=0 to gen_save_sp() because we don't write
-    // VM stack slots on leaf calls, which leaves those stack slots uninitialized. ZJIT keeps
-    // live objects on the C stack, so they are protected from GC properly.
-    let state = state.without_stack();
-    gen_prepare_call_with_gc(asm, &state, 0);
+    // A previous frame or non-leaf call may have left a stale cfp->sp.
+    // Leaf calls do not initialize VM stack slots; the backend spills live values
+    // to the native stack for GC. Publish an empty VM stack on every leaf call.
+    gen_write_jit_frame(asm, state, 0);
+    gen_save_sp(asm, 0);
     asm.expect_leaf_ccall(0);
 }
 
@@ -237,7 +227,13 @@ pub(super) fn gen_prepare_inline_frame(jit: &JITState, asm: &mut Assembler, stat
 /// JITFrame entries are encoded by the register allocator, where VReg locations
 /// on the native stack are known.
 pub(super) fn build_stack_map(jit: &JITState, function: &Function, state: &FrameState) -> Vec<StackMapEntry> {
-    let mut stack = Vec::new();
+    let mut stack = Vec::with_capacity(state.stack_size());
+    append_stack_map(jit, function, state, &mut stack);
+    stack
+}
+
+/// Append values in materialization order, without a BasePtr entry.
+fn append_stack_map(jit: &JITState, function: &Function, state: &FrameState, stack: &mut Vec<StackMapEntry>) {
     let mut current_state = state;
     loop {
         stack.extend(current_state.stack().rev().copied().map(|insn_id| {
@@ -255,7 +251,6 @@ pub(super) fn build_stack_map(jit: &JITState, function: &Function, state: &Frame
         stack.push(StackMapEntry::Skip(inline_frame_stack_gap(current_state.iseq)));
         current_state = function.frame_state_ref(caller);
     }
-    stack
 }
 
 /// Prepare for calling a C function that may call an arbitrary method.
@@ -264,12 +259,14 @@ pub(super) fn gen_prepare_non_leaf_call(jit: &JITState, asm: &mut Assembler, fun
     // Anchor the stack map on a private copy of SP rather than on cfp->sp. The callee is free to
     // use the stack map after pushing through and moving cfp->sp (e.g. rb_funcall() + a raise in
     // vm_callee_setup_arg()).
-    let mut stack_map = vec![StackMapEntry::BasePtr {
+    let mut stack_map = Vec::with_capacity(state.stack_size() + 1);
+    stack_map.push(StackMapEntry::BasePtr {
         slot_index: jit.base_ptr_slot_index(state.depth),
         stack_size: state.stack_size().try_into().expect("stack size overflow"),
-    }];
-    stack_map.extend(build_stack_map(jit, function, state));
-    let jit_frame = gen_prepare_call_with_gc(asm, state, stack_map.len());
+    });
+    append_stack_map(jit, function, state, &mut stack_map);
+    let jit_frame = gen_write_jit_frame(asm, state, stack_map.len());
+    gen_save_sp(asm, state.stack_size());
 
     // NOTE(alan): This store can be done once per CFP switch, but analysis is required
     //             to avoid the store in functions that make no non-leaf call.
@@ -484,16 +481,6 @@ fn entry_pc(iseq: IseqPtr, jit_entry_idx: Option<usize>) -> *const VALUE {
         .unwrap_or_else(|| panic!("entry_pc: opt_table out of bounds. {params:#?}, entry_idx={entry_idx}"))
         .as_u32();
     unsafe { rb_iseq_pc_at_idx(iseq, entry_insn_idx) }
-}
-
-/// Prepare the CFP and native stack before a C function call.
-///
-/// Unlike YJIT, ZJIT does not save stack slots for GC because the backend spills
-/// all live registers onto the C stack during a CCall.
-fn gen_prepare_call_with_gc(asm: &mut Assembler, state: &FrameState, stack_map_size: usize) -> *const zjit_jit_frame {
-    let jit_frame = gen_write_jit_frame(asm, state, stack_map_size);
-    gen_save_sp(asm, state.stack_size());
-    jit_frame
 }
 
 fn jit_frame_next_pc(state: &FrameState) -> *const VALUE {

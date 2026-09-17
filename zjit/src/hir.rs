@@ -8391,13 +8391,6 @@ impl FrameState {
         state
     }
 
-    /// Return itself without stack. Used by leaf calls with GC to reset SP to the base pointer.
-    pub fn without_stack(&self) -> Self {
-        let mut state = self.clone();
-        state.stack.clear();
-        state
-    }
-
     /// Return itself with a truncated stack.
     pub fn with_stack_size(&self, stack_size: usize) -> Self {
         let mut state = self.clone();
