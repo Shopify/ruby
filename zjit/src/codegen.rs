@@ -24,7 +24,7 @@ use crate::state::{rb_zjit_compiling_p, ZJITState};
 use crate::stats::{CompileError, exit_counter_for_compile_error, exit_counter_for_unhandled_hir_insn, incr_counter, incr_counter_by, send_fallback_counter, send_fallback_counter_for_method_type, send_fallback_counter_for_super_method_type, send_fallback_counter_ptr_for_opcode, send_fallback_counter_for_optimized_method_type};
 use crate::stats::{counter_ptr, with_time_stat, trace_compile_phase, Counter, Counter::{compile_time_ns, exit_compile_error}};
 use crate::{asm::CodeBlock, cruby::*, options::debug, virtualmem::CodePtr};
-use crate::backend::lir::{self, Assembler, CArgLocation, C_ARG_OPNDS, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, NATIVE_STACK_PTR, Opnd, SP, SideExit, SideExitRecompile, SideExitTarget, StackMap, Target, asm_ccall, asm_comment};
+use crate::backend::lir::{self, Assembler, CArgLocation, C_ARG_OPNDS, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, NATIVE_STACK_PTR, Opnd, SP, SideExit, SideExitRecompile, SideExitTarget, Target, asm_ccall, asm_comment};
 use crate::hir::{self, iseq_to_hir, BlockId, Invariant, RangeType, SideExitReason::{self, *}, SpecialBackrefSymbol, SpecialObjectType};
 use crate::hir::{BlockHandler, CCallVariadicData, CCallWithFrameData, Const, FieldName, FrameState, Function, Insn, InsnId, Recompile, SendDirectData, SendFallbackReason, qualified_method_name};
 use crate::hir_type::{types, Type};
@@ -1599,15 +1599,14 @@ fn gen_push_inline_frame(
     // (The non-inlined `gen_send_iseq_direct` path still emits its own store
     // because the callee's separate JIT entry reads it from memory.)
 
-    frame::gen_push_inline_frame(asm, prepared_frame, state, frame::ControlFrame {
+    frame::gen_push_inline_frame(asm, prepared_frame, state, frame::IseqFrame::new(
         recv,
-        iseq: Some(iseq),
+        iseq,
         cme,
         frame_type,
         specval,
-        write_block_code: iseq_may_write_block_code(iseq),
-        forwarded_argc: None, // `can_inline` rejects forwardable callees
-    });
+        0,
+    ));
 
 }
 
@@ -1669,15 +1668,14 @@ fn gen_send_iseq_direct(
 
     // Set up the new frame
     // TODO: Lazily materialize caller frames on side exits or when needed
-    let pending_frame = frame::gen_push_iseq_frame(asm, prepared_frame, state, frame::ControlFrame {
+    let pending_frame = frame::gen_push_iseq_frame(asm, prepared_frame, state, frame::IseqFrame::new(
         recv,
-        iseq: Some(iseq),
+        iseq,
         cme,
         frame_type,
         specval,
-        write_block_code: iseq_may_write_block_code(iseq),
-        forwarded_argc: Some(forwarded_argc),
-    });
+        forwarded_argc,
+    ));
 
     // Write "keyword_bits" to the callee's frame if the callee accepts keywords.
     // This is a synthetic local/parameter that the callee reads via checkkeyword to determine
@@ -1880,15 +1878,14 @@ fn gen_invoke_block_iseq_direct(
 
     let prepared_frame = frame::gen_prepare_iseq_block_call(jit, asm, function, state, args.len());
 
-    let pending_frame = frame::gen_push_iseq_frame(asm, prepared_frame, state, frame::ControlFrame {
-        recv: captured_self,
-        iseq: Some(block_iseq),
-        cme: std::ptr::null(),
-        frame_type: VM_FRAME_MAGIC_BLOCK,
+    let pending_frame = frame::gen_push_iseq_frame(asm, prepared_frame, state, frame::IseqFrame::new(
+        captured_self,
+        block_iseq,
+        std::ptr::null(),
+        VM_FRAME_MAGIC_BLOCK,
         specval,
-        write_block_code: iseq_may_write_block_code(block_iseq),
-        forwarded_argc: None, // `...` is not allowed in block arguments
-    });
+        0,
+    ));
 
     let entered_frame = frame::gen_enter_iseq_frame(asm, pending_frame);
 
@@ -3170,21 +3167,9 @@ fn build_side_exit(jit: &JITState, function: &Function, state: &FrameState) -> S
         stack,
         locals,
         iseq: state.iseq,
-        stack_map: build_caller_stack_map(jit, function, state),
+        stack_map: frame::build_caller_stack_map(jit, function, state),
         recompile: None,
     }
-}
-
-fn build_caller_stack_map(jit: &JITState, function: &Function, state: &FrameState) -> Option<StackMap> {
-    let caller = state.caller()?;
-    let caller_state = function.frame_state(caller);
-    let stack_map = frame::build_stack_map(jit, function, &caller_state);
-    if stack_map.is_empty() {
-        return None;
-    }
-
-    let jit_frame = frame::jit_frame_for_state(&caller_state, stack_map.len());
-    Some(StackMap::new(stack_map, jit_frame, caller_state.depth))
 }
 
 #[cfg(target_arch = "x86_64")]

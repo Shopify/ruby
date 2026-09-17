@@ -1,4 +1,4 @@
-use crate::backend::lir::{asm_ccall, asm_comment, Assembler, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, Opnd, SP, StackMapEntry};
+use crate::backend::lir::{asm_ccall, asm_comment, Assembler, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, Opnd, SP, StackMap, StackMapEntry};
 use crate::cruby::{
     get_iseq_body_local_table_size, insn_len, IseqAccess, local_idx_to_ep_offset, rb_callable_method_entry_t,
     rb_iseq_pc_at_idx, zjit_jit_frame, CfpPtr, EcPtr, IseqPtr, VALUE, RUBY_OFFSET_CFP_BLOCK_CODE,
@@ -12,7 +12,7 @@ use crate::options::InlineDepth;
 use crate::stats::Counter;
 use crate::cast::IntoUsize;
 
-use super::{gen_incr_counter, side_exit, JITEntry, JITFrame, JITState, PC_POISON};
+use super::{gen_incr_counter, iseq_may_write_block_code, side_exit, JITEntry, JITFrame, JITState, PC_POISON};
 
 /// Compile a frame setup. If jit_entry_idx is Some, remember the address of it as a JIT entry.
 pub(super) fn gen_entry_point(jit: &mut JITState, asm: &mut Assembler, jit_entry_idx: Option<usize>) {
@@ -102,7 +102,7 @@ fn cfp_jit_return_for_depth(asm: &mut Assembler, depth: InlineDepth) -> Opnd {
 }
 
 /// Create JITFrame metadata for a frame state and its stack-map size.
-pub(super) fn jit_frame_for_state(state: &FrameState, stack_map_size: usize) -> *const zjit_jit_frame {
+fn jit_frame_for_state(state: &FrameState, stack_map_size: usize) -> *const zjit_jit_frame {
     JITFrame::new_iseq(jit_frame_next_pc(state), state.iseq, stack_map_size)
 }
 
@@ -264,8 +264,26 @@ pub(super) fn gen_prepare_inline_frame(jit: &JITState, asm: &mut Assembler, stat
 /// Build entries for Ruby stack values that need materialization. The actual
 /// JITFrame entries are encoded by the register allocator, where VReg locations
 /// on the native stack are known.
-pub(super) fn build_stack_map(jit: &JITState, function: &Function, state: &FrameState) -> Vec<StackMapEntry> {
+fn build_stack_map(jit: &JITState, function: &Function, state: &FrameState) -> Vec<StackMapEntry> {
     build_stack_map_with_stack_size(jit, function, state, state.stack_size())
+}
+
+#[cfg(test)]
+pub(super) fn build_stack_map_for_test(jit: &JITState, function: &Function, state: &FrameState) -> Vec<StackMapEntry> {
+    build_stack_map(jit, function, state)
+}
+
+/// Build the stack map that materializes the callers of an inlined frame.
+pub(super) fn build_caller_stack_map(jit: &JITState, function: &Function, state: &FrameState) -> Option<StackMap> {
+    let caller = state.caller()?;
+    let caller_state = function.frame_state_ref(caller);
+    let stack_map = build_stack_map(jit, function, caller_state);
+    if stack_map.is_empty() {
+        return None;
+    }
+
+    let jit_frame = jit_frame_for_state(caller_state, stack_map.len());
+    Some(StackMap::new(stack_map, jit_frame, caller_state.depth))
 }
 
 fn build_stack_map_with_stack_size(jit: &JITState, function: &Function, state: &FrameState, stack_size: usize) -> Vec<StackMapEntry> {
@@ -326,21 +344,44 @@ pub(super) fn gen_prepare_non_leaf_call(jit: &JITState, asm: &mut Assembler, fun
     gen_spill_locals(jit, asm, state);
 }
 
-/// Frame metadata for gen_push_frame().
-pub(super) struct ControlFrame {
-    pub(super) recv: Opnd,
-    pub(super) iseq: Option<IseqPtr>,
-    pub(super) cme: *const rb_callable_method_entry_t,
-    pub(super) frame_type: u32,
-    /// The [`VM_ENV_DATA_INDEX_SPECVAL`] slot of the frame.
-    /// For the type of frames we push, block handler or the parent EP.
-    pub(super) specval: Opnd,
-    /// Whether to write block_code = 0 at frame push time.
-    /// True when the callee ISEQ may write to block_code (has send/invokesuper/invokeblock).
-    pub(super) write_block_code: bool,
-    /// Number of caller arguments a forwardable callee (`def foo(...)`) keeps below
-    /// the `...` local. `None` for non-forwardable callees.
-    pub(super) forwarded_argc: Option<usize>,
+/// Frame metadata for an ISEQ control frame.
+pub(super) struct IseqFrame {
+    recv: Opnd,
+    iseq: IseqPtr,
+    cme: *const rb_callable_method_entry_t,
+    frame_type: u32,
+    specval: Opnd,
+    extra_local_slots: usize,
+}
+
+impl IseqFrame {
+    pub(super) fn new(recv: Opnd, iseq: IseqPtr, cme: *const rb_callable_method_entry_t, frame_type: u32, specval: Opnd, extra_local_slots: usize) -> Self {
+        Self { recv, iseq, cme, frame_type, specval, extra_local_slots }
+    }
+}
+
+struct ControlFrame {
+    recv: Opnd,
+    iseq: Option<IseqPtr>,
+    cme: *const rb_callable_method_entry_t,
+    frame_type: u32,
+    specval: Opnd,
+    write_block_code: bool,
+    extra_local_slots: usize,
+}
+
+impl From<IseqFrame> for ControlFrame {
+    fn from(frame: IseqFrame) -> Self {
+        Self {
+            recv: frame.recv,
+            iseq: Some(frame.iseq),
+            cme: frame.cme,
+            frame_type: frame.frame_type,
+            specval: frame.specval,
+            write_block_code: iseq_may_write_block_code(frame.iseq),
+            extra_local_slots: frame.extra_local_slots,
+        }
+    }
 }
 
 /// Initialize and enter a C frame after gen_prepare_cfunc_call().
@@ -352,22 +393,21 @@ pub(super) fn gen_push_cfunc_frame(asm: &mut Assembler, prepared: PreparedCfuncF
         frame_type: VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL,
         specval,
         write_block_code: false,
-        forwarded_argc: None,
+        extra_local_slots: 0,
     });
     gen_enter_cfunc_frame(asm, sp_offset)
 }
 
 /// Initialize an ISEQ frame, but keep caller registers active for keyword and forwarding stores.
-pub(super) fn gen_push_iseq_frame(asm: &mut Assembler, prepared: PreparedIseqFrame, state: &FrameState, frame: ControlFrame) -> PendingIseqFrame {
-    assert!(frame.iseq.is_some());
-    let sp_offset = gen_push_frame(asm, prepared.stack_slots, state, frame);
+pub(super) fn gen_push_iseq_frame(asm: &mut Assembler, prepared: PreparedIseqFrame, state: &FrameState, frame: IseqFrame) -> PendingIseqFrame {
+    let sp_offset = gen_push_frame(asm, prepared.stack_slots, state, frame.into());
     PendingIseqFrame { sp_offset }
 }
 
 /// Initialize and enter an inline method frame with its depth-specific JITFrame.
-pub(super) fn gen_push_inline_frame(asm: &mut Assembler, prepared: PreparedIseqFrame, state: &FrameState, frame: ControlFrame) {
-    let iseq = frame.iseq.expect("inline frames require an ISEQ");
-    let sp_offset = gen_push_frame(asm, prepared.stack_slots, state, frame);
+pub(super) fn gen_push_inline_frame(asm: &mut Assembler, prepared: PreparedIseqFrame, state: &FrameState, frame: IseqFrame) {
+    let iseq = frame.iseq;
+    let sp_offset = gen_push_frame(asm, prepared.stack_slots, state, frame.into());
     gen_enter_inline_frame(asm, iseq, state.depth + 1, sp_offset);
 }
 
@@ -380,7 +420,7 @@ fn gen_push_frame(asm: &mut Assembler, stack_slots: usize, state: &FrameState, f
     asm_comment!(asm, "push cme, specval, frame type");
     // ep[-2]: cref of cme
     let local_size = if let Some(iseq) = frame.iseq {
-        unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + frame.forwarded_argc.unwrap_or(0)
+        unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + frame.extra_local_slots
     } else {
         0
     };

@@ -90,7 +90,7 @@ fn test_stack_map_resolves_replaced_operands() {
             jit.opnds[function.find_id(insn_id)] = Some(Opnd::Value(value));
         }
 
-        assert_eq!(super::frame::build_stack_map(&jit, &function, &state), vec![
+        assert_eq!(super::frame::build_stack_map_for_test(&jit, &function, &state), vec![
             StackMapEntry::Opnd(Opnd::Value(VALUE::fixnum_from_usize(7))),
             StackMapEntry::Opnd(Opnd::Value(VALUE::fixnum_from_usize(3))),
         ]);
