@@ -1,7 +1,7 @@
-use crate::backend::lir::{self, asm_ccall, asm_comment, Assembler, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, Opnd, SP, StackMapEntry};
+use crate::backend::lir::{asm_ccall, asm_comment, Assembler, C_RET_OPND, CFP, EC, NATIVE_BASE_PTR, Opnd, SP, StackMapEntry};
 use crate::cruby::{
-    get_iseq_body_local_table_size, insn_len, local_idx_to_ep_offset, rb_callable_method_entry_t,
-    rb_iseq_pc_at_idx, CfpPtr, EcPtr, IseqPtr, VALUE, RUBY_OFFSET_CFP_BLOCK_CODE,
+    get_iseq_body_local_table_size, insn_len, IseqAccess, local_idx_to_ep_offset, rb_callable_method_entry_t,
+    rb_iseq_pc_at_idx, zjit_jit_frame, CfpPtr, EcPtr, IseqPtr, VALUE, RUBY_OFFSET_CFP_BLOCK_CODE,
     RUBY_OFFSET_CFP_EP, RUBY_OFFSET_CFP_JIT_RETURN, RUBY_OFFSET_CFP_PC, RUBY_OFFSET_CFP_SELF,
     RUBY_OFFSET_CFP_SP, RUBY_OFFSET_EC_CFP, RUBY_SIZEOF_CONTROL_FRAME, SIZEOF_VALUE,
     SIZEOF_VALUE_I32, VM_ENV_DATA_SIZE, ZJIT_JIT_RETURN_C_FRAME,
@@ -12,8 +12,6 @@ use crate::stats::Counter;
 use crate::cast::IntoUsize;
 
 use super::{gen_incr_counter, side_exit, JITEntry, JITFrame, JITState, PC_POISON};
-use crate::cruby::IseqAccess;
-use crate::cruby::zjit_jit_frame;
 
 /// Compile a frame setup. If jit_entry_idx is Some, remember the address of it as a JIT entry.
 pub(super) fn gen_entry_point(jit: &mut JITState, asm: &mut Assembler, jit_entry_idx: Option<usize>) {
@@ -40,7 +38,7 @@ pub(super) fn gen_entry_point(jit: &mut JITState, asm: &mut Assembler, jit_entry
 }
 
 /// Compile code that exits from JIT code with a return value
-pub(super) fn gen_return(asm: &mut Assembler, val: lir::Opnd) {
+pub(super) fn gen_return(asm: &mut Assembler, val: Opnd) {
     // Pop the current frame (ec->cfp++)
     // Note: the return PC is already in the previous CFP
     asm_comment!(asm, "pop stack frame");
@@ -57,7 +55,7 @@ pub(super) fn gen_return(asm: &mut Assembler, val: lir::Opnd) {
     asm.cret(C_RET_OPND);
 }
 
-pub(super) fn gen_throw(jit: &mut JITState, asm: &mut Assembler, function: &Function, throw_state: u32, val: lir::Opnd, state: &FrameState) {
+pub(super) fn gen_throw(jit: &mut JITState, asm: &mut Assembler, function: &Function, throw_state: u32, val: Opnd, state: &FrameState) {
     gen_incr_counter(asm, Counter::throw_count);
 
     // The interpreter pops the thrown value before calling vm_throw(), so keep it out of the cfp->sp we publish.
@@ -260,7 +258,7 @@ pub(super) struct ControlFrame {
     pub(super) frame_type: u32,
     /// The [`VM_ENV_DATA_INDEX_SPECVAL`] slot of the frame.
     /// For the type of frames we push, block handler or the parent EP.
-    pub(super) specval: lir::Opnd,
+    pub(super) specval: Opnd,
     /// Whether to write block_code = 0 at frame push time.
     /// True when the callee ISEQ may write to block_code (has send/invokesuper/invokeblock).
     pub(super) write_block_code: bool,
