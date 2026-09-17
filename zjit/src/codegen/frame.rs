@@ -55,6 +55,7 @@ pub(super) fn gen_return(asm: &mut Assembler, val: Opnd) {
     asm.cret(C_RET_OPND);
 }
 
+/// Compile a throw through the VM fallback path.
 pub(super) fn gen_throw(jit: &mut JITState, asm: &mut Assembler, function: &Function, throw_state: u32, val: Opnd, state: &FrameState) {
     gen_incr_counter(asm, Counter::throw_count);
 
@@ -99,6 +100,7 @@ pub(super) fn cfp_jit_return_for_depth(asm: &mut Assembler, depth: InlineDepth) 
     }
 }
 
+/// Create JITFrame metadata for a frame state and its stack-map size.
 pub(super) fn jit_frame_for_state(state: &FrameState, stack_map_size: usize) -> *const zjit_jit_frame {
     JITFrame::new_iseq(jit_frame_next_pc(state), state.iseq, stack_map_size)
 }
@@ -122,6 +124,7 @@ pub(super) fn gen_write_jit_frame(asm: &mut Assembler, state: &FrameState, stack
     jit_frame
 }
 
+/// Prepare a leaf C call that may allocate but cannot call arbitrary Ruby methods.
 pub(super) fn gen_prepare_leaf_call_with_gc(asm: &mut Assembler, state: &FrameState) {
     // In gen_prepare_call_with_gc(), we update cfp->sp for leaf calls too.
     //
