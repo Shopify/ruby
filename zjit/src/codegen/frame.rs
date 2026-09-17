@@ -204,7 +204,7 @@ pub(super) fn gen_prepare_fallback_call(jit: &JITState, asm: &mut Assembler, fun
 /// on the native stack are known.
 pub(super) fn build_stack_map(jit: &JITState, function: &Function, state: &FrameState) -> Vec<StackMapEntry> {
     let mut stack = Vec::new();
-    let mut current_state = state.clone();
+    let mut current_state = state;
     loop {
         stack.extend(current_state.stack().rev().copied().map(|insn_id| {
             let opnd = jit.get_opnd(insn_id);
@@ -219,7 +219,7 @@ pub(super) fn build_stack_map(jit: &JITState, function: &Function, state: &Frame
             break;
         };
         stack.push(StackMapEntry::Skip(inline_frame_stack_gap(current_state.iseq)));
-        current_state = function.frame_state(caller);
+        current_state = function.frame_state_ref(caller);
     }
     stack
 }
