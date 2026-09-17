@@ -138,7 +138,9 @@ pub(super) fn gen_prepare_leaf_call_with_gc(asm: &mut Assembler, state: &FrameSt
     // We use state.without_stack() to pass stack_size=0 to gen_save_sp() because we don't write
     // VM stack slots on leaf calls, which leaves those stack slots uninitialized. ZJIT keeps
     // live objects on the C stack, so they are protected from GC properly.
-    gen_prepare_call_with_gc(asm, &state.without_stack(), true, 0);
+    let state = state.without_stack();
+    gen_prepare_call_with_gc(asm, &state, 0);
+    asm.expect_leaf_ccall(0);
 }
 
 /// Save the current SP on the CFP
@@ -235,7 +237,7 @@ pub(super) fn gen_prepare_non_leaf_call(jit: &JITState, asm: &mut Assembler, fun
         stack_size: state.stack_size().try_into().expect("stack size overflow"),
     }];
     stack_map.extend(build_stack_map(jit, function, state));
-    let jit_frame = gen_prepare_call_with_gc(asm, state, false, stack_map.len());
+    let jit_frame = gen_prepare_call_with_gc(asm, state, stack_map.len());
 
     // NOTE(alan): This store can be done once per CFP switch, but analysis is required
     //             to avoid the store in functions that make no non-leaf call.
@@ -352,17 +354,13 @@ fn entry_pc(iseq: IseqPtr, jit_entry_idx: Option<usize>) -> *const VALUE {
     unsafe { rb_iseq_pc_at_idx(iseq, entry_insn_idx) }
 }
 
-/// Prepare the CFP and native stack for a C function that may allocate objects.
-/// Use gen_prepare_non_leaf_call() if the function may raise or call arbitrary methods.
+/// Prepare the CFP and native stack before a C function call.
 ///
 /// Unlike YJIT, ZJIT does not save stack slots for GC because the backend spills
 /// all live registers onto the C stack during a CCall.
-fn gen_prepare_call_with_gc(asm: &mut Assembler, state: &FrameState, leaf: bool, stack_map_size: usize) -> *const zjit_jit_frame {
+fn gen_prepare_call_with_gc(asm: &mut Assembler, state: &FrameState, stack_map_size: usize) -> *const zjit_jit_frame {
     let jit_frame = gen_write_jit_frame(asm, state, stack_map_size);
     gen_save_sp(asm, state.stack_size());
-    if leaf {
-        asm.expect_leaf_ccall(state.stack_size());
-    }
     jit_frame
 }
 
