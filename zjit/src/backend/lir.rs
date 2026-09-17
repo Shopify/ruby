@@ -1811,9 +1811,8 @@ const _: () = assert!(
 
 impl StackMapEntry {
     /// Encode a [`StackMapEntry::BasePtr`] into its tagged VALUE form.
-    /// `stack_size` is bound by [`CompileError::IseqStackTooLarge`]
-    /// `slot_index` by the max inline iteration.
-    // TODO(alan): bounds check max inline iteration as it's user-controlled.
+    /// `stack_size` is bound by [`CompileError::IseqStackTooLarge`].
+    /// Code generation checks `slot_index` before it reserves the JIT frame slots.
     fn encode_base_ptr(slot_index: u32, stack_size: u32) -> VALUE {
         const INDEX_BITS: u32 = ZJIT_STACK_MAP_BASE_PTR_SIZE_SHIFT - ZJIT_STACK_MAP_SHIFT;
         assert!(

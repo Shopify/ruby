@@ -112,7 +112,8 @@ impl JITState {
 
     /// Byte offset from [NATIVE_BASE_PTR] to the slot holding the SP VM stack base pointer.
     fn base_ptr_slot_native_base_ptr_offset(&self) -> i32 {
-        -(i32::try_from(SIZEOF_VALUE * self.jit_frame_size).expect("base_ptr_slot_index overflow"))
+        let bytes = SIZEOF_VALUE.checked_mul(self.jit_frame_size).expect("base pointer byte offset overflow");
+        i32::try_from(bytes).expect("base pointer byte offset exceeds i32").checked_neg().expect("base pointer offset overflow")
     }
 
     /// The VALUE index a frame at `depth` uses to read the saved SP register as
@@ -120,8 +121,20 @@ impl JITState {
     /// `jit_return` and first slot past all `jit_frame` slots.
     /// Encoded into [`StackMapEntry::BasePtr`]. See [crate::backend::lir::StackState].
     fn base_ptr_slot_index(&self, depth: InlineDepth) -> u32 {
-        (self.jit_frame_size - depth).try_into().expect("base_ptr slot index overflow")
+        self.jit_frame_size.checked_sub(depth).expect("frame depth exceeds reserved slots")
+            .try_into().expect("base_ptr slot index overflow")
     }
+}
+
+fn jit_frame_size_for_depth(depth: InlineDepth) -> Result<usize, CompileError> {
+    let Some(size) = depth.checked_add(2) else {
+        return Err(CompileError::NativeStackTooLarge);
+    };
+    let byte_offset_fits = size.checked_mul(SIZEOF_VALUE).is_some_and(|bytes| i32::try_from(bytes).is_ok());
+    if size > ZJIT_STACK_MAP_BASE_PTR_INDEX_MASK as usize || !byte_offset_fits {
+        return Err(CompileError::NativeStackTooLarge);
+    }
+    Ok(size)
 }
 
 impl Assembler {
@@ -413,6 +426,7 @@ fn gen_iseq_body(cb: &mut CodeBlock, iseq: IseqPtr, mut version: IseqVersionRef,
 
 /// Compile a function
 fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, function: &Function) -> Result<(IseqCodePtrs, Vec<CodePtr>, Vec<IseqCallRef>), CompileError> {
+    let jit_frame_size = jit_frame_size_for_depth(function.inlining_depth())?;
     let (mut jit, asm) = trace_compile_phase("codegen", || {
         // Reserve one JITFrame slot per simultaneously live frame. The top-level
         // frame is depth 0, and each level of inlining adds another frame that
@@ -424,7 +438,6 @@ fn gen_function(cb: &mut CodeBlock, iseq: IseqPtr, version: IseqVersionRef, func
         //
         // One more slot below those holds the saved SP register that stack maps
         // are anchored on (see base_ptr_slot_offset()).
-        let jit_frame_size = function.inlining_depth() + 2;
         let mut jit = JITState::new(version, function.num_insns(), function.num_blocks(), jit_frame_size);
         let mut asm = Assembler::new_with_stack_slots(jit_frame_size);
 
@@ -1560,9 +1573,7 @@ fn gen_push_inline_frame(
     state: &FrameState,
     blockiseq: Option<IseqPtr>,
 ) {
-    let local_size = unsafe { get_iseq_body_local_table_size(iseq) }.to_usize();
-    let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(iseq) }.to_usize();
-    frame::gen_stack_overflow_check(jit, asm, function, state, stack_growth);
+    frame::gen_iseq_stack_overflow_check(jit, asm, function, state, iseq, 0);
 
     let prepared_frame = frame::gen_prepare_inline_frame(jit, asm, state, num_args.to_usize());
 
@@ -1637,9 +1648,7 @@ fn gen_send_iseq_direct(
     let forwarded_argc = if forwarding { args.len() } else { 0 };
     // Bake the callinfo as a GC offset since a non-packed (`vm_ci_packed_p`) callinfo is a movable imemo_callinfo.
     let forwarded_ci = Opnd::Value(unsafe { (*cd).ci }.into());
-    let local_size = unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + forwarded_argc;
-    let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(iseq) }.to_usize();
-    frame::gen_stack_overflow_check(jit, asm, function, state, stack_growth);
+    frame::gen_iseq_stack_overflow_check(jit, asm, function, state, iseq, forwarded_argc);
 
     let prepared_frame = frame::gen_prepare_iseq_method_call(jit, asm, function, state, args.len());
 
@@ -1863,9 +1872,7 @@ fn gen_invoke_block_iseq_direct(
 ) -> lir::Opnd {
     gen_incr_counter(asm, Counter::block_iseq_direct_optimized_send_count);
 
-    let local_size = unsafe { get_iseq_body_local_table_size(block_iseq) }.to_usize();
-    let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(block_iseq) }.to_usize();
-    frame::gen_stack_overflow_check(jit, asm, function, state, stack_growth);
+    frame::gen_iseq_stack_overflow_check(jit, asm, function, state, block_iseq, 0);
 
     // `captured` is the guarded `struct rb_captured_block *` (block handler with the ISEQ tag
     // masked off). The HIR builder loaded it from the LEP and guarded the tag + iseq identity.

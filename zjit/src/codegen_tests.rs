@@ -97,6 +97,12 @@ fn test_stack_map_resolves_replaced_operands() {
     });
 }
 
+#[test]
+fn test_jit_frame_size_rejects_unencodable_depth() {
+    assert_eq!(super::jit_frame_size_for_depth(0).unwrap(), 2);
+    assert!(super::jit_frame_size_for_depth(ZJIT_STACK_MAP_BASE_PTR_INDEX_MASK as usize).is_err());
+}
+
 #[cfg(feature = "runtime_checks")]
 #[test]
 fn test_cfunc_frame_preserves_caller_pc() {

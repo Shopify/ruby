@@ -84,7 +84,8 @@ pub(super) fn gen_throw(jit: &mut JITState, asm: &mut Assembler, function: &Func
 /// gen_function() reserves `inlining_depth() + 1` slots, so every live frame's
 /// depth maps to a distinct slot inside that reserved region.
 fn jit_frame_slot_offset(depth: InlineDepth) -> i32 {
-    -(SIZEOF_VALUE_I32 * (depth as i32 + 1))
+    let slots = depth.checked_add(1).expect("JITFrame depth overflow");
+    slot_offset_bytes(slots).checked_neg().expect("JITFrame offset overflow")
 }
 
 /// Compute the value to store in a frame's `cfp->jit_return` for the given
@@ -143,7 +144,7 @@ fn gen_save_sp(asm: &mut Assembler, stack_size: usize) {
     // an extra register for asm.lea(), but you'll need to manage the SP offset like YJIT does.
     gen_incr_counter(asm, Counter::vm_write_sp_count);
     asm_comment!(asm, "save SP to CFP: {}", stack_size);
-    let sp_addr = asm.lea(Opnd::mem(64, SP, stack_size as i32 * SIZEOF_VALUE_I32));
+    let sp_addr = asm.lea(Opnd::mem(64, SP, slot_offset_bytes(stack_size)));
     let cfp_sp = Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SP);
     asm.mov(cfp_sp, sp_addr);
 }
@@ -165,14 +166,15 @@ fn gen_spill_stack(jit: &JITState, asm: &mut Assembler, function: &Function, sta
     gen_incr_counter(asm, Counter::vm_write_stack_count);
     asm_comment!(asm, "spill stack");
 
-    let mut offset = stack_size as i32;
+    let mut offset = i32::try_from(stack_size).expect("VM stack offset exceeds i32");
     visit_stack_map_entries(jit, function, state, stack_size, |entry| match entry {
         StackMapEntry::Opnd(opnd) => {
-            offset -= 1;
-            asm.mov(Opnd::mem(64, SP, offset * SIZEOF_VALUE_I32), opnd);
+            offset = offset.checked_sub(1).expect("VM stack offset overflow");
+            asm.mov(Opnd::mem(64, SP, signed_slot_offset_bytes(offset)), opnd);
         }
         StackMapEntry::Skip(skip) => {
-            offset -= skip as i32;
+            let skip = i32::try_from(skip).expect("VM stack skip exceeds i32");
+            offset = offset.checked_sub(skip).expect("VM stack offset overflow");
         }
         // Only gen_prepare_non_leaf_call() prepends this, and it doesn't spill.
         StackMapEntry::BasePtr { .. } => unreachable!("stack map traversal does not emit BasePtr"),
@@ -234,7 +236,8 @@ pub(super) fn gen_prepare_cfunc_call(jit: &mut JITState, asm: &mut Assembler, fu
 
 /// Prepare a direct ISEQ method call with one consistent caller SP and stack map.
 pub(super) fn gen_prepare_iseq_method_call(jit: &JITState, asm: &mut Assembler, function: &Function, state: &FrameState, argc: usize) -> PreparedIseqFrame {
-    gen_prepare_iseq_call(jit, asm, function, state, argc + 1, argc)
+    let consumed_stack_slots = argc.checked_add(1).expect("argument count overflow");
+    gen_prepare_iseq_call(jit, asm, function, state, consumed_stack_slots, argc)
 }
 
 /// Prepare a direct ISEQ block call with one consistent caller SP and stack map.
@@ -254,7 +257,8 @@ fn gen_prepare_iseq_call(jit: &JITState, asm: &mut Assembler, function: &Functio
 
 /// Prepare the caller of an inline method without attaching a map to a nonexistent CCall.
 pub(super) fn gen_prepare_inline_frame(jit: &JITState, asm: &mut Assembler, state: &FrameState, argc: usize) -> PreparedIseqFrame {
-    let stack_size = caller_stack_size(state, argc + 1);
+    let consumed_stack_slots = argc.checked_add(1).expect("argument count overflow");
+    let stack_size = caller_stack_size(state, consumed_stack_slots);
     gen_write_jit_frame(asm, state, 0);
     gen_save_sp(asm, stack_size);
     gen_spill_locals(jit, asm, state);
@@ -322,7 +326,7 @@ pub(super) fn gen_prepare_non_leaf_call(jit: &JITState, asm: &mut Assembler, fun
     // Anchor the stack map on a private copy of SP rather than on cfp->sp. The callee is free to
     // use the stack map after pushing through and moving cfp->sp (e.g. rb_funcall() + a raise in
     // vm_callee_setup_arg()).
-    let mut stack_map = Vec::with_capacity(state.stack_size() + 1);
+    let mut stack_map = Vec::with_capacity(state.stack_size().checked_add(1).expect("stack map size overflow"));
     stack_map.push(StackMapEntry::BasePtr {
         slot_index: jit.base_ptr_slot_index(state.depth),
         stack_size: state.stack_size().try_into().expect("stack size overflow"),
@@ -408,7 +412,8 @@ pub(super) fn gen_push_iseq_frame(asm: &mut Assembler, prepared: PreparedIseqFra
 pub(super) fn gen_push_inline_frame(asm: &mut Assembler, prepared: PreparedIseqFrame, state: &FrameState, frame: IseqFrame) {
     let iseq = frame.iseq;
     let sp_offset = gen_push_frame(asm, prepared.stack_slots, state, frame.into());
-    gen_enter_inline_frame(asm, iseq, state.depth + 1, sp_offset);
+    let depth = state.depth.checked_add(1).expect("inline depth overflow");
+    gen_enter_inline_frame(asm, iseq, depth, sp_offset);
 }
 
 /// Initialize frame metadata and return the callee's SP offset in bytes.
@@ -420,22 +425,26 @@ fn gen_push_frame(asm: &mut Assembler, stack_slots: usize, state: &FrameState, f
     asm_comment!(asm, "push cme, specval, frame type");
     // ep[-2]: cref of cme
     let local_size = if let Some(iseq) = frame.iseq {
-        unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + frame.extra_local_slots
+        unsafe { get_iseq_body_local_table_size(iseq) }.to_usize()
+            .checked_add(frame.extra_local_slots)
+            .expect("local size overflow")
     } else {
         0
     };
     let sp_offset = callee_sp_offset(state, local_size, stack_slots);
-    let ep_offset = (sp_offset / SIZEOF_VALUE) as i32 - 1;
+    let ep_offset = i32::try_from(sp_offset / SIZEOF_VALUE).expect("EP offset exceeds i32")
+        .checked_sub(1).expect("EP offset overflow");
     // ep[-2]: CME
-    asm.store(Opnd::mem(64, SP, (ep_offset - 2) * SIZEOF_VALUE_I32), VALUE::from(frame.cme).into());
+    asm.store(Opnd::mem(64, SP, signed_slot_offset_bytes(ep_offset.checked_sub(2).expect("CME offset overflow"))), VALUE::from(frame.cme).into());
     // ep[-1]: specval
-    asm.store(Opnd::mem(64, SP, (ep_offset - 1) * SIZEOF_VALUE_I32), frame.specval);
+    asm.store(Opnd::mem(64, SP, signed_slot_offset_bytes(ep_offset.checked_sub(1).expect("specval offset overflow"))), frame.specval);
     // ep[0]: ENV_FLAGS
-    asm.store(Opnd::mem(64, SP, ep_offset * SIZEOF_VALUE_I32), frame.frame_type.into());
+    asm.store(Opnd::mem(64, SP, signed_slot_offset_bytes(ep_offset)), frame.frame_type.into());
 
     // Write to the callee CFP
     fn cfp_opnd(offset: i32) -> Opnd {
-        Opnd::mem(64, CFP, offset - (RUBY_SIZEOF_CONTROL_FRAME as i32))
+        let frame_size = i32::try_from(RUBY_SIZEOF_CONTROL_FRAME).expect("control frame size exceeds i32");
+        Opnd::mem(64, CFP, offset.checked_sub(frame_size).expect("control frame offset overflow"))
     }
 
     asm_comment!(asm, "push callee control frame");
@@ -453,7 +462,8 @@ fn gen_push_frame(asm: &mut Assembler, stack_slots: usize, state: &FrameState, f
         if let (None, Some(pc)) = (frame.iseq, PC_POISON) {
             asm.mov(cfp_opnd(RUBY_OFFSET_CFP_PC), Opnd::const_ptr(pc));
         }
-        let new_sp = asm.lea(Opnd::mem(64, SP, (ep_offset + 1) * SIZEOF_VALUE_I32));
+        let sp_offset = ep_offset.checked_add(1).expect("C frame SP offset overflow");
+        let new_sp = asm.lea(Opnd::mem(64, SP, signed_slot_offset_bytes(sp_offset)));
         asm.mov(cfp_opnd(RUBY_OFFSET_CFP_SP), new_sp);
         // block_code must be written explicitly because the interpreter reads
         // captured->code.ifunc directly from cfp->block_code (not through JITFrame).
@@ -468,7 +478,7 @@ fn gen_push_frame(asm: &mut Assembler, stack_slots: usize, state: &FrameState, f
     }
 
     asm.mov(cfp_opnd(RUBY_OFFSET_CFP_SELF), frame.recv);
-    let ep = asm.lea(Opnd::mem(64, SP, ep_offset * SIZEOF_VALUE_I32));
+    let ep = asm.lea(Opnd::mem(64, SP, signed_slot_offset_bytes(ep_offset)));
     asm.mov(cfp_opnd(RUBY_OFFSET_CFP_EP), ep);
     sp_offset
 }
@@ -507,7 +517,9 @@ fn gen_enter_inline_frame(asm: &mut Assembler, iseq: IseqPtr, depth: InlineDepth
     asm_comment!(asm, "install entry JITFrame for inlined callee");
     asm.mov(Opnd::mem(64, NATIVE_BASE_PTR, jit_frame_slot_offset(depth)), Opnd::const_ptr(jit_frame));
     let jit_return = cfp_jit_return_for_depth(asm, depth);
-    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN - RUBY_SIZEOF_CONTROL_FRAME as i32), jit_return);
+    let control_frame_size = i32::try_from(RUBY_SIZEOF_CONTROL_FRAME).expect("control frame size exceeds i32");
+    let jit_return_offset = RUBY_OFFSET_CFP_JIT_RETURN.checked_sub(control_frame_size).expect("jit_return offset overflow");
+    asm.mov(Opnd::mem(64, CFP, jit_return_offset), jit_return);
 
     asm_comment!(asm, "switch to inlined callee SP");
     let new_sp = asm.add(SP, sp_offset.into());
@@ -554,18 +566,29 @@ pub(super) fn gen_pop_inline_frame(
 
     asm_comment!(asm, "restore caller CFP after inline");
     asm.add_into(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
-    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP as i32), CFP);
+    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+}
+
+/// Check the stack space for an ISEQ callee and its additional local slots.
+pub(super) fn gen_iseq_stack_overflow_check(jit: &mut JITState, asm: &mut Assembler, function: &Function, state: &FrameState, iseq: IseqPtr, extra_local_slots: usize) {
+    let local_size = unsafe { get_iseq_body_local_table_size(iseq) }.to_usize()
+        .checked_add(extra_local_slots).expect("local size overflow");
+    let stack_growth = state.stack_size()
+        .checked_add(local_size)
+        .and_then(|size| size.checked_add(unsafe { crate::cruby::get_iseq_body_stack_max(iseq) }.to_usize()))
+        .expect("ISEQ stack growth overflow");
+    gen_stack_overflow_check(jit, asm, function, state, stack_growth);
 }
 
 /// Stack overflow check: fails if CFP<=SP at any point in the callee.
-pub(super) fn gen_stack_overflow_check(jit: &mut JITState, asm: &mut Assembler, function: &Function, state: &FrameState, stack_growth: usize) {
+fn gen_stack_overflow_check(jit: &mut JITState, asm: &mut Assembler, function: &Function, state: &FrameState, stack_growth: usize) {
     asm_comment!(asm, "stack overflow check");
     // vm_push_frame() checks it against a decremented cfp, and CHECK_VM_STACK_OVERFLOW0
     // adds to the margin another control frame with `&bounds[1]`.
     const { assert!(RUBY_SIZEOF_CONTROL_FRAME % SIZEOF_VALUE == 0, "sizeof(rb_control_frame_t) is a multiple of sizeof(VALUE)"); }
     let cfp_growth = 2 * (RUBY_SIZEOF_CONTROL_FRAME / SIZEOF_VALUE);
-    let peak_offset = (cfp_growth + stack_growth) * SIZEOF_VALUE;
-    let stack_limit = asm.lea(Opnd::mem(64, SP, peak_offset as i32));
+    let peak_slots = cfp_growth.checked_add(stack_growth).expect("stack growth overflow");
+    let stack_limit = asm.lea(Opnd::mem(64, SP, slot_offset_bytes(peak_slots)));
     asm.cmp(CFP, stack_limit);
     asm.jbe(jit, side_exit(jit, function, state, StackOverflow));
 }
@@ -592,7 +615,10 @@ fn inline_frame_stack_gap(iseq: IseqPtr) -> usize {
     // The extra slot is for the callee's receiver below its local table.
     // We currently never map out the stack for `invokeblock`, which doesn't
     // put a receiver on cfp->sp stack.
-    1 + unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + VM_ENV_DATA_SIZE.to_usize()
+    unsafe { get_iseq_body_local_table_size(iseq) }.to_usize()
+        .checked_add(VM_ENV_DATA_SIZE.to_usize())
+        .and_then(|size| size.checked_add(1))
+        .expect("inline frame stack gap overflow")
 }
 
 fn gen_switch_to_callee(asm: &mut Assembler, sp_offset: usize) {
@@ -610,5 +636,18 @@ fn caller_stack_size(state: &FrameState, consumed_stack_slots: usize) -> usize {
 }
 
 fn callee_sp_offset(state: &FrameState, local_size: usize, stack_slots: usize) -> usize {
-    (caller_stack_size(state, stack_slots) + local_size + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE
+    caller_stack_size(state, stack_slots)
+        .checked_add(local_size)
+        .and_then(|slots| slots.checked_add(VM_ENV_DATA_SIZE.to_usize()))
+        .and_then(|slots| slots.checked_mul(SIZEOF_VALUE))
+        .expect("callee SP offset overflow")
+}
+
+fn slot_offset_bytes(slots: usize) -> i32 {
+    let bytes = slots.checked_mul(SIZEOF_VALUE).expect("frame byte offset overflow");
+    i32::try_from(bytes).expect("frame byte offset exceeds i32")
+}
+
+fn signed_slot_offset_bytes(slots: i32) -> i32 {
+    slots.checked_mul(SIZEOF_VALUE_I32).expect("frame byte offset exceeds i32")
 }
