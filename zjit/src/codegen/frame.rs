@@ -82,7 +82,7 @@ pub(super) fn gen_throw(jit: &mut JITState, asm: &mut Assembler, function: &Func
 /// `[NATIVE_BASE_PTR - 8]`; each deeper inlined frame gets the next slot below.
 /// gen_function() reserves `inlining_depth() + 1` slots, so every live frame's
 /// depth maps to a distinct slot inside that reserved region.
-pub(super) fn jit_frame_slot_offset(depth: InlineDepth) -> i32 {
+fn jit_frame_slot_offset(depth: InlineDepth) -> i32 {
     -(SIZEOF_VALUE_I32 * (depth as i32 + 1))
 }
 
@@ -92,7 +92,7 @@ pub(super) fn jit_frame_slot_offset(depth: InlineDepth) -> i32 {
 /// the frame's storage slot (see jit_frame_slot_offset()). Depth 0 lands exactly
 /// on NATIVE_BASE_PTR, matching the non-inlined protocol; deeper frames need an
 /// address computed relative to it.
-pub(super) fn cfp_jit_return_for_depth(asm: &mut Assembler, depth: InlineDepth) -> Opnd {
+fn cfp_jit_return_for_depth(asm: &mut Assembler, depth: InlineDepth) -> Opnd {
     if depth == 0 {
         NATIVE_BASE_PTR
     } else {
@@ -329,6 +329,74 @@ pub(super) fn gen_push_frame(asm: &mut Assembler, argc: usize, state: &FrameStat
     asm.mov(cfp_opnd(RUBY_OFFSET_CFP_EP), ep);
 }
 
+/// Switch registers to a direct ISEQ callee, but leave ec->cfp on the caller.
+/// gen_entry_point() publishes the callee only after its JITFrame and jit_return are valid.
+pub(super) fn gen_enter_iseq_frame(asm: &mut Assembler, sp_offset: usize) {
+    gen_switch_to_callee(asm, sp_offset);
+}
+
+/// Enter a C frame whose SP, block_code, and C-frame sentinel are already initialized.
+pub(super) fn gen_enter_cfunc_frame(asm: &mut Assembler, sp_offset: usize) {
+    gen_switch_to_callee(asm, sp_offset);
+    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+}
+
+/// Install an inline callee's JITFrame before making its control frame visible.
+pub(super) fn gen_enter_inline_frame(asm: &mut Assembler, iseq: IseqPtr, depth: InlineDepth, sp_offset: usize) {
+    // Each inline depth has its own native slot. Initialize that slot before jit_return,
+    // then publish ec->cfp last so a signal profiler cannot read incomplete metadata.
+    // The first GC-capable call or side exit in the callee will initialize cfp->sp.
+    let pc = unsafe { rb_iseq_pc_at_idx(iseq, 0) };
+    let jit_frame = JITFrame::new_iseq(pc, iseq, 0);
+    asm_comment!(asm, "install entry JITFrame for inlined callee");
+    asm.mov(Opnd::mem(64, NATIVE_BASE_PTR, jit_frame_slot_offset(depth)), Opnd::const_ptr(jit_frame));
+    let jit_return = cfp_jit_return_for_depth(asm, depth);
+    asm.mov(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_JIT_RETURN - RUBY_SIZEOF_CONTROL_FRAME as i32), jit_return);
+
+    asm_comment!(asm, "switch to inlined callee SP");
+    let new_sp = asm.add(SP, sp_offset.into());
+    asm.mov(SP, new_sp);
+
+    asm_comment!(asm, "switch to inlined callee CFP");
+    let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
+    asm.mov(CFP, new_cfp);
+    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+}
+
+/// Restore the caller's control frame after a C call.
+pub(super) fn gen_pop_cfunc_frame(asm: &mut Assembler, sp_offset: usize) {
+    asm_comment!(asm, "pop C frame");
+    let new_cfp = asm.add(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
+    asm.mov(CFP, new_cfp);
+    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+    gen_restore_sp(asm, sp_offset);
+}
+
+/// Restore the caller's SP after a call that switched to a callee frame.
+pub(super) fn gen_restore_sp(asm: &mut Assembler, sp_offset: usize) {
+    asm_comment!(asm, "restore SP register for the caller");
+    let new_sp = asm.sub(SP, sp_offset.into());
+    asm.mov(SP, new_sp);
+}
+
+/// Pop the interpreter frame for an inlined callee, restoring the caller's SP and CFP.
+pub(super) fn gen_pop_inline_frame(
+    asm: &mut Assembler,
+    iseq: IseqPtr,
+    argc: usize,
+    state: &FrameState,
+) {
+    let local_size = unsafe { get_iseq_body_local_table_size(iseq) }.to_usize();
+    let sp_offset = (state.stack().len() + local_size - argc + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
+
+    asm_comment!(asm, "restore caller SP after inline");
+    asm.sub_into(SP, sp_offset.into());
+
+    asm_comment!(asm, "restore caller CFP after inline");
+    asm.add_into(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
+    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP as i32), CFP);
+}
+
 /// Stack overflow check: fails if CFP<=SP at any point in the callee.
 pub(super) fn gen_stack_overflow_check(jit: &mut JITState, asm: &mut Assembler, function: &Function, state: &FrameState, stack_growth: usize) {
     asm_comment!(asm, "stack overflow check");
@@ -375,4 +443,14 @@ fn inline_frame_stack_gap(iseq: IseqPtr) -> usize {
     // We currently never map out the stack for `invokeblock`, which doesn't
     // put a receiver on cfp->sp stack.
     1 + unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + VM_ENV_DATA_SIZE.to_usize()
+}
+
+fn gen_switch_to_callee(asm: &mut Assembler, sp_offset: usize) {
+    asm_comment!(asm, "switch to new SP register");
+    let new_sp = asm.add(SP, sp_offset.into());
+    asm.mov(SP, new_sp);
+
+    asm_comment!(asm, "switch to new CFP");
+    let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
+    asm.mov(CFP, new_cfp);
 }

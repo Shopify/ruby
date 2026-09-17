@@ -147,6 +147,41 @@ fn test_cfunc_frame_preserves_caller_pc() {
 }
 
 #[test]
+fn test_iseq_frame_stays_unpublished_until_entry() {
+    with_rubyvm(|| {
+        use crate::backend::lir::{C_RET_OPND, CFP, EC, Opnd, SP};
+
+        let mut frames: [rb_control_frame_t; 2] = unsafe { std::mem::zeroed() };
+        let caller = &mut frames[1] as CfpPtr;
+        let callee = &mut frames[0] as CfpPtr;
+        const CFP_SLOT: usize = RUBY_OFFSET_EC_CFP as usize / std::mem::size_of::<CfpPtr>();
+        let mut ec_slots = [std::ptr::null_mut(); CFP_SLOT + 1];
+        ec_slots[CFP_SLOT] = caller;
+        let ec = ec_slots.as_mut_ptr().cast();
+        let mut stack = [Qnil; 8];
+
+        let mut asm = Assembler::new();
+        asm.new_block_without_id("test");
+        asm.frame_setup(&[CFP, EC, SP]);
+        asm.mov(CFP, Opnd::const_ptr(caller));
+        asm.mov(EC, Opnd::const_ptr(ec));
+        asm.mov(SP, Opnd::const_ptr(stack.as_mut_ptr()));
+        super::frame::gen_enter_iseq_frame(&mut asm, SIZEOF_VALUE);
+        asm.load_into(C_RET_OPND, CFP);
+        asm.frame_teardown(&[CFP, EC, SP]);
+        asm.cret(C_RET_OPND);
+
+        let cb = crate::state::ZJITState::get_code_block();
+        let (code, _) = asm.compile(cb).unwrap();
+        cb.mark_all_executable();
+        let enter_frame: unsafe extern "C" fn() -> CfpPtr = unsafe { std::mem::transmute(code.raw_ptr(cb)) };
+        assert_eq!(unsafe { enter_frame() }, callee);
+        // A profiler still sees the initialized caller until the callee entry publishes its JITFrame.
+        assert_eq!(unsafe { get_ec_cfp(ec) }, caller);
+    });
+}
+
+#[test]
 fn test_breakpoint_hir_codegen() {
     rb_zjit_prepare_options();
 
