@@ -210,7 +210,7 @@ pub(super) fn build_stack_map(jit: &JITState, function: &Function, state: &Frame
     let mut current_state = state;
     loop {
         stack.extend(current_state.stack().rev().copied().map(|insn_id| {
-            let opnd = jit.get_opnd(insn_id);
+            let opnd = jit.get_opnd(function.find_id(insn_id));
             assert!(
                 matches!(opnd, Opnd::Value(_) | Opnd::VReg { .. }),
                 "FrameState should only reference Opnd::Value or Opnd::VReg, but got: {opnd:?}",

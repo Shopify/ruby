@@ -66,6 +66,38 @@ fn assert_inlines_allowing_exits(program: &str) -> String {
 }
 
 #[test]
+fn test_stack_map_resolves_replaced_operands() {
+    with_rubyvm(|| {
+        use crate::backend::lir::{Opnd, StackMapEntry};
+
+        let iseq = compile_to_iseq("[1 + 2, 3 + 4]");
+        let mut function = iseq_to_hir(iseq).unwrap();
+        let state = function.reverse_post_order().into_iter().flat_map(|block_id| {
+            function.block(block_id).insns().filter_map(|&insn_id| {
+                match function.find(insn_id) {
+                    Insn::Snapshot { state } if state.stack_size() == 2 => Some(*state),
+                    _ => None,
+                }
+            })
+        }).last().expect("array construction has two live stack values");
+
+        function.optimize();
+        let mut jit = JITState::new(IseqVersion::new(iseq), function.num_insns(), function.num_blocks(), 2);
+        for &insn_id in state.stack() {
+            let Insn::Const { val: crate::hir::Const::Value(value) } = function.find(insn_id) else {
+                panic!("arithmetic should fold to a Ruby value");
+            };
+            jit.opnds[function.find_id(insn_id)] = Some(Opnd::Value(value));
+        }
+
+        assert_eq!(super::frame::build_stack_map(&jit, &function, &state), vec![
+            StackMapEntry::Opnd(Opnd::Value(VALUE::fixnum_from_usize(7))),
+            StackMapEntry::Opnd(Opnd::Value(VALUE::fixnum_from_usize(3))),
+        ]);
+    });
+}
+
+#[test]
 fn test_breakpoint_hir_codegen() {
     rb_zjit_prepare_options();
 
