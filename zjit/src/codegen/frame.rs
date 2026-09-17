@@ -105,12 +105,12 @@ pub(super) fn jit_frame_for_state(state: &FrameState, stack_map_size: usize) -> 
     JITFrame::new_iseq(jit_frame_next_pc(state), state.iseq, stack_map_size)
 }
 
-/// Save only the PC to CFP. Use this when you need to call gen_save_sp()
-/// immediately after with a custom stack size (e.g., gen_ccall_with_frame
-/// adjusts SP to exclude receiver and arguments).
+/// Write the current JITFrame to native-stack storage.
+/// Use this before gen_save_sp() when the caller needs a custom stack size.
+/// The caller may adjust SP to exclude the receiver and arguments.
 pub(super) fn gen_write_jit_frame(asm: &mut Assembler, state: &FrameState, stack_map_size: usize) -> *const zjit_jit_frame {
     gen_incr_counter(asm, Counter::vm_write_jit_frame_count);
-    asm_comment!(asm, "save JITFrame to CFP");
+    asm_comment!(asm, "save JITFrame to native stack");
     let jit_frame = jit_frame_for_state(state, stack_map_size);
     asm.mov(Opnd::mem(64, NATIVE_BASE_PTR, jit_frame_slot_offset(state.depth)), Opnd::const_ptr(jit_frame));
 
@@ -250,7 +250,7 @@ pub(super) fn gen_prepare_non_leaf_call(jit: &JITState, asm: &mut Assembler, fun
     gen_spill_locals(jit, asm, state);
 }
 
-/// Frame metadata written by gen_push_frame()
+/// Frame metadata for gen_push_frame().
 pub(super) struct ControlFrame {
     pub(super) recv: Opnd,
     pub(super) iseq: Option<IseqPtr>,
@@ -267,7 +267,7 @@ pub(super) struct ControlFrame {
     pub(super) forwarded_argc: Option<usize>,
 }
 
-/// Compile an interpreter frame
+/// Compile a control-frame push for an ISEQ or C frame.
 pub(super) fn gen_push_frame(asm: &mut Assembler, argc: usize, state: &FrameState, frame: ControlFrame) {
     // Locals are written by the callee frame on side-exits or non-leaf calls
 
@@ -352,14 +352,11 @@ fn entry_pc(iseq: IseqPtr, jit_entry_idx: Option<usize>) -> *const VALUE {
     unsafe { rb_iseq_pc_at_idx(iseq, entry_insn_idx) }
 }
 
-/// Save the current PC on the CFP as a preparation for calling a C function
-/// that may allocate objects and trigger GC. Use gen_prepare_non_leaf_call()
-/// if it may raise exceptions or call arbitrary methods.
+/// Prepare the CFP and native stack for a C function that may allocate objects.
+/// Use gen_prepare_non_leaf_call() if the function may raise or call arbitrary methods.
 ///
-/// Unlike YJIT, we don't need to save the stack slots to protect them from GC
-/// because the backend spills all live registers onto the C stack on CCall.
-/// However, to avoid marking uninitialized stack slots, this also updates SP,
-/// which may have cfp->sp for a past frame or a past non-leaf call.
+/// Unlike YJIT, ZJIT does not save stack slots for GC because the backend spills
+/// all live registers onto the C stack during a CCall.
 fn gen_prepare_call_with_gc(asm: &mut Assembler, state: &FrameState, leaf: bool, stack_map_size: usize) -> *const zjit_jit_frame {
     let jit_frame = gen_write_jit_frame(asm, state, stack_map_size);
     gen_save_sp(asm, state.stack_size());
