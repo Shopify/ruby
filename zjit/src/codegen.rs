@@ -1049,7 +1049,7 @@ fn gen_ccall_with_frame(
 ) -> lir::Opnd {
     gen_incr_counter(asm, Counter::non_variadic_cfunc_optimized_send_count);
     let args_with_recv_len = args.len() + 1;
-    frame::gen_prepare_cfunc_call(jit, asm, function, state, args_with_recv_len);
+    let prepared_frame = frame::gen_prepare_cfunc_call(jit, asm, function, state, args_with_recv_len);
 
     let block_handler_specval = if let Some(BlockHandler::BlockIseq(block_iseq)) = block {
         // Change cfp->block_code in the current frame. See vm_caller_setup_arg_block().
@@ -1062,14 +1062,14 @@ fn gen_ccall_with_frame(
         VM_BLOCK_HANDLER_NONE.into()
     };
 
-    let sp_offset = frame::gen_push_cfunc_frame(asm, args_with_recv_len, state, recv, cme, block_handler_specval);
+    let entered_frame = frame::gen_push_cfunc_frame(asm, prepared_frame, state, recv, cme, block_handler_specval);
 
     let mut cfunc_args = vec![recv];
     cfunc_args.extend(args);
     asm.count_call_to_with(|| qualified_method_name(unsafe { (*cme).owner }, name));
     let result = asm.ccall(cfunc, cfunc_args);
 
-    frame::gen_pop_cfunc_frame(asm, sp_offset);
+    frame::gen_pop_cfunc_frame(asm, entered_frame);
 
     result
 }
@@ -1109,7 +1109,7 @@ fn gen_ccall_variadic(
     gen_incr_counter(asm, Counter::variadic_cfunc_optimized_send_count);
     let args_with_recv_len = args.len() + 1;
 
-    frame::gen_prepare_cfunc_call(jit, asm, function, state, args_with_recv_len);
+    let prepared_frame = frame::gen_prepare_cfunc_call(jit, asm, function, state, args_with_recv_len);
 
     let block_handler_specval = if let Some(BlockHandler::BlockIseq(blockiseq)) = block {
         gen_block_handler_specval(asm, blockiseq)
@@ -1117,13 +1117,13 @@ fn gen_ccall_variadic(
         VM_BLOCK_HANDLER_NONE.into()
     };
 
-    let sp_offset = frame::gen_push_cfunc_frame(asm, args_with_recv_len, state, recv, cme, block_handler_specval);
+    let entered_frame = frame::gen_push_cfunc_frame(asm, prepared_frame, state, recv, cme, block_handler_specval);
 
     let argv_ptr = gen_push_opnds(jit, asm, &args);
     asm.count_call_to_with(|| qualified_method_name(unsafe { (*cme).owner }, name));
     let result = asm.ccall(cfunc, vec![args.len().into(), argv_ptr, recv]);
 
-    frame::gen_pop_cfunc_frame(asm, sp_offset);
+    frame::gen_pop_cfunc_frame(asm, entered_frame);
 
     result
 }
@@ -1564,7 +1564,7 @@ fn gen_push_inline_frame(
     let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(iseq) }.to_usize();
     frame::gen_stack_overflow_check(jit, asm, function, state, stack_growth);
 
-    frame::gen_prepare_inline_frame(jit, asm, state, num_args.to_usize() + 1);
+    let prepared_frame = frame::gen_prepare_inline_frame(jit, asm, state, num_args.to_usize());
 
     // This mirrors vm_caller_setup_arg_block() for the `blockiseq != NULL` case.
     // The HIR specialization guards ensure we will only reach here for literal blocks,
@@ -1599,7 +1599,7 @@ fn gen_push_inline_frame(
     // (The non-inlined `gen_send_iseq_direct` path still emits its own store
     // because the callee's separate JIT entry reads it from memory.)
 
-    frame::gen_push_inline_frame(asm, num_args.to_usize(), state, frame::ControlFrame {
+    frame::gen_push_inline_frame(asm, prepared_frame, state, frame::ControlFrame {
         recv,
         iseq: Some(iseq),
         cme,
@@ -1642,7 +1642,7 @@ fn gen_send_iseq_direct(
     let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(iseq) }.to_usize();
     frame::gen_stack_overflow_check(jit, asm, function, state, stack_growth);
 
-    frame::gen_prepare_iseq_call(jit, asm, function, state, args.len() + 1);
+    let prepared_frame = frame::gen_prepare_iseq_method_call(jit, asm, function, state, args.len());
 
     // This mirrors vm_caller_setup_arg_block() in for the `blockiseq != NULL` case.
     // The HIR specialization guards ensure we will only reach here for literal blocks,
@@ -1669,7 +1669,7 @@ fn gen_send_iseq_direct(
 
     // Set up the new frame
     // TODO: Lazily materialize caller frames on side exits or when needed
-    let sp_offset = frame::gen_push_iseq_frame(asm, args.len(), state, frame::ControlFrame {
+    let pending_frame = frame::gen_push_iseq_frame(asm, prepared_frame, state, frame::ControlFrame {
         recv,
         iseq: Some(iseq),
         cme,
@@ -1707,7 +1707,7 @@ fn gen_send_iseq_direct(
         // the callee will spill the callinfo passed as part of `c_args` into the `...` local.
     }
 
-    frame::gen_enter_iseq_frame(asm, sp_offset);
+    let entered_frame = frame::gen_enter_iseq_frame(asm, pending_frame);
 
     let params = unsafe { iseq.params() };
 
@@ -1756,7 +1756,7 @@ fn gen_send_iseq_direct(
     // Restore the C stack pointer on exit
     asm.je(jit, ZJITState::get_exit_trampoline().into());
 
-    frame::gen_restore_sp(asm, sp_offset);
+    frame::gen_restore_iseq_frame(asm, entered_frame);
 
     ret
 }
@@ -1878,9 +1878,9 @@ fn gen_invoke_block_iseq_direct(
     // specval = VM_GUARDED_PREV_EP(captured->ep) = captured->ep | 0x01
     let specval = asm.or(captured_ep, Opnd::Imm(0x1));
 
-    frame::gen_prepare_iseq_call(jit, asm, function, state, args.len());
+    let prepared_frame = frame::gen_prepare_iseq_block_call(jit, asm, function, state, args.len());
 
-    let sp_offset = frame::gen_push_iseq_frame(asm, args.len(), state, frame::ControlFrame {
+    let pending_frame = frame::gen_push_iseq_frame(asm, prepared_frame, state, frame::ControlFrame {
         recv: captured_self,
         iseq: Some(block_iseq),
         cme: std::ptr::null(),
@@ -1890,7 +1890,7 @@ fn gen_invoke_block_iseq_direct(
         forwarded_argc: None, // `...` is not allowed in block arguments
     });
 
-    frame::gen_enter_iseq_frame(asm, sp_offset);
+    let entered_frame = frame::gen_enter_iseq_frame(asm, pending_frame);
 
     // JIT-to-JIT convention: self as c_args[0], then positional args. The block is
     // gated to simple + lead-only + exact arity, so there are no optionals/kw/block.
@@ -1908,7 +1908,7 @@ fn gen_invoke_block_iseq_direct(
     asm.cmp(ret, Qundef.into());
     asm.je(jit, ZJITState::get_exit_trampoline().into());
 
-    frame::gen_restore_sp(asm, sp_offset);
+    frame::gen_restore_iseq_frame(asm, entered_frame);
 
     ret
 }

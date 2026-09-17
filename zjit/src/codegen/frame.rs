@@ -195,34 +195,70 @@ fn gen_prepare_fallback_call_with_stack_size(jit: &JITState, asm: &mut Assembler
     gen_spill_stack(jit, asm, function, state, stack_size);
 }
 
+/// A C frame whose caller state is ready for the frame push.
+pub(super) struct PreparedCfuncFrame {
+    stack_slots: usize,
+}
+
+/// An ISEQ frame whose caller state is ready for the frame push.
+pub(super) struct PreparedIseqFrame {
+    stack_slots: usize,
+}
+
+/// An initialized ISEQ frame that is not visible through ec->cfp yet.
+pub(super) struct PendingIseqFrame {
+    sp_offset: usize,
+}
+
+/// An active C frame that must restore the caller CFP and SP.
+pub(super) struct EnteredCfuncFrame {
+    sp_offset: usize,
+}
+
+/// An active direct ISEQ frame whose callee restores the caller CFP.
+pub(super) struct EnteredIseqFrame {
+    sp_offset: usize,
+}
+
 /// Prepare a C method call. consumed_stack_slots includes the receiver and all arguments.
 /// Publish the caller's remaining stack before spilling the receiver and arguments for the C callee.
-pub(super) fn gen_prepare_cfunc_call(jit: &mut JITState, asm: &mut Assembler, function: &Function, state: &FrameState, consumed_stack_slots: usize) {
+pub(super) fn gen_prepare_cfunc_call(jit: &mut JITState, asm: &mut Assembler, function: &Function, state: &FrameState, consumed_stack_slots: usize) -> PreparedCfuncFrame {
     gen_stack_overflow_check(jit, asm, function, state, state.stack_size());
     let stack_size = caller_stack_size(state, consumed_stack_slots);
     gen_write_jit_frame(asm, state, 0);
     gen_save_sp(asm, stack_size);
     gen_spill_stack(jit, asm, function, state, state.stack_size());
     gen_spill_locals(jit, asm, state);
+    PreparedCfuncFrame { stack_slots: consumed_stack_slots }
 }
 
-/// Prepare a direct ISEQ call with one consistent caller SP and stack map.
-/// Method calls consume receiver plus arguments; block calls consume only arguments.
-pub(super) fn gen_prepare_iseq_call(jit: &JITState, asm: &mut Assembler, function: &Function, state: &FrameState, consumed_stack_slots: usize) {
+/// Prepare a direct ISEQ method call with one consistent caller SP and stack map.
+pub(super) fn gen_prepare_iseq_method_call(jit: &JITState, asm: &mut Assembler, function: &Function, state: &FrameState, argc: usize) -> PreparedIseqFrame {
+    gen_prepare_iseq_call(jit, asm, function, state, argc + 1, argc)
+}
+
+/// Prepare a direct ISEQ block call with one consistent caller SP and stack map.
+pub(super) fn gen_prepare_iseq_block_call(jit: &JITState, asm: &mut Assembler, function: &Function, state: &FrameState, argc: usize) -> PreparedIseqFrame {
+    gen_prepare_iseq_call(jit, asm, function, state, argc, argc)
+}
+
+fn gen_prepare_iseq_call(jit: &JITState, asm: &mut Assembler, function: &Function, state: &FrameState, consumed_stack_slots: usize, callee_stack_slots: usize) -> PreparedIseqFrame {
     let stack_size = caller_stack_size(state, consumed_stack_slots);
     let stack_map = build_stack_map_with_stack_size(jit, function, state, stack_size);
     let jit_frame = gen_write_jit_frame(asm, state, stack_map.len());
     gen_save_sp(asm, stack_size);
     gen_spill_locals(jit, asm, state);
     asm.stack_map(stack_map, jit_frame, state.depth);
+    PreparedIseqFrame { stack_slots: callee_stack_slots }
 }
 
 /// Prepare the caller of an inline method without attaching a map to a nonexistent CCall.
-pub(super) fn gen_prepare_inline_frame(jit: &JITState, asm: &mut Assembler, state: &FrameState, consumed_stack_slots: usize) {
-    let stack_size = caller_stack_size(state, consumed_stack_slots);
+pub(super) fn gen_prepare_inline_frame(jit: &JITState, asm: &mut Assembler, state: &FrameState, argc: usize) -> PreparedIseqFrame {
+    let stack_size = caller_stack_size(state, argc + 1);
     gen_write_jit_frame(asm, state, 0);
     gen_save_sp(asm, stack_size);
     gen_spill_locals(jit, asm, state);
+    PreparedIseqFrame { stack_slots: argc }
 }
 
 /// Build entries for Ruby stack values that need materialization. The actual
@@ -307,9 +343,9 @@ pub(super) struct ControlFrame {
     pub(super) forwarded_argc: Option<usize>,
 }
 
-/// Initialize and enter a C frame after gen_prepare_cfunc_call(). Return the SP offset for its pop.
-pub(super) fn gen_push_cfunc_frame(asm: &mut Assembler, consumed_stack_slots: usize, state: &FrameState, recv: Opnd, cme: *const rb_callable_method_entry_t, specval: Opnd) -> usize {
-    let sp_offset = gen_push_frame(asm, consumed_stack_slots, state, ControlFrame {
+/// Initialize and enter a C frame after gen_prepare_cfunc_call().
+pub(super) fn gen_push_cfunc_frame(asm: &mut Assembler, prepared: PreparedCfuncFrame, state: &FrameState, recv: Opnd, cme: *const rb_callable_method_entry_t, specval: Opnd) -> EnteredCfuncFrame {
+    let sp_offset = gen_push_frame(asm, prepared.stack_slots, state, ControlFrame {
         recv,
         iseq: None,
         cme,
@@ -318,21 +354,20 @@ pub(super) fn gen_push_cfunc_frame(asm: &mut Assembler, consumed_stack_slots: us
         write_block_code: false,
         forwarded_argc: None,
     });
-    gen_enter_cfunc_frame(asm, sp_offset);
-    sp_offset
+    gen_enter_cfunc_frame(asm, sp_offset)
 }
 
 /// Initialize an ISEQ frame, but keep caller registers active for keyword and forwarding stores.
-/// argc excludes the receiver. The receiver, when present, stays below the callee's locals.
-pub(super) fn gen_push_iseq_frame(asm: &mut Assembler, argc: usize, state: &FrameState, frame: ControlFrame) -> usize {
+pub(super) fn gen_push_iseq_frame(asm: &mut Assembler, prepared: PreparedIseqFrame, state: &FrameState, frame: ControlFrame) -> PendingIseqFrame {
     assert!(frame.iseq.is_some());
-    gen_push_frame(asm, argc, state, frame)
+    let sp_offset = gen_push_frame(asm, prepared.stack_slots, state, frame);
+    PendingIseqFrame { sp_offset }
 }
 
 /// Initialize and enter an inline method frame with its depth-specific JITFrame.
-pub(super) fn gen_push_inline_frame(asm: &mut Assembler, argc: usize, state: &FrameState, frame: ControlFrame) {
+pub(super) fn gen_push_inline_frame(asm: &mut Assembler, prepared: PreparedIseqFrame, state: &FrameState, frame: ControlFrame) {
     let iseq = frame.iseq.expect("inline frames require an ISEQ");
-    let sp_offset = gen_push_frame(asm, argc, state, frame);
+    let sp_offset = gen_push_frame(asm, prepared.stack_slots, state, frame);
     gen_enter_inline_frame(asm, iseq, state.depth + 1, sp_offset);
 }
 
@@ -400,14 +435,26 @@ fn gen_push_frame(asm: &mut Assembler, stack_slots: usize, state: &FrameState, f
 
 /// Switch registers to a direct ISEQ callee, but leave ec->cfp on the caller.
 /// gen_entry_point() publishes the callee only after its JITFrame and jit_return are valid.
-pub(super) fn gen_enter_iseq_frame(asm: &mut Assembler, sp_offset: usize) {
-    gen_switch_to_callee(asm, sp_offset);
+pub(super) fn gen_enter_iseq_frame(asm: &mut Assembler, frame: PendingIseqFrame) -> EnteredIseqFrame {
+    gen_switch_to_callee(asm, frame.sp_offset);
+    EnteredIseqFrame { sp_offset: frame.sp_offset }
+}
+
+#[cfg(test)]
+pub(super) fn prepared_cfunc_frame_for_test(stack_slots: usize) -> PreparedCfuncFrame {
+    PreparedCfuncFrame { stack_slots }
+}
+
+#[cfg(test)]
+pub(super) fn pending_iseq_frame_for_test(sp_offset: usize) -> PendingIseqFrame {
+    PendingIseqFrame { sp_offset }
 }
 
 /// Enter a C frame whose SP, block_code, and C-frame sentinel are already initialized.
-fn gen_enter_cfunc_frame(asm: &mut Assembler, sp_offset: usize) {
+fn gen_enter_cfunc_frame(asm: &mut Assembler, sp_offset: usize) -> EnteredCfuncFrame {
     gen_switch_to_callee(asm, sp_offset);
     asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+    EnteredCfuncFrame { sp_offset }
 }
 
 /// Install an inline callee's JITFrame before making its control frame visible.
@@ -433,16 +480,20 @@ fn gen_enter_inline_frame(asm: &mut Assembler, iseq: IseqPtr, depth: InlineDepth
 }
 
 /// Restore the caller's control frame after a C call.
-pub(super) fn gen_pop_cfunc_frame(asm: &mut Assembler, sp_offset: usize) {
+pub(super) fn gen_pop_cfunc_frame(asm: &mut Assembler, frame: EnteredCfuncFrame) {
     asm_comment!(asm, "pop C frame");
     let new_cfp = asm.add(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
     asm.mov(CFP, new_cfp);
     asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
-    gen_restore_sp(asm, sp_offset);
+    restore_sp(asm, frame.sp_offset);
 }
 
-/// Restore the caller's SP after a call that switched to a callee frame.
-pub(super) fn gen_restore_sp(asm: &mut Assembler, sp_offset: usize) {
+/// Restore the caller's SP after a direct ISEQ call.
+pub(super) fn gen_restore_iseq_frame(asm: &mut Assembler, frame: EnteredIseqFrame) {
+    restore_sp(asm, frame.sp_offset);
+}
+
+fn restore_sp(asm: &mut Assembler, sp_offset: usize) {
     asm_comment!(asm, "restore SP register for the caller");
     let new_sp = asm.sub(SP, sp_offset.into());
     asm.mov(SP, new_sp);

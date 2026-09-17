@@ -126,7 +126,8 @@ fn test_cfunc_frame_preserves_caller_pc() {
         asm.mov(CFP, Opnd::const_ptr(unsafe { frames.as_mut_ptr().add(1) }));
         asm.mov(SP, Opnd::const_ptr(stack.as_mut_ptr()));
         asm.mov(EC, Opnd::const_ptr(ec_slots.as_mut_ptr()));
-        super::frame::gen_push_cfunc_frame(&mut asm, 0, &state, Qnil.into(), std::ptr::null(), VM_BLOCK_HANDLER_NONE.into());
+        let prepared_frame = super::frame::prepared_cfunc_frame_for_test(0);
+        super::frame::gen_push_cfunc_frame(&mut asm, prepared_frame, &state, Qnil.into(), std::ptr::null(), VM_BLOCK_HANDLER_NONE.into());
         asm.frame_teardown(&[CFP, EC, SP]);
         asm.cret(Qnil.into());
 
@@ -161,7 +162,8 @@ fn test_iseq_frame_stays_unpublished_until_entry() {
         asm.mov(CFP, Opnd::const_ptr(caller));
         asm.mov(EC, Opnd::const_ptr(ec));
         asm.mov(SP, Opnd::const_ptr(stack.as_mut_ptr()));
-        super::frame::gen_enter_iseq_frame(&mut asm, SIZEOF_VALUE);
+        let pending_frame = super::frame::pending_iseq_frame_for_test(SIZEOF_VALUE);
+        super::frame::gen_enter_iseq_frame(&mut asm, pending_frame);
         asm.load_into(C_RET_OPND, CFP);
         asm.frame_teardown(&[CFP, EC, SP]);
         asm.cret(C_RET_OPND);
