@@ -101,7 +101,7 @@ fn test_stack_map_resolves_replaced_operands() {
 #[test]
 fn test_cfunc_frame_preserves_caller_pc() {
     with_rubyvm(|| {
-        use crate::backend::lir::{CFP, Opnd, SP};
+        use crate::backend::lir::{CFP, EC, Opnd, SP};
 
         let iseq = compile_to_iseq("nil");
         let function = iseq_to_hir(iseq).unwrap();
@@ -117,22 +117,17 @@ fn test_cfunc_frame_preserves_caller_pc() {
         let mut frames: [rb_control_frame_t; 2] = unsafe { std::mem::zeroed() };
         frames[1].pc = pc;
         let mut stack = [Qnil; VM_ENV_DATA_SIZE as usize];
+        const CFP_SLOT: usize = RUBY_OFFSET_EC_CFP as usize / std::mem::size_of::<CfpPtr>();
+        let mut ec_slots = [std::ptr::null_mut::<rb_control_frame_t>(); CFP_SLOT + 1];
 
         let mut asm = Assembler::new();
         asm.new_block_without_id("test");
-        asm.frame_setup(&[CFP, SP]);
+        asm.frame_setup(&[CFP, EC, SP]);
         asm.mov(CFP, Opnd::const_ptr(&frames[1]));
         asm.mov(SP, Opnd::const_ptr(stack.as_mut_ptr()));
-        super::frame::gen_push_frame(&mut asm, 0, &state, super::frame::ControlFrame {
-            recv: Qnil.into(),
-            iseq: None,
-            cme: std::ptr::null(),
-            frame_type: VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL,
-            specval: VM_BLOCK_HANDLER_NONE.into(),
-            write_block_code: false,
-            forwarded_argc: None,
-        });
-        asm.frame_teardown(&[CFP, SP]);
+        asm.mov(EC, Opnd::const_ptr(ec_slots.as_mut_ptr()));
+        super::frame::gen_push_cfunc_frame(&mut asm, 0, &state, Qnil.into(), std::ptr::null(), VM_BLOCK_HANDLER_NONE.into());
+        asm.frame_teardown(&[CFP, EC, SP]);
         asm.cret(Qnil.into());
 
         let cb = crate::state::ZJITState::get_code_block();

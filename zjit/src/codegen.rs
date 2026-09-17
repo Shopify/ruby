@@ -1048,17 +1048,8 @@ fn gen_ccall_with_frame(
     state: &FrameState,
 ) -> lir::Opnd {
     gen_incr_counter(asm, Counter::non_variadic_cfunc_optimized_send_count);
-    frame::gen_stack_overflow_check(jit, asm, function, state, state.stack_size());
-
     let args_with_recv_len = args.len() + 1;
-    let caller_stack_size = state.stack().len() - args_with_recv_len;
-
-    // Can't use gen_prepare_non_leaf_call() because we need to adjust the SP
-    // to account for the receiver and arguments (and block arguments if any)
-    frame::gen_write_jit_frame(asm, state, 0);
-    frame::gen_save_sp(asm, caller_stack_size);
-    frame::gen_spill_stack(jit, asm, function, state);
-    frame::gen_spill_locals(jit, asm, state);
+    frame::gen_prepare_cfunc_call(jit, asm, function, state, args_with_recv_len);
 
     let block_handler_specval = if let Some(BlockHandler::BlockIseq(block_iseq)) = block {
         // Change cfp->block_code in the current frame. See vm_caller_setup_arg_block().
@@ -1071,18 +1062,7 @@ fn gen_ccall_with_frame(
         VM_BLOCK_HANDLER_NONE.into()
     };
 
-    frame::gen_push_frame(asm, args_with_recv_len, state, frame::ControlFrame {
-        recv,
-        iseq: None,
-        cme,
-        frame_type: VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL,
-        specval: block_handler_specval,
-        write_block_code: false,
-        forwarded_argc: None, // cfunc doesn't support forwarded arguments
-    });
-
-    let sp_offset = (caller_stack_size + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
-    frame::gen_enter_cfunc_frame(asm, sp_offset);
+    let sp_offset = frame::gen_push_cfunc_frame(asm, args_with_recv_len, state, recv, cme, block_handler_specval);
 
     let mut cfunc_args = vec![recv];
     cfunc_args.extend(args);
@@ -1127,20 +1107,9 @@ fn gen_ccall_variadic(
     state: &FrameState,
 ) -> lir::Opnd {
     gen_incr_counter(asm, Counter::variadic_cfunc_optimized_send_count);
-    frame::gen_stack_overflow_check(jit, asm, function, state, state.stack_size());
-
     let args_with_recv_len = args.len() + 1;
 
-    // Compute the caller's stack size after consuming recv and args.
-    // state.stack() includes recv + args, so subtract both.
-    let caller_stack_size = state.stack_size() - args_with_recv_len;
-
-    // Can't use gen_prepare_non_leaf_call() because we need to adjust the SP
-    // to account for the receiver and arguments (like gen_ccall_with_frame does)
-    frame::gen_write_jit_frame(asm, state, 0);
-    frame::gen_save_sp(asm, caller_stack_size);
-    frame::gen_spill_stack(jit, asm, function, state);
-    frame::gen_spill_locals(jit, asm, state);
+    frame::gen_prepare_cfunc_call(jit, asm, function, state, args_with_recv_len);
 
     let block_handler_specval = if let Some(BlockHandler::BlockIseq(blockiseq)) = block {
         gen_block_handler_specval(asm, blockiseq)
@@ -1148,18 +1117,7 @@ fn gen_ccall_variadic(
         VM_BLOCK_HANDLER_NONE.into()
     };
 
-    frame::gen_push_frame(asm, args_with_recv_len, state, frame::ControlFrame {
-        recv,
-        iseq: None,
-        cme,
-        frame_type: VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL,
-        specval: block_handler_specval,
-        write_block_code: false,
-        forwarded_argc: None, // cfunc doesn't support forwarded arguments
-    });
-
-    let sp_offset = (caller_stack_size + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
-    frame::gen_enter_cfunc_frame(asm, sp_offset);
+    let sp_offset = frame::gen_push_cfunc_frame(asm, args_with_recv_len, state, recv, cme, block_handler_specval);
 
     let argv_ptr = gen_push_opnds(jit, asm, &args);
     asm.count_call_to_with(|| qualified_method_name(unsafe { (*cme).owner }, name));
@@ -1606,13 +1564,7 @@ fn gen_push_inline_frame(
     let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(iseq) }.to_usize();
     frame::gen_stack_overflow_check(jit, asm, function, state, stack_growth);
 
-    // Save cfp->pc and cfp->sp for the caller frame.
-    // Cannot use gen_prepare_non_leaf_call because we need special SP math.
-    let stack_size = state.stack().len() - num_args.to_usize() - 1; // -1 for receiver
-    frame::gen_write_jit_frame(asm, state, 0);
-    frame::gen_save_sp(asm, stack_size);
-
-    frame::gen_spill_locals(jit, asm, state);
+    frame::gen_prepare_inline_frame(jit, asm, state, num_args.to_usize() + 1);
 
     // This mirrors vm_caller_setup_arg_block() for the `blockiseq != NULL` case.
     // The HIR specialization guards ensure we will only reach here for literal blocks,
@@ -1637,16 +1589,6 @@ fn gen_push_inline_frame(
         (VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, specval)
     };
 
-    frame::gen_push_frame(asm, num_args.to_usize(), state, frame::ControlFrame {
-        recv,
-        iseq: Some(iseq),
-        cme,
-        frame_type,
-        specval,
-        write_block_code: iseq_may_write_block_code(iseq),
-        forwarded_argc: None, // `can_inline` rejects forwardable callees
-    });
-
     // The callee's hidden `kw_bits` local does not need a runtime store here:
     // the inliner aliases the local to a `Const::Value` carrying the
     // compile-time bitmask, so `checkkeyword` lowers to a constant
@@ -1657,8 +1599,16 @@ fn gen_push_inline_frame(
     // (The non-inlined `gen_send_iseq_direct` path still emits its own store
     // because the callee's separate JIT entry reads it from memory.)
 
-    let sp_offset = (state.stack().len() + local_size - num_args.to_usize() + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
-    frame::gen_enter_inline_frame(asm, iseq, state.depth + 1, sp_offset);
+    frame::gen_push_inline_frame(asm, num_args.to_usize(), state, frame::ControlFrame {
+        recv,
+        iseq: Some(iseq),
+        cme,
+        frame_type,
+        specval,
+        write_block_code: iseq_may_write_block_code(iseq),
+        forwarded_argc: None, // `can_inline` rejects forwardable callees
+    });
+
 }
 
 /// Compile a direct call to an ISEQ method.
@@ -1692,15 +1642,7 @@ fn gen_send_iseq_direct(
     let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(iseq) }.to_usize();
     frame::gen_stack_overflow_check(jit, asm, function, state, stack_growth);
 
-    // Save cfp->pc and cfp->sp for the caller frame
-    // Can't use gen_prepare_non_leaf_call because we need special SP math.
-    let stack_size = state.stack().len() - args.len() - 1; // -1 for receiver
-    let stack_map = frame::build_stack_map(jit, function, &state.with_stack_size(stack_size));
-    let jit_frame = frame::gen_write_jit_frame(asm, state, stack_map.len());
-    frame::gen_save_sp(asm, stack_size);
-
-    frame::gen_spill_locals(jit, asm, state);
-    asm.stack_map(stack_map, jit_frame, state.depth);
+    frame::gen_prepare_iseq_call(jit, asm, function, state, args.len() + 1);
 
     // This mirrors vm_caller_setup_arg_block() in for the `blockiseq != NULL` case.
     // The HIR specialization guards ensure we will only reach here for literal blocks,
@@ -1727,7 +1669,7 @@ fn gen_send_iseq_direct(
 
     // Set up the new frame
     // TODO: Lazily materialize caller frames on side exits or when needed
-    frame::gen_push_frame(asm, args.len(), state, frame::ControlFrame {
+    let sp_offset = frame::gen_push_iseq_frame(asm, args.len(), state, frame::ControlFrame {
         recv,
         iseq: Some(iseq),
         cme,
@@ -1765,7 +1707,6 @@ fn gen_send_iseq_direct(
         // the callee will spill the callinfo passed as part of `c_args` into the `...` local.
     }
 
-    let sp_offset = (state.stack().len() + local_size - args.len() + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
     frame::gen_enter_iseq_frame(asm, sp_offset);
 
     let params = unsafe { iseq.params() };
@@ -1937,15 +1878,9 @@ fn gen_invoke_block_iseq_direct(
     // specval = VM_GUARDED_PREV_EP(captured->ep) = captured->ep | 0x01
     let specval = asm.or(captured_ep, Opnd::Imm(0x1));
 
-    let stack_size = state.stack().len() - args.len();
-    let stack_map = frame::build_stack_map(jit, function, &state.with_stack_size(stack_size));
-    let jit_frame = frame::gen_write_jit_frame(asm, state, stack_map.len());
-    frame::gen_save_sp(asm, stack_size);
+    frame::gen_prepare_iseq_call(jit, asm, function, state, args.len());
 
-    frame::gen_spill_locals(jit, asm, state);
-    asm.stack_map(stack_map, jit_frame, state.depth);
-
-    frame::gen_push_frame(asm, args.len(), state, frame::ControlFrame {
+    let sp_offset = frame::gen_push_iseq_frame(asm, args.len(), state, frame::ControlFrame {
         recv: captured_self,
         iseq: Some(block_iseq),
         cme: std::ptr::null(),
@@ -1955,7 +1890,6 @@ fn gen_invoke_block_iseq_direct(
         forwarded_argc: None, // `...` is not allowed in block arguments
     });
 
-    let sp_offset = (stack_size + local_size + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
     frame::gen_enter_iseq_frame(asm, sp_offset);
 
     // JIT-to-JIT convention: self as c_args[0], then positional args. The block is

@@ -4,7 +4,8 @@ use crate::cruby::{
     rb_iseq_pc_at_idx, zjit_jit_frame, CfpPtr, EcPtr, IseqPtr, VALUE, RUBY_OFFSET_CFP_BLOCK_CODE,
     RUBY_OFFSET_CFP_EP, RUBY_OFFSET_CFP_JIT_RETURN, RUBY_OFFSET_CFP_PC, RUBY_OFFSET_CFP_SELF,
     RUBY_OFFSET_CFP_SP, RUBY_OFFSET_EC_CFP, RUBY_SIZEOF_CONTROL_FRAME, SIZEOF_VALUE,
-    SIZEOF_VALUE_I32, VM_ENV_DATA_SIZE, ZJIT_JIT_RETURN_C_FRAME,
+    SIZEOF_VALUE_I32, VM_ENV_DATA_SIZE, VM_ENV_FLAG_LOCAL, VM_FRAME_FLAG_CFRAME,
+    VM_FRAME_MAGIC_CFUNC, ZJIT_JIT_RETURN_C_FRAME,
 };
 use crate::hir::{FrameState, Function, SideExitReason::StackOverflow};
 use crate::options::InlineDepth;
@@ -108,7 +109,7 @@ pub(super) fn jit_frame_for_state(state: &FrameState, stack_map_size: usize) -> 
 /// Write the current JITFrame to native-stack storage.
 /// Use this before gen_save_sp() when the caller needs a custom stack size.
 /// The caller may adjust SP to exclude the receiver and arguments.
-pub(super) fn gen_write_jit_frame(asm: &mut Assembler, state: &FrameState, stack_map_size: usize) -> *const zjit_jit_frame {
+fn gen_write_jit_frame(asm: &mut Assembler, state: &FrameState, stack_map_size: usize) -> *const zjit_jit_frame {
     gen_incr_counter(asm, Counter::vm_write_jit_frame_count);
     asm_comment!(asm, "save JITFrame to native stack");
     let jit_frame = jit_frame_for_state(state, stack_map_size);
@@ -145,7 +146,7 @@ pub(super) fn gen_prepare_leaf_call_with_gc(asm: &mut Assembler, state: &FrameSt
 }
 
 /// Save the current SP on the CFP
-pub(super) fn gen_save_sp(asm: &mut Assembler, stack_size: usize) {
+fn gen_save_sp(asm: &mut Assembler, stack_size: usize) {
     // Update cfp->sp which will be read by the interpreter. We also have the SP register in JIT
     // code, and ZJIT's codegen currently assumes the SP register doesn't move, e.g. gen_param().
     // So we don't update the SP register here. We could update the SP register to avoid using
@@ -158,7 +159,7 @@ pub(super) fn gen_save_sp(asm: &mut Assembler, stack_size: usize) {
 }
 
 /// Spill locals onto the stack.
-pub(super) fn gen_spill_locals(jit: &JITState, asm: &mut Assembler, state: &FrameState) {
+fn gen_spill_locals(jit: &JITState, asm: &mut Assembler, state: &FrameState) {
     // TODO: Avoid spilling locals that have been spilled before and not changed.
     gen_incr_counter(asm, Counter::vm_write_locals_count);
     asm_comment!(asm, "spill locals");
@@ -168,7 +169,7 @@ pub(super) fn gen_spill_locals(jit: &JITState, asm: &mut Assembler, state: &Fram
 }
 
 /// Spill the virtual stack onto the stack.
-pub(super) fn gen_spill_stack(jit: &JITState, asm: &mut Assembler, function: &Function, state: &FrameState) {
+fn gen_spill_stack(jit: &JITState, asm: &mut Assembler, function: &Function, state: &FrameState) {
     // This function does not call gen_save_sp() at the moment because
     // gen_send_without_block_direct() spills stack slots above SP for arguments.
     gen_incr_counter(asm, Counter::vm_write_stack_count);
@@ -200,6 +201,36 @@ pub(super) fn gen_prepare_fallback_call(jit: &JITState, asm: &mut Assembler, fun
     gen_save_sp(asm, state.stack_size());
     gen_spill_locals(jit, asm, state);
     gen_spill_stack(jit, asm, function, state);
+}
+
+/// Prepare a C method call. consumed_stack_slots includes the receiver and all arguments.
+/// Publish the caller's remaining stack before spilling the receiver and arguments for the C callee.
+pub(super) fn gen_prepare_cfunc_call(jit: &mut JITState, asm: &mut Assembler, function: &Function, state: &FrameState, consumed_stack_slots: usize) {
+    gen_stack_overflow_check(jit, asm, function, state, state.stack_size());
+    let stack_size = caller_stack_size(state, consumed_stack_slots);
+    gen_write_jit_frame(asm, state, 0);
+    gen_save_sp(asm, stack_size);
+    gen_spill_stack(jit, asm, function, state);
+    gen_spill_locals(jit, asm, state);
+}
+
+/// Prepare a direct ISEQ call with one consistent caller SP and stack map.
+/// Method calls consume receiver plus arguments; block calls consume only arguments.
+pub(super) fn gen_prepare_iseq_call(jit: &JITState, asm: &mut Assembler, function: &Function, state: &FrameState, consumed_stack_slots: usize) {
+    let stack_size = caller_stack_size(state, consumed_stack_slots);
+    let stack_map = build_stack_map(jit, function, &state.with_stack_size(stack_size));
+    let jit_frame = gen_write_jit_frame(asm, state, stack_map.len());
+    gen_save_sp(asm, stack_size);
+    gen_spill_locals(jit, asm, state);
+    asm.stack_map(stack_map, jit_frame, state.depth);
+}
+
+/// Prepare the caller of an inline method without attaching a map to a nonexistent CCall.
+pub(super) fn gen_prepare_inline_frame(jit: &JITState, asm: &mut Assembler, state: &FrameState, consumed_stack_slots: usize) {
+    let stack_size = caller_stack_size(state, consumed_stack_slots);
+    gen_write_jit_frame(asm, state, 0);
+    gen_save_sp(asm, stack_size);
+    gen_spill_locals(jit, asm, state);
 }
 
 /// Build entries for Ruby stack values that need materialization. The actual
@@ -270,19 +301,50 @@ pub(super) struct ControlFrame {
     pub(super) forwarded_argc: Option<usize>,
 }
 
-/// Compile a control-frame push for an ISEQ or C frame.
-pub(super) fn gen_push_frame(asm: &mut Assembler, argc: usize, state: &FrameState, frame: ControlFrame) {
+/// Initialize and enter a C frame after gen_prepare_cfunc_call(). Return the SP offset for its pop.
+pub(super) fn gen_push_cfunc_frame(asm: &mut Assembler, consumed_stack_slots: usize, state: &FrameState, recv: Opnd, cme: *const rb_callable_method_entry_t, specval: Opnd) -> usize {
+    let sp_offset = gen_push_frame(asm, consumed_stack_slots, state, ControlFrame {
+        recv,
+        iseq: None,
+        cme,
+        frame_type: VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL,
+        specval,
+        write_block_code: false,
+        forwarded_argc: None,
+    });
+    gen_enter_cfunc_frame(asm, sp_offset);
+    sp_offset
+}
+
+/// Initialize an ISEQ frame, but keep caller registers active for keyword and forwarding stores.
+/// argc excludes the receiver. The receiver, when present, stays below the callee's locals.
+pub(super) fn gen_push_iseq_frame(asm: &mut Assembler, argc: usize, state: &FrameState, frame: ControlFrame) -> usize {
+    assert!(frame.iseq.is_some());
+    gen_push_frame(asm, argc, state, frame)
+}
+
+/// Initialize and enter an inline method frame with its depth-specific JITFrame.
+pub(super) fn gen_push_inline_frame(asm: &mut Assembler, argc: usize, state: &FrameState, frame: ControlFrame) {
+    let iseq = frame.iseq.expect("inline frames require an ISEQ");
+    let sp_offset = gen_push_frame(asm, argc, state, frame);
+    gen_enter_inline_frame(asm, iseq, state.depth + 1, sp_offset);
+}
+
+/// Initialize frame metadata and return the callee's SP offset in bytes.
+/// stack_slots excludes a method receiver, but includes the receiver for C calls.
+fn gen_push_frame(asm: &mut Assembler, stack_slots: usize, state: &FrameState, frame: ControlFrame) -> usize {
     // Locals are written by the callee frame on side-exits or non-leaf calls
 
     // See vm_push_frame() for details
     asm_comment!(asm, "push cme, specval, frame type");
     // ep[-2]: cref of cme
     let local_size = if let Some(iseq) = frame.iseq {
-        (unsafe { get_iseq_body_local_table_size(iseq) }) as i32 + frame.forwarded_argc.unwrap_or(0) as i32
+        unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + frame.forwarded_argc.unwrap_or(0)
     } else {
         0
     };
-    let ep_offset = state.stack().len() as i32 + local_size - argc as i32 + VM_ENV_DATA_SIZE as i32 - 1;
+    let sp_offset = callee_sp_offset(state, local_size, stack_slots);
+    let ep_offset = (sp_offset / SIZEOF_VALUE) as i32 - 1;
     // ep[-2]: CME
     asm.store(Opnd::mem(64, SP, (ep_offset - 2) * SIZEOF_VALUE_I32), VALUE::from(frame.cme).into());
     // ep[-1]: specval
@@ -327,6 +389,7 @@ pub(super) fn gen_push_frame(asm: &mut Assembler, argc: usize, state: &FrameStat
     asm.mov(cfp_opnd(RUBY_OFFSET_CFP_SELF), frame.recv);
     let ep = asm.lea(Opnd::mem(64, SP, ep_offset * SIZEOF_VALUE_I32));
     asm.mov(cfp_opnd(RUBY_OFFSET_CFP_EP), ep);
+    sp_offset
 }
 
 /// Switch registers to a direct ISEQ callee, but leave ec->cfp on the caller.
@@ -336,13 +399,13 @@ pub(super) fn gen_enter_iseq_frame(asm: &mut Assembler, sp_offset: usize) {
 }
 
 /// Enter a C frame whose SP, block_code, and C-frame sentinel are already initialized.
-pub(super) fn gen_enter_cfunc_frame(asm: &mut Assembler, sp_offset: usize) {
+fn gen_enter_cfunc_frame(asm: &mut Assembler, sp_offset: usize) {
     gen_switch_to_callee(asm, sp_offset);
     asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
 }
 
 /// Install an inline callee's JITFrame before making its control frame visible.
-pub(super) fn gen_enter_inline_frame(asm: &mut Assembler, iseq: IseqPtr, depth: InlineDepth, sp_offset: usize) {
+fn gen_enter_inline_frame(asm: &mut Assembler, iseq: IseqPtr, depth: InlineDepth, sp_offset: usize) {
     // Each inline depth has its own native slot. Initialize that slot before jit_return,
     // then publish ec->cfp last so a signal profiler cannot read incomplete metadata.
     // The first GC-capable call or side exit in the callee will initialize cfp->sp.
@@ -387,7 +450,7 @@ pub(super) fn gen_pop_inline_frame(
     state: &FrameState,
 ) {
     let local_size = unsafe { get_iseq_body_local_table_size(iseq) }.to_usize();
-    let sp_offset = (state.stack().len() + local_size - argc + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
+    let sp_offset = callee_sp_offset(state, local_size, argc);
 
     asm_comment!(asm, "restore caller SP after inline");
     asm.sub_into(SP, sp_offset.into());
@@ -453,4 +516,12 @@ fn gen_switch_to_callee(asm: &mut Assembler, sp_offset: usize) {
     asm_comment!(asm, "switch to new CFP");
     let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
     asm.mov(CFP, new_cfp);
+}
+
+fn caller_stack_size(state: &FrameState, consumed_stack_slots: usize) -> usize {
+    state.stack_size().checked_sub(consumed_stack_slots).expect("call consumes more stack slots than the caller has")
+}
+
+fn callee_sp_offset(state: &FrameState, local_size: usize, stack_slots: usize) -> usize {
+    (caller_stack_size(state, stack_slots) + local_size + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE
 }
