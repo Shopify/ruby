@@ -15,19 +15,6 @@ use super::{gen_incr_counter, side_exit, JITEntry, JITFrame, JITState, PC_POISON
 use crate::cruby::IseqAccess;
 use crate::cruby::zjit_jit_frame;
 
-/// Map an entry point to the bytecode PC used by its initial JITFrame.
-/// JIT call entries use `opt_table[jit_entry_idx]`; the interpreter entry uses
-/// `opt_table.last()` for the fall-through path where all optionals are filled.
-pub(super) fn entry_pc(iseq: IseqPtr, jit_entry_idx: Option<usize>) -> *const VALUE {
-    let params = unsafe { iseq.params() };
-    let opt_table = params.opt_table_slice();
-    let entry_idx = jit_entry_idx.unwrap_or_else(|| opt_table.len() - 1);
-    let entry_insn_idx = opt_table.get(entry_idx)
-        .unwrap_or_else(|| panic!("entry_pc: opt_table out of bounds. {params:#?}, entry_idx={entry_idx}"))
-        .as_u32();
-    unsafe { rb_iseq_pc_at_idx(iseq, entry_insn_idx) }
-}
-
 /// Compile a frame setup. If jit_entry_idx is Some, remember the address of it as a JIT entry.
 pub(super) fn gen_entry_point(jit: &mut JITState, asm: &mut Assembler, jit_entry_idx: Option<usize>) {
     if let Some(jit_entry_idx) = jit_entry_idx {
@@ -114,11 +101,6 @@ pub(super) fn cfp_jit_return_for_depth(asm: &mut Assembler, depth: InlineDepth) 
     }
 }
 
-pub(super) fn jit_frame_next_pc(state: &FrameState) -> *const VALUE {
-    let opcode: usize = state.get_opcode().try_into().unwrap();
-    unsafe { state.pc.offset(insn_len(opcode) as isize) }
-}
-
 pub(super) fn jit_frame_for_state(state: &FrameState, stack_map_size: usize) -> *const zjit_jit_frame {
     JITFrame::new_iseq(jit_frame_next_pc(state), state.iseq, stack_map_size)
 }
@@ -139,23 +121,6 @@ pub(super) fn gen_write_jit_frame(asm: &mut Assembler, state: &FrameState, stack
     // jit_frame->pc into cfp->pc and cleared cfp->jit_return: the JIT keeps
     // running, lands on this routine again, and the poison would replace
     // the valid materialized pc behind the GC's back.
-    jit_frame
-}
-
-/// Save the current PC on the CFP as a preparation for calling a C function
-/// that may allocate objects and trigger GC. Use gen_prepare_non_leaf_call()
-/// if it may raise exceptions or call arbitrary methods.
-///
-/// Unlike YJIT, we don't need to save the stack slots to protect them from GC
-/// because the backend spills all live registers onto the C stack on CCall.
-/// However, to avoid marking uninitialized stack slots, this also updates SP,
-/// which may have cfp->sp for a past frame or a past non-leaf call.
-pub(super) fn gen_prepare_call_with_gc(asm: &mut Assembler, state: &FrameState, leaf: bool, stack_map_size: usize) -> *const zjit_jit_frame {
-    let jit_frame = gen_write_jit_frame(asm, state, stack_map_size);
-    gen_save_sp(asm, state.stack_size());
-    if leaf {
-        asm.expect_leaf_ccall(state.stack_size());
-    }
     jit_frame
 }
 
@@ -257,13 +222,6 @@ pub(super) fn build_stack_map(jit: &JITState, function: &Function, state: &Frame
         current_state = function.frame_state(caller);
     }
     stack
-}
-
-pub(super) fn inline_frame_stack_gap(iseq: IseqPtr) -> usize {
-    // The extra slot is for the callee's receiver below its local table.
-    // We currently never map out the stack for `invokeblock`, which doesn't
-    // put a receiver on cfp->sp stack.
-    1 + unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + VM_ENV_DATA_SIZE.to_usize()
 }
 
 /// Prepare for calling a C function that may call an arbitrary method.
@@ -379,4 +337,46 @@ pub(super) fn gen_stack_overflow_check(jit: &mut JITState, asm: &mut Assembler, 
     let stack_limit = asm.lea(Opnd::mem(64, SP, peak_offset as i32));
     asm.cmp(CFP, stack_limit);
     asm.jbe(jit, side_exit(jit, function, state, StackOverflow));
+}
+
+/// Map an entry point to the bytecode PC used by its initial JITFrame.
+/// JIT call entries use `opt_table[jit_entry_idx]`; the interpreter entry uses
+/// `opt_table.last()` for the fall-through path where all optionals are filled.
+fn entry_pc(iseq: IseqPtr, jit_entry_idx: Option<usize>) -> *const VALUE {
+    let params = unsafe { iseq.params() };
+    let opt_table = params.opt_table_slice();
+    let entry_idx = jit_entry_idx.unwrap_or_else(|| opt_table.len() - 1);
+    let entry_insn_idx = opt_table.get(entry_idx)
+        .unwrap_or_else(|| panic!("entry_pc: opt_table out of bounds. {params:#?}, entry_idx={entry_idx}"))
+        .as_u32();
+    unsafe { rb_iseq_pc_at_idx(iseq, entry_insn_idx) }
+}
+
+/// Save the current PC on the CFP as a preparation for calling a C function
+/// that may allocate objects and trigger GC. Use gen_prepare_non_leaf_call()
+/// if it may raise exceptions or call arbitrary methods.
+///
+/// Unlike YJIT, we don't need to save the stack slots to protect them from GC
+/// because the backend spills all live registers onto the C stack on CCall.
+/// However, to avoid marking uninitialized stack slots, this also updates SP,
+/// which may have cfp->sp for a past frame or a past non-leaf call.
+fn gen_prepare_call_with_gc(asm: &mut Assembler, state: &FrameState, leaf: bool, stack_map_size: usize) -> *const zjit_jit_frame {
+    let jit_frame = gen_write_jit_frame(asm, state, stack_map_size);
+    gen_save_sp(asm, state.stack_size());
+    if leaf {
+        asm.expect_leaf_ccall(state.stack_size());
+    }
+    jit_frame
+}
+
+fn jit_frame_next_pc(state: &FrameState) -> *const VALUE {
+    let opcode: usize = state.get_opcode().try_into().unwrap();
+    unsafe { state.pc.offset(insn_len(opcode) as isize) }
+}
+
+fn inline_frame_stack_gap(iseq: IseqPtr) -> usize {
+    // The extra slot is for the callee's receiver below its local table.
+    // We currently never map out the stack for `invokeblock`, which doesn't
+    // put a receiver on cfp->sp stack.
+    1 + unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + VM_ENV_DATA_SIZE.to_usize()
 }
