@@ -1065,12 +1065,7 @@ fn gen_ccall_with_frame(
     let prepared_frame = frame::gen_prepare_cfunc_call(jit, asm, function, state, args_with_recv_len);
 
     let block_handler_specval = if let Some(BlockHandler::BlockIseq(block_iseq)) = block {
-        // Change cfp->block_code in the current frame. See vm_caller_setup_arg_block().
-        // VM_CFP_TO_CAPTURED_BLOCK then turns &cfp->self into a block handler.
-        // rb_captured_block->code.iseq aliases with cfp->block_code.
-        asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_BLOCK_CODE), VALUE::from(block_iseq).into());
-        let cfp_self_addr = asm.lea(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF));
-        asm.or(cfp_self_addr, Opnd::Imm(1))
+        gen_block_handler_specval(asm, block_iseq)
     } else {
         VM_BLOCK_HANDLER_NONE.into()
     };
@@ -1581,7 +1576,7 @@ fn gen_push_inline_frame(
     // The HIR specialization guards ensure we will only reach here for literal blocks,
     // not &block forwarding, &:foo, etc. These are rejected in `type_specialize` by
     // `unspecializable_call_type`.
-    let block_handler = blockiseq.map(|b| gen_block_handler_specval(asm, b));
+    let block_handler_specval = blockiseq.map(|b| gen_block_handler_specval(asm, b));
 
     let callee_is_bmethod = VM_METHOD_TYPE_BMETHOD == unsafe { get_cme_def_type(cme) };
 
@@ -1596,7 +1591,7 @@ fn gen_push_inline_frame(
         let bmethod_specval = (capture.ep.addr() | 1).into();
         (bmethod_frame_type, bmethod_specval)
     } else {
-        let specval = block_handler.unwrap_or_else(|| VM_BLOCK_HANDLER_NONE.into());
+        let specval = block_handler_specval.unwrap_or_else(|| VM_BLOCK_HANDLER_NONE.into());
         (VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, specval)
     };
 
@@ -1622,8 +1617,8 @@ fn gen_push_inline_frame(
 }
 
 /// Compile a direct call to an ISEQ method.
-/// If `block_handler` is provided, it's used as the specval for the new frame (for forwarding blocks).
-/// Otherwise, `VM_BLOCK_HANDLER_NONE` is used.
+/// If `block` is present, its handler becomes the new frame's specval.
+/// Otherwise, the frame uses `VM_BLOCK_HANDLER_NONE`.
 fn gen_send_iseq_direct(
     cb: &mut CodeBlock,
     jit: &mut JITState,
@@ -1652,11 +1647,10 @@ fn gen_send_iseq_direct(
 
     let prepared_frame = frame::gen_prepare_iseq_method_call(jit, asm, function, state, args.len());
 
-    // This mirrors vm_caller_setup_arg_block() in for the `blockiseq != NULL` case.
-    // The HIR specialization guards ensure we will only reach here for literal blocks,
-    // not &block forwarding, &:foo, etc. Thise are rejected in `type_specialize` by
-    // `unspecializable_call_type`.
-    let block_handler = block.map(|bh| match bh { BlockHandler::BlockIseq(b) => gen_block_handler_specval(asm, b), BlockHandler::BlockArg => unreachable!("BlockArg in gen_send_iseq_direct") });
+    // This mirrors vm_caller_setup_arg_block() for the `blockiseq != NULL` case.
+    // The HIR specialization guards ensure we only reach this path for literal blocks.
+    // `unspecializable_call_type` rejects &block forwarding and &:symbol arguments.
+    let block_handler_specval = block.map(|bh| match bh { BlockHandler::BlockIseq(b) => gen_block_handler_specval(asm, b), BlockHandler::BlockArg => unreachable!("BlockArg in gen_send_iseq_direct") });
 
     let callee_is_bmethod = VM_METHOD_TYPE_BMETHOD == unsafe { get_cme_def_type(cme) };
 
@@ -1671,7 +1665,7 @@ fn gen_send_iseq_direct(
         let bmethod_specval = (capture.ep.addr() | 1).into();
         (bmethod_frame_type, bmethod_specval)
     } else {
-        let specval = block_handler.unwrap_or_else(|| VM_BLOCK_HANDLER_NONE.into());
+        let specval = block_handler_specval.unwrap_or_else(|| VM_BLOCK_HANDLER_NONE.into());
         (VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, specval)
     };
 
@@ -1718,9 +1712,9 @@ fn gen_send_iseq_direct(
 
     let params = unsafe { iseq.params() };
 
-    // For &block, the JIT entrypoint expects the block_handler as an argument
-    // This HIR param is not actually used, things read from specval from the VM frame today.
-    // TODO: Remove unused param from HIR, or pass specval through c_args.
+    // The JIT entry point expects a block handler argument when the ISEQ has &block.
+    // HIR does not use this parameter. Runtime operations read specval from the VM frame.
+    // TODO: Remove the unused HIR parameter, or pass specval through c_args.
     // See https://github.com/ruby/ruby/pull/15911#discussion_r2710544982
     let needs_block = params.flags.has_block() != 0;
 
@@ -1741,7 +1735,7 @@ fn gen_send_iseq_direct(
         if callee_is_bmethod {
             // For bmethods, specval is the captured EP, not the block handler.
             // The block param needs nil (no block) or a Proc value.
-            assert!(block_handler.is_none(), "at the moment, HIR builder never emits a direct send for a to-bmethod send-with-literal-block");
+            assert!(block_handler_specval.is_none(), "at the moment, HIR builder never emits a direct send for a to-bmethod send-with-literal-block");
             c_args.push(Qnil.into());
         } else {
             c_args.push(specval);

@@ -423,7 +423,7 @@ fn gen_push_frame(asm: &mut Assembler, stack_slots: usize, state: &FrameState, f
 
     // See vm_push_frame() for details
     asm_comment!(asm, "push cme, specval, frame type");
-    // ep[-2]: cref of cme
+    // Include extra locals that forwardable ISEQs use for the caller's arguments.
     let local_size = if let Some(iseq) = frame.iseq {
         unsafe { get_iseq_body_local_table_size(iseq) }.to_usize()
             .checked_add(frame.extra_local_slots)
@@ -457,8 +457,8 @@ fn gen_push_frame(asm: &mut Assembler, stack_slots: usize, state: &FrameState, f
             asm.mov(cfp_opnd(RUBY_OFFSET_CFP_BLOCK_CODE), 0.into());
         }
     } else {
-        // C frames don't have a PC and ISEQ in normal operation. ISEQ frames set PC on gen_write_jit_frame().
-        // When runtime checks are enabled we poison the PC for C frames so accidental reads stand out.
+        // C frames have no PC or ISEQ in normal operation. ISEQ frames publish the PC through JITFrame metadata.
+        // Runtime checks poison the C-frame PC so accidental reads stand out.
         if let (None, Some(pc)) = (frame.iseq, PC_POISON) {
             asm.mov(cfp_opnd(RUBY_OFFSET_CFP_PC), Opnd::const_ptr(pc));
         }
