@@ -1127,8 +1127,13 @@ class TestRactor < Test::Unit::TestCase
     assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}, "-W:no-ractor_isolation", "-e", ""]) do |_stdout, stderr|
       assert_equal 1, stderr.grep(advisory).size, "expected the boot advisory exactly once, got: #{stderr.inspect}"
     end
-    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1", "RUBY_RACTOR_EXCLUSIVE" => "1"}, "-e", ""]) do |_stdout, stderr|
-      assert_empty stderr.grep(advisory)
+    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1", "RUBY_RACTOR_EXCLUSIVE" => "1"}, "-e", "puts RUBY_DESCRIPTION"]) do |stdout, stderr|
+      if stdout.first&.include?("+MN")
+        assert_empty stderr.grep(advisory)
+      else
+        # Without M:N support exclusive mode does nothing, so the advisory still prints.
+        assert_equal 1, stderr.grep(advisory).size, "expected the advisory on a non-MN build, got: #{stderr.inspect}"
+      end
     end
   end
 
