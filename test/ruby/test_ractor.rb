@@ -1036,6 +1036,28 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  def test_isolation_check_warns_but_does_not_fork_from_a_ractor
+    omit 'fork is not supported' unless Process.respond_to?(:fork)
+    # Warned like any other violation, but the fork itself must not proceed.
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+      require 'tmpdir'
+      Dir.mktmpdir do |dir|
+        marker = File.join(dir, 'child-ran')
+        result = Ractor.new(marker) do |path|
+          begin
+            [:forked, fork { File.write(path, 'ran'); exit!(0) }]
+          rescue SystemCallError => e
+            [:refused, e]
+          end
+        end.value
+
+        assert_equal :refused, result.first, "fork was not refused: #{result.inspect}"
+        assert_kind_of SystemCallError, result.last
+        refute File.exist?(marker), 'fork produced a child under RUBY_RACTOR_CHECK_ISOLATION'
+      end
+    RUBY
+  end
+
   def test_isolation_check_warns_for_finalizers_on_foreign_objects
     omit 'per-Ractor objspace semantics of the default GC' unless GC.config[:implementation] == 'default'
     assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)

@@ -4110,6 +4110,12 @@ rb_fork_ruby(int *status)
 {
     if (UNLIKELY(!rb_ractor_main_p())) {
         rb_ractor_isolation_violation("can not fork from non-main Ractors");
+
+        /* Reached only when the violation warned instead of raising.  fork keeps
+         * just the calling thread, so refuse it rather than hand the child a VM
+         * whose other Ractors are gone; every caller already handles -1. */
+        errno = EPERM;
+        return -1;
     }
 
     struct rb_process_status child = {.status = 0};
