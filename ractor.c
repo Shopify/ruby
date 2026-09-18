@@ -4058,6 +4058,38 @@ rb_ractor_isolation_violation_str(VALUE message)
     rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
 }
 
+// One check-mode warning per (C site, Ruby site); keys are malloc'd, the table is VM-global.
+static st_table *isolation_warn_tbl;
+static unsigned long isolation_warn_suppressed;
+
+static bool
+isolation_warn_first_p(const char *fmt)
+{
+    int line = 0;
+    const char *file = rb_source_location_cstr(&line);
+    VALUE loc = rb_sprintf("%p:%s:%d", (const void *)fmt, file ? file : "-", line);
+    char *key = strdup(RSTRING_PTR(loc));
+    if (!key) return true;
+
+    bool first;
+    RB_VM_LOCKING() {
+        if (!isolation_warn_tbl) isolation_warn_tbl = st_init_strtable();
+        first = !st_insert(isolation_warn_tbl, (st_data_t)key, 0);
+        if (!first) isolation_warn_suppressed++;
+    }
+    if (!first) free(key);
+    return first;
+}
+
+void
+rb_ractor_isolation_warning_summary(void)
+{
+    if (isolation_warn_suppressed) {
+        fprintf(stderr, "RUBY_RACTOR_CHECK_ISOLATION: %lu repeated isolation warnings suppressed\n",
+                isolation_warn_suppressed);
+    }
+}
+
 void
 rb_ractor_isolation_violation(const char *fmt, ...)
 {
@@ -4065,6 +4097,12 @@ rb_ractor_isolation_violation(const char *fmt, ...)
     va_start(args, fmt);
     VALUE message = rb_vsprintf(fmt, args);
     va_end(args);
+
+    if (rb_ractor_isolation_check_p()
+        && (NIL_P(ruby_verbose) || !rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION)
+            || !isolation_warn_first_p(fmt))) {
+        return;
+    }
 
     rb_ractor_isolation_violation_str(message);
 }
