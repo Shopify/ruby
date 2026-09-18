@@ -3803,6 +3803,7 @@ ractor_local_value_store_if_absent(rb_execution_context_t *ec, VALUE self, VALUE
 static VALUE
 ractor_shareable_proc(rb_execution_context_t *ec, VALUE replace_self, bool is_lambda)
 {
+    // in check mode, rb_proc_ractor_make_shareable below reports this violation
     if (!rb_ractor_shareable_p(replace_self) && !rb_ractor_isolation_check_p()) {
         rb_ractor_isolation_violation("self should be shareable: %" PRIsVALUE, replace_self);
     }
