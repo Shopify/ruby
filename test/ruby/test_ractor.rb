@@ -1121,6 +1121,29 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  def test_isolation_check_dedups_repeated_warnings
+    gvar_warning = /can not access global variable \$g/
+    summary = /RUBY_RACTOR_CHECK_ISOLATION: (\d+) repeated isolation warnings suppressed/
+    env = {"RUBY_RACTOR_CHECK_ISOLATION" => "1"}
+
+    assert_in_out_err([env, "-e", "$g = 1; Ractor.new { 10_000.times { $g } }.value"]) do |_stdout, stderr|
+      assert_equal 1, stderr.grep(gvar_warning).size, "expected one warning, got: #{stderr.inspect}"
+      assert_equal ["9999"], stderr.filter_map {|l| l[summary, 1] }
+    end
+
+    # each Ruby line warns once
+    assert_in_out_err([env, "-e", "$g = 1; Ractor.new {\n  $g\n  $g\n}.value"]) do |_stdout, stderr|
+      assert_equal 2, stderr.grep(gvar_warning).size, "expected two warnings, got: #{stderr.inspect}"
+      assert_empty stderr.grep(summary)
+    end
+
+    # disabling the category suppresses the warnings and the summary
+    assert_in_out_err([env, "-W:no-ractor_isolation", "-e", "$g = 1; Ractor.new { 10.times { $g } }.value"]) do |_stdout, stderr|
+      assert_empty stderr.grep(gvar_warning)
+      assert_empty stderr.grep(summary)
+    end
+  end
+
   def test_isolation_check_emits_nonexclusive_advisory_once_at_boot
     advisory = /RUBY_RACTOR_CHECK_ISOLATION: other Ractors can run in parallel/
     # The mode announcement must survive both -W0 and -W:no-ractor_isolation.

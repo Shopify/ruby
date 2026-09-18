@@ -250,6 +250,7 @@ bool rb_ractor_isolation_check_p(void);
  * calls). */
 PRINTF_ARGS(void rb_ractor_isolation_violation(const char *fmt, ...), 1, 2);
 void rb_ractor_isolation_violation_str(VALUE message);
+void rb_ractor_isolation_warning_summary(void);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 void rb_ractor_finish_marking(bool full_mark);

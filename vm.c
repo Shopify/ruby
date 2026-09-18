@@ -3571,6 +3571,7 @@ ruby_vm_destruct(rb_vm_t *vm)
 
     RUBY_FREE_ENTER("vm");
     ruby_vm_during_cleanup = true;
+    rb_ractor_isolation_warning_summary();
     rb_gc_stash_cleanup_objspace();
 
     if (vm) {
