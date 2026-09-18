@@ -144,7 +144,6 @@ struct rb_ractor_struct {
 
     bool malloc_gc_disabled;
     bool main_ractor;
-    bool isolation_check;
     void *newobj_cache;
 
     /* This Ractor's objspace.  The main Ractor receives the boot objspace from
@@ -236,12 +235,14 @@ VALUE rb_ractor_autoload_load(VALUE space, ID id);
 VALUE rb_ractor_ensure_shareable(VALUE obj, VALUE name);
 st_table *rb_ractor_targeted_hooks(rb_ractor_t *cr);
 
-/* True if the current Ractor was created by Ractor.check_isolation. */
+/* True if RUBY_RACTOR_CHECK_ISOLATION mode is enabled and the current Ractor
+ * is a non-main Ractor. */
 bool rb_ractor_isolation_check_p(void);
 
 /* Report a Ractor isolation violation:
- *   - if Ractor.check_isolation is active on the current Ractor, emit a
- *     :ractor_isolation category warning and return;
+ *   - if RUBY_RACTOR_CHECK_ISOLATION mode is enabled and the current Ractor
+ *     is a non-main Ractor, emit a :ractor_isolation category warning and
+ *     return;
  *   - otherwise, raise Ractor::IsolationError (does not return).
  *
  * Use the printf-style overload for ad-hoc messages and the _str overload

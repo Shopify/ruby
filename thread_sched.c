@@ -1794,11 +1794,19 @@ thread_sched_atfork(struct rb_thread_sched *sched)
 
 extern int ruby_mn_threads_enabled;
 extern int ruby_ractor_exclusive_enabled;
+extern int ruby_ractor_check_isolation_enabled;
 
 static bool
 ractor_exclusive_env_p(void)
 {
     const char *cstr = getenv("RUBY_RACTOR_EXCLUSIVE");
+    return cstr && atoi(cstr) > 0;
+}
+
+static bool
+ractor_check_isolation_env_p(void)
+{
+    const char *cstr = getenv("RUBY_RACTOR_CHECK_ISOLATION");
     return cstr && atoi(cstr) > 0;
 }
 
@@ -1837,6 +1845,14 @@ ruby_mn_threads_params(void)
     }
 
     vm->ractor.sched.max_cpu = max_cpu;
+
+    ruby_ractor_check_isolation_enabled = ractor_check_isolation_env_p();
+    if (ruby_ractor_check_isolation_enabled && !ruby_ractor_exclusive_enabled) {
+        rb_warn("RUBY_RACTOR_CHECK_ISOLATION: other Ractors can run in parallel"
+                " with the isolation-check Ractor. On builds with M:N scheduling,"
+                " RUBY_RACTOR_EXCLUSIVE=1 prevents simultaneous Ruby execution on"
+                " shared native threads.");
+    }
 }
 
 static void

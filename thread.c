@@ -154,6 +154,9 @@ MAYBE_UNUSED(static int consume_communication_pipe(int fd));
 static rb_atomic_t system_working = 1;
 static rb_internal_thread_specific_key_t specific_key_count;
 
+// set at boot from RUBY_RACTOR_CHECK_ISOLATION; defined in version.c
+extern int ruby_ractor_check_isolation_enabled;
+
 /********************************************************************************/
 
 #define THREAD_SYSTEM_DEPENDENT_IMPLEMENTATION
@@ -625,12 +628,12 @@ thread_do_start_proc(rb_thread_t *th)
         VALUE self = rb_ractor_self(th->ractor);
         th->thgroup = th->ractor->thgroup_default = rb_obj_alloc(cThGroup);
 
-        if (th->ractor->isolation_check) {
-            /* Isolation-check ractor (see thread_create_core): the block is not
-             * isolated and args were passed by reference as a real Array, so
-             * invoke the proc directly without going through the mailbox. Keep
-             * the proc's own self so closures over the enclosing scope keep
-             * working, mirroring the old inline Ractor.check_isolation block. */
+        if (ruby_ractor_check_isolation_enabled) {
+            /* RUBY_RACTOR_CHECK_ISOLATION mode (see thread_create_core): the
+             * block is not isolated and args were passed by reference as a
+             * real Array, so invoke the proc directly without going through
+             * the mailbox. Keep the proc's own self so closures over the
+             * enclosing scope keep working. */
             args_len = RARRAY_LENINT(args);
             if (args_len < 8) {
                 args_ptr = ALLOCA_N(VALUE, args_len);
@@ -960,10 +963,11 @@ thread_create_core(VALUE thval, struct thread_create_params *params)
         th->ec->ractor_id = rb_ractor_id(th->ractor);
         th->ractor->threads.main = th;
         th->invoke_arg.proc.kw_splat = rb_keyword_given_p();
-        if (th->ractor->isolation_check) {
-            /* This is a real non-main Ractor, but the Proc and arguments stay
-             * intact and are passed by reference. Report the Proc-isolation
-             * errors Ractor.new would raise, then run the original closure. */
+        if (ruby_ractor_check_isolation_enabled) {
+            /* RUBY_RACTOR_CHECK_ISOLATION mode: this is a real non-main
+             * Ractor, but the Proc and arguments stay intact and are passed
+             * by reference. Report the Proc-isolation errors Ractor.new would
+             * otherwise raise, then run the original closure. */
             rb_proc_check_isolation_warn(params->proc);
             th->invoke_arg.proc.proc = params->proc;
             th->invoke_arg.proc.args = params->args;
@@ -1019,7 +1023,7 @@ thread_create_core(VALUE thval, struct thread_create_params *params)
         EC_PUSH_TAG(ec);
         if ((state = EC_EXEC_TAG()) == TAG_NONE) {
             rb_ractor_setup_default_port(params->g);
-            if (!params->g->isolation_check) {
+            if (!ruby_ractor_check_isolation_enabled) {
                 rb_ractor_send_parameters(ec, params->g, params->args);
             }
         }

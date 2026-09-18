@@ -841,12 +841,11 @@ rb_ractor_main_setup(rb_vm_t *vm, rb_ractor_t *r, rb_thread_t *th)
 }
 
 static VALUE
-ractor_create0(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block, bool isolation_check)
+ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block)
 {
     VALUE rv = ractor_alloc(self);
     rb_ractor_t *r = RACTOR_PTR(rv);
     ractor_init(r, name, loc);
-    r->isolation_check = isolation_check;
 
     r->pub.id = ractor_next_id();
     RUBY_DEBUG_LOG("r:%u", r->pub.id);
@@ -863,12 +862,6 @@ ractor_create0(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VA
 
     RB_GC_GUARD(rv);
     return rv;
-}
-
-static VALUE
-ractor_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block)
-{
-    return ractor_create0(ec, self, loc, name, args, block, false);
 }
 
 #if 0
@@ -1957,7 +1950,7 @@ rb_ractor_ensure_shareable(VALUE obj, VALUE name)
 {
     if (!rb_ractor_shareable_p(obj)) {
         rb_ractor_isolation_violation("cannot assign unshareable object to %"PRIsVALUE, name);
-        // In check_isolation mode the violation only warned: return obj as-is
+        // In isolation-check mode the violation only warned: return obj as-is
         // so the caller can keep going. The caller's invariant ("this is now
         // shareable") will be wrong, which is exactly the bug we want surfaced.
     }
@@ -4027,26 +4020,30 @@ rb_ractor_autoload_load(VALUE module, ID name)
 }
 
 // =============================================================================
-// Ractor.check_isolation { ... }
+// RUBY_RACTOR_CHECK_ISOLATION (environment variable, read once at boot)
 //
-// A development/debugging mode: the block runs in a genuine non-main Ractor,
-// without isolating its Proc or copying its arguments. Violations are
-// downgraded from Ractor::IsolationError to :ractor_isolation category warnings
-// so the program can keep running and report more than the first violation.
+// A development/debugging mode: isolation violations on non-main Ractors are
+// downgraded from Ractor::IsolationError to :ractor_isolation category
+// warnings so the program can keep running and report more than the first
+// violation. The main Ractor is unaffected and keeps raising as usual.
 //
-// As a side effect (matches Ractor semantics), the VM is switched into
-// multi-ractor mode the first time check_isolation is enabled. Multi-ractor
-// mode cannot be turned off again, so the VM keeps paying that overhead for
-// the rest of the process lifetime.
+// The mode only changes how violations are reported. Creating a Ractor still
+// switches the VM into multi-ractor mode (ordinary Ractor.new semantics).
+// Multi-ractor mode cannot be turned off again, so the VM keeps paying that
+// overhead for the rest of the process lifetime.
 // =============================================================================
+
+/* Set at boot from the environment; see thread_sched.c and version.c. */
+extern int ruby_ractor_check_isolation_enabled;
 
 bool
 rb_ractor_isolation_check_p(void)
 {
+    if (!ruby_ractor_check_isolation_enabled) return false;
     rb_execution_context_t *ec = rb_current_ec_noinline();
     if (!ec) return false;
     rb_ractor_t *r = rb_ec_ractor_ptr(ec);
-    return r && r->isolation_check;
+    return r && r != rb_ec_vm_ptr(ec)->ractor.main_ractor;
 }
 
 void
@@ -4069,27 +4066,6 @@ rb_ractor_isolation_violation(const char *fmt, ...)
     va_end(args);
 
     rb_ractor_isolation_violation_str(message);
-}
-
-/* Set during native-thread scheduler initialization; see thread_sched.c. */
-extern int ruby_ractor_exclusive_enabled;
-
-static rb_atomic_t ractor_check_isolation_advisory_emitted;
-
-/* Return true to exactly one caller when nonexclusive mode needs its advisory.
- * This state cannot live on Ractor itself: setting a class/module ivar from an
- * ordinary non-main Ractor is itself an isolation violation. */
-static VALUE
-ractor_check_isolation_warn_p(rb_execution_context_t *ec, VALUE self)
-{
-    if (ruby_ractor_exclusive_enabled) return Qfalse;
-    return RBOOL(ATOMIC_EXCHANGE(ractor_check_isolation_advisory_emitted, 1) == 0);
-}
-
-static VALUE
-ractor_check_isolation_create(rb_execution_context_t *ec, VALUE self, VALUE loc, VALUE name, VALUE args, VALUE block)
-{
-    return ractor_create0(ec, self, loc, name, args, block, true);
 }
 
 #include "ractor.rbinc"
