@@ -1848,10 +1848,11 @@ ruby_mn_threads_params(void)
 
     ruby_ractor_check_isolation_enabled = ractor_check_isolation_env_p();
     if (ruby_ractor_check_isolation_enabled && !ruby_ractor_exclusive_enabled) {
-        rb_warn("RUBY_RACTOR_CHECK_ISOLATION: other Ractors can run in parallel"
+        // fprintf, not rb_warn: the mode announcement must survive -W0
+        fprintf(stderr, "warning: RUBY_RACTOR_CHECK_ISOLATION: other Ractors can run in parallel"
                 " with the isolation-check Ractor. On builds with M:N scheduling,"
                 " RUBY_RACTOR_EXCLUSIVE=1 prevents simultaneous Ruby execution on"
-                " shared native threads.");
+                " shared native threads.\n");
     }
 }
 

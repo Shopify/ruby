@@ -1123,8 +1123,8 @@ class TestRactor < Test::Unit::TestCase
 
   def test_isolation_check_emits_nonexclusive_advisory_once_at_boot
     advisory = /RUBY_RACTOR_CHECK_ISOLATION: other Ractors can run in parallel/
-    # The advisory is an uncategorized warning, so -W:no-ractor_isolation must not hide it.
-    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}, "-W:no-ractor_isolation", "-e", ""]) do |_stdout, stderr|
+    # The mode announcement must survive both -W0 and -W:no-ractor_isolation.
+    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}, "-W0", "-W:no-ractor_isolation", "-e", ""]) do |_stdout, stderr|
       assert_equal 1, stderr.grep(advisory).size, "expected the boot advisory exactly once, got: #{stderr.inspect}"
     end
     assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1", "RUBY_RACTOR_EXCLUSIVE" => "1"}, "-e", "puts RUBY_DESCRIPTION"]) do |stdout, stderr|
