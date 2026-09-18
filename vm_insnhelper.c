@@ -1263,7 +1263,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 // Second, other ractors need to check the shareability of the
                 // values returned from the class ivars.
                 //
-                // Ractor.check_isolation also routes here so the isolation
+                // RUBY_RACTOR_CHECK_ISOLATION mode also routes here so the isolation
                 // checks in the general path get a chance to fire.
 
                 if (default_value == Qundef) { // defined?
@@ -1433,7 +1433,7 @@ vm_setivar_class(VALUE obj, VALUE val, rb_setivar_cache cache)
 {
     if (UNLIKELY(!rb_ractor_main_p())) {
         // Bail out of the inline cache fast path so the slow path can run
-        // the isolation check (also fires under Ractor.check_isolation).
+        // the isolation check (also fires under RUBY_RACTOR_CHECK_ISOLATION).
         return Qundef;
     }
 
@@ -3553,7 +3553,7 @@ ractor_unsafe_check(void)
     if (LIKELY(rb_ractor_main_p())) return;
 
     if (rb_ractor_isolation_check_p()) {
-        // Ractor.check_isolation: downgrade to a :ractor_isolation warning so
+        // RUBY_RACTOR_CHECK_ISOLATION: downgrade to a :ractor_isolation warning so
         // the sweep can keep going. We deliberately route through the same
         // category as the IsolationError downgrades because from the caller's
         // point of view both mean "this code would not work in a Ractor".
@@ -4134,9 +4134,9 @@ vm_bmethod_proc_uncallable_p(rb_execution_context_t *ec, const rb_callable_metho
 // A method defined with a genuinely non-shareable Proc (e.g. define_method with
 // a Proc capturing unshareable state) can normally only be called from the
 // Ractor that defined it; calling it elsewhere raises. Under
-// Ractor.check_isolation we downgrade that to a :ractor_isolation warning and
+// RUBY_RACTOR_CHECK_ISOLATION we downgrade that to a :ractor_isolation warning and
 // fall through to invoke it anyway. RUBY_RACTOR_EXCLUSIVE makes this
-// race-free; without that scheduler mode the public wrapper emits an advisory.
+// race-free; without that scheduler mode a boot advisory is emitted.
 // Continuing lets a real-Ractor sweep collect the violations that follow
 // instead of dying on the first bmethod call.
 static void

@@ -192,8 +192,13 @@ int ruby_mn_threads_enabled;
 
 /* Set at boot (see ruby_mn_threads_params) when RUBY_RACTOR_EXCLUSIVE is
  * truthy: the M:N scheduler runs with a single shared native thread so at
- * most one thread executes Ruby VM-wide. Used by Ractor.check_isolation advisory. */
+ * most one thread executes Ruby VM-wide. Used by the RUBY_RACTOR_CHECK_ISOLATION
+ * boot advisory. */
 int ruby_ractor_exclusive_enabled;
+
+/* Set at boot (see ruby_mn_threads_params) when RUBY_RACTOR_CHECK_ISOLATION is
+ * truthy: every non-main Ractor downgrades isolation violations to warnings. */
+int ruby_ractor_check_isolation_enabled;
 
 #ifndef RB_DEFAULT_PARSER
 #define RB_DEFAULT_PARSER RB_DEFAULT_PARSER_PRISM
