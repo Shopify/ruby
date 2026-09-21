@@ -1649,8 +1649,7 @@ rb_proc_isolate(VALUE self)
     return dst;
 }
 
-/* Report the Proc-isolation checks performed by Ractor.new without mutating
- * the Proc, so RUBY_RACTOR_CHECK_ISOLATION mode can execute the original closure. */
+/* The checks of rb_proc_isolate_bang, reported as warnings, without mutating the Proc. */
 void
 rb_proc_check_isolation_warn(VALUE self)
 {

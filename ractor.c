@@ -1950,9 +1950,7 @@ rb_ractor_ensure_shareable(VALUE obj, VALUE name)
 {
     if (!rb_ractor_shareable_p(obj)) {
         rb_ractor_isolation_violation("cannot assign unshareable object to %"PRIsVALUE, name);
-        // In isolation-check mode the violation only warned: return obj as-is
-        // so the caller can keep going. The caller's invariant ("this is now
-        // shareable") will be wrong, which is exactly the bug we want surfaced.
+        // in check mode this only warned; the caller's "shareable" invariant is knowingly broken
     }
     return obj;
 }
@@ -4020,21 +4018,9 @@ rb_ractor_autoload_load(VALUE module, ID name)
     }
 }
 
-// =============================================================================
-// RUBY_RACTOR_CHECK_ISOLATION (environment variable, read once at boot)
-//
-// A development/debugging mode: isolation violations on non-main Ractors are
-// downgraded from Ractor::IsolationError to :ractor_isolation category
-// warnings so the program can keep running and report more than the first
-// violation. The main Ractor is unaffected and keeps raising as usual.
-//
-// The mode only changes how violations are reported. Creating a Ractor still
-// switches the VM into multi-ractor mode (ordinary Ractor.new semantics).
-// Multi-ractor mode cannot be turned off again, so the VM keeps paying that
-// overhead for the rest of the process lifetime.
-// =============================================================================
+// RUBY_RACTOR_CHECK_ISOLATION: non-main Ractors warn on isolation violations
+// instead of raising, so a sweep reports more than the first one.
 
-/* Set at boot from the environment; see thread_sched.c and version.c. */
 extern int ruby_ractor_check_isolation_enabled;
 
 bool

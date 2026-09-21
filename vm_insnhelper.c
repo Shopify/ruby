@@ -1262,9 +1262,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 // and modules. So we can skip locking.
                 // Second, other ractors need to check the shareability of the
                 // values returned from the class ivars.
-                //
-                // RUBY_RACTOR_CHECK_ISOLATION mode also routes here so the isolation
-                // checks in the general path get a chance to fire.
 
                 if (default_value == Qundef) { // defined?
                     return rb_ivar_defined(obj, id) ? Qtrue : Qundef;
@@ -1432,8 +1429,7 @@ static VALUE
 vm_setivar_class(VALUE obj, VALUE val, rb_setivar_cache cache)
 {
     if (UNLIKELY(!rb_ractor_main_p())) {
-        // Bail out of the inline cache fast path so the slow path can run
-        // the isolation check (also fires under RUBY_RACTOR_CHECK_ISOLATION).
+        // leave the inline cache so the slow path runs the isolation check
         return Qundef;
     }
 
@@ -3553,17 +3549,12 @@ ractor_unsafe_check(void)
     if (LIKELY(rb_ractor_main_p())) return;
 
     if (rb_ractor_isolation_check_p()) {
-        // RUBY_RACTOR_CHECK_ISOLATION: downgrade to a :ractor_isolation warning so
-        // the sweep can keep going. We deliberately route through the same
-        // category as the IsolationError downgrades because from the caller's
-        // point of view both mean "this code would not work in a Ractor".
+        // same category as IsolationError: to the caller both mean "not Ractor-safe"
         rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
                          "ractor unsafe method called from not main ractor");
         return;
     }
 
-    // Real non-main Ractor: preserve the existing UnsafeError behaviour so
-    // user code that rescues Ractor::UnsafeError specifically keeps working.
     rb_raise(rb_eRactorUnsafeError, "ractor unsafe method called from not main ractor");
 }
 
@@ -4122,8 +4113,6 @@ vm_call_attrset(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_c
     return vm_call_attrset_direct(ec, cfp, calling->cc, calling->recv);
 }
 
-// True if a bmethod's Proc may not be invoked from the current Ractor: it is
-// not shareable and was defined in a different Ractor.
 static inline bool
 vm_bmethod_proc_uncallable_p(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme, VALUE procv)
 {
@@ -4131,14 +4120,7 @@ vm_bmethod_proc_uncallable_p(rb_execution_context_t *ec, const rb_callable_metho
         cme->def->body.bmethod.defined_ractor_id != rb_ec_ractor_id(ec);
 }
 
-// A method defined with a genuinely non-shareable Proc (e.g. define_method with
-// a Proc capturing unshareable state) can normally only be called from the
-// Ractor that defined it; calling it elsewhere raises. Under
-// RUBY_RACTOR_CHECK_ISOLATION we downgrade that to a :ractor_isolation warning and
-// fall through to invoke it anyway. Check mode serializes Ractors, which makes
-// this race-free; on builds without M:N a boot advisory is emitted.
-// Continuing lets a real-Ractor sweep collect the violations that follow
-// instead of dying on the first bmethod call.
+// in check mode the bmethod is invoked anyway after the warning
 static void
 vm_bmethod_unshareable_proc_violation(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme)
 {

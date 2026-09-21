@@ -1808,8 +1808,7 @@ ruby_mn_threads_params(void)
     rb_vm_t *vm = GET_VM();
     rb_ractor_t *main_ractor = GET_RACTOR();
 
-    // Boot precedes the first Ractor, so isolation checking can serialize
-    // Ractors itself rather than ask for a second environment variable.
+    // boot precedes the first Ractor, so check mode can pin the scheduler itself
     ruby_ractor_check_isolation_enabled = ractor_check_isolation_env_p();
     bool exclusive = USE_MN_THREADS && ruby_ractor_check_isolation_enabled;
 
