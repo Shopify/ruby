@@ -439,6 +439,45 @@ class TestBox < Test::Unit::TestCase
       assert_equal 42, 42.itself
     end;
   end
+
+  def test_marshal_round_trip_in_main_box
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      class BoxMarshalFoo
+        attr_reader :value
+        def initialize(value)
+          @value = value
+        end
+      end
+      obj = Marshal.load(Marshal.dump(BoxMarshalFoo.new(42))) # [Bug #22090]
+      assert_instance_of BoxMarshalFoo, obj
+      assert_equal 42, obj.value
+      assert_instance_of BoxMarshalFoo, Marshal.load(Marshal.dump(BoxMarshalFoo.new(1)), freeze: true)
+    end;
+  end
+
+  def test_marshal_resolves_classes_in_the_caller_user_box
+    setup_box
+
+    obj = @box.eval("class BoxMarshalBar; end; Marshal.load(Marshal.dump(BoxMarshalBar.new))")
+    assert_equal "BoxMarshalBar", obj.class.name
+
+    # a class defined only in the box is invisible from the main box
+    dump = @box.eval("Marshal.dump(BoxMarshalBar.new)")
+    assert_raise_with_message(ArgumentError, /undefined class\/module BoxMarshalBar/) do
+      Marshal.load(dump)
+    end
+  end
+
+  def test_marshal_skips_root_box_frames_in_the_caller_stack
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      class BoxMarshalBaz; end
+      # the proc runs in the root box, where BoxMarshalBaz is invisible
+      loader = Ruby::Box.root.eval("->(dump) { Marshal.load(dump) }")
+      assert_instance_of BoxMarshalBaz, loader.call(Marshal.dump(BoxMarshalBaz.new))
+    end;
+  end
 end
 
 class TestBoxDescendantsMain
@@ -533,7 +572,9 @@ class TestBox < Test::Unit::TestCase
   def test_add_constants_in_box
     setup_box
 
-    @box.require('envutil')
+    # A new box copies the master box's $LOAD_PATH, so the tool/lib entry that
+    # tool/test/init.rb adds to the main box at boot is not visible here.
+    @box.require(File.expand_path("../../tool/lib/envutil", __dir__))
 
     String.const_set(:STR_CONST0, 999)
     assert_equal 999, String::STR_CONST0
@@ -609,6 +650,8 @@ class TestBox < Test::Unit::TestCase
     assert_raise(NameError) { String::STR_CONST2 }
     assert_raise(NameError) { String::STR_CONST3 }
     assert_raise(NameError) { Integer::INT_CONST1 }
+  ensure
+    String.__send__(:remove_const, :STR_CONST0) if String.const_defined?(:STR_CONST0, false)
   end
 
   def test_global_variables
@@ -650,6 +693,31 @@ class TestBox < Test::Unit::TestCase
       $-0 = default_l
       $, = default_f
     end
+  end
+
+  def test_defined_for_global_variables
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      $assigned_in_box = 1
+      assert_equal "global-variable", defined?($assigned_in_box)
+
+      assert_nil $never_assigned_in_box
+      assert_nil defined?($never_assigned_in_box)
+
+      assert_equal "global-variable", defined?($stdout)
+
+      in_box = Ruby::Box.new.eval(<<~'CODE')
+        $assigned_in_inner_box = 1
+        [
+          defined?($assigned_in_inner_box),
+          $never_assigned_in_inner_box,
+          defined?($never_assigned_in_inner_box),
+          defined?($stdout),
+        ]
+      CODE
+      assert_equal ["global-variable", nil, nil, "global-variable"], in_box
+      assert_nil defined?($assigned_in_inner_box)
+    end;
   end
 
   def test_match_variables_are_not_cached_in_box
@@ -777,6 +845,78 @@ class TestBox < Test::Unit::TestCase
     end;
   end
 
+  def test_stdio_gvar_reassignment_seen_by_kernel_methods
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      require "stringio"
+      orig_stdout, orig_stderr = $stdout, $stderr
+      $stdout, $stderr = StringIO.new, StringIO.new
+      puts "standard out"
+      warn "standard err"
+      out, err = $stdout.string, $stderr.string
+      $stdout, $stderr = orig_stdout, orig_stderr
+      assert_equal "standard out\n", out
+      assert_equal "standard err\n", err
+    end;
+  end
+
+  def test_stdio_gvar_reassignment_in_box_seen_by_kernel_methods
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      out, err = Ruby::Box.new.eval(<<~'CODE')
+        require "stringio"
+        orig_stdout, orig_stderr = $stdout, $stderr
+        $stdout, $stderr = StringIO.new, StringIO.new
+        puts "standard out"
+        warn "standard err"
+        result = [$stdout.string, $stderr.string]
+        $stdout, $stderr = orig_stdout, orig_stderr
+        result
+      CODE
+      assert_equal "standard out\n", out
+      assert_equal "standard err\n", err
+    end;
+  end
+
+  def test_child_status_gvar_not_cached_in_box
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      system(EnvUtil.rubybin, "-e", "exit 3")
+      assert_equal 3, $?.exitstatus
+      assert_equal Process.last_status.pid, $?.pid
+      IO.popen([EnvUtil.rubybin, "-e", "exit 5"]) {|io| io.read}
+      assert_equal 5, $?.exitstatus
+    end;
+  end
+
+  def test_child_status_gvar_not_cached_in_user_box
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      ruby = EnvUtil.rubybin.dump
+      first, second = Ruby::Box.new.eval(<<~CODE)
+        system(#{ruby}, "-e", "exit 3")
+        first = $?.exitstatus
+        system(#{ruby}, "-e", "exit 5")
+        [first, $?.exitstatus]
+      CODE
+      assert_equal 3, first
+      assert_equal 5, second
+    end;
+  end
+
+  def test_pid_gvar_not_cached_in_forked_child
+    omit "fork is not supported" unless Process.respond_to?(:fork)
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      _parent_pid = $$
+      r, w = IO.pipe
+      pid = fork { r.close; w.puts($$ == Process.pid); exit!(true) }
+      w.close
+      Process.wait(pid)
+      assert_equal "true", r.read.chomp
+    end;
+  end
+
   def test_errinfo_isolated_between_boxes
     assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
     begin;
@@ -884,14 +1024,14 @@ class TestBox < Test::Unit::TestCase
     setup_box
 
     # Define a class in the box via eval
-    @box.eval("class TestClass; def hello; 'from box'; end; end")
+    @box.eval("class BoxEvalTestClass; def hello; 'from box'; end; end")
 
     # Class should be accessible in the box
-    instance = @box::TestClass.new
+    instance = @box::BoxEvalTestClass.new
     assert_equal "from box", instance.hello
 
     # Class should not be visible in main box
-    assert_raise(NameError) { TestClass }
+    assert_raise(NameError) { BoxEvalTestClass }
   end
 
   def test_eval_isolation
@@ -942,7 +1082,7 @@ class TestBox < Test::Unit::TestCase
   # Tests which run always (w/o RUBY_BOX=1 globally)
 
   def test_prelude_gems_and_loaded_features
-    assert_in_out_err([ENV_ENABLE_BOX, "--enable=gems"], "#{<<-"begin;"}\n#{<<-'end;'}") do |output, error|
+    assert_in_out_err([ENV_ENABLE_BOX, "--enable=gems", "-W:experimental"], "#{<<-"begin;"}\n#{<<-'end;'}") do |output, error|
       begin;
         puts ["before:", $LOADED_FEATURES.select{ it.end_with?("/bundled_gems.rb") }&.first].join
         puts ["before:", $LOADED_FEATURES.select{ it.end_with?("/error_highlight.rb") }&.first].join
@@ -966,7 +1106,7 @@ class TestBox < Test::Unit::TestCase
   end
 
   def test_prelude_gems_and_loaded_features_with_disable_gems
-    assert_in_out_err([ENV_ENABLE_BOX, "--disable=gems"], "#{<<-"begin;"}\n#{<<-'end;'}") do |output, error|
+    assert_in_out_err([ENV_ENABLE_BOX, "--disable=gems", "-W:experimental"], "#{<<-"begin;"}\n#{<<-'end;'}") do |output, error|
       begin;
         puts ["before:", $LOADED_FEATURES.select{ it.end_with?("/bundled_gems.rb") }&.first].join
         puts ["before:", $LOADED_FEATURES.select{ it.end_with?("/error_highlight.rb") }&.first].join
@@ -1195,6 +1335,79 @@ class TestBox < Test::Unit::TestCase
     end;
   end
 
+  def test_symbol_to_proc_with_escaped_binding
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      # Regression test for [BUG] Local ep without cme/box, flags: 66660087.
+      # binding() may escape TOP env and propagate LOCAL to IFUNC frames.
+      assert_nothing_raised do
+        using Module.new {
+          refine ::Binding do
+            def eval_methods
+              ::Kernel.instance_method(:methods).bind_call(receiver)
+            end
+          end
+        }
+
+        result = binding.eval_methods.map(&:to_s)
+        assert_kind_of Array, result
+        assert result.all? { |x| x.is_a?(String) }
+      end
+    end;
+  end
+
+  def test_method_to_proc_called_from_ruby_frame
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      # Regression test for [BUG] Local ep without cme/box, flags: 77770021.
+      # An ifunc proc invoked directly from a Ruby frame (e.g. Proc#call)
+      # has no enclosing CFUNC frame, so the caller Ruby frame determines
+      # the box.
+      assert_nothing_raised do
+        method(:require).to_proc.call("English")
+      end
+      assert_equal 1, $LOADED_FEATURES.grep(/English/).size
+    end;
+  end
+
+  def test_symbol_to_proc_uses_current_box
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      box = Ruby::Box.new
+
+      normal, via_sym_proc = box.eval(<<~'RUBY')
+        class Array
+          def box_only_method
+            :ok
+          end
+        end
+
+        normal = [[1]].flat_map { |ary| ary.box_only_method }
+        via_sym_proc = [[1]].flat_map(&:box_only_method)
+        [normal, via_sym_proc]
+      RUBY
+
+      assert_equal [:ok], normal
+      assert_equal [:ok], via_sym_proc
+
+      assert_raise(NoMethodError) { [1].box_only_method }
+    end;
+  end
+
+  def test_symbol_to_proc_uses_main_box
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      class Array
+        def main_box_only_method
+          :ok
+        end
+      end
+
+      assert_equal [:ok], [[1]].flat_map { |ary| ary.main_box_only_method }
+      assert_equal [:ok], [[1]].flat_map(&:main_box_only_method)
+    end;
+  end
+
   def test_very_basic_method_calls_and_constants
     assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
     begin;
@@ -1229,8 +1442,7 @@ class TestBox < Test::Unit::TestCase
   end
 
   def test_loading_extension_libs_in_main_box_2
-    pend if /mswin|mingw/ =~ RUBY_PLATFORM # timeout on windows environments
-    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true, timeout: 60)
     begin;
       require "zlib"
       require "open3"
@@ -1380,6 +1592,19 @@ class TestBox < Test::Unit::TestCase
       RUBY
 
       Module.new.include?(Module.new)
+    end;
+  end
+
+  def test_method_call_in_isolated_proc_from_class_frame
+    # A TOP/CLASS local env stores its box in the SPECVAL slot (VM_ENV_BOX);
+    # Ractor.make_shareable's env copy must preserve it, or any method call
+    # inside the isolated proc dereferences a NULL box and crashes the VM.
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      module BoxIsolatedProcTest
+        PROC = Ractor.make_shareable(->(x){ x.to_s })
+      end
+      assert_equal "42", BoxIsolatedProcTest::PROC.call(42)
     end;
   end
 end

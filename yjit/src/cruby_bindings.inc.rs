@@ -453,6 +453,7 @@ pub struct iseq_inline_constant_cache_entry {
     pub flags: VALUE,
     pub value: VALUE,
     pub ic_cref: *const rb_cref_t,
+    pub ractor_id: rb_serial_t,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -486,6 +487,7 @@ pub const BUILTIN_ATTR_SINGLE_NOARG_LEAF: rb_builtin_attr = 2;
 pub const BUILTIN_ATTR_INLINE_BLOCK: rb_builtin_attr = 4;
 pub const BUILTIN_ATTR_C_TRACE: rb_builtin_attr = 8;
 pub const BUILTIN_ATTR_WITHOUT_INTERRUPTS: rb_builtin_attr = 16;
+pub const BUILTIN_ATTR_CALLER_USER_BOX: rb_builtin_attr = 32;
 pub type rb_builtin_attr = u32;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1003,44 +1005,40 @@ pub const YARVINSN_trace_setlocal_WC_0: ruby_vminsn_type = 222;
 pub const YARVINSN_trace_setlocal_WC_1: ruby_vminsn_type = 223;
 pub const YARVINSN_trace_putobject_INT2FIX_0_: ruby_vminsn_type = 224;
 pub const YARVINSN_trace_putobject_INT2FIX_1_: ruby_vminsn_type = 225;
-pub const YARVINSN_zjit_getblockparamproxy: ruby_vminsn_type = 226;
-pub const YARVINSN_zjit_getinstancevariable: ruby_vminsn_type = 227;
-pub const YARVINSN_zjit_setinstancevariable: ruby_vminsn_type = 228;
-pub const YARVINSN_zjit_splatkw: ruby_vminsn_type = 229;
-pub const YARVINSN_zjit_definedivar: ruby_vminsn_type = 230;
-pub const YARVINSN_zjit_send: ruby_vminsn_type = 231;
-pub const YARVINSN_zjit_opt_send_without_block: ruby_vminsn_type = 232;
-pub const YARVINSN_zjit_objtostring: ruby_vminsn_type = 233;
-pub const YARVINSN_zjit_opt_nil_p: ruby_vminsn_type = 234;
-pub const YARVINSN_zjit_invokesuper: ruby_vminsn_type = 235;
-pub const YARVINSN_zjit_invokeblock: ruby_vminsn_type = 236;
-pub const YARVINSN_zjit_opt_plus: ruby_vminsn_type = 237;
-pub const YARVINSN_zjit_opt_minus: ruby_vminsn_type = 238;
-pub const YARVINSN_zjit_opt_mult: ruby_vminsn_type = 239;
-pub const YARVINSN_zjit_opt_div: ruby_vminsn_type = 240;
-pub const YARVINSN_zjit_opt_mod: ruby_vminsn_type = 241;
-pub const YARVINSN_zjit_opt_eq: ruby_vminsn_type = 242;
-pub const YARVINSN_zjit_opt_neq: ruby_vminsn_type = 243;
-pub const YARVINSN_zjit_opt_lt: ruby_vminsn_type = 244;
-pub const YARVINSN_zjit_opt_le: ruby_vminsn_type = 245;
-pub const YARVINSN_zjit_opt_gt: ruby_vminsn_type = 246;
-pub const YARVINSN_zjit_opt_ge: ruby_vminsn_type = 247;
-pub const YARVINSN_zjit_opt_ltlt: ruby_vminsn_type = 248;
-pub const YARVINSN_zjit_opt_and: ruby_vminsn_type = 249;
-pub const YARVINSN_zjit_opt_or: ruby_vminsn_type = 250;
-pub const YARVINSN_zjit_opt_aref: ruby_vminsn_type = 251;
-pub const YARVINSN_zjit_opt_aset: ruby_vminsn_type = 252;
-pub const YARVINSN_zjit_opt_length: ruby_vminsn_type = 253;
-pub const YARVINSN_zjit_opt_size: ruby_vminsn_type = 254;
-pub const YARVINSN_zjit_opt_empty_p: ruby_vminsn_type = 255;
-pub const YARVINSN_zjit_opt_succ: ruby_vminsn_type = 256;
-pub const YARVINSN_zjit_opt_not: ruby_vminsn_type = 257;
-pub const YARVINSN_zjit_opt_regexpmatch2: ruby_vminsn_type = 258;
-pub const VM_INSTRUCTION_SIZE: ruby_vminsn_type = 259;
+pub const YARVINSN_zjit_getinstancevariable: ruby_vminsn_type = 226;
+pub const YARVINSN_zjit_setinstancevariable: ruby_vminsn_type = 227;
+pub const YARVINSN_zjit_splatkw: ruby_vminsn_type = 228;
+pub const YARVINSN_zjit_definedivar: ruby_vminsn_type = 229;
+pub const YARVINSN_zjit_send: ruby_vminsn_type = 230;
+pub const YARVINSN_zjit_opt_send_without_block: ruby_vminsn_type = 231;
+pub const YARVINSN_zjit_objtostring: ruby_vminsn_type = 232;
+pub const YARVINSN_zjit_opt_nil_p: ruby_vminsn_type = 233;
+pub const YARVINSN_zjit_invokesuper: ruby_vminsn_type = 234;
+pub const YARVINSN_zjit_invokeblock: ruby_vminsn_type = 235;
+pub const YARVINSN_zjit_opt_plus: ruby_vminsn_type = 236;
+pub const YARVINSN_zjit_opt_minus: ruby_vminsn_type = 237;
+pub const YARVINSN_zjit_opt_mult: ruby_vminsn_type = 238;
+pub const YARVINSN_zjit_opt_div: ruby_vminsn_type = 239;
+pub const YARVINSN_zjit_opt_mod: ruby_vminsn_type = 240;
+pub const YARVINSN_zjit_opt_eq: ruby_vminsn_type = 241;
+pub const YARVINSN_zjit_opt_neq: ruby_vminsn_type = 242;
+pub const YARVINSN_zjit_opt_lt: ruby_vminsn_type = 243;
+pub const YARVINSN_zjit_opt_le: ruby_vminsn_type = 244;
+pub const YARVINSN_zjit_opt_gt: ruby_vminsn_type = 245;
+pub const YARVINSN_zjit_opt_ge: ruby_vminsn_type = 246;
+pub const YARVINSN_zjit_opt_ltlt: ruby_vminsn_type = 247;
+pub const YARVINSN_zjit_opt_and: ruby_vminsn_type = 248;
+pub const YARVINSN_zjit_opt_or: ruby_vminsn_type = 249;
+pub const YARVINSN_zjit_opt_aref: ruby_vminsn_type = 250;
+pub const YARVINSN_zjit_opt_aset: ruby_vminsn_type = 251;
+pub const YARVINSN_zjit_opt_length: ruby_vminsn_type = 252;
+pub const YARVINSN_zjit_opt_size: ruby_vminsn_type = 253;
+pub const YARVINSN_zjit_opt_empty_p: ruby_vminsn_type = 254;
+pub const YARVINSN_zjit_opt_succ: ruby_vminsn_type = 255;
+pub const YARVINSN_zjit_opt_not: ruby_vminsn_type = 256;
+pub const YARVINSN_zjit_opt_regexpmatch2: ruby_vminsn_type = 257;
+pub const VM_INSTRUCTION_SIZE: ruby_vminsn_type = 258;
 pub type ruby_vminsn_type = u32;
-pub type rb_iseq_callback = ::std::option::Option<
-    unsafe extern "C" fn(arg1: *const rb_iseq_t, arg2: *mut ::std::os::raw::c_void),
->;
 pub const DEFINED_NOT_DEFINED: defined_type = 0;
 pub const DEFINED_NIL: defined_type = 1;
 pub const DEFINED_IVAR: defined_type = 2;
@@ -1060,8 +1058,16 @@ pub const DEFINED_REF: defined_type = 15;
 pub const DEFINED_FUNC: defined_type = 16;
 pub const DEFINED_CONST_FROM: defined_type = 17;
 pub type defined_type = u32;
+pub type rb_iseq_callback = ::std::option::Option<
+    unsafe extern "C" fn(arg1: *const rb_iseq_t, arg2: *mut ::std::os::raw::c_void),
+>;
+pub const YJIT_ISEQ_TRANSLATED: yjit_bindgen_constants = 1048576;
+pub type yjit_bindgen_constants = u32;
 pub type rb_seq_param_keyword_struct =
     rb_iseq_constant_body_rb_iseq_parameters_rb_iseq_param_keyword;
+pub const RSTRUCT_EMBED_LEN_MASK: ruby_rstruct_flags = 1040384;
+pub const RSTRUCT_EMBED_LEN_SHIFT: ruby_rstruct_flags = 13;
+pub type ruby_rstruct_flags = usize;
 pub const ROBJECT_OFFSET_AS_HEAP_FIELDS: jit_bindgen_constants = 16;
 pub const ROBJECT_OFFSET_AS_ARY: jit_bindgen_constants = 16;
 pub const RCLASS_OFFSET_PRIME_FIELDS_OBJ: jit_bindgen_constants = 40;
@@ -1247,6 +1253,7 @@ extern "C" {
         lines: *mut ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
     pub fn rb_jit_cont_each_iseq(callback: rb_iseq_callback, data: *mut ::std::os::raw::c_void);
+    pub fn rb_jit_for_each_iseq(callback: rb_iseq_callback, data: *mut ::std::os::raw::c_void);
     pub fn rb_yjit_exit_locations_dict(
         yjit_raw_samples: *mut VALUE,
         yjit_line_samples: *mut ::std::os::raw::c_int,
@@ -1260,7 +1267,6 @@ extern "C" {
     pub fn rb_str_neq_internal(str1: VALUE, str2: VALUE) -> VALUE;
     pub fn rb_ary_unshift_m(argc: ::std::os::raw::c_int, argv: *mut VALUE, ary: VALUE) -> VALUE;
     pub fn rb_yjit_rb_ary_subseq_length(ary: VALUE, beg: ::std::os::raw::c_long) -> VALUE;
-    pub fn rb_yjit_ruby2_keywords_splat_p(obj: VALUE) -> usize;
     pub fn rb_yjit_splat_varg_checks(
         sp: *mut VALUE,
         splat_array: VALUE,
@@ -1386,6 +1392,7 @@ extern "C" {
     pub fn rb_assert_cme_handle(handle: VALUE);
     pub fn rb_yarv_ary_entry_internal(ary: VALUE, offset: ::std::os::raw::c_long) -> VALUE;
     pub fn rb_jit_array_len(a: VALUE) -> ::std::os::raw::c_long;
+    pub fn rb_jit_ruby2_keywords_splat_p(obj: VALUE) -> usize;
     pub fn rb_set_cfp_pc(cfp: *mut rb_control_frame_struct, pc: *const VALUE);
     pub fn rb_set_cfp_sp(cfp: *mut rb_control_frame_struct, sp: *mut VALUE);
     pub fn rb_jit_shape_complex_p(shape_id: shape_id_t) -> bool;
@@ -1406,7 +1413,6 @@ extern "C" {
     pub fn rb_iseq_reset_jit_func(iseq: *const rb_iseq_t);
     pub fn rb_jit_get_page_size() -> u32;
     pub fn rb_jit_reserve_addr_space(mem_size: u32) -> *mut u8;
-    pub fn rb_jit_for_each_iseq(callback: rb_iseq_callback, data: *mut ::std::os::raw::c_void);
     pub fn rb_jit_mark_writable(mem_block: *mut ::std::os::raw::c_void, mem_size: u32) -> bool;
     pub fn rb_jit_mark_executable(mem_block: *mut ::std::os::raw::c_void, mem_size: u32);
     pub fn rb_jit_mark_unused(mem_block: *mut ::std::os::raw::c_void, mem_size: u32) -> bool;

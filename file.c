@@ -1156,12 +1156,29 @@ rb_stat_atime(VALUE self)
 }
 
 /*
+ *  :markup: markdown
+
  *  call-seq:
- *     stat.mtime  ->  time
+ *    mtime -> time
  *
- *  Returns the modification time of <i>stat</i>.
+ *  Returns a new Time object containing the modification time
+ *  of the object represented by `self`
+ *  at the time `self` was created;
+ *  see [Snapshot](rdoc-ref:File::Stat@Snapshot):
  *
- *     File.stat("testfile").mtime   #=> Wed Apr 09 08:53:14 CDT 2003
+ *  ```ruby
+ *  path = 't.tmp'
+ *  file = File.new(path, 'w+')
+ *  stat = File.stat(path)
+ *  stat.mtime        # => 2026-09-19 08:49:08.846933858 -0500
+ *  file.write('foo')
+ *  file.flush
+ *  File.mtime(path)  # => 2026-09-19 08:50:14.381365572 -0500
+ *  stat.mtime        # => 2026-09-19 08:49:08.846933858 -0500
+ *  stat = File.stat(path)
+ *  stat.mtime        # => 2026-09-19 08:50:14.381365572 -0500
+ *  File.unlink(path) # Clean up.
+ *  ```
  *
  */
 
@@ -1505,12 +1522,28 @@ rb_stat(VALUE file, struct stat *st)
 }
 
 /*
+ *  :markup: markdown
+ *
  *  call-seq:
- *    File.stat(filepath) ->  stat
+ *    File.stat(path) -> file_stat
  *
- *  Returns a File::Stat object for the file at +filepath+ (see File::Stat):
+ *  Returns a new File::Stat object for the entry at `path`.
+ *  Follows [symbolic links](file/symbolic_links.md);
+ *  therefore if the entry is a symbolic link,
+ *  the returned object contains information for the target entry, not the symbolic link:
  *
- *    File.stat('t.txt').class # => File::Stat
+ *  ```ruby
+ *  filepath = 'README.md'
+ *  linkpath = 'foo'
+ *  File.symlink(filepath, linkpath)
+ *  # Method File.stat follows the symlink, so the birthtimes are the same.
+ *  File.stat(filepath).birthtime  # => 2026-09-01 09:09:28.378987388 -0500
+ *  File.stat(linkpath).birthtime  # => 2026-09-01 09:09:28.378987388 -0500
+ *  # Method File.lstat does not follow the symlink, so the birthtimes are different.
+ *  File.lstat(filepath).birthtime # => 2026-09-01 09:09:28.378987388 -0500
+ *  File.lstat(linkpath).birthtime # => 2026-09-04 10:29:45.884317953 -0500
+ *  File.unlink(linkpath)          # Clean up.
+ *  ```
  *
  */
 
@@ -1579,24 +1612,24 @@ lstat_without_gvl(const char *path, struct stat *st)
  *  :markup: markdown
  *
  *  call-seq:
- *    File.lstat(path) -> new_stat
+ *    File.lstat(path) -> file_stat
  *
- *  Returns a File::Stat object for the entry at `path`;
- *  does not follow symbolic links,
- *  and therefore returns the stat object for `path`,
- *  regardless of whether it is a symbolic link:
+ *  Returns a new File::Stat object for the entry at `path`.
+ *  Does not follow [symbolic links](file/symbolic_links.md);
+ *  therefore the returned object contains information for the entry at `path`,
+ *  regardless of whether is a symbolic link:
  *
  *  ```ruby
- *  File.write('t.tmp', '')
- *  sleep(1)
- *  File.symlink('t.tmp', 'link')
- *  file = File.new('link', 'r')
- *  # Method stat: follows link to 't.tmp'.
- *  file.stat.ctime  # => 2026-06-13 15:05:16.996527996 -0500
- *  # Method lstat; does not follow link.
- *  file.lstat.ctime # => 2026-06-13 15:05:17.997527947 -0500
- *  File.delete('t.tmp')
- *  File.delete('link')
+ *  filepath = 'README.md'
+ *  linkpath = 'foo'
+ *  File.symlink(filepath, linkpath)
+ *  # Method File.stat follows the symlink, so the birthtimes are the same.
+ *  File.stat(filepath).birthtime  # => 2026-09-01 09:09:28.378987388 -0500
+ *  File.stat(linkpath).birthtime  # => 2026-09-01 09:09:28.378987388 -0500
+ *  # Method File.lstat does not follow the symlink, so the birthtimes are different.
+ *  File.lstat(filepath).birthtime # => 2026-09-01 09:09:28.378987388 -0500
+ *  File.lstat(linkpath).birthtime # => 2026-09-04 10:29:45.884317953 -0500
+ *  File.unlink(linkpath)          # Clean up.
  *  ```
  *
  */
@@ -1833,14 +1866,22 @@ rb_file_directory_p(VALUE obj, VALUE fname)
 }
 
 /*
+ * :markup: markdown
+ *
  * call-seq:
- *   File.pipe?(filepath) -> true or false
+ *   File.pipe?(path) -> true or false
  *
- * Returns +true+ if +filepath+ points to a pipe, +false+ otherwise:
+ * Returns whether the entry at the given `path` is a pipe:
  *
- *   File.mkfifo('tmp/fifo')
- *   File.pipe?('tmp/fifo') # => true
- *   File.pipe?('t.txt')    # => false
+ * ```ruby
+ * File.pipe?('doc/syntax/')        # => false  # Directory.
+ * File.pipe?('doc/maintainers.md') # => false  # Regular file.
+ * File.pipe?('nosuch')             # => false  # Non-existent.
+ * path = '/tmp/foo'
+ * File.mkfifo(path)
+ * File.pipe?(path)                 # => true
+ * File.delete(path)                # Clean up.
+ * ```
  *
  */
 
@@ -1867,18 +1908,16 @@ rb_file_pipe_p(VALUE obj, VALUE fname)
  * call-seq:
  *   File.symlink?(path) -> true or false
  *
- * Returns whether the entry at `path` is a symbolic link:
+ * Returns whether the entry at `path`
+ * is a [symbolic link](rdoc-ref:file/symbolic_links.md):
  *
  * ```ruby
- * # Create paths.
- * file_path = 'doc/extension.rdoc'         # => "doc/extension.rdoc"
- * target_path = File.join('..', file_path) # => "../doc/extension.rdoc"
- * link_path = 'lib/u.tmp'                  # => "lib/u.tmp"
- * File.symlink?(link_path)                 # => false
- * # Create link and verify.
- * File.symlink(target_path, link_path)
- * File.symlink?(link_path)                 # => true
- * File.delete(link_path)                   # Clean up.
+ * filepath = 'README.md'
+ * linkpath = 'foo'
+ * File.symlink(filepath, linkpath)
+ * File.symlink?(filepath) # => false
+ * File.symlink?(linkpath) # => true
+ * File.unlink(linkpath)   # Clean up.
  * ```
  *
  */
@@ -2051,14 +2090,25 @@ rb_file_exist_p(VALUE obj, VALUE fname)
 }
 
 /*
+ * :markup: markdown
+ *
  * call-seq:
- *    File.readable?(file_name)   -> true or false
+ *   File.readable?(path) -> true or false
  *
- * Returns <code>true</code> if the named file is readable by the effective
- * user and group id of this process. See eaccess(3).
+ * Returns whether the entry at the given `path`
+ * exists and is readable by the owner and group of the current process;
+ * see [Permissions](rdoc-ref:file/filesystem_modes.md@Permissions):
  *
- * Note that some OS-level security features may cause this to return true
- * even though the file is not readable by the effective user/group.
+ * ```ruby
+ * path = '/tmp/secret.txt'
+ * File.write(path, 'foo')
+ * File.readable?(path)     # => true
+ * File.chmod(0o000, path)
+ * File.readable?(path)     # => false
+ * File.delete(path)        # Clean up.
+ * File.readable?('nosuch') # => false
+ * ```
+ *
  */
 
 static VALUE
@@ -2068,14 +2118,13 @@ rb_file_readable_p(VALUE obj, VALUE fname)
 }
 
 /*
+ * :markup: markdown
+ *
  * call-seq:
- *    File.readable_real?(file_name)   -> true or false
+ *    File.readable_real?(path) -> true or false
  *
- * Returns <code>true</code> if the named file is readable by the real
- * user and group id of this process. See access(3).
- *
- * Note that some OS-level security features may cause this to return true
- * even though the file is not readable by the real user/group.
+ * Like File.readable?, but checks against the real user and group ids
+ * instead of the effective ids.
  */
 
 static VALUE
@@ -2350,14 +2399,27 @@ rb_file_size_p(VALUE obj, VALUE fname)
 }
 
 /*
+ * :markup: markdown
+ *
  * call-seq:
- *    File.owned?(file_name)   -> true or false
+ *   File.owned?(object) -> true or false
  *
- * Returns <code>true</code> if the named file exists and the
- * effective user id of the calling process is the owner of
- * the file.
+ * Returns whether the given `object` represents a filesystem entry or IO object
+ * that exists and is owned by the user of the current process:
  *
- * _file_name_ can be an IO object.
+ * ```ruby
+ * filepath = 'doc/t.tmp'
+ * File.write(filepath, 'foo')
+ * File.owned?(filepath) # => true
+ * File.delete(filepath) # Clean up.
+ * dirpath = 'doc/tmp'
+ * Dir.mkdir(dirpath)
+ * File.owned?(dirpath)  # => true
+ * Dir.rmdir(dirpath)    # Clean up.
+ * File.owned?($stdin)   # => true
+ * File.owned?('/etc')   # => false
+ * ```
+ *
  */
 
 static VALUE
@@ -2724,14 +2786,34 @@ rb_file_atime(VALUE obj)
 }
 
 /*
+ *  :markup: markdown
+ *
  *  call-seq:
- *     File.mtime(file_name)  ->  time
+ *    File.mtime(object) -> time
  *
- *  Returns the modification time for the named file as a Time object.
+ *  Returns a new Time object containing the modification time for the given object,
+ *  which may be a string path or an IO object;
+ *  see [Modification Time](rdoc-ref:file/timestamps.md@Modification+Time):
  *
- *  _file_name_ can be an IO object.
- *
- *     File.mtime("testfile")   #=> Tue Apr 08 12:58:04 CDT 2003
+ *  ```ruby
+ *  # Create directory; directory mtime established.
+ *  dirpath = 'doc/foo'                    # => "doc/foo"
+ *  Dir.mkdir(dirpath)
+ *  File.mtime(dirpath)                    # => 2026-09-19 09:01:30.045928322 -0500
+ *  # Create file therein; file mtime established, directory mtime updated.
+ *  filepath = File.join(dirpath, 't.tmp') # => "doc/foo/t.tmp"
+ *  File.write(filepath, 'foo')
+ *  File.mtime(filepath)                   # => 2026-09-19 09:02:32.860803131 -0500
+ *  File.mtime(dirpath)                    # => 2026-09-19 09:02:32.860803131 -0500
+ *  # Modify file; file mtime updated, directory mtime unchanged.
+ *  File.write(filepath, 'bar')
+ *  File.mtime(filepath)                   # => 2026-09-19 09:03:29.875611413 -0500
+ *  File.mtime(dirpath)                    # => 2026-09-19 09:02:32.860803131 -0500
+ *  FileUtils.rm_rf(dirpath)               # Clean up.
+ *  File.mtime($stdout)                    # => 2026-09-19 09:27:52 -0500
+ *  $stdout.flush
+ *  File.mtime($stdout)                    # => 2026-09-19 09:28:08 -0500
+ *  ```
  *
  */
 
@@ -2749,12 +2831,23 @@ rb_file_s_mtime(VALUE klass, VALUE fname)
 }
 
 /*
+ *  :markup: markdown
+ *
  *  call-seq:
- *     file.mtime  ->  time
+ *    mtime -> time
  *
- *  Returns the modification time for <i>file</i>.
+ *  Returns a new Time object containing the modification time for `self`;
+ *  see [Modification Time](rdoc-ref:file/timestamps.md@Modification+Time):
  *
- *     File.new("testfile").mtime   #=> Wed Apr 09 08:53:14 CDT 2003
+ *  ```ruby
+ *  path = 't.tmp'
+ *  file = File.new(path, 'w+')
+ *  file.mtime # => 2026-09-19 08:41:29.357110007 -0500
+ *  file.write('foo')
+ *  file.flush
+ *  file.mtime # => 2026-09-19 08:41:46.321965574 -0500
+ *  File.unlink(path)
+ *  ```
  *
  */
 
@@ -2871,7 +2964,7 @@ rb_file_ctime(VALUE obj)
  *
  */
 
-VALUE
+static VALUE
 rb_file_s_birthtime(VALUE klass, VALUE fname)
 {
     rb_io_stat_data st;
@@ -3119,24 +3212,24 @@ lchmod_internal(const char *path, void *mode)
  *  call-seq:
  *    File.lchmod(mode, *paths) -> paths_count
  *
- *  Not supported on some platforms (raises Errno:: ENOTSUP).
+ *  Not supported on Linux or Windows (raises NotImplementedError).
  *
- *  When supported: like File::chmod, but does not follow symbolic links,
+ *  When supported: like File::chmod,
+ *  but does not follow [symbolic links](rdoc-ref:file/symbolic_links.md),
  *  and therefore changes the mode of the entries given by `paths`;
  *  returns the number of paths given:
  *
  *  ```ruby
  *  File.write('t.tmp', '')
  *  File.symlink('t.tmp', 'link')
- *  File.stat('t.tmp').mode.to_s(8) # => "100664"
- *  File.stat('link').mode.to_s(8)  # => "100664"
+ *  File.lstat('t.tmp').mode.to_s(8) # => "100664"
+ *  File.lstat('link').mode.to_s(8)  # => "120755"
  *  File.lchmod(0777, 'link')
- *  File.stat('t.tmp').mode.to_s(8) # => "100664"
- *  File.stat('link').mode.to_s(8)  # => "100777"
+ *  File.lstat('t.tmp').mode.to_s(8) # => "100664"
+ *  File.lstat('link').mode.to_s(8)  # => "120777"
  *  File.delete('t.tmp')
  *  File.delete('link')
  *  ```
- *
  */
 
 static VALUE
@@ -3344,7 +3437,8 @@ lchown_internal(const char *path, void *arg)
  *
  *  Calling process must have superuser privileges.
  *
- *  When supported: like File::chown, but does not follow symbolic links,
+ *  When supported: like File::chown,
+ *  but does not follow [symbolic links](rdoc-ref:file/symbolic_links.md),
  *  and therefore changes the ownership of the entries given by `paths`;
  *  returns the number of paths given:
  *
@@ -3600,7 +3694,8 @@ rb_file_s_utime(int argc, VALUE *argv, VALUE _)
  * call-seq:
  *   File.lutime(atime, mtime, *paths) -> path_count
  *
- * Like File#utime, but does not follow symbolic links,
+ * Like File::utime,
+ * but does not follow [symbolic links](rdoc-ref:file/symbolic_links.md),
  * and therefore changes the times of the entries given by `paths`,
  * regardless of whether they are symbolic links;
  * returns the number of `paths` given:
@@ -3735,11 +3830,12 @@ rb_file_s_link(VALUE klass, VALUE from, VALUE to)
  * :markup: markdown
  *
  *  call-seq:
- *    File.symlink(path, link_path) -> 0
+ *    File.symlink(target_path, link_path) -> 0
  *
  *  Not supported on some platforms.
  *
- *  Creates a symbolic link at `link_path` to the entry at `path`:
+ *  Creates a [symbolic link](rdoc-ref:file/symbolic_links.md)
+ *  at `link_path` to the entry at `target_path`:
  *
  *  ```ruby
  *  # Create paths.
@@ -3751,6 +3847,9 @@ rb_file_s_link(VALUE klass, VALUE from, VALUE to)
  *  File.read(file_path) == File.read(link_path) # => true
  *  File.delete(link_path)                       # Clean up.
  *  ```
+ *
+ *  If the entry at `target_path` is itself a symlink, that link is _not_ followed;
+ *  thus the created symlink always points to `target_path`.
  *
  *  See also: ::read, ::readlink, ::symlink?.
  */
@@ -3777,20 +3876,21 @@ rb_file_s_symlink(VALUE klass, VALUE from, VALUE to)
  *  :markup: markdown
  *
  *  call-seq:
- *     File.readlink(link_path) -> path
+ *    File.readlink(link_path) -> string
  *
- *  Returns the string path to the entry referenced by the given `link_path`:
+ *  Returns the string path to the entry referenced
+ *  by the [symbolic link](rdoc-ref:file/symbolic_links.md) at `link_path`:
  *
  *  ```ruby
- *  # Create paths.
- *  file_path = 'doc/extension.rdoc'         # => "doc/extension.rdoc"
- *  target_path = File.join('..', file_path) # => "../doc/extension.rdoc"
- *  link_path = 'lib/u.tmp'                  # => "lib/u.tmp"
- *  File.symlink(target_path, link_path)
- *  File.readlink(link_path)                 # => "../doc/extension.rdoc"
- *  File.delete(link_path)                   # Clean up.
+ *  filepath = 'doc/maintainers.md'
+ *  linkpath = '/tmp/link'
+ *  File.symlink(filepath, linkpath)
+ *  File.readlink(linkpath) # => "doc/maintainers.md"
+ *  File.delete(linkpath)   # Clean up.
  *  ```
  *
+ *  Raises Errno::EINVAL if the entry referenced by `link_path`
+ *  is not a symbolic link.
  */
 
 static VALUE
@@ -3864,19 +3964,28 @@ unlink_internal(const char *path, void *arg)
 }
 
 /*
+ *  :markup: markdown
+ *
  *  call-seq:
- *    File.delete(*filepaths) -> integer
- *    File.unlink(*filepaths) -> integer
+ *    File.delete(*paths) -> integer
+ *    File.unlink(*paths) -> integer
  *
- *  Removes the file entry at each path in +filepaths+;
- *  returns the number of removed files.
+ *  Removes the entry at each path in `paths`;
+ *  returns the count of removed entries.
  *
- *    File.write('t.tmp', 'foo')
- *    File.write('u.tmp', 'bar')
- *    File.delete('t.tmp', 'u.tmp') # => 2
+ *  Does not follow [symbolic links](rdoc-ref:file/symbolic_links.md);
+ *  if an entry is a symlink, the link itself is removed.
+ *
+ *  ```ruby
+ *  File.write('t.tmp', 'foo')
+ *  File.write('u.tmp', 'bar')
+ *  File.delete('t.tmp', 'u.tmp') # => 2
+ *  File.symlink('README.md', 'foo')
+ *  File.unlink('foo')            # => 1
+ *  ```
  *
  *  Raises an exception on any error;
- *  some files may have been deleted before the path causing the error.
+ *  some entries may have been deleted before the path causing the error.
  */
 
 static VALUE
@@ -3899,13 +4008,70 @@ no_gvl_rename(void *ptr)
 }
 
 /*
- *  call-seq:
- *     File.rename(old_name, new_name)   -> 0
+ * :markup: markdown
  *
- *  Renames the given file to the new name. Raises a SystemCallError
- *  if the file cannot be renamed.
+ * call-seq:
+ *   File.rename(path, new_path) -> 0
  *
- *     File.rename("afile", "afile.bak")   #=> 0
+ * Moves the entry at the given `path` to the given `new_path`.
+ *
+ * Does not follow [symbolic links](rdoc-ref:file/symbolic_links.md);
+ * if the entry is a symlink, the link itself is renamed.
+ *
+ * The examples below use two temporary directories:
+ *
+ * ```ruby
+ * src_dirpath = '/tmp/src/' # => "/tmp/src/"
+ * dst_dirpath = '/tmp/dst/' # => "/tmp/dst/"
+ * Dir.mkdir(src_dirpath)
+ * Dir.mkdir(dst_dirpath)
+ * ```
+ *
+ * The entry to be renamed may be a file:
+ *
+ * ```ruby
+ * src_filepath = File.join(src_dirpath, 't.tmp') # => "/tmp/src/t.tmp"
+ * File.write(src_filepath, 'foo')
+ * dst_filepath = File.join(dst_dirpath, 'u.tmp') # => "/tmp/dst/u.tmp"
+ * File.rename(src_filepath, dst_filepath)
+ * File.exist?(src_filepath)                      # => false
+ * File.exist?(dst_filepath)                      # => true
+ * File.delete(dst_filepath)                      # Clean up.
+ * ```
+ *
+ * The entry to be renamed may be a symbolic link:
+ *
+ * ```ruby
+ * filepath = File.join(src_dirpath, 't.tmp') # => "/tmp/src/t.tmp"
+ * File.write(src_filepath, 'foo')
+ * linkpath = File.join(src_dirpath, 'u.tmp') # => "/tmp/src/u.tmp"
+ * File.symlink(filepath, linkpath)
+ * File.readlink(linkpath)                    # => "/tmp/src/t.tmp"
+ * newpath = File.join(dst_dirpath, 'v.tmp')  # => "/tmp/dst/v.tmp"
+ * File.rename(linkpath, newpath)             # Symlink not followed.
+ * File.readlink(newpath)                     # => "/tmp/src/t.tmp"
+ * File.delete(filepath, newpath)             # Clean up.
+ * ```
+ *
+ * The entry to be renamed may be a directory:
+ *
+ * ```ruby
+ * old_dirpath = File.join(src_dirpath, 'olddir') # => "/tmp/src/olddir"
+ * Dir.mkdir(old_dirpath)
+ * new_dirpath = File.join(dst_dirpath, 'newdir') # => "/tmp/dst/newdir"
+ * File.rename(old_dirpath, new_dirpath)
+ * File.directory?(new_dirpath)                   # => true
+ * Dir.rmdir(new_dirpath)                         # Clean up.
+ * ```
+ *
+ * Clean up:
+ *
+ * ```ruby
+ * FileUtils.rm_rf(src_dirpath) # => ["/tmp/src/"]
+ * FileUtils.rm_rf(dst_dirpath)  # => ["/tmp/dst/"]
+ * ```
+ *
+ * Raises SystemCallError if the file cannot be renamed.
  */
 
 static VALUE
@@ -6038,14 +6204,14 @@ rb_file_join(long argc, VALUE *args)
 }
 /*
  *  call-seq:
- *     File.join(*objects) -> new_string
+ *     File.join(*components) -> string
  *
- *  Returns a new string formed by joining the given string-converted +objects+
+ *  Returns a new string formed by joining the given string +components+
  *  with character <tt>'/'</tt>:
  *
- *    File.join                      # => ""
- *    File.join('foo')               # => "foo"
- *    File.join('foo', 'bar', 'baz') # => "foo/bar/baz"
+ *    File.join                   # => ""
+ *    File.join('foo')            # => "foo"
+ *    File.join(*%w[bar baz bat]) # => "bar/baz/bat"
  *
  */
 
@@ -6682,11 +6848,22 @@ rb_stat_d(VALUE obj)
 }
 
 /*
- *  call-seq:
- *     stat.pipe?    -> true or false
+ * :markup: markdown
  *
- *  Returns <code>true</code> if the operating system supports pipes and
- *  <i>stat</i> is a pipe; <code>false</code> otherwise.
+ *  call-seq:
+ *    stat.pipe? -> true or false
+ *
+ * Returns whether the entry at the path in `self` is a pipe:
+ *
+ * ```ruby
+ * File.stat('doc/syntax/').pipe?        # => false  # Directory .
+ * File.stat('doc/maintainers.md').pipe? # => false  # Regular file.
+ * path = '/tmp/foo'
+ * File.mkfifo(path)
+ * File.stat(path).pipe?                 # => true
+ * File.delete(path)                     # Clean up.
+ * ```
+ *
  */
 
 static VALUE
@@ -6705,18 +6882,17 @@ rb_stat_p(VALUE obj)
  *  call-seq:
  *    symlink? -> true or false
  *
- *  Returns whether the entry in `self` is a symbolic link:
+ *  Returns whether the entry in `self`
+ *  is a [symbolic link](rdoc-ref:file/symbolic_links.md):
  *
  *  ```ruby
- *  path = 'doc/t.tmp'
- *  link_path = 'lib/u.tmp'
- *  File.write(path, 'foo')
- *  File.symlink(path, link_path)
- *  File.stat(path).symlink?       # => false
- *  File.stat(link_path).symlink?  # Raises Errno::ENOENT; entry is not a file.
- *  File.lstat(link_path).symlink? # => true
- *  File.delete(path)
- *  File.delete(link_path)
+ *  filepath = 'README.md'
+ *  linkpath = 'foo'
+ *  File.symlink(filepath, linkpath)
+ *  File.stat(filepath).symlink?  # => false
+ *  File.stat(linkpath).symlink?  # => false  # stat followed symlink.
+ *  File.lstat(linkpath).symlink? # => true   # lstat did not follow symlink.
+ *  File.unlink(linkpath)         # Clean up.
  *  ```
  *
  */
@@ -6796,14 +6972,31 @@ rb_stat_c(VALUE obj)
 }
 
 /*
+ * :markup: markdown
+ *
  *  call-seq:
- *     stat.owned?    -> true or false
+ *    owned? -> true or false
  *
- *  Returns <code>true</code> if the effective user id of the process is
- *  the same as the owner of <i>stat</i>.
+ * Returns whether `self` represents a filesystem entry that,
+ * at the time `self` was created,
+ * existed and was owned by the user of the current process;
+ * see [Snapshot](rdoc-ref:File::Stat@Snapshot):
  *
- *     File.stat("testfile").owned?      #=> true
- *     File.stat("/etc/passwd").owned?   #=> false
+ * ```ruby
+ * filepath = 'doc/t.tmp'
+ * File.write(filepath, 'foo')
+ * filestat = File.stat(filepath)
+ * filestat.owned?          # => true
+ * File.delete(filepath)
+ * filestat.owned?          # => true  # Snapshot unchanged.
+ * dirpath = 'doc/tmp'
+ * Dir.mkdir(dirpath)
+ * dirstat = File.stat(dirpath)
+ * dirstat.owned?           # => true
+ * Dir.rmdir(dirpath)
+ * dirstat.owned?           # => true  # Snapshot unchanged.
+ * File.stat('/etc').owned? # => false
+ * ```
  *
  */
 
@@ -6847,13 +7040,23 @@ rb_stat_grpowned(VALUE obj)
 }
 
 /*
+ *  :markup: markdown
+ *
  *  call-seq:
- *     stat.readable?    -> true or false
+ *    readable? -> true or false
  *
- *  Returns <code>true</code> if <i>stat</i> is readable by the
- *  effective user id of this process.
+ *  Returns whether the entry represented by `self`
+ *  exists and is readable by the owner and group of the current process;
+ *  see [Permissions](rdoc-ref:file/filesystem_modes.md@Permissions):
  *
- *     File.stat("testfile").readable?   #=> true
+ *  ```ruby
+ *  path = '/tmp/secret.txt'
+ *  File.write(path, 'foo')
+ *  File.stat(path).readable? # => true
+ *  File.chmod(0o000, path)
+ *  File.stat(path).readable? # => false
+ *  File.delete(path)         # Clean up.
+ *  ```
  *
  */
 
@@ -6880,14 +7083,13 @@ rb_stat_r(VALUE obj)
 }
 
 /*
+ *  :markup: markdown
+ *
  *  call-seq:
  *     stat.readable_real?  ->  true or false
  *
- *  Returns <code>true</code> if <i>stat</i> is readable by the real
- *  user id of this process.
- *
- *     File.stat("testfile").readable_real?   #=> true
- *
+ *  Like #readable?, but checks against the real user and group ids
+ *  instead of the effective ids.
  */
 
 static VALUE
@@ -7260,13 +7462,24 @@ nogvl_mkfifo(void *ptr)
 }
 
 /*
- *  call-seq:
- *     File.mkfifo(file_name, mode=0666)  => 0
+ *  :markup: markdown
  *
- *  Creates a FIFO special file with name _file_name_.  _mode_
- *  specifies the FIFO's permissions. It is modified by the process's
- *  umask in the usual way: the permissions of the created file are
- *  (mode & ~umask).
+ *  call-seq:
+ *    File.mkfifo(path, mode = 0666) -> 0
+ *
+ *  Creates a FIFO special file at the given `path`,
+ *  with the permissions given by `mode`;
+ *  see [Filesystem Modes](rdoc-ref:file/filesystem_modes.md):
+ *
+ *  ```ruby
+ *  path = '/tmp/pipe'
+ *  File.mkfifo(path)
+ *  File.pipe?(path) # => true
+ *  File.ftype(path) # => "fifo"
+ *  File.unlink(path)
+ *  ```
+ *
+ *  Not implemented on Windows.
  */
 
 static VALUE

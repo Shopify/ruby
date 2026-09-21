@@ -778,7 +778,6 @@ pack_pack(rb_execution_context_t *ec, VALUE ary, VALUE fmt, VALUE buffer)
                     size_t numbytes, nlz_bits;
                     int sign, extra = 0;
                     char *cp;
-                    const long start = RSTRING_LEN(res);
 
                     from = NEXTFROM;
                     from = rb_to_int(from);
@@ -795,6 +794,8 @@ pack_pack(rb_execution_context_t *ec, VALUE ary, VALUE fmt, VALUE buffer)
                         extra = 1;
                     }
                     rb_str_modify_expand(res, numbytes + extra);
+
+                    long start = RSTRING_LEN(res);
 
                     cp = RSTRING_PTR(res) + start;
                     sign = rb_integer_pack(from, cp, numbytes, 1, 1, pack_flags);
@@ -1105,10 +1106,16 @@ pack_unpack_internal(VALUE str, VALUE fmt, VALUE ofs, enum unpack_mode mode)
     AVOID_CC_BUG long tmp_len;
     int signed_p, integer_size, bigendian_p;
     long align_base;
+    const char *sptr;
+    long slen;
 #define UNPACK_PUSH(item) do {\
         VALUE item_val = (item);\
         if ((mode) == UNPACK_BLOCK) {\
             rb_yield(item_val);\
+            /* The block may have modified str and invalidated s */ \
+            if (RSTRING_PTR(str) != sptr || RSTRING_LEN(str) != slen) {\
+                rb_raise(rb_eRuntimeError, "string modified");\
+            }\
         }\
         else if ((mode) == UNPACK_ARRAY) {\
             rb_ary_push(ary, item_val);\
@@ -1130,6 +1137,8 @@ pack_unpack_internal(VALUE str, VALUE fmt, VALUE ofs, enum unpack_mode mode)
 
     s = RSTRING_PTR(str);
     send = s + len;
+    sptr = s;
+    slen = len;
     s += offset;
     align_base = offset;
 

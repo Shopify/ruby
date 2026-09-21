@@ -41,6 +41,32 @@ class TestFileUtils < Test::Unit::TestCase
       /mswin|mingw|bcc|emx/ !~ RUBY_PLATFORM
     end
 
+    @@assignable_groups = nil
+
+    # Filter the given group IDs down to those the current process can actually
+    # assign to a file with chown.  Some environments (e.g. user-namespace
+    # containers) report supplementary groups such as the overflow GID
+    # (65534/nobody) that the kernel refuses to chgrp to; without this the
+    # group-ownership tests would fail with EPERM instead of being skipped.
+    def assignable_groups(groups)
+      @@assignable_groups ||= {}
+      groups.select do |gid|
+        @@assignable_groups.fetch(gid) do
+          Dir.mktmpdir("fileutils") do |dir|
+            probe = File.join(dir, "probe")
+            File.write(probe, "")
+            @@assignable_groups[gid] =
+              begin
+                File.chown(nil, gid, probe)
+                true
+              rescue Errno::EPERM
+                false
+              end
+          end
+        end
+      end
+    end
+
     @@have_symlink = nil
 
     def have_symlink?
@@ -182,7 +208,7 @@ class TestFileUtils < Test::Unit::TestCase
 
   def setup
     @prevdir = Dir.pwd
-    @groups = [Process.gid] | Process.groups if have_file_perm?
+    @groups = assignable_groups([Process.gid] | Process.groups) if have_file_perm?
     tmproot = @tmproot = Dir.mktmpdir "fileutils"
     Dir.chdir tmproot
     my_rm_rf 'data'; mymkdir 'data'
@@ -769,7 +795,7 @@ class TestFileUtils < Test::Unit::TestCase
   def test_rm_r_no_permissions
     check_singleton :rm_rf
 
-    return if /mswin|mingw/ =~ RUBY_PLATFORM
+    return if root_in_posix?
 
     mkdir 'tmpdatadir'
     touch 'tmpdatadir/tmpdata'
@@ -977,6 +1003,39 @@ class TestFileUtils < Test::Unit::TestCase
     ensure
       rm_f lnfname
     end
+  end if have_symlink? and !no_broken_symlink?
+
+  def test_ln_s_relative_to_symlinked_directory
+    mkdir_p 'tmp/symlink_dir/.dotfiles/zsh'
+    mkdir_p 'tmp/symlink_dir/.config'
+
+    src = File.expand_path('tmp/symlink_dir/.dotfiles/zsh')
+    dest = File.expand_path('tmp/symlink_dir/.config/zsh')
+
+    assert_output_lines(["ln -s ../.dotfiles/zsh #{dest}"]) {
+      ln_s src, dest, relative: true, verbose: true, noop: true
+    }
+
+    ln_s src, dest, relative: true
+    assert_file.symlink?(dest)
+    assert_equal '../.dotfiles/zsh', File.readlink(dest)
+
+    lnfname = File.join(dest, 'zsh')
+
+    if /mingw|mswin/ =~ RUBY_PLATFORM
+      unless /<SYMLINKD>/ =~ IO.popen({"DIRCMD"=>nil}, "dir zsh", chdir: File.dirname(dest), &:read)
+        omit "[Bug #22338]"
+      end
+    end
+
+    assert_output_lines(["ln -s ../../.dotfiles/zsh #{lnfname}"]) {
+      ln_s src, dest, relative: true, verbose: true, noop: true
+    }
+
+    ln_s src, dest, relative: true
+    assert_file.symlink?(lnfname)
+    assert_equal '../../.dotfiles/zsh', File.readlink(lnfname)
+    assert_equal File.realpath(src), File.realpath(lnfname)
   end if have_symlink? and !no_broken_symlink?
 
   def test_ln_s_broken_symlink
@@ -1998,6 +2057,37 @@ cd -
 
   def test_touch
     check_singleton :touch
+  end
+
+  def test_touch_verbose
+    assert_output_lines(["touch file"]) do
+      touch('file', verbose: true, noop: true)
+    end
+    assert_output_lines(["touch -c file"]) do
+      touch('file', verbose: true, noop: true, nocreate: true)
+    end
+    t = Time.new(2026, 5, 4, 3, 2, 1)
+    assert_output_lines(["touch -t 202605040302.01 file"]) do
+      touch('file', verbose: true, noop: true, mtime: t)
+    end
+  end
+
+  def test_touch_create
+    t0 = Time.now - 10          # discrepancies caused by remote file systems?
+    assert_file.not_exist?('file')
+    assert_raise(Errno::ENOENT) {touch('file', nocreate: true)}
+    assert_file.not_exist?('file')
+    touch('file')
+    assert_file.exist?('file')
+    t = File.mtime('file')
+    assert_operator(t, :>=, t0)
+    assert_operator(t, :<=, Time.now + 10)
+  end
+
+  def test_touch_mtime
+    t = Time.new(2026, 5, 4, 3, 2, 1)
+    touch('file', mtime: t)
+    assert_equal(t, File.mtime('file'))
   end
 
   def test_collect_methods

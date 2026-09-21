@@ -21,6 +21,7 @@
 #include "eval_intern.h"
 #include "internal.h"
 #include "internal/cont.h"
+#include "internal/jit.h"
 #include "internal/thread.h"
 #include "internal/error.h"
 #include "internal/eval.h"
@@ -29,6 +30,7 @@
 #include "internal/sanitizers.h"
 #include "internal/vm_map.h"
 #include "internal/warnings.h"
+#include "iseq.h"
 #include "ruby/fiber/scheduler.h"
 #include "yjit.h"
 #include "vm_core.h"
@@ -299,8 +301,15 @@ static ID fiber_initialize_keywords[3] = {0};
  */
 #if defined(MAP_STACK) && !defined(__FreeBSD__) && !defined(__FreeBSD_kernel__)
 #define FIBER_STACK_FLAGS (MAP_PRIVATE | MAP_ANON | MAP_STACK)
+#define FIBER_PROT_FLAGS (PROT_READ | PROT_WRITE)
 #else
 #define FIBER_STACK_FLAGS (MAP_PRIVATE | MAP_ANON)
+#ifdef PROT_MAX
+#define FIBER_BASE_PROT_FLAGS PROT_READ | PROT_WRITE
+#define FIBER_PROT_FLAGS (FIBER_BASE_PROT_FLAGS | PROT_MAX(FIBER_BASE_PROT_FLAGS))
+#else
+#define FIBER_PROT_FLAGS (PROT_READ | PROT_WRITE)
+#endif
 #endif
 
 #define ERRNOMSG strerror(errno)
@@ -487,7 +496,7 @@ fiber_pool_allocate_memory(size_t * count, size_t stride)
 #else
         errno = 0;
         size_t mmap_size = (*count)*stride;
-        void * base = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, FIBER_STACK_FLAGS, -1, 0);
+        void * base = mmap(NULL, mmap_size, FIBER_PROT_FLAGS, FIBER_STACK_FLAGS, -1, 0);
 
         if (base == MAP_FAILED) {
             // If the allocation fails, count = count / 2, and try again.
@@ -1107,9 +1116,9 @@ cont_compact(void *ptr)
     rb_context_t *cont = ptr;
 
     if (cont->self) {
-        cont->self = rb_gc_location(cont->self);
+        rb_gc_update_moved(&cont->self);
     }
-    cont->value = rb_gc_location(cont->value);
+    rb_gc_update_moved(&cont->value);
     rb_execution_context_update(&cont->saved_ec);
 }
 
@@ -1220,7 +1229,7 @@ void
 rb_fiber_update_self(rb_fiber_t *fiber)
 {
     if (fiber->cont.self) {
-        fiber->cont.self = rb_gc_location(fiber->cont.self);
+        rb_gc_update_moved(&fiber->cont.self);
     }
     else {
         rb_execution_context_update(&fiber->cont.saved_ec);
@@ -1237,7 +1246,7 @@ static void
 fiber_compact(void *ptr)
 {
     rb_fiber_t *fiber = ptr;
-    fiber->first_proc = rb_gc_location(fiber->first_proc);
+    rb_gc_update_moved(&fiber->first_proc);
 
     if (fiber->prev) rb_fiber_update_self(fiber->prev);
 
@@ -2124,10 +2133,18 @@ static const rb_data_type_t rb_fiber_data_type = {
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
+static VALUE fiber_alloc_in(VALUE klass, void *objspace);
+
 static VALUE
 fiber_alloc(VALUE klass)
 {
-    VALUE obj = TypedData_Wrap_Struct(klass, &rb_fiber_data_type, 0);
+    return fiber_alloc_in(klass, GET_RACTOR()->objspace);
+}
+
+static VALUE
+fiber_alloc_in(VALUE klass, void *objspace)
+{
+    VALUE obj = rb_data_typed_object_wrap_in_objspace(objspace, klass, 0, &rb_fiber_data_type);
     rb_gc_declare_weak_references(obj);
     return obj;
 }
@@ -2329,6 +2346,7 @@ rb_fiber_storage_aref(VALUE class, VALUE key)
  *
  *  Assign +value+ to the fiber storage variable identified by +key+.
  *  The variable is created if it doesn't exist.
+ *  Assigning +nil+ deletes the variable.
  *
  *  +key+ must be a Symbol, otherwise a TypeError is raised.
  *
@@ -2701,10 +2719,10 @@ rb_threadptr_root_fiber_setup(rb_thread_t *th)
 }
 
 void
-rb_root_fiber_obj_setup(rb_thread_t *th)
+rb_root_fiber_obj_setup(rb_thread_t *th, void *objspace)
 {
     rb_fiber_t *fiber = th->ec->fiber_ptr;
-    VALUE fiber_value = fiber_alloc(rb_cFiber);
+    VALUE fiber_value = fiber_alloc_in(rb_cFiber, objspace);
     DATA_PTR(fiber_value) = fiber;
     fiber->cont.self = fiber_value;
 }
@@ -3730,6 +3748,13 @@ ruby_Init_Continuation_body(void)
     rb_undef_method(CLASS_OF(rb_cContinuation), "new");
     rb_define_method(rb_cContinuation, "call", rb_cont_call, -1);
     rb_define_method(rb_cContinuation, "[]", rb_cont_call, -1);
+#ifdef COROUTINE_SHADOW_STACK
+    if (coroutine_shadow_stack_enabled()) {
+        /* Continuations cannot restore previously unwound shadow stack frames. */
+        rb_define_global_function("callcc", rb_f_notimplement, 0);
+        return;
+    }
+#endif
     rb_define_global_function("callcc", rb_callcc, 0);
 }
 

@@ -1076,10 +1076,6 @@ class TestIO < Test::Unit::TestCase
   end if defined? UNIXSocket
 
   def test_copy_stream_socket4
-    if RUBY_PLATFORM =~ /mingw|mswin/
-      omit "pread(2) is not implemented."
-    end
-
     with_bigsrc {|bigsrc, bigcontent|
       File.open(bigsrc) {|f|
         assert_equal(0, f.pos)
@@ -1099,10 +1095,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_copy_stream_socket5
-    if RUBY_PLATFORM =~ /mingw|mswin/
-      omit "pread(2) is not implemented."
-    end
-
     with_bigsrc {|bigsrc, bigcontent|
       File.open(bigsrc) {|f|
         assert_equal(bigcontent[0,100], f.read(100))
@@ -1123,10 +1115,6 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_copy_stream_socket6
-    if RUBY_PLATFORM =~ /mingw|mswin/
-      omit "pread(2) is not implemented."
-    end
-
     mkcdtmpdir {
       megacontent = "abc" * 1234567
       File.open("megasrc", "w") {|f| f << megacontent }
@@ -1150,9 +1138,7 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_copy_stream_socket7
-    if RUBY_PLATFORM =~ /mingw|mswin/
-      omit "pread(2) is not implemented."
-    end
+    omit "fork is not supported" unless Process.respond_to?(:fork)
 
     GC.start
     mkcdtmpdir {
@@ -1596,6 +1582,21 @@ class TestIO < Test::Unit::TestCase
       end, proc do |r|
         assert_equal("a" * n, r.read)
       end)
+    end
+  end
+
+  def test_write_with_many_arguments_is_flushed_when_sync
+    # Under sync mode, write(*args) must be observably atomic: all data must
+    # reach the peer immediately, not be left buffered until close. This
+    # covers argument counts above IOV_MAX, where the internal writev path
+    # previously coalesced into the buffer without flushing.
+    [10, 1023, 1024, 2000].each do |n|
+      IO.pipe do |r, w|
+        assert_predicate(w, :sync)
+        w.write(*(["a"] * n))
+        assert_equal("a" * n, r.read_nonblock(n),
+                     "sync write with #{n} arguments was not flushed")
+      end
     end
   end
 
@@ -3355,6 +3356,40 @@ __END__
     end.each {|th| th.join}
   end
 
+  def test_close_discards_write_buffer_in_sync_mode
+    IO.pipe do |r, w|
+      w.sync = false
+      w.write("buffered")
+
+      # Enabling sync marks the write buffer as non-authoritative, so close
+      # must abandon the pending bytes rather than replaying them.
+      w.sync = true
+      assert_nothing_raised { w.close }
+
+      assert_equal("", r.read)
+    end
+  end
+
+  def test_close_flushes_write_buffer_when_not_sync
+    IO.pipe do |r, w|
+      w.sync = false
+      w.write("data")
+      w.close
+      assert_equal("data", r.read)
+    end
+  end
+
+  def test_sync_write_is_not_lost_on_close
+    IO.pipe do |r, w|
+      w.sync = true
+      payload = "x" * 200_000
+      reader = Thread.new { r.read }
+      w.write(payload)
+      w.close
+      assert_equal(payload, reader.value)
+    end
+  end
+
   def test_flush_in_finalizer1
     bug3910 = '[ruby-dev:42341]'
     tmp = Tempfile.open("bug3910") {|t|
@@ -3606,8 +3641,6 @@ __END__
   end
 
   def test_cross_thread_close_stdio
-    omit "[Bug #18613]" if /freebsd/ =~ RUBY_PLATFORM
-
     assert_separately([], <<-'end;')
       IO.pipe do |r,w|
         $stdin.reopen(r)
@@ -4302,8 +4335,6 @@ __END__
   end
 
   def test_race_closed_stream
-    omit "[Bug #18613]" if /freebsd/ =~ RUBY_PLATFORM
-
     assert_separately([], "#{<<-"begin;"}\n#{<<-"end;"}")
     begin;
       bug13158 = '[ruby-core:79262] [Bug #13158]'
@@ -4398,8 +4429,6 @@ __END__
     end
 
     def test_closed_stream_in_rescue
-      omit "[Bug #18613]" if /freebsd/ =~ RUBY_PLATFORM
-
       assert_separately([], "#{<<-"begin;"}\n#{<<~"end;"}")
       begin;
       10.times do

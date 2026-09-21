@@ -6,7 +6,7 @@ use crate::backend::lir::Assembler;
 use crate::codegen::max_iseq_versions;
 use crate::cruby::*;
 use crate::hir::{Insn, iseq_to_hir};
-use crate::options::{get_option, rb_zjit_prepare_options, set_call_threshold, set_inline_threshold, set_max_versions, set_mem_bytes};
+use crate::options::{CallThreshold, get_option, rb_zjit_prepare_options, set_call_threshold, set_inline_threshold, set_max_versions, set_mem_bytes, set_num_exits_until_invalidate};
 use crate::payload::IseqVersion;
 use crate::hir::tests::hir_build_tests::assert_contains_opcode;
 use crate::payload::*;
@@ -44,6 +44,7 @@ fn with_inlining_threshold<T>(threshold: usize, mut ruby_fragment: impl FnMut() 
 /// interpreter. Asserting on `inline_method_count` fails the test in that case.
 #[track_caller]
 fn assert_inlines(program: &str) -> String {
+    ensure_rubyvm(); // ZJITState is not available until the VM is booted
     let counters = crate::state::ZJITState::get_counters();
     let inline_count_before = counters.inline_method_count;
     let result = assert_compiles(program);
@@ -57,6 +58,7 @@ fn assert_inlines(program: &str) -> String {
 /// of a literal block.
 #[track_caller]
 fn assert_inlines_allowing_exits(program: &str) -> String {
+    ensure_rubyvm(); // ZJITState is not available until the VM is booted
     let counters = crate::state::ZJITState::get_counters();
     let inline_count_before = counters.inline_method_count;
     let result = assert_compiles_allowing_exits(program);
@@ -114,6 +116,76 @@ fn test_nil() {
 }
 
 #[test]
+fn test_function_stub_profiles_before_compiling() {
+    rb_zjit_prepare_options();
+    set_inline_threshold(0);
+    let num_profiles = get_option!(num_profiles);
+    let call_threshold = CallThreshold::from(num_profiles) + 2;
+    set_call_threshold(call_threshold);
+
+    eval(&format!("
+        class Integer
+          def zjit_profile_stub_target = self + 1
+        end
+
+        def zjit_profile_stub_entry(run)
+          1.zjit_profile_stub_target if run
+        end
+
+        i = 0
+        while i < {call_threshold}
+          zjit_profile_stub_entry(false)
+          i += 1
+        end
+    "));
+
+    let entry_iseq = get_method_iseq("self", "zjit_profile_stub_entry");
+    let entry_payload = get_or_create_iseq_payload(entry_iseq);
+    let entry_version = unsafe { entry_payload.versions.last().unwrap().as_ref() };
+    assert_eq!(1, entry_version.outgoing.len(), "expected a JIT-to-JIT function stub");
+
+    let target_iseq = get_method_iseq("1", "zjit_profile_stub_target");
+    assert!(get_or_create_iseq_payload(target_iseq).versions.is_empty());
+
+    // The first stub hit should interpret the callee without compiling it.
+    assert_eq!(VALUE::fixnum_from_usize(2), eval("zjit_profile_stub_entry(true)"));
+    assert!(get_or_create_iseq_payload(target_iseq).versions.is_empty());
+
+    // That hit also enabled profiling instructions, so find `+` by looking for the profiling variant.
+    let mut insn_idx = 0;
+    let iseq_size = unsafe { get_iseq_encoded_size(target_iseq) };
+    let plus_idx = loop {
+        assert!(insn_idx < iseq_size, "target ISEQ is not profiling opt_plus");
+        let opcode = iseq_opcode_at_idx(target_iseq, insn_idx);
+        if opcode == YARVINSN_zjit_opt_plus {
+            break insn_idx as usize;
+        }
+        insn_idx += insn_len(opcode as usize);
+    };
+
+    // Every remaining stub hit in the profiling window should interpret the callee
+    // without compiling it.
+    for _ in 1..num_profiles {
+        assert_eq!(VALUE::fixnum_from_usize(2), eval("zjit_profile_stub_entry(true)"));
+        assert!(get_or_create_iseq_payload(target_iseq).versions.is_empty());
+    }
+
+    // Verify that the interpreted executions populated the profile for `+`.
+    assert_eq!(
+        2,
+        get_or_create_iseq_payload(target_iseq)
+            .profile
+            .get_operand_types(plus_idx)
+            .unwrap()
+            .len(),
+    );
+
+    // The following hit observes a completed profiling window and compiles.
+    assert_eq!(VALUE::fixnum_from_usize(2), eval("zjit_profile_stub_entry(true)"));
+    assert_eq!(1, get_or_create_iseq_payload(target_iseq).versions.len());
+}
+
+#[test]
 fn test_putobject() {
     assert_snapshot!(inspect("
         def test = 1
@@ -123,25 +195,101 @@ fn test_putobject() {
 }
 
 #[test]
-fn test_recompile_exit_waits_for_interpreter_profiles() {
+fn test_recompile_exit_invalidates_on_first_exit() {
     set_call_threshold(2);
+    set_num_exits_until_invalidate(1);
     eval("
-        def recompile_profile_window(a, b) = a + b
-        recompile_profile_window(1, 2)
-        recompile_profile_window(1, 2)
+        def recompile_on_first_exit(a, b) = a + b
+        recompile_on_first_exit(1, 2)
+        recompile_on_first_exit(1, 2)
     ");
 
-    let iseq = get_method_iseq("self", "recompile_profile_window");
-    let num_profiles = get_option!(num_profiles);
-    for _ in 0..num_profiles {
-        eval("recompile_profile_window(1.5, 2.5)");
-    }
+    let iseq = get_method_iseq("self", "recompile_on_first_exit");
     let payload = get_or_create_iseq_payload(iseq);
+    assert_eq!(1, payload.versions.len());
     assert!(!unsafe { payload.versions.last().unwrap().as_ref() }.is_invalidated());
 
-    eval("recompile_profile_window(1.5, 2.5)");
+    // With --zjit-num-exits-until-invalidate=1, the first recompile exit invalidates the version right
+    // away, so subsequent calls re-profile every instruction in the interpreter before recompiling.
+    eval("recompile_on_first_exit(1.5, 2.5)");
     let payload = get_or_create_iseq_payload(iseq);
+    assert_eq!(1, payload.versions.len());
     assert!(unsafe { payload.versions.last().unwrap().as_ref() }.is_invalidated());
+}
+
+#[test]
+fn test_recompile_exit_waits_for_exit_budget() {
+    set_call_threshold(2);
+    set_num_exits_until_invalidate(3);
+    eval("
+        def recompile_exit_budget(a, b) = a + b
+        recompile_exit_budget(1, 2)
+        recompile_exit_budget(1, 2)
+    ");
+
+    let iseq = get_method_iseq("self", "recompile_exit_budget");
+    let payload = get_or_create_iseq_payload(iseq);
+    assert_eq!(1, payload.versions.len());
+    assert!(!unsafe { payload.versions.last().unwrap().as_ref() }.is_invalidated());
+
+    // The first two recompile exits only decrement the budget. The compiled version keeps running.
+    for _ in 0..2 {
+        eval("recompile_exit_budget(1.5, 2.5)");
+        let payload = get_or_create_iseq_payload(iseq);
+        assert_eq!(1, payload.versions.len());
+        assert!(!unsafe { payload.versions.last().unwrap().as_ref() }.is_invalidated());
+    }
+
+    // The third recompile exit exhausts the budget and invalidates the version.
+    eval("recompile_exit_budget(1.5, 2.5)");
+    let payload = get_or_create_iseq_payload(iseq);
+    assert_eq!(1, payload.versions.len());
+    assert!(unsafe { payload.versions.last().unwrap().as_ref() }.is_invalidated());
+}
+
+#[test]
+fn test_function_stub_reprofiles_after_invalidation() {
+    rb_zjit_prepare_options();
+    set_inline_threshold(0);
+    set_num_exits_until_invalidate(1);
+    let num_profiles = get_option!(num_profiles);
+    let call_threshold = CallThreshold::from(num_profiles) + 2;
+    set_call_threshold(call_threshold);
+
+    eval(&format!("
+        def stub_reprofile_target(n) = n + 1
+        def stub_reprofile_entry(n) = stub_reprofile_target(n)
+
+        i = 0
+        while i < {call_threshold}
+          stub_reprofile_entry(1)
+          i += 1
+        end
+    "));
+
+    let target_iseq = get_method_iseq("self", "stub_reprofile_target");
+    let target_payload = get_or_create_iseq_payload(target_iseq);
+    assert_eq!(1, target_payload.versions.len());
+    assert!(!unsafe { target_payload.versions.last().unwrap().as_ref() }.is_invalidated());
+
+    // The first Float argument misses the Fixnum guard in the callee, and the
+    // recompile exit invalidates the callee right away, re-stubbing the
+    // JIT-to-JIT call into it.
+    assert_eq!(Qtrue, eval("stub_reprofile_entry(1.5) == 2.5"));
+    let target_payload = get_or_create_iseq_payload(target_iseq);
+    assert_eq!(1, target_payload.versions.len());
+    assert!(unsafe { target_payload.versions.last().unwrap().as_ref() }.is_invalidated());
+
+    // Every stub hit in the profiling window should interpret the invalidated
+    // callee without recompiling it.
+    for _ in 0..num_profiles {
+        assert_eq!(Qtrue, eval("stub_reprofile_entry(1.5) == 2.5"));
+        assert_eq!(1, get_or_create_iseq_payload(target_iseq).versions.len());
+    }
+
+    // The following hit observes a completed profiling window and recompiles.
+    assert_eq!(Qtrue, eval("stub_reprofile_entry(1.5) == 2.5"));
+    assert_eq!(2, get_or_create_iseq_payload(target_iseq).versions.len());
 }
 
 #[test]
@@ -444,6 +592,231 @@ fn test_kwargs_with_max_direct_send_arg_count() {
           ]
         end.uniq
     "), @"[[1, 2, 3, 4, 5, 6, 7, 8]]");
+}
+
+#[test]
+fn test_forwardable_callee_positional_args() {
+    assert_snapshot!(inspect("
+        def target(a, b) = a + b
+        def fwd(...) = target(...)
+        5.times.map { fwd(1, 2) }.uniq
+    "), @"[3]");
+}
+
+#[test]
+fn test_forwardable_callee_no_args() {
+    assert_snapshot!(inspect("
+        def target = :ok
+        def fwd(...) = target(...)
+        5.times.map { fwd }.uniq
+    "), @"[:ok]");
+}
+
+#[test]
+fn test_forwardable_callee_kwargs() {
+    assert_snapshot!(inspect("
+        def target(a, b:, c: 3) = [a, b, c]
+        def fwd(...) = target(...)
+        5.times.flat_map { [fwd(1, b: 2), fwd(1, c: 9, b: 2)] }.uniq
+    "), @"[[1, 2, 3], [1, 2, 9]]");
+}
+
+#[test]
+fn test_forwardable_callee_wrong_number_of_arguments() {
+    assert_snapshot!(inspect(r#"
+        def target(a, b) = a + b
+        def fwd(...) = target(...)
+        5.times.map { (fwd(1) rescue $!.message) }.uniq
+    "#), @r#"["wrong number of arguments (given 1, expected 2)"]"#);
+}
+
+#[test]
+fn test_forwardable_callee_unknown_keyword() {
+    assert_snapshot!(inspect(r#"
+        def target(a, b:) = [a, b]
+        def fwd(...) = target(...)
+        5.times.map { (fwd(1, z: 2) rescue $!.message) }.uniq
+    "#), @r#"["missing keyword: :b"]"#);
+}
+
+#[test]
+fn test_forwardable_callee_literal_block() {
+    assert_snapshot!(inspect("
+        def target(x) = yield(x)
+        def fwd(...) = target(...)
+        5.times.map { fwd(4) { |v| v * 2 } }.uniq
+    "), @"[8]");
+}
+
+// Enabling a TracePoint invalidates the callee's PatchPoint NoTracePoint, so the interpreter takes
+// over the frame that the direct send pushed and runs the forwarding call itself.
+#[test]
+fn test_forwardable_callee_side_exit() {
+    assert_snapshot!(inspect("
+        def target(a, b:) = [a, b]
+        def fwd(...) = target(...)
+        def call_fwd = fwd(1, b: 2)
+        5.times { call_fwd }
+        tp = TracePoint.new(:line) { |_| }
+        tp.enable { 5.times.map { call_fwd }.uniq }
+    "), @"[[1, 2]]");
+}
+
+#[test]
+fn test_forwardable_callee_block_arg_proc() {
+    assert_snapshot!(inspect("
+        def target(x) = yield(x)
+        def fwd(...) = target(...)
+        block = proc { |v| v * 2 }
+        5.times.map { fwd(4, &block) }.uniq
+    "), @"[8]");
+}
+
+#[test]
+fn test_forwardable_callee_block_arg_lambda() {
+    assert_snapshot!(inspect("
+        def target(x) = yield(x)
+        def fwd(...) = target(...)
+        block = ->(v) { v * 3 }
+        5.times.map { fwd(4, &block) }.uniq
+    "), @"[12]");
+}
+
+#[test]
+fn test_forwardable_callee_block_arg_symbol() {
+    assert_snapshot!(inspect(r#"
+        def target(x) = yield(x)
+        def fwd(...) = target(...)
+        5.times.map { fwd("hello", &:upcase) }.uniq
+    "#), @r#"["HELLO"]"#);
+}
+
+#[test]
+fn test_forwardable_callee_block_arg_method() {
+    assert_snapshot!(inspect("
+        def target(x) = yield(x)
+        def fwd(...) = target(...)
+        def double(v) = v * 2
+        5.times.map { fwd(4, &method(:double)) }.uniq
+    "), @"[8]");
+}
+
+#[test]
+fn test_forwardable_callee_block_arg_to_proc() {
+    assert_snapshot!(inspect("
+        class Doubler
+          def to_proc = proc { |v| v * 2 }
+        end
+        def target(x) = yield(x)
+        def fwd(...) = target(...)
+        doubler = Doubler.new
+        5.times.map { fwd(4, &doubler) }.uniq
+    "), @"[8]");
+}
+
+#[test]
+fn test_forwardable_callee_block_arg_nil() {
+    assert_snapshot!(inspect("
+        def target(x) = block_given? ? yield(x) : [:no_block, x]
+        def fwd(...) = target(...)
+        5.times.map { fwd(4, &nil) }.uniq
+    "), @"[[:no_block, 4]]");
+}
+
+#[test]
+fn test_forwardable_callee_block_arg_not_callable() {
+    assert_snapshot!(inspect(r#"
+        def target(x) = yield(x)
+        def fwd(...) = target(...)
+        5.times.map { (fwd(4, &42) rescue $!.class) }.uniq
+    "#), @"[TypeError]");
+}
+
+#[test]
+fn test_forwardable_callee_splat_call_site_stays_dynamic() {
+    assert_snapshot!(inspect("
+        def target(*a, **k) = [a, k]
+        def fwd(...) = target(...)
+        args = [1, 2]
+        opts = { x: 1 }
+        5.times.flat_map { [fwd(*args), fwd(**opts), fwd(&nil)] }.uniq
+    "), @"[[[1, 2], {}], [[], {x: 1}], [[], {}]]");
+}
+
+#[test]
+fn test_forwardable_callee_ruby2_keywords_flag_survives() {
+    assert_snapshot!(inspect("
+        def target(*a, **k) = [a, k]
+        def fwd(...) = target(...)
+        ruby2_keywords def r2k(*a) = fwd(*a)
+        5.times.map { r2k(1, k: 2) }.uniq
+    "), @"[[[1], {k: 2}]]");
+}
+
+#[test]
+fn test_forwardable_callee_chained_forwarding() {
+    assert_snapshot!(inspect("
+        def target(a, b:) = [a, b]
+        def inner(...) = target(...)
+        def outer(...) = inner(...)
+        5.times.map { outer(1, b: 2) }.uniq
+    "), @"[[1, 2]]");
+}
+
+#[test]
+fn test_forwardable_callee_with_extra_locals() {
+    assert_snapshot!(inspect("
+        def target(a) = a * 2
+        def fwd(...)
+          extra = 10
+          extra + target(...)
+        end
+        5.times.map { fwd(3) }.uniq
+    "), @"[16]");
+}
+
+#[test]
+fn test_forwardable_callee_super() {
+    assert_snapshot!(inspect(r#"
+        class Base
+          def run(*a, **k) = ["base", a, k]
+        end
+        class Child < Base
+          def run(...) = super
+        end
+        c = Child.new
+        5.times.map { c.run(1, k: 2) }.uniq
+    "#), @r#"[["base", [1], {k: 2}]]"#);
+}
+
+#[test]
+fn test_explicit_super_to_forwardable_callee() {
+    assert_snapshot!(inspect(r#"
+        class Base
+          def run(...) = fin(...)
+          def fin(a, b) = ["base", a, b]
+        end
+        class Child < Base
+          def run(a, b) = super(a, b)
+        end
+        c = Child.new
+        5.times.map { c.run(1, 2) }.uniq
+    "#), @r#"[["base", 1, 2]]"#);
+}
+
+#[test]
+fn test_zsuper_to_forwardable_callee() {
+    assert_snapshot!(inspect(r#"
+        class Base
+          def run(...) = fin(...)
+          def fin(a, b) = ["base", a, b]
+        end
+        class Child < Base
+          def run(a, b) = super
+        end
+        c = Child.new
+        5.times.map { c.run(3, 4) }.uniq
+    "#), @r#"[["base", 3, 4]]"#);
 }
 
 #[test]
@@ -1303,6 +1676,34 @@ fn test_no_ep_escape_patch_point_after_send_does_not_repeat_send() {
     "#);
     assert_contains_opcode("test", YARVINSN_send);
     assert_snapshot!(assert_compiles_allowing_exits("[test, test, test]"), @"[1, 2, 3]");
+}
+
+#[test]
+fn test_function_stub_exit_initializes_block_param() {
+    set_mem_bytes(1024 * 1024);
+    set_inline_threshold(0);
+    set_call_threshold(2);
+    assert_snapshot!(inspect(r#"
+        # Make the callee big enough that compiling it exhausts the code region, so the
+        # stub hit fails with OutOfMemory and falls back to the interpreter.
+        body = (0...400).map { |k| "u#{k} = #{k} + n" }.join("
+")
+        # Using a bmethod forces a Proc allocation for &blk in the EP at call time
+        Integer.class_eval <<~BMETHOD
+          define_method(:zjit_blk_callee) do |n, &blk|
+            #{body}
+            blk.nil?
+          end
+        BMETHOD
+
+        # Compile the call site, which generates the function stub, without running it,
+        # so the callee is still uncompiled when the stub is first hit.
+        def kaller(run) = run ? 1.zjit_blk_callee(2) : nil
+        300.times { kaller(false) }
+
+        # No block is passed, so the callee must see a nil block parameter.
+        kaller(true)
+    "#), @"true");
 }
 
 #[test]
@@ -4831,6 +5232,57 @@ fn test_array_pop_arg() {
 }
 
 #[test]
+fn test_string_byteslice_basic() {
+    assert_snapshot!(inspect(r#"
+        def test(s, beg, len) = s.byteslice(beg, len)
+        test("hello", 1, 3)
+        test("hello", 1, 3)
+    "#), @r#""ell""#);
+}
+
+#[test]
+fn test_string_byteslice_out_of_range_returns_nil() {
+    assert_snapshot!(inspect(r#"
+        def test(s, beg, len) = s.byteslice(beg, len)
+        test("hello", 1, 3)
+        test("hello", 1, 3)
+        test("hello", 6, 1)
+    "#), @"nil");
+}
+
+#[test]
+fn test_string_byteslice_one_arg() {
+    assert_snapshot!(inspect(r#"
+        def test(s, beg) = s.byteslice(beg)
+        test("hello", 1)
+        test("hello", 1)
+    "#), @r#""e""#);
+}
+
+#[test]
+fn test_string_byteslice_three_args_raises() {
+    assert_snapshot!(inspect(r#"
+        def test(s, beg, len, extra)
+          s.byteslice(beg, len, extra)
+        rescue ArgumentError
+          "ArgumentError"
+        end
+        test("hello", 1, 3, 5)
+        test("hello", 1, 3, 5)
+    "#), @r#""ArgumentError""#);
+}
+
+#[test]
+fn test_string_byteslice_bignum_arg_falls_back() {
+    assert_snapshot!(inspect(r#"
+        def test(s, beg, len) = s.byteslice(beg, len)
+        fixnum_result = test("hello", 0, 3)
+        bignum_result = test("hello", 0, 2**62)
+        [fixnum_result, bignum_result]
+    "#), @r#"["hel", "hello"]"#);
+}
+
+#[test]
 fn test_new_range_inclusive() {
     assert_snapshot!(inspect("
         def test(a, b) = a..b
@@ -7123,13 +7575,108 @@ fn test_send_on_heap_object_in_spilled_arg() {
 }
 
 #[test]
-fn test_send_splat() {
-    assert_snapshot!(inspect("
+fn test_send_caller_splat_arguments() {
+    eval("
         def test(a, b) = [a, b]
-        def entry(arr) = test(*arr)
+        def entry(args) = test(*args)
         entry([1, 2])
+    ");
+    assert_snapshot!(assert_compiles("entry([1, 2])"), @"[1, 2]");
+}
+
+#[test]
+fn test_send_empty_caller_splat_arguments() {
+    eval("
+        def test(a = 1) = a
+        def entry(args) = test(*args)
+        entry([])
+    ");
+    assert_snapshot!(assert_compiles("entry([])"), @"1");
+}
+
+#[test]
+fn test_send_caller_splat_arguments_with_positional_prefix() {
+    eval("
+        def test(a, b, c) = [a, b, c]
+        def entry(args) = test(1, *args)
+        entry([2, 3])
+    ");
+    assert_snapshot!(assert_compiles("entry([2, 3])"), @"[1, 2, 3]");
+}
+
+#[test]
+fn test_send_many_caller_splat_arguments_to_rest_parameter() {
+    eval("
+        def test(*args) = args.length
+        def entry(args) = test(*args)
+        entry([1, 2, 3, 4, 5, 6, 7])
+    ");
+    assert_snapshot!(assert_compiles("entry([1, 2, 3, 4, 5, 6, 7])"), @"7");
+}
+
+#[test]
+fn test_send_caller_splat_arguments_to_complex_parameters() {
+    eval("
+        def test(a, b = 2, *rest, z, k: 40) = [a, b, rest, z, k]
+        def entry(args) = test(1, *args)
+        entry([3, 4, 5])
+    ");
+    assert_snapshot!(assert_compiles("entry([3, 4, 5])"), @"[1, 3, [4], 5, 40]");
+}
+
+#[test]
+fn test_send_caller_splat_arguments_with_required_keyword() {
+    eval("
+        def test(*args, k:) = [args, k]
+        def entry(args) = test(*args, k: 40)
         entry([1, 2])
-    "), @"[1, 2]");
+    ");
+    assert_snapshot!(assert_compiles("entry([1, 2])"), @"[[1, 2], 40]");
+}
+
+#[test]
+fn test_send_caller_splat_arguments_with_block_literal() {
+    eval("
+        def test(*args) = yield args.length
+        def entry(args) = test(*args) { |n| n + 4 }
+        entry([1, 2, 3])
+    ");
+    assert_snapshot!(assert_compiles("entry([1, 2, 3])"), @"7");
+}
+
+#[test]
+fn test_send_caller_splat_length_mismatch_side_exits() {
+    eval("
+        def test(*args) = args
+        def entry(args) = test(*args)
+        entry([1, 2])
+    ");
+    assert_snapshot!(assert_compiles_allowing_exits("entry([1, 2, 3])"), @"[1, 2, 3]");
+}
+
+#[test]
+fn test_send_caller_splat_with_ruby2_keywords_hash_side_exits() {
+    eval("
+        def capture(*args) = args
+        ruby2_keywords(:capture)
+        def test(arg = :default, k: nil) = [arg, k]
+        def entry(args) = test(*args)
+        entry(capture(k: 1))
+    ");
+    assert_snapshot!(assert_compiles_allowing_exits("entry(capture(k: 1))"), @"[:default, 1]");
+}
+
+#[test]
+fn test_send_caller_splat_result_used_by_hash_aset() {
+    eval("
+        def test(value) = value
+        def entry(args)
+          hash = {}
+          hash[:value] = test(*args)
+        end
+        entry([1])
+    ");
+    assert_snapshot!(assert_compiles("entry([2])"), @"2");
 }
 
 #[test]
@@ -8045,7 +8592,6 @@ fn test_uncached_getconstant_path() {
 #[test]
 fn test_line_tracepoint_on_c_method() {
     set_call_threshold(1);
-    eval("nil"); // boot the VM before assert_compiles_allowing_exits touches ZJITState
     assert_snapshot!(assert_compiles_allowing_exits(r#"
         events = []
         events.instance_variable_set(
@@ -8072,7 +8618,6 @@ fn test_line_tracepoint_on_c_method() {
 #[test]
 fn test_targeted_line_tracepoint_in_c_method_call() {
     set_call_threshold(1);
-    eval("nil"); // boot the VM before assert_compiles_allowing_exits touches ZJITState
     assert_snapshot!(assert_compiles_allowing_exits(r#"
         events = []
         events.instance_variable_set(:@tp, TracePoint.new(:line) { |tp| events << tp.lineno })
@@ -8097,7 +8642,6 @@ fn test_targeted_line_tracepoint_in_c_method_call() {
 #[test]
 fn test_regression_cfp_sp_set_correctly_before_leaf_gc_call() {
     set_call_threshold(14);
-    eval("nil"); // boot the VM before assert_compiles_allowing_exits touches ZJITState
     assert_snapshot!(assert_compiles_allowing_exits(r#"
         def check(l, r)
           return 1 unless l
@@ -8128,7 +8672,6 @@ fn test_regression_cfp_sp_set_correctly_before_leaf_gc_call() {
 
 #[test]
 fn test_regression_gc_stress_with_lazy_block_code() {
-    eval("nil"); // boot the VM before assert_compiles_allowing_exits touches ZJITState
     assert_snapshot!(assert_compiles_allowing_exits(r#"
         def allocate_array
           [1, 2, 3]
@@ -8242,7 +8785,6 @@ fn test_no_ep_escape_invalidation_at_max_versions() {
 #[test]
 fn test_float_arithmetic() {
     set_call_threshold(1);
-    eval("nil"); // boot the VM before assert_compiles_allowing_exits touches ZJITState
     assert_snapshot!(assert_compiles_allowing_exits("def test = 1.5 + 2.5; test"), @"4.0");
     assert_snapshot!(assert_compiles_allowing_exits("def test = 2.0 * 3.0; test"), @"6.0");
     assert_snapshot!(assert_compiles_allowing_exits("def test = 3.5 - 2.0; test"), @"1.5");
@@ -8256,7 +8798,6 @@ fn test_float_arithmetic() {
 
 #[test]
 fn test_send_backtrace() {
-    eval("nil"); // boot the VM before assert_compiles_allowing_exits touches ZJITState
     assert_snapshot!(assert_compiles_allowing_exits(r#"
         def jit_frame2 = caller     # 1
         def jit_frame1 = jit_frame2 # 2
@@ -8318,4 +8859,146 @@ fn test_forward_fallback_with_lightweight_frame_reads_cfp() {
       end
       :done
     "#), @":done");
+}
+
+#[test]
+fn test_regression_stub_frame_sp_published_for_gc() {
+    rb_zjit_prepare_options();
+    set_inline_threshold(0); // don't inline the callee; we need a function stub
+    set_call_threshold(2000);
+
+    assert_snapshot!(inspect(r#"
+        class Integer
+          def zjit_stub_gc_callee(x) = x + 1
+        end
+
+        def zjit_stub_gc_caller(run, x)
+          1.zjit_stub_gc_callee(x) if run
+        end
+
+        def zjit_stub_gc_deep(n)
+          if n > 0
+            # Only reachable from this frame's VM stack slots
+            victim = "victim number #{n}"
+            tail = [n, n + 1, n + 2]
+            got = zjit_stub_gc_deep(n - 1)
+            got + victim.length + tail.sum
+          else
+            # Arm an incremental mark that can't finish in one step. Nothing
+            # allocates between here and the function stub hit below, so the
+            # pending mark is still in progress when the stub takes the VM lock.
+            GC.start(full_mark: true, immediate_mark: false, immediate_sweep: false)
+            $zjit_stub_gc_armed += 1 if GC.latest_gc_info(:state) == :marking
+            zjit_stub_gc_caller(true, 0) # JIT-to-JIT call through the function stub
+            0
+          end
+        end
+
+        def zjit_stub_gc_expect(n)
+          total = 0
+          n.downto(1) { |k| total += "victim number #{k}".length + (3 * k + 3) }
+          total
+        end
+
+        # Warm the caller past the call threshold so it compiles with a function
+        # stub for the still-uncompiled callee.
+        i = 0
+        while i < 2100
+          zjit_stub_gc_caller(false, nil)
+          i += 1
+        end
+
+        # Give the incremental mark enough work that it can't finish in one step.
+        $zjit_stub_gc_bloat = Array.new(300_000) { Object.new }
+        $zjit_stub_gc_armed = 0
+
+        bad = []
+        depth = 12
+        6.times do
+          want = zjit_stub_gc_expect(depth)
+          got = zjit_stub_gc_deep(depth)
+          bad << [depth, want, got] if got != want
+          depth += 12 # go deeper than any frame used so far
+        end
+        [bad, $zjit_stub_gc_armed > 0]
+    "#), @"[[], true]");
+
+    // Guard the shape of the repro: the caller must really call the callee
+    // through a JIT-to-JIT function stub.
+    let caller_iseq = get_method_iseq("self", "zjit_stub_gc_caller");
+    let caller_payload = get_or_create_iseq_payload(caller_iseq);
+    let caller_version = unsafe { caller_payload.versions.last().unwrap().as_ref() };
+    assert_eq!(1, caller_version.outgoing.len(), "expected a JIT-to-JIT function stub");
+}
+
+#[test]
+fn test_regression_stub_frame_block_code_cleared_for_gc() {
+    rb_zjit_prepare_options();
+    set_inline_threshold(0); // don't inline the callee; we need a function stub
+    set_call_threshold(2000);
+
+    assert_snapshot!(inspect(r#"
+        class Integer
+          # No send/invokesuper/invokeblock, so iseq_may_write_block_code() is false
+          # and gen_push_frame() leaves this frame's cfp->block_code alone.
+          def zjit_bc_callee(x) = x + 1
+        end
+
+        def zjit_bc_caller(run, x)
+          1.zjit_bc_callee(x) if run
+        end
+
+        def zjit_bc_deep(n)
+          if n > 0
+            zjit_bc_deep(n - 1)
+          else
+            # Arm an incremental mark that can't finish in one step. Nothing
+            # allocates between here and the function stub hit below, so the
+            # pending mark is still in progress when the stub takes the VM lock.
+            GC.start(full_mark: true, immediate_mark: false, immediate_sweep: false)
+            $zjit_bc_armed += 1 if GC.latest_gc_info(:state) == :marking
+            zjit_bc_caller(true, 0) # JIT-to-JIT call through the function stub
+          end
+        end
+
+        # Warm the caller past the call threshold so it compiles with a function
+        # stub for the still-uncompiled callee.
+        i = 0
+        while i < 2100
+          zjit_bc_caller(false, nil)
+          i += 1
+        end
+
+        # Give the incremental mark enough work that it can't finish in one step.
+        $zjit_bc_bloat = Array.new(300_000) { Object.new }
+        $zjit_bc_armed = 0
+
+        # Leave a pointer to this block ISEQ in 60 consecutive CFP slots.
+        # The module is anonymous and the entry call lives inside the eval'd code,
+        # so nothing outside keeps the module, the method or the block ISEQ alive.
+        Module.new.module_eval(<<~PLANT)
+          def self.plant(n)
+            plant(n - 1) { } if n > 0
+          end
+          plant(60)
+        PLANT
+
+        # FREE: the block ISEQ is garbage now, so those slots dangle at a T_NONE slot.
+        GC.start
+
+        results = []
+        depth = 20
+        6.times do
+          results << zjit_bc_deep(depth)
+          depth += 1 # land on a planted slot no frame has pushed over since
+        end
+        [results.uniq, $zjit_bc_armed > 0]
+    "#), @"[[1], true]");
+
+    // Guard the shape of the repro: the caller must really call the callee
+    // through a JIT-to-JIT function stub.
+    let caller_iseq = get_method_iseq("self", "zjit_bc_caller");
+    let caller_payload = get_or_create_iseq_payload(caller_iseq);
+    let caller_version = unsafe { caller_payload.versions.last().unwrap().as_ref() };
+    assert_eq!(1, caller_version.outgoing.len(), "expected a JIT-to-JIT function stub");
 }

@@ -36,6 +36,7 @@
 #include "internal/hash.h"
 #include "internal/object.h"
 #include "internal/proc.h"
+#include "internal/ractor.h"
 #include "internal/st.h"
 #include "internal/symbol.h"
 #include "internal/thread.h"
@@ -1553,7 +1554,9 @@ hash_alloc(VALUE klass, VALUE flags, VALUE ifnone, size_t size, bool frozen)
     VALUE hash = rb_newobj_of(klass, T_HASH | flags, hash_slot_size(size, frozen));
     rb_hash_set_ifnone(hash, ifnone);
 
-#ifdef RUBY_DEBUG
+    RHASH_AR_TABLE(hash)->ar_hint.word = 0;
+
+#if RUBY_DEBUG
     if (hash_slot_size(size, frozen) >= sizeof(struct RHash) + sizeof(st_table)) {
         RHASH_ST_TABLE(hash)->num_entries = 0;
         RHASH_ST_TABLE(hash)->entries = NULL;

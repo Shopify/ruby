@@ -94,6 +94,14 @@ MAKE_ENC      = -f $(ENC_MK) V="$(V)" UNICODE_HDR_DIR="$(UNICODE_HDR_DIR)" \
 
 PRISM_BUILD_DIR = prism
 
+COROUTINE_TEST = coroutine-test$(EXEEXT)
+COROUTINE_TEST_OBJS = coroutine-main.$(OBJEXT) \
+		coroutine-stack.$(OBJEXT) \
+		coroutine-test_initialize_destroy.$(OBJEXT) \
+		coroutine-test_pthread_resume.$(OBJEXT) \
+		coroutine-test_transfer_repeat.$(OBJEXT) \
+		coroutine-test_transfer_return.$(OBJEXT)
+
 LIBPRISM_OBJS = \
 		prism/arena.$(OBJEXT) \
 		prism/buffer.$(OBJEXT) \
@@ -410,7 +418,7 @@ program: $(SHOWFLAGS) $(DOT_WAIT) $(PROGRAM)
 wprogram: $(SHOWFLAGS) $(DOT_WAIT) $(WPROGRAM)
 mini: PHONY miniruby$(EXEEXT)
 
-$(PROGRAM) $(WPROGRAM): $(LIBRUBY) $(MAINOBJ) $(OBJS) $(EXTOBJS) $(SETUP) $(PREP)
+$(PROGRAM) $(WPROGRAM): $(LIBRUBY) $(MAINOBJ) $(OBJS) $(EXTOBJS) $(SETUP) $(PREP) $(PROGRAM_EXTS)
 
 $(LIBRUBY_A):	$(LIBRUBY_A_OBJS) $(MAINOBJ) $(INITOBJS) $(ARCHFILE)
 
@@ -691,6 +699,7 @@ noarch_config_h = tmp/include/noarch/ruby/config.h
 clean: clean-ext clean-enc clean-golf clean-docs clean-extout clean-modular-gc clean-local clean-platform clean-spec
 clean-local:: clean-runnable
 	$(Q)$(RM) $(ALLOBJS) $(LIBRUBY_A) $(LIBRUBY_SO) $(LIBRUBY) $(LIBRUBY_ALIASES)
+	$(Q)$(RM) $(COROUTINE_TEST) $(COROUTINE_TEST_OBJS)
 	$(Q)$(RM) $(PROGRAM) $(WPROGRAM) miniruby$(EXEEXT) dmyext.$(OBJEXT) dmyenc.$(OBJEXT) $(ARCHFILE) .*.time
 	$(Q)$(RM) y.tab.c y.output encdb.h transdb.h config.log rbconfig.rb $(ruby_pc) $(COROUTINE_H:/Context.h=/.time)
 	$(Q)$(RM) probes.h probes.$(OBJEXT) probes.stamp ruby-glommed.$(OBJEXT) ruby.imp ChangeLog $(STATIC_RUBY)$(EXEEXT)
@@ -931,8 +940,15 @@ yes-test-tool: prog PHONY
 	$(ACTIONS_ENDGROUP)
 no-test-tool: PHONY
 
+test-coroutine: $(TEST_RUNNABLE)-test-coroutine
+yes-test-coroutine: $(COROUTINE_TEST) PHONY
+	$(ACTIONS_GROUP)
+	$(Q)$(exec) $(COROUTINE_TEST_RUN)
+	$(ACTIONS_ENDGROUP)
+no-test-coroutine: PHONY
+
 test-sample: test-basic # backward compatibility for mswin-build
-test-short: btest-ruby $(DOT_WAIT) test-knownbug $(DOT_WAIT) test-basic
+test-short: test-coroutine $(DOT_WAIT) btest-ruby $(DOT_WAIT) test-knownbug $(DOT_WAIT) test-basic
 test: test-short
 
 # Separate to skip updating encs and exts by `make -o test-precheck`
@@ -1043,15 +1059,15 @@ $(ENC_MK): $(srcdir)/enc/make_encmake.rb $(srcdir)/enc/Makefile.in $(srcdir)/enc
 .PHONY: distclean-srcs distclean-srcs-local distclean-srcs-ext
 .PHONY: realclean realclean-ext realclean-local realclean-enc realclean-golf realclean-extout
 .PHONY: realclean-srcs realclean-srcs-local realclean-srcs-ext
-.PHONY: exam check test test-short test-all btest btest-ruby test-basic test-knownbug
+.PHONY: exam check test test-short test-all test-coroutine btest btest-ruby test-basic test-knownbug
 .PHONY: run runruby parse benchmark gdb gdb-ruby
 .PHONY: update-mspec update-rubyspec test-rubyspec test-spec
 .PHONY: touch-unicode-files
 
 PHONY:
 
-{$(VPATH)}parse.c: {$(VPATH)}parse.y {$(VPATH)}id.h
-{$(VPATH)}parse.h: {$(VPATH)}parse.c
+parse.c: {$(VPATH)}parse.y {$(VPATH)}id.h
+parse.h: {$(VPATH)}parse.c
 
 {$(srcdir)}.y.c:
 	$(ECHO) generating $@
@@ -1065,7 +1081,7 @@ $(PLATFORM_D):
 exe/$(PROGRAM): $(TIMESTAMPDIR)/$(arch)/.time
 exe/$(PROGRAM): ruby-runner.c ruby-runner.h exe/.time $(PREP) {$(VPATH)}config.h
 	$(Q) $(CC) $(CFLAGS) $(INCFLAGS) $(CPPFLAGS) -DRUBY_INSTALL_NAME=$(@F) $(COUTFLAG)ruby-runner.$(OBJEXT) -c $(CSRCFLAG)$(srcdir)/ruby-runner.c
-	$(Q) $(PURIFY) $(CC) $(CFLAGS) $(LDFLAGS) $(OUTFLAG)$@ ruby-runner.$(OBJEXT) $(LIBS)
+	$(Q) $(PURIFY) $(CC) $(CFLAGS) $(LDFLAGS) $(XLDFLAGS) $(OUTFLAG)$@ ruby-runner.$(OBJEXT) $(LIBS)
 	$(Q) $(POSTLINK)
 	$(Q) $(BOOTSTRAPRUBY) \
 	    -e 'prog, dest, inst = ARGV; dest += "/ruby"' \
@@ -1136,6 +1152,34 @@ tgamma.$(OBJEXT): {$(VPATH)}tgamma.c
 $(COROUTINE_H:/Context.h=/.time):
 	$(Q) $(MAKEDIRS) $(@D)
 	@$(NULLCMD) > $@
+
+$(COROUTINE_TEST): $(COROUTINE_TEST_OBJS) $(COROUTINE_OBJ)
+	$(ECHO) linking $@
+	$(Q) $(COROUTINE_TEST_LINK)
+
+coroutine-main.$(OBJEXT): {$(VPATH)}coroutine/test/main.c
+	$(ECHO) compiling $(srcdir)/coroutine/test/main.c
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(srcdir)/coroutine/test/main.c
+
+coroutine-stack.$(OBJEXT): {$(VPATH)}coroutine/test/stack.c
+	$(ECHO) compiling $(srcdir)/coroutine/test/stack.c
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(srcdir)/coroutine/test/stack.c
+
+coroutine-test_initialize_destroy.$(OBJEXT): {$(VPATH)}coroutine/test/test_initialize_destroy.c
+	$(ECHO) compiling $(srcdir)/coroutine/test/test_initialize_destroy.c
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(srcdir)/coroutine/test/test_initialize_destroy.c
+
+coroutine-test_pthread_resume.$(OBJEXT): {$(VPATH)}coroutine/test/test_pthread_resume.c
+	$(ECHO) compiling $(srcdir)/coroutine/test/test_pthread_resume.c
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(srcdir)/coroutine/test/test_pthread_resume.c
+
+coroutine-test_transfer_repeat.$(OBJEXT): {$(VPATH)}coroutine/test/test_transfer_repeat.c
+	$(ECHO) compiling $(srcdir)/coroutine/test/test_transfer_repeat.c
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(srcdir)/coroutine/test/test_transfer_repeat.c
+
+coroutine-test_transfer_return.$(OBJEXT): {$(VPATH)}coroutine/test/test_transfer_return.c
+	$(ECHO) compiling $(srcdir)/coroutine/test/test_transfer_return.c
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(srcdir)/coroutine/test/test_transfer_return.c
 
 ###
 
@@ -1310,9 +1354,7 @@ $(MAINOBJ): $(srcdir)/$(MAINSRC)
 	$(ECHO) compiling $(srcdir)/$(MAINSRC)
 	$(Q) $(CC) $(MAINCPPFLAGS) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(srcdir)/$(MAINSRC)
 
-{$(VPATH)}probes.dmyh: {$(srcdir)}probes.d $(tooldir)/gen_dummy_probes.rb
-
-probes.dmyh:
+probes.dmyh: {$(srcdir)}probes.d $(tooldir)/gen_dummy_probes.rb
 	$(BASERUBY) $(tooldir)/gen_dummy_probes.rb $(srcdir)/probes.d > $@
 
 probes.h: {$(VPATH)}probes.$(DTRACE_EXT) $(srcdir)/vm_opts.h
@@ -1358,8 +1400,11 @@ clean-build-tool:
 
 $(srcdir)/revision.h$(no_baseruby:no=~disabled~): $(REVISION_H)
 
+REVISION_H_CMD = $(BASERUBY) $(tooldir)/file2lastrev.rb -q --revision.h \
+	--srcdir="$(srcdir)" --output=revision.h --timestamp=$(REVISION_H)
+
 $(REVISION_H)$(no_baseruby:no=~disabled~):
-	$(Q) $(BASERUBY) $(tooldir)/file2lastrev.rb -q --revision.h --srcdir="$(srcdir)" --output=revision.h --timestamp=$@
+	$(Q) $(REVISION_H_CMD)
 $(REVISION_H)$(yes_baseruby:yes=~disabled~):
 	$(Q) exit > $@
 
@@ -1519,9 +1564,15 @@ after-update:: extract-extlibs
 after-update:: extract-gems
 after-update:: update-default-gemspecs
 
+# Do not remove or empty revision.h itself, whose content file2lastrev.rb
+# keeps when the source tree has no VCS.
 update-src::
-	$(Q) $(RM) $(REVISION_H) revision.h "$(srcdir)/$(REVISION_H)" "$(srcdir)/revision.h"
-	$(Q) exit > "$(srcdir)/revision.h"
+	$(Q) $(RM) $(REVISION_H) "$(srcdir)/$(REVISION_H)"
+
+# $(REVISION_H) can have been made already in this run, as a prerequisite
+# of the included dependency file, and make does not make it twice.
+update-src$(no_baseruby:no=~disabled~)::
+	$(Q) $(REVISION_H_CMD)
 
 update-remote:: update-src update-download
 update-download:: $(ALWAYS_UPDATE_UNICODE:yes=update-unicode)

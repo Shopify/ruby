@@ -156,6 +156,7 @@ make_counters! {
     default {
         compiled_iseq_count,
         failed_iseq_count,
+        jit_frame_heap_bytes,
         skipped_native_stack_full,
 
         compile_time_ns,
@@ -164,7 +165,7 @@ make_counters! {
         invalidation_time_ns,
 
         compiled_side_exit_count,
-        side_exit_size,
+        side_exit_size_bytes,
         compile_side_exit_time_ns,
 
         compile_hir_time_ns,
@@ -231,11 +232,6 @@ make_counters! {
         exit_callee_side_exit,
         exit_interrupt,
         exit_stackoverflow,
-        exit_block_param_proxy_not_iseq_or_ifunc,
-        exit_block_param_proxy_not_nil,
-        exit_block_param_proxy_not_proc,
-        exit_block_param_proxy_fallback_miss,
-        exit_block_param_proxy_profile_not_covered,
         exit_invoke_block_handler_not_iseq,
         exit_invoke_block_iseq_changed,
         exit_block_param_wb_required,
@@ -246,9 +242,12 @@ make_counters! {
         exit_splatkw_not_nil_or_hash,
         exit_splatkw_polymorphic,
         exit_splatkw_not_profiled,
+        exit_caller_splat_length_mismatch,
+        exit_caller_splat_ruby2_keywords,
         exit_directive_induced,
         exit_send_while_tracing,
         exit_invokeblock_not_ifunc,
+        exit_once_not_done,
     }
 
     // Send fallback counters that are summed as dynamic_send_count
@@ -336,6 +335,7 @@ make_counters! {
         getivar_fallback_not_t_object,
         getivar_fallback_complex,
         getivar_fallback_no_side_exits,
+        getivar_fallback_multi_ractor,
     }
 
     // Ivar fallback counters that are summed as dynamic_definedivar_count
@@ -368,6 +368,7 @@ make_counters! {
     compile_error_validation_duplicate_instruction,
     compile_error_validation_type_check_failure,
     compile_error_validation_misc_validation_error,
+    compile_error_validation_cfg_not_reducible,
 
     // unhandled_hir_insn_: Unhandled HIR instructions
     unhandled_hir_insn_invokebuiltin,
@@ -442,6 +443,9 @@ make_counters! {
     caller_splat_profile_megamorphic,
     caller_splat_profile_skewed_megamorphic,
 
+    // Caller splat specialization
+    caller_splat_optimized,
+
     // Contexts in which SendDirect argument planning failed. These are kept
     // outside dynamic_send because the detailed fallback reason is also counted.
     send_direct_fallback_context_send,
@@ -486,15 +490,6 @@ make_counters! {
     inline_reject_compile_failure,
     inline_reject_no_returns,
     inline_reject_budget_exceeded,
-
-    getblockparamproxy_handler_iseq,
-    getblockparamproxy_handler_ifunc,
-    getblockparamproxy_handler_symbol,
-    getblockparamproxy_handler_proc,
-    getblockparamproxy_handler_nil,
-    getblockparamproxy_handler_polymorphic,
-    getblockparamproxy_handler_megamorphic,
-    getblockparamproxy_handler_no_profiles,
 
     total_native_stack_bytes,
 }
@@ -573,6 +568,7 @@ pub fn exit_counter_for_compile_error(compile_error: &CompileError) -> Counter {
                 OperandNotDefined(_, _, _)    => compile_error_validation_operand_not_defined,
                 DuplicateInstruction(_, _)    => compile_error_validation_duplicate_instruction,
                 MismatchedOperandType(..)     => compile_error_validation_type_check_failure,
+                IrreducibleLoopEdge(..)       => compile_error_validation_cfg_not_reducible,
                 MiscValidationError(..)       => compile_error_validation_misc_validation_error,
             },
         }
@@ -630,11 +626,6 @@ pub fn side_exit_counter(reason: crate::hir::SideExitReason) -> Counter {
         CalleeSideExit                => exit_callee_side_exit,
         Interrupt                     => exit_interrupt,
         StackOverflow                 => exit_stackoverflow,
-        BlockParamProxyNotIseqOrIfunc => exit_block_param_proxy_not_iseq_or_ifunc,
-        BlockParamProxyNotNil         => exit_block_param_proxy_not_nil,
-        BlockParamProxyNotProc       => exit_block_param_proxy_not_proc,
-        BlockParamProxyFallbackMiss => exit_block_param_proxy_fallback_miss,
-        BlockParamProxyProfileNotCovered => exit_block_param_proxy_profile_not_covered,
         InvokeBlockHandlerNotIseq     => exit_invoke_block_handler_not_iseq,
         InvokeBlockIseqChanged        => exit_invoke_block_iseq_changed,
         BlockParamWbRequired          => exit_block_param_wb_required,
@@ -642,6 +633,8 @@ pub fn side_exit_counter(reason: crate::hir::SideExitReason) -> Counter {
         SplatKwNotNilOrHash           => exit_splatkw_not_nil_or_hash,
         SplatKwPolymorphic            => exit_splatkw_polymorphic,
         SplatKwNotProfiled            => exit_splatkw_not_profiled,
+        CallerSplatLengthMismatch     => exit_caller_splat_length_mismatch,
+        CallerSplatRuby2Keywords      => exit_caller_splat_ruby2_keywords,
         DirectiveInduced              => exit_directive_induced,
         PatchPoint(Invariant::BOPRedefined { .. })
                                       => exit_patchpoint_bop_redefined,
@@ -666,6 +659,7 @@ pub fn side_exit_counter(reason: crate::hir::SideExitReason) -> Counter {
         NoProfileGetIvar              => exit_no_profile_getivar,
         NoProfileSetIvar              => exit_no_profile_setivar,
         InvokeBlockNotIfunc           => exit_invokeblock_not_ifunc,
+        OnceNotDone                   => exit_once_not_done,
     }
 }
 
@@ -852,10 +846,12 @@ pub extern "C" fn rb_zjit_stats(_ec: EcPtr, _self: VALUE, target_key: VALUE) -> 
     }
 
     // Memory usage stats
+    let jit_frame_region_bytes = ZJITState::get_jit_frame_allocator().map_or(0, |allocator| allocator.mapped_bytes());
     let code_region_bytes = ZJITState::get_code_block().mapped_region_size();
+    set_stat_usize!(hash, "jit_frame_region_bytes", jit_frame_region_bytes);
     set_stat_usize!(hash, "code_region_bytes", code_region_bytes);
     set_stat_usize!(hash, "zjit_alloc_bytes", zjit_alloc_bytes());
-    set_stat_usize!(hash, "total_mem_bytes", code_region_bytes + zjit_alloc_bytes());
+    set_stat_usize!(hash, "total_mem_bytes", code_region_bytes + jit_frame_region_bytes + zjit_alloc_bytes());
 
     // End of default stats. Every counter beyond this is provided only for --zjit-stats.
     if !get_option!(stats) {

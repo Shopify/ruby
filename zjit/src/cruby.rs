@@ -180,7 +180,6 @@ pub use rb_get_ec_cfp as get_ec_cfp;
 pub use rb_get_cfp_iseq as get_cfp_iseq;
 pub use rb_get_cfp_pc as get_cfp_pc;
 pub use rb_get_cfp_sp as get_cfp_sp;
-pub use rb_get_cfp_ep_level as get_cfp_ep_level;
 pub use rb_get_cme_def_type as get_cme_def_type;
 pub use rb_get_cme_def_body_attr_id as get_cme_def_body_attr_id;
 pub use rb_get_cme_def_body_optimized_type as get_cme_def_body_optimized_type;
@@ -887,6 +886,12 @@ impl From<*const rb_callable_method_entry_t> for VALUE {
     }
 }
 
+impl From<*const rb_callinfo> for VALUE {
+    fn from(ci: *const rb_callinfo) -> Self {
+        VALUE(ci as usize)
+    }
+}
+
 impl From<&str> for VALUE {
     fn from(value: &str) -> Self {
         rust_str_to_ruby(value)
@@ -1220,12 +1225,6 @@ mod manual_defs {
     pub const VM_CALL_ZSUPER : u32 = 1 << VM_CALL_ZSUPER_bit;
     pub const VM_CALL_OPT_SEND : u32 = 1 << VM_CALL_OPT_SEND_bit;
 
-    // From internal/struct.h - in anonymous enum, so we can't easily import it
-    pub const RSTRUCT_EMBED_LEN_MASK: usize = (RUBY_FL_USER7 | RUBY_FL_USER6 | RUBY_FL_USER5 | RUBY_FL_USER4 | RUBY_FL_USER3 |RUBY_FL_USER2 | RUBY_FL_USER1) as usize;
-
-    // From iseq.h - via a different constant, which seems to confuse bindgen
-    pub const ISEQ_TRANSLATED: usize = RUBY_FL_USER7 as usize;
-
     // We'll need to encode a lot of Ruby struct/field offsets as constants unless we want to
     // redeclare all the Ruby C structs and write our own offsetof macro. For now, we use constants.
     pub const RUBY_OFFSET_RBASIC_FLAGS: i32 = 0; // struct RBasic, field "flags"
@@ -1322,9 +1321,15 @@ pub mod test_utils {
         }
     }
 
+    /// Make sure the Ruby VM is booted and ZJITState is initialized. Test helpers that
+    /// touch ZJITState or ZJIT stats before running any Ruby code must call this first.
+    pub fn ensure_rubyvm() {
+        RUBY_VM_INIT.call_once(boot_rubyvm);
+    }
+
     /// Make sure the Ruby VM is set up and run a given callback with rb_protect()
     pub fn with_rubyvm<T>(mut func: impl FnMut() -> T) -> T {
-        RUBY_VM_INIT.call_once(boot_rubyvm);
+        ensure_rubyvm();
 
         // Invoke callback through rb_protect() so exceptions don't crash the process.
         // "Fun" double pointer dance to get a thin function pointer to pass through C
@@ -1392,6 +1397,7 @@ pub mod test_utils {
     #[track_caller]
     pub fn assert_compiles_allowing_exits(program: &str) -> String {
         use crate::state::ZJITState;
+        ensure_rubyvm(); // ZJITState is not available until the VM is booted
         ZJITState::enable_assert_compiles();
         let result = inspect(program);
         ZJITState::disable_assert_compiles();
@@ -1403,6 +1409,7 @@ pub mod test_utils {
     #[track_caller]
     pub fn assert_compiles(program: &str) -> String {
         use crate::state::ZJITState;
+        ensure_rubyvm(); // ZJITState is not available until the VM is booted
         let exits_before = crate::stats::total_exit_count();
         ZJITState::enable_assert_compiles();
         let result = inspect(program);
@@ -1734,8 +1741,8 @@ pub(crate) mod ids {
         name: freeze
         name: minusat            content: b"-@"
         name: aref               content: b"[]"
-        name: rb_obj_is_proc
         name: rb_ivar_get_at_no_ractor_check
+        name: rb_jit_ruby2_keywords_splat_p
         name: RUBY_FL_FREEZE
         name: RUBY_ELTS_SHARED
         name: RubyVM

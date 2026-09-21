@@ -23,6 +23,7 @@
 #include "internal/object.h"
 #include "internal/proc.h"
 #include "internal/rational.h"
+#include "internal/set.h"
 #include "internal/string.h"
 #include "internal/vm.h"
 #include "probes.h"
@@ -1177,6 +1178,7 @@ rb_ary_initialize(int argc, VALUE *argv, VALUE ary)
     }
     /* recheck after argument conversion */
     rb_ary_modify(ary);
+    ARY_SET_LEN(ary, 0);
     ary_resize_capa(ary, len);
     if (rb_block_given_p()) {
         long i;
@@ -1941,7 +1943,7 @@ rb_ary_aref1(VALUE ary, VALUE arg)
       default:
         if (step == 0) rb_raise(rb_eArgError, "slice step cannot be zero");
         len = ary_subseq_len(ary, beg, len);
-        if (len == 0) return ary_new(klass, 0);
+        if (len <= 0) return ary_new(klass, 0);
         if (step == 1) return ary_make_partial(ary, klass, beg, len);
         return ary_make_partial_step(ary, klass, beg, len, step);
     }
@@ -2786,8 +2788,9 @@ rb_ary_each(VALUE ary)
     long i;
     ary_verify(ary);
     RETURN_SIZED_ENUMERATOR(ary, 0, 0, ary_enum_length);
+    rb_execution_context_t *ec = GET_EC();
     for (i=0; i<RARRAY_LEN(ary); i++) {
-        rb_yield(RARRAY_AREF(ary, i));
+        rb_ec_yield(ec, RARRAY_AREF(ary, i));
     }
     return ary;
 }
@@ -3961,6 +3964,9 @@ append_values_at_single(VALUE result, VALUE ary, long olen, VALUE idx)
     /* check if idx is Range */
     else if (rb_range_beg_len(idx, &beg, &len, olen, 1)) {
         if (len > 0) {
+            // rb_range_beg_len may run arbitrary code that modifies ary, so we
+            // need to re-calculate olen
+            const long olen = RARRAY_LEN(ary);
             const VALUE *const src = RARRAY_CONST_PTR(ary);
             const long end = beg + len;
             const long prevlen = RARRAY_LEN(result);
@@ -4842,7 +4848,7 @@ rb_ary_zip(int argc, VALUE *argv, VALUE ary)
     else {
         result = rb_ary_new_capa(len);
 
-        for (i=0; i<len; i++) {
+        for (i=0; i<RARRAY_LEN(ary); i++) {
             VALUE tmp = rb_ary_new_capa(argc+1);
 
             rb_ary_push(tmp, RARRAY_AREF(ary, i));
@@ -5723,52 +5729,20 @@ rb_ary_cmp(VALUE ary1, VALUE ary2)
     return INT2FIX(-1);
 }
 
-static VALUE
-ary_add_hash(VALUE hash, VALUE ary)
+static void
+rb_ary_union_set(VALUE set, VALUE ary)
 {
-    long i;
-
-    for (i=0; i<RARRAY_LEN(ary); i++) {
-        VALUE elt = RARRAY_AREF(ary, i);
-        rb_hash_add_new_element(hash, elt, elt);
+    for (long i = 0; i < RARRAY_LEN(ary); i++) {
+        rb_set_add_no_check(set, RARRAY_AREF(ary, i));
     }
-    return hash;
-}
-
-static inline VALUE
-ary_tmp_hash_new(VALUE ary)
-{
-    long size = RARRAY_LEN(ary);
-    VALUE hash = rb_hash_new_capa(size);
-
-    RBASIC_CLEAR_CLASS(hash);
-    return hash;
 }
 
 static VALUE
-ary_make_hash(VALUE ary)
+ary_to_set(VALUE ary)
 {
-    VALUE hash = ary_tmp_hash_new(ary);
-    return ary_add_hash(hash, ary);
-}
-
-static VALUE
-ary_add_hash_by(VALUE hash, VALUE ary)
-{
-    long i;
-
-    for (i = 0; i < RARRAY_LEN(ary); ++i) {
-        VALUE v = rb_ary_elt(ary, i), k = rb_yield(v);
-        rb_hash_add_new_element(hash, k, v);
-    }
-    return hash;
-}
-
-static VALUE
-ary_make_hash_by(VALUE ary)
-{
-    VALUE hash = ary_tmp_hash_new(ary);
-    return ary_add_hash_by(hash, ary);
+    VALUE set = rb_obj_hide(rb_set_new_capa(RARRAY_LEN(ary)));
+    rb_ary_union_set(set, ary);
+    return set;
 }
 
 /*
@@ -5792,16 +5766,12 @@ ary_make_hash_by(VALUE ary)
 VALUE
 rb_ary_diff(VALUE ary1, VALUE ary2)
 {
-    VALUE ary3;
-    VALUE hash;
-    long i;
-
     ary2 = to_ary(ary2);
     if (RARRAY_LEN(ary2) == 0) { return ary_make_shared_copy(ary1); }
-    ary3 = rb_ary_new();
+    VALUE ary3 = rb_ary_new();
 
     if (RARRAY_LEN(ary1) <= SMALL_ARRAY_LEN || RARRAY_LEN(ary2) <= SMALL_ARRAY_LEN) {
-        for (i=0; i<RARRAY_LEN(ary1); i++) {
+        for (long i = 0; i < RARRAY_LEN(ary1); i++) {
             VALUE elt = rb_ary_elt(ary1, i);
             if (rb_ary_includes_by_eql(ary2, elt)) continue;
             rb_ary_push(ary3, elt);
@@ -5809,9 +5779,9 @@ rb_ary_diff(VALUE ary1, VALUE ary2)
         return ary3;
     }
 
-    hash = ary_make_hash(ary2);
-    for (i=0; i<RARRAY_LEN(ary1); i++) {
-        if (rb_hash_stlike_lookup(hash, RARRAY_AREF(ary1, i), NULL)) continue;
+    VALUE set = ary_to_set(ary2);
+    for (long i = 0; i < RARRAY_LEN(ary1); i++) {
+        if (rb_set_lookup(set, RARRAY_AREF(ary1, i))) continue;
         rb_ary_push(ary3, rb_ary_elt(ary1, i));
     }
 
@@ -5840,25 +5810,25 @@ rb_ary_diff(VALUE ary1, VALUE ary2)
 static VALUE
 rb_ary_difference_multi(int argc, VALUE *argv, VALUE ary)
 {
-    VALUE ary_diff;
-    long i, length;
     volatile VALUE t0;
-    bool *is_hash = ALLOCV_N(bool, t0, argc);
-    ary_diff = rb_ary_new();
-    length = RARRAY_LEN(ary);
+    bool *is_set = ALLOCV_N(bool, t0, argc);
+    VALUE ary_diff = rb_ary_new();
+    long length = RARRAY_LEN(ary);
 
-    for (i = 0; i < argc; i++) {
+    for (long i = 0; i < argc; i++) {
         argv[i] = to_ary(argv[i]);
-        is_hash[i] = (length > SMALL_ARRAY_LEN && RARRAY_LEN(argv[i]) > SMALL_ARRAY_LEN);
-        if (is_hash[i]) argv[i] = ary_make_hash(argv[i]);
+        is_set[i] = (length > SMALL_ARRAY_LEN && RARRAY_LEN(argv[i]) > SMALL_ARRAY_LEN);
+        if (is_set[i]) {
+            argv[i] = ary_to_set(argv[i]);
+        }
     }
 
-    for (i = 0; i < RARRAY_LEN(ary); i++) {
+    for (long i = 0; i < RARRAY_LEN(ary); i++) {
         int j;
         VALUE elt = rb_ary_elt(ary, i);
         for (j = 0; j < argc; j++) {
-            if (is_hash[j]) {
-                if (rb_hash_stlike_lookup(argv[j], elt, NULL))
+            if (is_set[j]) {
+                if (rb_set_lookup(argv[j], elt))
                     break;
             }
             else {
@@ -5901,17 +5871,13 @@ rb_ary_difference_multi(int argc, VALUE *argv, VALUE ary)
 static VALUE
 rb_ary_and(VALUE ary1, VALUE ary2)
 {
-    VALUE hash, ary3, v;
-    st_data_t vv;
-    long i;
-
     ary2 = to_ary(ary2);
-    ary3 = rb_ary_new();
+    VALUE ary3 = rb_ary_new();
     if (RARRAY_LEN(ary1) == 0 || RARRAY_LEN(ary2) == 0) return ary3;
 
     if (RARRAY_LEN(ary1) <= SMALL_ARRAY_LEN && RARRAY_LEN(ary2) <= SMALL_ARRAY_LEN) {
-        for (i=0; i<RARRAY_LEN(ary1); i++) {
-            v = RARRAY_AREF(ary1, i);
+        for (long i = 0; i < RARRAY_LEN(ary1); i++) {
+            VALUE v = RARRAY_AREF(ary1, i);
             if (!rb_ary_includes_by_eql(ary2, v)) continue;
             if (rb_ary_includes_by_eql(ary3, v)) continue;
             rb_ary_push(ary3, v);
@@ -5919,12 +5885,11 @@ rb_ary_and(VALUE ary1, VALUE ary2)
         return ary3;
     }
 
-    hash = ary_make_hash(ary2);
+    VALUE set = ary_to_set(ary2);
 
-    for (i=0; i<RARRAY_LEN(ary1); i++) {
-        v = RARRAY_AREF(ary1, i);
-        vv = (st_data_t)v;
-        if (rb_hash_stlike_delete(hash, &vv, 0)) {
+    for (long i = 0; i < RARRAY_LEN(ary1); i++) {
+        VALUE v = RARRAY_AREF(ary1, i);
+        if (rb_set_delete_no_check(set, v)) {
             rb_ary_push(ary3, v);
         }
     }
@@ -5966,14 +5931,6 @@ rb_ary_intersection_multi(int argc, VALUE *argv, VALUE ary)
     return result;
 }
 
-static int
-ary_hash_orset(st_data_t *key, st_data_t *value, st_data_t arg, int existing)
-{
-    if (existing) return ST_STOP;
-    *key = *value = (VALUE)arg;
-    return ST_CONTINUE;
-}
-
 static void
 rb_ary_union(VALUE ary_union, VALUE ary)
 {
@@ -5982,18 +5939,6 @@ rb_ary_union(VALUE ary_union, VALUE ary)
         VALUE elt = rb_ary_elt(ary, i);
         if (rb_ary_includes_by_eql(ary_union, elt)) continue;
         rb_ary_push(ary_union, elt);
-    }
-}
-
-static void
-rb_ary_union_hash(VALUE hash, VALUE ary2)
-{
-    long i;
-    for (i = 0; i < RARRAY_LEN(ary2); i++) {
-        VALUE elt = RARRAY_AREF(ary2, i);
-        if (!rb_hash_stlike_update(hash, (st_data_t)elt, ary_hash_orset, (st_data_t)elt)) {
-            RB_OBJ_WRITTEN(hash, Qundef, elt);
-        }
     }
 }
 
@@ -6015,8 +5960,6 @@ rb_ary_union_hash(VALUE hash, VALUE ary2)
 static VALUE
 rb_ary_or(VALUE ary1, VALUE ary2)
 {
-    VALUE hash;
-
     ary2 = to_ary(ary2);
     if (RARRAY_LEN(ary1) + RARRAY_LEN(ary2) <= SMALL_ARRAY_LEN) {
         VALUE ary3 = rb_ary_new();
@@ -6025,10 +5968,11 @@ rb_ary_or(VALUE ary1, VALUE ary2)
         return ary3;
     }
 
-    hash = ary_make_hash(ary1);
-    rb_ary_union_hash(hash, ary2);
+    VALUE set = rb_obj_hide(rb_set_new_capa(RARRAY_LEN(ary1) + RARRAY_LEN(ary2)));
+    rb_ary_union_set(set, ary1);
+    rb_ary_union_set(set, ary2);
 
-    return rb_hash_values(hash);
+    return rb_set_to_a(set);
 }
 
 /*
@@ -6057,12 +6001,8 @@ rb_ary_or(VALUE ary1, VALUE ary2)
 static VALUE
 rb_ary_union_multi(int argc, VALUE *argv, VALUE ary)
 {
-    int i;
-    long sum;
-    VALUE hash;
-
-    sum = RARRAY_LEN(ary);
-    for (i = 0; i < argc; i++) {
+    long sum = RARRAY_LEN(ary);
+    for (int i = 0; i < argc; i++) {
         argv[i] = to_ary(argv[i]);
         sum += RARRAY_LEN(argv[i]);
     }
@@ -6071,15 +6011,16 @@ rb_ary_union_multi(int argc, VALUE *argv, VALUE ary)
         VALUE ary_union = rb_ary_new();
 
         rb_ary_union(ary_union, ary);
-        for (i = 0; i < argc; i++) rb_ary_union(ary_union, argv[i]);
+        for (int i = 0; i < argc; i++) rb_ary_union(ary_union, argv[i]);
 
         return ary_union;
     }
 
-    hash = ary_make_hash(ary);
-    for (i = 0; i < argc; i++) rb_ary_union_hash(hash, argv[i]);
+    VALUE set = rb_obj_hide(rb_set_new_capa(sum));
+    rb_ary_union_set(set, ary);
+    for (int i = 0; i < argc; i++) rb_ary_union_set(set, argv[i]);
 
-    return rb_hash_values(hash);
+    return rb_set_to_a(set);
 }
 
 /*
@@ -6099,35 +6040,30 @@ rb_ary_union_multi(int argc, VALUE *argv, VALUE ary)
 static VALUE
 rb_ary_intersect_p(VALUE ary1, VALUE ary2)
 {
-    VALUE hash, v, result, shorter, longer;
-    st_data_t vv;
-    long i;
-
     ary2 = to_ary(ary2);
     if (RARRAY_LEN(ary1) == 0 || RARRAY_LEN(ary2) == 0) return Qfalse;
 
     if (RARRAY_LEN(ary1) <= SMALL_ARRAY_LEN && RARRAY_LEN(ary2) <= SMALL_ARRAY_LEN) {
-        for (i=0; i<RARRAY_LEN(ary1); i++) {
-            v = RARRAY_AREF(ary1, i);
+        for (long i = 0; i < RARRAY_LEN(ary1); i++) {
+            VALUE v = RARRAY_AREF(ary1, i);
             if (rb_ary_includes_by_eql(ary2, v)) return Qtrue;
         }
         return Qfalse;
     }
 
-    shorter = ary1;
-    longer = ary2;
+    VALUE shorter = ary1;
+    VALUE longer = ary2;
     if (RARRAY_LEN(ary1) > RARRAY_LEN(ary2)) {
         longer = ary1;
         shorter = ary2;
     }
 
-    hash = ary_make_hash(shorter);
-    result = Qfalse;
+    VALUE set = ary_to_set(shorter);
+    VALUE result = Qfalse;
 
-    for (i=0; i<RARRAY_LEN(longer); i++) {
-        v = RARRAY_AREF(longer, i);
-        vv = (st_data_t)v;
-        if (rb_hash_stlike_lookup(hash, vv, 0)) {
+    for (long i = 0; i < RARRAY_LEN(longer); i++) {
+        VALUE v = RARRAY_AREF(longer, i);
+        if (rb_set_lookup(set, v)) {
             result = Qtrue;
             break;
         }
@@ -6522,9 +6458,9 @@ rb_ary_minmax(VALUE ary)
 }
 
 static int
-push_value(st_data_t key, st_data_t val, st_data_t ary)
+push_value_i(VALUE elt, VALUE ary)
 {
-    rb_ary_push((VALUE)ary, (VALUE)val);
+    rb_ary_push(ary, elt);
     return ST_CONTINUE;
 }
 
@@ -6558,19 +6494,27 @@ push_value(st_data_t key, st_data_t val, st_data_t ary)
 static VALUE
 rb_ary_uniq_bang(VALUE ary)
 {
-    VALUE hash;
-    long hash_size;
-
     rb_ary_modify_check(ary);
     if (RARRAY_LEN(ary) <= 1)
         return Qnil;
-    if (rb_block_given_p())
-        hash = ary_make_hash_by(ary);
-    else
-        hash = ary_make_hash(ary);
 
-    hash_size = RHASH_SIZE(hash);
-    if (RARRAY_LEN(ary) == hash_size) {
+    if (rb_block_given_p()) {
+        VALUE set = rb_obj_hide(rb_set_new_capa(RARRAY_LEN(ary)));
+        VALUE uniq = rb_ary_new_capa(RARRAY_LEN(ary));
+        for (long i = 0; i < RARRAY_LEN(ary); i++) {
+            VALUE elt = rb_ary_elt(ary, i);
+            if (rb_set_add_no_check(set, rb_yield(elt)))
+                rb_ary_push(uniq, elt);
+        }
+        if (RARRAY_LEN(ary) == RARRAY_LEN(uniq))
+            return Qnil;
+        rb_ary_replace(ary, uniq);
+        return ary;
+    }
+
+    VALUE set = ary_to_set(ary);
+    long size = (long)rb_set_size(set);
+    if (RARRAY_LEN(ary) == size) {
         return Qnil;
     }
     rb_ary_modify_check(ary);
@@ -6579,8 +6523,8 @@ rb_ary_uniq_bang(VALUE ary)
         rb_ary_unshare(ary);
         FL_SET_EMBED(ary);
     }
-    ary_resize_capa(ary, hash_size);
-    rb_hash_foreach(hash, push_value, ary);
+    ary_resize_capa(ary, size);
+    rb_set_foreach(set, push_value_i, ary);
 
     return ary;
 }
@@ -6614,22 +6558,25 @@ rb_ary_uniq_bang(VALUE ary)
 static VALUE
 rb_ary_uniq(VALUE ary)
 {
-    VALUE hash, uniq;
-
     if (RARRAY_LEN(ary) <= 1) {
-        hash = 0;
-        uniq = rb_ary_dup(ary);
+        return rb_ary_dup(ary);
     }
-    else if (rb_block_given_p()) {
-        hash = ary_make_hash_by(ary);
-        uniq = rb_hash_values(hash);
+
+    VALUE set = rb_obj_hide(rb_set_new_capa(RARRAY_LEN(ary)));
+
+    if (rb_block_given_p()) {
+        VALUE uniq = rb_ary_new_capa(RARRAY_LEN(ary));
+        for (long i = 0; i < RARRAY_LEN(ary); i++) {
+            VALUE elt = rb_ary_elt(ary, i);
+            if (rb_set_add_no_check(set, rb_yield(elt)))
+                rb_ary_push(uniq, elt);
+        }
+        return uniq;
     }
     else {
-        hash = ary_make_hash(ary);
-        uniq = rb_hash_values(hash);
+        rb_ary_union_set(set, ary);
+        return rb_set_to_a(set);
     }
-
-    return uniq;
 }
 
 /*
@@ -6750,13 +6697,11 @@ rb_ary_count(int argc, VALUE *argv, VALUE ary)
     return LONG2NUM(n);
 }
 
-VALUE rb_ident_set_new(void);
-
 static VALUE
 flatten(VALUE ary, int level)
 {
     long i;
-    VALUE stack, result, tmp = 0, elt;
+    VALUE stack, result, tmp = Qnil, elt;
     VALUE memo = Qfalse;
 
     for (i = 0; i < RARRAY_LEN(ary); i++) {
@@ -6766,8 +6711,13 @@ flatten(VALUE ary, int level)
             break;
         }
     }
-    if (i == RARRAY_LEN(ary)) {
+    if (NIL_P(tmp)) {
         return ary;
+    }
+    if (i > RARRAY_LEN(ary)) {
+        /* ary was shrunk while converting an element with #to_ary, so
+           the scanned elements may no longer exist in ary */
+        i = RARRAY_LEN(ary);
     }
 
     result = ary_new(0, RARRAY_LEN(ary));
@@ -7059,7 +7009,7 @@ ary_sample(rb_execution_context_t *ec, VALUE ary, VALUE randgen, VALUE nv, VALUE
     len = RARRAY_LEN(ary);
     if (len < k && n <= numberof(idx)) {
         for (i = 0; i < n; ++i) {
-            if (rnds[i] >= len) return rb_ary_new_capa(0);
+            if (rnds[i] >= len - 1) return rb_ary_new_capa(0);
         }
     }
     if (n > len) n = len;

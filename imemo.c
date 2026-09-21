@@ -215,7 +215,7 @@ rb_imemo_fields_clone(VALUE fields_obj)
         // to mark an uninitialized table.
         clone = imemo_fields_new(owner, ROOT_SHAPE_ID, sizeof(struct rb_fields), false /* TODO: check */);
         st_table *dest_table = rb_imemo_fields_complex_tbl(clone);
-#ifdef RUBY_DEBUG
+#if RUBY_DEBUG
         dest_table->entries = NULL;
 #endif
         st_replace(dest_table, src_table);
@@ -298,7 +298,7 @@ rb_imemo_memsize(VALUE obj)
       case imemo_memo:
         break;
       case imemo_ment:
-        size += sizeof(((rb_method_entry_t *)obj)->def);
+        size += sizeof(struct rb_method_definition_struct);
 
         break;
       case imemo_svar:
@@ -422,9 +422,8 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
              */
         }
         else if (reference_updating) {
-            *((VALUE *)&cc->klass) = rb_gc_location(cc->klass);
-            *((struct rb_callable_method_entry_struct **)&cc->cme_) =
-                (struct rb_callable_method_entry_struct *)rb_gc_location((VALUE)cc->cme_);
+            rb_gc_update_moved((VALUE *)&cc->klass);
+            rb_gc_update_moved_ptr((struct rb_callable_method_entry_struct **)&cc->cme_);
 
             RUBY_ASSERT(RB_TYPE_P(cc->klass, T_CLASS) || RB_TYPE_P(cc->klass, T_ICLASS));
             RUBY_ASSERT(IMEMO_TYPE_P((VALUE)cc->cme_, imemo_ment));
@@ -488,7 +487,7 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
             }
 
             if (reference_updating) {
-                ((VALUE *)env->ep)[VM_ENV_DATA_INDEX_ENV] = rb_gc_location(env->ep[VM_ENV_DATA_INDEX_ENV]);
+                rb_gc_update_moved(&((VALUE *)env->ep)[VM_ENV_DATA_INDEX_ENV]);
             }
             else {
                 if (!VM_ENV_FLAGS(env->ep, VM_ENV_FLAG_WB_REQUIRED)) {
@@ -564,7 +563,7 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
             VALUE *entries = rb_imemo_subclasses_entries(obj);
             for (uint32_t i = 0; i < subs->count; i++) {
                 if (entries[i]) {
-                    entries[i] = rb_gc_location(entries[i]);
+                    rb_gc_update_moved(&entries[i]);
                 }
             }
         }

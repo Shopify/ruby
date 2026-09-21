@@ -1,11 +1,6 @@
 # frozen_string_literal: true
+
 require_relative 'test_helper'
-require 'stringio'
-require 'tempfile'
-begin
-  require 'bigdecimal'
-rescue LoadError
-end
 
 class JSONParserTest < Test::Unit::TestCase
   include JSON
@@ -403,6 +398,15 @@ class JSONParserTest < Test::Unit::TestCase
     assert_raise(JSON::ParserError) { parse('"\\uD800_________________"') }
     assert_raise(JSON::ParserError) { parse('"\\uD800\\u0041"') }
     assert_raise(JSON::ParserError) { parse('"\\uD800\\u004') }
+    # Lone trailing surrogate (issue #1069): parser previously returned an
+    # invalid-UTF-8 String instead of raising. Symmetric to the leading cases
+    # above.
+    assert_raise(JSON::ParserError) { parse('"\\uDC00"') }
+    assert_raise(JSON::ParserError) { parse('"\\uDC00_________________"') }
+    assert_raise(JSON::ParserError) { parse('"\\uDC00\\uD800"') }
+    # Valid pair still parses to the astral codepoint U+10000.
+    assert_predicate JSON.parse('"\\uD800\\uDC00"'), :valid_encoding?
+    assert_equal "\u{10000}", JSON.parse('"\\uD800\\uDC00"')
   end
 
   def test_parse_big_integers
@@ -767,7 +771,7 @@ class JSONParserTest < Test::Unit::TestCase
       @attrs[k.to_sym] = v
     end
 
-    def method_missing(name, ...)
+    def method_missing(name, *)
       @attrs.fetch(name) do
         super
       end
@@ -848,8 +852,6 @@ class JSONParserTest < Test::Unit::TestCase
   end
 
   def test_parse_error_json_path
-    omit "JRuby errors don't contain positions" if RUBY_ENGINE == "jruby"
-
     assert_parse_error_at "$", "xyz"
     assert_parse_error_at "$.a", '{"a": xyz}'
     assert_parse_error_at "$[3]", '[1, 2, "hi", xyz]'
@@ -866,9 +868,17 @@ class JSONParserTest < Test::Unit::TestCase
     assert_parse_error_at "$[5]", '[1,2,3,4,5,]'
   end
 
-  def test_parse_error_json_path_on_load
-    omit "JRuby errors don't contain positions" if RUBY_ENGINE == "jruby"
+  def test_parse_error_position
+    error = assert_raise(JSON::ParserError) { JSON.parse("[1,\n@") }
+    assert_equal 2, error.line
+    assert_equal 1, error.column
 
+    error = assert_raise(JSON::ParserError) { JSON.parse('{"a": {"b": [1, {"c": 1, "c": 2}]}}') }
+    assert_equal 1, error.line
+    assert_equal 17, error.column
+  end
+
+  def test_parse_error_json_path_on_load
     assert_parse_error_at "$" do
       JSON.load('{"a": {"b": {"c":', -> (obj) {
         if String === obj
@@ -891,8 +901,6 @@ class JSONParserTest < Test::Unit::TestCase
   end
 
   def test_parse_error_json_path_key_escaping
-    omit "JRuby errors don't contain positions" if RUBY_ENGINE == "jruby"
-
     assert_parse_error_at '$["hello world"]', '{"hello world": xyz}'
     assert_parse_error_at '$["a\"b"]', '{"a\"b": xyz}'
     assert_parse_error_at '$[""]', '{"": xyz}'
@@ -901,8 +909,6 @@ class JSONParserTest < Test::Unit::TestCase
   end
 
   def test_parse_error_json_path_duplicate_key
-    omit "JRuby errors don't contain positions" if RUBY_ENGINE == "jruby"
-
     assert_parse_error_at "$.a", '{"a": 1, "a": 2}'
     assert_parse_error_at "$.x.a", '{"x": {"a": 1, "b": 2, "a": 3}}'
     assert_parse_error_at "$.arr[0].a", '{"arr": [{"a": 1, "a": 2}]}'

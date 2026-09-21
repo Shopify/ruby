@@ -1021,6 +1021,7 @@ static const char szInternalCmds[][InternalCmdsMax+2] = {
     "\1" "lock",
     "\3" "md",
     "\3" "mkdir",
+    "\2" "mklink",
     "\2" "move",
     "\3" "path",
     "\3" "pause",
@@ -3486,6 +3487,15 @@ rb_w32_getsockopt(int s, int level, int optname, char *optval, int *optlen)
         r = getsockopt(TO_SOCKET(s), level, optname, optval, optlen);
         if (r == SOCKET_ERROR)
             errno = map_errno(WSAGetLastError());
+    }
+    /* Winsock leaves a WSA error code in SO_ERROR, but the callers expect
+     * an errno as on the other platforms.  [Bug #18661] */
+    if (r == 0 && level == SOL_SOCKET && optname == SO_ERROR &&
+        *optlen == (int)sizeof(int)) {
+        int sockerr;
+        memcpy(&sockerr, optval, sizeof(sockerr));
+        sockerr = map_errno(sockerr);
+        memcpy(optval, &sockerr, sizeof(sockerr));
     }
     return r;
 }

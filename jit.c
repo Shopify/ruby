@@ -14,12 +14,14 @@
 #include "iseq.h"
 #include "internal/compile.h"
 #include "internal/gc.h"
+#include "internal/jit.h"
 #include "vm_sync.h"
 #include "internal/fixnum.h"
 #include "internal/hash.h"
 #include "internal/string.h"
 #include "internal/class.h"
 #include "internal/imemo.h"
+#include "internal/struct.h"
 #include "ruby/internal/core/rtypeddata.h"
 #include "zjit.h"
 
@@ -562,6 +564,19 @@ rb_jit_array_len(VALUE a)
     return rb_array_len(a);
 }
 
+// Return non-zero when `obj` is an array and its last item is a
+// `ruby2_keywords` hash. The JITs don't support this kind of splat.
+size_t
+rb_jit_ruby2_keywords_splat_p(VALUE obj)
+{
+    if (!RB_TYPE_P(obj, T_ARRAY)) return 0;
+    long len = RARRAY_LEN(obj);
+    if (len == 0) return 0;
+    VALUE last = RARRAY_AREF(obj, len - 1);
+    if (!RB_TYPE_P(last, T_HASH)) return 0;
+    return FL_TEST_RAW(last, RHASH_PASS_AS_KEYWORDS);
+}
+
 void
 rb_set_cfp_pc(struct rb_control_frame_struct *cfp, const VALUE *pc)
 {
@@ -691,9 +706,9 @@ rb_jit_get_page_size(void)
 }
 
 #if defined(MAP_FIXED_NOREPLACE) && defined(_SC_PAGESIZE)
-// Align the current write position to a multiple of bytes
-static uint8_t *
-align_ptr(uint8_t *ptr, uint32_t multiple)
+// Round `ptr` up to the next multiple of `multiple` bytes. Shared with zjit.c.
+uint8_t *
+rb_jit_align_ptr(uint8_t *ptr, uint32_t multiple)
 {
     // Compute the pointer modulo the given alignment boundary
     uint32_t rem = ((uint32_t)(uintptr_t)ptr) % multiple;
@@ -721,13 +736,32 @@ rb_jit_reserve_addr_space(uint32_t mem_size)
     #if defined(MAP_FIXED_NOREPLACE) && defined(_SC_PAGESIZE)
         uint32_t const page_size = (uint32_t)sysconf(_SC_PAGESIZE);
         uint8_t *const cfunc_sample_addr = (void *)(uintptr_t)&rb_jit_reserve_addr_space;
-        uint8_t *const probe_region_end = cfunc_sample_addr + INT32_MAX;
-        // Align the requested address to page size
-        uint8_t *req_addr = align_ptr(cfunc_sample_addr, page_size);
+        // 64MiB: balancing space probed and time spent probing.
+        const uintptr_t probe_stride = 64 * 1024 * 1024;
+        // Related to the stride. Any successful trial will be within INT32_MAX
+        // range with slack for the binary size.
+        const int max_probe_trials = 30;
 
         // Probe for addresses close to this function using MAP_FIXED_NOREPLACE
         // to improve odds of being in range for 32-bit relative call instructions.
-        do {
+        uint8_t *req_addr = cfunc_sample_addr;
+        for (int i = 0; i < max_probe_trials; i++) {
+            // The address space on x86-64/A64 Linux tends to look like:
+            //
+            //  high addr  +---------------+
+            //      |      |    [stack]    |
+            //      |      |   DSO  text   |
+            //      |      |    [heap]     |
+            //      |      | main exe text |
+            //      v      |       0       |
+            //   low addr  +---------------+
+            //
+            // We always probe downwards from one of the program text areas
+            // to avoid getting in the way of the stack's downwards growth.
+            // If we happen to start from the main text, we also avoid the heap.
+            req_addr -= probe_stride;
+            req_addr = rb_jit_align_ptr(req_addr, page_size);
+
             mem_block = mmap(
                 req_addr,
                 mem_size,
@@ -742,13 +776,7 @@ rb_jit_reserve_addr_space(uint32_t mem_size)
                 ruby_annotate_mmap(mem_block, mem_size, "Ruby:rb_jit_reserve_addr_space");
                 break;
             }
-
-            // -4MiB. Downwards to probe away from the heap. (On x86/A64 Linux
-            // main_code_addr < heap_addr, and in case we are in a shared
-            // library mapped higher than the heap, downwards is still better
-            // since it's towards the end of the heap rather than the stack.)
-            req_addr -= 4 * 1024 * 1024;
-        } while (req_addr < probe_region_end);
+        }
 
     // On MacOS and other platforms
     #else
@@ -782,12 +810,8 @@ rb_jit_reserve_addr_space(uint32_t mem_size)
 
     // Check that the memory mapping was successful
     if (mem_block == MAP_FAILED) {
-        perror("ruby: jit: mmap:");
-        if(errno == ENOMEM) {
-            // No crash report if it's only insufficient memory
-            exit(EXIT_FAILURE);
-        }
-        rb_bug("mmap failed");
+        perror("ruby: jit: Fatal mmap failure:");
+        abort();
     }
 
     return mem_block;

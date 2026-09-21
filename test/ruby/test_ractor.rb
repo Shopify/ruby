@@ -141,18 +141,18 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_sending_object_with_broken_clone
-    # Copying a message does not call the user-visible #clone, so a broken #clone cannot
-    # break sending; the singleton class that defining #clone creates makes it uncopyable.
+    # Ractor copy used to call the user-visible #clone, and one returning self handed
+    # the receiver the sender's object. #clone is no longer called at all; the
+    # singleton class that defining it creates is dropped, as #dup would.
     assert_ractor(<<~'RUBY')
       o = Object.new
       def o.clone
-        self
+        raise "clone called"
       end
-      ractor = Ractor.new { Ractor.receive }
-      error = assert_raise Ractor::Error do
-        ractor.send(o)
-      end
-      assert_match "can not copy", error.message
+      copy = Ractor.new(o) { |x| x }.value
+      refute_same o, copy
+      assert_instance_of Object, copy
+      assert_empty copy.singleton_methods
     RUBY
   end
 
@@ -241,6 +241,169 @@ class TestRactor < Test::Unit::TestCase
       refute_same obj.ivar, obj_copy.ivar
       assert_equal obj.member, obj_copy.member
       refute_same obj.member, obj_copy.member
+    RUBY
+  end
+
+  def test_sending_objects
+    assert_ractor(<<~'RUBY')
+      def echo(obj)
+        Ractor.new { Ractor.receive }.send(obj).value
+      end
+
+      # An unshareable object arrives as an equal copy.
+      def assert_copy(obj)
+        copy = echo(obj)
+        refute_same obj, copy
+        assert_instance_of obj.class, copy
+        assert_equal obj, copy
+      end
+
+      # A shareable object arrives as itself.
+      def assert_shared(obj)
+        assert_same obj, echo(obj)
+      end
+
+      assert_copy Time.at(0)
+      assert_copy Time.now
+      assert_copy [Time.now]
+      assert_shared Ractor::Port.new
+      assert_copy [Ractor::Port.new]
+      assert_copy [Time.now, Ractor::Port.new]
+      # Dump hooks run after the courier is sized, so enough of them make it grow.
+      assert_copy Array.new(2000) { |i| Time.at(i) }
+      # Set has no dump hook of its own; it goes through its rb_marshal_define_compat entry.
+      assert_copy Set.new
+      assert_copy Set[1,2,3]
+      assert_copy Set[+"a", [+"b"], {+"c" => Set[+"d"]}]
+      assert_copy Set[1].compare_by_identity
+      assert_copy Class.new(Set)[1, 2]
+      assert_equal true, echo(Set[1].compare_by_identity).compare_by_identity?
+      set = Set[Ractor::Port.new, Ractor::Port.new]   # Marshal cannot carry a Port
+      assert_equal set.to_a, echo(set).to_a
+
+      # Time#_dump keeps these as ivars on the dumped string; Time#== ignores the last two.
+      time = Time.at(0, 123456789, :nsec, in: "+09:00")
+      copy = echo(time)
+      assert_equal time.nsec, copy.nsec
+      assert_equal time.utc_offset, copy.utc_offset
+      assert_equal time.zone, copy.zone
+
+      # Ivars on the object itself land on what _load returned.
+      time.instance_variable_set(:@ivar, +"ivar")
+      assert_equal "ivar", echo(time).instance_variable_get(:@ivar)
+
+      # Every reference to a _load'ed object resolves to the one copy.
+      copy_time, copy_hash = echo([time, { time => time }])
+      assert_same copy_time, copy_hash.keys[0]
+      assert_same copy_time, copy_hash[time]
+    RUBY
+  end
+
+  def test_sending_regexps
+    assert_ractor(<<~'RUBY')
+      def echo(obj)
+        Ractor.new { Ractor.receive }.send(obj).value
+      end
+
+      # A Regexp is frozen from birth, so shareable: only a subclass instance is copied.
+      re = /a/
+      assert_same re, echo(re)
+      assert_same re, echo([re])[0]
+      class MyRegexp < Regexp; end
+      re = MyRegexp.new("a", "i")
+      re.instance_variable_set(:@ivar, +"ivar")
+      copy = echo(re)
+      refute_same re, copy
+      assert_instance_of MyRegexp, copy
+      assert_equal re, copy
+      assert_equal Regexp::IGNORECASE, copy.options
+      assert_equal "ivar", copy.instance_variable_get(:@ivar)
+      refute_same re.instance_variable_get(:@ivar), copy.instance_variable_get(:@ivar)
+      copy = echo([re, re])
+      assert_same copy[0], copy[1]
+
+      re = MyRegexp.new("\u3042")
+      copy = echo(re)
+      assert_equal Encoding::UTF_8, copy.encoding
+      assert_predicate copy, :fixed_encoding?
+      assert_equal "\u3042".b, copy.source.b
+
+      # A frozen one is shareable again, however its class.
+      re = MyRegexp.new("a").freeze
+      assert_same re, echo(re)
+    RUBY
+  end
+
+  def test_sending_hash_with_shared_key
+    # A key that was already reached elsewhere in the graph must be complete before the
+    # hash inserts it, or it is inserted under the wrong #hash.
+    assert_ractor(<<~'RUBY')
+      def echo(obj)
+        Ractor.new { Ractor.receive }.send(obj).value
+      end
+
+      key = { 1 => 2 }
+      copy_key, copy_hash = echo([key, { key => 1 }])
+      assert_equal key, copy_key
+      assert_equal 1, copy_hash[key]
+      assert_same copy_key, copy_hash.keys[0]
+
+      # The same for a key hashed by an ivar that is itself copied.
+      class ByValue
+        attr_reader :v
+        def initialize(v) = @v = v
+        def hash = @v.hash
+        def eql?(other) = other.is_a?(ByValue) && @v == other.v
+      end
+      key = ByValue.new(+"abc")
+      copy_key, copy_hash = echo([key, { key => 1 }])
+      assert_equal 1, copy_hash[key]
+      assert_same copy_key, copy_hash.keys[0]
+    RUBY
+  end
+
+  def test_failed_send_leaves_receiver_usable
+    # The courier built so far is freed once, not again with the basket.
+    assert_ractor(<<~'RUBY')
+      ractor = Ractor.new { Ractor.receive }
+      assert_raise(Ractor::Error) { ractor.send([proc {}]) }
+      ractor.send(42)
+      assert_equal 42, ractor.value
+    RUBY
+  end
+
+  def test_sending_hook_payloads_under_gc_stress
+    # A dump hook's payload is garbage once captured. A later payload allocated into
+    # its slot must not be taken for the one already seen.
+    assert_ractor(<<~'RUBY', timeout: 60)
+      GC.stress = true
+      times = Array.new(200) { |i| Time.at(i) }
+      assert_equal (0...200).to_a, Ractor.new(times) { |x| x.map(&:to_i) }.value
+    RUBY
+  end
+
+  def test_sending_object_compacted_during_build
+    # A source captured before a dump hook compacts the heap is still found when the
+    # message references it again after.
+    assert_ractor(<<~'RUBY')
+      class CompactingTime < Time
+        def _dump(limit)
+          begin
+            GC.compact
+          rescue NotImplementedError
+          end
+          super
+        end
+      end
+      junk = Array.new(50_000) { +"j" }
+      str = +"x" * 1000
+      msg = [str, CompactingTime.now, str]
+      junk.clear
+      GC.start(full_mark: false, immediate_sweep: true)
+      port = Ractor::Port.new
+      port.send(msg)
+      copy = port.receive
+      assert_same copy[0], copy[2]
     RUBY
   end
 
@@ -354,9 +517,101 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  # Ex: Rubygems redefines require before single-ractor mode is cancelled. The redefined require
+  # from a gem like rubygems should run in the main Ractor regardless of whether the gem is loaded
+  # before or after single ractor mode is cancelled.
+  #
+  # Uses assert_separately rather than assert_ractor: these tests must start out in single-ractor
+  # mode, and assert_ractor cancels it by creating a Ractor before the test body runs.
+  def test_redefined_require_before_single_ractor_mode_cancelled
+    assert_separately([], __FILE__, __LINE__, <<-'RUBY')
+      Warning[:experimental] = false
+      refute defined?(Gem), "rubygems must not be loaded"
+      refute Object.private_method_defined?(:__ractor_original_require), "must still be in single-ractor mode"
+
+      require "tempfile"
+      require "pathname"
+      f = Tempfile.new(["file_to_require_from_ractor", ".rb"])
+      f.write("")
+      f.flush
+      old = $-w; $-w = nil
+      class << Ractor
+        alias __orig_ractor_require _require
+        def _require(feature)
+          (Ractor.current[:required] ||= []) << [self.inspect, __method__, feature.to_s]
+          __orig_ractor_require(feature)
+        end
+      end
+      module Kernel
+        alias some_original_require require
+        def require(feature)
+          (Ractor.current[:required] ||= []) << [self.inspect, __method__, feature.to_s]
+          some_original_require(feature)
+        end
+      end
+      $-w = old
+      result = Ractor.new(f.path) do |path|
+        require Pathname.new(path)
+        Ractor.current[:required]
+      end.value
+      assert_equal [["Ractor", :_require, f.path]], result
+      assert_equal ["nil", :require, f.path], Ractor.current[:required]&.first
+    RUBY
+  end
+
+  # Ex: Rubygems redefines require after single-ractor mode is cancelled. The redefined require
+  # from a gem like rubygems should run in the main Ractor regardless of whether the gem is loaded
+  # before or after single ractor mode is cancelled.
+  #
+  # Uses assert_separately rather than assert_ractor: these tests must start out in single-ractor
+  # mode, and assert_ractor cancels it by creating a Ractor before the test body runs.
+  def test_redefined_require_after_single_ractor_mode_cancelled
+    assert_separately([], __FILE__, __LINE__, <<-'RUBY')
+      Warning[:experimental] = false
+      refute defined?(Gem), "rubygems must not be loaded"
+      refute Object.private_method_defined?(:__ractor_original_require), "must still be in single-ractor mode"
+
+      require "tempfile"
+      require "pathname"
+      f = Tempfile.new(["file_to_require_from_ractor", ".rb"])
+      f.write("")
+      f.flush
+      old = $-w; $-w = nil
+      class << Ractor
+        alias __orig_ractor_require _require
+        def _require(feature)
+          (Ractor.current[:required] ||= []) << [self.inspect, __method__, feature.to_s]
+          __orig_ractor_require(feature)
+        end
+      end
+      $-w = old
+      result = Ractor.new(f.path) do |path|
+        require Pathname.new(path)
+        Ractor.current[:required]
+      end.value
+      assert_equal [["Ractor", :_require, f.path]], result
+      assert_nil Ractor.current[:required]
+      old = $-w; $-w = nil
+      module Kernel
+        alias some_original_require require
+        def require(feature)
+          (Ractor.current[:required] ||= []) << [self.inspect, __method__, feature.to_s]
+          some_original_require(feature)
+        end
+      end
+      $-w = old
+      result = Ractor.new(f.path) do |path|
+        require Pathname.new(path)
+        Ractor.current[:required]
+      end.value
+      assert_equal [["Ractor", :_require, f.path]], result
+      assert_equal ["nil", :require, f.path], Ractor.current[:required]&.first
+    RUBY
+  end
+
   # [Bug #21398]
   def test_port_receive_dnt_with_port_send
-    omit 'unstable on windows and macos-14' if RUBY_PLATFORM =~ /mswin|mingw|darwin/
+    omit 'unstable on windows' if RUBY_PLATFORM =~ /mswin|mingw/
     assert_ractor(<<~'RUBY', timeout: 90)
       THREADS = 10
       JOBS_PER_THREAD = 50
@@ -563,6 +818,34 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  # A thread that released the GVL keeps its EC, so it still resolves an objspace to
+  # charge its frees to.  It must not be sent to the objspace of a child Ractor being
+  # built by another thread of the same Ractor: a stillborn child frees that objspace.
+  def test_stillborn_ractor_with_free_off_gvl
+    assert_ractor(<<~'RUBY', require: '-test-/gvl/call_without_gvl', timeout: 60)
+      x = 42 # capturing an outer local makes Ractor.new raise IsolationError
+      stop = false
+      ready = Queue.new
+      freers = 4.times.map do
+        Thread.new do
+          ready << :up
+          Bug::Thread.xfree_without_gvl(2_000) until stop
+        end
+      end
+      freers.size.times { ready.pop } # all of them are churning before we start
+      2_000.times do
+        begin
+          Ractor.new { x }
+        rescue Ractor::IsolationError
+        end
+      end
+      stop = true
+      freers.each(&:join)
+      GC.start
+      GC.verify_internal_consistency
+    RUBY
+  end
+
   # Moving a CoW shared-root String must not steal its buffer (regression guard for the
   # remaining sharers reading freed memory).
   def test_move_shared_root_string_keeps_buffer
@@ -723,7 +1006,7 @@ class TestRactor < Test::Unit::TestCase
       b = Ractor.new(target) do |t|
         t.monitor(p = Ractor::Port.new)
         Ractor.main << :ready
-        p.receive
+        p.receive == [t, :exited]
       end
 
       Ractor.receive  # b's monitor is registered
@@ -737,7 +1020,7 @@ class TestRactor < Test::Unit::TestCase
       end
 
       assert_equal :ok, a.value
-      assert_equal :exited, b.value
+      assert_equal true, b.value
     RUBY
   end
 
@@ -900,7 +1183,7 @@ class TestRactor < Test::Unit::TestCase
       messages = []
       messages << ISOLATION_WARNINGS.pop until ISOLATION_WARNINGS.empty?
       combined = messages.join("\n")
-      assert_match(/instance variables of classes\/modules from non-main Ractors/, combined)
+      assert_match(/instance variables of classes\/modules created by another Ractor/, combined)
       assert_match(/non-shareable class variable @@cvar/, combined)
       assert_match(/non-shareable objects in constant CheckIsolationFixture::MUTABLE/, combined)
       assert_match(/global variable \$check_isolation_global/, combined)
@@ -1270,7 +1553,6 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_io_priority_wait_on_mn_thread
-    omit 'POLLPRI/MSG_OOB semantics differ on windows' if RUBY_PLATFORM =~ /mswin|mingw/
     # A timeout-less IO#wait(IO::PRIORITY) on an M:N thread must take the
     # blocking path: the M:N scheduler has no event for POLLPRI and used to
     # register nothing yet park the thread forever.
@@ -1307,4 +1589,52 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+
+  def test_move_object_with_finalizer
+    # The moved-from shell keeps its finalizer table entry, so it has to keep
+    # FL_FINALIZE with it; the two disagreeing failed an assertion at shutdown.
+    assert_normal_exit(<<~'RUBY', '[Bug #21368]')
+      Warning[:experimental] = false
+      r = Ractor.new { Ractor.receive }
+      1000.times do
+        o = Object.new
+        ObjectSpace.define_finalizer(o, proc { |id| })
+        r.send(o, move: true)
+      end
+    RUBY
+
+    assert_in_out_err(%w[-W0], <<~'RUBY', %w[sent finalized], [], '[Bug #21368]')
+      r = Ractor.new { Ractor.receive }
+      o = Object.new
+      ObjectSpace.define_finalizer(o, proc { |id| $stdout.puts "finalized" })
+      r.send(o, move: true)
+      $stdout.puts "sent"
+    RUBY
+  end
+
+  def test_attached_object_of_unshareable_object
+    omit 'objspace per Ractor is how an object\'s owner is known' unless GC.config[:implementation] == 'default'
+    assert_ractor(<<~'RUBY')
+      # A singleton class is shareable whatever it is attached to, so sending one used to
+      # hand the attached object to another Ractor through #attached_object.
+      o = Object.new
+      assert_equal true, Ractor.shareable?(o.singleton_class)
+      assert_same o, o.singleton_class.attached_object
+
+      r = Ractor.new(o.singleton_class) do |sc|
+        begin
+          sc.attached_object
+        rescue Ractor::IsolationError
+          :isolated
+        end
+      end
+      assert_equal :isolated, r.value
+
+      # A shareable attached object, and a Ractor's own unshareable one, are fine.
+      shareable = Ractor.make_shareable(Object.new)
+      assert_same shareable, Ractor.new(shareable.singleton_class) { |sc| sc.attached_object }.value
+      assert_same String, Ractor.new(String.singleton_class) { |sc| sc.attached_object }.value
+      assert_equal true, Ractor.new { own = Object.new; own.singleton_class.attached_object.equal?(own) }.value
+    RUBY
+  end
 end

@@ -116,6 +116,10 @@
 
 #endif
 
+#if defined __APPLE__
+# include <AvailabilityMacros.h>
+#endif
+
 #include "ruby/internal/stdbool.h"
 #include "ccan/list/list.h"
 #include "dln.h"
@@ -244,6 +248,39 @@ struct argf {
     struct rb_io_encoding encs;
     int8_t init_p, next_p, binmode;
 };
+
+
+#if defined(__APPLE__) && \
+    (!defined(MAC_OS_VERSION_27_0) || (MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_VERSION_27_0))
+
+# if __has_attribute(availability) && __has_warning("-Wunguarded-availability-new")
+
+RBIMPL_WARNING_PUSH()
+RBIMPL_WARNING_IGNORED(-Wunguarded-availability-new)
+
+#   ifdef HAVE_DUP3
+static inline int (*rb_dup3(void))(int, int, int) {return &dup3;}
+#     define dup3 rb_dup3()
+#   endif
+
+#   ifdef HAVE_PIPE2
+static inline int (*rb_pipe2(void))(int [2], int) {return &pipe2;}
+#     define pipe2 rb_pipe2()
+#   endif
+
+RBIMPL_WARNING_POP()
+
+# else /* __API_AVAILABLE macro does nothing on gcc */
+
+#   ifdef HAVE_DUP3
+__attribute__((weak)) int dup3(int, int, int);
+#   endif
+#   ifdef HAVE_PIPE2
+__attribute__((weak)) int pipe2(int [2], int);
+#   endif
+
+# endif
+#endif /* __APPLE__ && < MAC_OS_X_VERSION_27_0 */
 
 static rb_atomic_t max_file_descriptor = NOFILE;
 void
@@ -384,23 +421,28 @@ rb_cloexec_dup2(int oldfd, int newfd)
     }
     else {
 #if defined(HAVE_DUP3) && defined(O_CLOEXEC)
-        static int try_dup3 = 1;
-        if (2 < newfd && try_dup3) {
+# if defined(__APPLE__)
+#   define try_dup3 (dup3 != NULL)
+#   define abandon_dup3() true
+# else
+        static bool try_dup3 = true;
+#   define abandon_dup3() (errno != ENOSYS || !!(try_dup3 = false))
+# endif
+        if (newfd <= 2) {
+            /* pass stdin, stdout and stderr to children  */
+        }
+        else if (try_dup3) {
             ret = dup3(oldfd, newfd, O_CLOEXEC);
+            /* dup3 is available since:
+             * - Linux 2.6.27, glibc 2.9
+             * - macOS 27.0
+             */
             if (ret != -1)
                 return ret;
-            /* dup3 is available since Linux 2.6.27, glibc 2.9. */
-            if (errno == ENOSYS) {
-                try_dup3 = 0;
-                ret = dup2(oldfd, newfd);
-            }
+            if (abandon_dup3()) return ret;
         }
-        else {
-            ret = dup2(oldfd, newfd);
-        }
-#else
-        ret = dup2(oldfd, newfd);
 #endif
+        ret = dup2(oldfd, newfd);
         if (ret < 0) return ret;
     }
     rb_maygvl_fd_fix_cloexec(ret);
@@ -425,16 +467,25 @@ rb_fd_set_nonblock(int fd)
     return 0;
 }
 
-int
-rb_cloexec_pipe(int descriptors[2])
+static inline int
+cloexec_pipe(int descriptors[2], int flags, bool force_cloexec)
 {
+    int result = -1;
 #ifdef HAVE_PIPE2
-    int result = pipe2(descriptors, O_CLOEXEC | O_NONBLOCK);
-#else
-    int result = pipe(descriptors);
+# if defined(__APPLE__)
+#   define try_pipe2 (pipe2 != NULL)
+#   define abandon_pipe2() true
+# else
+    static bool try_pipe2 = true;
+#   define abandon_pipe2() (errno != ENOSYS || !!(try_pipe2 = false))
+# endif
+    if (try_pipe2) {
+        result = pipe2(descriptors, O_CLOEXEC | flags);
+        if (result == 0) return result;
+        if (abandon_pipe2()) return result;
+    }
 #endif
-
-    if (result < 0)
+    if (result < 0 && (result = pipe(descriptors)) < 0)
         return result;
 
 #ifdef __CYGWIN__
@@ -446,7 +497,9 @@ rb_cloexec_pipe(int descriptors[2])
     }
 #endif
 
-#ifndef HAVE_PIPE2
+    if (!force_cloexec) return result;
+
+    /* no pipe2 or fallenback to dup */
     rb_maygvl_fd_fix_cloexec(descriptors[0]);
     rb_maygvl_fd_fix_cloexec(descriptors[1]);
 
@@ -454,9 +507,14 @@ rb_cloexec_pipe(int descriptors[2])
     rb_fd_set_nonblock(descriptors[0]);
     rb_fd_set_nonblock(descriptors[1]);
 #endif
-#endif
 
     return result;
+}
+
+int
+rb_cloexec_pipe(int descriptors[2])
+{
+    return cloexec_pipe(descriptors, O_NONBLOCK, true);
 }
 
 int
@@ -2176,6 +2234,14 @@ io_binwritev(struct iovec *iov, int iovcnt, rb_io_t *fptr)
             }
 
             fptr->wbuf.len += total;
+
+            /* io_binwritev is only reached in sync/TTY mode (it is called only
+             * from io_fwritev, which io_writev uses only when FMODE_SYNC or
+             * FMODE_TTY is set), so the coalesced data must be flushed
+             * immediately rather than left in the buffer until the next flush
+             * or close. Otherwise a multi-argument write with many arguments
+             * would not be observably atomic under sync. */
+            if (io_fflush(fptr) < 0) return -1;
 
             return total;
         }
@@ -5573,7 +5639,15 @@ fptr_finalize_flush(rb_io_t *fptr, int noraise, int keepgvl)
             error = finish_writeconv(fptr, noraise);
         }
     }
-    if (fptr->wbuf.len) {
+    /* Do not flush the write buffer on close when the stream is in sync
+     * mode. In sync mode Ruby's write buffer is not authoritative (writes go
+     * straight to the OS), so any bytes left in the buffer are the result of
+     * writes made while sync was disabled. Setting sync = true is therefore a
+     * way to abandon that pending output rather than replaying it on close,
+     * which matters after an interrupted write where the amount actually
+     * written is indeterminate. Call flush before enabling sync if the
+     * buffered data should still be sent. */
+    if (fptr->wbuf.len && !(fptr->mode & FMODE_SYNC)) {
         if (noraise) {
             io_flush_buffer_sync(fptr);
         }
@@ -6044,6 +6118,16 @@ rb_io_close_write(VALUE io)
 #ifndef SHUT_WR
 # define SHUT_WR 1
 #endif
+        /* Flush any buffered data before shutting down the write side.
+         * Otherwise the buffered bytes are silently dropped here, and a
+         * subsequent #close would try to flush them into the now
+         * shutdown(SHUT_WR) socket and fail with EPIPE. This matches the
+         * behaviour of the non-socket path below, which flushes via
+         * rb_io_close(). */
+        if (fptr->mode & FMODE_WRITABLE) {
+            if (io_fflush(fptr) < 0)
+                rb_sys_fail_on_write(fptr);
+        }
         if (shutdown(fptr->fd, SHUT_WR) < 0)
             rb_sys_fail_path(fptr->pathv);
         fptr->mode &= ~FMODE_WRITABLE;
@@ -7428,11 +7512,6 @@ rb_io_synchronized(rb_io_t *fptr)
     fptr->mode |= FMODE_SYNC;
 }
 
-void
-rb_io_unbuffered(rb_io_t *fptr)
-{
-    rb_io_synchronized(fptr);
-}
 
 int
 rb_pipe(int *pipes)
@@ -8142,14 +8221,8 @@ ruby_popen_writer(char *const *argv, rb_pid_t *pid)
     int write_pair[2];
 # endif
 
-#ifdef HAVE_PIPE2
-    int result = pipe2(write_pair, O_CLOEXEC);
-#else
-    int result = pipe(write_pair);
-#endif
-
     *pid = -1;
-    if (result == 0) {
+    if (cloexec_pipe(write_pair, 0, false) == 0) {
 # ifdef HAVE_WORKING_FORK
         pw.argv = argv;
         int status;
@@ -8193,33 +8266,47 @@ rb_open_file(VALUE io, VALUE fname, VALUE vmode, VALUE vperm, VALUE opt)
 /*
  *  Document-method: File::open
  *
+ *  :markup: markdown
+ *
  *  call-seq:
- *    File.open(path, mode = 'r', perm = 0666, **opts) -> file
- *    File.open(path, mode = 'r', perm = 0666, **opts) {|f| ... } -> object
+ *    File.open(path, mode = 'r', permissions = 0666, **options) -> file
+ *    File.open(path, mode = 'r', permissions = 0666, **options) {|file| ... } -> object
  *
- *  Creates a new File object, via File.new with the given arguments.
+ *  Creates a new \File object via File.new with the given arguments.
  *
- *  With no block given, returns the File object.
+ *  With no block given, returns the \File object.
  *
- *  With a block given, calls the block with the File object
- *  and returns the block's value.
+ *  With a block given, calls the block with the \File object,
+ *  closes the \File object, and returns the block's value:
  *
+ *  ```ruby
+ *  File.open('doc/maintainers.md') {|file| file.size } # => 14900
+ *  ```
+ *
+ *  Note that the \File object is automatically closed
+ *  even if the block raises an exception.
  */
 
 /*
  *  Document-method: IO::open
  *
- *  call-seq:
- *    IO.open(fd, mode = 'r', **opts)             -> io
- *    IO.open(fd, mode = 'r', **opts) {|io| ... } -> object
+ *  :markup: markdown
  *
- *  Creates a new \IO object, via IO.new with the given arguments.
+ *  call-seq:
+ *    IO.open(fd, mode = 'r', **options) -> io
+ *    IO.open(fd, mode = 'r', **options) {|io| ... } -> object
+ *
+ *  Creates a new \IO object via IO.new with the given arguments.
  *
  *  With no block given, returns the \IO object.
  *
- *  With a block given, calls the block with the \IO object
- *  and returns the block's value.
+ *  With a block given, calls the block with the \IO object,
+ *  closes the \IO object, and returns the block’s value:
  *
+ *  ```ruby
+ *  fd = File.sysopen('doc/maintainers.md') # => 6
+ *  IO.open(fd) {|io| io.read.size }        # => 14897
+ *  ```
  */
 
 static VALUE
@@ -9671,43 +9758,51 @@ rb_io_set_encoding_by_bom(VALUE io)
 }
 
 /*
+ *  :markup: markdown
+ *
  *  call-seq:
- *    File.new(path, mode = 'r', perm = 0666, **opts) -> file
+ *    File.new(path, mode = 'r', permissions = 0666, **options) -> file
  *
- *  Opens the file at the given +path+ according to the given +mode+;
- *  creates and returns a new File object for that file.
+ *  Opens the file as specified by the given arguments.
+ *  Creates and returns a new open \File object for that file;
+ *  the opened file is in non-synchronous mode.
  *
- *  The new File object is buffered mode (or non-sync mode), unless
- *  +filename+ is a tty.
- *  See IO#flush, IO#fsync, IO#fdatasync, and IO#sync=.
+ *  Argument `path` must the string path to an existing filesystem entry:
  *
- *  Argument +path+ must be a valid file path:
+ *  ```ruby
+ *  file = File.new('doc/maintainers.md') # => #<File:doc/maintainers.md>
+ *  file.close                            # Clean up.
+ *  tty = File.new('/dev/tty')            # => #<File:/dev/tty>
+ *  tty.close                             # Clean up.
+ *  ```
  *
- *    f = File.new('/etc/fstab')
- *    f.close
- *    f = File.new('t.txt')
- *    f.close
+ *  Note that the caller is responsible for closing the file;
+ *  see File.open for automatic closing.
  *
- *  Optional argument +mode+ (defaults to 'r') must specify a valid mode;
- *  see {Access Modes}[rdoc-ref:File@Access+Modes]:
+ *  Optional argument `mode` (defaults to `'r'`) must specify a valid mode;
+ *  see [Access Modes](rdoc-ref:File@Access+Modes):
  *
- *    f = File.new('t.tmp', 'w')
- *    f.close
- *    f = File.new('t.tmp', File::RDONLY)
- *    f.close
+ *  ```ruby
+ *  file = File.new('t.tmp', 'w')          # => #<File:t.tmp>
+ *  file.close                             # Clean up.
+ *  file = File.new('t.tmp', File::RDONLY) # => #<File:t.tmp>
+ *  file.close                             # Clean up.
+ *  ```
  *
- *  Optional argument +perm+ (defaults to 0666) must specify valid permissions
- *  see {File Permissions}[rdoc-ref:File@File+Permissions]:
+ *  Optional argument `permissions` (defaults to `0666`) must specify valid permissions;
+ *  see [File Permissions](rdoc-ref:File@File+Permissions):
  *
- *    f = File.new('t.tmp', File::CREAT, 0644)
- *    f.close
- *    f = File.new('t.tmp', File::CREAT, 0444)
- *    f.close
+ *  ```ruby
+ *  file = File.new('t.tmp', 'w', 0644)    # => #<File:t.tmp>
+ *  file.close                             # Clean up.
+ *  file = File.new('t.tmp', 'w', 0444)    # => #<File:t.tmp>
+ *  file.close                             # Clean up.
+ *  ```
  *
- *  Optional keyword arguments +opts+ specify:
+ *  Optional keyword arguments `options` specify:
  *
- *  - {Open Options}[rdoc-ref:IO@Open+Options].
- *  - {Encoding options}[rdoc-ref:encodings.rdoc@Encoding+Options].
+ *  - [Open Options](rdoc-ref:IO@Open+Options).
+ *  - [Encoding options](rdoc-ref:encodings.rdoc@Encoding+Options).
  *
  */
 
@@ -15930,6 +16025,11 @@ Init_IO(void)
     rb_gvar_ractor_local("$>");
     rb_gvar_ractor_local("$stderr");
 
+    rb_gvar_box_dynamic("$stdin");
+    rb_gvar_box_dynamic("$stdout");
+    rb_gvar_box_dynamic("$>");
+    rb_gvar_box_dynamic("$stderr");
+
     rb_global_variable(&rb_stdin);
     rb_stdin  = rb_io_prep_stdin();
     rb_global_variable(&rb_stdout);
@@ -16075,4 +16175,17 @@ Init_IO(void)
     sym_wait_writable = ID2SYM(rb_intern_const("wait_writable"));
 }
 
+static void init_builtin_io(void);
+#define Init_builtin_io init_builtin_io
 #include "io.rbinc"
+#undef Init_builtin_io
+
+void
+Init_builtin_io(void)
+{
+    init_builtin_io();
+
+    /* Init_IO is called earlier than `loaded_features` is initialized */
+    rb_provide("io/wait.rb");
+    rb_provide("io/wait.so");
+}

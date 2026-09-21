@@ -617,7 +617,10 @@ class TestHash < Test::Unit::TestCase
   end
 
   def hash_hint hv
-    hv & 0xff
+    hint = hv & 0xff
+    # hash.c's ar_do_hash_hint() substitutes RHASH_AR_CLEARED_HINT (0x00)
+    # with RHASH_AR_SUBSTITUTION_HINT (0x01), so those two alias.
+    hint == 0 ? 1 : hint
   end
 
   def test_rehash
@@ -1325,6 +1328,11 @@ class TestHash < Test::Unit::TestCase
     assert_equal({1=>6, 3=>4, 5=>7}, h1.merge(h2) {|k, v1, v2| k + v1 + v2 })
     assert_equal({1=>1, 2=>4, 3=>4, 5=>7}, h1.merge(h2, h3))
     assert_equal({1=>8, 2=>4, 3=>4, 5=>7}, h1.merge(h2, h3) {|k, v1, v2| k + v1 + v2 })
+  end
+
+  def test_merge_during_gc
+    hash = @cls[a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8]
+    assert_equal(9, EnvUtil.under_gc_stress(0x04) { hash.merge(i: 9) }[:i])
   end
 
   def test_merge_on_identhash

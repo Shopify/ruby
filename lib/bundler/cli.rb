@@ -319,10 +319,10 @@ module Bundler
     method_option "source", type: :array, banner: "Update a specific source (and all gems associated with it)"
     method_option "force", type: :boolean, aliases: "--redownload", banner: "Force reinstalling every gem, even if already installed"
     method_option "ruby", type: :boolean, banner: "Update ruby specified in Gemfile.lock"
-    method_option "bundler", type: :string, lazy_default: "> 0.a", banner: "Update the locked version of bundler"
+    method_option "bundler", type: :string, lazy_default: ">= #{Bundler::VERSION}", banner: "Update the locked version of bundler"
     method_option "patch", type: :boolean, banner: "Prefer updating only to next patch version"
     method_option "minor", type: :boolean, banner: "Prefer updating only to next minor version"
-    method_option "major", type: :boolean, banner: "Prefer updating to next major version (default)"
+    method_option "major", type: :boolean, banner: "Prefer updating to latest major version (default)"
     method_option "pre", type: :boolean, banner: "Always choose the highest allowed version when updating gems, regardless of prerelease status"
     method_option "strict", type: :boolean, banner: "Do not allow any gem to be updated past latest --patch | --minor | --major"
     method_option "conservative", type: :boolean, banner: "Use bundle install conservative update behavior and do not allow shared dependencies to be updated."
@@ -342,6 +342,7 @@ module Bundler
     D
     method_option "paths", type: :boolean, banner: "List the paths of all gems that are required by your Gemfile."
     method_option "outdated", type: :boolean, banner: "Show verbose output including whether gems are outdated (removed)."
+    method_option "exact-match", type: :boolean, banner: "Only match gems whose names exactly match the given name"
     def show(gem_name = nil)
       if ARGV.include?("--outdated")
         removed_message = "the `--outdated` flag to `bundle show` has been removed in favor of `bundle show --verbose`"
@@ -367,6 +368,7 @@ module Bundler
     desc "info GEM [OPTIONS]", "Show information for the given gem"
     method_option "path", type: :boolean, banner: "Print full path to gem"
     method_option "version", type: :boolean, banner: "Print gem version"
+    method_option "exact-match", type: :boolean, banner: "Only match gems whose names exactly match the given name"
     def info(gem_name)
       require_relative "cli/info"
       Info.new(options, gem_name).run
@@ -434,7 +436,7 @@ module Bundler
     method_option "filter-strict", type: :boolean, aliases: "--strict", banner: "Only list newer versions allowed by your Gemfile requirements"
     method_option "update-strict", type: :boolean, banner: "Strict conservative resolution, do not allow any gem to be updated past latest --patch | --minor | --major"
     method_option "minor", type: :boolean, banner: "Prefer updating only to next minor version"
-    method_option "major", type: :boolean, banner: "Prefer updating to next major version (default)"
+    method_option "major", type: :boolean, banner: "Prefer updating to latest major version (default)"
     method_option "patch", type: :boolean, banner: "Prefer updating only to next patch version"
     method_option "filter-major", type: :boolean, banner: "Only list major newer versions"
     method_option "filter-minor", type: :boolean, banner: "Only list minor newer versions"
@@ -530,6 +532,7 @@ module Bundler
 
     desc "open GEM", "Opens the source directory of the given bundled gem"
     method_option "path", type: :string, lazy_default: "", banner: "Open relative path of the gem source."
+    method_option "exact-match", type: :boolean, banner: "Only match gems whose names exactly match the given name"
     def open(name)
       require_relative "cli/open"
       Open.new(options, name).run
@@ -640,11 +643,11 @@ module Bundler
     method_option "normalize-platforms", type: :boolean, default: false, banner: "Normalize lockfile platforms"
     method_option "patch", type: :boolean, banner: "If updating, prefer updating only to next patch version"
     method_option "minor", type: :boolean, banner: "If updating, prefer updating only to next minor version"
-    method_option "major", type: :boolean, banner: "If updating, prefer updating to next major version (default)"
+    method_option "major", type: :boolean, banner: "If updating, prefer updating to latest major version (default)"
     method_option "pre", type: :boolean, banner: "If updating, always choose the highest allowed version, regardless of prerelease status"
     method_option "strict", type: :boolean, banner: "If updating, do not allow any gem to be updated past latest --patch | --minor | --major"
     method_option "conservative", type: :boolean, banner: "If updating, use bundle install conservative update behavior and do not allow shared dependencies to be updated"
-    method_option "bundler", type: :string, lazy_default: "> 0.a", banner: "Update the locked version of bundler"
+    method_option "bundler", type: :string, lazy_default: ">= #{Bundler::VERSION}", banner: "Update the locked version of bundler"
     method_option "cooldown", type: :numeric, banner: "Only consider gem versions published at least N days ago. Use 0 to disable."
     def lock
       require_relative "cli/lock"

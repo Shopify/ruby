@@ -108,6 +108,7 @@ w32_error(const char *func)
 #define w32_event_debug if (0) printf
 #endif
 
+#ifdef USE_WIN32_MUTEX
 static int
 w32_mutex_lock(HANDLE lock, bool try)
 {
@@ -154,6 +155,7 @@ w32_mutex_create(void)
     }
     return lock;
 }
+#endif
 
 static void
 w32_close_handle(HANDLE handle)
@@ -871,6 +873,12 @@ native_reset_timer_thread(void)
  * backend.  Every thread here is dedicated, so the scheduler never reaches
  * the ones that rb_bug().
  * ------------------------------------------------------------------------- */
+
+static bool
+native_thread_self_can_retire_p(void)
+{
+    return true;
+}
 
 static int
 native_thread_create_shared(rb_thread_t *th)

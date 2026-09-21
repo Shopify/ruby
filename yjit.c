@@ -29,6 +29,7 @@
 #include "iseq.h"
 #include "ruby/debug.h"
 #include "internal/cont.h"
+#include "internal/jit.h"
 
 // For mmapp(), sysconf()
 #ifndef _WIN32
@@ -48,6 +49,12 @@ STATIC_ASSERT(size_t_no_padding_bits, sizeof(size_t) == sizeof(uint64_t));
 // This build config impacts the pointer tagging scheme and we only want to
 // support one scheme for simplicity.
 STATIC_ASSERT(pointer_tagging_scheme, USE_FLONUM);
+
+enum yjit_bindgen_constants {
+    // ISEQ_TRANSLATED expands to an enum value through a chain of macros,
+    // which bindgen cannot evaluate, so it needs to be re-exposed here.
+    YJIT_ISEQ_TRANSLATED = ISEQ_TRANSLATED,
+};
 
 // NOTE: We can trust that uint8_t has no "padding bits" since the C spec
 // guarantees it. Wording about padding bits is more explicit in C11 compared
@@ -240,19 +247,6 @@ rb_yjit_rb_ary_subseq_length(VALUE ary, long beg)
 {
     long len = RARRAY_LEN(ary);
     return rb_ary_subseq(ary, beg, len);
-}
-
-// Return non-zero when `obj` is an array and its last item is a
-// `ruby2_keywords` hash. We don't support this kind of splat.
-size_t
-rb_yjit_ruby2_keywords_splat_p(VALUE obj)
-{
-    if (!RB_TYPE_P(obj, T_ARRAY)) return 0;
-    long len = RARRAY_LEN(obj);
-    if (len == 0) return 0;
-    VALUE last = RARRAY_AREF(obj, len - 1);
-    if (!RB_TYPE_P(last, T_HASH)) return 0;
-    return FL_TEST_RAW(last, RHASH_PASS_AS_KEYWORDS);
 }
 
 // Checks to establish preconditions for rb_yjit_splat_varg_cfunc()
@@ -530,4 +524,3 @@ static VALUE yjit_c_builtin_p(rb_execution_context_t *ec, VALUE self) { return Q
 
 // Preprocessed yjit.rb generated during build
 #include "yjit.rbinc"
-

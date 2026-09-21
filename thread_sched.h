@@ -161,8 +161,8 @@ struct rb_native_thread {
     bool retiring;
 
     // A terminating coroutine records its context here before its final
-    // transfer; this nt's loop reclaims it. (Not via coroutine_transfer()'s
-    // return value: its meaning differs between the amd64 asm and ucontext.)
+    // transfer; this nt's loop reclaims it. coroutine_transfer() cannot be
+    // used because a terminating coroutine never resumes to return a value.
     struct coroutine_context *dead_co;
 };
 
@@ -262,6 +262,7 @@ struct rb_ractor_sched {
 
 void rb_ractor_sched_wait(struct rb_execution_context_struct *ec, struct rb_ractor_struct *cr, rb_unblock_function_t *ptr, void *arg);
 void rb_ractor_sched_wakeup(struct rb_ractor_struct *r, struct rb_thread_struct *th);
+void rb_ractor_sched_wait_terminate(struct rb_vm_struct *vm, rb_nativethread_cond_t *cond, unsigned long msec);
 void rb_thread_wake_fence(struct rb_thread_struct *th);
 
 #endif /* RUBY_THREAD_SCHED_H */
