@@ -1144,24 +1144,22 @@ class TestRactor < Test::Unit::TestCase
     end
   end
 
-  def test_isolation_check_emits_nonexclusive_advisory_once_at_boot
-    advisory = /RUBY_RACTOR_CHECK_ISOLATION: other Ractors can run in parallel/
+  def test_isolation_check_serializes_ractors_or_warns_at_boot
+    advisory = /RUBY_RACTOR_CHECK_ISOLATION: this build has no M:N scheduling/
     # The mode announcement must survive both -W0 and -W:no-ractor_isolation.
-    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}, "-W0", "-W:no-ractor_isolation", "-e", ""]) do |_stdout, stderr|
-      assert_equal 1, stderr.grep(advisory).size, "expected the boot advisory exactly once, got: #{stderr.inspect}"
-    end
-    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1", "RUBY_RACTOR_EXCLUSIVE" => "1"}, "-e", "puts RUBY_DESCRIPTION"]) do |stdout, stderr|
+    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}, "-W0", "-W:no-ractor_isolation",
+                       "-e", "puts RUBY_DESCRIPTION"]) do |stdout, stderr|
       if stdout.first&.include?("+MN")
+        # Check mode turns on M:N and pins it to one CPU, so nothing to advise.
         assert_empty stderr.grep(advisory)
       else
-        # Without M:N support exclusive mode does nothing, so the advisory still prints.
         assert_equal 1, stderr.grep(advisory).size, "expected the advisory on a non-MN build, got: #{stderr.inspect}"
       end
     end
   end
 
-  def test_isolation_check_blocks_other_ractors_in_exclusive_mode
-    assert_separately([{"RUBY_RACTOR_EXCLUSIVE" => "1", "RUBY_RACTOR_CHECK_ISOLATION" => "1"}, "-W:no-experimental"],
+  def test_isolation_check_blocks_other_ractors
+    assert_separately([{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}, "-W:no-experimental"],
                       <<~'RUBY', timeout: 30, ignore_stderr: true)
       omit "M:N scheduling is not supported by this build" unless RUBY_DESCRIPTION.include?("+MN")
 
@@ -1195,7 +1193,7 @@ class TestRactor < Test::Unit::TestCase
       end
       during = stamps.count { |time| time >= start && time <= finish }
       assert_equal 0, during,
-        "expected no other Ractor to run during exclusive isolation check, observed #{during} ticks"
+        "expected no other Ractor to run during the isolation check, observed #{during} ticks"
     RUBY
   end
 

@@ -1793,15 +1793,7 @@ thread_sched_atfork(struct rb_thread_sched *sched)
 #endif
 
 extern int ruby_mn_threads_enabled;
-extern int ruby_ractor_exclusive_enabled;
 extern int ruby_ractor_check_isolation_enabled;
-
-static bool
-ractor_exclusive_env_p(void)
-{
-    const char *cstr = getenv("RUBY_RACTOR_EXCLUSIVE");
-    return cstr && atoi(cstr) > 0;
-}
 
 static bool
 ractor_check_isolation_env_p(void)
@@ -1815,7 +1807,11 @@ ruby_mn_threads_params(void)
 {
     rb_vm_t *vm = GET_VM();
     rb_ractor_t *main_ractor = GET_RACTOR();
-    bool exclusive = USE_MN_THREADS && ractor_exclusive_env_p();
+
+    // Boot precedes the first Ractor, so isolation checking can serialize
+    // Ractors itself rather than ask for a second environment variable.
+    ruby_ractor_check_isolation_enabled = ractor_check_isolation_env_p();
+    bool exclusive = USE_MN_THREADS && ruby_ractor_check_isolation_enabled;
 
     const char *mn_threads_cstr = getenv("RUBY_MN_THREADS");
     bool enable_mn_threads = false;
@@ -1841,18 +1837,15 @@ ruby_mn_threads_params(void)
      * run slot to another Ractor when the current one blocks. */
     if (exclusive) {
         max_cpu = 1;
-        ruby_ractor_exclusive_enabled = 1;
     }
 
     vm->ractor.sched.max_cpu = max_cpu;
 
-    ruby_ractor_check_isolation_enabled = ractor_check_isolation_env_p();
-    if (ruby_ractor_check_isolation_enabled && !ruby_ractor_exclusive_enabled) {
+    if (ruby_ractor_check_isolation_enabled && !exclusive) {
         // fprintf, not rb_warn: the mode announcement must survive -W0
-        fprintf(stderr, "warning: RUBY_RACTOR_CHECK_ISOLATION: other Ractors can run in parallel"
-                " with the isolation-check Ractor. On builds with M:N scheduling,"
-                " RUBY_RACTOR_EXCLUSIVE=1 prevents simultaneous Ruby execution on"
-                " shared native threads.\n");
+        fprintf(stderr, "warning: RUBY_RACTOR_CHECK_ISOLATION: this build has no M:N"
+                " scheduling, so other Ractors can run in parallel with the"
+                " isolation-check Ractor.\n");
     }
 }
 

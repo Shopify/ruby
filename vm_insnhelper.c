@@ -4135,8 +4135,8 @@ vm_bmethod_proc_uncallable_p(rb_execution_context_t *ec, const rb_callable_metho
 // a Proc capturing unshareable state) can normally only be called from the
 // Ractor that defined it; calling it elsewhere raises. Under
 // RUBY_RACTOR_CHECK_ISOLATION we downgrade that to a :ractor_isolation warning and
-// fall through to invoke it anyway. RUBY_RACTOR_EXCLUSIVE makes this
-// race-free; without that scheduler mode a boot advisory is emitted.
+// fall through to invoke it anyway. Check mode serializes Ractors, which makes
+// this race-free; on builds without M:N a boot advisory is emitted.
 // Continuing lets a real-Ractor sweep collect the violations that follow
 // instead of dying on the first bmethod call.
 static void
