@@ -1475,7 +1475,7 @@ static void
 proc_isolation_violation_str(VALUE message, bool warn)
 {
     if (warn) {
-        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, "%s", StringValueCStr(message));
+        rb_ractor_isolation_warn(message);
     }
     else {
         rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));

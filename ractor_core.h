@@ -242,6 +242,8 @@ bool rb_ractor_isolation_check_p(void);
 /* Warns and returns in check mode, raises Ractor::IsolationError otherwise. */
 PRINTF_ARGS(void rb_ractor_isolation_violation(const char *fmt, ...), 1, 2);
 void rb_ractor_isolation_violation_str(VALUE message);
+/* Always warns (deduplicated at level 1); for sites that run in the parent Ractor. */
+void rb_ractor_isolation_warn(VALUE message);
 void rb_ractor_isolation_warning_summary(void);
 
 RUBY_SYMBOL_EXPORT_BEGIN

@@ -1453,6 +1453,16 @@ class TestRactor < Test::Unit::TestCase
       assert_empty stderr.grep(gvar_warning)
       assert_empty stderr.grep(summary)
     end
+
+    # warnings raised inside <internal:ractor> dedup too and name the caller's line
+    src = "x = [1]\nport = Ractor::Port.new\n3.times { Ractor.new(port) { |pt| 5.times { pt << [x] } }.value }"
+    assert_in_out_err([env, "-W:no-experimental", "-e", src]) do |_stdout, stderr|
+      assert_equal ["-e:3: warning: can not isolate a Proc because it accesses outer variables (x)."],
+                   stderr.grep(/isolate a Proc/)
+      assert_equal 1, stderr.grep(/^-e:3: warning: can not copy an unshareable Array/).size, stderr.inspect
+      assert_empty stderr.grep(/<internal:/)
+      assert_equal ["16"], stderr.filter_map {|l| l[summary, 1] }
+    end
   end
 
   def test_isolation_check_serializes_ractors_or_warns_at_boot

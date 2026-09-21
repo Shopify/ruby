@@ -4259,27 +4259,35 @@ rb_ractor_isolation_check_p(void)
     return r && r != rb_ec_vm_ptr(ec)->ractor.main_ractor;
 }
 
-void
-rb_ractor_isolation_violation_str(VALUE message)
-{
-    if (rb_ractor_isolation_check_p()) {
-        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, "%s", StringValueCStr(message));
-        return;
-    }
-
-    rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
-}
-
-// Level 1 warns once per (C site, Ruby site); keys are malloc'd, the table is VM-global.
+// Level 1 warns once per (message, Ruby site); keys are malloc'd, the table is VM-global.
 static st_table *isolation_warn_tbl;
 static unsigned long isolation_warn_suppressed;
 
-static bool
-isolation_warn_first_p(const char *fmt)
+// nearest Ruby frame outside <internal:...>, so Ractor.new and Port#<< report the app site
+static const char *
+isolation_source_location(int *line)
 {
-    int line = 0;
-    const char *file = rb_source_location_cstr(&line);
-    VALUE loc = rb_sprintf("%p:%s:%d", (const void *)fmt, file ? file : "-", line);
+    const rb_execution_context_t *ec = GET_EC();
+    const rb_control_frame_t *cfp = ec->cfp;
+
+    while (!RUBY_VM_CONTROL_FRAME_STACK_OVERFLOW_P(ec, cfp)) {
+        if (VM_FRAME_RUBYFRAME_P(cfp) && CFP_ISEQ(cfp)) {
+            VALUE path = rb_iseq_path(CFP_ISEQ(cfp));
+            if (strncmp("<internal:", RSTRING_PTR(path), 10) != 0) {
+                *line = rb_vm_get_sourceline(cfp);
+                return RSTRING_PTR(path);
+            }
+        }
+        cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
+    }
+    *line = 0;
+    return NULL;
+}
+
+static bool
+isolation_warn_first_p(const char *message, const char *file, int line)
+{
+    VALUE loc = rb_sprintf("%s:%d:%s", file ? file : "-", line, message);
     char *key = strdup(RSTRING_PTR(loc));
     if (!key) return true;
 
@@ -4294,6 +4302,19 @@ isolation_warn_first_p(const char *fmt)
 }
 
 void
+rb_ractor_isolation_warn(VALUE message)
+{
+    if (NIL_P(ruby_verbose) || !rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION)) return;
+
+    int line;
+    const char *file = isolation_source_location(&line);
+    const char *cstr = StringValueCStr(message);
+    if (ruby_ractor_check_isolation_enabled < 2 && !isolation_warn_first_p(cstr, file, line)) return;
+
+    rb_category_compile_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, file, line, "%s", cstr);
+}
+
+void
 rb_ractor_isolation_warning_summary(void)
 {
     if (isolation_warn_suppressed) {
@@ -4303,18 +4324,23 @@ rb_ractor_isolation_warning_summary(void)
 }
 
 void
+rb_ractor_isolation_violation_str(VALUE message)
+{
+    if (rb_ractor_isolation_check_p()) {
+        rb_ractor_isolation_warn(message);
+        return;
+    }
+
+    rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+}
+
+void
 rb_ractor_isolation_violation(const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
     VALUE message = rb_vsprintf(fmt, args);
     va_end(args);
-
-    if (rb_ractor_isolation_check_p()
-        && (NIL_P(ruby_verbose) || !rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION)
-            || (ruby_ractor_check_isolation_enabled < 2 && !isolation_warn_first_p(fmt)))) {
-        return;
-    }
 
     rb_ractor_isolation_violation_str(message);
 }
