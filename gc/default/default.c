@@ -8541,6 +8541,12 @@ rb_gc_impl_objspace_retire_gc(void *objspace_ptr)
 {
     rb_objspace_t *objspace = objspace_ptr;
 
+    /* Other Ractors may hold this heap's objects by reference; the next global cycle sweeps it. */
+    if (rb_gc_vm_global_gc_only_p()) {
+        gc_rest(objspace);
+        return;
+    }
+
     /* The dying thread's stack is already torn down here, so the root scan must skip
      * its machine context (rb_gc_mark_roots). */
     objspace->flags.during_postmortem = 1;
@@ -8696,6 +8702,7 @@ static bool
 gc_need_global_p(rb_objspace_t *objspace)
 {
     if (rb_gc_single_objspace_p()) return false;
+    if (rb_gc_vm_global_gc_only_p()) return true;
     if (objspace->shareable_objects > objspace->shareable_objects_limit) return true;
     /* A zombie's garbage only a global cycle reclaims, but what survived the last one
      * is live data, so retrigger only once TRIGGER more pages accumulate on top of it.

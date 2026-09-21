@@ -1097,6 +1097,28 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  # check mode runs every GC globally: objects held by reference across Ractors must survive
+  def test_isolation_check_keeps_child_objects_reachable_from_main
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+      acc = []
+      Ractor.new(acc) { |a| 2000.times { |i| a << "s#{i}" * 4 }; GC.start; 2000.times { |i| a << "t#{i}" }; nil }.value
+      expected = 2000.times.sum { |i| ("s#{i}" * 4).size } + 2000.times.sum { |i| "t#{i}".size }
+      assert_equal 4000, acc.size
+      assert_equal expected, acc.sum(&:size)
+    RUBY
+  end
+
+  def test_isolation_check_keeps_messages_alive_past_sender_exit
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+      port = Ractor::Port.new
+      Ractor.new(port) { |p| 500.times { |i| p << ["m#{i}", i] }; nil }.value
+      GC.start
+      sum = 0
+      500.times { m, i = port.receive; sum += m.size + i }
+      assert_equal 500.times.sum { |i| "m#{i}".size + i }, sum
+    RUBY
+  end
+
   def test_isolation_check_passes_args_and_closes_over_outer_variables
     assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
       outer = [1, 2, 3]
