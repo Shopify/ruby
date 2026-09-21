@@ -482,11 +482,14 @@ fn inline_string_force_encoding(fun: &mut hir::Function, block: hir::BlockId, re
 
     let string = fun.coerce_to(block, recv, types::String, state);
     let encoding = fun.coerce_to(block, enc, enc_type, state);
+    let flags = fun.load_rbasic_flags(block, string);
     let _ = fun.push_insn(block, hir::Insn::StringForceEncoding {
         string,
         encoding,
+        flags,
         state,
     });
+
     Some(string)
 }
 

@@ -651,7 +651,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         &Insn::ObjectAllocClass { class, state } => gen_object_alloc_class(jit, asm, function, class, &function.frame_state(state)),
         Insn::StringCopy { val, chilled, state } => gen_string_copy(jit, asm, function, *val, opnd!(val), *chilled, &function.frame_state(*state)),
         Insn::StringConcat { strings, state } => gen_string_concat(jit, asm, function, opnds!(strings), &function.frame_state(*state)),
-        Insn::StringForceEncoding { string, encoding, state } => gen_string_force_encoding(jit, asm, function, opnd!(string), opnd!(encoding), &function.frame_state(*state)),
+        Insn::StringForceEncoding { string, encoding, flags, state } => gen_string_force_encoding(jit, asm, function, opnd!(string), opnd!(encoding), opnd!(flags), &function.frame_state(*state)),
         &Insn::StringGetbyte { string, index } => gen_string_getbyte(asm, opnd!(string), opnd!(index)),
         Insn::StringByteslice { string, beg, len, state } => gen_string_byteslice(asm, opnd!(string), opnd!(beg), opnd!(len), &function.frame_state(*state)),
         Insn::StringSetbyteFixnum { string, index, value } => gen_string_setbyte_fixnum(asm, opnd!(string), opnd!(index), opnd!(value)),
@@ -4219,7 +4219,7 @@ fn gen_string_concat(jit: &mut JITState, asm: &mut Assembler, function: &Functio
     asm_ccall!(asm, rb_str_concat_literals, strings.len().into(), first_string_ptr)
 }
 
-fn gen_string_force_encoding(jit: &mut JITState, asm: &mut Assembler, function: &Function, string: Opnd, encoding: Opnd, state: &FrameState) -> Opnd {
+fn gen_string_force_encoding(jit: &mut JITState, asm: &mut Assembler, function: &Function, string: Opnd, encoding: Opnd, flags: Opnd, state: &FrameState) -> Opnd {
     asm_comment!(asm, "String#force_encoding fast path");
     // Avoid the C call only when a direct flag update preserves all rb_str_force_encoding behavior.
     let string = asm.load_mem(string);
@@ -4228,7 +4228,6 @@ fn gen_string_force_encoding(jit: &mut JITState, asm: &mut Assembler, function: 
     // rb_str_force_encoding checks mutability before it checks whether the encoding changed.
     // Side-exit so CRuby can raise for frozen or locked strings and warn for chilled strings.
     let unmodifiable_exit = side_exit(jit, function, state, GuardNotFrozen);
-    let flags = asm.load(Opnd::mem(VALUE_BITS, string, RUBY_OFFSET_RBASIC_FLAGS));
     let unmodifiable_mask = RUBY_FL_FREEZE as u64 | RUBY_FL_USER2 as u64 | RUBY_FL_USER7 as u64;
     asm.test(flags, Opnd::UImm(unmodifiable_mask));
     asm.jnz(jit, unmodifiable_exit);

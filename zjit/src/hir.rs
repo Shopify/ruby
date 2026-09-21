@@ -1004,7 +1004,8 @@ pub enum Insn {
     StringIntern { val: InsnId, state: InsnId },
     StringConcat { strings: Vec<InsnId>, state: InsnId },
     /// Apply String#force_encoding for a mutable string and an inline encoding.
-    StringForceEncoding { string: InsnId, encoding: InsnId, state: InsnId },
+    /// HIR loads the string flags for reuse by other instructions.
+    StringForceEncoding { string: InsnId, encoding: InsnId, flags: InsnId, state: InsnId },
     /// Call rb_str_getbyte with known-Fixnum index
     StringGetbyte { string: InsnId, index: InsnId },
     /// Call rb_str_byte_substr with known-Fixnum beg/len
@@ -1428,9 +1429,10 @@ macro_rules! for_each_operand_impl {
                 $visit_many!(strings);
                 $visit_one!(*state);
             }
-            Insn::StringForceEncoding { string, encoding, state, .. } => {
+            Insn::StringForceEncoding { string, encoding, flags, state, .. } => {
                 $visit_one!(*string);
                 $visit_one!(*encoding);
+                $visit_one!(*flags);
                 $visit_one!(*state);
             }
             Insn::StringGetbyte { string, index } => {
@@ -2164,8 +2166,8 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
                 write_separated!(f, " ", ", ", strings);
                 Ok(())
             }
-            Insn::StringForceEncoding { string, encoding, .. } => {
-                write!(f, "StringForceEncoding {string}, {encoding}")
+            Insn::StringForceEncoding { string, encoding, flags, .. } => {
+                write!(f, "StringForceEncoding {string}, {encoding}, flags: {flags}")
             }
             Insn::StringGetbyte { string, index, .. } => {
                 write!(f, "StringGetbyte {string}, {index}")
@@ -8111,9 +8113,10 @@ impl Function {
                     }
                 }
             }
-            Insn::StringForceEncoding { string, encoding, .. } => {
+            Insn::StringForceEncoding { string, encoding, flags, .. } => {
                 self.assert_subtype(insn_id, string, types::String)?;
-                self.assert_subtype(insn_id, encoding, Type::from_class(unsafe { rb_cEncoding }))
+                self.assert_subtype(insn_id, encoding, Type::from_class(unsafe { rb_cEncoding }))?;
+                self.assert_subtype(insn_id, flags, types::CUInt64)
             }
             Insn::GuardLess { left, right, .. }
             | Insn::GuardGreaterEq { left, right, .. } => {

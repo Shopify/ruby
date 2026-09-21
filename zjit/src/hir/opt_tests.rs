@@ -17198,9 +17198,52 @@ mod hir_opt_tests {
           PatchPoint MethodRedefined(String@0x1008, force_encoding@0x1010, cme:0x1018)
           v28:StringExact = GuardType v12, StringExact recompile
           v29:ObjectSubclass[class_exact:Encoding] = GuardType v13, ObjectSubclass[class_exact:Encoding]
-          v30:StringExact = StringForceEncoding v28, v29
+          v30:CUInt64 = LoadField v28, :RBASIC_FLAGS@0x1040
+          v31:StringExact = StringForceEncoding v28, v29, flags: v30
           CheckInterrupts
           Return v28
+        ");
+    }
+
+    #[test]
+    fn test_optimize_string_force_encoding_reuses_flags_load() {
+        eval(r#"
+            def test(s, enc)
+              s.ascii_only?
+              s.force_encoding(enc)
+            end
+            test("iron", Encoding::UTF_8)
+        "#);
+        assert_snapshot!(hir_string("test"), @"
+        fn test@<compiled>:3:
+        bb1():
+          EntryPoint interpreter
+          v1:BasicObject = LoadSelf
+          v2:CPtr = LoadSP
+          v3:BasicObject = LoadField v2, :s@0x1000
+          v4:BasicObject = LoadField v2, :enc@0x1001
+          Jump bb3(v1, v3, v4)
+        bb2():
+          EntryPoint JIT(0)
+          v7:BasicObject = LoadArg :self@0
+          v8:BasicObject = LoadArg :s@1
+          v9:BasicObject = LoadArg :enc@2
+          Jump bb3(v7, v8, v9)
+        bb3(v11:BasicObject, v12:BasicObject, v13:BasicObject):
+          PatchPoint NoSingletonClass(String@0x1008)
+          PatchPoint MethodRedefined(String@0x1008, ascii_only?@0x1010, cme:0x1018)
+          v34:StringExact = GuardType v12, StringExact recompile
+          v35:CUInt64 = LoadField v34, :RBASIC_FLAGS@0x1040
+          v36:CUInt64[3145728] = Const CUInt64(3145728)
+          v37:CInt64 = IntAnd v35, v36
+          v38:CInt64[1048576] = Const CInt64(1048576)
+          v39:CInt64 = GuardGreaterEq v37, v38
+          PatchPoint NoEPEscape(test)
+          PatchPoint MethodRedefined(String@0x1008, force_encoding@0x1041, cme:0x1048)
+          v47:ObjectSubclass[class_exact:Encoding] = GuardType v13, ObjectSubclass[class_exact:Encoding]
+          v49:StringExact = StringForceEncoding v34, v47, flags: v35
+          CheckInterrupts
+          Return v34
         ");
     }
 
