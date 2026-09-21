@@ -4270,7 +4270,7 @@ rb_ractor_isolation_violation_str(VALUE message)
     rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
 }
 
-// One check-mode warning per (C site, Ruby site); keys are malloc'd, the table is VM-global.
+// Level 1 warns once per (C site, Ruby site); keys are malloc'd, the table is VM-global.
 static st_table *isolation_warn_tbl;
 static unsigned long isolation_warn_suppressed;
 
@@ -4312,7 +4312,7 @@ rb_ractor_isolation_violation(const char *fmt, ...)
 
     if (rb_ractor_isolation_check_p()
         && (NIL_P(ruby_verbose) || !rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION)
-            || !isolation_warn_first_p(fmt))) {
+            || (ruby_ractor_check_isolation_enabled < 2 && !isolation_warn_first_p(fmt)))) {
         return;
     }
 

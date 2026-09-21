@@ -1420,6 +1420,12 @@ class TestRactor < Test::Unit::TestCase
       assert_empty stderr.grep(summary)
     end
 
+    # level 2 reports every hit
+    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "2"}, "-e", "$g = 1; Ractor.new { 100.times { $g } }.value"]) do |_stdout, stderr|
+      assert_equal 100, stderr.grep(gvar_warning).size, "expected 100 warnings, got: #{stderr.size} lines"
+      assert_empty stderr.grep(summary)
+    end
+
     # disabling the category suppresses the warnings and the summary
     assert_in_out_err([env, "-W:no-ractor_isolation", "-e", "$g = 1; Ractor.new { 10.times { $g } }.value"]) do |_stdout, stderr|
       assert_empty stderr.grep(gvar_warning)
