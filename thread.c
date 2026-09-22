@@ -631,66 +631,46 @@ thread_do_start_proc(rb_thread_t *th)
     vm_check_ints_blocking(th->ec);
 
     if (th->invoke_type == thread_invoke_type_ractor_proc) {
-        VALUE self = rb_ractor_self(th->ractor);
         th->thgroup = th->ractor->thgroup_default = rb_obj_alloc(cThGroup);
 
-        if (ruby_ractor_isolation_enabled) {
-            // check mode: args is a real Array, not a mailbox count (see thread_create_core)
-            args_len = RARRAY_LENINT(args);
-            if (args_len < 8) {
-                args_ptr = ALLOCA_N(VALUE, args_len);
-                MEMCPY((VALUE *)args_ptr, RARRAY_CONST_PTR(args), VALUE, args_len);
-                th->invoke_arg.proc.args = Qnil;
-            }
-            else {
-                args_ptr = RARRAY_CONST_PTR(args);
-            }
+        if (!ruby_ractor_isolation_enabled) {
+            VALUE self = rb_ractor_self(th->ractor);
+            args_len = FIX2INT(args);
+            args_ptr = ALLOCA_N(VALUE, args_len);
+            rb_ractor_receive_parameters(th->ec, th->ractor, args_len, (VALUE *)args_ptr);
             vm_check_ints_blocking(th->ec);
 
-            return rb_vm_invoke_proc(
-                th->ec, proc,
+            return rb_vm_invoke_proc_with_self(
+                th->ec, proc, self,
                 args_len, args_ptr,
                 th->invoke_arg.proc.kw_splat,
                 VM_BLOCK_HANDLER_NONE,
                 cref
             );
         }
+    }
 
-        args_len = FIX2INT(args);
+    // Threads and check-mode Ractors both keep their arguments in an Array.
+    args_len = RARRAY_LENINT(args);
+    if (args_len < 8) {
+        /* free proc.args if the length is enough small */
         args_ptr = ALLOCA_N(VALUE, args_len);
-        rb_ractor_receive_parameters(th->ec, th->ractor, args_len, (VALUE *)args_ptr);
-        vm_check_ints_blocking(th->ec);
-
-        return rb_vm_invoke_proc_with_self(
-            th->ec, proc, self,
-            args_len, args_ptr,
-            th->invoke_arg.proc.kw_splat,
-            VM_BLOCK_HANDLER_NONE,
-            cref
-        );
+        MEMCPY((VALUE *)args_ptr, RARRAY_CONST_PTR(args), VALUE, args_len);
+        th->invoke_arg.proc.args = Qnil;
     }
     else {
-        args_len = RARRAY_LENINT(args);
-        if (args_len < 8) {
-            /* free proc.args if the length is enough small */
-            args_ptr = ALLOCA_N(VALUE, args_len);
-            MEMCPY((VALUE *)args_ptr, RARRAY_CONST_PTR(args), VALUE, args_len);
-            th->invoke_arg.proc.args = Qnil;
-        }
-        else {
-            args_ptr = RARRAY_CONST_PTR(args);
-        }
-
-        vm_check_ints_blocking(th->ec);
-
-        return rb_vm_invoke_proc(
-            th->ec, proc,
-            args_len, args_ptr,
-            th->invoke_arg.proc.kw_splat,
-            VM_BLOCK_HANDLER_NONE,
-            cref
-        );
+        args_ptr = RARRAY_CONST_PTR(args);
     }
+
+    vm_check_ints_blocking(th->ec);
+
+    return rb_vm_invoke_proc(
+        th->ec, proc,
+        args_len, args_ptr,
+        th->invoke_arg.proc.kw_splat,
+        VM_BLOCK_HANDLER_NONE,
+        cref
+    );
 }
 
 static VALUE

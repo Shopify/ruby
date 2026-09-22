@@ -1161,31 +1161,13 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_warns_instead_of_raising
-    # Warnings originate in the special Ractor, so capture them with a
-    # shareable queue rather than replacing the main Ractor's $stderr.
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
       class CheckIsolationFixture
         @ivar = "ivar"
         @@cvar = [1, 2, 3]
         MUTABLE = "mutable"
       end
       $check_isolation_global = "global"
-      ISOLATION_WARNINGS = Thread::Queue.new
-      module CaptureIsolationWarnings
-        def warn(message, category: nil)
-          if category == :ractor_isolation && !Thread.current[:capturing_isolation]
-            Thread.current[:capturing_isolation] = true
-            begin
-              ISOLATION_WARNINGS << Ractor.make_shareable(message)
-            ensure
-              Thread.current[:capturing_isolation] = false
-            end
-            return nil
-          end
-          super
-        end
-      end
-      Warning.singleton_class.prepend(CaptureIsolationWarnings)
       require "etc"
 
       h = Hash.new(Mutex.new)
@@ -1202,9 +1184,7 @@ class TestRactor < Test::Unit::TestCase
       end.value
       assert_equal :completed, result
 
-      messages = []
-      messages << ISOLATION_WARNINGS.pop until ISOLATION_WARNINGS.empty?
-      combined = messages.join("\n")
+      combined = RactorIsolationWarnings.drain.join("\n")
       assert_match(/instance variables of classes\/modules created by another Ractor/, combined)
       assert_match(/non-shareable class variable @@cvar/, combined)
       assert_match(/non-shareable objects in constant CheckIsolationFixture::MUTABLE/, combined)
@@ -1216,27 +1196,14 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_warns_on_outer_variable_capture
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
       captured = []
-      OUTER_VARIABLE_WARNINGS = Thread::Queue.new
-      module CaptureOuterVariableWarnings
-        def warn(message, category: nil)
-          if category == :ractor_isolation
-            OUTER_VARIABLE_WARNINGS << Ractor.make_shareable(message)
-            return nil
-          end
-          super
-        end
-      end
-      Warning.singleton_class.prepend(CaptureOuterVariableWarnings)
 
       result = Ractor.new { captured << :ran; captured }.value
       assert_same captured, result
       assert_equal [:ran], captured
-      messages = []
-      messages << OUTER_VARIABLE_WARNINGS.pop until OUTER_VARIABLE_WARNINGS.empty?
       assert_match(/can not isolate a Proc because it accesses outer variables \(captured\)/,
-                   messages.join("\n"))
+                   RactorIsolationWarnings.drain.join("\n"))
     RUBY
   end
 
@@ -1255,67 +1222,31 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_warns_and_executes_captured_define_method
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
       captured = []
       klass = Class.new
       klass.define_method(:capture) { captured << :called; captured }
-      BMETHOD_WARNINGS = Thread::Queue.new
-      module CaptureBmethodWarnings
-        def warn(message, category: nil)
-          if category == :ractor_isolation && !Thread.current[:capturing_bmethod_warning]
-            Thread.current[:capturing_bmethod_warning] = true
-            begin
-              BMETHOD_WARNINGS << Ractor.make_shareable(message)
-            ensure
-              Thread.current[:capturing_bmethod_warning] = false
-            end
-            return nil
-          end
-          super
-        end
-      end
-      Warning.singleton_class.prepend(CaptureBmethodWarnings)
 
       result = Ractor.new(klass) { |k| k.new.capture }.value
       assert_same captured, result
       assert_equal [:called], captured
-      messages = []
-      messages << BMETHOD_WARNINGS.pop until BMETHOD_WARNINGS.empty?
       assert_match(/can not call method capture defined with an un-shareable Proc/,
-                   messages.join("\n"))
+                   RactorIsolationWarnings.drain.join("\n"))
     RUBY
   end
 
   def test_isolation_check_is_active_in_child_threads
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
       class CheckIsolationChildThreadFixture
         VALUE = []
       end
-      CHILD_THREAD_WARNINGS = Thread::Queue.new
-      module CaptureChildThreadWarnings
-        def warn(message, category: nil)
-          if category == :ractor_isolation && !Thread.current[:capturing_child_thread_warning]
-            Thread.current[:capturing_child_thread_warning] = true
-            begin
-              CHILD_THREAD_WARNINGS << Ractor.make_shareable(message)
-            ensure
-              Thread.current[:capturing_child_thread_warning] = false
-            end
-            return nil
-          end
-          super
-        end
-      end
-      Warning.singleton_class.prepend(CaptureChildThreadWarnings)
 
       value = Ractor.new do
         Thread.new { CheckIsolationChildThreadFixture::VALUE }.value
       end.value
       assert_same CheckIsolationChildThreadFixture::VALUE, value
-      messages = []
-      messages << CHILD_THREAD_WARNINGS.pop until CHILD_THREAD_WARNINGS.empty?
       assert_match(/non-shareable objects in constant CheckIsolationChildThreadFixture::VALUE/,
-                   messages.join("\n"))
+                   RactorIsolationWarnings.drain.join("\n"))
     RUBY
   end
 
@@ -1365,25 +1296,9 @@ class TestRactor < Test::Unit::TestCase
 
   def test_isolation_check_warns_for_finalizers_on_foreign_objects
     omit 'per-Ractor objspace semantics of the default GC' unless GC.config[:implementation] == 'default'
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
       object = Object.new
       finalizer = proc {}
-      FINALIZER_WARNINGS = Thread::Queue.new
-      module CaptureFinalizerWarnings
-        def warn(message, category: nil)
-          if category == :ractor_isolation && !Thread.current[:capturing_finalizer_warning]
-            Thread.current[:capturing_finalizer_warning] = true
-            begin
-              FINALIZER_WARNINGS << Ractor.make_shareable(message)
-            ensure
-              Thread.current[:capturing_finalizer_warning] = false
-            end
-            return nil
-          end
-          super
-        end
-      end
-      Warning.singleton_class.prepend(CaptureFinalizerWarnings)
 
       defined, undefined = Ractor.new do
         [ObjectSpace.define_finalizer(object, finalizer),
@@ -1392,9 +1307,7 @@ class TestRactor < Test::Unit::TestCase
       assert_same finalizer, defined[1]
       assert_same object, undefined
 
-      messages = []
-      messages << FINALIZER_WARNINGS.pop until FINALIZER_WARNINGS.empty?
-      combined = messages.join("\n")
+      combined = RactorIsolationWarnings.drain.join("\n")
       assert_match(/can not define a finalizer for an object of another Ractor/, combined)
       assert_match(/can not undefine a finalizer of an object of another Ractor/, combined)
     RUBY
@@ -1462,6 +1375,29 @@ class TestRactor < Test::Unit::TestCase
       assert_equal 1, stderr.grep(/^-e:3: warning: can not copy an unshareable Array/).size, stderr.inspect
       assert_empty stderr.grep(/<internal:/)
       assert_equal ["16"], stderr.filter_map {|l| l[summary, 1] }
+    end
+  end
+
+  def test_isolation_check_dedups_by_message_and_source
+    src = <<~'RUBY'
+      $g = 1
+      $h = 2
+      Ractor.new do
+        2.times do
+          ["first.rb", "second.rb"].each do |path|
+            eval('$g; $h', binding, path, 7)
+          end
+          GC.start
+        end
+      end.value
+    RUBY
+    assert_in_out_err([{"RUBY_RACTOR_ISOLATION" => "1"}, "-W:no-experimental", "-e", src]) do |_stdout, stderr|
+      warnings = stderr.grep(/can not access global variable/)
+      expected = ["first.rb", "second.rb"].product(["$g", "$h"]).map do |path, name|
+        "#{path}:7: warning: can not access global variable #{name} from non-main Ractor"
+      end
+      assert_equal expected, warnings
+      assert_include stderr, "RUBY_RACTOR_ISOLATION: 4 repeated isolation warnings suppressed"
     end
   end
 

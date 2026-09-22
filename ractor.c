@@ -4263,8 +4263,44 @@ rb_ractor_isolation_check_p(void)
 static st_table *isolation_warn_tbl;
 static unsigned long isolation_warn_suppressed;
 
+struct isolation_warn_key {
+    const char *file;
+    const char *message;
+    int line;
+};
+
+static int
+isolation_warn_key_cmp(st_data_t a, st_data_t b)
+{
+    const struct isolation_warn_key *key1 = (const void *)a;
+    const struct isolation_warn_key *key2 = (const void *)b;
+    return key1->line != key2->line ||
+        strcmp(key1->file, key2->file) || strcmp(key1->message, key2->message);
+}
+
+static st_index_t
+isolation_warn_key_hash(st_data_t data)
+{
+    const struct isolation_warn_key *key = (const void *)data;
+    st_index_t hash = st_hash_start(key->line);
+    hash = st_hash(key->file, strlen(key->file), hash);
+    hash = st_hash(key->message, strlen(key->message), hash);
+    return st_hash_end(hash);
+}
+
+static const struct st_hash_type isolation_warn_hash_type = {
+    isolation_warn_key_cmp,
+    isolation_warn_key_hash,
+};
+
+static bool
+isolation_warnings_enabled_p(void)
+{
+    return !NIL_P(ruby_verbose) && rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION);
+}
+
 // nearest Ruby frame outside <internal:...>, so Ractor.new and Port#<< report the app site
-static const char *
+static VALUE
 isolation_source_location(int *line)
 {
     const rb_execution_context_t *ec = GET_EC();
@@ -4275,43 +4311,63 @@ isolation_source_location(int *line)
             VALUE path = rb_iseq_path(CFP_ISEQ(cfp));
             if (strncmp("<internal:", RSTRING_PTR(path), 10) != 0) {
                 *line = rb_vm_get_sourceline(cfp);
-                return RSTRING_PTR(path);
+                return path;
             }
         }
         cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
     }
     *line = 0;
-    return NULL;
+    return Qnil;
 }
 
 static bool
-isolation_warn_first_p(const char *message, const char *file, int line)
+isolation_warn_first_p(VALUE message, VALUE path, int line)
 {
-    VALUE loc = rb_sprintf("%s:%d:%s", file ? file : "-", line, message);
-    char *key = strdup(RSTRING_PTR(loc));
-    if (!key) return true;
-
-    bool first;
+    bool first = true;
     RB_VM_LOCKING() {
-        if (!isolation_warn_tbl) isolation_warn_tbl = st_init_strtable();
-        first = !st_insert(isolation_warn_tbl, (st_data_t)key, 0);
-        if (!first) isolation_warn_suppressed++;
+        if (!isolation_warn_tbl) isolation_warn_tbl = st_init_table(&isolation_warn_hash_type);
+        const struct isolation_warn_key lookup = {
+            .file = NIL_P(path) ? "-" : RSTRING_PTR(path),
+            .message = RSTRING_PTR(message),
+            .line = line,
+        };
+        if (st_lookup(isolation_warn_tbl, (st_data_t)&lookup, NULL)) {
+            first = false;
+            isolation_warn_suppressed++;
+        }
+        else {
+            size_t file_size = strlen(lookup.file) + 1;
+            size_t message_size = strlen(lookup.message) + 1;
+            struct isolation_warn_key *key = malloc(sizeof(*key) + file_size + message_size);
+            if (key) {
+                char *file = (char *)(key + 1);
+                char *text = file + file_size;
+                memcpy(file, lookup.file, file_size);
+                memcpy(text, lookup.message, message_size);
+                *key = (struct isolation_warn_key){file, text, line};
+                st_add_direct(isolation_warn_tbl, (st_data_t)key, 0);
+            }
+        }
     }
-    if (!first) free(key);
+    RB_GC_GUARD(message);
+    RB_GC_GUARD(path);
     return first;
 }
 
 void
 rb_ractor_isolation_warn(VALUE message)
 {
-    if (NIL_P(ruby_verbose) || !rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION)) return;
+    if (!isolation_warnings_enabled_p()) return;
 
     int line;
-    const char *file = isolation_source_location(&line);
-    const char *cstr = StringValueCStr(message);
-    if (ruby_ractor_isolation_enabled < 2 && !isolation_warn_first_p(cstr, file, line)) return;
+    VALUE path = isolation_source_location(&line);
+    StringValueCStr(message);
+    if (ruby_ractor_isolation_enabled < 2 && !isolation_warn_first_p(message, path, line)) return;
 
-    rb_category_compile_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, file, line, "%s", cstr);
+    const char *file = NIL_P(path) ? NULL : RSTRING_PTR(path);
+    rb_category_compile_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, file, line, "%s", RSTRING_PTR(message));
+    RB_GC_GUARD(message);
+    RB_GC_GUARD(path);
 }
 
 void
@@ -4337,6 +4393,8 @@ rb_ractor_isolation_violation_str(VALUE message)
 void
 rb_ractor_isolation_violation(const char *fmt, ...)
 {
+    if (rb_ractor_isolation_check_p() && !isolation_warnings_enabled_p()) return;
+
     va_list args;
     va_start(args, fmt);
     VALUE message = rb_vsprintf(fmt, args);
