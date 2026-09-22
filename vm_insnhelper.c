@@ -4117,18 +4117,16 @@ vm_call_attrset(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_c
     return vm_call_attrset_direct(ec, cfp, calling->cc, calling->recv);
 }
 
-static inline bool
-vm_bmethod_proc_uncallable_p(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme, VALUE procv)
+static inline void
+vm_bmethod_check_ractor(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme, VALUE procv)
 {
-    return !RB_OBJ_SHAREABLE_P(procv) &&
-        cme->def->body.bmethod.defined_ractor_id != rb_ec_ractor_id(ec);
-}
+    if (RB_OBJ_SHAREABLE_P(procv) ||
+        cme->def->body.bmethod.defined_ractor_id == rb_ec_ractor_id(ec)) {
+        return;
+    }
 
-// in check mode the bmethod is invoked anyway after the warning
-static void
-vm_bmethod_unshareable_proc_violation(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme)
-{
     if (rb_ractor_isolation_check_p()) {
+        // Diagnostic mode invokes the method after reporting the violation.
         rb_ractor_isolation_violation(
             "can not call method %"PRIsVALUE" defined with an un-shareable Proc from a different Ractor",
             rb_id2str(cme->called_id));
@@ -4147,9 +4145,7 @@ vm_call_bmethod_body(rb_execution_context_t *ec, struct rb_calling_info *calling
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     VALUE procv = cme->def->body.bmethod.proc;
 
-    if (vm_bmethod_proc_uncallable_p(ec, cme, procv)) {
-        vm_bmethod_unshareable_proc_violation(ec, cme);
-    }
+    vm_bmethod_check_ractor(ec, cme, procv);
 
     /* control block frame */
     GetProcPtr(procv, proc);
@@ -4169,9 +4165,7 @@ vm_call_iseq_bmethod(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     VALUE procv = cme->def->body.bmethod.proc;
 
-    if (vm_bmethod_proc_uncallable_p(ec, cme, procv)) {
-        vm_bmethod_unshareable_proc_violation(ec, cme);
-    }
+    vm_bmethod_check_ractor(ec, cme, procv);
 
     rb_proc_t *proc;
     GetProcPtr(procv, proc);

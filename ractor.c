@@ -4293,7 +4293,9 @@ static const struct st_hash_type isolation_warn_hash_type = {
 static bool
 isolation_warnings_enabled_p(void)
 {
-    return !GET_EC()->ractor_isolation_warning && !NIL_P(ruby_verbose) &&
+    if (GET_EC()->ractor_isolation_warning) return false;
+
+    return !NIL_P(ruby_verbose) &&
         rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION);
 }
 
@@ -4302,24 +4304,24 @@ static VALUE
 isolation_source_location(int *line)
 {
     const rb_execution_context_t *ec = GET_EC();
-    const rb_control_frame_t *cfp = ec->cfp;
 
-    while (!RUBY_VM_CONTROL_FRAME_STACK_OVERFLOW_P(ec, cfp)) {
-        if (VM_FRAME_RUBYFRAME_P(cfp) && CFP_ISEQ(cfp)) {
-            VALUE path = rb_iseq_path(CFP_ISEQ(cfp));
-            if (strncmp("<internal:", RSTRING_PTR(path), 10) != 0) {
-                *line = rb_vm_get_sourceline(cfp);
-                return path;
-            }
-        }
-        cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
+    for (const rb_control_frame_t *cfp = ec->cfp;
+         !RUBY_VM_CONTROL_FRAME_STACK_OVERFLOW_P(ec, cfp);
+         cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)) {
+        if (!VM_FRAME_RUBYFRAME_P(cfp) || !CFP_ISEQ(cfp)) continue;
+
+        VALUE path = rb_iseq_path(CFP_ISEQ(cfp));
+        if (strncmp("<internal:", RSTRING_PTR(path), 10) == 0) continue;
+
+        *line = rb_vm_get_sourceline(cfp);
+        return path;
     }
     *line = 0;
     return Qnil;
 }
 
 static bool
-isolation_warn_first_p(VALUE message, VALUE path, int line)
+isolation_warn_first_occurrence_p(VALUE message, VALUE path, int line)
 {
     bool first = true;
     RB_VM_LOCKING() {
@@ -4334,6 +4336,7 @@ isolation_warn_first_p(VALUE message, VALUE path, int line)
             isolation_warn_suppressed++;
         }
         else {
+            // Own copies of both strings outside Ruby's heap for this VM-wide table.
             size_t file_size = strlen(lookup.file) + 1;
             size_t message_size = strlen(lookup.message) + 1;
             struct isolation_warn_key *key = malloc(sizeof(*key) + file_size + message_size);
@@ -4345,6 +4348,7 @@ isolation_warn_first_p(VALUE message, VALUE path, int line)
                 *key = (struct isolation_warn_key){file, text, line};
                 st_add_direct(isolation_warn_tbl, (st_data_t)key, 0);
             }
+            // If allocation fails, still report the warning.
         }
     }
     RB_GC_GUARD(message);
@@ -4358,7 +4362,9 @@ isolation_warn_emit(VALUE message)
     int line;
     VALUE path = isolation_source_location(&line);
     StringValueCStr(message);
-    if (ruby_ractor_isolation_enabled < 2 && !isolation_warn_first_p(message, path, line)) return Qnil;
+    if (ruby_ractor_isolation_enabled < 2 && !isolation_warn_first_occurrence_p(message, path, line)) {
+        return Qnil;
+    }
 
     const char *file = NIL_P(path) ? NULL : RSTRING_PTR(path);
     rb_category_compile_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, file, line, "%s", RSTRING_PTR(message));
@@ -4368,7 +4374,7 @@ isolation_warn_emit(VALUE message)
 }
 
 static VALUE
-isolation_warn_end(VALUE ec_ptr)
+isolation_warn_clear_guard(VALUE ec_ptr)
 {
     ((rb_execution_context_t *)ec_ptr)->ractor_isolation_warning = false;
     return Qnil;
@@ -4384,7 +4390,7 @@ rb_ractor_isolation_warn(VALUE message)
     // Keep the guard fiber-local and restore it even if the hook raises.
     rb_execution_context_t *ec = GET_EC();
     ec->ractor_isolation_warning = true;
-    rb_ensure(isolation_warn_emit, message, isolation_warn_end, (VALUE)ec);
+    rb_ensure(isolation_warn_emit, message, isolation_warn_clear_guard, (VALUE)ec);
 }
 
 void
