@@ -1092,31 +1092,60 @@ fn gen_ccall_with_frame(
         forwarded_argc: None, // cfunc doesn't support forwarded arguments
     });
 
-    asm_comment!(asm, "switch to new SP register");
     let sp_offset = (caller_stack_size + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
-    let new_sp = asm.add(SP, sp_offset.into());
-    asm.mov(SP, new_sp);
-
-    asm_comment!(asm, "switch to new CFP");
-    let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
-    asm.mov(CFP, new_cfp);
-    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+    gen_enter_cfunc_frame(asm, sp_offset);
 
     let mut cfunc_args = vec![recv];
     cfunc_args.extend(args);
     asm.count_call_to_with(|| qualified_method_name(unsafe { (*cme).owner }, name));
     let result = asm.ccall(cfunc, cfunc_args);
 
+    gen_pop_cfunc_frame(asm, sp_offset);
+
+    result
+}
+
+/// Switch registers to a direct ISEQ callee, but leave ec->cfp on the caller.
+/// gen_entry_point() publishes the callee only after its JITFrame and jit_return are valid.
+fn gen_enter_iseq_frame(asm: &mut Assembler, sp_offset: usize) {
+    gen_switch_to_callee(asm, sp_offset);
+}
+
+/// Enter a C frame whose SP, block_code, and C-frame sentinel are already initialized.
+fn gen_enter_cfunc_frame(asm: &mut Assembler, sp_offset: usize) {
+    gen_switch_to_callee(asm, sp_offset);
+    gen_set_ec_cfp(asm);
+}
+
+/// Restore the caller's control frame after a C call.
+fn gen_pop_cfunc_frame(asm: &mut Assembler, sp_offset: usize) {
     asm_comment!(asm, "pop C frame");
     let new_cfp = asm.add(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
     asm.mov(CFP, new_cfp);
-    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+    gen_set_ec_cfp(asm);
+    gen_restore_sp(asm, sp_offset);
+}
 
+/// Set `ec->cfp` to the current CFP.
+fn gen_set_ec_cfp(asm: &mut Assembler) {
+    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+}
+
+/// Restore the caller's SP after a call that switched to a callee frame.
+fn gen_restore_sp(asm: &mut Assembler, sp_offset: usize) {
     asm_comment!(asm, "restore SP register for the caller");
     let new_sp = asm.sub(SP, sp_offset.into());
     asm.mov(SP, new_sp);
+}
 
-    result
+fn gen_switch_to_callee(asm: &mut Assembler, sp_offset: usize) {
+    asm_comment!(asm, "switch to new SP register");
+    let new_sp = asm.add(SP, sp_offset.into());
+    asm.mov(SP, new_sp);
+
+    asm_comment!(asm, "switch to new CFP");
+    let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
+    asm.mov(CFP, new_cfp);
 }
 
 /// Lowering for [`Insn::CCall`]. This is a low-level raw call that doesn't know
@@ -1183,28 +1212,14 @@ fn gen_ccall_variadic(
         forwarded_argc: None, // cfunc doesn't support forwarded arguments
     });
 
-    asm_comment!(asm, "switch to new SP register");
     let sp_offset = (caller_stack_size + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
-    let new_sp = asm.add(SP, sp_offset.into());
-    asm.mov(SP, new_sp);
-
-    asm_comment!(asm, "switch to new CFP");
-    let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
-    asm.mov(CFP, new_cfp);
-    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+    gen_enter_cfunc_frame(asm, sp_offset);
 
     let argv_ptr = gen_push_opnds(jit, asm, &args);
     asm.count_call_to_with(|| qualified_method_name(unsafe { (*cme).owner }, name));
     let result = asm.ccall(cfunc, vec![args.len().into(), argv_ptr, recv]);
 
-    asm_comment!(asm, "pop C frame");
-    let new_cfp = asm.add(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
-    asm.mov(CFP, new_cfp);
-    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
-
-    asm_comment!(asm, "restore SP register for the caller");
-    let new_sp = asm.sub(SP, sp_offset.into());
-    asm.mov(SP, new_sp);
+    gen_pop_cfunc_frame(asm, sp_offset);
 
     result
 }
@@ -1744,7 +1759,7 @@ fn gen_push_inline_frame(
     asm_comment!(asm, "switch to inlined callee CFP");
     let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
     asm.mov(CFP, new_cfp);
-    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP as i32), CFP);
+    gen_set_ec_cfp(asm);
 }
 
 /// Pop the interpreter frame for an inlined callee, restoring the caller's SP and CFP.
@@ -1762,7 +1777,7 @@ fn gen_pop_inline_frame(
 
     asm_comment!(asm, "restore caller CFP after inline");
     asm.add_into(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
-    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP as i32), CFP);
+    gen_set_ec_cfp(asm);
 }
 
 /// Compile a direct call to an ISEQ method.
@@ -1869,14 +1884,8 @@ fn gen_send_iseq_direct(
         // the callee will spill the callinfo passed as part of `c_args` into the `...` local.
     }
 
-    asm_comment!(asm, "switch to new SP register");
     let sp_offset = (state.stack().len() + local_size - args.len() + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
-    let new_sp = asm.add(SP, sp_offset.into());
-    asm.mov(SP, new_sp);
-
-    asm_comment!(asm, "switch to new CFP");
-    let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
-    asm.mov(CFP, new_cfp); // will be published at `ec->cfp` after callee's entrypoint
+    gen_enter_iseq_frame(asm, sp_offset);
 
     let params = unsafe { iseq.params() };
 
@@ -1925,9 +1934,7 @@ fn gen_send_iseq_direct(
     // Restore the C stack pointer on exit
     asm.je(jit, ZJITState::get_exit_trampoline().into());
 
-    asm_comment!(asm, "restore SP register for the caller");
-    let new_sp = asm.sub(SP, sp_offset.into());
-    asm.mov(SP, new_sp);
+    gen_restore_sp(asm, sp_offset);
 
     ret
 }
@@ -2067,15 +2074,9 @@ fn gen_invoke_block_iseq_direct(
         forwarded_argc: None, // `...` is not allowed in block arguments
     });
 
-    asm_comment!(asm, "switch to new SP register");
     let sp_offset = (stack_size + local_size + VM_ENV_DATA_SIZE.to_usize()) * SIZEOF_VALUE;
-    let new_sp = asm.add(SP, sp_offset.into());
-    asm.mov(SP, new_sp);
-
-    asm_comment!(asm, "switch to new CFP");
-    let new_cfp = asm.sub(CFP, RUBY_SIZEOF_CONTROL_FRAME.into());
-    asm.mov(CFP, new_cfp);
-    asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP), CFP);
+    gen_switch_to_callee(asm, sp_offset);
+    gen_set_ec_cfp(asm);
 
     // JIT-to-JIT convention: self as c_args[0], then positional args. The block is
     // gated to simple + lead-only + exact arity, so there are no optionals/kw/block.
@@ -2093,9 +2094,7 @@ fn gen_invoke_block_iseq_direct(
     asm.cmp(ret, Qundef.into());
     asm.je(jit, ZJITState::get_exit_trampoline().into());
 
-    asm_comment!(asm, "restore SP register for the caller");
-    let new_sp = asm.sub(SP, sp_offset.into());
-    asm.mov(SP, new_sp);
+    gen_restore_sp(asm, sp_offset);
 
     ret
 }
