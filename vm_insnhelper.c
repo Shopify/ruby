@@ -6770,6 +6770,13 @@ vm_ic_update(const rb_iseq_t *iseq, IC ic, VALUE val, const VALUE *reg_ep, const
         return;
     }
 
+    // A diagnostic Ractor can read foreign unshareable constants. Caching them
+    // would bypass later warnings, including after the category is re-enabled.
+    if (rb_ractor_isolation_check_p() && !rb_ractor_shareable_p(val)) {
+        ic->entry = NULL;
+        return;
+    }
+
     struct iseq_inline_constant_cache_entry *ice = SHAREABLE_IMEMO_NEW(struct iseq_inline_constant_cache_entry, imemo_constcache, 0);
     RB_OBJ_WRITE(ice, &ice->value, val);
     ice->ic_cref = vm_get_const_key_cref(reg_ep);

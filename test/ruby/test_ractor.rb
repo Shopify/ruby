@@ -1207,6 +1207,100 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  def test_isolation_check_warns_and_copies_classes_and_modules
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
+      originals = [Class.new, Module.new]
+      originals.each do |type|
+        type.const_set(:VALUE, [])
+        type.instance_variable_set(:@value, [])
+        type.class_variable_set(:@@value, [])
+      end
+
+      results = Ractor.new(*originals) do |*types|
+        types.flat_map do |type|
+          [:dup, :clone].map do |operation|
+            copy = type.public_send(operation)
+            [!copy.equal?(type),
+             copy.const_get(:VALUE).equal?(type.const_get(:VALUE)),
+             copy.instance_variable_get(:@value).equal?(type.instance_variable_get(:@value)),
+             copy.class_variable_get(:@@value).equal?(type.class_variable_get(:@@value))]
+          end
+        end
+      end.value
+
+      assert_equal [[true, true, true, true]] * 4, results
+      warnings = RactorIsolationWarnings.drain.join("\n")
+      assert_match(/can not copy a class\/module.*constant VALUE refers to an unshareable object/, warnings)
+      assert_match(/can not copy a class\/module.*variable @value refers to an unshareable object/, warnings)
+      assert_match(/can not copy a class\/module.*variable @@value refers to an unshareable object/, warnings)
+    RUBY
+  end
+
+  def test_isolation_check_warns_and_returns_attached_objects
+    omit 'objspace per Ractor is how an object\'s owner is known' unless GC.config[:implementation] == 'default'
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
+      object = Object.new
+      result = Ractor.new(object.singleton_class) { |type| type.attached_object }.value
+      assert_same object, result
+      assert_match(/can not get an unshareable attached object from another Ractor/,
+                   RactorIsolationWarnings.drain.join("\n"))
+    RUBY
+  end
+
+  def test_class_copy_enforces_isolation_without_isolation_check_env
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => nil}])
+      [Class, Module].each do |factory|
+        [:constant, :ivar, :cvar].each do |storage|
+          type = factory.new
+          case storage
+          when :constant then type.const_set(:VALUE, [])
+          when :ivar then type.instance_variable_set(:@value, [])
+          when :cvar then type.class_variable_set(:@@value, [])
+          end
+          results = Ractor.new(type) do |original|
+            [:dup, :clone].map do |operation|
+              begin
+                original.public_send(operation)
+                :copied
+              rescue Ractor::IsolationError
+                :isolated
+              end
+            end
+          end.value
+          assert_equal [:isolated, :isolated], results
+        end
+      end
+    RUBY
+  end
+
+  def test_isolation_check_warns_on_proc_instance_variables
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "2"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
+      [nil, 42, []].each do |state|
+        callable = proc { :done }
+        callable.instance_variable_set(:@state, state)
+        assert_equal :done, Ractor.new(&callable).value
+        assert_same state, callable.instance_variable_get(:@state)
+        refute Ractor.shareable?(callable)
+        refute callable.frozen?
+      end
+
+      warnings = RactorIsolationWarnings.drain.grep(/can not isolate a Proc because it has instance variables/)
+      assert_equal 3, warnings.size
+    RUBY
+  end
+
+  def test_proc_instance_variables_enforce_isolation_without_isolation_check_env
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => nil}])
+      [nil, 42, []].each do |state|
+        callable = proc { :done }
+        callable.instance_variable_set(:@state, state)
+        assert_raise_with_message(Ractor::IsolationError, /has instance variables/) do
+          Ractor.new(&callable)
+        end
+      end
+    RUBY
+  end
+
   def test_isolation_check_handles_block_defined_warning_hooks
     [1, 2].each do |level|
       assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => level.to_s}], ignore_stderr: true)
@@ -1304,6 +1398,88 @@ class TestRactor < Test::Unit::TestCase
       refute callable.frozen?
       assert_same captured, callable.call
       assert_equal [:called], captured
+    RUBY
+  end
+
+  def test_isolation_check_preserves_invalid_proc_receivers
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
+      results = Ractor.new do
+        [nil, :replacement, Object.new].flat_map do |receiver|
+          [:shareable_proc, :shareable_lambda].map do |kind|
+            captured = []
+            callable = Ractor.public_send(kind, self: receiver) do |value|
+              captured << value
+              [self, captured]
+            end
+            [kind, receiver, captured, callable]
+          end
+        end
+      end.value
+
+      results.each do |kind, receiver, captured, callable|
+        actual_self, actual_capture = callable.call(:called)
+        assert_same receiver, actual_self
+        assert_same captured, actual_capture
+        assert_equal [:called], captured
+        assert_equal kind == :shareable_lambda, callable.lambda?
+        refute Ractor.shareable?(callable)
+        refute callable.frozen?
+      end
+      assert_match(/cannot make a shareable Proc.*unshareable object of class Array/,
+                   RactorIsolationWarnings.drain.join("\n"))
+    RUBY
+  end
+
+  def test_shareable_proc_receivers_without_isolation_check_env
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => nil}])
+      [:shareable_proc, :shareable_lambda].each do |kind|
+        original = Ractor.public_send(kind) { self }
+        [nil, :replacement].each do |receiver|
+          callables = [Ractor.public_send(kind, self: receiver) { self },
+                       Ractor.public_send(kind, self: receiver, &original)]
+          callables.each do |callable|
+            assert_same receiver, callable.call
+            assert Ractor.shareable?(callable)
+            assert callable.frozen?
+            assert_equal kind == :shareable_lambda, callable.lambda?
+          end
+        end
+        assert_nil original.call
+
+        captured = []
+        assert_raise(Ractor::IsolationError) do
+          Ractor.public_send(kind, self: :replacement) { captured }
+        end
+        assert_raise(Ractor::IsolationError) do
+          Ractor.public_send(kind, self: Object.new) { self }
+        end
+      end
+    RUBY
+  end
+
+  def test_isolation_check_does_not_keep_shareability_when_rebinding_proc
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true, require_relative: "ractor_isolation_helper")
+      results = Ractor.new do
+        [:shareable_proc, :shareable_lambda].map do |kind|
+          original = Ractor.public_send(kind) { self }
+          receiver = Object.new
+          copy = Ractor.public_send(kind, self: receiver, &original)
+          [kind, original, receiver, copy]
+        end
+      end.value
+
+      results.each do |kind, original, receiver, copy|
+        assert_same receiver, copy.call
+        assert_equal kind == :shareable_lambda, copy.lambda?
+        refute Ractor.shareable?(copy)
+        refute copy.frozen?
+        copy.instance_variable_set(:@state, :mutable)
+        assert_equal :mutable, copy.instance_variable_get(:@state)
+        assert Ractor.shareable?(original)
+        assert original.frozen?
+        assert_nil original.call
+      end
+      assert_match(/Proc's self is not shareable/, RactorIsolationWarnings.drain.join("\n"))
     RUBY
   end
 
@@ -1484,6 +1660,60 @@ class TestRactor < Test::Unit::TestCase
       end
       assert_equal expected, warnings
       assert_include stderr, "RUBY_RACTOR_ISOLATION: 4 repeated isolation warnings suppressed"
+    end
+  end
+
+  def test_isolation_check_warns_on_repeated_constant_reads
+    source = <<~'RUBY'
+      module IsolationConstantFixture
+        VALUE = []
+        def self.read
+          VALUE
+        end
+      end
+      # Populate the same cache in the main Ractor before using it in a child.
+      10.times { IsolationConstantFixture.read }
+      Ractor.new { 10.times { IsolationConstantFixture.read } }.value
+    RUBY
+    assert_isolation_constant_warnings(source)
+  end
+
+  def test_isolation_check_warns_after_reenabling_constant_warnings
+    source = <<~'RUBY'
+      module IsolationConstantFixture
+        VALUE = []
+        def self.read
+          VALUE
+        end
+      end
+      Ractor.new do
+        Warning[:ractor_isolation] = false
+        10.times { IsolationConstantFixture.read }
+        Warning[:ractor_isolation] = true
+        10.times { IsolationConstantFixture.read }
+      end.value
+    RUBY
+    assert_isolation_constant_warnings(source)
+  end
+
+  def assert_isolation_constant_warnings(source)
+    require_relative '../lib/jit_support'
+    options = [[]]
+    options << %w[--yjit --yjit-call-threshold=1] if JITSupport.yjit_supported?
+    options << %w[--zjit --zjit-call-threshold=1] if JITSupport.zjit_supported?
+
+    options.each do |jit_options|
+      [1, 2].each do |level|
+        env = {"RUBY_RACTOR_ISOLATION" => level.to_s}
+        args = [env, *jit_options, "-W:no-experimental", "-e", source]
+        assert_in_out_err(args, success: true) do |_stdout, stderr|
+          warnings = stderr.grep(/non-shareable objects in constant IsolationConstantFixture::VALUE/)
+          assert_equal level == 1 ? 1 : 10, warnings.size, "#{jit_options.inspect}, level #{level}"
+          if level == 1
+            assert_include stderr, "RUBY_RACTOR_ISOLATION: 9 repeated isolation warnings suppressed"
+          end
+        end
+      end
     end
   end
 

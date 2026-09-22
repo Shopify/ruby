@@ -4029,7 +4029,7 @@ ractor_shareable_proc(rb_execution_context_t *ec, VALUE replace_self, bool is_la
         rb_ractor_isolation_violation("self should be shareable: %" PRIsVALUE, replace_self);
     }
     VALUE proc = is_lambda ? rb_block_lambda() : rb_block_proc();
-    return rb_proc_ractor_make_shareable(rb_proc_dup(proc), replace_self);
+    return rb_proc_ractor_make_shareable_copy(proc, replace_self);
 }
 
 // Ractor#require

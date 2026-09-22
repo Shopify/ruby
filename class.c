@@ -1004,9 +1004,9 @@ init_copy_check_const_i(ID id, VALUE v, void *data)
 {
     const rb_const_entry_t *ce = (const rb_const_entry_t *)v;
     if (!UNDEF_P(ce->value) && !rb_ractor_shareable_p(ce->value)) {
-        rb_raise(rb_eRactorIsolationError,
-                 "can not copy a class/module created by another Ractor because "
-                 "constant %"PRIsVALUE" refers to an unshareable object", rb_id2str(id));
+        rb_ractor_isolation_violation(
+            "can not copy a class/module created by another Ractor because "
+            "constant %"PRIsVALUE" refers to an unshareable object", rb_id2str(id));
     }
     return ID_TABLE_CONTINUE;
 }
@@ -1015,9 +1015,9 @@ static int
 init_copy_check_field_i(ID id, VALUE val, st_data_t arg)
 {
     if ((rb_is_instance_id(id) || rb_is_class_id(id)) && !rb_ractor_shareable_p(val)) {
-        rb_raise(rb_eRactorIsolationError,
-                 "can not copy a class/module created by another Ractor because "
-                 "variable %"PRIsVALUE" refers to an unshareable object", rb_id2str(id));
+        rb_ractor_isolation_violation(
+            "can not copy a class/module created by another Ractor because "
+            "variable %"PRIsVALUE" refers to an unshareable object", rb_id2str(id));
     }
     return ST_CONTINUE;
 }
@@ -2442,8 +2442,7 @@ rb_class_attached_object(VALUE klass)
     if (rb_objspace_foreign_object_p(obj) && !RB_OBJ_SHAREABLE_P(obj)) {
         /* No klass in the message: naming a singleton class inspects the very object we
          * must not touch from here. */
-        rb_raise(rb_eRactorIsolationError,
-                 "can not get an unshareable attached object from another Ractor");
+        rb_ractor_isolation_violation("can not get an unshareable attached object from another Ractor");
     }
 
     return obj;

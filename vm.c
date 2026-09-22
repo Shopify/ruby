@@ -1366,8 +1366,8 @@ proc_create(VALUE klass, const struct rb_block *block, int8_t is_from_method, in
     return procval;
 }
 
-VALUE
-rb_proc_dup_0(VALUE self)
+static VALUE
+proc_dup_0(VALUE self, bool preserve_shareability)
 {
     VALUE procval;
     rb_proc_t *src;
@@ -1389,18 +1389,30 @@ rb_proc_dup_0(VALUE self)
         dst->header.is_refined = 1;
     }
 
-    if (RB_OBJ_SHAREABLE_P(self)) RB_OBJ_SET_SHAREABLE(procval);
+    if (preserve_shareability && RB_OBJ_SHAREABLE_P(self)) RB_OBJ_SET_SHAREABLE(procval);
     RB_GC_GUARD(self); /* for: body = rb_proc_dup(body) */
+    return procval;
+}
+
+VALUE
+rb_proc_dup_0(VALUE self)
+{
+    return proc_dup_0(self, true);
+}
+
+static VALUE
+proc_dup(VALUE self, bool preserve_shareability)
+{
+    VALUE procval = proc_dup_0(self, preserve_shareability);
+    VALUE recipe = rb_proc_refinements_recipe(self);
+    if (!NIL_P(recipe)) rb_proc_set_refinements_recipe(procval, recipe);
     return procval;
 }
 
 VALUE
 rb_proc_dup(VALUE self)
 {
-    VALUE procval = rb_proc_dup_0(self);
-    VALUE recipe = rb_proc_refinements_recipe(self);
-    if (!NIL_P(recipe)) rb_proc_set_refinements_recipe(procval, recipe);
-    return procval;
+    return proc_dup(self, true);
 }
 
 /* Proc#refined: build a Proc that runs `iseq` with the refinements of
@@ -1602,6 +1614,21 @@ proc_has_ivar_i(ID name, VALUE val, st_data_t arg)
     return ST_CONTINUE;
 }
 
+static void
+proc_check_isolation_ivars(VALUE self, bool warn)
+{
+    /* ivars are not traversed here, so their values may be unshareable */
+    if (UNLIKELY(rb_obj_shape_has_ivars(self))) {
+        bool has_ivar = false;
+        rb_ivar_foreach(self, proc_has_ivar_i, (st_data_t)&has_ivar);
+
+        if (has_ivar) {
+            proc_isolation_violation_str(
+                rb_str_new_cstr("can not isolate a Proc because it has instance variables"), warn);
+        }
+    }
+}
+
 static VALUE
 proc_shared_outer_variables(struct rb_id_table *outer_variables, bool isolate, const char *message, bool warn, bool *valid)
 {
@@ -1662,15 +1689,7 @@ rb_proc_isolate_bang(VALUE self, VALUE replace_self)
         RB_OBJ_WRITE(self, &proc->block.as.captured.self, Qnil);
     }
 
-    /* ivars are not traversed here, so their values may be unshareable */
-    if (UNLIKELY(rb_obj_shape_has_ivars(self))) {
-        bool has_ivar = false;
-        rb_ivar_foreach(self, proc_has_ivar_i, (st_data_t)&has_ivar);
-
-        if (has_ivar) {
-            rb_raise(rb_eRactorIsolationError, "can not isolate a Proc because it has instance variables");
-        }
-    }
+    proc_check_isolation_ivars(self, false);
 
     RB_OBJ_SET_SHAREABLE(self);
     return self;
@@ -1696,6 +1715,7 @@ rb_proc_check_isolation_warn(VALUE self)
             proc_shared_outer_variables(ISEQ_BODY(iseq)->outer_variables, true, "isolate a Proc", true, NULL);
         }
     }
+    proc_check_isolation_ivars(self, true);
 }
 
 VALUE
@@ -1725,10 +1745,13 @@ rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
                                             "make a Proc shareable", warn, &valid);
         }
 
-        if (!proc_isolate_env(self, proc, read_only_variables, warn, valid)) return self;
+        valid = proc_isolate_env(self, proc, read_only_variables, warn, valid);
         if (!UNDEF_P(replace_self)) {
             RB_OBJ_WRITE(self, &proc->block.as.captured.self, replace_self);
         }
+        // Diagnostic fallback keeps the original closure and requested receiver,
+        // but must not mark an invalid Proc isolated or shareable.
+        if (!valid) return self;
         proc->header.is_isolated = TRUE;
     }
     else {
@@ -1745,6 +1768,15 @@ rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
 
     RB_OBJ_SET_FROZEN_SHAREABLE(self);
     return self;
+}
+
+VALUE
+rb_proc_ractor_make_shareable_copy(VALUE self, VALUE replace_self)
+{
+    // Rebinding self can make a shareable Proc unshareable in diagnostic mode.
+    // The copy must only become shareable after its new receiver is validated.
+    VALUE copy = proc_dup(self, false);
+    return rb_proc_ractor_make_shareable(copy, replace_self);
 }
 
 VALUE
