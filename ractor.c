@@ -1873,9 +1873,8 @@ make_shareable_check_shareable(VALUE obj)
     else if (!allow_frozen_shareable_p(obj)) {
         if (!RB_TYPE_P(obj, T_DATA)) {
             if (rb_ractor_isolation_check_p()) {
-                rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
-                                 "can not make shareable object of class %+"PRIsVALUE,
-                                 rb_class_of(obj));
+                rb_ractor_isolation_violation("can not make shareable object of class %+"PRIsVALUE,
+                                              rb_class_of(obj));
                 return traverse_stop;
             }
             rb_raise(rb_eRactorError,
@@ -1888,9 +1887,8 @@ make_shareable_check_shareable(VALUE obj)
                 return traverse_skip;
             }
             else if (rb_ractor_isolation_check_p()) {
-                rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
-                                 "can not make shareable object of class %+"PRIsVALUE
-                                 " because it refers unshareable objects", rb_class_of(obj));
+                rb_ractor_isolation_violation("can not make shareable object of class %+"PRIsVALUE
+                                              " because it refers unshareable objects", rb_class_of(obj));
                 return traverse_stop;
             }
             else {
@@ -1903,9 +1901,8 @@ make_shareable_check_shareable(VALUE obj)
             return rb_ractor_shareable_p(obj) ? traverse_cont : traverse_stop;
         }
         else if (rb_ractor_isolation_check_p()) {
-            rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
-                             "can not make shareable object of class %+"PRIsVALUE,
-                             rb_class_of(obj));
+            rb_ractor_isolation_violation("can not make shareable object of class %+"PRIsVALUE,
+                                          rb_class_of(obj));
             return traverse_stop;
         }
         else {
@@ -4296,7 +4293,8 @@ static const struct st_hash_type isolation_warn_hash_type = {
 static bool
 isolation_warnings_enabled_p(void)
 {
-    return !NIL_P(ruby_verbose) && rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION);
+    return !GET_EC()->ractor_isolation_warning && !NIL_P(ruby_verbose) &&
+        rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION);
 }
 
 // nearest Ruby frame outside <internal:...>, so Ractor.new and Port#<< report the app site
@@ -4354,20 +4352,39 @@ isolation_warn_first_p(VALUE message, VALUE path, int line)
     return first;
 }
 
-void
-rb_ractor_isolation_warn(VALUE message)
+static VALUE
+isolation_warn_emit(VALUE message)
 {
-    if (!isolation_warnings_enabled_p()) return;
-
     int line;
     VALUE path = isolation_source_location(&line);
     StringValueCStr(message);
-    if (ruby_ractor_isolation_enabled < 2 && !isolation_warn_first_p(message, path, line)) return;
+    if (ruby_ractor_isolation_enabled < 2 && !isolation_warn_first_p(message, path, line)) return Qnil;
 
     const char *file = NIL_P(path) ? NULL : RSTRING_PTR(path);
     rb_category_compile_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, file, line, "%s", RSTRING_PTR(message));
     RB_GC_GUARD(message);
     RB_GC_GUARD(path);
+    return Qnil;
+}
+
+static VALUE
+isolation_warn_end(VALUE ec_ptr)
+{
+    ((rb_execution_context_t *)ec_ptr)->ractor_isolation_warning = false;
+    return Qnil;
+}
+
+void
+rb_ractor_isolation_warn(VALUE message)
+{
+    if (!isolation_warnings_enabled_p()) return;
+
+    // A user-defined warning hook can itself violate isolation, including
+    // before entering its body when defined with define_singleton_method.
+    // Keep the guard fiber-local and restore it even if the hook raises.
+    rb_execution_context_t *ec = GET_EC();
+    ec->ractor_isolation_warning = true;
+    rb_ensure(isolation_warn_emit, message, isolation_warn_end, (VALUE)ec);
 }
 
 void

@@ -5,13 +5,8 @@ module RactorIsolationWarnings
   QUEUE = Thread::Queue.new
 
   def warn(message, category: nil)
-    if category == :ractor_isolation && !Thread.current[:capturing_isolation_warning]
-      Thread.current[:capturing_isolation_warning] = true
-      begin
-        QUEUE << Ractor.make_shareable(message)
-      ensure
-        Thread.current[:capturing_isolation_warning] = false
-      end
+    if category == :ractor_isolation
+      QUEUE << Ractor.make_shareable(message)
       return nil
     end
     super

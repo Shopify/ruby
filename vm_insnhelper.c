@@ -3555,8 +3555,7 @@ ractor_unsafe_check(void)
 
     if (rb_ractor_isolation_check_p()) {
         // same category as IsolationError: to the caller both mean "not Ractor-safe"
-        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
-                         "ractor unsafe method called from not main ractor");
+        rb_ractor_isolation_violation("ractor unsafe method called from not main ractor");
         return;
     }
 
@@ -4130,9 +4129,9 @@ static void
 vm_bmethod_unshareable_proc_violation(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme)
 {
     if (rb_ractor_isolation_check_p()) {
-        rb_category_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION,
-                         "can not call method %"PRIsVALUE" defined with an un-shareable Proc from a different Ractor",
-                         rb_id2str(cme->called_id));
+        rb_ractor_isolation_violation(
+            "can not call method %"PRIsVALUE" defined with an un-shareable Proc from a different Ractor",
+            rb_id2str(cme->called_id));
     }
     else {
         rb_raise(rb_eRuntimeError, "defined with an un-shareable Proc in a different Ractor");

@@ -1207,6 +1207,92 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  def test_isolation_check_handles_block_defined_warning_hooks
+    [1, 2].each do |level|
+      assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => level.to_s}], ignore_stderr: true)
+        messages = []
+        $warning_hook_global = 1
+        $first_warning_global = 2
+        $second_warning_global = 3
+        Warning.define_singleton_method(:warn) do |message, category: nil|
+          next unless category == :ractor_isolation
+          $warning_hook_global
+          messages << message
+          raise "warning hook failed" if message.include?("$first_warning_global")
+        end
+
+        result = Ractor.new do
+          begin
+            $first_warning_global
+          rescue RuntimeError => error
+            raise unless error.message == "warning hook failed"
+          end
+          $second_warning_global
+          :done
+        end.value
+
+        assert_equal :done, result
+        assert_equal 2, messages.size
+        assert_match(/global variable \$first_warning_global/, messages[0])
+        assert_match(/global variable \$second_warning_global/, messages[1])
+      RUBY
+    end
+  end
+
+  def test_isolation_check_deduplicates_all_warning_paths
+    source = <<~'RUBY'
+      require "etc"
+      klass = Class.new
+      klass.define_method(:call) { :done }
+      Ractor.new(klass) do |type|
+        file = File.open(IO::NULL)
+        3.times { Ractor.make_shareable(file) }
+        file.close
+        3.times { Etc.getlogin }
+        3.times { type.new.call }
+      end.value
+    RUBY
+
+    [1, 2].each do |level|
+      env = {"RUBY_RACTOR_ISOLATION" => level.to_s}
+      assert_in_out_err([env, "-W:no-experimental", "-e", source], success: true) do |_stdout, stderr|
+        expected = level == 1 ? 1 : 3
+        assert_equal expected, stderr.grep(/^-e:6: warning: can not make shareable object/).size
+        assert_equal expected, stderr.grep(/^-e:8: warning: ractor unsafe method/).size
+        assert_equal expected, stderr.grep(/^-e:9: warning: can not call method call/).size
+        assert_empty stderr.grep(/<internal:/)
+      end
+    end
+  end
+
+  def test_isolation_check_warning_guard_is_fiber_local
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "2"}], ignore_stderr: true)
+      messages = []
+      $suspended_warning_global = 1
+      $other_fiber_global = 2
+      $parent_fiber_global = 3
+      Warning.define_singleton_method(:warn) do |message, category: nil|
+        next unless category == :ractor_isolation
+        messages << message
+        if message.include?("$suspended_warning_global")
+          Fiber.yield Fiber.new { $other_fiber_global }
+        end
+      end
+
+      result = Ractor.new do
+        suspended = Fiber.new { $suspended_warning_global }
+        other = suspended.resume
+        [other.resume, $parent_fiber_global, suspended.resume]
+      end.value
+
+      assert_equal [2, 3, 1], result
+      assert_equal 3, messages.size
+      assert_match(/global variable \$suspended_warning_global/, messages[0])
+      assert_match(/global variable \$other_fiber_global/, messages[1])
+      assert_match(/global variable \$parent_fiber_global/, messages[2])
+    RUBY
+  end
+
   def test_isolation_check_does_not_mark_an_invalid_proc_shareable
     assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       captured = []

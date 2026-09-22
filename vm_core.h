@@ -1124,6 +1124,7 @@ struct rb_execution_context_struct {
     VALUE passed_block_handler; /* for rb_iterate */
 
     uint8_t raised_flag; /* only 3 bits needed */
+    bool ractor_isolation_warning; /* suppress violations inside Warning.warn */
 
     /* n.b. only 7 bits needed, really: */
     BITFIELD(enum method_missing_reason, method_missing_reason, 8);
