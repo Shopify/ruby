@@ -1082,7 +1082,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_runs_in_a_non_main_ractor
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       result = Ractor.new(name: "isolation check") do
         [Ractor.main?, Ractor.current == Ractor.main, Ractor.current.name]
       end.value
@@ -1091,7 +1091,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_returns_the_block_value_by_reference
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       obj = Object.new
       assert_same obj, Ractor.new { obj }.value
     RUBY
@@ -1099,7 +1099,7 @@ class TestRactor < Test::Unit::TestCase
 
   # check mode runs every GC globally: objects held by reference across Ractors must survive
   def test_isolation_check_keeps_child_objects_reachable_from_main
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       acc = []
       Ractor.new(acc) { |a| 2000.times { |i| a << "s#{i}" * 4 }; GC.start; 2000.times { |i| a << "t#{i}" }; nil }.value
       expected = 2000.times.sum { |i| ("s#{i}" * 4).size } + 2000.times.sum { |i| "t#{i}".size }
@@ -1109,7 +1109,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_keeps_messages_alive_past_sender_exit
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       port = Ractor::Port.new
       Ractor.new(port) { |p| 500.times { |i| p << ["m#{i}", i] }; nil }.value
       GC.start
@@ -1120,7 +1120,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_passes_args_and_closes_over_outer_variables
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       outer = [1, 2, 3]
       arg = Object.new
       returned_arg, returned_outer = Ractor.new(arg) do |a|
@@ -1132,7 +1132,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_handles_large_argument_lists_without_using_the_native_stack
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       marker = Object.new
       args = Array.new(200_000, marker)
       length, first, last = Ractor.new(*args) do |*values|
@@ -1145,7 +1145,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_make_shareable_warns_and_continues_for_files
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       file = File.open(IO::NULL)
       begin
         result = Ractor.new(file) do |f|
@@ -1163,7 +1163,7 @@ class TestRactor < Test::Unit::TestCase
   def test_isolation_check_warns_instead_of_raising
     # Warnings originate in the special Ractor, so capture them with a
     # shareable queue rather than replacing the main Ractor's $stderr.
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       class CheckIsolationFixture
         @ivar = "ivar"
         @@cvar = [1, 2, 3]
@@ -1216,7 +1216,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_warns_on_outer_variable_capture
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       captured = []
       OUTER_VARIABLE_WARNINGS = Thread::Queue.new
       module CaptureOuterVariableWarnings
@@ -1241,7 +1241,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_does_not_mark_an_invalid_proc_shareable
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       captured = []
       callable = Ractor.new do
         Ractor.shareable_proc { captured << :called; captured }
@@ -1255,7 +1255,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_warns_and_executes_captured_define_method
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       captured = []
       klass = Class.new
       klass.define_method(:capture) { captured << :called; captured }
@@ -1287,7 +1287,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_is_active_in_child_threads
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       class CheckIsolationChildThreadFixture
         VALUE = []
       end
@@ -1320,7 +1320,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_applies_to_nested_and_later_ractors
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       nested, returned = Ractor.new do
         captured = Object.new
         [captured, Ractor.new { captured }.value]
@@ -1333,7 +1333,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_ractor_new_enforces_isolation_without_isolation_check_env
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => nil}])
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => nil}])
       captured = Object.new
       assert_raise(Ractor::IsolationError) do
         Ractor.new { captured }
@@ -1344,7 +1344,7 @@ class TestRactor < Test::Unit::TestCase
   def test_isolation_check_warns_but_does_not_fork_from_a_ractor
     omit 'fork is not supported' unless Process.respond_to?(:fork)
     # Warned like any other violation, but the fork itself must not proceed.
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       require 'tmpdir'
       Dir.mktmpdir do |dir|
         marker = File.join(dir, 'child-ran')
@@ -1358,14 +1358,14 @@ class TestRactor < Test::Unit::TestCase
 
         assert_equal :refused, result.first, "fork was not refused: #{result.inspect}"
         assert_kind_of SystemCallError, result.last
-        refute File.exist?(marker), 'fork produced a child under RUBY_RACTOR_CHECK_ISOLATION'
+        refute File.exist?(marker), 'fork produced a child under RUBY_RACTOR_ISOLATION'
       end
     RUBY
   end
 
   def test_isolation_check_warns_for_finalizers_on_foreign_objects
     omit 'per-Ractor objspace semantics of the default GC' unless GC.config[:implementation] == 'default'
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       object = Object.new
       finalizer = proc {}
       FINALIZER_WARNINGS = Thread::Queue.new
@@ -1401,7 +1401,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_reraises_block_exceptions
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       error = assert_raise(Ractor::RemoteError) do
         Ractor.new { raise "boom" }.value
       end
@@ -1410,7 +1410,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_allows_dispatch_to_main
-    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}], ignore_stderr: true)
+    assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       main_port = Ractor::Port.new
       Thread.new do
         callable, reply = main_port.receive
@@ -1428,8 +1428,8 @@ class TestRactor < Test::Unit::TestCase
 
   def test_isolation_check_dedups_repeated_warnings
     gvar_warning = /can not access global variable \$g/
-    summary = /RUBY_RACTOR_CHECK_ISOLATION: (\d+) repeated isolation warnings suppressed/
-    env = {"RUBY_RACTOR_CHECK_ISOLATION" => "1"}
+    summary = /RUBY_RACTOR_ISOLATION: (\d+) repeated isolation warnings suppressed/
+    env = {"RUBY_RACTOR_ISOLATION" => "1"}
 
     assert_in_out_err([env, "-e", "$g = 1; Ractor.new { 10_000.times { $g } }.value"]) do |_stdout, stderr|
       assert_equal 1, stderr.grep(gvar_warning).size, "expected one warning, got: #{stderr.inspect}"
@@ -1443,7 +1443,7 @@ class TestRactor < Test::Unit::TestCase
     end
 
     # level 2 reports every hit
-    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "2"}, "-e", "$g = 1; Ractor.new { 100.times { $g } }.value"]) do |_stdout, stderr|
+    assert_in_out_err([{"RUBY_RACTOR_ISOLATION" => "2"}, "-e", "$g = 1; Ractor.new { 100.times { $g } }.value"]) do |_stdout, stderr|
       assert_equal 100, stderr.grep(gvar_warning).size, "expected 100 warnings, got: #{stderr.size} lines"
       assert_empty stderr.grep(summary)
     end
@@ -1466,9 +1466,9 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_serializes_ractors_or_warns_at_boot
-    advisory = /RUBY_RACTOR_CHECK_ISOLATION: this build has no M:N scheduling/
+    advisory = /RUBY_RACTOR_ISOLATION: this build has no M:N scheduling/
     # The mode announcement must survive both -W0 and -W:no-ractor_isolation.
-    assert_in_out_err([{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}, "-W0", "-W:no-ractor_isolation",
+    assert_in_out_err([{"RUBY_RACTOR_ISOLATION" => "1"}, "-W0", "-W:no-ractor_isolation",
                        "-e", "puts RUBY_DESCRIPTION"]) do |stdout, stderr|
       if stdout.first&.include?("+MN")
         # Check mode turns on M:N and pins it to one CPU, so nothing to advise.
@@ -1480,7 +1480,7 @@ class TestRactor < Test::Unit::TestCase
   end
 
   def test_isolation_check_blocks_other_ractors
-    assert_separately([{"RUBY_RACTOR_CHECK_ISOLATION" => "1"}, "-W:no-experimental"],
+    assert_separately([{"RUBY_RACTOR_ISOLATION" => "1"}, "-W:no-experimental"],
                       <<~'RUBY', timeout: 30, ignore_stderr: true)
       omit "M:N scheduling is not supported by this build" unless RUBY_DESCRIPTION.include?("+MN")
 

@@ -227,7 +227,7 @@ rb_warning_category_enabled_p(rb_warning_category_t category)
  *   * Shape variation limit
  *
  * +:ractor_isolation+ ::
- *   Ractor isolation violations reported under RUBY_RACTOR_CHECK_ISOLATION
+ *   Ractor isolation violations reported under RUBY_RACTOR_ISOLATION
  *   (downgraded from Ractor::IsolationError exceptions to warnings).
  */
 

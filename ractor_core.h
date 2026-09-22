@@ -373,7 +373,7 @@ rb_ractor_targeted_hooks_cnt(rb_ractor_t *cr)
 #if RACTOR_CHECK_MODE > 0
 
 extern bool rb_ractor_ignore_belonging_flag;
-extern int ruby_ractor_check_isolation_enabled;
+extern int ruby_ractor_isolation_enabled;
 
 /* An object's owning Ractor is decided by the objspace its page belongs to
  * (rb_gc_obj_foreign_p).  Putting an unshareable object on the VM stack of anyone
@@ -383,7 +383,7 @@ rb_ractor_confirm_belonging(VALUE obj)
 {
     if (rb_ractor_ignore_belonging_flag) return obj;
     // check mode passes unshareable objects by reference on purpose
-    if (ruby_ractor_check_isolation_enabled) return obj;
+    if (ruby_ractor_isolation_enabled) return obj;
     if (SPECIAL_CONST_P(obj) || RB_OBJ_SHAREABLE_P(obj)) return obj;
 
     if (UNLIKELY(rb_gc_obj_foreign_p(obj))) {

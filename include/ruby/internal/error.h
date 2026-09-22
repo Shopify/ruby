@@ -56,7 +56,7 @@ typedef enum {
     /** Warning is for checking unused block strictly */
     RB_WARN_CATEGORY_STRICT_UNUSED_BLOCK,
 
-    /** Warning is for Ractor isolation violations reported under RUBY_RACTOR_CHECK_ISOLATION. */
+    /** Warning is for Ractor isolation violations reported under RUBY_RACTOR_ISOLATION. */
     RB_WARN_CATEGORY_RACTOR_ISOLATION,
 
     RB_WARN_CATEGORY_DEFAULT_BITS = (

@@ -1115,7 +1115,7 @@ ractor_prepare_payload(rb_execution_context_t *ec, VALUE obj, enum ractor_basket
             // copying can fail outright (e.g. Procs), which would abort the sweep;
             // pass by reference instead
             rb_ractor_isolation_warn(rb_sprintf("can not copy an unshareable %"PRIsVALUE" across Ractors; "
-                                                "passing by reference under RUBY_RACTOR_CHECK_ISOLATION",
+                                                "passing by reference under RUBY_RACTOR_ISOLATION",
                                                 rb_class_of(obj)));
             *ptype = basket_type_ref;
             return obj;

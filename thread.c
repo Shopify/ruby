@@ -156,7 +156,7 @@ MAYBE_UNUSED(static int consume_communication_pipe(int fd));
 static rb_atomic_t system_working = 1;
 static rb_internal_thread_specific_key_t specific_key_count;
 
-extern int ruby_ractor_check_isolation_enabled;
+extern int ruby_ractor_isolation_enabled;
 
 /********************************************************************************/
 
@@ -634,7 +634,7 @@ thread_do_start_proc(rb_thread_t *th)
         VALUE self = rb_ractor_self(th->ractor);
         th->thgroup = th->ractor->thgroup_default = rb_obj_alloc(cThGroup);
 
-        if (ruby_ractor_check_isolation_enabled) {
+        if (ruby_ractor_isolation_enabled) {
             // check mode: args is a real Array, not a mailbox count (see thread_create_core)
             args_len = RARRAY_LENINT(args);
             if (args_len < 8) {
@@ -965,7 +965,7 @@ thread_create_core(VALUE thval, struct thread_create_params *params)
         th->ec->ractor_id = rb_ractor_id(th->ractor);
         th->ractor->threads.main = th;
         th->invoke_arg.proc.kw_splat = rb_keyword_given_p();
-        if (ruby_ractor_check_isolation_enabled) {
+        if (ruby_ractor_isolation_enabled) {
             // check mode: keep the Proc and args by reference, warn instead of isolating
             rb_proc_check_isolation_warn(params->proc);
             th->invoke_arg.proc.proc = params->proc;
@@ -1022,7 +1022,7 @@ thread_create_core(VALUE thval, struct thread_create_params *params)
         EC_PUSH_TAG(ec);
         if ((state = EC_EXEC_TAG()) == TAG_NONE) {
             rb_ractor_setup_default_port(params->g);
-            if (!ruby_ractor_check_isolation_enabled) {
+            if (!ruby_ractor_isolation_enabled) {
                 rb_ractor_send_parameters(ec, params->g, params->args);
             }
         }

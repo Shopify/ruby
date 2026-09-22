@@ -4206,13 +4206,13 @@ rb_gc_vm_ractor_count(void)
     return GET_VM()->ractor.cnt;
 }
 
-extern int ruby_ractor_check_isolation_enabled;
+extern int ruby_ractor_isolation_enabled;
 
 /* Check mode passes objects between Ractors by reference; only a global cycle sees those edges. */
 bool
 rb_gc_vm_global_gc_only_p(void)
 {
-    return ruby_ractor_check_isolation_enabled != 0;
+    return ruby_ractor_isolation_enabled != 0;
 }
 
 /* Called by a global cycle from inside the barrier. */

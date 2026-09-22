@@ -4244,15 +4244,15 @@ rb_ractor_autoload_load(VALUE module, ID name)
     }
 }
 
-// RUBY_RACTOR_CHECK_ISOLATION: non-main Ractors warn on isolation violations
+// RUBY_RACTOR_ISOLATION: non-main Ractors warn on isolation violations
 // instead of raising, so a sweep reports more than the first one.
 
-extern int ruby_ractor_check_isolation_enabled;
+extern int ruby_ractor_isolation_enabled;
 
 bool
 rb_ractor_isolation_check_p(void)
 {
-    if (!ruby_ractor_check_isolation_enabled) return false;
+    if (!ruby_ractor_isolation_enabled) return false;
     rb_execution_context_t *ec = rb_current_ec_noinline();
     if (!ec) return false;
     rb_ractor_t *r = rb_ec_ractor_ptr(ec);
@@ -4309,7 +4309,7 @@ rb_ractor_isolation_warn(VALUE message)
     int line;
     const char *file = isolation_source_location(&line);
     const char *cstr = StringValueCStr(message);
-    if (ruby_ractor_check_isolation_enabled < 2 && !isolation_warn_first_p(cstr, file, line)) return;
+    if (ruby_ractor_isolation_enabled < 2 && !isolation_warn_first_p(cstr, file, line)) return;
 
     rb_category_compile_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, file, line, "%s", cstr);
 }
@@ -4318,7 +4318,7 @@ void
 rb_ractor_isolation_warning_summary(void)
 {
     if (isolation_warn_suppressed) {
-        fprintf(stderr, "RUBY_RACTOR_CHECK_ISOLATION: %lu repeated isolation warnings suppressed\n",
+        fprintf(stderr, "RUBY_RACTOR_ISOLATION: %lu repeated isolation warnings suppressed\n",
                 isolation_warn_suppressed);
     }
 }

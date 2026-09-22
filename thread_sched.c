@@ -1813,12 +1813,12 @@ thread_sched_atfork(struct rb_thread_sched *sched)
 #endif
 
 extern int ruby_mn_threads_enabled;
-extern int ruby_ractor_check_isolation_enabled;
+extern int ruby_ractor_isolation_enabled;
 
 static int
-ractor_check_isolation_env_level(void)
+ractor_isolation_env_level(void)
 {
-    const char *cstr = getenv("RUBY_RACTOR_CHECK_ISOLATION");
+    const char *cstr = getenv("RUBY_RACTOR_ISOLATION");
     int level = cstr ? atoi(cstr) : 0;
     return level > 0 ? level : 0;
 }
@@ -1830,8 +1830,8 @@ ruby_mn_threads_params(void)
     rb_ractor_t *main_ractor = GET_RACTOR();
 
     // boot precedes the first Ractor, so check mode can pin the scheduler itself
-    ruby_ractor_check_isolation_enabled = ractor_check_isolation_env_level();
-    bool exclusive = USE_MN_THREADS && ruby_ractor_check_isolation_enabled;
+    ruby_ractor_isolation_enabled = ractor_isolation_env_level();
+    bool exclusive = USE_MN_THREADS && ruby_ractor_isolation_enabled;
 
     // RUBY_MN_THREADS: -1 = nothing is M:N, 0 = the default, 1 = the main
     // Ractor's threads too, 2 = the main thread as well (see
@@ -1875,9 +1875,9 @@ ruby_mn_threads_params(void)
     }
 #endif
 
-    if (ruby_ractor_check_isolation_enabled && !exclusive) {
+    if (ruby_ractor_isolation_enabled && !exclusive) {
         // fprintf, not rb_warn: the mode announcement must survive -W0
-        fprintf(stderr, "warning: RUBY_RACTOR_CHECK_ISOLATION: this build has no M:N"
+        fprintf(stderr, "warning: RUBY_RACTOR_ISOLATION: this build has no M:N"
                 " scheduling, so other Ractors can run in parallel with the"
                 " isolation-check Ractor.\n");
     }
