@@ -1144,7 +1144,7 @@ vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_
                         else {
                             if (UNLIKELY(!rb_class_owned_p(klass))) {
                                 if (!rb_ractor_shareable_p(val)) {
-                                    rb_raise(rb_eRactorIsolationError,
+                                    rb_ractor_isolation_violation(
                                              "can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" of a class/module created by another Ractor.", rb_class_path(klass), rb_id2str(id));
                                 }
                             }
@@ -1429,6 +1429,7 @@ static VALUE
 vm_setivar_class(VALUE obj, VALUE val, rb_setivar_cache cache)
 {
     if (UNLIKELY(!rb_class_owned_p(obj))) {
+        // leave the inline cache so the slow path runs the isolation check
         return Qundef;
     }
 
@@ -3550,9 +3551,15 @@ vm_call_iseq_setup_tailcall(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 static void
 ractor_unsafe_check(void)
 {
-    if (!rb_ractor_main_p()) {
-        rb_raise(rb_eRactorUnsafeError, "ractor unsafe method called from not main ractor");
+    if (LIKELY(rb_ractor_main_p())) return;
+
+    if (rb_ractor_isolation_check_p()) {
+        // same category as IsolationError: to the caller both mean "not Ractor-safe"
+        rb_ractor_isolation_violation("ractor unsafe method called from not main ractor");
+        return;
     }
+
+    rb_raise(rb_eRactorUnsafeError, "ractor unsafe method called from not main ractor");
 }
 
 static VALUE
@@ -4110,6 +4117,25 @@ vm_call_attrset(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_c
     return vm_call_attrset_direct(ec, cfp, calling->cc, calling->recv);
 }
 
+static inline void
+vm_bmethod_check_ractor(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme, VALUE procv)
+{
+    if (RB_LIKELY(RB_OBJ_SHAREABLE_P(procv) ||
+                  cme->def->body.bmethod.defined_ractor_id == rb_ec_ractor_id(ec))) {
+        return;
+    }
+
+    if (rb_ractor_isolation_check_p()) {
+        // Diagnostic mode invokes the method after reporting the violation.
+        rb_ractor_isolation_violation(
+            "can not call method %"PRIsVALUE" defined with an un-shareable Proc from a different Ractor",
+            rb_id2str(cme->called_id));
+    }
+    else {
+        rb_raise(rb_eRuntimeError, "defined with an un-shareable Proc in a different Ractor");
+    }
+}
+
 static inline VALUE
 vm_call_bmethod_body(rb_execution_context_t *ec, struct rb_calling_info *calling, const VALUE *argv)
 {
@@ -4119,10 +4145,7 @@ vm_call_bmethod_body(rb_execution_context_t *ec, struct rb_calling_info *calling
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     VALUE procv = cme->def->body.bmethod.proc;
 
-    if (!RB_OBJ_SHAREABLE_P(procv) &&
-        cme->def->body.bmethod.defined_ractor_id != rb_ec_ractor_id(ec)) {
-        rb_raise(rb_eRuntimeError, "defined with an un-shareable Proc in a different Ractor");
-    }
+    vm_bmethod_check_ractor(ec, cme, procv);
 
     /* control block frame */
     GetProcPtr(procv, proc);
@@ -4142,10 +4165,7 @@ vm_call_iseq_bmethod(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     VALUE procv = cme->def->body.bmethod.proc;
 
-    if (!RB_OBJ_SHAREABLE_P(procv) &&
-        cme->def->body.bmethod.defined_ractor_id != rb_ec_ractor_id(ec)) {
-        rb_raise(rb_eRuntimeError, "defined with an un-shareable Proc in a different Ractor");
-    }
+    vm_bmethod_check_ractor(ec, cme, procv);
 
     rb_proc_t *proc;
     GetProcPtr(procv, proc);
@@ -6740,6 +6760,13 @@ vm_ic_update(const rb_iseq_t *iseq, IC ic, VALUE val, const VALUE *reg_ep, const
 {
     if (ruby_vm_const_missing_count > 0) {
         ruby_vm_const_missing_count = 0;
+        ic->entry = NULL;
+        return;
+    }
+
+    // A diagnostic Ractor can read foreign unshareable constants. Caching them
+    // would bypass later warnings, including after the category is re-enabled.
+    if (rb_ractor_isolation_check_p() && !rb_ractor_shareable_p(val)) {
         ic->entry = NULL;
         return;
     }

@@ -2172,6 +2172,8 @@ fiber_t_alloc(VALUE fiber_value, unsigned int blocking)
     fiber->blocking = blocking;
     fiber->killed = 0;
     cont_init(&fiber->cont, th);
+    // A warning hook in the creator must not silence this new fiber.
+    fiber->cont.saved_ec.ractor_isolation_warning = false;
 
     fiber->cont.saved_ec.fiber_ptr = fiber;
     fiber->cont.saved_ec.serial = next_ec_serial(th->ractor);

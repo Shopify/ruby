@@ -190,6 +190,11 @@ Init_version(void)
 
 int ruby_mn_threads_enabled;
 
+/* Set at boot (see ruby_mn_threads_params) to the RUBY_RACTOR_ISOLATION
+ * level: every non-main Ractor downgrades isolation violations to warnings,
+ * deduplicated per site at 1 and reported on every hit at 2. */
+int ruby_ractor_isolation_enabled;
+
 #ifndef RB_DEFAULT_PARSER
 #define RB_DEFAULT_PARSER RB_DEFAULT_PARSER_PRISM
 #endif

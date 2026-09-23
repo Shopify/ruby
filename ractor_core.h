@@ -237,6 +237,16 @@ VALUE rb_ractor_autoload_load(VALUE space, ID id);
 VALUE rb_ractor_ensure_shareable(VALUE obj, VALUE name);
 st_table *rb_ractor_targeted_hooks(rb_ractor_t *cr);
 
+extern int ruby_ractor_isolation_enabled;
+bool rb_ractor_isolation_check_p_slowpath(void);
+
+/* Warns and returns in check mode, raises Ractor::IsolationError otherwise. */
+PRINTF_ARGS(void rb_ractor_isolation_violation(const char *fmt, ...), 1, 2);
+void rb_ractor_isolation_violation_str(VALUE message);
+/* Always warns (deduplicated at level 1); for sites that run in the parent Ractor. */
+void rb_ractor_isolation_warn(VALUE message);
+void rb_ractor_isolation_warning_summary(void);
+
 RUBY_SYMBOL_EXPORT_BEGIN
 void rb_ractor_finish_marking(bool full_mark);
 
@@ -257,6 +267,13 @@ rb_ractor_main_p(void)
     else {
         return rb_ractor_main_p_();
     }
+}
+
+static inline bool
+rb_ractor_isolation_check_p(void)
+{
+    if (!ruby_ractor_isolation_enabled) return false;
+    return rb_ractor_isolation_check_p_slowpath();
 }
 
 static inline bool
@@ -372,6 +389,8 @@ static inline VALUE
 rb_ractor_confirm_belonging(VALUE obj)
 {
     if (rb_ractor_ignore_belonging_flag) return obj;
+    // check mode passes unshareable objects by reference on purpose
+    if (ruby_ractor_isolation_enabled) return obj;
     if (SPECIAL_CONST_P(obj) || RB_OBJ_SHAREABLE_P(obj)) return obj;
 
     if (UNLIKELY(rb_gc_obj_foreign_p(obj))) {

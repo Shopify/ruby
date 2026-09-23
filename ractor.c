@@ -5,6 +5,7 @@
 #include "ruby/ractor.h"
 #include "ruby/re.h"
 #include "ruby/thread_native.h"
+#include "ruby_atomic.h"
 #include "vm_core.h"
 #include "vm_sync.h"
 #include "ractor_core.h"
@@ -1871,6 +1872,11 @@ make_shareable_check_shareable(VALUE obj)
     }
     else if (!allow_frozen_shareable_p(obj)) {
         if (!RB_TYPE_P(obj, T_DATA)) {
+            if (rb_ractor_isolation_check_p()) {
+                rb_ractor_isolation_violation("can not make shareable object of class %+"PRIsVALUE,
+                                              rb_class_of(obj));
+                return traverse_stop;
+            }
             rb_raise(rb_eRactorError,
                      "can not make shareable object for %+"PRIsVALUE, obj);
         }
@@ -1880,6 +1886,11 @@ make_shareable_check_shareable(VALUE obj)
                 RB_OBJ_SET_SHAREABLE(obj);
                 return traverse_skip;
             }
+            else if (rb_ractor_isolation_check_p()) {
+                rb_ractor_isolation_violation("can not make shareable object of class %+"PRIsVALUE
+                                              " because it refers unshareable objects", rb_class_of(obj));
+                return traverse_stop;
+            }
             else {
                 rb_raise(rb_eRactorError,
                          "can not make shareable object for %+"PRIsVALUE" because it refers unshareable objects", obj);
@@ -1887,7 +1898,12 @@ make_shareable_check_shareable(VALUE obj)
         }
         else if (rb_obj_is_proc(obj)) {
             rb_proc_ractor_make_shareable(obj, Qundef);
-            return traverse_cont;
+            return rb_ractor_shareable_p(obj) ? traverse_cont : traverse_stop;
+        }
+        else if (rb_ractor_isolation_check_p()) {
+            rb_ractor_isolation_violation("can not make shareable object of class %+"PRIsVALUE,
+                                          rb_class_of(obj));
+            return traverse_stop;
         }
         else {
             rb_raise(rb_eRactorError, "can not make shareable object for %+"PRIsVALUE, obj);
@@ -1951,9 +1967,8 @@ VALUE
 rb_ractor_ensure_shareable(VALUE obj, VALUE name)
 {
     if (!rb_ractor_shareable_p(obj)) {
-        VALUE message = rb_sprintf("cannot assign unshareable object to %"PRIsVALUE,
-                                   name);
-        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+        rb_ractor_isolation_violation("cannot assign unshareable object to %"PRIsVALUE, name);
+        // in check mode this only warned; the caller's "shareable" invariant is knowingly broken
     }
     return obj;
 }
@@ -1962,7 +1977,7 @@ void
 rb_ractor_ensure_main_ractor(const char *msg)
 {
     if (!rb_ractor_main_p()) {
-        rb_raise(rb_eRactorIsolationError, "%s", msg);
+        rb_ractor_isolation_violation("%s", msg);
     }
 }
 
@@ -4009,13 +4024,12 @@ ractor_local_value_store_if_absent(rb_execution_context_t *ec, VALUE self, VALUE
 static VALUE
 ractor_shareable_proc(rb_execution_context_t *ec, VALUE replace_self, bool is_lambda)
 {
-    if (!rb_ractor_shareable_p(replace_self)) {
-        rb_raise(rb_eRactorIsolationError, "self should be shareable: %" PRIsVALUE, replace_self);
+    // in check mode, rb_proc_ractor_make_shareable below reports this violation
+    if (!rb_ractor_shareable_p(replace_self) && !rb_ractor_isolation_check_p()) {
+        rb_ractor_isolation_violation("self should be shareable: %" PRIsVALUE, replace_self);
     }
-    else {
-        VALUE proc = is_lambda ? rb_block_lambda() : rb_block_proc();
-        return rb_proc_ractor_make_shareable(rb_proc_dup(proc), replace_self);
-    }
+    VALUE proc = is_lambda ? rb_block_lambda() : rb_block_proc();
+    return rb_proc_ractor_make_shareable_copy(proc, replace_self);
 }
 
 // Ractor#require
@@ -4225,6 +4239,185 @@ rb_ractor_autoload_load(VALUE module, ID name)
     else {
         return result;
     }
+}
+
+// RUBY_RACTOR_ISOLATION: non-main Ractors warn on isolation violations
+// instead of raising, so the isolation check can report further violations.
+
+bool
+rb_ractor_isolation_check_p_slowpath(void)
+{
+    rb_execution_context_t *ec = rb_current_ec_noinline();
+    if (!ec) return false;
+    rb_ractor_t *r = rb_ec_ractor_ptr(ec);
+    return r && r != rb_ec_vm_ptr(ec)->ractor.main_ractor;
+}
+
+// Level 1 warns once per (message, Ruby site); keys are malloc'd, the table is VM-global.
+static st_table *isolation_warn_tbl;
+static unsigned long isolation_warn_suppressed;
+
+struct isolation_warn_key {
+    const char *file;
+    const char *message;
+    int line;
+};
+
+static int
+isolation_warn_key_cmp(st_data_t a, st_data_t b)
+{
+    const struct isolation_warn_key *key1 = (const void *)a;
+    const struct isolation_warn_key *key2 = (const void *)b;
+    return key1->line != key2->line ||
+        strcmp(key1->file, key2->file) || strcmp(key1->message, key2->message);
+}
+
+static st_index_t
+isolation_warn_key_hash(st_data_t data)
+{
+    const struct isolation_warn_key *key = (const void *)data;
+    st_index_t hash = st_hash_start(key->line);
+    hash = st_hash(key->file, strlen(key->file), hash);
+    hash = st_hash(key->message, strlen(key->message), hash);
+    return st_hash_end(hash);
+}
+
+static const struct st_hash_type isolation_warn_hash_type = {
+    isolation_warn_key_cmp,
+    isolation_warn_key_hash,
+};
+
+static bool
+isolation_warnings_enabled_p(void)
+{
+    if (GET_EC()->ractor_isolation_warning) return false;
+
+    return !NIL_P(ruby_verbose) &&
+        rb_warning_category_enabled_p(RB_WARN_CATEGORY_RACTOR_ISOLATION);
+}
+
+// nearest Ruby frame outside <internal:...>, so Ractor.new and Port#<< report the app site
+static VALUE
+isolation_source_location(int *line)
+{
+    const rb_execution_context_t *ec = GET_EC();
+
+    for (const rb_control_frame_t *cfp = ec->cfp;
+         !RUBY_VM_CONTROL_FRAME_STACK_OVERFLOW_P(ec, cfp);
+         cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)) {
+        if (!VM_FRAME_RUBYFRAME_P(cfp) || !CFP_ISEQ(cfp)) continue;
+
+        VALUE path = rb_iseq_path(CFP_ISEQ(cfp));
+        if (strncmp("<internal:", RSTRING_PTR(path), 10) == 0) continue;
+
+        *line = rb_vm_get_sourceline(cfp);
+        return path;
+    }
+    *line = 0;
+    return Qnil;
+}
+
+static bool
+isolation_warn_first_occurrence_p(VALUE message, VALUE path, int line)
+{
+    bool first = true;
+    RB_VM_LOCKING() {
+        if (!isolation_warn_tbl) isolation_warn_tbl = st_init_table(&isolation_warn_hash_type);
+        const struct isolation_warn_key lookup = {
+            .file = NIL_P(path) ? "-" : RSTRING_PTR(path),
+            .message = RSTRING_PTR(message),
+            .line = line,
+        };
+        if (st_lookup(isolation_warn_tbl, (st_data_t)&lookup, NULL)) {
+            first = false;
+            isolation_warn_suppressed++;
+        }
+        else {
+            // Own copies of both strings outside Ruby's heap for this VM-wide table.
+            size_t file_size = strlen(lookup.file) + 1;
+            size_t message_size = strlen(lookup.message) + 1;
+            struct isolation_warn_key *key = ruby_xmalloc(sizeof(*key) + file_size + message_size);
+            char *file = (char *)(key + 1);
+            char *text = file + file_size;
+            memcpy(file, lookup.file, file_size);
+            memcpy(text, lookup.message, message_size);
+            *key = (struct isolation_warn_key){file, text, line};
+            st_add_direct(isolation_warn_tbl, (st_data_t)key, 0);
+        }
+    }
+    RB_GC_GUARD(message);
+    RB_GC_GUARD(path);
+    return first;
+}
+
+static VALUE
+isolation_warn_emit(VALUE message)
+{
+    int line;
+    VALUE path = isolation_source_location(&line);
+    StringValueCStr(message);
+    if (ruby_ractor_isolation_enabled < 2 && !isolation_warn_first_occurrence_p(message, path, line)) {
+        return Qnil;
+    }
+
+    const char *file = NIL_P(path) ? NULL : RSTRING_PTR(path);
+    rb_category_compile_warn(RB_WARN_CATEGORY_RACTOR_ISOLATION, file, line, "%s", RSTRING_PTR(message));
+    RB_GC_GUARD(message);
+    RB_GC_GUARD(path);
+    return Qnil;
+}
+
+static VALUE
+isolation_warn_clear_guard(VALUE ec_ptr)
+{
+    ((rb_execution_context_t *)ec_ptr)->ractor_isolation_warning = false;
+    return Qnil;
+}
+
+void
+rb_ractor_isolation_warn(VALUE message)
+{
+    if (!isolation_warnings_enabled_p()) return;
+
+    // A user-defined warning hook can itself violate isolation, including
+    // before entering its body when defined with define_singleton_method.
+    // Keep the guard fiber-local and restore it even if the hook raises.
+    rb_execution_context_t *ec = GET_EC();
+    ec->ractor_isolation_warning = true;
+    rb_ensure(isolation_warn_emit, message, isolation_warn_clear_guard, (VALUE)ec);
+}
+
+void
+rb_ractor_isolation_warning_summary(void)
+{
+    if (isolation_warn_suppressed) {
+        fprintf(stderr, "RUBY_RACTOR_ISOLATION: %lu repeated isolation warnings suppressed\n",
+                isolation_warn_suppressed);
+    }
+}
+
+void
+rb_ractor_isolation_violation_str(VALUE message)
+{
+    if (rb_ractor_isolation_check_p()) {
+        rb_ractor_isolation_warn(message);
+        return;
+    }
+
+    rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, message));
+}
+
+void
+rb_ractor_isolation_violation(const char *fmt, ...)
+{
+    if (rb_ractor_isolation_check_p() && !isolation_warnings_enabled_p()) return;
+
+    va_list args;
+    va_start(args, fmt);
+    VALUE message = rb_vsprintf(fmt, args);
+    va_end(args);
+
+    rb_ractor_isolation_violation_str(message);
 }
 
 #include "ractor.rbinc"

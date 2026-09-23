@@ -2151,8 +2151,13 @@ undefine_final(VALUE os, VALUE obj)
 VALUE
 rb_undefine_finalizer(VALUE obj)
 {
-    rb_check_frozen(obj);
+    if (rb_objspace_foreign_object_p(obj)) {
+        rb_ractor_isolation_violation(
+            "can not undefine a finalizer of an object of another Ractor");
+        return obj;
+    }
 
+    rb_check_frozen(obj);
     rb_gc_impl_undefine_finalizer(rb_gc_get_objspace(), obj);
 
     return obj;
@@ -2273,7 +2278,13 @@ rb_define_finalizer(VALUE obj, VALUE block)
     should_be_finalizable(obj);
     should_be_callable(block);
 
-    block = rb_gc_impl_define_finalizer(rb_gc_get_objspace(), obj, block);
+    if (rb_gc_obj_foreign_p(obj)) {
+        rb_ractor_isolation_violation(
+            "can not define a finalizer for an object of another Ractor");
+    }
+    else {
+        block = rb_gc_impl_define_finalizer(rb_gc_get_objspace(), obj, block);
+    }
 
     block = rb_ary_new3(2, INT2FIX(0), block);
     OBJ_FREEZE(block);
@@ -4192,6 +4203,15 @@ unsigned int
 rb_gc_vm_ractor_count(void)
 {
     return GET_VM()->ractor.cnt;
+}
+
+extern int ruby_ractor_isolation_enabled;
+
+/* Check mode passes objects between Ractors by reference; only a global cycle sees those edges. */
+bool
+rb_gc_vm_global_gc_only_p(void)
+{
+    return ruby_ractor_isolation_enabled != 0;
 }
 
 /* Called by a global cycle from inside the barrier. */
