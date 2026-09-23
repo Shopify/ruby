@@ -15,7 +15,7 @@ use std::{
 use crate::hir_type::{Type, types};
 use crate::hir_effect::{Effect, abstract_heaps, effects};
 use crate::bitset::BitSet;
-use crate::profile::{ProfiledType, SplatLength, TypeDistributionSummary};
+use crate::profile::{ProfiledType, SplatLength, TypeDistributionSummary, PROFILED_IFUNC_BLOCK_HANDLER, PROFILED_PROC_BLOCK_HANDLER};
 use crate::stats::{Counter, incr_counter};
 use SendFallbackReason::*;
 
@@ -8974,7 +8974,7 @@ fn add_iseq_to_hir(
                                 let obj = summary.bucket(0).class();
                                 if unsafe { rb_IMEMO_TYPE_P(obj, imemo_iseq) == 1 } {
                                     fun.count(block, Counter::invokeblock_handler_monomorphic_iseq);
-                                } else if unsafe { rb_IMEMO_TYPE_P(obj, imemo_ifunc) == 1 } {
+                                } else if obj == PROFILED_IFUNC_BLOCK_HANDLER {
                                     fun.count(block, Counter::invokeblock_handler_monomorphic_ifunc);
                                 } else {
                                     fun.count(block, Counter::invokeblock_handler_monomorphic_other);
@@ -9001,7 +9001,7 @@ fn add_iseq_to_hir(
                             let obj = summary.bucket(0).class();
                             if unsafe { rb_IMEMO_TYPE_P(obj, imemo_iseq) == 1} {
                                 fun.count(block, Counter::getblockparamproxy_handler_iseq);
-                            } else if unsafe { rb_IMEMO_TYPE_P(obj, imemo_ifunc) == 1} {
+                            } else if obj == PROFILED_IFUNC_BLOCK_HANDLER {
                                 fun.count(block, Counter::getblockparamproxy_handler_ifunc);
                             }
                             else if obj.nil_p() {
@@ -9009,7 +9009,7 @@ fn add_iseq_to_hir(
                             }
                             else if obj.symbol_p() {
                                 fun.count(block, Counter::getblockparamproxy_handler_symbol);
-                            } else if unsafe { rb_obj_is_proc(obj).test() } {
+                            } else if obj == PROFILED_PROC_BLOCK_HANDLER {
                                 fun.count(block, Counter::getblockparamproxy_handler_proc);
                             }
                         } else if summary.is_polymorphic() || summary.is_skewed_polymorphic() {
@@ -9699,12 +9699,10 @@ fn add_iseq_to_hir(
                             let obj = profiled_type.class();
                             if obj.nil_p() {
                                 Some(Self::Nil)
-                            } else if unsafe {
-                                rb_IMEMO_TYPE_P(obj, imemo_iseq) == 1
-                                    || rb_IMEMO_TYPE_P(obj, imemo_ifunc) == 1
-                            } {
+                            } else if unsafe { rb_IMEMO_TYPE_P(obj, imemo_iseq) == 1 }
+                                || obj == PROFILED_IFUNC_BLOCK_HANDLER {
                                 Some(Self::IseqOrIfunc)
-                            } else if unsafe { rb_obj_is_proc(obj).test() } {
+                            } else if obj == PROFILED_PROC_BLOCK_HANDLER {
                                 Some(Self::Proc)
                             } else {
                                 None
@@ -10378,7 +10376,7 @@ fn add_iseq_to_hir(
                     });
 
                     let is_ifunc = (flags & (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG)) == 0
-                        && block_handler_class.is_some_and(|obj| unsafe { rb_IMEMO_TYPE_P(obj, imemo_ifunc) == 1 });
+                        && block_handler_class.is_some_and(|obj| obj == PROFILED_IFUNC_BLOCK_HANDLER);
 
                     // Collect the profiled ISEQ blocks that can be invoked directly with a JIT-to-JIT call.
                     let mut fallback_reason = InvokeBlockNotSpecialized;

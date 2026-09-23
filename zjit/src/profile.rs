@@ -235,7 +235,7 @@ fn profile_block_handler(profiler: &mut Profiler, profile: &mut IseqProfile) {
     if entry.opnd_types.is_empty() {
         entry.opnd_types.resize(1, TypeDistribution::new());
     }
-    let obj = profiler.peek_at_block_handler();
+    let obj = block_handler_profile_value(profiler.peek_at_block_handler());
     let ty = ProfiledType::object(obj);
     VALUE::from(profiler.iseq).write_barrier(ty.class());
     entry.opnd_types[0].observe(ty);
@@ -252,9 +252,27 @@ fn profile_getblockparamproxy(profiler: &mut Profiler, profile: &mut IseqProfile
     let block_handler = unsafe { *ep.offset(VM_ENV_DATA_INDEX_SPECVAL as isize) };
     let untagged = unsafe { rb_vm_untag_block_handler(block_handler) };
 
-    let ty = ProfiledType::object(untagged);
+    let ty = ProfiledType::object(block_handler_profile_value(untagged));
     VALUE::from(profiler.iseq).write_barrier(ty.class());
     entry.opnd_types[0].observe(ty);
+}
+
+/// Fixnum values to represent a profiled block handler type without retaining its reference.
+/// If we kept them in profiles, imemo for IFUNC or a Proc object with a captured environment
+/// would be kept in memory. However, for IFUNC and Proc, we're only interested in the block
+/// handler type. We use Fixnum values because Fixnum cannot be a block handler.
+pub const PROFILED_IFUNC_BLOCK_HANDLER: VALUE = VALUE::fixnum_from_usize(1);
+pub const PROFILED_PROC_BLOCK_HANDLER: VALUE = VALUE::fixnum_from_usize(2);
+
+/// Map an untagged block handler to the value recorded in the profile.
+fn block_handler_profile_value(block_handler: VALUE) -> VALUE {
+    if unsafe { rb_IMEMO_TYPE_P(block_handler, imemo_ifunc) == 1 } {
+        PROFILED_IFUNC_BLOCK_HANDLER
+    } else if unsafe { rb_obj_is_proc(block_handler).test() } {
+        PROFILED_PROC_BLOCK_HANDLER
+    } else {
+        block_handler
+    }
 }
 
 fn profile_invokesuper(profiler: &mut Profiler, profile: &mut IseqProfile) {
