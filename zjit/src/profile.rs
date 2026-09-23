@@ -169,9 +169,29 @@ fn profile_operands(profiler: &mut Profiler, profile: &mut IseqProfile, n: usize
         // TODO(max): Handle GC-hidden classes like Array, Hash, etc and make them look normal or
         // drop them or something
         let ty = ProfiledType::new(obj);
-        VALUE::from(profiler.iseq).write_barrier(ty.class());
-        profile_type.observe(ty);
+        observe_profiled_type(profiler, profile_type, ty);
     }
+}
+
+/// Record a profiled type unless its class is the singleton class of a young object that is not a Module.
+fn observe_profiled_type(profiler: &Profiler, distribution: &mut TypeDistribution, ty: ProfiledType) {
+    let class = ty.class();
+
+    // Skip observing short-lived objects with a singleton-class. Such a class
+    // belongs to one object, so specializing on it doesn't help other objects.
+    if !class.special_const_p() && class.is_singleton_class() && !class.is_metaclass() {
+        let attached = unsafe { rb_class_attached_object(class) };
+        let long_lived = attached.builtin_flags() & RUBY_FL_PROMOTED as usize != 0 // survived GC
+            || attached == unsafe { rb_vm_top_self() }
+            || attached == unsafe { rb_block_param_proxy };
+        if !long_lived {
+            distribution.observe_other();
+            return;
+        }
+    }
+
+    VALUE::from(profiler.iseq).write_barrier(class);
+    distribution.observe(ty);
 }
 
 fn profile_splat_length(profiler: &mut Profiler, profile: &mut IseqProfile, ci: *const rb_callinfo) {
@@ -207,8 +227,7 @@ fn profile_self(profiler: &mut Profiler, profile: &mut IseqProfile) {
     // TODO(max): Handle GC-hidden classes like Array, Hash, etc and make them look normal or
     // drop them or something
     let ty = ProfiledType::new(obj);
-    VALUE::from(profiler.iseq).write_barrier(ty.class());
-    entry.opnd_types[0].observe(ty);
+    observe_profiled_type(profiler, &mut entry.opnd_types[0], ty);
 }
 
 fn profile_block_handler(profiler: &mut Profiler, profile: &mut IseqProfile) {
