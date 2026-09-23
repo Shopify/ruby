@@ -3616,6 +3616,34 @@ fn test_opt_eq_string_distinct_objects() {
     assert_contains_opcode("test", YARVINSN_opt_eq);
 }
 
+// The inlined reader is profiled only with an object whose ivars are embedded, so its
+// ivar load reads the embedded slot. Folding that load on a frozen constant whose ivars
+// are not embedded used to read its out-of-line fields object as the ivar value.
+#[test]
+fn test_getivar_on_frozen_extended_object_after_inlining() {
+    eval(r#"
+        class FoldIvarFoo
+          def initialize(n)
+            n.times { |i| instance_variable_set(:"@a#{i}", i) }
+            @v = "x"
+            freeze
+          end
+
+          def v = @v
+        end
+
+        FOLD_IVAR_EMBEDDED = FoldIvarFoo.new(0)
+        FOLD_IVAR_EXTENDED = FoldIvarFoo.new(20)
+
+        def test = FOLD_IVAR_EXTENDED.v
+    "#);
+    assert_snapshot!(inspect(r#"
+        FOLD_IVAR_EMBEDDED.v # profile FoldIvarFoo#v with the embedded object only
+        test # compile test, inlining FoldIvarFoo#v
+        test
+    "#), @r#""x""#);
+}
+
 #[test]
 fn test_opt_eq_string_symbol_arg_after_inlining() {
     eval(r#"
