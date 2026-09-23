@@ -627,7 +627,13 @@ class TestRactorIsolationCheck < Test::Unit::TestCase
       warnings = ["-e:2: warning: Proc's self is not shareable"] * (level == 1 ? 1 : 3)
       warnings << "RUBY_RACTOR_ISOLATION: 2 repeated isolation warnings suppressed" if level == 1
       args = [{"RUBY_RACTOR_ISOLATION" => level.to_s}, "-W:no-experimental", "-e", source, kind]
-      assert_in_out_err(args, "", [], warnings, success: true)
+      assert_in_out_err(args) do |stdout, stderr, status|
+        assert_predicate status, :success?
+        assert_empty stdout
+        # The startup advisory on non-M:N builds is checked separately.
+        stderr.reject! { |line| line.start_with?("warning: RUBY_RACTOR_ISOLATION: this build has no M:N scheduling,") }
+        assert_equal warnings, stderr
+      end
     end
   end
 
