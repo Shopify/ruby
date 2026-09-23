@@ -4242,14 +4242,11 @@ rb_ractor_autoload_load(VALUE module, ID name)
 }
 
 // RUBY_RACTOR_ISOLATION: non-main Ractors warn on isolation violations
-// instead of raising, so a sweep reports more than the first one.
-
-extern int ruby_ractor_isolation_enabled;
+// instead of raising, so the isolation check can report further violations.
 
 bool
-rb_ractor_isolation_check_p(void)
+rb_ractor_isolation_check_p_slowpath(void)
 {
-    if (!ruby_ractor_isolation_enabled) return false;
     rb_execution_context_t *ec = rb_current_ec_noinline();
     if (!ec) return false;
     rb_ractor_t *r = rb_ec_ractor_ptr(ec);
@@ -4339,16 +4336,13 @@ isolation_warn_first_occurrence_p(VALUE message, VALUE path, int line)
             // Own copies of both strings outside Ruby's heap for this VM-wide table.
             size_t file_size = strlen(lookup.file) + 1;
             size_t message_size = strlen(lookup.message) + 1;
-            struct isolation_warn_key *key = malloc(sizeof(*key) + file_size + message_size);
-            if (key) {
-                char *file = (char *)(key + 1);
-                char *text = file + file_size;
-                memcpy(file, lookup.file, file_size);
-                memcpy(text, lookup.message, message_size);
-                *key = (struct isolation_warn_key){file, text, line};
-                st_add_direct(isolation_warn_tbl, (st_data_t)key, 0);
-            }
-            // If allocation fails, still report the warning.
+            struct isolation_warn_key *key = ruby_xmalloc(sizeof(*key) + file_size + message_size);
+            char *file = (char *)(key + 1);
+            char *text = file + file_size;
+            memcpy(file, lookup.file, file_size);
+            memcpy(text, lookup.message, message_size);
+            *key = (struct isolation_warn_key){file, text, line};
+            st_add_direct(isolation_warn_tbl, (st_data_t)key, 0);
         }
     }
     RB_GC_GUARD(message);

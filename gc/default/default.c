@@ -6926,11 +6926,13 @@ check_children_i(const VALUE child, void *ptr)
          * invisible to both local GCs.  The exception is a box's top_self, which every
          * thread's th->top_self points at and which is VM-permanent.  Skipped during a
          * global GC: it clears every shref bit, so the shref exemption would not fire,
-         * and its unified exact stop-the-world mark makes the invariant itself moot. */
+         * and its unified exact stop-the-world mark makes the invariant itself moot.
+         * Isolation checking also allows these edges and uses only global GC. */
         if (!data->parent_shareable &&
             child != rb_gc_vm_top_self() &&
             !MARKED_IN_BITMAP(GET_HEAP_SHAREABLE_BITS(child), child) &&
             !MARKED_IN_BITMAP(GET_HEAP_SHREF_BITS(child), child) &&
+            !rb_gc_vm_global_gc_only_p() &&
             !rb_gc_impl_during_global_gc_p(data->objspace) &&
             !global_objspace->during_absorb) {
             fprintf(stderr, "check_children_i: containment violation: "
@@ -7004,6 +7006,8 @@ root_scope_check_i(const char *category, VALUE obj, void *ptr)
         return;
     }
 
+    /* Isolation checking permits foreign unshareable roots and uses only global GC. */
+    if (rb_gc_vm_global_gc_only_p()) return;
     if (GET_HEAP_OBJSPACE(obj) == data->objspace) return;
     if (MARKED_IN_BITMAP(GET_HEAP_SHAREABLE_BITS(obj), obj)) return;
     if (MARKED_IN_BITMAP(GET_HEAP_SHREF_BITS(obj), obj)) return;

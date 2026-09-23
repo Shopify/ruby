@@ -237,7 +237,8 @@ VALUE rb_ractor_autoload_load(VALUE space, ID id);
 VALUE rb_ractor_ensure_shareable(VALUE obj, VALUE name);
 st_table *rb_ractor_targeted_hooks(rb_ractor_t *cr);
 
-bool rb_ractor_isolation_check_p(void);
+extern int ruby_ractor_isolation_enabled;
+bool rb_ractor_isolation_check_p_slowpath(void);
 
 /* Warns and returns in check mode, raises Ractor::IsolationError otherwise. */
 PRINTF_ARGS(void rb_ractor_isolation_violation(const char *fmt, ...), 1, 2);
@@ -266,6 +267,13 @@ rb_ractor_main_p(void)
     else {
         return rb_ractor_main_p_();
     }
+}
+
+static inline bool
+rb_ractor_isolation_check_p(void)
+{
+    if (!ruby_ractor_isolation_enabled) return false;
+    return rb_ractor_isolation_check_p_slowpath();
 }
 
 static inline bool
@@ -373,7 +381,6 @@ rb_ractor_targeted_hooks_cnt(rb_ractor_t *cr)
 #if RACTOR_CHECK_MODE > 0
 
 extern bool rb_ractor_ignore_belonging_flag;
-extern int ruby_ractor_isolation_enabled;
 
 /* An object's owning Ractor is decided by the objspace its page belongs to
  * (rb_gc_obj_foreign_p).  Putting an unshareable object on the VM stack of anyone

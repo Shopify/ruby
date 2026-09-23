@@ -1839,8 +1839,8 @@ ruby_mn_threads_params(void)
     // here, so it is set rather than defaulted.
     const char *mn_threads_cstr = getenv("RUBY_MN_THREADS");
     int mn_threads = (USE_MN_THREADS && mn_threads_cstr) ? atoi(mn_threads_cstr) : 0;
-    if (exclusive && mn_threads < 1) {
-        mn_threads = 1;
+    if (exclusive && mn_threads < 2) {
+        mn_threads = 2;
     }
 
     mn_threads_mode = mn_threads;

@@ -2151,14 +2151,13 @@ undefine_final(VALUE os, VALUE obj)
 VALUE
 rb_undefine_finalizer(VALUE obj)
 {
-    rb_check_frozen(obj);
-
-    if (rb_gc_obj_foreign_p(obj)) {
+    if (rb_objspace_foreign_object_p(obj)) {
         rb_ractor_isolation_violation(
             "can not undefine a finalizer of an object of another Ractor");
         return obj;
     }
 
+    rb_check_frozen(obj);
     rb_gc_impl_undefine_finalizer(rb_gc_get_objspace(), obj);
 
     return obj;

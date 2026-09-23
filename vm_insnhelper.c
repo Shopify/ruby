@@ -4120,8 +4120,8 @@ vm_call_attrset(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_c
 static inline void
 vm_bmethod_check_ractor(rb_execution_context_t *ec, const rb_callable_method_entry_t *cme, VALUE procv)
 {
-    if (RB_OBJ_SHAREABLE_P(procv) ||
-        cme->def->body.bmethod.defined_ractor_id == rb_ec_ractor_id(ec)) {
+    if (RB_LIKELY(RB_OBJ_SHAREABLE_P(procv) ||
+                  cme->def->body.bmethod.defined_ractor_id == rb_ec_ractor_id(ec))) {
         return;
     }
 

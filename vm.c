@@ -1735,7 +1735,9 @@ rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
         bool can_isolate = true;
         VALUE proc_self = UNDEF_P(replace_self) ? vm_block_self(&proc->block) : replace_self;
         if (!rb_ractor_shareable_p(proc_self)) {
-            VALUE message = rb_sprintf("Proc's self is not shareable: %" PRIsVALUE, self);
+            VALUE message = mode == PROC_ISOLATION_WARN_ONLY ?
+                rb_str_new_cstr("Proc's self is not shareable") :
+                rb_sprintf("Proc's self is not shareable: %" PRIsVALUE, self);
             proc_isolation_violation_str(message, mode);
             can_isolate = false;
         }
@@ -1763,7 +1765,9 @@ rb_proc_ractor_make_shareable(VALUE self, VALUE replace_self)
 
         VALUE proc_self = vm_block_self(block);
         if (!rb_ractor_shareable_p(proc_self)) {
-            VALUE message = rb_sprintf("Proc's self is not shareable: %" PRIsVALUE, self);
+            VALUE message = mode == PROC_ISOLATION_WARN_ONLY ?
+                rb_str_new_cstr("Proc's self is not shareable") :
+                rb_sprintf("Proc's self is not shareable: %" PRIsVALUE, self);
             proc_isolation_violation_str(message, mode);
             return self;
         }

@@ -656,10 +656,10 @@ global_entry_lookup(ID id, bool create_entry, bool *isolation_error)
 }
 
 static struct rb_global_entry*
-rb_find_global_entry(ID id)
+rb_global_entry(ID id)
 {
     bool isolation_error;
-    struct rb_global_entry *entry = global_entry_lookup(id, false, &isolation_error);
+    struct rb_global_entry *entry = global_entry_lookup(id, true, &isolation_error);
 
     if (isolation_error) global_entry_isolation_error(id);
 
@@ -669,29 +669,29 @@ rb_find_global_entry(ID id)
 void
 rb_gvar_ractor_local(const char *name)
 {
-    struct rb_global_entry *entry = rb_find_global_entry(rb_intern(name));
+    struct rb_global_entry *entry = rb_global_entry(rb_intern(name));
     entry->ractor_local = true;
 }
 
 void
 rb_gvar_box_ready(const char *name)
 {
-    struct rb_global_entry *entry = rb_find_global_entry(rb_intern(name));
+    struct rb_global_entry *entry = rb_global_entry(rb_intern(name));
     entry->var->box_ready = true;
 }
 
 void
 rb_gvar_box_dynamic(const char *name)
 {
-    struct rb_global_entry *entry = rb_find_global_entry(rb_intern(name));
+    struct rb_global_entry *entry = rb_global_entry(rb_intern(name));
     entry->var->box_dynamic = true;
 }
 
 static struct rb_global_entry*
-rb_global_entry(ID id)
+rb_find_global_entry(ID id)
 {
     bool isolation_error;
-    struct rb_global_entry *entry = global_entry_lookup(id, true, &isolation_error);
+    struct rb_global_entry *entry = global_entry_lookup(id, false, &isolation_error);
 
     if (isolation_error) global_entry_isolation_error(id);
 

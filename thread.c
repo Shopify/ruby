@@ -664,8 +664,10 @@ thread_do_start_proc(rb_thread_t *th)
 
     vm_check_ints_blocking(th->ec);
 
-    return rb_vm_invoke_proc(
-        th->ec, proc,
+    VALUE self = th->invoke_type == thread_invoke_type_ractor_proc ?
+        rb_ractor_self(th->ractor) : vm_block_self(&proc->block);
+    return rb_vm_invoke_proc_with_self(
+        th->ec, proc, self,
         args_len, args_ptr,
         th->invoke_arg.proc.kw_splat,
         VM_BLOCK_HANDLER_NONE,
