@@ -1418,6 +1418,55 @@ rb_io_write_memory(rb_io_t *fptr, const void *buf, size_t count)
     return (ssize_t)rb_io_blocking_region_wait(fptr, internal_write_func, &iis, RUBY_IO_WRITABLE);
 }
 
+struct io_write_buffer_arguments {
+    VALUE scheduler;
+    rb_io_t *fptr;
+    const void *buffer;
+    size_t size;
+    ssize_t result;
+    int error;
+};
+
+static VALUE
+io_write_buffer_fiber_scheduler_body(VALUE argument)
+{
+    struct io_write_buffer_arguments *args = (struct io_write_buffer_arguments *)argument;
+    VALUE result = rb_fiber_scheduler_io_write_memory(args->scheduler, args->fptr->self,
+        args->buffer, args->size);
+
+    if (!UNDEF_P(result)) {
+        args->result = rb_fiber_scheduler_io_result_apply(result);
+        args->error = errno;
+    }
+    return result;
+}
+
+static bool
+io_write_buffer_fiber_scheduler(VALUE scheduler, rb_io_t *fptr, const void *buffer,
+    size_t size, ssize_t *result)
+{
+    struct io_write_buffer_arguments args = {
+        .scheduler = scheduler,
+        .fptr = fptr,
+        .buffer = buffer,
+        .size = size,
+    };
+    int state = 0;
+    VALUE ret = rb_protect(io_write_buffer_fiber_scheduler_body, (VALUE)&args, &state);
+
+    if (state) {
+        /* Retrying after unwinding without a byte count may replay written bytes. */
+        fptr->wbuf.off = 0;
+        fptr->wbuf.len = 0;
+        rb_jump_tag(state);
+    }
+    if (UNDEF_P(ret)) return false;
+
+    *result = args.result;
+    errno = args.error;
+    return true;
+}
+
 #ifdef HAVE_WRITEV
 static ssize_t
 rb_writev_internal(rb_io_t *fptr, const struct iovec *iov, int iovcnt)
@@ -1429,10 +1478,17 @@ rb_writev_internal(rb_io_t *fptr, const struct iovec *iov, int iovcnt)
     VALUE scheduler = rb_fiber_scheduler_current_for_threadptr(th);
     if (scheduler != Qnil) {
         // This path assumes at least one `iov`:
-        VALUE result = rb_fiber_scheduler_io_write_memory(scheduler, fptr->self, iov[0].iov_base, iov[0].iov_len);
-
-        if (!UNDEF_P(result)) {
-            return rb_fiber_scheduler_io_result_apply(result);
+        if (fptr->wbuf.len && iov[0].iov_base == fptr->wbuf.ptr + fptr->wbuf.off) {
+            ssize_t result;
+            if (io_write_buffer_fiber_scheduler(scheduler, fptr, iov[0].iov_base, iov[0].iov_len, &result)) {
+                return result;
+            }
+        }
+        else {
+            VALUE result = rb_fiber_scheduler_io_write_memory(scheduler, fptr->self, iov[0].iov_base, iov[0].iov_len);
+            if (!UNDEF_P(result)) {
+                return rb_fiber_scheduler_io_result_apply(result);
+            }
         }
     }
 
@@ -1483,16 +1539,15 @@ io_flush_buffer_sync(void *arg)
 static inline VALUE
 io_flush_buffer_fiber_scheduler(VALUE scheduler, rb_io_t *fptr)
 {
-    VALUE ret = rb_fiber_scheduler_io_write_memory(scheduler, fptr->self, fptr->wbuf.ptr+fptr->wbuf.off, fptr->wbuf.len);
-    if (!UNDEF_P(ret)) {
-        ssize_t result = rb_fiber_scheduler_io_result_apply(ret);
+    ssize_t result;
+    if (io_write_buffer_fiber_scheduler(scheduler, fptr, fptr->wbuf.ptr + fptr->wbuf.off, fptr->wbuf.len, &result)) {
         if (result > 0) {
             fptr->wbuf.off += result;
             fptr->wbuf.len -= result;
         }
         return result >= 0 ? (VALUE)0 : (VALUE)-1;
     }
-    return ret;
+    return RUBY_Qundef;
 }
 
 static VALUE
