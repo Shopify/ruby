@@ -7696,7 +7696,9 @@ impl Function {
             run_pass!(clean_cfg);
             run_pass!(remove_redundant_patch_points);
             run_pass!(remove_duplicate_check_interrupts);
-            run_pass!(eliminate_empty_inline_frames);
+            if did_inline {
+                run_pass!(eliminate_empty_inline_frames);
+            }
             run_pass!(eliminate_dead_code);
 
             if !did_inline {
