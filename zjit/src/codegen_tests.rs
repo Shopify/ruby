@@ -1128,6 +1128,25 @@ fn test_yield_inlined_caller_block_dispatches_without_guards() {
 }
 
 #[test]
+fn test_yield_block_iseq_guard_survives_compaction() {
+    // The yield dispatch guards captured->code.iseq against the profiled block ISEQ baked into
+    // JIT code. ISEQs are movable GC objects, so compaction must update the baked pointer.
+    // Otherwise the guard would side-exit after compaction, or worse, match an unrelated ISEQ
+    // allocated at the old address later and dispatch to the wrong block.
+    // Disable inlining: when foo is inlined into test, yield takes the guard-free path instead.
+    with_inlining_threshold(0, || {
+        eval("
+            def foo = yield
+            def test = foo { 42 }
+            # Call it enough times to compile both test and foo (through test's JIT-to-JIT stub)
+            4.times { test }
+            GC.verify_compaction_references(expand_heap: true, toward: :empty) if GC.respond_to?(:compact)
+        ");
+        assert_snapshot!(assert_compiles("test"), @"42");
+    });
+}
+
+#[test]
 fn test_yield_with_lambda_arg() {
     // A lambda passed via &l is a proc handler (not imemo_iseq): yield falls back but runs.
     set_call_threshold(2);
