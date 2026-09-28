@@ -119,6 +119,22 @@ class TestHash < Test::Unit::TestCase
     assert_nil(h['a'])
   end
 
+  def test_s_AREF_from_hash_during_gc
+    # The copy is allocated in an ar_table sized slot and transitions to an
+    # st_table while it is already reachable by the GC, so a GC triggered by
+    # the st_table allocation must not walk the uninitialized table.
+    # Runs in a separate process so that the slots being recycled are the ones
+    # freed by this loop.
+    assert_separately([], <<~RUBY)
+      src = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8 }
+      copy = nil
+      EnvUtil.under_gc_stress(0x04) do
+        50.times { copy = Hash[src] }
+      end
+      assert_equal(src, copy)
+    RUBY
+  end
+
   def test_s_AREF_from_list
     h = @cls["a", 100, "b", 200]
     assert_equal(100, h['a'])

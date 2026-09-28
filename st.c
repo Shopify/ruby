@@ -545,9 +545,16 @@ st_init_existing_table_with_size(st_table *tab, const struct st_hash_type *type,
     tab->entry_power = n;
     tab->bin_power = features[n].bin_power;
     tab->size_ind = features[n].size_ind;
-    if (n <= MAX_POWER2_FOR_TABLES_WITHOUT_BINS)
-        tab->bins = NULL;
-    else {
+
+    /* The table may be embedded in an object the GC can already reach (T_HASH,
+       imemo_cdhash), in which case the allocations below can mark it. Empty it
+       first, marking walks entries[entries_start..entries_bound). */
+    tab->bins = NULL;
+    tab->entries = NULL;
+    tab->num_entries = 0;
+    tab->entries_start = tab->entries_bound = 0;
+
+    if (n > MAX_POWER2_FOR_TABLES_WITHOUT_BINS) {
         tab->bins = (st_index_t *) malloc(bins_size(tab));
 #ifndef RUBY
         if (tab->bins == NULL) {
