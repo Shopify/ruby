@@ -6464,7 +6464,10 @@ pm_source_file_node_create(pm_parser_t *parser, const pm_token_t *file_keyword) 
             flags |= PM_STRING_FLAGS_MUTABLE;
             break;
         case PM_OPTIONS_FROZEN_STRING_LITERAL_ENABLED:
-            flags |= PM_NODE_FLAG_STATIC_LITERAL | PM_STRING_FLAGS_FROZEN;
+            flags |= PM_STRING_FLAGS_FROZEN;
+            if (parser->version < PM_OPTIONS_VERSION_CRUBY_4_1) {
+                flags |= PM_NODE_FLAG_STATIC_LITERAL;
+            }
             break;
     }
 
@@ -6897,7 +6900,7 @@ pm_symbol_node_to_string_node(pm_parser_t *parser, pm_symbol_node_t *node) {
         flags,
         PM_LOCATION_INIT_NODE(node),
         node->opening_loc,
-        node->value_loc,
+        node->content_loc,
         node->closing_loc,
         node->unescaped
     );
@@ -17177,7 +17180,7 @@ pm_slice_is_valid_local(const pm_parser_t *parser, const uint8_t *start, const u
  */
 static pm_node_t *
 parse_pattern_hash_implicit_value(pm_parser_t *parser, pm_constant_id_list_t *captures, pm_symbol_node_t *key) {
-    const pm_location_t *value_loc = &((pm_symbol_node_t *) key)->value_loc;
+    const pm_location_t *value_loc = &((pm_symbol_node_t *) key)->content_loc;
     const uint8_t *start = parser->start + PM_LOCATION_START(value_loc);
     const uint8_t *end = parser->start + PM_LOCATION_END(value_loc);
 
@@ -17625,22 +17628,44 @@ parse_pattern_primitive(pm_parser_t *parser, pm_constant_id_list_t *captures, pm
     }
 }
 
+/**
+ * Add an error for each variable captured by the given pattern. Only descend
+ * into nodes that make up the pattern itself: a lambda, a string interpolation,
+ * or a pinned expression can contain local variable targets of its own that
+ * are not captures of this pattern. A nested alternation is not visited
+ * either: its operands were already checked when it was parsed.
+ */
 static bool
 parse_pattern_alternation_error_each(const pm_node_t *node, void *data) {
+    pm_parser_t *parser = (pm_parser_t *) data;
+
     switch (PM_NODE_TYPE(node)) {
-        case PM_LOCAL_VARIABLE_TARGET_NODE: {
-            pm_parser_t *parser = (pm_parser_t *) data;
-            pm_parser_err(parser, PM_NODE_START(node), PM_NODE_LENGTH(node), PM_ERR_PATTERN_CAPTURE_IN_ALTERNATIVE);
+        case PM_LOCAL_VARIABLE_TARGET_NODE:
+            // Underscore-prefixed names are not captures, see
+            // parse_pattern_capture.
+            if (peek_at(parser, parser->start + PM_NODE_START(node)) != '_') {
+                pm_parser_err(parser, PM_NODE_START(node), PM_NODE_LENGTH(node), PM_ERR_PATTERN_CAPTURE_IN_ALTERNATIVE);
+            }
             return false;
-        }
-        default:
+        case PM_ARRAY_PATTERN_NODE:
+        case PM_ASSOC_NODE:
+        case PM_ASSOC_SPLAT_NODE:
+        case PM_CAPTURE_PATTERN_NODE:
+        case PM_FIND_PATTERN_NODE:
+        case PM_HASH_PATTERN_NODE:
+        case PM_IMPLICIT_NODE:
+        case PM_PARENTHESES_NODE:
+        case PM_SPLAT_NODE:
             return true;
+        default:
+            return false;
     }
 }
 
 /**
- * When we get here, we know that we already have a syntax error, because we
- * know we have captured a variable and that we are in an alternation.
+ * Called when we are in an alternation and a variable has been captured
+ * somewhere in the pattern. That capture may be outside of the given node, so
+ * this only adds errors for the captures that are actually inside of it.
  */
 static void
 parse_pattern_alternation_error(pm_parser_t *parser, const pm_node_t *node) {
@@ -18227,7 +18252,7 @@ parse_case(pm_parser_t *parser, uint8_t flags, uint16_t depth) {
                      * frozen because when clause strings are frozen. */
                     if (PM_NODE_TYPE_P(condition, PM_STRING_NODE)) {
                         pm_node_flag_set(condition, PM_STRING_FLAGS_FROZEN | PM_NODE_FLAG_STATIC_LITERAL);
-                    } else if (PM_NODE_TYPE_P(condition, PM_SOURCE_FILE_NODE)) {
+                    } else if (PM_NODE_TYPE_P(condition, PM_SOURCE_FILE_NODE) && parser->version < PM_OPTIONS_VERSION_CRUBY_4_1) {
                         pm_node_flag_set(condition, PM_NODE_FLAG_STATIC_LITERAL);
                     }
 
@@ -19133,8 +19158,8 @@ parse_symbol_array(pm_parser_t *parser, uint16_t depth) {
                     pm_symbol_node_t *cast = (pm_symbol_node_t *) current;
                     pm_token_t content = {
                         .type = PM_TOKEN_STRING_CONTENT,
-                        .start = parser->start + cast->value_loc.start,
-                        .end = parser->start + cast->value_loc.start + cast->value_loc.length
+                        .start = parser->start + cast->content_loc.start,
+                        .end = parser->start + cast->content_loc.start + cast->content_loc.length
                     };
 
                     pm_node_t *first_string = UP(pm_string_node_create_unescaped(parser, NULL, &content, NULL, &cast->unescaped));
@@ -20513,7 +20538,7 @@ parse_expression_prefix(pm_parser_t *parser, pm_binding_power_t binding_power, u
                         pm_interpolated_symbol_node_append(parser->arena, (pm_interpolated_symbol_node_t *) current, string);
                     } else if (PM_NODE_TYPE_P(current, PM_SYMBOL_NODE)) {
                         pm_symbol_node_t *cast = (pm_symbol_node_t *) current;
-                        pm_token_t content = { .type = PM_TOKEN_STRING_CONTENT, .start = parser->start + cast->value_loc.start, .end = parser->start + cast->value_loc.start + cast->value_loc.length };
+                        pm_token_t content = { .type = PM_TOKEN_STRING_CONTENT, .start = parser->start + cast->content_loc.start, .end = parser->start + cast->content_loc.start + cast->content_loc.length };
                         pm_node_t *first_string = UP(pm_string_node_create_unescaped(parser, NULL, &content, NULL, &cast->unescaped));
                         pm_node_t *second_string = UP(pm_string_node_create_current_string(parser, NULL, &parser->previous, NULL));
                         parser_lex(parser);

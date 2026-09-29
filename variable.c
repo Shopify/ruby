@@ -551,6 +551,7 @@ struct rb_global_variable {
     rb_gvar_marker_t *marker;
     rb_gvar_compact_t *compactor;
     struct trace_var *trace;
+    ID id;
     bool box_ready;
     bool box_dynamic;
 };
@@ -637,6 +638,7 @@ global_entry_lookup(ID id, bool create_entry, bool *isolation_error)
             entry->id = id;
             entry->var = var;
             entry->ractor_local = false;
+            var->id = id;
             var->counter = 1;
             var->data = 0;
             var->getter = rb_gvar_undef_getter;
@@ -1024,13 +1026,10 @@ trace_en(VALUE v)
     return Qnil;		/* not reached */
 }
 
-static VALUE
-rb_gvar_set_entry(struct rb_global_entry *entry, VALUE val)
+static void
+gvar_trace(struct rb_global_variable *var, VALUE val)
 {
     struct trace_data trace;
-    struct rb_global_variable *var = entry->var;
-
-    (*var->setter)(val, entry->id, var->data);
 
     if (var->trace && !var->block_trace) {
         var->block_trace = 1;
@@ -1038,6 +1037,15 @@ rb_gvar_set_entry(struct rb_global_entry *entry, VALUE val)
         trace.val = val;
         rb_ensure(trace_ev, (VALUE)&trace, trace_en, (VALUE)var);
     }
+}
+
+static VALUE
+rb_gvar_set_entry(struct rb_global_entry *entry, VALUE val)
+{
+    struct rb_global_variable *var = entry->var;
+
+    (*var->setter)(val, entry->id, var->data);
+    gvar_trace(var, val);
     return val;
 }
 
@@ -1063,15 +1071,17 @@ rb_gvar_set(ID id, VALUE val)
 
         if ((!isolation_error || rb_ractor_isolation_check_p()) && gvar_use_box_tbl(box, entry)) {
             use_box_tbl = true;
-            rb_hash_aset(box->gvar_tbl, rb_id2sym(entry->id), val);
+            rb_hash_aset(box->gvar_tbl, rb_id2sym(entry->var->id), val);
             retval = val;
-            // TODO: think about trace
         }
     }
 
     if (isolation_error) global_entry_isolation_error(id);
 
-    if (!use_box_tbl) {
+    if (use_box_tbl) {
+        gvar_trace(entry->var, val);
+    }
+    else {
         retval = rb_gvar_set_entry(entry, val);
     }
     return retval;
@@ -1103,7 +1113,7 @@ rb_gvar_get(ID id)
             if (gvar_use_box_tbl(box, entry)) {
                 use_box_tbl = true;
                 gvars = box->gvar_tbl;
-                key = rb_id2sym(entry->id);
+                key = rb_id2sym(var->id);
                 if (RTEST(rb_hash_has_key(gvars, key))) { // this gvar is already cached
                     retval = rb_hash_aref(gvars, key);
                 }
@@ -1157,7 +1167,7 @@ rb_gvar_defined(ID id)
 
         defined = entry->var->getter != rb_gvar_undef_getter ||
             (gvar_use_box_tbl(box, entry) &&
-             RTEST(rb_hash_has_key(box->gvar_tbl, rb_id2sym(id))));
+             RTEST(rb_hash_has_key(box->gvar_tbl, rb_id2sym(entry->var->id))));
     }
     return RBOOL(defined);
 }
@@ -4682,8 +4692,13 @@ rb_fields_tbl_copy(VALUE dst, VALUE src)
 
     VALUE fields_obj = RCLASS_WRITABLE_FIELDS_OBJ(src);
     if (fields_obj) {
-        RCLASS_WRITABLE_SET_FIELDS_OBJ(dst, rb_imemo_fields_clone(fields_obj));
-        RBASIC_SET_SHAPE_ID(dst, RBASIC_SHAPE_ID(src));
+        VALUE dst_fields_obj = rb_imemo_fields_clone(fields_obj);
+        // `dst` is a freshly allocated object, so it must not inherit `src`'s
+        // frozen status. Callers that need it re-freeze `dst` themselves.
+        shape_id_t shape_id = RBASIC_SHAPE_ID(dst_fields_obj) & ~SHAPE_ID_FL_FROZEN;
+        RBASIC_SET_SHAPE_ID(dst_fields_obj, shape_id);
+        RCLASS_WRITABLE_SET_FIELDS_OBJ(dst, dst_fields_obj);
+        RBASIC_SET_SHAPE_ID(dst, shape_id);
     }
 }
 

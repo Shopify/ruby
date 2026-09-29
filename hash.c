@@ -5027,6 +5027,12 @@ rb_init_identtable(void)
     return st_init_table(&identhash);
 }
 
+void
+rb_init_existing_identtable_with_size(st_table *tbl, st_index_t size)
+{
+    st_init_existing_table_with_size(tbl, &identhash, size);
+}
+
 static int
 any_p_i(VALUE key, VALUE value, VALUE arg)
 {
@@ -5451,8 +5457,6 @@ static char **origenviron;
 static char **my_environ;
 #undef environ
 #define environ my_environ
-#undef getenv
-#define getenv(n) rb_w32_ugetenv(n)
 #elif defined(__APPLE__)
 #undef environ
 #define environ (*_NSGetEnviron())

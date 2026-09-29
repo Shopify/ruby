@@ -720,6 +720,44 @@ class TestBox < Test::Unit::TestCase
     end;
   end
 
+  def test_global_variable_alias_in_box
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      $aliased_original = 1
+      alias $aliased_alias $aliased_original
+      assert_equal [1, 1], [$aliased_original, $aliased_alias]
+      $aliased_alias = 2
+      assert_equal [2, 2], [$aliased_original, $aliased_alias]
+      assert_equal "global-variable", defined?($aliased_alias)
+
+      in_box = Ruby::Box.new.eval(<<~'CODE')
+        $aliased_original = 3
+        seen_through_alias = $aliased_alias
+        $aliased_alias = 4
+        alias $aliased_in_box $aliased_original
+        $aliased_in_box = 5
+        [seen_through_alias, $aliased_original, $aliased_in_box]
+      CODE
+      assert_equal [3, 5, 5], in_box
+      assert_equal [2, 2], [$aliased_original, $aliased_alias]
+    end;
+  end
+
+  def test_trace_var_in_box
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      traced = []
+      trace_var(:$traced_in_box) {|v| traced << v}
+      $traced_in_box = 1
+      assert_equal [1], traced
+      Ruby::Box.new.eval("$traced_in_box = 2")
+      assert_equal [1, 2], traced
+
+      trace_var(:$raise_in_trace) { raise "traced" }
+      assert_raise_with_message(RuntimeError, "traced") { $raise_in_trace = 1 }
+    end;
+  end
+
   def test_match_variables_are_not_cached_in_box
     assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
     begin;
@@ -1168,6 +1206,10 @@ class TestBox < Test::Unit::TestCase
     end
   end
 
+  def test_free_at_exit_in_a_box
+    assert_ruby_status([ENV_ENABLE_BOX.merge("RUBY_FREE_AT_EXIT" => "1"), "-e;"], timeout: 30)
+  end
+
   def test_bundler_setup_not_loaded_while_decorator_gems_are_autoloaded
     with_bundler_setup_log do |env|
       # assert_separately w/ ENV_ENABLE_BOX and --enable=gems causes timeouts on CI @ Windows
@@ -1606,5 +1648,21 @@ class TestBox < Test::Unit::TestCase
       end
       assert_equal "42", BoxIsolatedProcTest::PROC.call(42)
     end;
+  end
+
+  def test_builtin_module_copied_into_box_survives_gc_stress
+    # Not assert_separately, since loading test/unit copies Kernel into the main box first.
+    assert_in_out_err([ENV_ENABLE_BOX, "--disable-gems"], "#{<<-"begin;"}\n#{<<-'end;'}") do |output, error|
+      begin;
+        GC.stress = true
+        module Kernel
+          def _test_defined_in_main_box; end
+        end
+        GC.start
+        GC.stress = false
+        p Kernel.instance_methods(false).include?(:_test_defined_in_main_box)
+      end;
+      assert_equal ["true"], output
+    end
   end
 end

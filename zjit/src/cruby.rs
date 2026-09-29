@@ -756,6 +756,12 @@ impl VALUE {
         unsafe { rb_IMEMO_TYPE_P(self, imemo_ment) == 1 }
     }
 
+    /// Return true if `self` is an ISEQ (`imemo_iseq`)
+    pub fn iseq_p(self) -> bool {
+        if self == VALUE(0) { return false; }
+        unsafe { rb_IMEMO_TYPE_P(self, imemo_iseq) == 1 }
+    }
+
     /// Assert that `self` is a method entry in debug builds
     pub fn as_cme(self) -> *const rb_callable_method_entry_t {
         let ptr: *const rb_callable_method_entry_t = self.as_ptr();
@@ -1648,6 +1654,10 @@ pub fn class_has_leaf_allocator(class: VALUE) -> bool {
     if class == unsafe { rb_cString } { return true; }
     // rb_reg_s_alloc
     if class == unsafe { rb_cRegexp } { return true; }
+    // struct_alloc, used by every Struct subclass, is leaf: it reads the hidden __members__ ivar
+    // and allocates, without calling into Ruby. It does modify the class's __members__ ivar once
+    // to cache the members, but without a Ractor check.
+    if unsafe { rb_zjit_class_has_struct_allocator(class) } { return true; }
     // rb_class_allocate_instance
     unsafe { rb_zjit_class_has_default_allocator(class) }
 }

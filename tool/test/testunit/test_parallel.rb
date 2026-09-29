@@ -151,11 +151,11 @@ module TestParallel
   end
 
   class TestParallel < Test::Unit::TestCase
-    def spawn_runner(*opt_args, jobs: "t1", env: {})
+    def spawn_runner(*opt_args, jobs: "t1", env: {}, **spawn_options)
       @test_out, o = IO.pipe
       @test_pid = spawn(env, *@__runner_options__[:ruby], TESTS+"/runner.rb",
                         "--ruby", @__runner_options__[:ruby].join(" "),
-                        "-j", jobs, *opt_args, out: o, err: o)
+                        *(jobs ? ["-j", jobs] : []), *opt_args, out: o, err: o, **spawn_options)
       o.close
     end
 

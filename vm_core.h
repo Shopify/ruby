@@ -146,8 +146,6 @@ If `rb_vm_check_ints()` is called between the `RUBY_ASSERT_CRITICAL_SECTION_ENTE
 #elif defined(_SIG_MAXSIG)      /* FreeBSD */
 # undef NSIG
 # define NSIG _SIG_MAXSIG
-#elif defined(_SIGMAX)          /* QNX */
-# define NSIG (_SIGMAX + 1)
 #elif defined(NSIG)             /* 99% of everything else */
 # /* take it */
 #else                           /* Last resort */
@@ -818,14 +816,11 @@ typedef struct rb_vm_struct {
 #if USE_MODULAR_GC
         struct gc_mark_func_data_struct *mark_func_data;
 #endif
-        /* One VM-wide list for rb_gc_register_address: a slot can later hold another
-         * objspace's value, so it is not split per Ractor and every Ractor's GC scans it
-         * conservatively.  Leaf lock; register/unregister are cold paths. */
         struct {
             rb_nativethread_lock_t lock;
-            VALUE **addrs;              /* rb_gc_register_address: mark_maybe on *addr */
-            size_t addrs_cnt, addrs_capa;
-        } registered_globals;
+            struct rb_ractor_struct **registry;
+            size_t registry_cnt, registry_capa;
+        } registered_addrs;
 
         /* Holders keeping GC disabled (atomic): Ractors that called GC.disable (at
          * most one hold each) plus short internal critical sections.  One holder stops
@@ -1725,11 +1720,16 @@ VM_ENV_BOX_UNCHECKED(const VALUE *ep)
 #if VM_CHECK_MODE > 0
 int rb_vm_ep_in_heap_p(const VALUE *ep);
 #endif
+static inline rb_execution_context_t * rb_current_execution_context(bool expect_ec);
 
 static inline int
 VM_ENV_ESCAPED_P(const VALUE *ep)
 {
-    VM_ASSERT(rb_vm_ep_in_heap_p(ep) == !!VM_ENV_FLAGS(ep, VM_ENV_FLAG_ESCAPED));
+#if VM_CHECK_MODE > 0
+    if (rb_current_execution_context(false)) {
+        VM_ASSERT(rb_vm_ep_in_heap_p(ep) == !!VM_ENV_FLAGS(ep, VM_ENV_FLAG_ESCAPED));
+    }
+#endif
     return VM_ENV_FLAGS(ep, VM_ENV_FLAG_ESCAPED) ? 1 : 0;
 }
 

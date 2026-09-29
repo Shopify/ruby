@@ -4719,10 +4719,7 @@ rb_fd_init_copy(rb_fdset_t *dst, rb_fdset_t *src)
 static inline size_t
 fdset_memsize(int capa)
 {
-    if (capa == FD_SETSIZE) {
-        return sizeof(fd_set);
-    }
-    return sizeof(unsigned int) + (capa * sizeof(SOCKET));
+    return offsetof(fd_set, fd_array) + (capa * sizeof(SOCKET));
 }
 
 void
@@ -4748,7 +4745,7 @@ rb_fd_set(int fd, rb_fdset_t *set)
         set->capa = (set->fdset->fd_count / FD_SETSIZE + 1) * FD_SETSIZE;
         set->fdset =
             rb_xrealloc_mul_add(
-                set->fdset, set->capa, sizeof(SOCKET), sizeof(unsigned int));
+                set->fdset, set->capa, sizeof(SOCKET), offsetof(fd_set, fd_array));
     }
     set->fdset->fd_array[set->fdset->fd_count++] = s;
 }
@@ -5335,7 +5332,8 @@ rb_thread_atfork_internal(rb_thread_t *th, void (*atfork)(rb_thread_t *, const r
     rb_signal_atfork();
 
     // OK. Only this thread accesses:
-    ccan_list_for_each(&vm->ractor.set, r, vmlr_node) {
+    rb_ractor_t *r_next;
+    ccan_list_for_each_safe(&vm->ractor.set, r, r_next, vmlr_node) {
         if (r != vm->ractor.main_ractor) {
             rb_ractor_terminate_atfork(vm, r);
         }
@@ -5343,7 +5341,8 @@ rb_thread_atfork_internal(rb_thread_t *th, void (*atfork)(rb_thread_t *, const r
             atfork(i, th);
         }
     }
-    rb_vm_living_threads_init(vm);
+
+    ccan_list_head_init(&vm->ractor.set);
 
     rb_ractor_atfork(vm, th);
     rb_vm_postponed_job_atfork();
@@ -5356,6 +5355,7 @@ rb_thread_atfork_internal(rb_thread_t *th, void (*atfork)(rb_thread_t *, const r
     rb_gc_zombie_objspaces_atfork();
     rb_gc_atfork_global_locks();
     rb_generic_fields_lock_atfork();
+    rb_fiber_pool_lock_atfork();
     ccan_list_head_init(&th->interrupt_exec_tasks);
 
     vm->fork_gen++;
