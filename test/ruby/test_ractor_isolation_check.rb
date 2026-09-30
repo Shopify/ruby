@@ -73,6 +73,41 @@ class TestRactorIsolationCheck < Test::Unit::TestCase
     RUBY
   end
 
+  EXPLICIT_GC_VARIANTS = [{}, {global: false}, {full_mark: false}, {immediate_mark: false}, {immediate_sweep: false}]
+
+  # an explicit GC.start must not collect one objspace alone either
+  def test_isolation_check_runs_explicit_gc_start_globally
+    omit "no GC.stat(:global_gc_count)" unless GC.stat.key?(:global_gc_count)
+    assert_ractor(<<~"RUBY", args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
+      variants = #{EXPLICIT_GC_VARIANTS.inspect}
+      in_child = Ractor.new(variants) do |vs|
+        vs.map { |kw| before = GC.stat(:global_gc_count); GC.start(**kw); GC.stat(:global_gc_count) - before }
+      end.value
+      assert_equal [1] * variants.size, in_child.map { _1.clamp(0, 1) }, variants.inspect
+
+      r = Ractor.new { Ractor.receive }
+      in_main = variants.map { |kw| before = GC.stat(:global_gc_count); GC.start(**kw); GC.stat(:global_gc_count) - before }
+      r.send(:done).value
+      assert_equal [1] * variants.size, in_main.map { _1.clamp(0, 1) }, variants.inspect
+    RUBY
+  end
+
+  def test_isolation_check_keeps_child_objects_alive_across_explicit_gc_start
+    EXPLICIT_GC_VARIANTS.each do |kw|
+      assert_ractor(<<~"RUBY", args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
+        sink = []
+        Ractor.new(sink) do |s|
+          20_000.times { |i| s << "payload-\#{i}-" + "x" * 32 }
+          GC.start(**#{kw.inspect})
+          20_000.times { |i| "reuse-\#{i}-" + "y" * 32 }
+          nil
+        end.value
+        bad = sink.each_with_index.count { |s, i| !(String === s) || !s.start_with?("payload-\#{i}-") }
+        assert_equal 0, bad, #{kw.inspect.dump}
+      RUBY
+    end
+  end
+
   def test_isolation_check_passes_args_and_closes_over_outer_variables
     assert_ractor(<<~'RUBY', args: [{"RUBY_RACTOR_ISOLATION" => "1"}], ignore_stderr: true)
       outer = [1, 2, 3]

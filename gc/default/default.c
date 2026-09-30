@@ -10256,6 +10256,9 @@ rb_gc_impl_start(void *objspace_ptr, bool full_mark, bool immediate_mark, bool i
         global = false;
     }
 
+    /* Isolation checking never collects one objspace alone (see gc_need_global_p). */
+    if (rb_gc_vm_global_gc_only_p()) global = true;
+
     if (global && !rb_gc_single_objspace_p()) {
         /* A mid-cycle driver is settled by gc_start_global itself: it aborts the partial
          * mark and finishes the lazy sweep, so the dead slots are T_NONE before the
