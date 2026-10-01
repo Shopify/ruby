@@ -1133,9 +1133,7 @@ impl Assembler {
                     unreachable!("PosMarkerAtBlockEnd should have been lowered by linearize_instructions");
                 },
                 Insn::BakeString(text) => {
-                    for byte in text.as_bytes() {
-                        cb.write_byte(*byte);
-                    }
+                    cb.write_bytes(text.as_bytes());
 
                     // Add a null-terminator byte for safety (in case we pass
                     // this to C code)
@@ -1143,9 +1141,8 @@ impl Assembler {
 
                     // Pad out the string to the next 4-byte boundary so that
                     // it's easy to jump past.
-                    for _ in 0..(4 - ((text.len() + 1) % 4)) {
-                        cb.write_byte(0);
-                    }
+                    let padding = 4 - ((text.len() + 1) % 4);
+                    cb.write_bytes(&[0; 4][..padding]);
                 },
                 &Insn::FrameSetup { preserved, mut slot_count } => {
                     const { assert!(SIZEOF_VALUE == 8, "alignment logic relies on SIZEOF_VALUE == 8"); }
@@ -2031,6 +2028,18 @@ mod tests {
         0xc: udf #0x21
         ");
         assert_snapshot!(cb.hexdump(), @"48656c6c6f2c20776f726c6421000000");
+    }
+
+    #[test]
+    fn test_emit_bake_string_alignment_boundaries() {
+        for (text, expected) in [("abc", "6162630000000000"), ("", "00000000")] {
+            let (mut asm, mut cb) = setup_asm();
+
+            asm.bake_string(text);
+            asm.compile_with_num_regs(&mut cb, 0);
+
+            assert_eq!(cb.hexdump(), expected);
+        }
     }
 
     #[test]

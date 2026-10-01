@@ -148,10 +148,6 @@ impl CodeBlock {
         self.write_pos
     }
 
-    pub fn write_mem(&self, write_ptr: CodePtr, byte: u8) -> Result<(), WriteError> {
-        self.mem_block.borrow_mut().write_byte(write_ptr, byte)
-    }
-
     /// Get a (possibly dangling) direct pointer to the current write position
     pub fn get_write_ptr(&self) -> CodePtr {
         self.get_ptr(self.write_pos)
@@ -190,47 +186,35 @@ impl CodeBlock {
 
     /// Write a single byte at the current position.
     pub fn write_byte(&mut self, byte: u8) {
-        let write_ptr = self.get_write_ptr();
-        // TODO: check has_capacity()
-        if self.mem_block.borrow_mut().write_byte(write_ptr, byte).is_ok() {
-            self.write_pos += 1;
-        } else {
-            self.dropped_bytes = true;
-        }
+        self.write_bytes(&[byte]);
     }
 
     /// Write multiple bytes starting from the current position.
-    pub fn write_bytes(&mut self, bytes: &[u8]) {
-        for byte in bytes {
-            self.write_byte(*byte);
+    pub fn write_bytes(&mut self, mut bytes: &[u8]) {
+        let mut mem_block = self.mem_block.borrow_mut();
+        let start_ptr = mem_block.start_ptr();
+        while !bytes.is_empty() {
+            match mem_block.write_bytes(start_ptr.add_bytes(self.write_pos), bytes) {
+                Ok(count) => {
+                    debug_assert!(count > 0, "nonempty write made no progress");
+                    self.write_pos += count;
+                    bytes = &bytes[count..];
+                }
+                Err(_) => {
+                    self.dropped_bytes = true;
+                    break;
+                }
+            }
         }
     }
 
     /// Write an integer over the given number of bits at the current position.
     pub fn write_int(&mut self, val: u64, num_bits: u32) {
         assert!(num_bits > 0);
+        assert!(num_bits <= 64);
         assert!(num_bits % 8 == 0);
 
-        // Switch on the number of bits
-        match num_bits {
-            8 => self.write_byte(val as u8),
-            16 => self.write_bytes(&[(val & 0xff) as u8, ((val >> 8) & 0xff) as u8]),
-            32 => self.write_bytes(&[
-                (val & 0xff) as u8,
-                ((val >> 8) & 0xff) as u8,
-                ((val >> 16) & 0xff) as u8,
-                ((val >> 24) & 0xff) as u8,
-            ]),
-            _ => {
-                let mut cur = val;
-
-                // Write out the bytes
-                for _byte in 0..(num_bits / 8) {
-                    self.write_byte((cur & 0xff) as u8);
-                    cur >>= 8;
-                }
-            }
-        }
+        self.write_bytes(&val.to_le_bytes()[..(num_bits / 8) as usize]);
     }
 
     /// Check if bytes have been dropped (unwritten because of insufficient space)
@@ -532,5 +516,70 @@ mod tests
             cb.link_labels().unwrap();
         }
         assert!(cb.has_dropped_bytes(), "the reservation must discover the unmappable page");
+        assert_eq!(cb.get_write_pos(), page_size);
+        let bytes = unsafe {
+            std::slice::from_raw_parts(cb.get_ptr(page_size - 2).raw_ptr(&cb), 2)
+        };
+        assert_eq!(bytes, &[0, 0]);
+    }
+
+    #[test]
+    fn write_bytes_crosses_page_boundaries() {
+        let page_size = unsafe { crate::cruby::rb_jit_get_page_size() } as usize;
+        let mut cb = CodeBlock::new_dummy();
+
+        for _ in 0..(page_size - 2) {
+            cb.write_byte(0x90);
+        }
+        cb.write_bytes(&[1, 2, 3, 4, 5]);
+
+        assert_eq!(cb.get_write_pos(), page_size + 3);
+        assert!(!cb.has_dropped_bytes());
+        let bytes = unsafe {
+            std::slice::from_raw_parts(cb.get_ptr(page_size - 2).raw_ptr(&cb), 5)
+        };
+        assert_eq!(bytes, &[1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn empty_writes_preserve_position_and_dropped_state() {
+        let page_size = unsafe { crate::cruby::rb_jit_get_page_size() } as usize;
+        let limit = crate::stats::zjit_alloc_bytes() + page_size + page_size / 2;
+        let virt_mem = VirtualMem::alloc(2 * page_size, Some(limit));
+        let mut cb = CodeBlock::new(Rc::new(RefCell::new(virt_mem)), false);
+
+        cb.write_bytes(&[]);
+        assert_eq!(cb.get_write_pos(), 0);
+        assert!(!cb.has_dropped_bytes());
+
+        for _ in 0..page_size {
+            cb.write_byte(0x90);
+        }
+        cb.write_bytes(&[]);
+        assert_eq!(cb.get_write_pos(), page_size);
+        assert!(!cb.has_dropped_bytes());
+
+        cb.write_byte(0x90);
+        assert_eq!(cb.get_write_pos(), page_size);
+        assert!(cb.has_dropped_bytes());
+        cb.write_bytes(&[]);
+        assert_eq!(cb.get_write_pos(), page_size);
+        assert!(cb.has_dropped_bytes());
+    }
+
+    #[test]
+    fn write_int_emits_little_endian_bytes() {
+        let cases = [
+            (8, "ef"),
+            (16, "efcd"),
+            (32, "efcdab89"),
+            (64, "efcdab8967452301"),
+        ];
+
+        for (width, expected) in cases {
+            let mut cb = CodeBlock::new_dummy();
+            cb.write_int(0x0123456789abcdef, width);
+            assert_eq!(cb.hexdump(), expected);
+        }
     }
 }

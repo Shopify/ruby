@@ -808,9 +808,7 @@ impl Assembler {
                 },
 
                 Insn::BakeString(text) => {
-                    for byte in text.as_bytes() {
-                        cb.write_byte(*byte);
-                    }
+                    cb.write_bytes(text.as_bytes());
 
                     // Add a null-terminator byte for safety (in case we pass
                     // this to C code)

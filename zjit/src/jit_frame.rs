@@ -55,12 +55,12 @@ impl JITFrameAllocator {
         if end > self.virt_mem.virtual_region_size() {
             return ptr::null_mut();
         }
-        // Touch the last byte of the allocation on first use: write_byte maps every
+        // Touch the last byte of the allocation on first use: write_bytes maps every
         // page between the end of the mapped region and the byte it writes.
         if end > self.virt_mem.mapped_region_size() {
             let last_byte = self.virt_mem.start_ptr().add_bytes(end - 1);
-            if self.virt_mem.write_byte(last_byte, 0).is_err() {
-                // write_byte's bound check refuses the final page of the region, so
+            if self.virt_mem.write_bytes(last_byte, &[0]).is_err() {
+                // write_bytes' bound check refuses the final page of the region, so
                 // treat any failure as permanent exhaustion instead of retrying on
                 // every allocation.
                 self.cursor = self.virt_mem.virtual_region_size();

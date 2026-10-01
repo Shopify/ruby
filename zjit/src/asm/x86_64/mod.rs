@@ -403,10 +403,7 @@ fn write_rm(cb: &mut CodeBlock, sz_pref: bool, rex_w: bool, r_opnd: X86Opnd, rm_
         cb.write_byte(rex_byte);
     }
 
-    // Write the opcode bytes to the code block
-    for byte in bytes {
-        cb.write_byte(*byte)
-    }
+    cb.write_bytes(bytes);
 
     // MODRM.mod (2 bits)
     // MODRM.reg (3 bits)
