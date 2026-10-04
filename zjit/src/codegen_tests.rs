@@ -1738,6 +1738,21 @@ fn test_no_ep_escape_patch_point_after_send_does_not_repeat_send() {
 }
 
 #[test]
+fn test_local_invalidation_at_branch_merge_after_non_leaf_call() {
+    eval(r#"
+        def test(v)
+          y = 1
+          binding.local_variable_set(:y, v) if v
+          y
+        end
+
+        30.times { test(1) }
+    "#);
+
+    assert_snapshot!(assert_compiles_allowing_exits("test(2)"), @"2");
+}
+
+#[test]
 fn test_function_stub_exit_initializes_block_param() {
     set_mem_bytes(1024 * 1024);
     set_inline_threshold(0);
