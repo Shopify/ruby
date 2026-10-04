@@ -9001,6 +9001,133 @@ fn invalidates_locals(opcode: u32, operands: *const VALUE) -> bool {
     }
 }
 
+fn enqueue_local_invalidation_state(
+    block: BlockId,
+    insn_idx: u32,
+    local_inval: bool,
+    entry_states: &mut HashMap<BlockId, bool>,
+    queue: &mut VecDeque<(BlockId, u32, bool)>,
+) {
+    match entry_states.entry(block) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(local_inval);
+            queue.push_back((block, insn_idx, local_inval));
+        }
+        std::collections::hash_map::Entry::Occupied(mut entry)
+            if local_inval && !*entry.get() =>
+        {
+            entry.insert(true);
+            queue.push_back((block, insn_idx, true));
+        }
+        _ => {}
+    }
+}
+
+/// Compute whether locals may have been invalidated on any path into each bytecode block.
+/// Blocks are compiled once, so this must reach a fixed point before code generation rather than
+/// inheriting the state from whichever predecessor happens to be visited first.
+fn local_invalidation_at_block_entries(
+    iseq: *const rb_iseq_t,
+    jit_entry_insns: &[u32],
+    insn_idx_to_block: &HashMap<u32, BlockId>,
+    ep_escaped: bool,
+) -> HashMap<BlockId, bool> {
+    let mut entry_states = HashMap::new();
+    let mut queue = VecDeque::new();
+
+    for &insn_idx in jit_entry_insns {
+        enqueue_local_invalidation_state(
+            insn_idx_to_block[&insn_idx],
+            insn_idx,
+            false,
+            &mut entry_states,
+            &mut queue,
+        );
+    }
+
+    let iseq_size = unsafe { get_iseq_encoded_size(iseq) };
+    while let Some((_block, mut insn_idx, mut local_inval)) = queue.pop_front() {
+        while insn_idx < iseq_size {
+            let pc = unsafe { rb_iseq_pc_at_idx(iseq, insn_idx) };
+            let opcode: u32 = unsafe { rb_zjit_insn_to_bare_insn(rb_iseq_opcode_at_pc(iseq, pc)) }
+                .try_into()
+                .unwrap();
+
+            if invalidates_locals(opcode, unsafe { pc.offset(1) }) {
+                local_inval = true;
+            }
+
+            if !ep_escaped && local_inval {
+                let level_zero_local_access = match opcode {
+                    YARVINSN_getlocal_WC_0 | YARVINSN_setlocal_WC_0 => true,
+                    YARVINSN_getlocal | YARVINSN_setlocal => get_arg(pc, 1).as_u32() == 0,
+                    YARVINSN_checkkeyword => true,
+                    _ => false,
+                };
+                if level_zero_local_access {
+                    // Code generation inserts NoEPEscape here and clears this state.
+                    local_inval = false;
+                }
+            }
+
+            insn_idx += insn_len(opcode as usize);
+            match opcode {
+                YARVINSN_branchunless
+                | YARVINSN_branchif
+                | YARVINSN_branchnil
+                | YARVINSN_branchunless_without_ints
+                | YARVINSN_branchif_without_ints
+                | YARVINSN_branchnil_without_ints => {
+                    let target_idx = insn_idx_at_offset(insn_idx, get_arg(pc, 0).as_i64());
+                    enqueue_local_invalidation_state(
+                        insn_idx_to_block[&target_idx],
+                        target_idx,
+                        local_inval,
+                        &mut entry_states,
+                        &mut queue,
+                    );
+                }
+                YARVINSN_opt_new => {
+                    let target_idx = insn_idx_at_offset(insn_idx, get_arg(pc, 1).as_i64());
+                    enqueue_local_invalidation_state(
+                        insn_idx_to_block[&target_idx],
+                        target_idx,
+                        local_inval,
+                        &mut entry_states,
+                        &mut queue,
+                    );
+                }
+                YARVINSN_jump | YARVINSN_jump_without_ints => {
+                    let target_idx = insn_idx_at_offset(insn_idx, get_arg(pc, 0).as_i64());
+                    enqueue_local_invalidation_state(
+                        insn_idx_to_block[&target_idx],
+                        target_idx,
+                        local_inval,
+                        &mut entry_states,
+                        &mut queue,
+                    );
+                    break;
+                }
+                YARVINSN_leave | YARVINSN_opt_invokebuiltin_delegate_leave | YARVINSN_throw => break,
+                _ => {}
+            }
+
+            if let Some(&target) = insn_idx_to_block.get(&insn_idx) {
+                enqueue_local_invalidation_state(
+                    target,
+                    insn_idx,
+                    local_inval,
+                    &mut entry_states,
+                    &mut queue,
+                );
+                break;
+            }
+        }
+    }
+
+    entry_states
+}
+
 /// The index of the self parameter in the HIR function
 pub const SELF_PARAM_IDX: usize = 0;
 
@@ -9172,6 +9299,12 @@ fn add_iseq_to_hir(
     // its EP is shared with other frames.
     let seen_ep_escape = iseq_seen_ep_escape(iseq);
     let ep_escaped = ep_starts_escaped || seen_ep_escape;
+    let local_inval_at_block_entry = local_invalidation_at_block_entries(
+        iseq,
+        &jit_entry_insns,
+        &insn_idx_to_block,
+        ep_escaped,
+    );
 
     // Iteratively fill out basic blocks using a queue.
     // TODO(max): Basic block arguments at edges
@@ -9187,6 +9320,7 @@ fn add_iseq_to_hir(
         // Compile each block only once
         if visited.contains(&block) { continue; }
         visited.insert(block);
+        local_inval = local_inval_at_block_entry.get(&block).copied().unwrap_or(local_inval);
 
         // Load basic block params first
         let mut self_param = fun.push_insn(block, Insn::Param);
