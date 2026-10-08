@@ -23,6 +23,79 @@
 #define RARRAY_PTR_IN_USE_FLAG  FL_USER14
 #define RARRAY_FAKEARY          FL_USER19
 
+/* Address of a narrowed array's packed buffer.  Only the narrow decode path
+ * may use this; everything else goes through RARRAY_CONST_PTR, which widens.
+ * Narrow arrays always own a heap buffer: embedded arrays are never narrowed. */
+static inline const void *
+rarray_raw_ptr(VALUE ary)
+{
+    RUBY_ASSERT(rb_array_stride(ary) != RARRAY_STRIDE_VALUE);
+    RUBY_ASSERT(!FL_TEST_RAW(ary, RARRAY_EMBED_FLAG));
+    return (const void *)RARRAY(ary)->as.heap.ptr;
+}
+
+/* Load element i of a narrowed array as a C integer.  This is the single
+ * place that knows the width/sign encoding.  It serves any strategy whose
+ * unboxed payload is an integer; a strategy with a different payload type
+ * would add a sibling loader. */
+static inline long
+rarray_narrow_load_int(VALUE ary, long i)
+{
+    const void *p = rarray_raw_ptr(ary);
+    if (rb_array_stride_unsigned_p(ary)) {
+        switch (rb_array_stride(ary)) {
+          case RARRAY_STRIDE_W8:  return (long)((const uint8_t  *)p)[i];
+          case RARRAY_STRIDE_W16: return (long)((const uint16_t *)p)[i];
+          default:                return (long)((const uint32_t *)p)[i];
+        }
+    }
+    switch (rb_array_stride(ary)) {
+      case RARRAY_STRIDE_W8:  return ((const int8_t  *)p)[i];
+      case RARRAY_STRIDE_W16: return ((const int16_t *)p)[i];
+      default:                return ((const int32_t *)p)[i];
+    }
+}
+
+/* Decode element i of a narrowed array into a ::VALUE.  This is where the
+ * per-strategy knowledge lives: how to rebuild a VALUE from the payload. */
+static inline VALUE
+rarray_narrow_aref(VALUE ary, long i)
+{
+    return LONG2FIX(rarray_narrow_load_int(ary, i));
+}
+
+/* Core's RARRAY_AREF replaces the public macro (which must stay an lvalue-
+ * capable macro for extensions).  It adds a bounds assertion, and it is
+ * narrow-aware: an element of a narrowed array is decoded in place rather
+ * than widening the whole array, so read-only iteration (each, map, sum,
+ * index, ==, ...) leaves a narrowed array narrow.  Never allocates, so it is
+ * also safe where RARRAY_CONST_PTR is not (opt_aref, GC callbacks).
+ *
+ * Not PURE: it is still a pure function of (ary, i) in the narrow case, but
+ * the wide case reads through RARRAY_CONST_PTR, which is not pure either. */
+#undef RARRAY_AREF
+RBIMPL_ATTR_ARTIFICIAL()
+static inline VALUE
+RARRAY_AREF(VALUE ary, long i)
+{
+    VALUE val;
+    RBIMPL_ASSERT_TYPE(ary, RUBY_T_ARRAY);
+
+    RUBY_ASSERT(i < RARRAY_LEN(ary));
+
+    if (RB_UNLIKELY(rb_array_stride(ary) != RARRAY_STRIDE_VALUE)) {
+        return rarray_narrow_aref(ary, i);
+    }
+
+    RBIMPL_WARNING_PUSH();
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ == 13
+    RBIMPL_WARNING_IGNORED(-Warray-bounds);
+#endif
+    val = RARRAY_CONST_PTR(ary)[i];
+    RBIMPL_WARNING_POP();
+    return val;
+}
+
 /* array.c */
 VALUE rb_ary_hash_values(long len, const VALUE *elements);
 VALUE rb_ary_last(int, const VALUE *, VALUE);
@@ -34,6 +107,11 @@ size_t rb_ary_memsize(VALUE);
 VALUE rb_to_array_type(VALUE obj);
 VALUE rb_to_array(VALUE obj);
 void rb_ary_cancel_sharing(VALUE ary);
+/* Pack a heap array whose elements can all be stored unboxed to the narrowest
+ * element width that holds every value.  Returns the resulting stride;
+ * RARRAY_STRIDE_VALUE means the array was left as-is.  Used by the freeze
+ * trigger and by the compiler for frozen array literals. */
+int rb_ary_narrow(VALUE ary);
 size_t rb_ary_size_as_embedded(VALUE ary);
 void rb_ary_make_embedded(VALUE ary);
 bool rb_ary_embeddable_p(VALUE ary);
@@ -59,7 +137,6 @@ static inline VALUE
 rb_ary_entry_internal(VALUE ary, long offset)
 {
     long len = RARRAY_LEN(ary);
-    const VALUE *ptr = RARRAY_CONST_PTR(ary);
     if (len == 0) return Qnil;
     if (offset < 0) {
         offset += len;
@@ -68,7 +145,7 @@ rb_ary_entry_internal(VALUE ary, long offset)
     else if (len <= offset) {
         return Qnil;
     }
-    return ptr[offset];
+    return RARRAY_AREF(ary, offset); /* narrow-aware; does not allocate */
 }
 
 static inline bool
@@ -134,25 +211,5 @@ ARY_SHARED_ROOT_REFCNT(VALUE ary)
         rb_ary_new_from_values(numberof(args_to_new_ary), args_to_new_ary); \
     })
 #endif
-
-#undef RARRAY_AREF
-RBIMPL_ATTR_PURE_UNLESS_DEBUG()
-RBIMPL_ATTR_ARTIFICIAL()
-static inline VALUE
-RARRAY_AREF(VALUE ary, long i)
-{
-    VALUE val;
-    RBIMPL_ASSERT_TYPE(ary, RUBY_T_ARRAY);
-
-    RUBY_ASSERT(i < RARRAY_LEN(ary));
-
-    RBIMPL_WARNING_PUSH();
-#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ == 13
-    RBIMPL_WARNING_IGNORED(-Warray-bounds);
-#endif
-    val = RARRAY_CONST_PTR(ary)[i];
-    RBIMPL_WARNING_POP();
-    return val;
-}
 
 #endif /* INTERNAL_ARRAY_H */

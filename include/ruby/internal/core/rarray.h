@@ -111,7 +111,31 @@ enum ruby_rarray_flags {
      * store array elements.  It was a bad idea to expose this to them.
      */
     RARRAY_EMBED_LEN_MASK  = RUBY_FL_USER9 | RUBY_FL_USER8 | RUBY_FL_USER7 | RUBY_FL_USER6 |
-                                 RUBY_FL_USER5 | RUBY_FL_USER4 | RUBY_FL_USER3
+                                 RUBY_FL_USER5 | RUBY_FL_USER4 | RUBY_FL_USER3,
+
+    /**
+     * Width of one element in the backend storage.  Zero means the storage is
+     * an array of ::VALUE, which is the only representation 3rd parties can
+     * see.  A non-zero value means the elements are stored unboxed, narrower
+     * than a ::VALUE, and the array must be widened before its buffer is
+     * handed out.  See ::rb_ary_widen.
+     *
+     * @internal
+     *
+     * 3rd parties must not be aware that there even is more than one way to
+     * store array elements.  It was a bad idea to expose this to them.
+     */
+    RARRAY_STRIDE_MASK     = RUBY_FL_USER11 | RUBY_FL_USER10,
+
+    /**
+     * Set when a narrowed array's unboxed elements are to be read as unsigned.
+     * Doubles the non-negative range a given width can hold.
+     *
+     * @internal
+     *
+     * 3rd parties must not be aware of this.
+     */
+    RARRAY_STRIDE_UNSIGNED = RUBY_FL_USER2
 };
 
 /**
@@ -120,8 +144,42 @@ enum ruby_rarray_flags {
  */
 enum ruby_rarray_consts {
     /** Where ::RARRAY_EMBED_LEN_MASK resides. */
-    RARRAY_EMBED_LEN_SHIFT = RUBY_FL_USHIFT + 3
+    RARRAY_EMBED_LEN_SHIFT = RUBY_FL_USHIFT + 3,
+
+    /** Where ::RARRAY_STRIDE_MASK resides. */
+    RARRAY_STRIDE_SHIFT    = RUBY_FL_USHIFT + 10
 };
+
+/**
+ * Element widths an array can use, in bits.  ::RARRAY_STRIDE_VALUE is the
+ * default: elements are ::VALUE.
+ */
+enum ruby_rarray_stride {
+    RARRAY_STRIDE_VALUE = 0,
+    RARRAY_STRIDE_W8    = 1,
+    RARRAY_STRIDE_W16   = 2,
+    RARRAY_STRIDE_W32   = 3
+};
+
+/**
+ * @private
+ *
+ * True when a narrowed array's elements are unsigned.
+ */
+static inline int
+rb_array_stride_unsigned_p(VALUE a)
+{
+    return RB_FL_ANY_RAW(a, RARRAY_STRIDE_UNSIGNED) ? 1 : 0;
+}
+
+/**
+ * Converts a narrowed array back to ::VALUE storage, in place.  A no-op for an
+ * array that already uses ::RARRAY_STRIDE_VALUE.  Allocates, so it must not be
+ * called while allocation is forbidden, for instance during GC marking.
+ *
+ * @param[out]  ary  An object of ::RArray.
+ */
+void rb_ary_widen(VALUE ary);
 
 /** Ruby's array. */
 struct RArray {
@@ -282,12 +340,29 @@ RARRAY_LENINT(VALUE ary)
     return rb_long2int(RARRAY_LEN(ary));
 }
 
-RBIMPL_ATTR_PURE_UNLESS_DEBUG()
+/**
+ * @private
+ *
+ * The element width currently used by the backend storage.
+ *
+ * @param[in]  a  An object of ::RArray.
+ * @return     One of ::ruby_rarray_stride.
+ */
+static inline int
+rb_array_stride(VALUE a)
+{
+    RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY);
+    return (int)((RBASIC(a)->flags & RARRAY_STRIDE_MASK) >> RARRAY_STRIDE_SHIFT);
+}
+
 /**
  * @private
  *
  * This is  an implementation  detail of  RARRAY_PTR().  People  do not  use it
  * directly.
+ *
+ * This is deliberately not pure: a narrowed array is widened in place before
+ * its buffer is returned, because every caller expects ::VALUE elements.
  *
  * @param[in]  a  An object of ::RArray.
  * @return     Its backend storage.
@@ -296,6 +371,10 @@ static inline const VALUE *
 rb_array_const_ptr(VALUE a)
 {
     RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY);
+
+    if (RB_UNLIKELY(rb_array_stride(a) != RARRAY_STRIDE_VALUE)) {
+        rb_ary_widen(a);
+    }
 
     if (RB_FL_ANY_RAW(a, RARRAY_EMBED_FLAG)) {
         return FIX_CONST_VALUE_PTR(RARRAY(a)->as.ary);
