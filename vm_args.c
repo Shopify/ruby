@@ -45,6 +45,18 @@ arg_rest_dup(struct args_info *args)
     }
 }
 
+/* The setup code below reads the splat array through RARRAY_CONST_PTR, which
+ * would widen a narrowed array in place.  Take a private (wide) copy instead,
+ * so f(*TABLE) leaves TABLE packed.  rb_ary_dup decodes element-wise. */
+static inline void
+arg_rest_unnarrow(struct args_info *args)
+{
+    if (RB_UNLIKELY(rb_array_stride(args->rest) != RARRAY_STRIDE_VALUE)) {
+        args->rest = rb_ary_dup(args->rest);
+        args->rest_dupped = TRUE;
+    }
+}
+
 static inline int
 args_argc(struct args_info *args)
 {
@@ -677,6 +689,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
         args->rest_index = 0;
         keyword_hash = locals[--args->argc];
         args->rest = locals[--args->argc];
+        arg_rest_unnarrow(args);
 
         if (ignore_keyword_hash_p(keyword_hash, iseq, &kw_flag, &converted_keyword_hash)) {
             keyword_hash = Qnil;
@@ -728,6 +741,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
         // f(*a)
         args->rest_index = 0;
         args->rest = locals[--args->argc];
+        arg_rest_unnarrow(args);
         int len = RARRAY_LENINT(args->rest);
         given_argc += len - 1;
 
