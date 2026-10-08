@@ -3677,6 +3677,11 @@ rb_gc_mark_children(void *objspace, VALUE obj)
                 gc_mark_and_pin_internal(root);
             }
         }
+        else if (rb_array_stride(obj) != RARRAY_STRIDE_VALUE) {
+            /* narrow storage holds unboxed values, never object references, so
+             * there is nothing to trace; widening here is impossible anyway
+             * because it allocates */
+        }
         else {
             long len = RARRAY_LEN(obj);
             const VALUE *ptr = RARRAY_CONST_PTR(obj);
@@ -4620,7 +4625,8 @@ gc_ref_update_array(void *objspace, VALUE v)
     else {
         long len = RARRAY_LEN(v);
 
-        if (len > 0) {
+        /* narrow storage holds no object references: nothing to re-point */
+        if (len > 0 && rb_array_stride(v) == RARRAY_STRIDE_VALUE) {
             VALUE *ptr = (VALUE *)RARRAY_CONST_PTR(v);
             for (long i = 0; i < len; i++) {
                 UPDATE_IF_MOVED(objspace, ptr[i]);

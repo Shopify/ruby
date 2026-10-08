@@ -1721,6 +1721,11 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
         {
             rb_ary_cancel_sharing(obj);
 
+            /* Narrow storage holds unboxed values, never object references:
+             * every element would hit the RB_SPECIAL_CONST_P early return in
+             * obj_traverse_i, so there is nothing to visit.  Skip the loop. */
+            if (rb_array_stride(obj) != RARRAY_STRIDE_VALUE) break;
+
             for (int i = 0; i < RARRAY_LENINT(obj); i++) {
                 VALUE e = RARRAY_AREF(obj, i);
                 if (obj_traverse_i(e, data)) return 1;

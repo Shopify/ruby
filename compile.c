@@ -3676,6 +3676,7 @@ iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcal
             if (vm_ci_simple(ci) && vm_ci_argc(ci) == 0 && blockiseq == NULL && vm_ci_mid(ci) == idFreeze) {
                 VALUE ary = iobj->operands[0];
                 rb_obj_reveal(ary, rb_cArray);
+                rb_ary_narrow(ary);
 
                 insn_replace_with_operands(iseq, iobj, BIN(opt_ary_freeze), 2, ary, (VALUE)ci);
                 ELEM_REMOVE(next);
