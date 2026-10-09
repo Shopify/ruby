@@ -1,5 +1,5 @@
 .\"Ruby is copyrighted by Yukihiro Matsumoto <matz@netlab.jp>.
-.Dd September 25, 2026
+.Dd October 09, 2026
 .Dt RUBY 1 "Ruby Programmer's Reference Guide"
 .Os UNIX
 .Sh NAME
@@ -553,6 +553,30 @@ option.
 Introduced in Ruby 3.0, default:
 .Ev PAGER
 environment variable.
+.Pp
+.It Ev RUBY_RACTOR_ISOLATION
+Makes non-main Ractors warn about isolation violations instead of raising
+.Li Ractor::IsolationError ,
+so one run finds all of them.
+.Pp
+When set to
+.Li 1 ,
+each warning is printed once per source location, and the number of
+suppressed repeats is reported at exit.
+.br
+When set to
+.Li 2 ,
+every occurrence is printed, repeats included.
+.Pp
+Introduced in Ruby 4.1, default: unset.
+.Pp
+Disable the warnings with
+.Fl W:no-ractor_isolation .
+.Li Ractor.new
+blocks are not isolated, and arguments and messages from non-main Ractors
+are shared by reference, so all Ractors run one at a time on one native
+thread, and every GC covers all Ractors.
+Without the M:N scheduler, Ractors may still run in parallel.
 .Pp
 .It Ev RUBY_THREAD_TIMESLICE
 Sets the default thread time slice (thread quantum) in milliseconds.
