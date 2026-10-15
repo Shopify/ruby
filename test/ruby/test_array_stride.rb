@@ -158,7 +158,11 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal W16, stride(t)
     assert_operator ObjectSpace.memsize_of(t), :<=, n * 2 + 128
     assert_equal src, t.map { |x| x }
-    refute template_alive.call, "template must be freed once the borrower owns its own buffer"
+    # A JIT may embed the literal's template in compiled code as a constant,
+    # which legitimately keeps it alive; only the interpreter can prove it dead.
+    unless defined?(RubyVM::ZJIT.enabled?) && RubyVM::ZJIT.enabled?
+      refute template_alive.call, "template must be freed once the borrower owns its own buffer"
+    end
   end
 
   # Census: homogeneous arrays >= 1024 elements are 93.6% (Core) / 99.3%

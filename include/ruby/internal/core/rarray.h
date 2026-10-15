@@ -114,22 +114,19 @@ enum ruby_rarray_flags {
                                  RUBY_FL_USER5 | RUBY_FL_USER4 | RUBY_FL_USER3,
 
     /**
-     * Width of one element in the backend storage.  Zero means the storage is
-     * an array of ::VALUE, which is the only representation 3rd parties can
-     * see.  A non-zero value means the elements are stored unboxed, narrower
-     * than a ::VALUE, and the array must be widened before its buffer is
-     * handed out.  See ::rb_ary_widen.
+     * Width of one element in the backend storage.  Zero means an array of
+     * ::VALUE.  Non-zero means elements are stored unboxed and narrower than
+     * a ::VALUE; the array is widened before its buffer is handed out.  See
+     * ::rb_ary_widen.
      *
      * @internal
      *
-     * 3rd parties must not be aware that there even is more than one way to
-     * store array elements.  It was a bad idea to expose this to them.
+     * 3rd parties must not be aware of this.
      */
     RARRAY_STRIDE_MASK     = RUBY_FL_USER11 | RUBY_FL_USER10,
 
     /**
-     * Set when a narrowed array's unboxed elements are to be read as unsigned.
-     * Doubles the non-negative range a given width can hold.
+     * Set when a narrowed array's unboxed elements are read as unsigned.
      *
      * @internal
      *
@@ -361,8 +358,7 @@ rb_array_stride(VALUE a)
  * This is  an implementation  detail of  RARRAY_PTR().  People  do not  use it
  * directly.
  *
- * This is deliberately not pure: a narrowed array is widened in place before
- * its buffer is returned, because every caller expects ::VALUE elements.
+ * Not pure: a narrowed array is widened in place before its buffer is returned.
  *
  * @param[in]  a  An object of ::RArray.
  * @return     Its backend storage.

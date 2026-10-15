@@ -236,9 +236,7 @@ rb_ary_embeddable_p(VALUE ary)
      *    flag.
      *  - Shared: we don't want to re-embed an array that points to a shared
      *    root (to save memory).
-     *  - Narrowed: the buffer is not VALUEs, so it cannot be copied into the
-     *    slot as-is, and GC compaction (the caller) cannot widen because it
-     *    must not allocate.
+     *  - Narrowed: the buffer is not VALUEs, and compaction cannot widen.
      */
     if (ARY_SHARED_ROOT_P(ary) || OBJ_FROZEN(ary) || ARY_SHARED_P(ary) ||
         rb_array_stride(ary) != RARRAY_STRIDE_VALUE) return false;
@@ -300,8 +298,6 @@ ary_verify_(VALUE ary, const char *file, int line)
             RUBY_ASSERT(ARY_CAPA(ary) >= RARRAY_LEN(ary));
         }
         if (RARRAY_LEN(ary) > 0) {
-            /* RARRAY_AREF is narrow-aware and does not widen, so an assertion
-             * cannot change the array's representation. */
             volatile VALUE v = RARRAY_AREF(ary, 0); /* access check: HEAD only */
             v = v;
         }
@@ -345,10 +341,8 @@ rb_ary_widen(VALUE ary)
 {
     if (rb_array_stride(ary) == RARRAY_STRIDE_VALUE) return;
 
-    /* A frozen narrow array may be Ractor-shareable, so two Ractors can reach
-     * this point in parallel through RARRAY_CONST_PTR.  Widening swaps and
-     * frees the buffer, which must happen exactly once.  Take the VM lock and
-     * re-check: whoever loses the race finds the array already widened. */
+    /* A frozen narrow array may be shareable, so two Ractors can widen it
+     * concurrently.  Lock and re-check so the buffer swap happens once. */
     RB_VM_LOCKING() {
         if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
             ary_widen_locked(ary);
@@ -425,10 +419,8 @@ rb_ary_narrow(VALUE ary)
 
 /* ---- narrow fast paths ------------------------------------------------- */
 
-/* Run BODY once with `const T *p` bound to a narrowed array's packed buffer,
- * where T is the element's C type.  This hoists the width/sign dispatch out
- * of the caller's loop: inside BODY, p[i] is a plain typed load the compiler
- * can vectorize, instead of a per-element RARRAY_AREF decode. */
+/* Run BODY with `const T *p` bound to the packed buffer, so the width/sign
+ * dispatch happens once instead of per element. */
 #define ARY_NARROW_DISPATCH(ary, T, p, BODY) do { \
     const void *narrow_raw_ = rarray_raw_ptr(ary); \
     if (rb_array_stride_unsigned_p(ary)) { \
@@ -447,10 +439,8 @@ rb_ary_narrow(VALUE ary)
     } \
 } while (0)
 
-/* Index of the first (or last) element equal to needle, or -1.  Equality on
- * unboxed integers is a plain compare, so this is only valid when Integer#==
- * is not redefined; callers check.  A needle the element type cannot
- * represent cannot be present, which the round trip through T detects. */
+/* Index of the first (or last) element equal to needle, or -1.  Valid only
+ * when Integer#== is not redefined; callers check. */
 static long
 ary_narrow_find(VALUE ary, long needle, bool from_end)
 {
@@ -484,8 +474,7 @@ ary_narrow_count(VALUE ary, long needle)
     return count;
 }
 
-/* Sum of a narrowed array as a long.  Elements are at most 32 bits, so the
- * accumulator cannot overflow for fewer than 2**31 elements; callers check. */
+/* Sum as a long.  Cannot overflow below 2**31 elements; callers check. */
 static long
 ary_narrow_sum(VALUE ary)
 {
@@ -497,8 +486,8 @@ ary_narrow_sum(VALUE ary)
     return acc;
 }
 
-/* Minimum (or maximum) of a non-empty narrowed array.  Only valid when
- * Integer#<=> is not redefined; callers check. */
+/* Min (or max) of a non-empty narrowed array.  Valid only when Integer#<=>
+ * is not redefined; callers check. */
 static long
 ary_narrow_minmax(VALUE ary, bool want_max)
 {
@@ -514,10 +503,8 @@ ary_narrow_minmax(VALUE ary, bool want_max)
     return best;
 }
 
-/* Decode a narrowed array's elements into dst[0..len) as VALUEs, in order or
- * reversed.  One dispatch, then a tight typed loop: ~8x faster than
- * RARRAY_AREF per element.  Elements are immediates, so dst needs no write
- * barrier. */
+/* Decode into dst[0..len) as VALUEs, in order or reversed.  Elements are
+ * immediates, so no write barrier is needed. */
 static void
 ary_narrow_decode(VALUE src, VALUE *dst, long len, bool reversed)
 {
@@ -1198,11 +1185,8 @@ ary_make_shared(VALUE ary)
 {
     ary_verify(ary);
 
-    /* A shared root's buffer is read as VALUEs by every array that borrows
-     * it, and borrowers copy the raw pointer.  A narrow array must therefore
-     * never become a root; widen before handing the buffer out.  This is the
-     * frozen case in practice: narrowing happens on freeze, and a frozen
-     * array is returned below as its own root. */
+    /* Borrowers read a shared root's buffer as VALUEs, so a narrow array
+     * must be widened before it can become one. */
     if (RB_UNLIKELY(rb_array_stride(ary) != RARRAY_STRIDE_VALUE)) {
         rb_ary_widen(ary);
     }
@@ -5724,9 +5708,8 @@ rb_ary_rassoc(VALUE ary, VALUE value)
     return Qnil;
 }
 
-/* Two wide heap arrays that share one buffer are trivially equal.  A narrow
- * array has no VALUE buffer to compare, and asking for one would widen it;
- * narrow arrays never share a buffer, so the shortcut simply does not apply. */
+/* Two wide heap arrays sharing one buffer are trivially equal.  Narrow arrays
+ * never share a buffer, so the shortcut does not apply to them. */
 static inline bool
 ary_same_buffer_p(VALUE ary1, VALUE ary2)
 {
@@ -5735,9 +5718,8 @@ ary_same_buffer_p(VALUE ary1, VALUE ary2)
            RARRAY_CONST_PTR(ary1) == RARRAY_CONST_PTR(ary2);
 }
 
-/* Element-wise == from index i, re-reading both arrays every iteration.
- * rb_equal() may run Ruby code that mutates, widens or shrinks either array,
- * so nothing is cached across it.  Lengths were equal on entry. */
+/* Element-wise == from index i.  rb_equal() may mutate, widen or shrink
+ * either array, so nothing is cached across it. */
 static VALUE
 ary_equal_slow_from(VALUE ary1, VALUE ary2, long i, bool eql)
 {
@@ -5754,11 +5736,9 @@ ary_equal_slow_from(VALUE ary1, VALUE ary2, long i, bool eql)
     return Qtrue;
 }
 
-/* == where at least one side is narrow.  Two equal-width narrow arrays are a
- * memcmp.  Otherwise the dispatch is hoisted onto the narrow side and the
- * other side is read through RARRAY_AREF; a mismatch against a Fixnum is a
- * definite inequality (Integer#== not redefined), anything else drops to the
- * slow path, which is safe against rb_equal() mutating the arrays. */
+/* == where at least one side is narrow.  Equal-width narrow arrays are a
+ * memcmp; otherwise compare element-wise, falling back to the slow path for
+ * anything that is not a Fixnum mismatch. */
 static VALUE
 ary_narrow_equal(VALUE ary1, VALUE ary2, bool eql)
 {
@@ -5772,8 +5752,7 @@ ary_narrow_equal(VALUE ary1, VALUE ary2, bool eql)
         return RBOOL(memcmp(rarray_raw_ptr(ary1), rarray_raw_ptr(ary2), (size_t)len * ary_stride_bytes(ary1)) == 0);
     }
 
-    /* Two Fixnums that are not identical are never == (unless Integer#== is
-     * redefined) and never eql?.  Anything else goes to the slow path. */
+    /* Distinct Fixnums are never == (Integer#== not redefined) nor eql?. */
     const bool fix_mismatch_decides = eql || BASIC_OP_UNREDEFINED_P(BOP_EQ, INTEGER_REDEFINED_OP_FLAG);
     long i = 0;
     if (n1 && n2) {
@@ -5825,8 +5804,7 @@ recursive_equal(VALUE ary1, VALUE ary2, int recur)
         return ary_narrow_equal(ary1, ary2, false);
     }
 
-    /* Both wide: the original cached-pointer loop.  rb_equal() can evacuate
-     * ptrs, hence the re-fetch after each call that returns true. */
+    /* Both wide: rb_equal() can evacuate ptrs, hence the re-fetch. */
     p1 = RARRAY_CONST_PTR(ary1);
     p2 = RARRAY_CONST_PTR(ary2);
     len1 = RARRAY_LEN(ary1);
@@ -5985,10 +5963,8 @@ rb_ary_hash(VALUE ary)
 {
     RBIMPL_ASSERT_OR_ASSUME(ary);
     if (RB_UNLIKELY(rb_array_stride(ary) != RARRAY_STRIDE_VALUE)) {
-        /* Same combine sequence as ary_hash_values, over decoded elements, so
-         * a narrowed array hashes identically to its wide equivalent (they
-         * are ==, so they must).  Elements are immediates: rb_hash cannot
-         * re-enter and change the array, so no length re-check is needed. */
+        /* Same combine sequence as ary_hash_values, so a narrowed array
+         * hashes identically to its wide equivalent. */
         const long len = RARRAY_LEN(ary);
         st_index_t h = rb_hash_start(len);
         h = rb_hash_uint(h, (st_index_t)rb_ary_hash_values);
@@ -6026,8 +6002,6 @@ rb_ary_includes(VALUE ary, VALUE item)
         return RBOOL(ary_narrow_find(ary, FIX2LONG(item), false) >= 0);
     }
 
-    /* RARRAY_AREF is narrow-aware inside core, so this loop reads a narrowed
-     * array in place without widening it. */
     for (i=0; i<RARRAY_LEN(ary); i++) {
         e = RARRAY_AREF(ary, i);
         if (rb_equal(e, item)) {
@@ -6037,8 +6011,7 @@ rb_ary_includes(VALUE ary, VALUE item)
     return Qfalse;
 }
 
-/* Test hooks.  Not public API: they exist so the stride machinery can be
- * driven directly from the test suite before any automatic policy exists. */
+/* Test hooks for the stride machinery.  Not public API. */
 static VALUE
 rb_ary_narrow_bang(VALUE ary)
 {
@@ -8787,9 +8760,7 @@ rb_ary_sum(int argc, VALUE *argv, VALUE ary)
     n = 0;
     r = Qundef;
 
-    /* Narrow fast path: unboxed elements are summed as plain longs.  Mirrors
-     * the Fixnum loop below (which also adds natively); elements are <= 32
-     * bits, so the accumulator is safe below 2**31 elements. */
+    /* Narrow fast path: sum unboxed elements as longs (see ary_narrow_sum). */
     if (!block_given && FIXNUM_P(v) &&
         RB_UNLIKELY(rb_array_stride(ary) != RARRAY_STRIDE_VALUE) &&
         RARRAY_LEN(ary) < (1L << 30)) {

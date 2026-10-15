@@ -23,9 +23,8 @@
 #define RARRAY_PTR_IN_USE_FLAG  FL_USER14
 #define RARRAY_FAKEARY          FL_USER19
 
-/* Address of a narrowed array's packed buffer.  Only the narrow decode path
- * may use this; everything else goes through RARRAY_CONST_PTR, which widens.
- * Narrow arrays always own a heap buffer: embedded arrays are never narrowed. */
+/* Packed buffer of a narrowed array.  Only the narrow decode path may use
+ * this; everything else goes through RARRAY_CONST_PTR, which widens. */
 static inline const void *
 rarray_raw_ptr(VALUE ary)
 {
@@ -34,10 +33,8 @@ rarray_raw_ptr(VALUE ary)
     return (const void *)RARRAY(ary)->as.heap.ptr;
 }
 
-/* Load element i of a narrowed array as a C integer.  This is the single
- * place that knows the width/sign encoding.  It serves any strategy whose
- * unboxed payload is an integer; a strategy with a different payload type
- * would add a sibling loader. */
+/* Load element i of a narrowed array as a C integer.  The single place that
+ * knows the width/sign encoding. */
 static inline long
 rarray_narrow_load_int(VALUE ary, long i)
 {
@@ -56,23 +53,16 @@ rarray_narrow_load_int(VALUE ary, long i)
     }
 }
 
-/* Decode element i of a narrowed array into a ::VALUE.  This is where the
- * per-strategy knowledge lives: how to rebuild a VALUE from the payload. */
+/* Decode element i of a narrowed array into a ::VALUE. */
 static inline VALUE
 rarray_narrow_aref(VALUE ary, long i)
 {
     return LONG2FIX(rarray_narrow_load_int(ary, i));
 }
 
-/* Core's RARRAY_AREF replaces the public macro (which must stay an lvalue-
- * capable macro for extensions).  It adds a bounds assertion, and it is
- * narrow-aware: an element of a narrowed array is decoded in place rather
- * than widening the whole array, so read-only iteration (each, map, sum,
- * index, ==, ...) leaves a narrowed array narrow.  Never allocates, so it is
- * also safe where RARRAY_CONST_PTR is not (opt_aref, GC callbacks).
- *
- * Not PURE: it is still a pure function of (ary, i) in the narrow case, but
- * the wide case reads through RARRAY_CONST_PTR, which is not pure either. */
+/* Core's RARRAY_AREF replaces the public macro.  It adds a bounds assertion
+ * and decodes narrowed elements in place instead of widening the array, so
+ * read-only paths leave a narrowed array narrow.  Never allocates. */
 #undef RARRAY_AREF
 RBIMPL_ATTR_ARTIFICIAL()
 static inline VALUE
@@ -107,10 +97,8 @@ size_t rb_ary_memsize(VALUE);
 VALUE rb_to_array_type(VALUE obj);
 VALUE rb_to_array(VALUE obj);
 void rb_ary_cancel_sharing(VALUE ary);
-/* Pack a heap array whose elements can all be stored unboxed to the narrowest
- * element width that holds every value.  Returns the resulting stride;
- * RARRAY_STRIDE_VALUE means the array was left as-is.  Used by the freeze
- * trigger and by the compiler for frozen array literals. */
+/* Pack an all-Fixnum heap array to the narrowest width that holds every
+ * value.  Returns the resulting stride; RARRAY_STRIDE_VALUE means unchanged. */
 int rb_ary_narrow(VALUE ary);
 size_t rb_ary_size_as_embedded(VALUE ary);
 void rb_ary_make_embedded(VALUE ary);

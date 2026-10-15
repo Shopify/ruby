@@ -2347,6 +2347,11 @@ fn gen_adjust_bounds(asm: &mut Assembler, index: Opnd, length: Opnd) -> lir::Opn
 }
 
 /// Compile array access (`array[index]`)
+///
+/// Goes through rb_yarv_ary_entry_internal() rather than reading the buffer
+/// inline: a frozen all-Fixnum array may store its elements narrower than a
+/// VALUE (see RARRAY_STRIDE_MASK), and RARRAY_AREF decodes those in place.
+/// The call is leaf and never allocates.
 fn gen_array_aref(
     asm: &mut Assembler,
     array: Opnd,
@@ -2354,10 +2359,7 @@ fn gen_array_aref(
 ) -> lir::Opnd {
     let unboxed_idx = asm.load_mem(index);
     let array = asm.load_mem(array);
-    let array_ptr = gen_array_ptr(asm, array);
-    let elem_offset = asm.lshift(unboxed_idx, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
-    let elem_ptr = asm.add(array_ptr, elem_offset);
-    asm.load(Opnd::mem(VALUE_BITS, elem_ptr, 0))
+    asm_ccall!(asm, rb_yarv_ary_entry_internal, array, unboxed_idx)
 }
 
 fn gen_array_aset(

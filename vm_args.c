@@ -45,9 +45,8 @@ arg_rest_dup(struct args_info *args)
     }
 }
 
-/* The setup code below reads the splat array through RARRAY_CONST_PTR, which
- * would widen a narrowed array in place.  Take a private (wide) copy instead,
- * so f(*TABLE) leaves TABLE packed.  rb_ary_dup decodes element-wise. */
+/* Argument setup reads the splat array through RARRAY_CONST_PTR, which would
+ * widen it.  Take a wide copy instead so f(*TABLE) leaves TABLE packed. */
 static inline void
 arg_rest_unnarrow(struct args_info *args)
 {
