@@ -1,31 +1,43 @@
 # frozen_string_literal: false
 require 'test/unit'
 require 'objspace'
+require 'rbconfig/sizeof'
 
-# Element-stride narrowing for arrays of Fixnums.
-#
-# The shapes here come from the after-boot heap census of Shopify Core and SFR:
-#   - mail gem Ragel transition tables, 229,766 / 52,489 / 34,684 / 22,106 elements
-#   - annex_29 Unicode word segmentation table, 13,773 elements
-#   - a 3,072-element JSON escape table, allocated 116 times
-#   - SPLIT_DELIVERY_INCOMPATIBLE_APP_IDS, 69,937 ids, some above 2**32
-#   - Method#parameters pairs, [:req, :name], 53% of SFR's all-immediate arrays
-#   - 80% of all-immediate arrays are length 1 or 2
-#   - of all-fixnum arrays: 78.5% hold only 0..255, 96.5% fit 0..65535,
-#     99.8% fit signed 32-bit, none contain a bignum
+# Element-stride narrowing for frozen arrays of Fixnums.  Array shapes and
+# value bands come from a heap census of Shopify Core and SFR.
 class TestArrayStride < Test::Unit::TestCase
   WIDE = 0   # elements are VALUE, 8 bytes
   W8   = 1
   W16  = 2
   W32  = 3
 
-  # Arrays at or below this length are stored inside the object itself and own
-  # no buffer, so there is nothing to narrow.
-  EMBED_MAX = 126
-  N = 200    # comfortably past EMBED_MAX
+  FIXNUM_MIN = RbConfig::LIMITS['FIXNUM_MIN']
+  FIXNUM_MAX = RbConfig::LIMITS['FIXNUM_MAX']
+
+  # Longest array that embeds in a GC slot (no buffer, nothing to narrow):
+  # VALUEs that fit the largest slot, capped by the 7-bit embed length field.
+  # MMTk has no size pools and does not report RVARGC_MAX_ALLOCATE_SIZE.
+  EMBED_MAX = if (max_slot = GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE])
+    [(max_slot - GC::INTERNAL_CONSTANTS[:RBASIC_SIZE] -
+      GC::INTERNAL_CONSTANTS[:RVALUE_OVERHEAD]) / RbConfig::SIZEOF["void*"], 127].min
+  else
+    127
+  end
+  N = EMBED_MAX + 74    # comfortably past EMBED_MAX (200 on 64-bit)
+
+  RVALUE_SIZE = GC::INTERNAL_CONSTANTS[:RVALUE_SIZE]
+  SIZEOF_VALUE = RbConfig::SIZEOF["void*"]
 
   def narrow(a) = a.__narrow!
   def stride(a) = a.__stride
+
+  def assert_embedded(ary, msg = nil)
+    assert_include ObjectSpace.dump(ary), '"embedded":true', msg
+  end
+
+  def assert_not_embedded(ary, msg = nil)
+    assert_not_include ObjectSpace.dump(ary), '"embedded":true', msg
+  end
 
   # ---------------------------------------------------------------- widths
 
@@ -52,13 +64,23 @@ class TestArrayStride < Test::Unit::TestCase
   end
 
   def test_unsigned_32_boundary
-    assert_equal W32, narrow(Array.new(N) { |i| i == 0 ? 2**32 - 1 : 0 })
+    assert_equal W32, narrow(Array.new(N) { |i| i == 0 ? 1_000_000_000 : 0 })
     assert_equal WIDE, narrow(Array.new(N) { |i| i == 0 ? 2**32 : 0 })
   end
 
+  def test_unsigned_32_max_boundary
+    omit "2**32-1 is not a Fixnum on this platform" if 2**32 - 1 > FIXNUM_MAX
+    assert_equal W32, narrow(Array.new(N) { |i| i == 0 ? 2**32 - 1 : 0 })
+  end
+
   def test_signed_32_boundary
-    assert_equal W32,  narrow(Array.new(N) { |i| i.zero? ? -(2**31) : 0 })
+    assert_equal W32,  narrow(Array.new(N) { |i| i.zero? ? -1_000_000_000 : 0 })
     assert_equal WIDE, narrow(Array.new(N) { |i| i.zero? ? -(2**31) - 1 : 0 })
+  end
+
+  def test_signed_32_min_boundary
+    omit "-2**31 is not a Fixnum on this platform" if -(2**31) < FIXNUM_MIN
+    assert_equal W32, narrow(Array.new(N) { |i| i.zero? ? -(2**31) : 0 })
   end
 
   def test_bignum_never_narrows
@@ -68,7 +90,6 @@ class TestArrayStride < Test::Unit::TestCase
   end
 
   def test_fixnum_above_32_bits_does_not_narrow
-    # SPLIT_DELIVERY_INCOMPATIBLE_APP_IDS holds 111_900_950_529 and friends
     a = Array.new(1_000) { |i| i } + [111_900_950_529]
     assert_equal WIDE, narrow(a)
   end
@@ -102,7 +123,6 @@ class TestArrayStride < Test::Unit::TestCase
   end
 
   def test_embedded_arrays_are_left_alone
-    # 80% of the census population is length 1 or 2, embedded, nothing to save
     [[], [1], [1, 2], [1, 2, 3], Array.new(EMBED_MAX) { 1 }].each do |a|
       assert_equal WIDE, narrow(a), "length #{a.length} should not narrow"
       assert_equal 0, ObjectSpace.memsize_of(a) - ObjectSpace.memsize_of(a)
@@ -120,21 +140,12 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal src[-1], a[-1]
     assert_equal src[115_000], a[115_000]
     assert_equal src.sum, a.sum
-    # 1.8 MB of VALUEs becomes ~460 KB of uint16_t
     assert_operator ObjectSpace.memsize_of(a), :<=, 229_766 * 2 + 128
   end
 
-  # The mail gem's Ragel tables are plain (unfrozen) literals assigned once:
-  #   self._indicies = [ 0, 1, 1, 1, 2, ... ]
-  # The compiler turns a static literal into a frozen hidden template and
-  # `duparray` hands out a 40-byte borrower sharing its buffer.  The 1.8 MB
-  # lives in the template, invisible to ObjectSpace, kept alive only by the
-  # borrower.  Neither the freeze trigger nor the literal trigger reaches
-  # this shape (the borrower is unfrozen and shared; the template is a copy
-  # source).  Narrowing it explicitly must see through the share, take
-  # ownership, and let the template die -- this is what a boot-time pass
-  # would do.  (Census: Core's 153 all-immediate arrays >= 1024 are only
-  # 19.6% frozen -- these tables are why.)
+  # An unfrozen literal table (e.g. a Ragel `self._indicies = [...]`) is a
+  # borrower sharing a hidden frozen template.  Narrowing it must take
+  # ownership of the data and let the template die.
   def test_duparray_literal_table_narrows_and_frees_template
     n = 20_000
     src = Array.new(n) { |i| (i * 7) % 300 }
@@ -145,7 +156,7 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal n, t.length
     refute_predicate t, :frozen?
     assert_equal WIDE, stride(t)
-    assert_equal 40, ObjectSpace.memsize_of(t), "borrower owns no buffer"
+    assert_equal RVALUE_SIZE, ObjectSpace.memsize_of(t), "borrower owns no buffer"
     template_alive = -> {
       ObjectSpace.dump_all(output: :string).lines.any? { |l|
         l.include?('"type":"ARRAY"') && l.include?(%("length":#{n})) && l.include?('"frozen":true') && !l.include?('"class"')
@@ -158,16 +169,14 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal W16, stride(t)
     assert_operator ObjectSpace.memsize_of(t), :<=, n * 2 + 128
     assert_equal src, t.map { |x| x }
-    # A JIT may embed the literal's template in compiled code as a constant,
-    # which legitimately keeps it alive; only the interpreter can prove it dead.
+    # A JIT may keep the template alive as a compiled constant.
     unless defined?(RubyVM::ZJIT.enabled?) && RubyVM::ZJIT.enabled?
       refute template_alive.call, "template must be freed once the borrower owns its own buffer"
     end
   end
 
-  # Census: homogeneous arrays >= 1024 elements are 93.6% (Core) / 99.3%
-  # (SFR) frozen.  Those written as `CONST = [...].freeze` never reach
-  # Array#freeze; the compiler narrows the opt_ary_freeze operand instead.
+  # `CONST = [...].freeze` never reaches Array#freeze; the compiler narrows
+  # the opt_ary_freeze operand instead.
   def test_frozen_literal_table_is_narrow_and_owns_nothing_extra
     n = 5_000
     mod = Module.new
@@ -182,8 +191,7 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal W8, stride(t), "a rejected write must not widen"
   end
 
-  # Census: of all-Fixnum arrays, 78.5% fit 0..255, 96.5% fit 0..65535,
-  # 99.8% fit signed 32-bit, none hold a bignum.  Each band maps to a width.
+  # Each census value band maps to a width.
   def test_census_value_bands
     assert_equal W8,   narrow(Array.new(N) { |i| i % 256 })                 # 78.5%
     assert_equal W16,  narrow(Array.new(N) { |i| (i * 331) % 65_536 })      # 96.5%
@@ -192,11 +200,11 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal WIDE, narrow(Array.new(N) { |i| i == 0 ? 2**64 : 0 })       # bignum: never
   end
 
-  # Census: 80% of all-immediate arrays are length 1 or 2, 98% are <= 8,
-  # 98.9% are embedded.  Narrowing only applies past the embed limit, and
-  # must kick in exactly there.
+  # Narrowing applies only past the embed limit, and must kick in exactly there.
   def test_embed_boundary
     assert_equal WIDE, stride(Array.new(EMBED_MAX) { 1 }.freeze),     "#{EMBED_MAX} elements embed in the largest slot"
+    assert_embedded Array.new(EMBED_MAX) { 1 }, "#{EMBED_MAX} elements embed in the largest slot"
+    assert_not_embedded Array.new(EMBED_MAX + 1) { 1 }, "#{EMBED_MAX + 1} elements need a heap buffer"
     assert_equal W8,   stride(Array.new(EMBED_MAX + 1) { 1 }.freeze), "#{EMBED_MAX + 1} elements need a heap buffer"
     [1, 2, 3, 8].each do |len|
       a = Array.new(len) { |i| i }.freeze
@@ -205,37 +213,35 @@ class TestArrayStride < Test::Unit::TestCase
     end
   end
 
-  # Census: SFR's 6,604 all-Fixnum arrays total 292 kB and are 79% length 2.
-  # A realistic small-array workload must be untouched: no narrowing, no
-  # extra allocation, identical behaviour.
+  # Small arrays, the common case, must be untouched: no narrowing, no
+  # extra allocation.
   def test_small_fixnum_arrays_are_untouched
     pairs = Array.new(1_000) { |i| [i, i + 1].freeze }
     assert pairs.all? { |p| stride(p) == WIDE }
-    assert pairs.all? { |p| ObjectSpace.memsize_of(p) == 40 }
+    assert pairs.all? { |p| ObjectSpace.memsize_of(p) == RVALUE_SIZE }
     triples = Array.new(500) { |i| [i % 256, (i * 3) % 256, (i * 7) % 256] }
     triples.each(&:freeze)
     assert triples.all? { |t| stride(t) == WIDE }
   end
 
-  # Census shapes that must NOT narrow, so nothing is spent on them.
+  # Census shapes that must not narrow.
   def test_census_non_candidates
-    # Method#parameters pairs: 53% of SFR's all-immediate arrays, all Symbols
+    # Method#parameters pairs
     assert_equal WIDE, stride([:req, :name].freeze)
     assert_equal WIDE, stride(Array.new(N) { |i| i.even? ? :req : :opt }.freeze)
-    # iseq pathobj tuples: [String, nil], 22% of every array in Core
+    # iseq pathobj tuples
     assert_equal WIDE, stride(["/tmp/x.rb", nil].freeze)
-    # SPLIT_DELIVERY_INCOMPATIBLE_APP_IDS: frozen literal, 69,937 ids, some > 2**32
+    # id table with values above 2**32
     ids = Array.new(69_937) { |i| i * 1_600_003 }
     ids[1_234] = 111_900_950_529
     ids.freeze
     assert_equal WIDE, stride(ids)
     assert_include ids, 111_900_950_529
-    # ActiveModel Type::Integer bounds: one bit past Fixnum
+    # one bit past Fixnum
     assert_equal WIDE, stride(Array.new(N) { |i| i.zero? ? 2**63 : 0 }.freeze)
   end
 
-  # The Ragel driver loop only ever does table[int].  That path must stay on
-  # the narrow buffer indefinitely: no widen after any number of lookups.
+  # Index lookups must never widen, however many are done.
   def test_index_lookups_never_widen
     t = Array.new(50_000) { |i| (i * 7) % 300 }.freeze
     assert_equal W16, stride(t)
@@ -345,10 +351,8 @@ class TestArrayStride < Test::Unit::TestCase
 
   # ------------------------------------------------ reads do not un-narrow
   #
-  # Core reads elements through a narrow-aware RARRAY_AREF, so ordinary
-  # read-only methods leave the packed buffer in place.  Values surviving is
-  # not enough: a method that quietly widened would pass every value check
-  # while silently undoing the memory saving.
+  # Read-only methods go through the narrow-aware RARRAY_AREF and must leave
+  # the packed buffer in place, not just return the right values.
 
   def narrow_fixture
     src = Array.new(5_000) { |i| i % 250 }
@@ -428,7 +432,7 @@ class TestArrayStride < Test::Unit::TestCase
     # a mismatching Fixnum on the wide side is a definite inequality
     wide = Array.new(5_000) { |i| i % 250 }; wide[123] = 251
     refute_equal a, wide; refute_equal wide, a
-    # recursion guard still works with a narrow array inside a self-referential one
+    # recursion guard with a narrow array inside a self-referential one
     r = [a]; r << r
     s = [a.map { _1 }]; s << s
     assert_equal r, s
@@ -438,12 +442,11 @@ class TestArrayStride < Test::Unit::TestCase
   def test_equality_survives_mutation_during_compare
     _, a = narrow_fixture
     victim = Array.new(5_000) { |i| i % 250 }
-    # an element whose == mutates the other array mid-comparison
     saboteur = Object.new
     def saboteur.==(o) = (@hit ||= 0; @hit += 1; $__victim.clear if @hit == 1; true)
     $__victim = victim
     victim[10] = saboteur
-    # a == victim: index 10 → slow path → saboteur.== clears victim → lengths differ → false
+    # saboteur.== clears victim mid-comparison; lengths then differ
     refute_equal victim, a
     assert_stays_narrow(a, "== with mutating element")
   ensure
@@ -464,8 +467,7 @@ class TestArrayStride < Test::Unit::TestCase
     refute_predicate a, :empty?;                 assert_stays_narrow(a, "empty?")
   end
 
-  # Buffer-level operations (slicing shares the buffer; pack/splat/Marshal
-  # need real VALUEs) are expected to widen.  Pinned here so a change is
+  # Buffer-sharing operations are expected to widen.  Pinned so a change is
   # deliberate.
   def test_buffer_level_reads_widen
     _, a = narrow_fixture; a.first(3);          assert_equal WIDE, stride(a), "first(n) shares, so widens"
@@ -473,8 +475,7 @@ class TestArrayStride < Test::Unit::TestCase
     _, a = narrow_fixture; a.dup;               assert_equal WIDE, stride(a), "Array#dup shares (rb_ary_replace), so widens"
   end
 
-  # hash / reverse / sort / splat used to read the raw VALUE buffer and so
-  # widened the source; they now read element-wise and leave it packed.
+  # hash / reverse / sort / splat read element-wise and leave the source packed.
   def test_hash_keeps_narrow_and_matches_wide
     src, a = narrow_fixture
     assert_equal src.hash, a.hash
@@ -513,10 +514,8 @@ class TestArrayStride < Test::Unit::TestCase
 
   # --------------------------------------------- narrow fast paths (hoisted)
   #
-  # include?/index/rindex/count(x)/sum/min/max run a width-specialised loop
-  # on the packed buffer instead of decoding per element.  They must agree
-  # with the generic implementation in every case, including the ones where
-  # the fast path must step aside.
+  # include?/index/rindex/count/sum/min/max loop over the packed buffer
+  # directly.  They must agree with the generic implementation everywhere.
 
   def fast_path_fixtures
     u8  = Array.new(5_000) { |i| i % 250 };          narrow(u8)   # unsigned W8
@@ -578,11 +577,9 @@ class TestArrayStride < Test::Unit::TestCase
   def test_fast_paths_respect_redefined_operators
     u8, = fast_path_fixtures
     ref = u8.map { |x| x }
-    # With Integer#== redefined the fast path must step aside and agree with
-    # the generic path.  rb_equal short-circuits on identical VALUEs, so a
-    # same-Fixnum needle is still found (as on a wide array); a Float needle
-    # is where the redefinition becomes observable.  Results are captured
-    # while redefined and asserted afterwards, since assert_equal uses ==.
+    # With Integer#== redefined the fast path must step aside.  rb_equal
+    # short-circuits on identical VALUEs, so only a Float needle observes the
+    # redefinition.  Results are captured first since assert_equal uses ==.
     got = begin
       Integer.class_eval { alias_method :__orig_eq, :==; def ==(o) = false }
       [ref.include?(7), u8.include?(7), ref.index(7), u8.index(7), ref.count(7), u8.count(7),
@@ -648,7 +645,6 @@ class TestArrayStride < Test::Unit::TestCase
 
 
   def test_pack_keeps_narrow
-    # pack reads element by element through the narrow-aware accessor
     a = Array.new(200) { |i| i }
     narrow(a)
     assert_equal 800, a.pack("l*").bytesize
@@ -741,9 +737,8 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal W8, narrow(a)
     after = ObjectSpace.memsize_of(a)
     assert_operator after, :<, before
-    # one byte per element plus the object itself
     assert_operator after, :<=, 100_000 + 128
-    assert_operator before, :>=, 100_000 * 8
+    assert_operator before, :>=, 100_000 * SIZEOF_VALUE
   end
 
   def test_widening_restores_memsize
@@ -752,16 +747,15 @@ class TestArrayStride < Test::Unit::TestCase
     small = ObjectSpace.memsize_of(a)
     a.first(3)            # shares the buffer, so it widens
     assert_equal WIDE, stride(a)
-    assert_operator ObjectSpace.memsize_of(a), :>=, 100_000 * 8
+    assert_operator ObjectSpace.memsize_of(a), :>=, 100_000 * SIZEOF_VALUE
     assert_operator ObjectSpace.memsize_of(a), :>, small
     assert_equal 249, a[249]
   end
 
   # ------------------------------------------------------- trigger: freeze
   #
-  # Array#freeze is the first automatic trigger.  The census found homogeneous
-  # arrays of >= 1024 elements are 93.6% (Core) / 99.3% (SFR) frozen, and a
-  # frozen array never reaches rb_ary_modify, so it never pays to widen back.
+  # Array#freeze is the automatic trigger: a frozen array never reaches
+  # rb_ary_modify, so it never pays to widen back.
 
   def test_freeze_narrows_all_fixnum_heap_array
     a = Array.new(N) { |i| i % 256 }
@@ -790,8 +784,7 @@ class TestArrayStride < Test::Unit::TestCase
   end
 
   def test_freeze_does_not_copy_a_shared_array
-    # Freezing must not change memory behaviour for arrays that borrow their
-    # buffer: a slice of a big array is left shared, not copied and packed.
+    # A slice borrows its buffer; freezing leaves it shared, not copied.
     src = Array.new(N * 10) { |i| i % 256 }
     a = src[1..]
     before = ObjectSpace.memsize_of(a)
@@ -802,9 +795,8 @@ class TestArrayStride < Test::Unit::TestCase
   end
 
   def test_dup_then_freeze_stays_shared
-    # Array#dup of a large array shares the buffer (rb_ary_replace), so the
-    # common `x.dup.freeze` idiom is a shared array at freeze time and is not
-    # narrowed.  Documented here so a change in that trade-off is deliberate.
+    # Array#dup shares the buffer, so `x.dup.freeze` is shared at freeze time
+    # and is not narrowed.  Pinned so a change is deliberate.
     src = Array.new(N * 10) { |i| i % 256 }
     a = src.dup.freeze
     assert_equal WIDE, stride(a)
@@ -817,16 +809,13 @@ class TestArrayStride < Test::Unit::TestCase
     before = ObjectSpace.memsize_of(a)
     a.freeze
     assert_equal W8, stride(a)
-    # one byte per element plus the object slot itself
     assert_operator ObjectSpace.memsize_of(a), :<=, N * 10 + 128
     assert_operator ObjectSpace.memsize_of(a), :<, before / 4
   end
 
   def test_frozen_literal_narrows
-    # `[...].freeze` compiles to opt_ary_freeze, which returns the compile-time
-    # array itself.  That object never passes through Array#freeze, so the
-    # compiler narrows it directly.  This is how frozen constant tables are
-    # usually written.
+    # `[...].freeze` compiles to opt_ary_freeze and never passes through
+    # Array#freeze; the compiler narrows the operand directly.
     a = eval("[#{(0...N).map { |i| i % 256 }.join(',')}].freeze")
     assert_equal W8, stride(a)
     assert_equal N - 1, a[N - 1]
@@ -841,26 +830,23 @@ class TestArrayStride < Test::Unit::TestCase
     y = __stride_lit
     assert_same x, y
     assert_equal W8, stride(x)
-    assert_equal 199, x[199]
+    assert_equal (N - 1) % 256, x[N - 1]
   ensure
     Object.send(:remove_method, :__stride_lit) if Object.method_defined?(:__stride_lit)
   end
 
   def test_plain_literal_is_not_narrowed
-    # A non-frozen literal is a template that duparray shares on every
-    # evaluation.  Narrowing it would force a copy per evaluation (O(n)
-    # where sharing is O(1)), so it is deliberately left wide; only the
-    # `.freeze` form (opt_ary_freeze) is narrowed at compile time.
+    # A non-frozen literal is shared by duparray on every evaluation;
+    # narrowing it would force a copy each time, so it stays wide.
     a = eval("[#{(0...N).map { |i| i % 256 }.join(',')}]")
     assert_equal WIDE, stride(a)
-    assert_equal 40, ObjectSpace.memsize_of(a), "shared view of the template"
+    assert_equal RVALUE_SIZE, ObjectSpace.memsize_of(a), "shared view of the template"
     a << 1
     assert_equal N + 1, a.length
   end
 
-  # A frozen array becomes its own shared root when it is dup'd or sliced,
-  # and the borrower copies the raw buffer pointer.  A narrow buffer must
-  # never be handed out that way.
+  # dup/slice make a frozen array a shared root and copy its raw buffer
+  # pointer; a narrow buffer must never be handed out that way.
 
   def test_dup_of_frozen_narrow_array
     src = Array.new(N * 10) { |i| i % 256 }
@@ -924,22 +910,22 @@ class TestArrayStride < Test::Unit::TestCase
   end
 
   def test_ractor_shareable_narrow_array_parallel_reads
-    omit "Ractor not available" unless defined?(Ractor)
-    src = Array.new(N * 10) { |i| i % 256 }
-    a = Ractor.make_shareable(Array.new(N * 10) { |i| i % 256 })
-    assert_equal W8, stride(a)
-    assert_predicate a, :frozen?
-    # Every reader walks the array through a widening accessor at the same
-    # time; exactly one widen must happen.
-    rs = 4.times.map do
-      Ractor.new(a) { |ary| [ary.sum, ary.each_slice(100).count, ary.index(255)] }
-    end
-    results = rs.map { |r| r.respond_to?(:value) ? r.value : r.take }
-    results.each do |sum, slices, idx|
-      assert_equal src.sum, sum
-      assert_equal src.each_slice(100).count, slices
-      assert_equal 255, idx
-    end
-    assert_equal src, a
+    assert_ractor(<<~RUBY)
+      n = #{N * 10}
+      src = Array.new(n) { |i| i % 256 }
+      a = Ractor.make_shareable(Array.new(n) { |i| i % 256 })
+      assert_equal #{W8}, a.__stride
+      assert_predicate a, :frozen?
+      # Concurrent readers all hit the widening accessor; it must widen once.
+      rs = 4.times.map do
+        Ractor.new(a) { |ary| [ary.sum, ary.each_slice(100).count, ary.index(255)] }
+      end
+      rs.map(&:value).each do |sum, slices, idx|
+        assert_equal src.sum, sum
+        assert_equal src.each_slice(100).count, slices
+        assert_equal 255, idx
+      end
+      assert_equal src, a
+    RUBY
   end
 end

@@ -474,12 +474,12 @@ ary_narrow_count(VALUE ary, long needle)
     return count;
 }
 
-/* Sum as a long.  Cannot overflow below 2**31 elements; callers check. */
-static long
+/* long long, not long (32-bit on LLP64).  Callers check the length. */
+static long long
 ary_narrow_sum(VALUE ary)
 {
     const long len = RARRAY_LEN(ary);
-    long acc = 0;
+    long long acc = 0;
     ARY_NARROW_DISPATCH(ary, T, p, {
         for (long i = 0; i < len; i++) acc += p[i];
     });
@@ -5880,9 +5880,20 @@ recursive_eql(VALUE ary1, VALUE ary2, int recur)
                     rb_array_stride(ary2) != RARRAY_STRIDE_VALUE)) {
         return ary_narrow_equal(ary1, ary2, true);
     }
-    for (i = 0; i < RARRAY_LEN(ary1); i++) {
-        if (!rb_eql(rb_ary_elt(ary1, i), rb_ary_elt(ary2, i)))
-            return Qfalse;
+
+    /* rb_eql() can resize either array and evacuate ptrs */
+    p1 = RARRAY_CONST_PTR(ary1);
+    p2 = RARRAY_CONST_PTR(ary2);
+    len1 = RARRAY_LEN(ary1);
+
+    for (i = 0; i < len1; i++) {
+        if (p1[i] != p2[i]) {
+            if (!rb_eql(p1[i], p2[i])) return Qfalse;
+            len1 = RARRAY_LEN(ary1);
+            if (len1 != RARRAY_LEN(ary2)) return Qfalse;
+            p1 = RARRAY_CONST_PTR(ary1);
+            p2 = RARRAY_CONST_PTR(ary2);
+        }
     }
     return Qtrue;
 }
@@ -6012,12 +6023,15 @@ rb_ary_includes(VALUE ary, VALUE item)
 }
 
 /* Test hooks for the stride machinery.  Not public API. */
+
+/* :nodoc: */
 static VALUE
 rb_ary_narrow_bang(VALUE ary)
 {
     return INT2FIX(ary_try_narrow(ary));
 }
 
+/* :nodoc: */
 static VALUE
 rb_ary_stride_m(VALUE ary)
 {
@@ -8764,7 +8778,7 @@ rb_ary_sum(int argc, VALUE *argv, VALUE ary)
     if (!block_given && FIXNUM_P(v) &&
         RB_UNLIKELY(rb_array_stride(ary) != RARRAY_STRIDE_VALUE) &&
         RARRAY_LEN(ary) < (1L << 30)) {
-        return rb_int_plus(LONG2NUM(ary_narrow_sum(ary)), v);
+        return rb_int_plus(LL2NUM(ary_narrow_sum(ary)), v);
     }
 
     bool init_is_float = RB_FLOAT_TYPE_P(v);

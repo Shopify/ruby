@@ -34,30 +34,30 @@ rarray_raw_ptr(VALUE ary)
 }
 
 /* Load element i of a narrowed array as a C integer.  The single place that
- * knows the width/sign encoding. */
-static inline long
+ * knows the width/sign encoding.  int64_t, not long: long is 32-bit on
+ * LLP64 platforms.  Dispatches once on the stride and sign flag bits
+ * together, the same way io.c switches on FMODE_READABLE|FMODE_WRITABLE. */
+static inline int64_t
 rarray_narrow_load_int(VALUE ary, long i)
 {
     const void *p = rarray_raw_ptr(ary);
-    if (rb_array_stride_unsigned_p(ary)) {
-        switch (rb_array_stride(ary)) {
-          case RARRAY_STRIDE_W8:  return (long)((const uint8_t  *)p)[i];
-          case RARRAY_STRIDE_W16: return (long)((const uint16_t *)p)[i];
-          default:                return (long)((const uint32_t *)p)[i];
-        }
+#define W(stride) ((VALUE)(stride) << RARRAY_STRIDE_SHIFT)
+    switch (RBASIC(ary)->flags & (RARRAY_STRIDE_MASK | RARRAY_STRIDE_UNSIGNED)) {
+      case W(RARRAY_STRIDE_W8):                           return ((const int8_t   *)p)[i];
+      case W(RARRAY_STRIDE_W16):                          return ((const int16_t  *)p)[i];
+      case W(RARRAY_STRIDE_W32):                          return ((const int32_t  *)p)[i];
+      case W(RARRAY_STRIDE_W8)  | RARRAY_STRIDE_UNSIGNED: return ((const uint8_t  *)p)[i];
+      case W(RARRAY_STRIDE_W16) | RARRAY_STRIDE_UNSIGNED: return ((const uint16_t *)p)[i];
+      default:                                            return ((const uint32_t *)p)[i];
     }
-    switch (rb_array_stride(ary)) {
-      case RARRAY_STRIDE_W8:  return ((const int8_t  *)p)[i];
-      case RARRAY_STRIDE_W16: return ((const int16_t *)p)[i];
-      default:                return ((const int32_t *)p)[i];
-    }
+#undef W
 }
 
 /* Decode element i of a narrowed array into a ::VALUE. */
 static inline VALUE
 rarray_narrow_aref(VALUE ary, long i)
 {
-    return LONG2FIX(rarray_narrow_load_int(ary, i));
+    return LL2NUM(rarray_narrow_load_int(ary, i));
 }
 
 /* Core's RARRAY_AREF replaces the public macro.  It adds a bounds assertion
