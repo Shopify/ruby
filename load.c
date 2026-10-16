@@ -1189,6 +1189,7 @@ load_ext(VALUE path, VALUE fname)
     void *handle = dln_load_feature(RSTRING_PTR(loaded), RSTRING_PTR(fname));
     if (cleanup) {
         rb_box_cleanup_local_extension(cleanup);
+        rb_box_defer_unload_local_extension(handle);
     }
     RB_GC_GUARD(loaded);
     RB_GC_GUARD(fname);
@@ -1631,7 +1632,7 @@ rb_ext_resolve_symbol(const char* fname, const char* symbol)
     VALUE handle;
     VALUE resolved;
     VALUE path;
-    char *ext;
+    const char *ext;
     VALUE fname_str = rb_str_new_cstr(fname);
     const rb_box_t *box = rb_loading_box();
 

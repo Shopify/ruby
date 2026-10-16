@@ -1004,6 +1004,19 @@ class TestArray < Test::Unit::TestCase
     assert_equal([1, 2, 1, 2, 1, c], b.flatten(4))
   end
 
+  def test_flatten_modify_during_to_ary
+    # [Bug #22318]
+    a = (1..10_000).to_a
+    obj = Object.new
+    obj.define_singleton_method(:to_ary) do
+      a.clear
+      [1, 2, 3]
+    end
+    a << obj
+    assert_nothing_raised { a.flatten }
+    assert_equal([], a)
+  end
+
   def test_flatten!
     a1 = @cls[ 1, 2, 3]
     a2 = @cls[ 5, 6 ]
@@ -2879,6 +2892,18 @@ class TestArray < Test::Unit::TestCase
     assert_equal([nil], a.values_at(2**31-1))
   end
 
+  def test_values_at_ary_modify
+    a = (0..100_000).to_a
+    obj = Object.new
+    obj.define_singleton_method(:begin) do
+      a.clear
+      0
+    end
+    obj.define_singleton_method(:end) { 10_000 }
+    obj.define_singleton_method(:exclude_end?) { false }
+    assert_equal(10_001, a.values_at(obj).length)
+  end
+
   def test_select
     assert_equal([0, 2], [0, 1, 2, 3].select {|x| x % 2 == 0 })
   end
@@ -3025,6 +3050,18 @@ class TestArray < Test::Unit::TestCase
     assert_equal([["a", 0], ["b", 1], ["c", 2]], a.zip(e), bug17814)
     assert_equal([["a", 3], ["b", 4], ["c", 5]], a.zip(e), bug17814)
     assert_equal([["a", 6], ["b", 7], ["c", 8]], a.zip(e), bug17814)
+  end
+
+  def test_zip_modify_during_to_ary
+    # [Bug #22319]
+    a = (1..100_000).to_a
+    obj = Object.new
+    obj.define_singleton_method(:to_ary) do
+      a.clear
+      [1, 2, 3]
+    end
+    assert_nothing_raised { a.zip(obj) }
+    assert_equal([], a)
   end
 
   def test_transpose

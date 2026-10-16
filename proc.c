@@ -3393,6 +3393,9 @@ method_inspect(VALUE method)
     }
     else {
         mklass = data->klass;
+        if (RB_TYPE_P(mklass, T_ICLASS)) {
+            mklass = RBASIC_CLASS(mklass);
+        }
         if (RCLASS_SINGLETON_P(mklass)) {
             VALUE v = RCLASS_ATTACHED_OBJECT(mklass);
             if (!(RB_TYPE_P(v, T_CLASS) || RB_TYPE_P(v, T_MODULE))) {
@@ -3852,10 +3855,11 @@ proc_curry(int argc, const VALUE *argv, VALUE self)
         arity = INT2FIX(min_arity);
     }
     else {
-        sarity = FIX2INT(arity);
+        sarity = NUM2INT(arity);
         if (rb_proc_lambda_p(self)) {
             rb_check_arity(sarity, min_arity, max_arity);
         }
+        arity = INT2FIX(sarity);
     }
 
     return make_curry_proc(self, rb_ary_new(), arity);

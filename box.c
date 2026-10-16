@@ -61,7 +61,6 @@ bool ruby_box_crashed = false; // extern, changed only in vm.c
 
 VALUE rb_resolve_feature_path(VALUE klass, VALUE fname);
 static VALUE rb_box_inspect(VALUE obj);
-static void cleanup_all_local_extensions(VALUE libmap);
 
 void
 rb_box_set_gem_flags(rb_box_gem_flags_t *flags)
@@ -273,6 +272,12 @@ free_classext_for_box(st_data_t key, st_data_t _value, st_data_t box_arg)
     VALUE obj = (VALUE)key;
     const rb_box_t *box = (const rb_box_t *)box_arg;
 
+    if (RB_TYPE_P(obj, T_NONE)) {
+        /* RUBY_FREE_AT_EXIT can free a class before the box that refers to
+         * it, and freeing a class already freed its classext for this box. */
+        return ST_CONTINUE;
+    }
+
     if (RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE)) {
         ext = rb_class_unlink_classext(obj, box);
         rb_class_classext_free(obj, ext, false);
@@ -295,8 +300,6 @@ box_entry_free(void *ptr)
     if (box->classext_cow_classes) {
         st_foreach(box->classext_cow_classes, free_classext_for_box, (st_data_t)box);
     }
-
-    cleanup_all_local_extensions(box->ruby_dln_libmap);
 
     free_box_st_tables(ptr);
     xfree((void *)box);
@@ -798,24 +801,48 @@ rb_box_cleanup_local_extension(VALUE cleanup)
     (void)p;
 }
 
-static int
-cleanup_local_extension_i(VALUE key, VALUE value, VALUE arg)
+#if defined(_WIN32)
+struct box_local_ext_list {
+    struct box_local_ext_list *next;
+    HMODULE handle;
+};
+static struct box_local_ext_list *box_local_exts;
+#endif
+
+void
+rb_box_defer_unload_local_extension(void *handle)
 {
 #if defined(_WIN32)
-    HMODULE h = (HMODULE)NUM2PTR(value);
-    WCHAR module_path[MAXPATHLEN];
-    DWORD len = GetModuleFileNameW(h, module_path, numberof(module_path));
-
-    FreeLibrary(h);
-    if (len > 0 && len < numberof(module_path)) DeleteFileW(module_path);
+    /* A box-local copy of an extension DLL must stay loaded as long as
+     * objects created by it can be finalized; unloading is deferred to
+     * rb_box_unload_local_extensions after the objspace is destructed.
+     * The loaded copy cannot be deleted on Windows, so the file is also
+     * removed there instead of in box_ext_cleanup_free. */
+    struct box_local_ext_list *ext = malloc(sizeof(struct box_local_ext_list));
+    if (!ext) return;
+    ext->handle = (HMODULE)handle;
+    ext->next = box_local_exts;
+    box_local_exts = ext;
 #endif
-    return ST_DELETE;
 }
 
-static void
-cleanup_all_local_extensions(VALUE libmap)
+void
+rb_box_unload_local_extensions(void)
 {
-    rb_hash_foreach(libmap, cleanup_local_extension_i, 0);
+#if defined(_WIN32)
+    struct box_local_ext_list *ext = box_local_exts;
+    box_local_exts = NULL;
+    while (ext) {
+        struct box_local_ext_list *next = ext->next;
+        WCHAR module_path[MAXPATHLEN];
+        DWORD len = GetModuleFileNameW(ext->handle, module_path, numberof(module_path));
+
+        FreeLibrary(ext->handle);
+        if (len > 0 && len < numberof(module_path)) DeleteFileW(module_path);
+        free(ext);
+        ext = next;
+    }
+#endif
 }
 
 VALUE

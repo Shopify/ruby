@@ -3834,6 +3834,9 @@ append_values_at_single(VALUE result, VALUE ary, long olen, VALUE idx)
     /* check if idx is Range */
     else if (rb_range_beg_len(idx, &beg, &len, olen, 1)) {
         if (len > 0) {
+            // rb_range_beg_len may run arbitrary code that modifies ary, so we
+            // need to re-calculate olen
+            const long olen = RARRAY_LEN(ary);
             const VALUE *const src = RARRAY_CONST_PTR(ary);
             const long end = beg + len;
             const long prevlen = RARRAY_LEN(result);
@@ -4715,7 +4718,7 @@ rb_ary_zip(int argc, VALUE *argv, VALUE ary)
     else {
         result = rb_ary_new_capa(len);
 
-        for (i=0; i<len; i++) {
+        for (i=0; i<RARRAY_LEN(ary); i++) {
             VALUE tmp = rb_ary_new_capa(argc+1);
 
             rb_ary_push(tmp, RARRAY_AREF(ary, i));
@@ -6629,7 +6632,7 @@ static VALUE
 flatten(VALUE ary, int level)
 {
     long i;
-    VALUE stack, result, tmp = 0, elt;
+    VALUE stack, result, tmp = Qnil, elt;
     VALUE memo = Qfalse;
 
     for (i = 0; i < RARRAY_LEN(ary); i++) {
@@ -6639,8 +6642,13 @@ flatten(VALUE ary, int level)
             break;
         }
     }
-    if (i == RARRAY_LEN(ary)) {
+    if (NIL_P(tmp)) {
         return ary;
+    }
+    if (i > RARRAY_LEN(ary)) {
+        /* ary was shrunk while converting an element with #to_ary, so
+           the scanned elements may no longer exist in ary */
+        i = RARRAY_LEN(ary);
     }
 
     result = ary_new(0, RARRAY_LEN(ary));
