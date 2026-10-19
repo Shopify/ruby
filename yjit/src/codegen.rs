@@ -2243,7 +2243,7 @@ fn guard_object_is_not_ruby2_keyword_hash(
 }
 
 /// This instruction pops a single value off the stack, converts it to an
-/// arrayif it isn’t already one using the #to_ary method, and then pushes
+/// array if it isn’t already one using the #to_ary method, and then pushes
 /// the values from the array back onto the stack.
 fn gen_expandarray(
     jit: &mut JITState,
@@ -2373,15 +2373,17 @@ fn gen_expandarray(
         );
     }
 
-    let array_opnd = asm.stack_pop(1); // pop after using the type info
-
-    // Load the pointer to the embedded or heap array
+    // Narrowed arrays store packed integers, not VALUEs, so the inline
+    // buffer read below cannot handle them. Side-exit and let the
+    // interpreter deal with them.
     let ary_opnd = if comptime_len > 0 {
-        let array_reg = asm.load(array_opnd);
+        guard_array_not_narrow(asm, array_reg, Counter::expandarray_stride_mismatch);
         Some(get_array_ptr(asm, array_reg))
     } else {
         None
     };
+
+    asm.stack_pop(1); // pop after using the type info
 
     // Loop backward through the array and push each element onto the stack.
     for i in (0..num).rev() {
@@ -7331,7 +7333,25 @@ fn get_array_len(asm: &mut Assembler, array_opnd: Opnd) -> Opnd {
     asm.csel_nz(emb_len_opnd, array_len_opnd)
 }
 
+/// A frozen all-Fixnum array may be stored narrow (see RARRAY_STRIDE_MASK),
+/// in which case its buffer is not VALUEs and get_array_ptr() must not be used
+/// on it. Side-exit so the interpreter can handle such arrays.
+fn guard_array_not_narrow(asm: &mut Assembler, array_reg: Opnd, counter: Counter) {
+    asm_comment!(asm, "guard array is not narrow");
+    let flags_opnd = Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RBASIC_FLAGS);
+    asm.test(flags_opnd, (RARRAY_STRIDE_MASK as u64).into());
+    asm.jnz(Target::side_exit(counter));
+}
+
+/// get_array_ptr() for an array that may be narrow. Side-exits on narrow
+/// arrays, otherwise returns the VALUE buffer pointer.
+fn get_array_ptr_checked(asm: &mut Assembler, array_reg: Opnd, counter: Counter) -> Opnd {
+    guard_array_not_narrow(asm, array_reg, counter);
+    get_array_ptr(asm, array_reg)
+}
+
 // Generate RARRAY_CONST_PTR (part of RARRAY_AREF)
+// The caller must know the array is not narrow; see get_array_ptr_checked().
 fn get_array_ptr(asm: &mut Assembler, array_reg: Opnd) -> Opnd {
     asm_comment!(asm, "get array pointer for embedded or heap");
 
@@ -7406,6 +7426,10 @@ fn push_splat_args(required_args: u32, asm: &mut Assembler) {
     asm_comment!(asm, "Guard for expected splat length");
     asm.cmp(array_len_opnd, required_args.into());
     asm.jne(Target::side_exit(Counter::guard_send_splatarray_length_not_equal));
+
+    // Narrow arrays cannot be read inline; let the interpreter splat them.
+    let array_reg = asm.load(asm.stack_opnd(0));
+    guard_array_not_narrow(asm, array_reg, Counter::guard_send_splatarray_stride_mismatch);
 
     // Check last element of array if present
     if required_args > 0 {
@@ -8166,7 +8190,7 @@ fn gen_send_iseq(
         asm.jne(Target::side_exit(Counter::invokeblock_iseq_arg0_wrong_len));
 
         let arg0_reg = asm.load(arg0_opnd);
-        let array_opnd = get_array_ptr(asm, arg0_reg);
+        let array_opnd = get_array_ptr_checked(asm, arg0_reg, Counter::invokeblock_iseq_arg0_stride_mismatch);
         asm_comment!(asm, "push splat arg0 onto the stack");
         asm.stack_pop(argc.try_into().unwrap());
         for i in 0..lead_num {
