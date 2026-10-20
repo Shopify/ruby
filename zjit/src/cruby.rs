@@ -1751,6 +1751,7 @@ pub(crate) mod ids {
         name: rb_jit_ruby2_keywords_splat_p
         name: RUBY_FL_FREEZE
         name: RUBY_ELTS_SHARED
+        name: RARRAY_STRIDE_MASK
         name: RubyVM
         name: ZJIT
         name: induce_side_exit_bang       content: b"induce_side_exit!"

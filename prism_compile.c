@@ -843,6 +843,9 @@ pm_static_literal_value(rb_iseq_t *iseq, const pm_node_t *node, pm_scope_node_t 
             rb_ary_push(value, pm_static_literal_value(iseq, elements->nodes[index], scope_node));
         }
 
+        /* An all-Fixnum template is kept narrow; duparray copies it into a
+         * narrow array rather than sharing its buffer. */
+        rb_ary_narrow(value);
         RB_OBJ_SET_FROZEN_SHAREABLE(value);
         return value;
       }
@@ -7418,6 +7421,7 @@ pm_compile_array_node(rb_iseq_t *iseq, const pm_node_t *node, const pm_node_list
                     rb_ary_push(tmp_array, pm_static_literal_value(iseq, elements->nodes[index++], scope_node));
 
                 index--; // about to be incremented by for loop
+                rb_ary_narrow(tmp_array);
                 RB_OBJ_SET_FROZEN_SHAREABLE(tmp_array);
 
                 // Emit the optimized code.

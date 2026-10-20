@@ -321,6 +321,21 @@ rb_objid_hash(st_index_t index)
     return (long)st_index_hash(index);
 }
 
+/* The value NUM2LONG(rb_hash(fixnum)) would produce, without the type switch
+ * and the Fixnum round trip.  For code that hashes many Fixnums in a row. */
+long
+rb_fixnum_hash(VALUE fixnum)
+{
+    RUBY_ASSERT(FIXNUM_P(fixnum));
+    /* same clamping as the tail of any_hash() */
+    st_index_t hnum = rb_objid_hash((st_index_t)fixnum);
+    if ((SIGNED_VALUE)hnum > 0)
+        hnum &= FIXNUM_MAX;
+    else
+        hnum |= FIXNUM_MIN;
+    return (long)hnum;
+}
+
 static st_index_t
 objid_hash(VALUE obj)
 {

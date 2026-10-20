@@ -342,8 +342,11 @@ pub type st_foreach_callback_func = ::std::option::Option<
 >;
 pub const RARRAY_EMBED_FLAG: ruby_rarray_flags = 8192;
 pub const RARRAY_EMBED_LEN_MASK: ruby_rarray_flags = 4161536;
+pub const RARRAY_STRIDE_MASK: ruby_rarray_flags = 12582912;
+pub const RARRAY_STRIDE_UNSIGNED: ruby_rarray_flags = 16384;
 pub type ruby_rarray_flags = u32;
 pub const RARRAY_EMBED_LEN_SHIFT: ruby_rarray_consts = 15;
+pub const RARRAY_STRIDE_SHIFT: ruby_rarray_consts = 22;
 pub type ruby_rarray_consts = u32;
 #[repr(C)]
 pub struct RArray {
