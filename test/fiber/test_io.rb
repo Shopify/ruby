@@ -5,6 +5,22 @@ require_relative 'scheduler'
 class TestFiberIO < Test::Unit::TestCase
   MESSAGE = "Hello World"
 
+  class YieldAfterWriteScheduler < IOBufferScheduler
+    def initialize
+      super
+      @yielded = false
+    end
+
+    def io_write(...)
+      result = super
+      if result > 0 && !@yielded
+        @yielded = true
+        transfer
+      end
+      result
+    end
+  end
+
   def test_read
     omit unless defined?(UNIXSocket)
 
@@ -273,6 +289,52 @@ class TestFiberIO < Test::Unit::TestCase
       scheduler_thread&.join rescue nil
       reading_thread&.kill
       reading_thread&.join rescue nil
+    end
+  end
+
+  def test_interrupted_flush_does_not_replay_buffered_bytes
+    assert_no_replayed_buffer { |io| io.flush }
+  end
+
+  def test_interrupted_write_does_not_replay_buffered_bytes
+    assert_no_replayed_buffer { |io| io.write("x" * 16_384) }
+  end
+
+  def test_interrupted_writev_does_not_replay_buffered_bytes
+    assert_no_replayed_buffer { |io| io.write("x" * 16_384, "y") }
+  end
+
+  private
+
+  def assert_no_replayed_buffer
+    omit("UNIXSocket is not defined!") unless defined?(UNIXSocket)
+
+    UNIXSocket.pair do |reader, writer|
+      writer.sync = false
+      thread = Thread.new do
+        Fiber.set_scheduler(YieldAfterWriteScheduler.new)
+        fiber = Fiber.schedule do
+          begin
+            writer.write(MESSAGE)
+            yield(writer)
+          ensure
+            writer.close
+          end
+        end
+        assert_equal(MESSAGE, reader.read_nonblock(MESSAGE.bytesize))
+        assert_raise(Interrupt) { fiber.raise(Interrupt) }
+      ensure
+        Fiber.set_scheduler(nil)
+      end
+
+      thread.value
+      assert_predicate(writer, :closed?)
+      assert_equal("", reader.read)
+    ensure
+      if thread&.alive?
+        thread.kill
+        thread.join
+      end
     end
   end
 end
