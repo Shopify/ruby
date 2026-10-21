@@ -492,11 +492,14 @@ class TestArrayStride < Test::Unit::TestCase
     _, a = narrow_fixture; b = a.clone;        assert_equal [W8, W8], [stride(a), stride(b)], "clone"
   end
 
-  # Operations that make the array a shared root, or alias its own buffer,
-  # still need VALUEs and widen.  Pinned so a change is deliberate.
-  def test_shared_root_operations_widen
-    _, a = narrow_fixture; a.unshift(1);       assert_equal WIDE, stride(a), "unshift makes a shared root"
-    _, a = narrow_fixture; a.shift;            assert_equal WIDE, stride(a), "large shift makes a shared root"
+  # Operations that go through a shared root keep the array narrow: the root
+  # takes the narrow buffer and views read it at the same stride.  Only the
+  # self-insert splice, which needs a VALUE copy of its own buffer, widens.
+  def test_shared_root_operations_keep_narrow
+    _, a = narrow_fixture; a.unshift(1);       assert_equal W8, stride(a), "unshift makes a shared root"
+    assert_include ObjectSpace.dump(a), '"shared":true'
+    _, a = narrow_fixture; a.shift;            assert_equal W8, stride(a), "large shift makes a shared root"
+    assert_include ObjectSpace.dump(a), '"shared":true'
     _, a = narrow_fixture; a[5, 2] = a;        assert_equal WIDE, stride(a), "self-insert aliases the buffer"
   end
 
@@ -1085,6 +1088,139 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal ref, a
   end
 
+  # ------------------------------------------------------ narrow shared views
+  # A slice, dup, replace or literal evaluation of a narrow array shares its
+  # buffer like a wide one does: the view carries the root's stride bits and
+  # reads the buffer at the element width.  Views unshare before any change
+  # of representation; a frozen root never changes representation at all.
+
+  def test_views_of_narrow_arrays_are_narrow_and_shared
+    a = pushed
+    ref = (0...N).map { |i| i % 256 }
+    { "[i,n]" => a[10, 50], "range" => a[10..60], "first" => a.first(40), "last" => a.last(40),
+      "drop" => a.drop(40), "dup" => a.dup, "clone" => a.clone }.each do |name, v|
+      assert_equal W8, stride(v), name
+      assert_include ObjectSpace.dump(v), '"shared":true', name
+      assert_equal RVALUE_SIZE, ObjectSpace.memsize_of(v), "#{name} owns no buffer"
+    end
+    assert_equal ref[10, 50], a[10, 50]
+    assert_equal W8, stride(a), "source stays narrow"
+  end
+
+  def test_literal_evaluation_is_a_view
+    code = "[#{(0...N).map { |i| i % 256 }.join(',')}]"
+    a = eval(code)
+    assert_equal W8, stride(a)
+    assert_include ObjectSpace.dump(a), '"shared":true'
+    assert_equal RVALUE_SIZE, ObjectSpace.memsize_of(a)
+    a << 1
+    assert_equal N + 1, a.length
+    assert_equal N, eval(code).length, "template unaffected"
+  end
+
+  def test_view_write_unshares_without_touching_root
+    ref = (0...N).map { |i| i % 256 }
+    a = pushed
+    v = a[10, 50]
+    v[0] = 70_000                        # promote: needs a private buffer
+    assert_equal W32, stride(v)
+    assert_not_include ObjectSpace.dump(v), '"shared":true'
+    assert_equal ref, a, "root unchanged"
+    w = a[10, 50]
+    w[0] = "s"                           # widen: same
+    assert_equal WIDE, stride(w)
+    assert_equal ref, a
+    x = a[10, 50]
+    x[0] = 7                             # fits: copy-on-write, still narrow
+    assert_equal W8, stride(x)
+    assert_equal ref, a
+  end
+
+  def test_view_unshare_cases
+    ref = (0...N).map { |i| i % 256 }
+    a = pushed; v = a[10, 2]; v << 1
+    assert_equal [10, 11, 1], v;  assert_embedded v           # fits the slot
+    a = pushed; v = a[1, N - 1]; a = nil; GC.start; v << 5
+    assert_equal ref[1, N - 1] + [5], v; assert_equal W8, stride(v)  # sole view, steals the buffer
+    a = pushed; v = a[10, 50]; v << 5
+    assert_equal ref[10, 50] + [5], v; assert_equal W8, stride(v)    # plain private copy
+    assert_equal ref, a
+  end
+
+  def test_push_into_view_slack_keeps_sharing
+    ref = (0...N).map { |i| i % 256 }
+    a = pushed; a << 5                   # a is the view with slack after the root
+    sib = a[0, 100]
+    a << 6; a << 7
+    assert_equal ref + [5, 6, 7], a
+    assert_equal ref[0, 100], sib, "sibling view unaffected"
+    assert_equal [W8, W8], [stride(a), stride(sib)]
+  end
+
+  def test_unshift_and_shift_keep_narrow
+    ref = (0...N).map { |i| i % 256 }
+    a = pushed; a.unshift(5, 6)
+    assert_equal [5, 6] + ref, a;        assert_equal W8, stride(a)
+    a.shift(3)
+    assert_equal ref.drop(1), a;         assert_equal W8, stride(a)
+    q = pushed; 50.times { q.shift; q << q.size % 256 }
+    assert_equal W8, stride(q), "push/shift queue stays narrow"
+  end
+
+  def test_c_extension_read_of_frozen_root_keeps_views_valid
+    require 'json'
+    ref = (0...N).to_a
+    t = Array.new(N) { |i| i }.freeze          # owns its buffer; becomes a root when sliced
+    v1 = t[10, 100]; v2 = t[N - 50, 50]
+    before = ObjectSpace.memsize_of(t)
+    assert_equal ref.to_json, JSON.generate(t)  # RARRAY_AREF on the frozen root
+    assert_equal W8, stride(t), "frozen root never changes representation"
+    assert_operator ObjectSpace.memsize_of(t), :>, before, "it owns a wide copy for C now"
+    assert_equal ref[10, 100], v1;  assert_equal ref[N - 50, 50], v2
+    assert_include ObjectSpace.dump(v1), '"shared":true'
+    v3 = t[0, 150]
+    assert_equal ref[0, 150], v3
+    GC.start
+    assert_equal [ref[10, 100], ref[N - 50, 50], ref[0, 150]], [v1, v2, v3]
+    assert_equal ref.to_json, JSON.generate(t), "cache reused"
+  end
+
+  def test_c_extension_read_of_view_unshares_only_that_view
+    require 'json'
+    ref = (0...N).map { |i| i % 256 }
+    a = pushed; v1 = a[10, 100]; v2 = a[10, 100]
+    assert_equal ref[10, 100].to_json, JSON.generate(v1)
+    assert_equal WIDE, stride(v1)
+    assert_not_include ObjectSpace.dump(v1), '"shared":true'
+    assert_equal W8, stride(v2);  assert_equal W8, stride(a)
+    assert_equal ref[10, 100], v2
+  end
+
+  def test_narrow_views_survive_compaction
+    omit "compaction not supported" unless GC.respond_to?(:compact)
+    assert_separately(%w[-robjspace], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10)
+    begin;
+      a = []; 200.times { |i| a << i }
+      v = a[10..40]
+      assert_include ObjectSpace.dump(v), '"shared":true'
+      GC.verify_compaction_references(expand_heap: true, toward: :empty)
+      assert_equal 10, v[0]
+      assert_equal (10..40).to_a, v
+      assert_include ObjectSpace.dump(v), '"shared":true'
+    end;
+  end
+
+  def test_ractors_slice_one_shareable_narrow_table
+    assert_ractor("#{<<~"begin;"}\n#{<<~"end;"}")
+    begin;
+      t = Array.new(300) { |i| i }.freeze
+      Ractor.make_shareable(t)
+      rs = 4.times.map { |k| Ractor.new(t, k) { |t, k| v = t[k * 10, 100]; [v.sum, v[0]] } }
+      assert_equal 4.times.map { |k| [(k * 10...k * 10 + 100).sum, k * 10] }, rs.map(&:value)
+      assert_equal 2, t.__stride
+    end;
+  end
+
   # ------------------------------------- freeze: trims and catches born-wide
   # Arrays built by push are already narrow when frozen; freeze only trims
   # the push slack.  Ruby-level constructors (Array.new, [x] * n, map,
@@ -1129,13 +1265,14 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal src[1..], a
   end
 
-  def test_dup_then_freeze_stays_shared
-    # Array#dup of a *wide* array shares the buffer, so `x.dup.freeze` is
-    # shared at freeze time and is not narrowed.  Pinned so a change is
-    # deliberate.
+  def test_dup_of_wide_fixnum_array_narrows_both_sides
+    # Array#dup shares the buffer.  Sharing a complete wide all-Fixnum array
+    # is where it gets narrowed, so the source, the dup, and `dup.freeze`
+    # all end up narrow and sharing one buffer.
     src = wide_fixnums(N * 10) { |i| i % 256 }
     a = src.dup.freeze
-    assert_equal WIDE, stride(a)
+    assert_equal [W8, W8], [stride(src), stride(a)]
+    assert_include ObjectSpace.dump(a), '"shared":true'
     assert_equal src, a
   end
 

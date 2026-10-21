@@ -209,6 +209,17 @@ struct RArray {
                 const
 #endif
                 VALUE shared_root;
+
+                /**
+                 * A frozen narrowed array never changes representation (views
+                 * may point into its buffer), so when C code asks for its
+                 * elements as ::VALUE it gets this lazily built copy instead.
+                 * Valid when the array is frozen, narrowed, and carries
+                 * ::RARRAY_SHARED_ROOT_FLAG (which also makes its capacity
+                 * read as its length, freeing this field).  NULL until first
+                 * requested.  Owned and freed with the array.
+                 */
+                const VALUE *wide_cache;
             } aux;
 
             /**
@@ -243,6 +254,17 @@ RBIMPL_SYMBOL_EXPORT_BEGIN()
  * @param[out]  ary  An object of ::RArray.
  */
 void rb_ary_widen(VALUE ary);
+
+/**
+ * The elements of a narrowed array as a ::VALUE buffer.  A mutable array is
+ * widened in place (see ::rb_ary_widen).  A frozen array is left narrow so
+ * that arrays sharing its buffer stay valid; it returns a wide copy that the
+ * frozen array owns for the rest of its life.  Allocates on first use.
+ *
+ * @param[in]  ary  A narrowed array.
+ * @return     Its elements as ::VALUE, valid as long as @p ary is.
+ */
+const VALUE *rb_ary_wide_ptr(VALUE ary);
 
 /**
  * @private
@@ -369,7 +391,7 @@ rb_array_const_ptr(VALUE a)
     RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY);
 
     if (RB_UNLIKELY(rb_array_stride(a) != RARRAY_STRIDE_VALUE)) {
-        rb_ary_widen(a);
+        return rb_ary_wide_ptr(a);
     }
 
     if (RB_FL_ANY_RAW(a, RARRAY_EMBED_FLAG)) {
