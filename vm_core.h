@@ -1124,6 +1124,7 @@ struct rb_execution_context_struct {
     VALUE passed_block_handler; /* for rb_iterate */
 
     uint8_t raised_flag; /* only 3 bits needed */
+    bool ractor_isolation_warning; /* suppress violations inside Warning.warn */
 
     /* n.b. only 7 bits needed, really: */
     BITFIELD(enum method_missing_reason, method_missing_reason, 8);
@@ -1399,7 +1400,9 @@ const rb_cref_t *rb_proc_refinements_cref_for_call(VALUE procval);
 RUBY_SYMBOL_EXPORT_BEGIN
 VALUE rb_proc_isolate(VALUE self);
 VALUE rb_proc_isolate_bang(VALUE self, VALUE replace_self);
+void rb_proc_check_isolation_warn(VALUE self);
 VALUE rb_proc_ractor_make_shareable(VALUE proc, VALUE replace_self);
+VALUE rb_proc_ractor_make_shareable_copy(VALUE proc, VALUE replace_self);
 RUBY_SYMBOL_EXPORT_END
 
 typedef struct {

@@ -1813,6 +1813,15 @@ thread_sched_atfork(struct rb_thread_sched *sched)
 #endif
 
 extern int ruby_mn_threads_enabled;
+extern int ruby_ractor_isolation_enabled;
+
+static int
+ractor_isolation_env_level(void)
+{
+    const char *cstr = getenv("RUBY_RACTOR_ISOLATION");
+    int level = cstr ? atoi(cstr) : 0;
+    return level > 0 ? level : 0;
+}
 
 void
 ruby_mn_threads_params(void)
@@ -1820,12 +1829,19 @@ ruby_mn_threads_params(void)
     rb_vm_t *vm = GET_VM();
     rb_ractor_t *main_ractor = GET_RACTOR();
 
+    // boot precedes the first Ractor, so check mode can pin the scheduler itself
+    ruby_ractor_isolation_enabled = ractor_isolation_env_level();
+    bool exclusive = USE_MN_THREADS && ruby_ractor_isolation_enabled;
+
     // RUBY_MN_THREADS: -1 = nothing is M:N, 0 = the default, 1 = the main
     // Ractor's threads too, 2 = the main thread as well (see
     // thread_sched_main_to_shared).  The main Ractor's sched already exists
     // here, so it is set rather than defaulted.
     const char *mn_threads_cstr = getenv("RUBY_MN_THREADS");
     int mn_threads = (USE_MN_THREADS && mn_threads_cstr) ? atoi(mn_threads_cstr) : 0;
+    if (exclusive && mn_threads < 2) {
+        mn_threads = 2;
+    }
 
     mn_threads_mode = mn_threads;
     if (mn_threads > 0) {
@@ -1845,6 +1861,12 @@ ruby_mn_threads_params(void)
         }
     }
 
+    /* One shared native thread acts as a VM-wide GVL while still handing the
+     * run slot to another Ractor when the current one blocks. */
+    if (exclusive) {
+        max_cpu = 1;
+    }
+
     vm->ractor.sched.max_cpu = max_cpu;
 
 #if USE_MN_THREADS
@@ -1852,6 +1874,13 @@ ruby_mn_threads_params(void)
         thread_sched_main_to_shared(GET_THREAD());
     }
 #endif
+
+    if (ruby_ractor_isolation_enabled && !exclusive) {
+        // fprintf, not rb_warn: the mode announcement must survive -W0
+        fprintf(stderr, "warning: RUBY_RACTOR_ISOLATION: this build has no M:N"
+                " scheduling, so other Ractors can run in parallel with the"
+                " isolation-check Ractor.\n");
+    }
 }
 
 static void
