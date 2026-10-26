@@ -390,16 +390,16 @@ rb_array_const_ptr(VALUE a)
 {
     RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY);
 
-    if (RB_UNLIKELY(rb_array_stride(a) != RARRAY_STRIDE_VALUE)) {
-        return rb_ary_wide_ptr(a);
-    }
-
-    if (RB_FL_ANY_RAW(a, RARRAY_EMBED_FLAG)) {
-        return FIX_CONST_VALUE_PTR(RARRAY(a)->as.ary);
-    }
-    else {
+    /* One test for the common case (heap array of ::VALUE); see the core
+     * RARRAY_AREF for why the embed and stride bits are tested together. */
+    const VALUE flags = RBASIC(a)->flags;
+    if (RB_LIKELY((flags & (RARRAY_EMBED_FLAG | RARRAY_STRIDE_MASK)) == 0)) {
         return FIX_CONST_VALUE_PTR(RARRAY(a)->as.heap.ptr);
     }
+    if (flags & RARRAY_STRIDE_MASK) {
+        return rb_ary_wide_ptr(a);
+    }
+    return FIX_CONST_VALUE_PTR(RARRAY(a)->as.ary);
 }
 
 /**

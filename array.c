@@ -459,6 +459,9 @@ ary_widen_locked(VALUE ary)
         return;
     }
 
+    /* Views of a root point into its buffer, which is about to be freed. */
+    RUBY_ASSERT(!ARY_SHARED_ROOT_P(ary) || ARY_SHARED_ROOT_REFCNT(ary) == 0);
+
     const long capa = ARY_CAPA(ary);
     RUBY_ASSERT(capa >= len);
     const size_t old_bytes = (size_t)capa * ary_stride_bytes(ary);
@@ -661,6 +664,8 @@ ary_promote_stride(VALUE ary, int new_stride, int new_uns)
     RUBY_ASSERT(!ARY_EMBED_P(ary));
     RUBY_ASSERT(rb_array_stride(ary) != RARRAY_STRIDE_VALUE);
     RUBY_ASSERT(new_stride > rb_array_stride(ary));
+    RUBY_ASSERT(!ARY_SHARED_P(ary));
+    RUBY_ASSERT(!ARY_SHARED_ROOT_P(ary) || ARY_SHARED_ROOT_REFCNT(ary) == 0);
 
     const long capa = ARY_CAPA(ary);
     const size_t old_bytes = (size_t)capa * ary_stride_bytes(ary);
@@ -917,14 +922,30 @@ ary_memfill(VALUE ary, rb_len_t beg, rb_len_t size, VALUE val)
 }
 
 /* Store a Fixnum into a narrow buffer. The caller must have made sure it
- * fits (see ary_fit_stride). */
+ * fits (see ary_fit_stride). ary must own its buffer or be the sole view
+ * of an occupied shared root. */
 static inline void
 ary_narrow_write(VALUE ary, long idx, VALUE elem)
 {
     RUBY_ASSERT(!ARY_EMBED_P(ary));
-    RUBY_ASSERT(!ARY_SHARED_P(ary));
     RUBY_ASSERT(!ARY_SHARED_ROOT_P(ary));
-    RUBY_ASSERT(idx >= 0 && idx < ARY_HEAP_CAPA(ary));
+    RUBY_ASSERT(idx >= 0);
+#if RUBY_DEBUG
+    if (ARY_SHARED_P(ary)) {
+        VALUE root = ARY_SHARED_ROOT(ary);
+        RUBY_ASSERT(ARY_SHARED_ROOT_OCCUPIED(root));
+        RUBY_ASSERT(rb_array_stride(ary) == rb_array_stride(root));
+        RUBY_ASSERT(rb_array_stride_unsigned_p(ary) == rb_array_stride_unsigned_p(root));
+        /* A root's len is its capacity. */
+        const size_t w = ary_stride_bytes(ary);
+        const char *base = (const char *)ary_raw_ptr(root);
+        const char *slot = (const char *)RARRAY(ary)->as.heap.ptr + (size_t)idx * w;
+        RUBY_ASSERT(base <= slot && slot + w <= base + (size_t)RARRAY_LEN(root) * w);
+    }
+    else {
+        RUBY_ASSERT(idx < ARY_HEAP_CAPA(ary));
+    }
+#endif
     RUBY_ASSERT(FIXNUM_P(elem));
     RUBY_ASSERT(ary_fixnum_fits_stride(FIX2LONG(elem), rb_array_stride(ary),
                                        rb_array_stride_unsigned_p(ary)));
@@ -4524,7 +4545,9 @@ rb_ary_sort_bang(VALUE ary)
             ary_narrow_sort(ary);
             return ary;
         }
-        VALUE tmp = ary_make_substitution(ary); /* only ary refers tmp; widens ary if narrow */
+        /* Widen before sharing: tmp's buffer must not change while ary views it. */
+        if (was_narrow) rb_ary_widen(ary);
+        VALUE tmp = ary_make_substitution(ary); /* only ary refers tmp */
         struct ary_sort_data data;
         rb_len_t len = RARRAY_LEN(ary);
         RBASIC_CLEAR_CLASS(tmp);

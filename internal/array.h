@@ -71,10 +71,17 @@ RARRAY_AREF(VALUE ary, rb_len_t i)
     RBIMPL_ASSERT_OR_ASSUME(i >= 0);
     RBIMPL_ASSERT_OR_ASSUME(i < RARRAY_LEN(ary));
 
-    if (RB_UNLIKELY(rb_array_stride(ary) != RARRAY_STRIDE_VALUE)) {
+    /* One test for the common case: a heap array of VALUEs.  Checking the
+     * embed and stride bits separately costs a second branch per element,
+     * which is measurable in tight read loops over wide arrays. */
+    const VALUE flags = RBASIC(ary)->flags;
+    if (RB_LIKELY((flags & (RARRAY_EMBED_FLAG | RARRAY_STRIDE_MASK)) == 0)) {
+        return RARRAY(ary)->as.heap.ptr[i];
+    }
+    if (flags & RARRAY_STRIDE_MASK) {
         return rarray_narrow_aref(ary, i);
     }
-    return RARRAY_CONST_PTR(ary)[i];
+    return RARRAY(ary)->as.ary[i];
 }
 
 /* array.c */

@@ -1167,6 +1167,56 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal W8, stride(q), "push/shift queue stays narrow"
   end
 
+  def assert_shared(ary, msg = nil)
+    assert_include ObjectSpace.dump(ary), '"shared":true', msg
+  end
+
+  def test_deque_writes_keep_sharing
+    ref = (0...N).map { |i| i % 256 }
+    a = pushed; a.unshift(5, 6)
+    assert_shared a, "unshift writes through the view"
+    a.unshift(7)
+    assert_shared a
+    assert_equal [7, 5, 6] + ref, a
+    q = pushed; 10.times { q.shift }
+    assert_shared q
+    q.push(1, 2); q << 3
+    assert_shared q, "push after shift writes into the root's slack"
+    assert_equal ref.drop(10) + [1, 2, 3], q
+    assert_equal [W8, W8], [stride(a), stride(q)]
+  end
+
+  def test_deque_view_promotes_and_widens
+    ref = (0...N).map { |i| i % 256 }
+    q = pushed; 10.times { q.shift }
+    q << 70_000
+    assert_equal ref.drop(10) + [70_000], q;  assert_equal W32, stride(q)
+    q = pushed; 10.times { q.shift }
+    q.unshift(70_000)
+    assert_equal [70_000] + ref.drop(10), q;  assert_equal W32, stride(q)
+    q = pushed; 10.times { q.shift }
+    q.unshift("s")
+    assert_equal ["s"] + ref.drop(10), q;    assert_equal WIDE, stride(q)
+  end
+
+  def test_repeated_unshift_past_front_slack
+    a = pushed
+    ref = a.to_a
+    300.times { |i| a.unshift(i % 256); ref.unshift(i % 256) }
+    assert_equal ref, a
+    assert_equal W8, stride(a)
+  end
+
+  def test_sort_bang_block_mutating_receiver
+    narrow_a = pushed { |i| (i * 7919) % 200 }
+    wide_a = wide_fixnums(N) { |i| (i * 7919) % 200 }
+    [narrow_a, wide_a].each do |a|
+      a.sort! { |x, y| a << 1 if a.size < N + 5; y <=> x }
+    end
+    assert_equal wide_a, narrow_a
+    assert_not_equal WIDE, stride(narrow_a)
+  end
+
   def test_c_extension_read_of_frozen_root_keeps_views_valid
     require 'json'
     ref = (0...N).to_a
