@@ -379,6 +379,12 @@ rb_imemo_mark_and_move(VALUE obj, bool reference_updating)
             if ((vm_cc_super_p(cc) || vm_cc_refinement_p(cc))) {
                 rb_gc_mark_movable((VALUE)cc->cme_);
             }
+
+            if (vm_cc_refinement_p(cc)) {
+                // it is a key of the "cc_refinement" table, which looks up
+                // entries by address, so it should be pinned.
+                rb_gc_mark(obj);
+            }
         }
 
         break;

@@ -161,6 +161,48 @@ class TestGCCompact < Test::Unit::TestCase
     end;
   end
 
+  def test_refinement_callcaches_are_not_moved
+    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 60)
+    begin;
+      module RefinementForCompaction
+        refine String do
+          def refined_method; :refined; end
+        end
+      end
+      using RefinementForCompaction
+
+      objects = []
+      10.times do
+        procs = 200.times.map { eval("proc { 'str'.refined_method }") }
+        procs.each(&:call)
+
+        # Refinement call caches are registered in a VM wide table which looks
+        # up entries by address, so they must not be moved.
+        GC.verify_compaction_references(expand_heap: false, toward: :empty)
+
+        procs = nil
+        GC.start
+
+        # Reuse the slots of the collected refinement call caches.
+        500.times do
+          klass = Class.new { def foo; end }
+          obj = klass.new
+          3.times { obj.foo }
+          objects << obj
+        end
+      end
+
+      # Invalidates every registered refinement call cache.
+      module RefinementForCompaction
+        refine String do
+          def other_refined_method; :refined; end
+        end
+      end
+
+      assert_equal(:refined, "str".refined_method)
+    end;
+  end
+
   def test_compact_count
     count = GC.stat(:compact_count)
     GC.compact
