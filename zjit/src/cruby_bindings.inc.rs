@@ -369,6 +369,7 @@ pub struct RArray__bindgen_ty_1__bindgen_ty_1 {
 pub struct RArray__bindgen_ty_1__bindgen_ty_1__bindgen_ty_1 {
     pub capa: __BindgenUnionField<rb_len_t>,
     pub shared_root: __BindgenUnionField<VALUE>,
+    pub wide_cache: __BindgenUnionField<*const VALUE>,
     pub bindgen_union_field: u64,
 }
 pub const RMODULE_IS_REFINEMENT: ruby_rmodule_flags = 8192;

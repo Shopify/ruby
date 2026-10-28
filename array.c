@@ -116,10 +116,29 @@ ary_stride_bytes(VALUE ary)
     return ary_stride_width_bytes(rb_array_stride(ary));
 }
 
+/* The integer in a FIXNUM_P word, at full VALUE width.  Unlike FIX2LONG it
+ * never raises or truncates: internal code tags pointers as Fixnums
+ * (e.g. compile.c labels), and on LLP64 those don't fit a long. */
+static inline SIGNED_VALUE
+ary_fix2nint(VALUE x)
+{
+    RUBY_ASSERT(FIXNUM_P(x));
+    return RSHIFT((SIGNED_VALUE)x, 1);
+}
+
+/* The reverse: rebuild the FIXNUM_P word.  Unlike LONG2FIX it doesn't
+ * assert FIXABLE, so unwritten slots above len (garbage) decode harmlessly.
+ * Shifts as unsigned: left-shifting a negative signed value is undefined. */
+static inline VALUE
+ary_nint2fix(SIGNED_VALUE v)
+{
+    return ((VALUE)v << 1) | RUBY_FIXNUM_FLAG;
+}
+
 /* Store the raw integer v as element idx of a narrow buffer of the given
  * stride. The caller is responsible for v fitting the stride. */
 static inline void
-ary_narrow_encode(void *buf, int stride, long idx, long v)
+ary_narrow_encode(void *buf, int stride, long idx, SIGNED_VALUE v)
 {
     switch (stride) {
       case RARRAY_STRIDE_W8:  ((uint8_t  *)buf)[idx] = (uint8_t)v;  break;
@@ -255,11 +274,11 @@ ary_raw_ptr(VALUE ary)
 static void ary_fit_stride(VALUE ary, VALUE elem);
 static inline void ary_narrow_write(VALUE ary, long idx, VALUE elem);
 static void ary_narrow_empty_heap(VALUE ary, int stride, int uns);
-static inline bool ary_fixnum_fits_stride(long v, int stride, int uns);
+static inline bool ary_fixnum_fits_stride(SIGNED_VALUE v, int stride, int uns);
 static size_t ary_heap_realloc(VALUE ary, size_t new_capa);
 static void rb_ary_unshare(VALUE ary);
 static void ary_promote_stride(VALUE ary, int new_stride, int new_uns);
-static inline int ary_stride_for_fixnum(long v, int *uns);
+static inline int ary_stride_for_fixnum(SIGNED_VALUE v, int *uns);
 static int ary_stride_for_values(const VALUE *ptr, long len, int *uns);
 
 static inline void
@@ -414,7 +433,7 @@ ary_copy_stride(VALUE dst, VALUE src)
 static void
 ary_narrow_decode_raw(const void *raw, int stride, int uns, long n, VALUE *dst)
 {
-#define DECODE(T) do { const T *p = raw; for (long i = 0; i < n; i++) dst[i] = LONG2FIX(p[i]); } while (0)
+#define DECODE(T) do { const T *p = raw; for (long i = 0; i < n; i++) dst[i] = ary_nint2fix(p[i]); } while (0)
     if (uns) {
         switch (stride) {
           case RARRAY_STRIDE_W8:  DECODE(uint8_t);  break;
@@ -548,7 +567,7 @@ rb_ary_wide_ptr(VALUE ary)
 /* Return the narrowest stride that can hold a Fixnum value, or
  * RARRAY_STRIDE_VALUE if it doesn't fit in W32. Sets *uns to 1 if unsigned. */
 static inline int
-ary_stride_for_range(long lo, long hi, int *uns)
+ary_stride_for_range(SIGNED_VALUE lo, SIGNED_VALUE hi, int *uns)
 {
     RUBY_ASSERT(lo <= hi);
     if (lo >= 0) {
@@ -567,19 +586,21 @@ ary_stride_for_range(long lo, long hi, int *uns)
 }
 
 static inline int
-ary_stride_for_fixnum(long v, int *uns)
+ary_stride_for_fixnum(SIGNED_VALUE v, int *uns)
 {
     return ary_stride_for_range(v, v, uns);
 }
 
-/* Min and max of len VALUEs as C longs.  False if any is not a Fixnum. */
+/* Min and max of len > 0 VALUEs.  False if any is not a Fixnum. */
 static bool
-ary_values_range(const VALUE *ptr, long len, long *lo, long *hi)
+ary_values_range(const VALUE *ptr, long len, SIGNED_VALUE *lo, SIGNED_VALUE *hi)
 {
-    *lo = LONG_MAX; *hi = LONG_MIN;
-    for (long i = 0; i < len; i++) {
+    RUBY_ASSERT(len > 0);
+    if (!FIXNUM_P(ptr[0])) return false;
+    *lo = *hi = ary_fix2nint(ptr[0]);
+    for (long i = 1; i < len; i++) {
         if (!FIXNUM_P(ptr[i])) return false;
-        long v = FIX2LONG(ptr[i]);
+        SIGNED_VALUE v = ary_fix2nint(ptr[i]);
         if (v < *lo) *lo = v;
         if (v > *hi) *hi = v;
     }
@@ -591,7 +612,7 @@ ary_values_range(const VALUE *ptr, long len, long *lo, long *hi)
 static int
 ary_stride_for_values(const VALUE *ptr, long len, int *uns)
 {
-    long lo, hi;
+    SIGNED_VALUE lo, hi;
     if (len == 0 || !ary_values_range(ptr, len, &lo, &hi)) return RARRAY_STRIDE_VALUE;
     return ary_stride_for_range(lo, hi, uns);
 }
@@ -608,22 +629,22 @@ ary_fit_stride_batch(VALUE ary, const VALUE *argv, long argc)
     const int stride = rb_array_stride(ary);
     if (stride == RARRAY_STRIDE_VALUE || argc == 0) return;
 
-    long lo, hi;
+    SIGNED_VALUE lo, hi;
     const int uns = rb_array_stride_unsigned_p(ary);
     const bool all_fix = ary_values_range(argv, argc, &lo, &hi);
     if (all_fix && ary_fixnum_fits_stride(lo, stride, uns) && ary_fixnum_fits_stride(hi, stride, uns)) {
         return;   /* everything fits as is */
     }
-    if (ARY_SHARED_P(ary)) rb_ary_cancel_sharing(ary);   /* see ary_fit_stride */
+    /* A view must not change the root's buffer: take a private copy first. */
+    if (ARY_SHARED_P(ary)) rb_ary_cancel_sharing(ary);
     if (!all_fix || (uns && lo < 0)) {
         rb_ary_widen(ary);         /* non-Fixnum, or negative into unsigned */
         return;
     }
-    /* Width these elements need, keeping the array's signedness: a signed
-     * array must stay signed even if every element here is non-negative. */
-    long range_lo = (!uns && lo >= 0) ? -1 : lo;
+    /* A signed array stays signed even if every element here is non-negative. */
+    if (!uns && lo >= 0) lo = -1;
     int need_uns;
-    int need = ary_stride_for_range(range_lo, hi, &need_uns);
+    int need = ary_stride_for_range(lo, hi, &need_uns);
     if (need == RARRAY_STRIDE_VALUE) {
         rb_ary_widen(ary);
     }
@@ -634,11 +655,12 @@ ary_fit_stride_batch(VALUE ary, const VALUE *argv, long argc)
 
 /* Check if a Fixnum value fits in the given stride and signedness. */
 static inline bool
-ary_fixnum_fits_stride(long v, int stride, int uns)
+ary_fixnum_fits_stride(SIGNED_VALUE v, int stride, int uns)
 {
     if (stride == RARRAY_STRIDE_VALUE) return true;
 
-    long min, max;
+    /* int64_t, not long: UINT32_MAX does not fit a 32-bit long (LLP64, i686). */
+    int64_t min, max;
     if (uns) {
         min = 0;
         switch (stride) {
@@ -675,7 +697,7 @@ ary_promote_stride(VALUE ary, int new_stride, int new_uns)
     /* Re-encode the whole capacity at the wider stride (see the note in
      * ary_widen_locked about slots above len). */
     ARY_NARROW_DISPATCH(ary, T, p, {
-        for (long i = 0; i < capa; i++) ary_narrow_encode(buf, new_stride, i, (long)p[i]);
+        for (long i = 0; i < capa; i++) ary_narrow_encode(buf, new_stride, i, (SIGNED_VALUE)p[i]);
     });
 
     void *old = (void *)RARRAY(ary)->as.heap.ptr;
@@ -708,7 +730,7 @@ ary_try_narrow(VALUE ary)
     const size_t old_bytes = (size_t)ARY_CAPA(ary) * sizeof(VALUE);
     void *buf = ruby_xmalloc((size_t)len * width);
     for (long i = 0; i < len; i++) {
-        ary_narrow_encode(buf, want, i, FIX2LONG(src[i]));
+        ary_narrow_encode(buf, want, i, ary_fix2nint(src[i]));
     }
 
     void *old = (void *)RARRAY(ary)->as.heap.ptr;
@@ -904,7 +926,7 @@ ary_memfill(VALUE ary, rb_len_t beg, rb_len_t size, VALUE val)
 {
     if (beg == 0 && size > 0 && FIXNUM_P(val)) {
         int uns;
-        int stride = ary_stride_for_fixnum(FIX2LONG(val), &uns);
+        int stride = ary_stride_for_fixnum(ary_fix2nint(val), &uns);
         ary_narrow_empty_heap(ary, stride, uns);
     }
     if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
@@ -947,9 +969,9 @@ ary_narrow_write(VALUE ary, long idx, VALUE elem)
     }
 #endif
     RUBY_ASSERT(FIXNUM_P(elem));
-    RUBY_ASSERT(ary_fixnum_fits_stride(FIX2LONG(elem), rb_array_stride(ary),
+    RUBY_ASSERT(ary_fixnum_fits_stride(ary_fix2nint(elem), rb_array_stride(ary),
                                        rb_array_stride_unsigned_p(ary)));
-    ary_narrow_encode((void *)RARRAY(ary)->as.heap.ptr, rb_array_stride(ary), idx, FIX2LONG(elem));
+    ary_narrow_encode((void *)RARRAY(ary)->as.heap.ptr, rb_array_stride(ary), idx, ary_fix2nint(elem));
 }
 
 /* A heap array that was allocated wide but has nothing in it yet (Array.new,
@@ -986,39 +1008,10 @@ ary_fit_stride(VALUE ary, VALUE elem)
     int stride = rb_array_stride(ary);
     if (stride == RARRAY_STRIDE_VALUE) return;
 
-    if (FIXNUM_P(elem) && ary_fixnum_fits_stride(FIX2LONG(elem), stride, rb_array_stride_unsigned_p(ary))) {
+    if (FIXNUM_P(elem) && ary_fixnum_fits_stride(ary_fix2nint(elem), stride, rb_array_stride_unsigned_p(ary))) {
         return;   /* fits as is; a view may write in place into its root's buffer */
     }
-
-    /* The representation has to change.  A view must not do that to the
-     * root's buffer: take a private copy first. */
-    if (ARY_SHARED_P(ary)) rb_ary_cancel_sharing(ary);
-
-    if (!FIXNUM_P(elem)) {
-        rb_ary_widen(ary);
-        return;
-    }
-
-    long v = FIX2LONG(elem);
-    int uns = rb_array_stride_unsigned_p(ary);
-    if (ary_fixnum_fits_stride(v, stride, uns)) return;
-
-    int new_uns;
-    int needed = ary_stride_for_fixnum(v, &new_uns);
-
-    /* Sign mismatch: picking a signed width that also covers the existing
-     * elements needs a scan of the buffer. Widen for now. */
-    if (uns != new_uns) {
-        rb_ary_widen(ary);
-        return;
-    }
-
-    if (needed == RARRAY_STRIDE_VALUE) {
-        rb_ary_widen(ary);
-        return;
-    }
-
-    ary_promote_stride(ary, needed, uns);
+    ary_fit_stride_batch(ary, &elem, 1);
 }
 
 static void
@@ -1156,7 +1149,7 @@ ary_resize_capa(VALUE ary, rb_len_t capacity)
                 void *buf = ruby_xmalloc((size_t)capacity * width);
                 const VALUE *src = ARY_EMBED_PTR(ary);
                 for (long i = 0; i < len; i++) {
-                    ary_narrow_encode(buf, stride, i, FIX2LONG(src[i]));
+                    ary_narrow_encode(buf, stride, i, ary_fix2nint(src[i]));
                 }
                 FL_UNSET_EMBED(ary);
                 ary_set_stride(ary, stride);
@@ -2025,7 +2018,7 @@ rb_ary_store(VALUE ary, rb_len_t idx, VALUE val)
         /* First element into an empty heap array: pick the stride from it
          * before len is bumped (ARY_SET can't tell afterwards). */
         int uns;
-        int stride = ary_stride_for_fixnum(FIX2LONG(val), &uns);
+        int stride = ary_stride_for_fixnum(ary_fix2nint(val), &uns);
         ary_narrow_empty_heap(ary, stride, uns);
     }
     if (idx >= len) {
@@ -2210,7 +2203,7 @@ rb_ary_push(VALUE ary, VALUE item)
     VALUE target_ary = ary_ensure_room_for_push(ary, 1);
     if (idx == 0 && FIXNUM_P(item)) {
         int uns;
-        int stride = ary_stride_for_fixnum(FIX2LONG(item), &uns);
+        int stride = ary_stride_for_fixnum(ary_fix2nint(item), &uns);
         ary_narrow_empty_heap(ary, stride, uns);
     }
     /* Making room may have narrowed a wide array (embedded->heap spill picks

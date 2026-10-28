@@ -881,14 +881,23 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal 2**40, a[-1]
   end
 
-  def test_push_of_opposite_sign_widens
-    # An unsigned array receiving a negative (or vice versa) widens rather
-    # than rescanning for a signed width.  Values must still round-trip.
-    a = pushed
-    a << -1
-    assert_equal WIDE, stride(a)
-    assert_equal -1, a[-1]
-    assert_equal (0...N).map { |i| i % 256 } + [-1], a
+  # [elements, value, stride after writing value]
+  SIGN_CHANGES = {
+    "signed W8 + positive"   => [->(i) { (i % 100) - 50 },      200,           W16],
+    "signed W16 + positive"  => [->(i) { (i % 100) * 300 - 15_000 }, 40_000,  W32],
+    "unsigned W8 + negative" => [->(i) { i % 256 },             -1,            WIDE],
+    "unsigned W16 + negative"=> [->(i) { i * 200 },             -1,            WIDE],
+  }
+
+  def test_opposite_sign_writes_match_for_single_and_batch
+    SIGN_CHANGES.each do |name, (blk, v, want)|
+      ref = (0...N).map(&blk)
+      single = pushed(&blk); single << v
+      batch  = pushed(&blk); batch.push(v, 1)
+      assert_equal ref + [v], single, name
+      assert_equal ref + [v, 1], batch, name
+      assert_equal [want, want], [stride(single), stride(batch)], name
+    end
   end
 
   def test_push_keeps_working_after_widening
