@@ -23,6 +23,67 @@
 #define RARRAY_PTR_IN_USE_FLAG  FL_USER14
 #define RARRAY_FAKEARY          FL_USER19
 
+/* Packed buffer of a narrowed array.  Only the narrow decode path may use
+ * this; everything else goes through RARRAY_CONST_PTR, which widens. */
+static inline const void *
+rarray_raw_ptr(VALUE ary)
+{
+    RUBY_ASSERT(rb_array_stride(ary) != RARRAY_STRIDE_VALUE);
+    RUBY_ASSERT(!FL_TEST_RAW(ary, RARRAY_EMBED_FLAG));
+    return (const void *)RARRAY(ary)->as.heap.ptr;
+}
+
+/* Load element i of a narrowed array as a C integer.  The single place that
+ * knows the width/sign encoding.  int64_t, not long: long is 32-bit on
+ * LLP64 platforms.  Dispatches once on the stride and sign flag bits
+ * together, the same way io.c switches on FMODE_READABLE|FMODE_WRITABLE. */
+static inline int64_t
+rarray_narrow_load_int(VALUE ary, rb_len_t i)
+{
+    const void *p = rarray_raw_ptr(ary);
+#define W(stride) ((VALUE)(stride) << RARRAY_STRIDE_SHIFT)
+    switch (RBASIC(ary)->flags & (RARRAY_STRIDE_MASK | RARRAY_STRIDE_UNSIGNED)) {
+      case W(RARRAY_STRIDE_W8):                           return ((const int8_t   *)p)[i];
+      case W(RARRAY_STRIDE_W16):                          return ((const int16_t  *)p)[i];
+      case W(RARRAY_STRIDE_W32):                          return ((const int32_t  *)p)[i];
+      case W(RARRAY_STRIDE_W8)  | RARRAY_STRIDE_UNSIGNED: return ((const uint8_t  *)p)[i];
+      case W(RARRAY_STRIDE_W16) | RARRAY_STRIDE_UNSIGNED: return ((const uint16_t *)p)[i];
+      default:                                            return ((const uint32_t *)p)[i];
+    }
+#undef W
+}
+
+/* Decode element i of a narrowed array into a ::VALUE. */
+static inline VALUE
+rarray_narrow_aref(VALUE ary, rb_len_t i)
+{
+    return LL2NUM(rarray_narrow_load_int(ary, i));
+}
+
+/* Core's RARRAY_AREF replaces the public macro.  It adds a bounds assertion
+ * and decodes narrowed elements in place instead of widening the array, so
+ * read-only paths leave a narrowed array narrow.  Never allocates. */
+#undef RARRAY_AREF
+RBIMPL_ATTR_ARTIFICIAL()
+static inline VALUE
+RARRAY_AREF(VALUE ary, rb_len_t i)
+{
+    RBIMPL_ASSERT_OR_ASSUME(i >= 0);
+    RBIMPL_ASSERT_OR_ASSUME(i < RARRAY_LEN(ary));
+
+    /* One test for the common case: a heap array of VALUEs.  Checking the
+     * embed and stride bits separately costs a second branch per element,
+     * which is measurable in tight read loops over wide arrays. */
+    const VALUE flags = RBASIC(ary)->flags;
+    if (RB_LIKELY((flags & (RARRAY_EMBED_FLAG | RARRAY_STRIDE_MASK)) == 0)) {
+        return RARRAY(ary)->as.heap.ptr[i];
+    }
+    if (flags & RARRAY_STRIDE_MASK) {
+        return rarray_narrow_aref(ary, i);
+    }
+    return RARRAY(ary)->as.ary[i];
+}
+
 /* array.c */
 VALUE rb_ary_hash_values(rb_len_t len, const VALUE *elements);
 VALUE rb_ary_last(int, const VALUE *, VALUE);
@@ -34,6 +95,9 @@ size_t rb_ary_memsize(VALUE);
 VALUE rb_to_array_type(VALUE obj);
 VALUE rb_to_array(VALUE obj);
 void rb_ary_cancel_sharing(VALUE ary);
+/* Pack an all-Fixnum heap array to the narrowest width that holds every
+ * value.  Returns the resulting stride; RARRAY_STRIDE_VALUE means unchanged. */
+int rb_ary_narrow(VALUE ary);
 size_t rb_ary_size_as_embedded(VALUE ary);
 void rb_ary_make_embedded(VALUE ary);
 bool rb_ary_embeddable_p(VALUE ary);
@@ -59,7 +123,6 @@ static inline VALUE
 rb_ary_entry_internal(VALUE ary, rb_len_t offset)
 {
     rb_len_t len = RARRAY_LEN(ary);
-    const VALUE *ptr = RARRAY_CONST_PTR(ary);
     if (len == 0) return Qnil;
     if (offset < 0) {
         offset += len;
@@ -68,7 +131,7 @@ rb_ary_entry_internal(VALUE ary, rb_len_t offset)
     else if (len <= offset) {
         return Qnil;
     }
-    return ptr[offset];
+    return RARRAY_AREF(ary, offset); /* narrow-aware; does not allocate */
 }
 
 static inline bool
@@ -135,16 +198,5 @@ ARY_SHARED_ROOT_REFCNT(VALUE ary)
     })
 #endif
 
-#undef RARRAY_AREF
-RBIMPL_ATTR_PURE_UNLESS_DEBUG()
-RBIMPL_ATTR_ARTIFICIAL()
-static inline VALUE
-RARRAY_AREF(VALUE ary, rb_len_t i)
-{
-    RBIMPL_ASSERT_OR_ASSUME(i >= 0);
-    RBIMPL_ASSERT_OR_ASSUME(i < RARRAY_LEN(ary));
-
-    return RARRAY_CONST_PTR(ary)[i];
-}
 
 #endif /* INTERNAL_ARRAY_H */

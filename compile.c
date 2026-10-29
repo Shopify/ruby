@@ -3701,6 +3701,7 @@ iseq_peephole_optimize(rb_iseq_t *iseq, struct unreachable_unref *unref, LINK_EL
             if (vm_ci_simple(ci) && vm_ci_argc(ci) == 0 && blockiseq == NULL && vm_ci_mid(ci) == idFreeze) {
                 VALUE ary = iobj->operands[0];
                 rb_obj_reveal(ary, rb_cArray);
+                rb_ary_narrow(ary);
 
                 insn_replace_with_operands(iseq, iobj, BIN(opt_ary_freeze), 2, ary, (VALUE)ci);
                 ELEM_REMOVE(next);
@@ -5446,6 +5447,9 @@ compile_array(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, int pop
                 /* Create a hidden array */
                 for (; count; count--, node = RNODE_LIST(node)->nd_next)
                     rb_ary_push(ary, static_literal_value(RNODE_LIST(node)->nd_head, iseq));
+                /* An all-Fixnum template is kept narrow; duparray copies it
+                 * into a narrow array rather than sharing its buffer. */
+                rb_ary_narrow(ary);
                 RB_OBJ_SET_FROZEN_SHAREABLE(ary);
 
                 /* Emit optimized code */
