@@ -7995,6 +7995,12 @@ fn gen_send_iseq(
                 let array_len_opnd = get_array_len(asm, splat_array);
                 asm.cmp(array_len_opnd, take_count.into());
                 asm.jl(Target::side_exit(Counter::guard_send_iseq_has_rest_and_splat_too_few));
+
+                // copy_splat_args_for_rest_callee() reads the array's dup inline as
+                // VALUEs; a narrow array's dup is narrow too (rb_ary_dup keeps the
+                // layout), so guard here, while a side exit is still possible.
+                let array_reg = asm.load(splat_array);
+                guard_array_not_narrow(asm, array_reg, Counter::guard_send_splatarray_stride_mismatch);
             }
         }
 

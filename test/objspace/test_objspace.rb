@@ -501,14 +501,14 @@ class TestObjSpace < Test::Unit::TestCase
     assert_not_include(info, '"shared":true')
 
     # Non-embed array
-    arr = (1..10).to_a
+    arr = ("a".."j").to_a
     info = ObjectSpace.dump(arr)
     assert_include(info, '"length":10')
     assert_not_include(info, '"embedded":true')
     assert_not_include(info, '"shared":true')
 
     # Shared array
-    arr1 = (1..10).to_a
+    arr1 = ("a".."j").to_a
     arr = []
     arr.replace(arr1)
     info = ObjectSpace.dump(arr)

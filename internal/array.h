@@ -23,34 +23,53 @@
 #define RARRAY_PTR_IN_USE_FLAG  FL_USER14
 #define RARRAY_FAKEARY          FL_USER19
 
-/* Packed buffer of a narrowed array.  Only the narrow decode path may use
- * this; everything else goes through RARRAY_CONST_PTR, which widens. */
+/* The element storage as it is, in the slot or on the heap, at whatever
+ * width the array uses.  For code that moves bytes around (at
+ * ary_stride_bytes per element); readers go through RARRAY_AREF or
+ * RARRAY_CONST_PTR, which decode or widen. */
 static inline const void *
-rarray_raw_ptr(VALUE ary)
+rarray_storage_ptr(VALUE ary)
 {
-    RUBY_ASSERT(rb_array_stride(ary) != RARRAY_STRIDE_VALUE);
-    RUBY_ASSERT(!FL_TEST_RAW(ary, RARRAY_EMBED_FLAG));
+    if (FL_TEST_RAW(ary, RARRAY_EMBED_FLAG)) {
+        return (const void *)RARRAY(ary)->as.ary;
+    }
     return (const void *)RARRAY(ary)->as.heap.ptr;
 }
 
-/* Load element i of a narrowed array as a C integer.  The single place that
- * knows the width/sign encoding.  int64_t, not long: long is 32-bit on
- * LLP64 platforms.  Dispatches once on the stride and sign flag bits
- * together, the same way io.c switches on FMODE_READABLE|FMODE_WRITABLE. */
+/* The packed integers of a narrow array.  Asserts the array is narrow: on a
+ * wide array these bytes are VALUEs, not integers. */
+static inline const void *
+rarray_packed_ptr(VALUE ary)
+{
+    RUBY_ASSERT(rb_array_stride(ary) != RARRAY_STRIDE_VALUE);
+    return rarray_storage_ptr(ary);
+}
+
+/* Element i of a packed buffer as a C integer, given its width and sign.
+ * The single place that knows the encoding.  int64_t, not long: long is
+ * 32-bit on LLP64 platforms. */
+static inline int64_t
+rarray_packed_load(const void *p, int stride, int uns, rb_len_t i)
+{
+    if (uns) {
+        switch (stride) {
+          case RARRAY_STRIDE_W8:  return ((const uint8_t  *)p)[i];
+          case RARRAY_STRIDE_W16: return ((const uint16_t *)p)[i];
+          default:                return ((const uint32_t *)p)[i];
+        }
+    }
+    switch (stride) {
+      case RARRAY_STRIDE_W8:  return ((const int8_t  *)p)[i];
+      case RARRAY_STRIDE_W16: return ((const int16_t *)p)[i];
+      default:                return ((const int32_t *)p)[i];
+    }
+}
+
+/* Load element i of a narrowed array as a C integer. */
 static inline int64_t
 rarray_narrow_load_int(VALUE ary, rb_len_t i)
 {
-    const void *p = rarray_raw_ptr(ary);
-#define W(stride) ((VALUE)(stride) << RARRAY_STRIDE_SHIFT)
-    switch (RBASIC(ary)->flags & (RARRAY_STRIDE_MASK | RARRAY_STRIDE_UNSIGNED)) {
-      case W(RARRAY_STRIDE_W8):                           return ((const int8_t   *)p)[i];
-      case W(RARRAY_STRIDE_W16):                          return ((const int16_t  *)p)[i];
-      case W(RARRAY_STRIDE_W32):                          return ((const int32_t  *)p)[i];
-      case W(RARRAY_STRIDE_W8)  | RARRAY_STRIDE_UNSIGNED: return ((const uint8_t  *)p)[i];
-      case W(RARRAY_STRIDE_W16) | RARRAY_STRIDE_UNSIGNED: return ((const uint16_t *)p)[i];
-      default:                                            return ((const uint32_t *)p)[i];
-    }
-#undef W
+    return rarray_packed_load(rarray_packed_ptr(ary), rb_array_stride(ary), rb_array_stride_unsigned_p(ary), i);
 }
 
 /* Decode element i of a narrowed array into a ::VALUE. */
@@ -95,9 +114,11 @@ size_t rb_ary_memsize(VALUE);
 VALUE rb_to_array_type(VALUE obj);
 VALUE rb_to_array(VALUE obj);
 void rb_ary_cancel_sharing(VALUE ary);
-/* Pack an all-Fixnum heap array to the narrowest width that holds every
- * value.  Returns the resulting stride; RARRAY_STRIDE_VALUE means unchanged. */
+/* Settle the representation of an array about to be frozen: pack an
+ * all-Fixnum heap array to the narrowest width that holds every value, and
+ * keep an embedded array wide.  Returns the resulting stride. */
 int rb_ary_narrow(VALUE ary);
+VALUE rb_ary_wide_or_dup(VALUE ary);
 size_t rb_ary_size_as_embedded(VALUE ary);
 void rb_ary_make_embedded(VALUE ary);
 bool rb_ary_embeddable_p(VALUE ary);

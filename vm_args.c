@@ -46,13 +46,17 @@ arg_rest_dup(struct args_info *args)
 }
 
 /* Argument setup reads the splat array through RARRAY_CONST_PTR, which would
- * widen it.  Take a wide copy instead so f(*TABLE) leaves TABLE packed. */
+ * widen it.  A small embedded array is widened in its slot (no allocation);
+ * anything else gets a wide copy so f(*TABLE) leaves TABLE packed. */
 static inline void
 arg_rest_unnarrow(struct args_info *args)
 {
     if (RB_UNLIKELY(rb_array_stride(args->rest) != RARRAY_STRIDE_VALUE)) {
-        args->rest = rb_ary_dup(args->rest);
-        args->rest_dupped = TRUE;
+        VALUE wide = rb_ary_wide_or_dup(args->rest);
+        if (wide != args->rest) {
+            args->rest = wide;
+            args->rest_dupped = TRUE;
+        }
     }
 }
 

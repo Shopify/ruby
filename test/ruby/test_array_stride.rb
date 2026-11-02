@@ -46,6 +46,17 @@ class TestArrayStride < Test::Unit::TestCase
     a
   end
 
+  # Force an all-Fixnum embedded array wide without leaving its slot: a
+  # non-Fixnum store widens in place, and a wide array stays wide.
+  def widen_in_slot(a)
+    first = a[0]
+    a[0] = :widen
+    a[0] = first
+    assert_equal WIDE, stride(a)
+    assert_embedded a
+    a
+  end
+
   def assert_embedded(ary, msg = nil)
     assert_include ObjectSpace.dump(ary), '"embedded":true', msg
   end
@@ -137,10 +148,17 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal WIDE, narrow(a)
   end
 
-  def test_embedded_arrays_are_left_alone
-    [[], [1], [1, 2], [1, 2, 3], Array.new(EMBED_MAX) { 1 }].each do |a|
-      assert_equal WIDE, narrow(a), "length #{a.length} should not narrow"
-      assert_equal 0, ObjectSpace.memsize_of(a) - ObjectSpace.memsize_of(a)
+  # An embedded array packs inside its slot: same object, same slot, no buffer.
+  def test_embedded_arrays_narrow_in_place
+    assert_equal WIDE, narrow([]), "nothing to narrow"
+    [[1], [1, 2], [1, 2, 3], Array.new(EMBED_MAX) { 1 }].each do |a|
+      expected = a.dup
+      widen_in_slot(a)
+      size_before = ObjectSpace.memsize_of(a)
+      assert_equal W8, narrow(a), "length #{a.length} should narrow"
+      assert_embedded a
+      assert_equal expected, a
+      assert_equal size_before, ObjectSpace.memsize_of(a), "the slot is the storage"
     end
   end
 
@@ -216,7 +234,7 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal WIDE, narrow(Array.new(N) { |i| i == 0 ? 2**64 : 0 })       # bignum: never
   end
 
-  # Narrowing applies only past the embed limit, and must kick in exactly there.
+  # Frozen arrays: wide while they fit their slot as VALUEs, packed on the heap past it.
   def test_embed_boundary
     assert_equal WIDE, stride(Array.new(EMBED_MAX) { 1 }.freeze),     "#{EMBED_MAX} elements embed in the largest slot"
     assert_embedded Array.new(EMBED_MAX) { 1 }, "#{EMBED_MAX} elements embed in the largest slot"
@@ -791,10 +809,10 @@ class TestArrayStride < Test::Unit::TestCase
     a
   end
 
-  def test_push_narrows_when_spilling_to_heap
+  def test_push_narrows_eagerly_and_spills_packed
     a = []
     3.times { |i| a << i }
-    assert_equal WIDE, stride(a), "embedded arrays stay wide"
+    assert_equal W8, stride(a), "the first Fixnum picks the width"
     assert_embedded a
     N.times { |i| a << i % 256 }
     assert_equal W8, stride(a)
@@ -882,6 +900,131 @@ class TestArrayStride < Test::Unit::TestCase
   end
 
   # [elements, value, stride after writing value]
+  # ---------------------------------------------------------- embedded slots
+
+  # Bytes of element storage in the smallest slot (what `[]` is allocated in).
+  SMALL_SLOT_BYTES = RVALUE_SIZE - GC::INTERNAL_CONSTANTS[:RBASIC_SIZE] -
+                     GC::INTERNAL_CONSTANTS[:RVALUE_OVERHEAD]
+  SMALL_SLOT_VALUES = SMALL_SLOT_BYTES / SIZEOF_VALUE
+
+  def test_embedded_promotes_in_place_and_spills_wide
+    a = []
+    a << 1;      assert_equal W8,  stride(a); assert_embedded a
+    a << 300;    assert_equal W16, stride(a); assert_embedded a
+    a << 70_000; assert_equal W32, stride(a); assert_embedded a
+    assert_equal [1, 300, 70_000], a
+    a << 2**40                        # does not fit 32 bits: widen
+    assert_equal WIDE, stride(a)
+    (SMALL_SLOT_VALUES - 2).times { a << 2**40 }   # one VALUE more than the slot holds
+    assert_not_embedded a
+    assert_equal [1, 300, 70_000] + [2**40] * (SMALL_SLOT_VALUES - 1), a
+  end
+
+  def test_embedded_fills_the_slot_before_the_heap
+    a = []
+    size = ObjectSpace.memsize_of(a)
+    SMALL_SLOT_BYTES.times { |i| a << i % 100 }
+    assert_equal W8, stride(a)
+    assert_embedded a, "#{SMALL_SLOT_BYTES} bytes hold #{SMALL_SLOT_BYTES} 8-bit integers"
+    assert_equal size, ObjectSpace.memsize_of(a), "no buffer yet"
+    a << 1
+    assert_not_embedded a
+    assert_equal W8, stride(a), "leaves the slot packed"
+    assert_equal (0...SMALL_SLOT_BYTES).map { |i| i % 100 } + [1], a
+  end
+
+  def test_embedded_widens_in_place_when_values_fit
+    a = []
+    a << 1
+    a << "x"
+    assert_equal WIDE, stride(a)
+    assert_embedded a, "2 VALUEs fit the small slot"
+    assert_equal [1, "x"], a
+
+    b = Array.new(SMALL_SLOT_VALUES) { |i| i }
+    assert_equal W8, stride(b)
+    b << "x"                          # one VALUE too many for the slot
+    assert_equal WIDE, stride(b)
+    assert_not_embedded b
+    assert_equal (0...SMALL_SLOT_VALUES).to_a + ["x"], b
+  end
+
+  def test_embedded_wide_packs_before_leaving_the_slot
+    a = widen_in_slot(Array.new(SMALL_SLOT_VALUES) { |i| i })   # wide, full
+    a << SMALL_SLOT_VALUES            # a Fixnum: pack in place rather than spill
+    assert_equal W8, stride(a)
+    assert_embedded a
+    assert_equal (0..SMALL_SLOT_VALUES).to_a, a
+  end
+
+  def test_gap_fill_past_embedded_narrow_widens_with_room
+    a = []; a << 1; a << 2            # built by push: a literal's layout is up to the JIT
+    assert_equal W8, stride(a)
+    a[SMALL_SLOT_VALUES + 2] = 9      # nil gap: widen, and keep the room made for it
+    assert_equal [1, 2] + [nil] * SMALL_SLOT_VALUES + [9], a
+    assert_equal WIDE, stride(a)
+  end
+
+  def test_self_concat_of_embedded_narrow
+    a = []; 3.times { |i| a << i + 1 }   # built by push: a literal's layout is up to the JIT
+    assert_equal W8, stride(a)
+    a.concat(a)
+    assert_equal [1, 2, 3, 1, 2, 3], a
+    a.concat(a)
+    assert_equal [1, 2, 3] * 4, a
+  end
+
+  def test_freeze_keeps_embedded_arrays_wide
+    a = []; a << 1; a << 2
+    assert_equal W8, stride(a)
+    a.freeze
+    assert_equal WIDE, stride(a), "a frozen embedded array is always wide"
+    assert_embedded a
+    assert_equal [1, 2], a
+
+    b = []; (SMALL_SLOT_VALUES + 5).times { |i| b << i }
+    assert_embedded b
+    b.freeze
+    assert_equal W8, stride(b), "too many for the slot as VALUEs: heap, still packed"
+    assert_not_embedded b
+    assert_equal (0...SMALL_SLOT_VALUES + 5).to_a, b
+    assert_equal b, b.dup
+  end
+
+  def test_slice_of_embedded_narrow_is_a_narrow_copy
+    a = []; 20.times { |i| a << i }
+    assert_embedded a
+    s = a[2, 10]
+    assert_equal (2...12).to_a, s
+    assert_equal W8, stride(s)
+    assert_embedded s
+    s[0] = 99
+    assert_equal 2, a[2]
+  end
+
+  def test_embedded_length_is_capped_by_the_flag_bits
+    a = Array.new(EMBED_MAX) { 1 }      # the largest slot
+    assert_embedded a
+    (127 - EMBED_MAX).times { a << 1 }
+    assert_equal 127, a.size
+    assert_embedded a, "the 7-bit embedded length goes up to 127"
+    a << 1
+    assert_not_embedded a
+    assert_equal 128, a.size
+    assert_equal W8, stride(a)
+  end
+
+  def test_embedded_narrow_survives_compaction
+    omit "GC.compact unavailable" unless GC.respond_to?(:compact) && GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE]
+    arrays = Array.new(200) { |k| a = []; (k % 20 + 1).times { |i| a << i * 3 }; a }
+    expected = arrays.map(&:dup)
+    GC.compact
+    arrays.each_with_index do |a, k|
+      assert_equal expected[k], a
+      assert_equal W8, stride(a)
+    end
+  end
+
   SIGN_CHANGES = {
     "signed W8 + positive"   => [->(i) { (i % 100) - 50 },      200,           W16],
     "signed W16 + positive"  => [->(i) { (i % 100) * 300 - 15_000 }, 40_000,  W32],
@@ -1044,30 +1187,35 @@ class TestArrayStride < Test::Unit::TestCase
     assert_equal ref.shuffle(random: Random.new(7)), a.shuffle!(random: Random.new(7))
   end
 
-  def test_shrink_to_embedded_decodes_elements
-    # Embedded slots overlap the heap len/capa/ptr fields; shrinking a narrow
-    # array back into its slot must decode without reading through a
-    # pointer it has already overwritten.  Needs a slot wider than 3 VALUEs.
+  def test_shrink_to_embedded_stays_narrow
+    # Embedded slots overlap the heap len/capa/ptr fields; moving a narrow
+    # array back into its slot must copy without reading through a pointer
+    # it has already overwritten.
     a = Array.new(8, 0)
     assert_embedded a
     N.times { a << 0 }
     4.times { |i| a[i] = i + 1 }
     assert_equal W8, stride(a)
+    assert_not_embedded a
     a.delete(0)
     assert_equal [1, 2, 3, 4], a
     assert_embedded a
-    assert_equal WIDE, stride(a)
+    assert_equal W8, stride(a), "packed bytes move back into the slot as they are"
     a << 5
     assert_equal [1, 2, 3, 4, 5], a
   end
 
-  def test_replace_clears_stride
+  def test_replace_keeps_narrow
     a = pushed
     a.replace([5, 6, 7])
     assert_equal [5, 6, 7], a
-    assert_equal WIDE, stride(a)
+    assert_equal W8, stride(a)
+    assert_embedded a
     a.replace((0...50).to_a)
     assert_equal (0...50).to_a, a
+    a.replace([:x, 1])
+    assert_equal [:x, 1], a
+    assert_equal WIDE, stride(a)
   end
 
   def test_clear_then_push_renarrows

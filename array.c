@@ -153,7 +153,7 @@ ary_narrow_encode(void *buf, int stride, long idx, SIGNED_VALUE v)
  * bodies (ARY_NARROW_DISPATCH), empty for in-place mutation
  * (ARY_NARROW_DISPATCH_MUT). The pointer is captured once, before BODY runs. */
 #define ARY_NARROW_DISPATCH_(ary, QUAL, T, p, BODY) do { \
-    QUAL void *narrow_raw_ = (QUAL void *)rarray_raw_ptr(ary); \
+    QUAL void *narrow_raw_ = (QUAL void *)rarray_packed_ptr(ary); \
     if (rb_array_stride_unsigned_p(ary)) { \
         switch (rb_array_stride(ary)) { \
           case RARRAY_STRIDE_W8:  { typedef uint8_t  T; QUAL T *p = narrow_raw_; BODY; } break; \
@@ -176,9 +176,9 @@ ary_narrow_encode(void *buf, int stride, long idx, SIGNED_VALUE v)
 #define ARY_OWNS_HEAP_P(a) (RUBY_ASSERT(should_be_T_ARRAY((VALUE)(a))), \
                             !FL_TEST_RAW((a), RARRAY_SHARED_FLAG|RARRAY_EMBED_FLAG))
 
+/* Keeps the stride bits: an embedded array may be narrow. */
 #define FL_SET_EMBED(a) do { \
     RUBY_ASSERT(!ARY_SHARED_P(a)); \
-    FL_UNSET_RAW((a), RARRAY_STRIDE_MASK | RARRAY_STRIDE_UNSIGNED); \
     FL_SET((a), RARRAY_EMBED_FLAG); \
     ary_verify(a); \
 } while (0)
@@ -228,14 +228,6 @@ ary_narrow_encode(void *buf, int stride, long idx, SIGNED_VALUE v)
     RARRAY(ary)->as.heap.ptr = (const VALUE *)((const char *)RARRAY(ary)->as.heap.ptr + (n) * ary_stride_bytes(ary)); \
 } while (0)
 
-/* The buffer as it is, embedded or heap, with no widening.  For code that
- * manages storage rather than reads elements. */
-static inline const void *
-ary_raw_ptr(VALUE ary)
-{
-    return ARY_EMBED_P(ary) ? (const void *)RARRAY(ary)->as.ary : (const void *)RARRAY(ary)->as.heap.ptr;
-}
-
 #define ARY_INCREASE_LEN(ary, n) do  { \
     RUBY_ASSERT(!OBJ_FROZEN(ary)); \
     if (ARY_EMBED_P(ary)) { \
@@ -271,13 +263,18 @@ ary_raw_ptr(VALUE ary)
 } while (0)
 
 /* Forward declarations for stride support */
-static void ary_fit_stride(VALUE ary, VALUE elem);
+static void ary_fit_stride(VALUE ary, VALUE elem, rb_len_t need);
+static void ary_fit_stride_batch(VALUE ary, const VALUE *argv, long argc, rb_len_t need);
 static inline void ary_narrow_write(VALUE ary, long idx, VALUE elem);
-static void ary_narrow_empty_heap(VALUE ary, int stride, int uns);
+static void ary_narrow_empty(VALUE ary, int stride, int uns);
 static inline bool ary_fixnum_fits_stride(SIGNED_VALUE v, int stride, int uns);
 static size_t ary_heap_realloc(VALUE ary, size_t new_capa);
+static void ary_heap_free_ptr(VALUE ary, const VALUE *ptr, rb_len_t size);
+static inline void ary_shrink_capa(VALUE ary);
 static void rb_ary_unshare(VALUE ary);
-static void ary_promote_stride(VALUE ary, int new_stride, int new_uns);
+static void ary_promote_stride(VALUE ary, int new_stride, int new_uns, rb_len_t need);
+static void ary_widen_locked(VALUE ary, rb_len_t need);
+static int ary_try_narrow(VALUE ary);
 static inline int ary_stride_for_fixnum(SIGNED_VALUE v, int *uns);
 static int ary_stride_for_values(const VALUE *ptr, long len, int *uns);
 
@@ -287,23 +284,39 @@ ARY_SET(VALUE a, rb_len_t i, VALUE v)
     RUBY_ASSERT(!ARY_SHARED_P(a));
     RUBY_ASSERT(!OBJ_FROZEN(a));
 
+    ary_fit_stride(a, v, i + 1);
     if (rb_array_stride(a) != RARRAY_STRIDE_VALUE) {
-        ary_fit_stride(a, v);
-        if (rb_array_stride(a) != RARRAY_STRIDE_VALUE) {
-            ary_narrow_write(a, i, v);
-            return;
-        }
+        ary_narrow_write(a, i, v);
+        return;
     }
     RARRAY_ASET(a, i, v);
 }
 #undef RARRAY_ASET
 
-static rb_len_t
-ary_embed_capa(VALUE ary)
+/* Bytes of element storage in the object's slot. */
+static inline size_t
+ary_embed_bytes(VALUE ary)
 {
     size_t size = rb_obj_shape_slot_size(ary) - offsetof(struct RArray, as.ary);
     RUBY_ASSERT(size % sizeof(VALUE) == 0);
-    return size / sizeof(VALUE);
+    return size;
+}
+
+/* Elements the slot holds at the given stride.  The embedded length lives in
+ * RARRAY_EMBED_LEN_MASK, which caps it regardless of slot size. */
+static rb_len_t
+ary_embed_capa_for(VALUE ary, int stride)
+{
+    const rb_len_t embed_len_max = RARRAY_EMBED_LEN_MASK >> RARRAY_EMBED_LEN_SHIFT;
+    size_t n = ary_embed_bytes(ary) / ary_stride_width_bytes(stride);
+    return n > (size_t)embed_len_max ? embed_len_max : (rb_len_t)n;
+}
+
+/* Elements the slot holds at the array's current stride. */
+static rb_len_t
+ary_embed_capa(VALUE ary)
+{
+    return ary_embed_capa_for(ary, rb_array_stride(ary));
 }
 
 static size_t
@@ -333,10 +346,8 @@ rb_ary_embeddable_p(VALUE ary)
      *    flag.
      *  - Shared: we don't want to re-embed an array that points to a shared
      *    root (to save memory).
-     *  - Narrowed: the buffer is not VALUEs, and compaction cannot widen.
      */
-    if (ARY_SHARED_ROOT_P(ary) || OBJ_FROZEN(ary) || ARY_SHARED_P(ary) ||
-        rb_array_stride(ary) != RARRAY_STRIDE_VALUE) return false;
+    if (ARY_SHARED_ROOT_P(ary) || OBJ_FROZEN(ary) || ARY_SHARED_P(ary)) return false;
 
     const long embed_len_max = RARRAY_EMBED_LEN_MASK >> RARRAY_EMBED_LEN_SHIFT;
     return ARY_HEAP_CAPA(ary) <= embed_len_max;
@@ -356,15 +367,17 @@ rb_ary_size_as_embedded(VALUE ary)
 {
     size_t real_size;
 
+    /* Bytes, not VALUEs: a narrow array's elements are smaller. */
     if (ARY_EMBED_P(ary)) {
-        real_size = ary_embed_size(ARY_EMBED_LEN(ary));
+        real_size = offsetof(struct RArray, as.ary) + ARY_EMBED_LEN(ary) * ary_stride_bytes(ary);
     }
     else if (rb_ary_embeddable_p(ary)) {
-        real_size = ary_embed_size(ARY_HEAP_CAPA(ary));
+        real_size = offsetof(struct RArray, as.ary) + ARY_HEAP_CAPA(ary) * ary_stride_bytes(ary);
     }
     else {
         real_size = sizeof(struct RArray);
     }
+    if (real_size < sizeof(struct RArray)) real_size = sizeof(struct RArray);
     return real_size;
 }
 
@@ -381,7 +394,7 @@ ary_verify_(VALUE ary, const char *file, int line)
         VALUE root = ARY_SHARED_ROOT(ary);
         /* raw pointers: RARRAY_CONST_PTR would widen or hand out a cache */
         const char *ptr = (const char *)ARY_HEAP_PTR(ary);
-        const char *root_ptr = (const char *)ary_raw_ptr(root);
+        const char *root_ptr = (const char *)rarray_storage_ptr(root);
         rb_len_t len = ARY_HEAP_LEN(ary), root_len = RARRAY_LEN(root);
         size_t w = ary_stride_bytes(root);
         RUBY_ASSERT(ARY_SHARED_ROOT_P(root) || OBJ_FROZEN(root));
@@ -420,6 +433,50 @@ ary_set_stride(VALUE ary, int stride)
                          ((VALUE)stride << RARRAY_STRIDE_SHIFT);
 }
 
+static inline void
+ary_set_stride_uns(VALUE ary, int stride, int uns)
+{
+    ary_set_stride(ary, stride);
+    if (uns) FL_SET_RAW(ary, RARRAY_STRIDE_UNSIGNED);
+    else     FL_UNSET_RAW(ary, RARRAY_STRIDE_UNSIGNED);
+}
+
+/* Move an embedded array's elements to a heap buffer of capacity elements,
+ * at the current stride.  The slot bytes are copied out before the heap
+ * fields overwrite them. */
+static void
+ary_spill_to_heap(VALUE ary, rb_len_t capacity)
+{
+    RUBY_ASSERT(ARY_EMBED_P(ary));
+    const rb_len_t len = ARY_EMBED_LEN(ary);
+    RUBY_ASSERT(len <= capacity);
+    const size_t w = ary_stride_bytes(ary);
+    void *buf = ruby_xmalloc((size_t)(capacity == 0 ? 1 : capacity) * w);
+    memcpy(buf, RARRAY(ary)->as.ary, (size_t)len * w);
+    FL_UNSET_EMBED(ary);
+    /* Raw writes: a frozen array may get here from ary_frozen_wide_cache. */
+    RUBY_ASSERT(!ARY_SHARED_P(ary));
+    ARY_SET_PTR_FORCE(ary, (const VALUE *)buf);
+    RARRAY(ary)->as.heap.len = len;
+    ARY_SET_CAPA_FORCE(ary, capacity);
+}
+
+/* Move an owned heap array's first len elements into its slot, at the
+ * current stride.  The slot overlaps the heap fields, so they are read
+ * before the first byte is written. */
+static void
+ary_move_to_embed(VALUE ary, rb_len_t len)
+{
+    RUBY_ASSERT(ARY_OWNS_HEAP_P(ary));
+    RUBY_ASSERT(len <= ary_embed_capa(ary));
+    const VALUE *ptr = ARY_HEAP_PTR(ary);
+    const size_t old_bytes = (size_t)ARY_HEAP_CAPA(ary) * ary_stride_bytes(ary);
+    memcpy((void *)RARRAY(ary)->as.ary, ptr, (size_t)len * ary_stride_bytes(ary));
+    FL_SET_EMBED(ary);
+    ARY_SET_EMBED_LEN(ary, len);
+    ary_heap_free_ptr(ary, ptr, old_bytes);
+}
+
 /* Copy stride and sign bits from src to dst (a view must mirror its root). */
 static inline void
 ary_copy_stride(VALUE dst, VALUE src)
@@ -451,6 +508,16 @@ ary_narrow_decode_raw(const void *raw, int stride, int uns, long n, VALUE *dst)
 #undef DECODE
 }
 
+/* Declare `copy`, a stack copy of the slot's bytes.  In-place conversions of
+ * the slot read from the copy and write to the slot: reading memory as one
+ * element type while writing it as another is undefined under strict
+ * aliasing.  Must stay a statement: alloca is not allowed inside another
+ * call's argument list. */
+#define ARY_EMBED_COPY(ary, copy) \
+    const size_t copy##_bytes_ = ary_embed_bytes(ary); \
+    void *copy = ALLOCA_N(char, copy##_bytes_); \
+    memcpy(copy, RARRAY(ary)->as.ary, copy##_bytes_)
+
 /* True when a frozen narrow array keeps a wide copy for C callers; see
  * rb_ary_wide_ptr.  Such an array carries RARRAY_SHARED_ROOT_FLAG so that
  * ARY_CAPA reads its length and aux is free for the cache pointer. */
@@ -458,12 +525,16 @@ ary_narrow_decode_raw(const void *raw, int stride, int uns, long n, VALUE *dst)
     (OBJ_FROZEN(ary) && ARY_SHARED_ROOT_P(ary) && rb_array_stride(ary) != RARRAY_STRIDE_VALUE)
 #define ARY_WIDE_CACHE(ary) (RARRAY(ary)->as.heap.aux.wide_cache)
 
-/* Widen a mutable narrow array in place.  A shared view must not touch the
- * root's buffer: it gets its own wide buffer and stops sharing. */
+/* Widen a mutable narrow array.  need is the element capacity that must
+ * survive: callers make room first and write afterwards (rb_ary_modify_expand
+ * then RARRAY_PTR is public API), so an embedded array widens in its slot
+ * only if need fits there as VALUEs, and otherwise moves to the heap.  A
+ * shared view must not touch the root's buffer: it gets its own wide buffer
+ * and stops sharing. */
 static void
-ary_widen_locked(VALUE ary)
+ary_widen_locked(VALUE ary, rb_len_t need)
 {
-    RUBY_ASSERT(!OBJ_FROZEN(ary) || ARY_SHARED_P(ary));
+    RUBY_ASSERT(!OBJ_FROZEN(ary) || ARY_SHARED_P(ary) || ARY_EMBED_P(ary));
     const long len = RARRAY_LEN(ary);
 
     if (ARY_SHARED_P(ary)) {
@@ -481,20 +552,41 @@ ary_widen_locked(VALUE ary)
     /* Views of a root point into its buffer, which is about to be freed. */
     RUBY_ASSERT(!ARY_SHARED_ROOT_P(ary) || ARY_SHARED_ROOT_REFCNT(ary) == 0);
 
-    const long capa = ARY_CAPA(ary);
-    RUBY_ASSERT(capa >= len);
-    const size_t old_bytes = (size_t)capa * ary_stride_bytes(ary);
-    VALUE *wide = ALLOC_N(VALUE, capa == 0 ? 1 : capa);
     /* Decode the whole capacity, not just len: callers such as ary_memcpy0
      * and rb_ary_plus write ahead of len and set it afterwards, so slots
      * above len may be pending elements.  Unused slots decode to harmless
      * Fixnums. */
-    ary_narrow_decode_raw(RARRAY(ary)->as.heap.ptr, rb_array_stride(ary),
-                          rb_array_stride_unsigned_p(ary), capa, wide);
+    const long capa = ARY_CAPA(ary);
+    RUBY_ASSERT(capa >= len);
+    const int stride = rb_array_stride(ary);
+    const int uns = rb_array_stride_unsigned_p(ary);
+
+    if (ARY_EMBED_P(ary)) {
+        if (need < len) need = len;
+        if (need > capa) need = capa;   /* pending elements never exceed the room made */
+        const rb_len_t wide_capa = ary_embed_capa_for(ary, RARRAY_STRIDE_VALUE);
+        if (need <= wide_capa) {
+            ARY_EMBED_COPY(ary, copy);
+            ary_narrow_decode_raw(copy, stride, uns, wide_capa, (VALUE *)RARRAY(ary)->as.ary);
+            ary_set_stride_uns(ary, RARRAY_STRIDE_VALUE, 0);
+            return;
+        }
+        VALUE *wide = ALLOC_N(VALUE, need);
+        ary_narrow_decode_raw(RARRAY(ary)->as.ary, stride, uns, need, wide);
+        FL_UNSET_EMBED(ary);
+        ary_set_stride_uns(ary, RARRAY_STRIDE_VALUE, 0);
+        ARY_SET_PTR(ary, wide);
+        ARY_SET_HEAP_LEN(ary, len);
+        ARY_SET_CAPA(ary, need);
+        return;
+    }
+
+    const size_t old_bytes = (size_t)capa * ary_stride_bytes(ary);
+    VALUE *wide = ALLOC_N(VALUE, capa == 0 ? 1 : capa);
+    ary_narrow_decode_raw(RARRAY(ary)->as.heap.ptr, stride, uns, capa, wide);
 
     void *old = (void *)RARRAY(ary)->as.heap.ptr;
-    ary_set_stride(ary, RARRAY_STRIDE_VALUE);
-    FL_UNSET_RAW(ary, RARRAY_STRIDE_UNSIGNED); /* VALUE slots carry their own sign */
+    ary_set_stride_uns(ary, RARRAY_STRIDE_VALUE, 0); /* VALUE slots carry their own sign */
     RARRAY(ary)->as.heap.ptr = wide;
     RARRAY(ary)->as.heap.aux.capa = capa == 0 ? 1 : capa;
     RARRAY(ary)->as.heap.len = len;
@@ -509,14 +601,31 @@ static const VALUE *
 ary_frozen_wide_cache(VALUE ary)
 {
     RUBY_ASSERT(OBJ_FROZEN(ary));
-    RUBY_ASSERT(!ARY_EMBED_P(ary));
+
+    /* rb_ary_freeze keeps frozen embedded arrays wide (see
+     * ary_freeze_prepare).  One frozen behind its back (a raw OBJ_FREEZE) is
+     * settled here instead; ary_make_partial never shares such a slot, so
+     * nothing points into it. */
+    if (ARY_EMBED_P(ary)) {
+        RB_VM_LOCKING() {
+            if (ARY_EMBED_P(ary) && rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
+                if (RARRAY_LEN(ary) <= ary_embed_capa_for(ary, RARRAY_STRIDE_VALUE)) {
+                    ary_widen_locked(ary, RARRAY_LEN(ary));
+                }
+                else {
+                    ary_spill_to_heap(ary, RARRAY_LEN(ary));
+                }
+            }
+        }
+        if (ARY_EMBED_P(ary)) return RARRAY(ary)->as.ary;
+    }
 
     /* A frozen view has no buffer of its own and nothing points into it, so
      * it can simply stop sharing and own a wide copy, like a mutable view.
      * Under the lock: a frozen view may be Ractor-shareable. */
     if (ARY_SHARED_P(ary)) {
         RB_VM_LOCKING() {
-            if (ARY_SHARED_P(ary)) ary_widen_locked(ary);
+            if (ARY_SHARED_P(ary)) ary_widen_locked(ary, RARRAY_LEN(ary));
         }
         return RARRAY(ary)->as.heap.ptr;
     }
@@ -550,18 +659,18 @@ rb_ary_widen(VALUE ary)
         ary_frozen_wide_cache(ary);
         return;
     }
-    ary_widen_locked(ary);
+    ary_widen_locked(ary, RARRAY_LEN(ary));
 }
 
 const VALUE *
 rb_ary_wide_ptr(VALUE ary)
 {
     if (rb_array_stride(ary) == RARRAY_STRIDE_VALUE) {
-        return ARY_EMBED_P(ary) ? RARRAY(ary)->as.ary : RARRAY(ary)->as.heap.ptr;
+        return (const VALUE *)rarray_storage_ptr(ary);
     }
     if (OBJ_FROZEN(ary)) return ary_frozen_wide_cache(ary);
-    ary_widen_locked(ary);
-    return RARRAY(ary)->as.heap.ptr;
+    ary_widen_locked(ary, RARRAY_LEN(ary));
+    return (const VALUE *)rarray_storage_ptr(ary); /* widened in the slot or on the heap */
 }
 
 /* Return the narrowest stride that can hold a Fixnum value, or
@@ -624,32 +733,50 @@ ary_stride_for_values(const VALUE *ptr, long len, int *uns)
  * widen or promote in the middle only preserves [0, len), dropping the
  * elements of this copy already encoded above it. */
 static void
-ary_fit_stride_batch(VALUE ary, const VALUE *argv, long argc)
+ary_fit_stride_batch(VALUE ary, const VALUE *argv, long argc, rb_len_t need)
 {
-    const int stride = rb_array_stride(ary);
-    if (stride == RARRAY_STRIDE_VALUE || argc == 0) return;
-
+    if (argc == 0) return;
+    int stride = rb_array_stride(ary);
     SIGNED_VALUE lo, hi;
-    const int uns = rb_array_stride_unsigned_p(ary);
     const bool all_fix = ary_values_range(argv, argc, &lo, &hi);
+
+    if (stride == RARRAY_STRIDE_VALUE) {
+        if (!all_fix) return;
+        if (RARRAY_LEN(ary) == 0 && need == argc) {
+            /* The first write, covering the whole array: these elements pick
+             * the width (Array.new, [x] * n, concat into [], a + b, push). */
+            int uns;
+            const int first = ary_stride_for_range(lo, hi, &uns);   /* before uns is read */
+            ary_narrow_empty(ary, first, uns);
+            return;
+        }
+        /* A wide embedded array about to outgrow its slot packs in place if
+         * every element, old and new, is a Fixnum; the fit below then picks
+         * the width.  Otherwise there is nothing to settle. */
+        if (!(ARY_EMBED_P(ary) && need > ary_embed_capa(ary))) return;
+        stride = ary_try_narrow(ary);
+        if (stride == RARRAY_STRIDE_VALUE) return;
+    }
+
+    const int uns = rb_array_stride_unsigned_p(ary);
     if (all_fix && ary_fixnum_fits_stride(lo, stride, uns) && ary_fixnum_fits_stride(hi, stride, uns)) {
         return;   /* everything fits as is */
     }
     /* A view must not change the root's buffer: take a private copy first. */
     if (ARY_SHARED_P(ary)) rb_ary_cancel_sharing(ary);
     if (!all_fix || (uns && lo < 0)) {
-        rb_ary_widen(ary);         /* non-Fixnum, or negative into unsigned */
+        ary_widen_locked(ary, need);   /* non-Fixnum, or negative into unsigned */
         return;
     }
     /* A signed array stays signed even if every element here is non-negative. */
     if (!uns && lo >= 0) lo = -1;
-    int need_uns;
-    int need = ary_stride_for_range(lo, hi, &need_uns);
-    if (need == RARRAY_STRIDE_VALUE) {
-        rb_ary_widen(ary);
+    int want_uns;
+    int want = ary_stride_for_range(lo, hi, &want_uns);
+    if (want == RARRAY_STRIDE_VALUE) {
+        ary_widen_locked(ary, need);
     }
-    else if (need > stride) {
-        ary_promote_stride(ary, need, uns);
+    else if (want > stride) {
+        ary_promote_stride(ary, want, uns, need);
     }
 }
 
@@ -681,29 +808,53 @@ ary_fixnum_fits_stride(SIGNED_VALUE v, int stride, int uns)
 
 /* Promote array to a wider stride. Copies elements to new buffer. */
 static void
-ary_promote_stride(VALUE ary, int new_stride, int new_uns)
+ary_promote_stride(VALUE ary, int new_stride, int new_uns, rb_len_t need)
 {
-    RUBY_ASSERT(!ARY_EMBED_P(ary));
     RUBY_ASSERT(rb_array_stride(ary) != RARRAY_STRIDE_VALUE);
     RUBY_ASSERT(new_stride > rb_array_stride(ary));
     RUBY_ASSERT(!ARY_SHARED_P(ary));
     RUBY_ASSERT(!ARY_SHARED_ROOT_P(ary) || ARY_SHARED_ROOT_REFCNT(ary) == 0);
 
-    const long capa = ARY_CAPA(ary);
-    const size_t old_bytes = (size_t)capa * ary_stride_bytes(ary);
-    const size_t new_width = ary_stride_width_bytes(new_stride);
-    void *buf = ruby_xmalloc((size_t)capa * new_width);
-
     /* Re-encode the whole capacity at the wider stride (see the note in
      * ary_widen_locked about slots above len). */
+    const long capa = ARY_CAPA(ary);
+    const size_t new_width = ary_stride_width_bytes(new_stride);
+
+    if (ARY_EMBED_P(ary)) {
+        const rb_len_t len = ARY_EMBED_LEN(ary);
+        if (need < len) need = len;
+        if (need > capa) need = capa;   /* pending elements never exceed the room made */
+        const rb_len_t new_capa = ary_embed_capa_for(ary, new_stride);
+        if (need <= new_capa) {
+            const int stride = rb_array_stride(ary), uns = rb_array_stride_unsigned_p(ary);
+            ARY_EMBED_COPY(ary, copy);
+            void *slot = (void *)RARRAY(ary)->as.ary;
+            for (long i = 0; i < new_capa; i++) {
+                ary_narrow_encode(slot, new_stride, i, (SIGNED_VALUE)rarray_packed_load(copy, stride, uns, i));
+            }
+            ary_set_stride_uns(ary, new_stride, new_uns);
+            return;
+        }
+        void *buf = ruby_xmalloc((size_t)need * new_width);
+        ARY_NARROW_DISPATCH(ary, T, p, {
+            for (long i = 0; i < need; i++) ary_narrow_encode(buf, new_stride, i, (SIGNED_VALUE)p[i]);
+        });
+        FL_UNSET_EMBED(ary);
+        ary_set_stride_uns(ary, new_stride, new_uns);
+        ARY_SET_PTR(ary, (const VALUE *)buf);
+        ARY_SET_HEAP_LEN(ary, len);
+        ARY_SET_CAPA(ary, need);
+        return;
+    }
+
+    const size_t old_bytes = (size_t)capa * ary_stride_bytes(ary);
+    void *buf = ruby_xmalloc((size_t)capa * new_width);
     ARY_NARROW_DISPATCH(ary, T, p, {
         for (long i = 0; i < capa; i++) ary_narrow_encode(buf, new_stride, i, (SIGNED_VALUE)p[i]);
     });
 
     void *old = (void *)RARRAY(ary)->as.heap.ptr;
-    ary_set_stride(ary, new_stride);
-    if (new_uns) FL_SET_RAW(ary, RARRAY_STRIDE_UNSIGNED);
-    else         FL_UNSET_RAW(ary, RARRAY_STRIDE_UNSIGNED);
+    ary_set_stride_uns(ary, new_stride, new_uns);
     RARRAY(ary)->as.heap.ptr = (const VALUE *)buf;
     /* capa stays the same in element count */
     ruby_xfree_sized(old, old_bytes);
@@ -714,7 +865,7 @@ ary_try_narrow(VALUE ary)
 {
     if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) return rb_array_stride(ary);
     if (ARY_SHARED_P(ary)) rb_ary_cancel_sharing(ary);
-    if (ARY_EMBED_P(ary) || ARY_SHARED_P(ary) || ARY_SHARED_ROOT_P(ary)) {
+    if (ARY_SHARED_P(ary) || ARY_SHARED_ROOT_P(ary)) {
         return RARRAY_STRIDE_VALUE;
     }
 
@@ -725,6 +876,16 @@ ary_try_narrow(VALUE ary)
     int uns;
     int want = ary_stride_for_values(src, len, &uns);
     if (want == RARRAY_STRIDE_VALUE) return RARRAY_STRIDE_VALUE;
+
+    if (ARY_EMBED_P(ary)) {
+        ARY_EMBED_COPY(ary, copy);
+        void *slot = (void *)RARRAY(ary)->as.ary;
+        for (long i = 0; i < len; i++) {
+            ary_narrow_encode(slot, want, i, ary_fix2nint(((const VALUE *)copy)[i]));
+        }
+        ary_set_stride_uns(ary, want, uns);
+        return want;
+    }
 
     const size_t width = ary_stride_width_bytes(want);
     const size_t old_bytes = (size_t)ARY_CAPA(ary) * sizeof(VALUE);
@@ -744,10 +905,51 @@ ary_try_narrow(VALUE ary)
     return want;
 }
 
+/* Settle the representation of an array about to be frozen.  A frozen
+ * narrow array keeps a wide copy for C callers in as.heap.aux (see
+ * rb_ary_wide_ptr), which an embedded array has no room for.  So a frozen
+ * embedded array is always wide: a narrow one is widened in the slot when it
+ * fits as VALUEs, and moved to the heap, still narrow, when it doesn't. */
+static int
+ary_freeze_prepare(VALUE ary)
+{
+    if (ARY_EMBED_P(ary)) {
+        if (rb_array_stride(ary) == RARRAY_STRIDE_VALUE) return RARRAY_STRIDE_VALUE;
+        if (RARRAY_LEN(ary) <= ary_embed_capa_for(ary, RARRAY_STRIDE_VALUE)) {
+            ary_widen_locked(ary, RARRAY_LEN(ary));
+            return RARRAY_STRIDE_VALUE;
+        }
+        ary_spill_to_heap(ary, RARRAY_LEN(ary));
+        return rb_array_stride(ary);
+    }
+    if (ARY_SHARED_P(ary) || ARY_SHARED_ROOT_P(ary)) return rb_array_stride(ary);
+    /* An array may already be narrow from mutation; trim push slack either
+     * way (no-op when capa == len). */
+    int stride = ary_try_narrow(ary);
+    ary_shrink_capa(ary);
+    return stride;
+}
+
 int
 rb_ary_narrow(VALUE ary)
 {
-    return ary_try_narrow(ary);
+    return ary_freeze_prepare(ary);
+}
+
+/* For C code that has to read ary as VALUEs without leaving it widened: a
+ * mutable embedded array whose elements fit its slot as VALUEs is widened in
+ * place (no allocation); anything else stays packed and a wide copy is
+ * returned instead. */
+VALUE
+rb_ary_wide_or_dup(VALUE ary)
+{
+    if (rb_array_stride(ary) == RARRAY_STRIDE_VALUE) return ary;
+    if (ARY_EMBED_P(ary) && !OBJ_FROZEN(ary) &&
+        RARRAY_LEN(ary) <= ary_embed_capa_for(ary, RARRAY_STRIDE_VALUE)) {
+        ary_widen_locked(ary, RARRAY_LEN(ary));
+        return ary;
+    }
+    return rb_ary_dup(ary);
 }
 
 /* ---- narrow fast paths ------------------------------------------------- */
@@ -765,24 +967,9 @@ ary_memmove(VALUE ary, long dst, long src, long n)
     }
     else {
         const size_t w = ary_stride_bytes(ary);
-        char *buf = (char *)RARRAY(ary)->as.heap.ptr;
+        char *buf = (char *)rarray_storage_ptr(ary);
         memmove(buf + (size_t)dst * w, buf + (size_t)src * w, (size_t)n * w);
     }
-}
-
-/* Decode a narrow heap array's first len elements into its embedded slots.
- * The embedded slots overlap the heap len/capa/ptr fields, so the buffer
- * pointer is captured once (by the dispatch) before any slot is written.
- * The caller frees the old buffer and sets the embed flag afterwards. */
-static void
-ary_narrow_decode_to_embed(VALUE ary, long len)
-{
-    RUBY_ASSERT(!ARY_EMBED_P(ary));
-    RUBY_ASSERT(len <= (long)ary_embed_capa(ary));
-    VALUE *dest = (VALUE *)RARRAY(ary)->as.ary;
-    ARY_NARROW_DISPATCH(ary, T, p, {
-        for (long i = 0; i < len; i++) dest[i] = LONG2FIX(p[i]);
-    });
 }
 
 /* Reverse elements [i, j] of a narrow array in place. */
@@ -860,15 +1047,14 @@ ary_narrow_minmax(VALUE ary, bool want_max)
     return best;
 }
 
-/* Decode src[offset, offset+len) into dst[0..len) as VALUEs, in order or
- * reversed.  Elements are immediates, so no write barrier is needed. */
+/* Decode src[offset, offset+len) into dst[0..len) as VALUEs.  Elements are
+ * immediates, so no write barrier is needed. */
 static void
-ary_narrow_decode(VALUE src, long offset, VALUE *dst, long len, bool reversed)
+ary_narrow_decode(VALUE src, long offset, VALUE *dst, long len)
 {
     ARY_NARROW_DISPATCH(src, T, p, {
         p += offset;
-        if (reversed) { for (long i = 0; i < len; i++) dst[len - 1 - i] = LONG2FIX(p[i]); }
-        else          { for (long i = 0; i < len; i++) dst[i] = LONG2FIX(p[i]); }
+        for (long i = 0; i < len; i++) dst[i] = LONG2FIX(p[i]);
     });
 }
 
@@ -908,6 +1094,11 @@ ary_mem_clear(VALUE ary, rb_len_t beg, rb_len_t size)
     /* Filling a gap with nil is a non-Fixnum write, so a narrow array has
      * to widen; but an empty gap (append at the end) touches nothing. */
     if (size <= 0) return;
+    if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
+        /* Widen with the room the caller made, not just len (see ary_widen_locked). */
+        if (ARY_SHARED_P(ary)) rb_ary_cancel_sharing(ary);
+        ary_widen_locked(ary, beg + size);
+    }
     RARRAY_PTR_USE(ary, ptr, {
         rb_mem_clear(ptr + beg, size);
     });
@@ -924,18 +1115,17 @@ memfill(register VALUE *mem, register rb_len_t size, register VALUE val)
 static void
 ary_memfill(VALUE ary, rb_len_t beg, rb_len_t size, VALUE val)
 {
-    if (beg == 0 && size > 0 && FIXNUM_P(val)) {
+    if (beg == 0 && size > 0 && RARRAY_LEN(ary) == 0 && FIXNUM_P(val)) {
+        /* The first write, covering the whole array: val picks the width. */
         int uns;
-        int stride = ary_stride_for_fixnum(ary_fix2nint(val), &uns);
-        ary_narrow_empty_heap(ary, stride, uns);
+        const int first = ary_stride_for_fixnum(ary_fix2nint(val), &uns);   /* before uns is read */
+        ary_narrow_empty(ary, first, uns);
     }
+    /* One fit check for the single value, then encode it size times. */
+    ary_fit_stride(ary, val, beg + size);
     if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
-        /* One fit check for the single value, then encode it size times. */
-        ary_fit_stride(ary, val);
-        if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
-            for (long i = 0; i < size; i++) ary_narrow_write(ary, beg + i, val);
-            return;
-        }
+        for (long i = 0; i < size; i++) ary_narrow_write(ary, beg + i, val);
+        return;
     }
     RARRAY_PTR_USE(ary, ptr, {
         memfill(ptr + beg, size, val);
@@ -949,7 +1139,6 @@ ary_memfill(VALUE ary, rb_len_t beg, rb_len_t size, VALUE val)
 static inline void
 ary_narrow_write(VALUE ary, long idx, VALUE elem)
 {
-    RUBY_ASSERT(!ARY_EMBED_P(ary));
     RUBY_ASSERT(!ARY_SHARED_ROOT_P(ary));
     RUBY_ASSERT(idx >= 0);
 #if RUBY_DEBUG
@@ -960,42 +1149,42 @@ ary_narrow_write(VALUE ary, long idx, VALUE elem)
         RUBY_ASSERT(rb_array_stride_unsigned_p(ary) == rb_array_stride_unsigned_p(root));
         /* A root's len is its capacity. */
         const size_t w = ary_stride_bytes(ary);
-        const char *base = (const char *)ary_raw_ptr(root);
+        const char *base = (const char *)rarray_storage_ptr(root);
         const char *slot = (const char *)RARRAY(ary)->as.heap.ptr + (size_t)idx * w;
         RUBY_ASSERT(base <= slot && slot + w <= base + (size_t)RARRAY_LEN(root) * w);
     }
     else {
-        RUBY_ASSERT(idx < ARY_HEAP_CAPA(ary));
+        RUBY_ASSERT(idx < ARY_CAPA(ary));
     }
 #endif
     RUBY_ASSERT(FIXNUM_P(elem));
     RUBY_ASSERT(ary_fixnum_fits_stride(ary_fix2nint(elem), rb_array_stride(ary),
                                        rb_array_stride_unsigned_p(ary)));
-    ary_narrow_encode((void *)RARRAY(ary)->as.heap.ptr, rb_array_stride(ary), idx, ary_fix2nint(elem));
+    ary_narrow_encode((void *)rarray_storage_ptr(ary), rb_array_stride(ary), idx, ary_fix2nint(elem));
 }
 
-/* A heap array that was allocated wide but has nothing in it yet (Array.new,
- * [x] * n, concat into [], a + b) can still pick a narrow stride from the
- * first element(s) written at index 0.  Reallocates the buffer at the new
- * width, keeping capacity.  No-op unless the array is heap, wide, empty and
- * owns its buffer.  len must be exactly 0: unshift moves existing elements
- * up before writing at 0, so a non-zero len means live data past index 0. */
+/* An array that is still wide but has nothing in it yet (Array.new, [x] * n,
+ * concat into [], a + b, a fresh literal) picks a narrow stride from the
+ * first element(s) written at index 0.  Embedded: the slot is simply
+ * reinterpreted.  Heap: the buffer is reallocated at the new width, keeping
+ * capacity.  len must be exactly 0: unshift moves existing elements up
+ * before writing at 0, so a non-zero len means live data past index 0. */
 static void
-ary_narrow_empty_heap(VALUE ary, int stride, int uns)
+ary_narrow_empty(VALUE ary, int stride, int uns)
 {
     if (stride == RARRAY_STRIDE_VALUE) return;
-    if (ARY_EMBED_P(ary) || ARY_SHARED_P(ary) || ARY_SHARED_ROOT_P(ary)) return;
+    if (ARY_SHARED_P(ary) || ARY_SHARED_ROOT_P(ary)) return;
     if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE || RARRAY_LEN(ary) != 0) return;
     RUBY_ASSERT(!OBJ_FROZEN(ary));
 
-    const long capa = ARY_HEAP_CAPA(ary);
-    const size_t old_bytes = (size_t)capa * sizeof(VALUE);
-    const size_t new_bytes = (size_t)capa * ary_stride_width_bytes(stride);
-    void *buf = ruby_xrealloc_sized((void *)RARRAY(ary)->as.heap.ptr, new_bytes, old_bytes);
-    RARRAY(ary)->as.heap.ptr = (const VALUE *)buf;
-    ary_set_stride(ary, stride);
-    if (uns) FL_SET_RAW(ary, RARRAY_STRIDE_UNSIGNED);
-    else     FL_UNSET_RAW(ary, RARRAY_STRIDE_UNSIGNED);
+    if (!ARY_EMBED_P(ary)) {
+        const long capa = ARY_HEAP_CAPA(ary);
+        const size_t old_bytes = (size_t)capa * sizeof(VALUE);
+        const size_t new_bytes = (size_t)capa * ary_stride_width_bytes(stride);
+        void *buf = ruby_xrealloc_sized((void *)RARRAY(ary)->as.heap.ptr, new_bytes, old_bytes);
+        RARRAY(ary)->as.heap.ptr = (const VALUE *)buf;
+    }
+    ary_set_stride_uns(ary, stride, uns);
     ary_verify(ary);
 }
 
@@ -1003,15 +1192,17 @@ ary_narrow_empty_heap(VALUE ary, int stride, int uns)
  * already fits, promote to a wider narrow stride if a Fixnum needs it, or
  * widen to VALUE storage otherwise. Does not write elem. */
 static void
-ary_fit_stride(VALUE ary, VALUE elem)
+ary_fit_stride(VALUE ary, VALUE elem, rb_len_t need)
 {
     int stride = rb_array_stride(ary);
-    if (stride == RARRAY_STRIDE_VALUE) return;
-
-    if (FIXNUM_P(elem) && ary_fixnum_fits_stride(ary_fix2nint(elem), stride, rb_array_stride_unsigned_p(ary))) {
+    if (stride == RARRAY_STRIDE_VALUE) {
+        /* Nothing to settle unless this is the first write or the slot is full. */
+        if (!(RARRAY_LEN(ary) == 0 && need == 1) && !(ARY_EMBED_P(ary) && need > ary_embed_capa(ary))) return;
+    }
+    else if (FIXNUM_P(elem) && ary_fixnum_fits_stride(ary_fix2nint(elem), stride, rb_array_stride_unsigned_p(ary))) {
         return;   /* fits as is; a view may write in place into its root's buffer */
     }
-    ary_fit_stride_batch(ary, &elem, 1);
+    ary_fit_stride_batch(ary, &elem, 1, need);
 }
 
 static void
@@ -1019,14 +1210,9 @@ ary_memcpy0(VALUE ary, rb_len_t beg, rb_len_t argc, const VALUE *argv, VALUE buf
 {
     RUBY_ASSERT(!ARY_SHARED_P(buff_owner_ary));
 
-    if (beg == 0 && argc > 0) {
-        /* One decision for all argc elements, so no promotions mid-copy. */
-        int uns;
-        int stride = ary_stride_for_values(argv, argc, &uns);
-        ary_narrow_empty_heap(ary, stride, uns);
-    }
-    /* Settle the representation for all argc elements first, then encode. */
-    ary_fit_stride_batch(ary, argv, argc);
+    /* Settle the representation for all argc elements first, then encode:
+     * one decision for the batch, so no promotions mid-copy. */
+    ary_fit_stride_batch(ary, argv, argc, beg + argc);
     if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
         for (long i = 0; i < argc; i++) ary_narrow_write(ary, beg + i, argv[i]);
         return;
@@ -1106,27 +1292,13 @@ rb_ary_make_embedded(VALUE ary)
 {
     RUBY_ASSERT(rb_ary_embeddable_p(ary));
     if (!ARY_EMBED_P(ary)) {
-        const VALUE *buf = ARY_HEAP_PTR(ary);
-        rb_len_t len = ARY_HEAP_LEN(ary);
-        rb_len_t capa = ARY_HEAP_CAPA(ary);
-
-        FL_SET_EMBED(ary);
-        ARY_SET_EMBED_LEN(ary, len);
-
-        MEMCPY((void *)ARY_EMBED_PTR(ary), (void *)buf, VALUE, len);
-
-        ary_heap_free_ptr(ary, buf, capa * sizeof(VALUE));
+        ary_move_to_embed(ary, ARY_HEAP_LEN(ary));
     }
 }
 
-/* Check if all elements in embedded array are Fixnums, compute stride. */
-static int
-ary_embed_all_fixnum(VALUE ary, int *uns_out)
-{
-    RUBY_ASSERT(ARY_EMBED_P(ary));
-    return ary_stride_for_values(ARY_EMBED_PTR(ary), ARY_EMBED_LEN(ary), uns_out);
-}
-
+/* Make room for capacity elements at the current stride.  Writers settle
+ * the stride before asking for room (ary_fit_stride_batch), so this only
+ * moves storage: out of the slot when it is full, back in when it fits. */
 static void
 ary_resize_capa(VALUE ary, rb_len_t capacity)
 {
@@ -1134,68 +1306,18 @@ ary_resize_capa(VALUE ary, rb_len_t capacity)
     RUBY_ASSERT(!OBJ_FROZEN(ary));
     RUBY_ASSERT(!ARY_SHARED_P(ary));
 
-    if (capacity > ary_embed_capa(ary)) {
-        size_t new_capa = capacity;
-        if (ARY_EMBED_P(ary)) {
-            rb_len_t len = ARY_EMBED_LEN(ary);
-
-            /* Try to narrow on embedded→heap transition */
-            int uns = 0;
-            int stride = ary_embed_all_fixnum(ary, &uns);
-
-            if (stride != RARRAY_STRIDE_VALUE) {
-                /* All Fixnums: allocate narrow buffer */
-                size_t width = ary_stride_width_bytes(stride);
-                void *buf = ruby_xmalloc((size_t)capacity * width);
-                const VALUE *src = ARY_EMBED_PTR(ary);
-                for (long i = 0; i < len; i++) {
-                    ary_narrow_encode(buf, stride, i, ary_fix2nint(src[i]));
-                }
-                FL_UNSET_EMBED(ary);
-                ary_set_stride(ary, stride);
-                if (uns) FL_SET_RAW(ary, RARRAY_STRIDE_UNSIGNED);
-                else     FL_UNSET_RAW(ary, RARRAY_STRIDE_UNSIGNED);
-                ARY_SET_PTR(ary, (VALUE *)buf);
-                ARY_SET_HEAP_LEN(ary, len);
-                ARY_SET_CAPA(ary, capacity);
-            }
-            else {
-                /* Not all Fixnums or empty: stay wide */
-                VALUE *ptr = ary_heap_alloc_buffer(capacity);
-                MEMCPY(ptr, ARY_EMBED_PTR(ary), VALUE, len);
-                FL_UNSET_EMBED(ary);
-                ARY_SET_PTR(ary, ptr);
-                ARY_SET_HEAP_LEN(ary, len);
-                ARY_SET_CAPA(ary, new_capa);
-            }
-        }
-        else {
-            new_capa = ary_heap_realloc(ary, capacity);
-            ARY_SET_CAPA(ary, new_capa);
-        }
+    if (ARY_EMBED_P(ary)) {
+        if (capacity <= ary_embed_capa(ary)) return;
+        ary_spill_to_heap(ary, capacity);
+    }
+    else if (capacity <= ary_embed_capa(ary)) {
+        rb_len_t len = ARY_HEAP_LEN(ary);
+        if (len > capacity) len = capacity;
+        ary_move_to_embed(ary, len);
     }
     else {
-        if (!ARY_EMBED_P(ary)) {
-            rb_len_t len = ARY_HEAP_LEN(ary);
-            rb_len_t old_capa = ARY_HEAP_CAPA(ary);
-            const VALUE *ptr = ARY_HEAP_PTR(ary);
-            int stride = rb_array_stride(ary);
-
-            if (len > capacity) len = capacity;
-
-            if (stride != RARRAY_STRIDE_VALUE) {
-                size_t old_bytes = (size_t)old_capa * ary_stride_bytes(ary);
-                ary_narrow_decode_to_embed(ary, len);
-                ary_heap_free_ptr(ary, ptr, old_bytes);
-            }
-            else {
-                MEMCPY((VALUE *)RARRAY(ary)->as.ary, ptr, VALUE, len);
-                ary_heap_free_ptr(ary, ptr, old_capa * sizeof(VALUE));
-            }
-
-            FL_SET_EMBED(ary);
-            ARY_SET_LEN(ary, len);
-        }
+        size_t new_capa = ary_heap_realloc(ary, capacity);
+        ARY_SET_CAPA(ary, new_capa);
     }
 
     ary_verify(ary);
@@ -1310,20 +1432,12 @@ rb_ary_cancel_sharing(VALUE ary)
         const size_t w = ary_stride_bytes(ary);   /* a view's stride mirrors its root's */
 
         if (len <= ary_embed_capa(ary)) {
-            /* Into the slot, as VALUEs.  A narrow view is decoded first
-             * (the slot overlaps the heap fields the pointer lives in);
-             * embedding clears the stride bits. */
-            if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
-                ary_narrow_decode_to_embed(ary, len);
-                FL_UNSET_SHARED(ary);
-                FL_SET_EMBED(ary);
-            }
-            else {
-                const VALUE *ptr = ARY_HEAP_PTR(ary);
-                FL_UNSET_SHARED(ary);
-                FL_SET_EMBED(ary);
-                MEMCPY((VALUE *)ARY_EMBED_PTR(ary), ptr, VALUE, len);
-            }
+            /* Into the slot at the view's stride.  The slot overlaps the heap
+             * fields, so the pointer is read before the first byte lands. */
+            const char *ptr = (const char *)ARY_HEAP_PTR(ary);
+            FL_UNSET_SHARED(ary);
+            FL_SET_EMBED(ary);
+            memmove((void *)RARRAY(ary)->as.ary, ptr, (size_t)len * w);
             rb_ary_decrement_share(shared_root);
             ARY_SET_EMBED_LEN(ary, len);
         }
@@ -1332,13 +1446,14 @@ rb_ary_cancel_sharing(VALUE ary)
              * over and slide our elements to the front, at element width.
              * Raw pointers: RARRAY_CONST_PTR would widen. */
             const char *view_ptr = (const char *)ARY_HEAP_PTR(ary);
-            char *root_ptr = (char *)ary_raw_ptr(shared_root);
+            char *root_ptr = (char *)rarray_storage_ptr(shared_root);
             size_t shift_bytes = (size_t)(view_ptr - root_ptr);
             FL_UNSET_SHARED(ary);
             ARY_SET_PTR(ary, (const VALUE *)root_ptr);
             ARY_SET_CAPA(ary, shared_len);
             memmove(root_ptr, root_ptr + shift_bytes, (size_t)len * w);
-            FL_SET_EMBED(shared_root);      /* root owns nothing now (clears its stride too) */
+            ary_set_stride_uns(shared_root, RARRAY_STRIDE_VALUE, 0);
+            FL_SET_EMBED(shared_root);      /* root owns nothing now */
             rb_ary_decrement_share(shared_root);
         }
         else {
@@ -1376,7 +1491,7 @@ ary_ensure_room_for_push(VALUE ary, rb_len_t add_len)
             VALUE shared_root = ARY_SHARED_ROOT(ary);
             if (ARY_SHARED_ROOT_OCCUPIED(shared_root)) {
                 /* raw pointers at element width: RARRAY_CONST_PTR would widen the root */
-                rb_len_t head = (rb_len_t)(((const char *)ARY_HEAP_PTR(ary) - (const char *)ary_raw_ptr(shared_root)) / ary_stride_bytes(ary));
+                rb_len_t head = (rb_len_t)(((const char *)ARY_HEAP_PTR(ary) - (const char *)rarray_storage_ptr(shared_root)) / ary_stride_bytes(ary));
                 if (head + new_len <= RARRAY_LEN(shared_root)) {
                     rb_ary_modify_check(ary);
 
@@ -1426,12 +1541,7 @@ rb_ary_freeze(VALUE ary)
 
     if (OBJ_FROZEN(ary)) return ary;
 
-    if (!ARY_EMBED_P(ary) && !ARY_SHARED_P(ary) && !ARY_SHARED_ROOT_P(ary)) {
-        /* An array may already be narrow from mutation; trim push slack
-         * either way (no-op when capa == len). */
-        ary_try_narrow(ary);
-        ary_shrink_capa(ary);
-    }
+    ary_freeze_prepare(ary);
 
     return rb_obj_freeze(ary);
 }
@@ -1737,20 +1847,13 @@ ary_make_shared(VALUE ary)
         FL_SET_SHARED_ROOT(shared);
 
         if (ARY_EMBED_P(ary)) {
-            VALUE *ptr = ary_heap_alloc_buffer(capa);
-            ARY_SET_PTR(shared, ptr);
-            ary_memcpy(shared, 0, len, RARRAY_CONST_PTR(ary));
-
-            FL_UNSET_EMBED(ary);
-            ARY_SET_HEAP_LEN(ary, len);
-            ARY_SET_PTR(ary, ptr);
+            /* Out of the slot at the array's stride; the root takes it over. */
+            ary_spill_to_heap(ary, capa);
         }
-        else {
-            /* The root takes the buffer as it is, narrow or wide.  Views read
-             * it with their own stride bits, so the root's must match. */
-            ARY_SET_PTR(shared, (const VALUE *)ary_raw_ptr(ary));
-            ary_copy_stride(shared, ary);
-        }
+        /* The root takes the buffer as it is, narrow or wide.  Views read
+         * it with their own stride bits, so the root's must match. */
+        ARY_SET_PTR(shared, (const VALUE *)rarray_storage_ptr(ary));
+        ary_copy_stride(shared, ary);
 
         ARY_SET_LEN(shared, capa);
         /* The slack must hold valid VALUEs for the GC to mark; a narrow root
@@ -2014,13 +2117,8 @@ rb_ary_store(VALUE ary, rb_len_t idx, VALUE val)
         ary_mem_clear(ary, len, idx - len + 1);
     }
 
-    if (idx == 0 && len == 0 && FIXNUM_P(val)) {
-        /* First element into an empty heap array: pick the stride from it
-         * before len is bumped (ARY_SET can't tell afterwards). */
-        int uns;
-        int stride = ary_stride_for_fixnum(ary_fix2nint(val), &uns);
-        ary_narrow_empty_heap(ary, stride, uns);
-    }
+    /* Settle before len is bumped: the first write picks the width. */
+    ary_fit_stride(ary, val, idx + 1);
     if (idx >= len) {
         ARY_SET_LEN(ary, idx + 1);
     }
@@ -2035,17 +2133,31 @@ ary_make_partial(VALUE ary, VALUE klass, rb_len_t offset, rb_len_t len)
     RUBY_ASSERT(offset+len <= RARRAY_LEN(ary));
 
     VALUE result = ary_alloc_heap(klass);
-    size_t embed_capa = ary_embed_capa(result);
-    if ((size_t)len <= embed_capa) {
+    const int stride = rb_array_stride(ary);
+    const size_t w = ary_stride_bytes(ary);
+    if (len <= ary_embed_capa_for(result, stride)) {
+        /* A copy in the slot, at the source's stride. */
+        ary_copy_stride(result, ary);
         FL_SET_EMBED(result);
-        if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
-            /* decode the range into the slot; the source stays narrow */
-            ary_narrow_decode(ary, offset, (VALUE *)RARRAY(result)->as.ary, len, false);
+        if (stride != RARRAY_STRIDE_VALUE) {
+            memcpy((void *)RARRAY(result)->as.ary, (const char *)rarray_storage_ptr(ary) + offset * w, (size_t)len * w);
         }
         else {
             ary_memcpy(result, 0, len, RARRAY_CONST_PTR(ary) + offset);
         }
         ARY_SET_EMBED_LEN(result, len);
+    }
+    else if (stride != RARRAY_STRIDE_VALUE && OBJ_FROZEN(ary) && ARY_EMBED_P(ary)) {
+        /* A frozen narrow embedded array (frozen behind rb_ary_freeze's back)
+         * may still be widened in place by rb_ary_wide_ptr, so nothing may
+         * point into its slot: copy to the heap instead of sharing. */
+        void *buf = ruby_xmalloc((size_t)len * w);
+        memcpy(buf, (const char *)rarray_storage_ptr(ary) + offset * w, (size_t)len * w);
+        FL_UNSET_EMBED(result); /* the malloc may have run a compacting GC */
+        ary_copy_stride(result, ary);
+        ARY_SET_PTR(result, (const VALUE *)buf);
+        ARY_SET_HEAP_LEN(result, len);
+        ARY_SET_CAPA(result, len);
     }
     else {
         VALUE shared = ary_make_shared(ary);
@@ -2058,7 +2170,7 @@ ary_make_partial(VALUE ary, VALUE klass, rb_len_t offset, rb_len_t len)
         /* A view into a narrow root: same stride bits, pointer advanced at
          * the element width.  Raw pointer: RARRAY_CONST_PTR would widen. */
         ary_copy_stride(result, ary);
-        ARY_SET_PTR(result, (const VALUE *)ary_raw_ptr(ary));
+        ARY_SET_PTR(result, (const VALUE *)rarray_storage_ptr(ary));
         ARY_SET_LEN(result, RARRAY_LEN(ary));
         rb_ary_set_shared(result, shared);
 
@@ -2085,9 +2197,8 @@ ary_make_partial_step(VALUE ary, VALUE klass, rb_len_t offset, rb_len_t len, rb_
     if (step > 0 && step >= len) {
         VALUE result = ary_new(klass, 1);
         VALUE *ptr = (VALUE *)ARY_EMBED_PTR(result);
-        const VALUE *values = RARRAY_CONST_PTR(ary);
 
-        RB_OBJ_WRITE(result, ptr, values[offset]);
+        RB_OBJ_WRITE(result, ptr, RARRAY_AREF(ary, offset));
         ARY_SET_EMBED_LEN(result, 1);
         return result;
     }
@@ -2101,23 +2212,21 @@ ary_make_partial_step(VALUE ary, VALUE klass, rb_len_t offset, rb_len_t len, rb_
     rb_len_t i;
     rb_len_t j = offset + ((step > 0) ? 0 : (orig_len - 1));
 
+    /* RARRAY_AREF, not RARRAY_CONST_PTR: reading must not widen ary. */
     VALUE result = ary_new(klass, len);
     if (ARY_EMBED_P(result)) {
         VALUE *ptr = (VALUE *)ARY_EMBED_PTR(result);
-        const VALUE *values = RARRAY_CONST_PTR(ary);
 
         for (i = 0; i < len; ++i) {
-            RB_OBJ_WRITE(result, ptr+i, values[j]);
+            RB_OBJ_WRITE(result, ptr+i, RARRAY_AREF(ary, j));
             j += step;
         }
         ARY_SET_EMBED_LEN(result, len);
     }
     else {
-        const VALUE *values = RARRAY_CONST_PTR(ary);
-
         RARRAY_PTR_USE(result, ptr, {
             for (i = 0; i < len; ++i) {
-                RB_OBJ_WRITE(result, ptr+i, values[j]);
+                RB_OBJ_WRITE(result, ptr+i, RARRAY_AREF(ary, j));
                 j += step;
             }
         });
@@ -2196,22 +2305,9 @@ rb_ary_push(VALUE ary, VALUE item)
     /* Settle the representation before making room: if this write has to
      * unshare or widen, that must happen first.  Room made afterwards may
      * live in a shared root's buffer, and a fresh private copy has no slack. */
-    if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
-        rb_ary_modify_check(ary);
-        ary_fit_stride(ary, item);
-    }
+    rb_ary_modify_check(ary);
+    ary_fit_stride(ary, item, idx + 1);
     VALUE target_ary = ary_ensure_room_for_push(ary, 1);
-    if (idx == 0 && FIXNUM_P(item)) {
-        int uns;
-        int stride = ary_stride_for_fixnum(ary_fix2nint(item), &uns);
-        ary_narrow_empty_heap(ary, stride, uns);
-    }
-    /* Making room may have narrowed a wide array (embedded->heap spill picks
-     * a stride from the existing elements); settle again.  Safe here: the
-     * array owns its buffer with slack, so no view and no lost room. */
-    if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
-        ary_fit_stride(ary, item);
-    }
     /* Narrow: encode in place.  For a view with slack this lands in the
      * root's buffer through our pointer; strides match by invariant. */
     if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
@@ -2232,6 +2328,11 @@ VALUE
 rb_ary_cat(VALUE ary, const VALUE *argv, rb_len_t len)
 {
     rb_len_t oldlen = RARRAY_LEN(ary);
+    /* Settle the representation before making room (see rb_ary_push). */
+    if (len > 0) {
+        rb_ary_modify_check(ary);
+        ary_fit_stride_batch(ary, argv, len, oldlen + len);
+    }
     VALUE target_ary = ary_ensure_room_for_push(ary, len);
     ary_memcpy0(ary, oldlen, len, argv, target_ary);
     ARY_SET_LEN(ary, oldlen + len);
@@ -2442,7 +2543,7 @@ make_room_for_unshift(VALUE ary, int argc, rb_len_t capa, rb_len_t len)
     /* ary is a view into an occupied root; work on raw pointers at the
      * element width (RARRAY_CONST_PTR would widen one of them). */
     const size_t w = ary_stride_bytes(ary);
-    char *sharedp = (char *)ary_raw_ptr(ARY_SHARED_ROOT(ary));
+    char *sharedp = (char *)rarray_storage_ptr(ARY_SHARED_ROOT(ary));
     const char *head = (const char *)ARY_HEAP_PTR(ary);
     if ((size_t)(head - sharedp) < (size_t)argc * w) {
         rb_len_t room = capa - len - argc;
@@ -2545,10 +2646,8 @@ rb_ary_unshift_m(int argc, VALUE *argv, VALUE ary)
     }
 
     /* Settle the representation before making room (see rb_ary_push). */
-    if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
-        rb_ary_modify_check(ary);
-        ary_fit_stride_batch(ary, argv, argc);
-    }
+    rb_ary_modify_check(ary);
+    ary_fit_stride_batch(ary, argv, argc, len + argc);
     target_ary = ary_ensure_room_for_unshift(ary, argc);
     ary_memcpy0(ary, 0, argc, argv, target_ary);
     ARY_SET_LEN(ary, len + argc);
@@ -3162,10 +3261,12 @@ ary_splice(VALUE ary, rb_len_t beg, rb_len_t len, const VALUE *rptr, rb_len_t rl
         }
         /* Settle the representation before making room (see rb_ary_push).
          * A gap of nils past the end is a non-Fixnum write too. */
-        if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
-            rb_ary_modify_check(ary);
-            if (beg > olen) rb_ary_widen(ary);
-            else if (!self_insert) ary_fit_stride_batch(ary, rptr, rlen);
+        rb_ary_modify_check(ary);
+        if (beg > olen) {
+            if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) ary_widen_locked(ary, beg + rlen);
+        }
+        else if (!self_insert) {
+            ary_fit_stride_batch(ary, rptr, rlen, beg + rlen);
         }
         target_ary = ary_ensure_room_for_push(ary, rlen-len); /* len is 0 or negative */
         len = beg + rlen;
@@ -3185,6 +3286,8 @@ ary_splice(VALUE ary, rb_len_t beg, rb_len_t len, const VALUE *rptr, rb_len_t rl
         }
         rb_ary_modify(ary);
         alen = olen + rlen - len;
+        /* Settle the representation before making room (see rb_ary_push). */
+        if (!self_insert) ary_fit_stride_batch(ary, rptr, rlen, alen);
         if (alen >= ARY_CAPA(ary)) {
             ary_double_capa(ary, alen);
         }
@@ -3219,7 +3322,7 @@ rb_ary_splice(VALUE ary, rb_len_t beg, rb_len_t len, VALUE rpl)
          * way into ary if ary is narrow. */
         VALUE tmp;
         VALUE *buf = ALLOCV_N(VALUE, tmp, rlen);
-        ary_narrow_decode(rpl, 0, buf, rlen, false);
+        ary_narrow_decode(rpl, 0, buf, rlen);
         ary_splice(ary, beg, len, buf, rlen, FALSE);
         ALLOCV_END(tmp);
     }
@@ -3256,6 +3359,12 @@ rb_ary_modify_expand(VALUE ary, rb_len_t expand)
         rb_raise(rb_eArgError, " size too big");
     }
     rb_ary_modify_check(ary);
+    /* The caller writes VALUEs through RARRAY_PTR next, and that widen must
+     * not undo the room made here (see ary_widen_locked): widen first. */
+    if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
+        if (ARY_SHARED_P(ary)) rb_ary_cancel_sharing(ary);
+        ary_widen_locked(ary, len + expand);
+    }
     if (len + expand > ARY_CAPA(ary)) {
         ary_resize_capa(ary, len + expand);
     }
@@ -3284,21 +3393,7 @@ rb_ary_resize(VALUE ary, rb_len_t len)
         ARY_SET_EMBED_LEN(ary, len);
     }
     else if (len <= ary_embed_capa(ary)) {
-        const VALUE *ptr = ARY_HEAP_PTR(ary);
-        rb_len_t ptr_capa = ARY_HEAP_SIZE(ary);
-        bool is_malloc_ptr = !ARY_SHARED_P(ary);
-
-        if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
-            ary_narrow_decode_to_embed(ary, len);
-            FL_SET_EMBED(ary);
-        }
-        else {
-            FL_SET_EMBED(ary);
-            MEMCPY((VALUE *)ARY_EMBED_PTR(ary), ptr, VALUE, len); /* WB: no new reference */
-        }
-        ARY_SET_EMBED_LEN(ary, len);
-
-        if (is_malloc_ptr) ruby_xfree_sized((void *)ptr, ptr_capa);
+        ary_move_to_embed(ary, len); /* WB: no new reference */
     }
     else {
         if (olen > len + ARY_DEFAULT_SIZE) {
@@ -3779,12 +3874,16 @@ rb_ary_dup(VALUE ary)
 {
     rb_len_t len = RARRAY_LEN(ary);
     VALUE dup = rb_ary_new2(len);
+    /* The copy keeps the source's layout.  YJIT relies on it: gen_send_iseq's
+     * rest handling guards the source's layout, dups it, and reads the dup
+     * inline.  Not ary_memcpy: its first-write hook would pack a wide copy. */
     if (RB_UNLIKELY(rb_array_stride(ary) != RARRAY_STRIDE_VALUE)) {
-        /* Decode into the (wide) copy so the source stays narrow. */
-        RARRAY_PTR_USE(dup, ptr, ary_narrow_decode(ary, 0, ptr, len, false));
+        ary_narrow_empty(dup, rb_array_stride(ary), rb_array_stride_unsigned_p(ary));
+        memcpy((void *)rarray_storage_ptr(dup), rarray_storage_ptr(ary), (size_t)len * ary_stride_bytes(ary));
     }
-    else {
-        ary_memcpy(dup, 0, len, RARRAY_CONST_PTR(ary));
+    else if (len > 0) {
+        RARRAY_PTR_USE(dup, ptr, MEMCPY(ptr, RARRAY_CONST_PTR(ary), VALUE, len));
+        rb_gc_writebarrier_remember(dup);
     }
     ARY_SET_LEN(dup, len);
 
@@ -4270,8 +4369,12 @@ rb_ary_reverse_m(VALUE ary)
     VALUE dup = rb_ary_new2(len);
 
     if (len > 0 && RB_UNLIKELY(rb_array_stride(ary) != RARRAY_STRIDE_VALUE)) {
-        /* decode reversed, so the source stays narrow */
-        RARRAY_PTR_USE(dup, p2, ary_narrow_decode(ary, 0, p2, len, true));
+        /* A copy keeps the source's layout: packed bytes, then reversed in place. */
+        ary_narrow_empty(dup, rb_array_stride(ary), rb_array_stride_unsigned_p(ary));
+        memcpy((void *)rarray_storage_ptr(dup), rarray_storage_ptr(ary), (size_t)len * ary_stride_bytes(ary));
+        ARY_SET_LEN(dup, len);
+        ary_narrow_reverse(dup, 0, len - 1);
+        return dup;
     }
     else if (len > 0) {
         const VALUE *p1 = RARRAY_CONST_PTR(ary);
@@ -4452,7 +4555,7 @@ ary_narrow_sort(VALUE ary)
       case RARRAY_STRIDE_W16: cmp = uns ? ary_narrow_cmp_uint16_t : ary_narrow_cmp_int16_t; break;
       default:                cmp = uns ? ary_narrow_cmp_uint32_t : ary_narrow_cmp_int32_t; break;
     }
-    ruby_qsort((void *)RARRAY(ary)->as.heap.ptr, RARRAY_LEN(ary), ary_stride_bytes(ary), cmp, NULL);
+    ruby_qsort((void *)rarray_storage_ptr(ary), RARRAY_LEN(ary), ary_stride_bytes(ary), cmp, NULL);
 }
 
 static VALUE
@@ -5843,26 +5946,42 @@ rb_ary_replace(VALUE copy, VALUE orig)
 
     rb_ary_reset(copy);
 
-    /* orig has enough space to embed the contents of orig. */
-    if (RARRAY_LEN(orig) <= ary_embed_capa(copy)) {
+    const int stride = rb_array_stride(orig);
+    const size_t w = ary_stride_bytes(orig);
+
+    /* copy's slot has room for the contents of orig, at orig's stride. */
+    if (RARRAY_LEN(orig) <= ary_embed_capa_for(copy, stride)) {
         RUBY_ASSERT(ARY_EMBED_P(copy));
-        ary_memcpy(copy, 0, RARRAY_LEN(orig), RARRAY_CONST_PTR(orig));
+        if (stride != RARRAY_STRIDE_VALUE) {
+            /* packed bytes as they are; RARRAY_CONST_PTR would widen orig */
+            ary_copy_stride(copy, orig);
+            memcpy((void *)RARRAY(copy)->as.ary, rarray_storage_ptr(orig), (size_t)RARRAY_LEN(orig) * w);
+        }
+        else {
+            ary_memcpy(copy, 0, RARRAY_LEN(orig), RARRAY_CONST_PTR(orig));
+        }
         ARY_SET_EMBED_LEN(copy, RARRAY_LEN(orig));
     }
     /* orig is embedded but copy does not have enough space to embed the
      * contents of orig. */
     else if (ARY_EMBED_P(orig)) {
         rb_len_t len = ARY_EMBED_LEN(orig);
-        VALUE *ptr = ary_heap_alloc_buffer(len);
+        void *ptr = ruby_xmalloc((size_t)len * w);
 
         FL_UNSET_EMBED(copy);
-        ARY_SET_PTR(copy, ptr);
+        ary_copy_stride(copy, orig);
+        ARY_SET_PTR(copy, (const VALUE *)ptr);
         ARY_SET_LEN(copy, len);
         ARY_SET_CAPA(copy, len);
 
         // No allocation and exception expected that could leave `copy` in a
         // bad state from the edits above.
-        ary_memcpy(copy, 0, len, RARRAY_CONST_PTR(orig));
+        if (stride != RARRAY_STRIDE_VALUE) {
+            memcpy(ptr, rarray_storage_ptr(orig), (size_t)len * w);   /* no references, no barrier */
+        }
+        else {
+            ary_memcpy(copy, 0, len, RARRAY_CONST_PTR(orig));
+        }
     }
     /* Otherwise, orig is on heap and copy does not have enough space to embed
      * the contents of orig. */
@@ -6297,7 +6416,7 @@ rb_ary_times(VALUE ary, VALUE times)
         VALUE tmp = 0;
         if (rb_array_stride(ary) != RARRAY_STRIDE_VALUE) {
             VALUE *buf = ALLOCV_N(VALUE, tmp, t);
-            ary_narrow_decode(ary, 0, buf, t, false);
+            ary_narrow_decode(ary, 0, buf, t);
             ptr = buf;
         }
         else {
@@ -6385,14 +6504,14 @@ rb_ary_rassoc(VALUE ary, VALUE value)
     return Qnil;
 }
 
-/* Two wide heap arrays sharing one buffer are trivially equal.  Narrow arrays
- * never share a buffer, so the shortcut does not apply to them. */
+/* Two arrays sharing one buffer at the same stride are trivially equal.
+ * Raw pointers: RARRAY_CONST_PTR would widen a narrow array. */
 static inline bool
 ary_same_buffer_p(VALUE ary1, VALUE ary2)
 {
-    return rb_array_stride(ary1) == RARRAY_STRIDE_VALUE &&
-           rb_array_stride(ary2) == RARRAY_STRIDE_VALUE &&
-           RARRAY_CONST_PTR(ary1) == RARRAY_CONST_PTR(ary2);
+    return rb_array_stride(ary1) == rb_array_stride(ary2) &&
+           rb_array_stride_unsigned_p(ary1) == rb_array_stride_unsigned_p(ary2) &&
+           rarray_storage_ptr(ary1) == rarray_storage_ptr(ary2);
 }
 
 /* Element-wise == from index i.  rb_equal() may mutate, widen or shrink
@@ -6426,7 +6545,7 @@ ary_narrow_equal(VALUE ary1, VALUE ary2, bool eql)
     if (n1 && n2 &&
         rb_array_stride(ary1) == rb_array_stride(ary2) &&
         rb_array_stride_unsigned_p(ary1) == rb_array_stride_unsigned_p(ary2)) {
-        return RBOOL(memcmp(rarray_raw_ptr(ary1), rarray_raw_ptr(ary2), (size_t)len * ary_stride_bytes(ary1)) == 0);
+        return RBOOL(memcmp(rarray_packed_ptr(ary1), rarray_packed_ptr(ary2), (size_t)len * ary_stride_bytes(ary1)) == 0);
     }
 
     /* Distinct Fixnums are never == (Integer#== not redefined) nor eql?. */
@@ -8075,7 +8194,7 @@ rb_ary_shuffle_bang(rb_execution_context_t *ec, VALUE ary, VALUE randgen)
             while (i > 1) {
                 long j = RAND_UPTO(i);
                 if (len != RARRAY_LEN(ary) || rb_array_stride(ary) != stride ||
-                    (const void *)p != (const void *)RARRAY(ary)->as.heap.ptr) {
+                    (const void *)p != rarray_storage_ptr(ary)) {
                     rb_raise(rb_eRuntimeError, "modified during shuffle");
                 }
                 T tmp = p[--i];
