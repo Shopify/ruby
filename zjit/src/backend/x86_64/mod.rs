@@ -107,9 +107,13 @@ pub const ALLOC_REGS: &[Reg] = &[
 const SCRATCH0_OPND: Opnd = Opnd::Reg(R11_REG);
 const SCRATCH1_OPND: Opnd = Opnd::Reg(R10_REG);
 
-/// A scratch register available for use by resolve_ssa to break register copy cycles.
-/// Must not overlap with ALLOC_REGS or other preserved registers.
+/// A scratch register for CCall lowering. It must not overlap with ALLOC_REGS
+/// or other preserved registers.
 pub const SCRATCH_REG: Reg = R11_REG;
+
+/// A scratch register for parallel-copy cycles. Keep it separate from
+/// SCRATCH0_OPND, which x86_scratch_split uses to lower memory-to-memory moves.
+pub const PARCOPY_SCRATCH_REG: Reg = R10_REG;
 
 impl Assembler {
     // This keeps frame growth below the +/-4096-byte displacement range we rely
