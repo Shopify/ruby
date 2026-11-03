@@ -965,6 +965,9 @@ pub struct SendDirectData {
     pub args: Vec<InsnId>,
     pub kw_bits: u32,
     pub jit_entry_idx: u16,
+    /// Reuse the caller-built splat as the rest argument, removing this many leading elements
+    /// after the stack-overflow side exit has been ruled out.
+    pub rest_array_behead: Option<(InsnId, usize)>,
     pub block: Option<BlockHandler>,
     pub state: InsnId,
 }
@@ -1270,6 +1273,8 @@ pub enum Insn {
         recv: InsnId,
         num_args: u16,
         blockiseq: Option<IseqPtr>,
+        /// See [`SendDirectData::rest_array_behead`].
+        rest_array_behead: Option<(InsnId, usize)>,
         state: InsnId,
     },
 
@@ -1624,8 +1629,11 @@ macro_rules! for_each_operand_impl {
                 $visit_many!(args);
                 $visit_one!(*state);
             }
-            Insn::PushInlineFrame { recv, state, .. } => {
+            Insn::PushInlineFrame { recv, rest_array_behead, state, .. } => {
                 $visit_one!(*recv);
+                if let Some((array, _)) = &$($mut)? *rest_array_behead {
+                    $visit_one!(*array);
+                }
                 $visit_one!(*state);
             }
             // SendDirect/CCallWithFrame/CCallVariadic carry their operands behind a Box,
@@ -1634,6 +1642,9 @@ macro_rules! for_each_operand_impl {
             Insn::SendDirect(insn) => {
                 $visit_one!(insn.recv);
                 $visit_many!(insn.args);
+                if let Some((array, _)) = &$($mut)? insn.rest_array_behead {
+                    $visit_one!(*array);
+                }
                 if let Some(BlockHandler::BlockArgProc(id)) = &$($mut)? insn.block {
                     $visit_one!(*id);
                 }
@@ -1930,6 +1941,7 @@ impl Insn {
             // new CFP. It may side-exit on stack overflow. It does not allocate,
             // invalidate PatchPoint invariants, or set the interrupt flag, so
             // optimizations tracking those heaps can flow across an inlined call.
+            Insn::PushInlineFrame { rest_array_behead: Some(..), .. } => effects::Any,
             Insn::PushInlineFrame { .. } => Effect::read_write(
                 abstract_heaps::Memory,
                 abstract_heaps::Frame
@@ -2260,7 +2272,7 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
                 write!(f, "CondBranchHasType {val}, {}, {if_true}, {if_false}", expected.print(self.ptr_map))
             },
             Insn::SendDirect(insn) => {
-                let SendDirectData { recv, cme, iseq, args, block, jit_entry_idx, .. } = &**insn;
+                let SendDirectData { recv, cme, iseq, args, block, jit_entry_idx, rest_array_behead, .. } = &**insn;
                 let block = match block {
                     Some(BlockHandler::BlockArgProc(proc_id)) => format!("&{proc_id}"),
                     Some(BlockHandler::BlockIseq(blockiseq)) => format!("{:p}", self.ptr_map.map_ptr(*blockiseq)),
@@ -2272,13 +2284,19 @@ impl<'a> std::fmt::Display for InsnPrinter<'a> {
                 if *jit_entry_idx != 0 {
                     write!(f, ", jit_entry_idx={jit_entry_idx}")?;
                 }
+                if let Some((_, behead)) = rest_array_behead {
+                    write!(f, ", rest_behead={behead}")?;
+                }
                 write_separated!(f, ", ", ", ", args);
                 Ok(())
             }
-            Insn::PushInlineFrame { recv, iseq, cme, num_args, .. } => {
+            Insn::PushInlineFrame { recv, iseq, cme, num_args, rest_array_behead, .. } => {
                 let method_name = unsafe { (**cme).called_id };
                 write!(f, "PushInlineFrame :{method_name}, {recv} ({:?})", self.ptr_map.map_ptr(*iseq))?;
                 write!(f, ", num_args={num_args}")?;
+                if let Some((_, behead)) = rest_array_behead {
+                    write!(f, ", rest_behead={behead}")?;
+                }
                 Ok(())
             }
             Insn::PopInlineFrame { .. } => {
@@ -2986,6 +3004,13 @@ struct SendDirectArgs {
     args: Vec<InsnId>,
     kw_bits: u32,
     jit_entry_idx: u16,
+    rest_array_behead: Option<(InsnId, usize)>,
+}
+
+struct SendDirectRestArgs {
+    args: Vec<SendDirectArg>,
+    jit_entry_idx: u16,
+    rest_array_behead: Option<(InsnId, usize)>,
 }
 
 /// Caller Arguments as they appear on the original Send instruction.
@@ -3062,6 +3087,7 @@ struct SendDirectCall {
     kw_bits: u32,
     /// Optional positional entry selected from the caller's argument count.
     jit_entry_idx: u16,
+    rest_array_behead: Option<(InsnId, usize)>,
 }
 
 /// Why a SendDirect call could not be built, including feature counters that
@@ -4096,18 +4122,25 @@ impl Function {
                 args: caller_args.original.iter().copied().map(SendDirectArg::Existing).collect(),
                 kw_bits: 0,
                 jit_entry_idx: 0,
+                rest_array_behead: None,
             });
         }
         let args = Self::expand_caller_splat_args(caller_args, caller_splat);
         let (args, kw_bits) = Self::plan_send_direct_keyword_arguments(args, caller_args, iseq)
             .map_err(SendDirectFailure::new)?;
-        let (args, jit_entry_idx) = Self::plan_send_direct_rest_parameter(args, iseq)
+        let SendDirectRestArgs { args, jit_entry_idx, rest_array_behead } =
+            Self::plan_send_direct_rest_parameter(
+                args,
+                caller_splat.filter(|_| caller_args.flags & VM_CALL_ARGS_SPLAT_MUT != 0),
+                iseq,
+            )
             .map_err(SendDirectFailure::new)?;
 
         Ok(SendDirectCall {
             args,
             kw_bits,
             jit_entry_idx,
+            rest_array_behead,
         })
     }
 
@@ -4136,6 +4169,7 @@ impl Function {
             args,
             kw_bits: call.kw_bits,
             jit_entry_idx: call.jit_entry_idx,
+            rest_array_behead: call.rest_array_behead,
         }
     }
 
@@ -4467,8 +4501,9 @@ impl Function {
     /// - jit_entry_idx: number of positional optional parameters provided by the caller
     fn plan_send_direct_rest_parameter(
         args: Vec<SendDirectArg>,
+        caller_splat: Option<CallerSplat>,
         iseq: IseqPtr,
-    ) -> Result<(Vec<SendDirectArg>, u16), SendFallbackReason> {
+    ) -> Result<SendDirectRestArgs, SendFallbackReason> {
         let params = unsafe { iseq.params() };
         let lead_num = params.lead_num as usize;
         let opt_num = params.opt_num as usize;
@@ -4489,7 +4524,7 @@ impl Function {
         // Methods without *rest still need the jit_entry_idx computed above,
         // but their positional args do not need repacking.
         if params.flags.has_rest() == 0 {
-            return Ok((args, jit_entry_idx));
+            return Ok(SendDirectRestArgs { args, jit_entry_idx, rest_array_behead: None });
         }
 
         // Rebuild [lead, filled opts, rest elements..., post, kw...] into the
@@ -4500,10 +4535,44 @@ impl Function {
         let mut packed_args = args;
         let mut rest_elements = packed_args.split_off(rest_start);
         let suffix = rest_elements.split_off(rest_end - rest_start);
-        packed_args.push(SendDirectArg::RestArray(rest_elements));
+
+        // The interpreter can turn VM_CALL_ARGS_SPLAT_MUT's private caller array into the
+        // rest argument directly. Reuse it when the rest is its complete suffix. Any leading
+        // elements consumed by required/optional parameters are removed only in codegen, after
+        // the stack-overflow side exit that must replay the original send.
+        let rest_array_behead = caller_splat.and_then(|splat| {
+            let splat_start = splat.arg_idx;
+            let splat_end = splat_start + splat.length as usize;
+            if rest_end != positional_argc || rest_start < splat_start || rest_start > splat_end {
+                return None;
+            }
+
+            let behead = rest_start - splat_start;
+            let rest_len = splat.length as usize - behead;
+            if rest_elements.len() != rest_len {
+                return None;
+            }
+            let matches_splat_suffix = rest_elements.iter().enumerate().all(|(offset, arg)| {
+                matches!(arg,
+                    SendDirectArg::SplatElement { array, index }
+                        if *array == splat.array && *index as usize == behead + offset
+                )
+            });
+            matches_splat_suffix.then_some((splat.array, behead))
+        });
+
+        if let Some((array, _)) = rest_array_behead {
+            packed_args.push(SendDirectArg::Existing(array));
+        } else {
+            packed_args.push(SendDirectArg::RestArray(rest_elements));
+        }
         packed_args.extend(suffix);
 
-        Ok((packed_args, jit_entry_idx))
+        Ok(SendDirectRestArgs {
+            args: packed_args,
+            jit_entry_idx,
+            rest_array_behead: rest_array_behead.filter(|(_, behead)| *behead > 0),
+        })
     }
 
     /// Resolve the receiver type for method dispatch optimization.
@@ -4796,6 +4865,11 @@ impl Function {
         let Insn::SendDirect(data) = &insn else {
             panic!("try_inline_send_direct called with non-SendDirect instruction");
         };
+        // The call must retain a frame-push point so codegen can perform the deferred
+        // behead after its stack-overflow side exit.
+        if data.rest_array_behead.is_some() {
+            return self.push_insn(block, insn);
+        }
         let recv = data.recv;
         let iseq = data.iseq;
         let cd = data.cd;
@@ -5049,9 +5123,9 @@ impl Function {
                                 self.insn_types[recv] = self.infer_type(recv);
                             }
 
-                            let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx } =
+                            let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx, rest_array_behead } =
                                 self.emit_send_direct_args(block, call, &args, send_frame_state, state);
-                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: send_block })));
+                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, rest_array_behead, state: send_state, block: send_block })));
                             self.make_equal_to(insn_id, replacement);
                         } else if !has_block && def_type == VM_METHOD_TYPE_BMETHOD {
                             let procv = unsafe { rb_get_def_bmethod_proc((*cme).def) };
@@ -5090,9 +5164,9 @@ impl Function {
                                 recv = self.guard_type_recompile(block, recv, Type::from_profiled_type(profiled_type), state, Recompile);
                             }
 
-                            let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx } =
+                            let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx, rest_array_behead } =
                                 self.emit_send_direct_args(block, call, &args, send_frame_state, state);
-                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, state: send_state, block: None })));
+                            let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData { recv, cd, cme, iseq, args: send_args, kw_bits, jit_entry_idx, rest_array_behead, state: send_state, block: None })));
                             self.make_equal_to(insn_id, replacement);
                         } else if !has_block && def_type == VM_METHOD_TYPE_IVAR && args.is_empty() {
                             // Check singleton class assumption first, before emitting other patchpoints
@@ -5611,7 +5685,7 @@ impl Function {
 
                             emit_super_call_guards(self, block, super_cme, current_cme, mid, state, frame_state_iseq);
 
-                            let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx } =
+                            let SendDirectArgs { state: send_state, args: send_args, kw_bits, jit_entry_idx, rest_array_behead } =
                                 self.emit_send_direct_args(block, call, &args, state, state);
                             // Use SendDirect with the super method's CME and ISEQ.
                             let replacement = self.try_inline_send_direct(block, Insn::SendDirect(Box::new(SendDirectData {
@@ -5622,6 +5696,7 @@ impl Function {
                                 args: send_args,
                                 kw_bits,
                                 jit_entry_idx,
+                                rest_array_behead,
                                 state: send_state,
                                 block: None,
                             })));
@@ -5895,7 +5970,7 @@ impl Function {
                 else {
                     unreachable!("position {send_insn_id} is not a SendDirect");
                 };
-                let SendDirectData { recv, cme, iseq, kw_bits, jit_entry_idx, block: call_block, state, .. } = **data;
+                let SendDirectData { recv, cme, iseq, kw_bits, jit_entry_idx, rest_array_behead, block: call_block, state, .. } = **data;
                 let args_len = data.args.len();
                 // TODO: Inline callees that receive a &proc block handler. The inlined body
                 // only knows a static blockiseq for yield/defined?(yield); it would need to
@@ -6114,7 +6189,7 @@ impl Function {
 
                 // Insert PushLightweightFrame and jump to callee body entry.
                 self.push_insn(block, Insn::PushInlineFrame {
-                    iseq, cme, recv, num_args: args.len().try_into().unwrap(), blockiseq, state,
+                    iseq, cme, recv, num_args: args.len().try_into().unwrap(), blockiseq, rest_array_behead, state,
                 });
                 self.count(block, Counter::inline_iseq_optimized_send_count);
                 self.push_insn(block, Insn::Jump(BranchEdge {
@@ -7411,8 +7486,13 @@ impl Function {
             let mut pending_pushes: Vec<PendingPush> = Vec::new();
             for &insn_id in &self.blocks[block_id].insns {
                 match self.find_ref(insn_id) {
-                    Insn::PushInlineFrame { .. } => {
-                        pending_pushes.push(PendingPush { push_id: insn_id, frame_observed: false });
+                    Insn::PushInlineFrame { rest_array_behead, .. } => {
+                        // Codegen performs this mutation at frame push, so eliding the
+                        // otherwise-empty pair must not discard it.
+                        pending_pushes.push(PendingPush {
+                            push_id: insn_id,
+                            frame_observed: rest_array_behead.is_some(),
+                        });
                     }
                     Insn::PopInlineFrame { .. } => {
                         match pending_pushes.pop() {
@@ -8042,8 +8122,12 @@ impl Function {
             Insn::AnyToString { val, .. } => {
                 self.assert_subtype(insn_id, val, types::BasicObject)
             }
-            Insn::PushInlineFrame { recv, .. } => {
-                self.assert_subtype(insn_id, recv, types::BasicObject)
+            Insn::PushInlineFrame { recv, rest_array_behead, .. } => {
+                self.assert_subtype(insn_id, recv, types::BasicObject)?;
+                if let Some((array, _)) = rest_array_behead {
+                    self.assert_subtype(insn_id, array, types::ArrayExact)?;
+                }
+                Ok(())
             }
             // Instructions with recv and a Vec of Ruby objects
             | Insn::Send { recv, ref args, .. }
@@ -8063,6 +8147,9 @@ impl Function {
                 self.assert_subtype(insn_id, insn.recv, types::BasicObject)?;
                 for &arg in &insn.args {
                     self.assert_subtype(insn_id, arg, types::BasicObject)?;
+                }
+                if let Some((array, _)) = insn.rest_array_behead {
+                    self.assert_subtype(insn_id, array, types::ArrayExact)?;
                 }
                 Ok(())
             }
