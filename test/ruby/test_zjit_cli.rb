@@ -26,6 +26,50 @@ class TestZJITCLI < Test::Unit::TestCase
     RUBY
   end
 
+  def test_rest_parameters_reuse_mutable_caller_splat
+    assert_runs 'true', <<~RUBY, assert_compiles: true, stats: true
+      def rest(s, *a) = a
+      def rest_kw(s, *a, default: 1) = a
+      def exact(*a) = a
+      def call_rest(x) = rest(*x, 4)
+      def call_rest_kw(x) = rest_kw(*x, 4)
+      def call_exact(x) = exact(*x, 4)
+
+      def measure_allocations_and_splat_optimizations(iterations = 10)
+        before_optimizations = RubyVM::ZJIT.stats[:caller_splat_optimized]
+        before_allocations = GC.stat(:total_allocated_objects)
+        iteration = 0
+        while iteration < iterations
+          yield
+          iteration += 1
+        end
+        [
+          GC.stat(:total_allocated_objects) - before_allocations,
+          RubyVM::ZJIT.stats[:caller_splat_optimized] - before_optimizations,
+        ]
+      end
+
+      x = [1, 2, 3]
+      40.times do
+        measure_allocations_and_splat_optimizations(1) { call_rest(x) }
+        measure_allocations_and_splat_optimizations(1) { call_rest_kw(x) }
+        measure_allocations_and_splat_optimizations(1) { call_exact(x) }
+      end
+
+      raise unless call_rest(x) == [2, 3, 4]
+      raise unless call_rest_kw(x) == [2, 3, 4]
+      raise unless call_exact(x) == [1, 2, 3, 4]
+      raise unless x == [1, 2, 3]
+
+      measurements = [
+        measure_allocations_and_splat_optimizations { call_rest(x) },
+        measure_allocations_and_splat_optimizations { call_rest_kw(x) },
+        measure_allocations_and_splat_optimizations { call_exact(x) },
+      ]
+      measurements.all? { |allocations, optimizations| allocations == 10 && optimizations > 0 }
+    RUBY
+  end
+
   def test_stats_enabled
     assert_runs 'false', <<~RUBY, stats: false
       RubyVM::ZJIT.stats_enabled?

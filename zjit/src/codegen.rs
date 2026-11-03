@@ -691,7 +691,7 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         &Insn::Send { block: Some(BlockHandler::BlockArgProc(_)), .. } => unreachable!("BlockArgProc only appears in SendDirect"),
         &Insn::SendForward { cd, blockiseq, state, reason, .. } => gen_send_forward(jit, asm, function, cd, blockiseq, &function.frame_state(state), reason),
         Insn::SendDirect(insn) => {
-            let SendDirectData { cd, cme, iseq, recv, args, kw_bits, jit_entry_idx, block, state, .. } = &**insn;
+            let SendDirectData { cd, cme, iseq, recv, args, kw_bits, jit_entry_idx, rest_array_behead, block, state, .. } = &**insn;
             let block = block.map(|bh| match bh {
                 BlockHandler::BlockIseq(blockiseq) => lir::BlockHandler::Iseq(blockiseq),
                 BlockHandler::BlockArgProc(proc_id) => {
@@ -708,10 +708,15 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
                 cb, jit, asm,
                 function, *cd, *cme, *iseq, opnd!(recv), opnds!(args),
                 *kw_bits, *jit_entry_idx, &function.frame_state(*state), block,
+                rest_array_behead.map(|(array, count)| (opnd!(array), count)),
             )
         }
-        Insn::PushInlineFrame { cme, iseq, recv, num_args, blockiseq, state, .. } => {
-            no_output!(gen_push_inline_frame(jit, asm, function, *cme, *iseq, opnd!(recv), *num_args, &function.frame_state(*state), *blockiseq))
+        Insn::PushInlineFrame { cme, iseq, recv, num_args, blockiseq, rest_array_behead, state } => {
+            no_output!(gen_push_inline_frame(
+                jit, asm, function, *cme, *iseq, opnd!(recv), *num_args,
+                &function.frame_state(*state), *blockiseq,
+                rest_array_behead.map(|(array, count)| (opnd!(array), count)),
+            ))
         },
         Insn::PopInlineFrame { iseq, argc, state } => {
             no_output!(gen_pop_inline_frame(asm, *iseq, *argc, &function.frame_state(*state)))
@@ -1699,10 +1704,15 @@ fn gen_push_inline_frame(
     num_args: u16,
     state: &FrameState,
     blockiseq: Option<IseqPtr>,
+    rest_array_behead: Option<(Opnd, usize)>,
 ) {
     let local_size = unsafe { get_iseq_body_local_table_size(iseq) }.to_usize();
     let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(iseq) }.to_usize();
     gen_stack_overflow_check(jit, asm, function, state, stack_growth);
+
+    if let Some((array, count)) = rest_array_behead {
+        gen_array_behead(jit, asm, function, array, count, state);
+    }
 
     // Save cfp->pc and cfp->sp for the caller frame.
     // Cannot use gen_prepare_non_leaf_call because we need special SP math.
@@ -1802,6 +1812,22 @@ fn gen_push_inline_frame(
     asm.store(Opnd::mem(64, EC, RUBY_OFFSET_EC_CFP as i32), CFP);
 }
 
+/// Remove required/optional arguments from a private caller splat array after the stack-overflow
+/// check. A side exit from that check must still be able to replay the original send unchanged.
+fn gen_array_behead(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    function: &Function,
+    array: Opnd,
+    count: usize,
+    state: &FrameState,
+) {
+    debug_assert!(count > 0);
+    let count: c_long = count.try_into().expect("caller splat prefix exceeds rb_len_t");
+    gen_prepare_non_leaf_call(jit, asm, function, state);
+    asm_ccall!(asm, rb_ary_behead, array, count.into());
+}
+
 /// Pop the interpreter frame for an inlined callee, restoring the caller's SP and CFP.
 fn gen_pop_inline_frame(
     asm: &mut Assembler,
@@ -1837,6 +1863,7 @@ fn gen_send_iseq_direct(
     jit_entry_idx: u16,
     state: &FrameState,
     block: Option<lir::BlockHandler>,
+    rest_array_behead: Option<(Opnd, usize)>,
 ) -> lir::Opnd {
     gen_incr_counter(asm, Counter::iseq_optimized_send_count);
 
@@ -1850,6 +1877,10 @@ fn gen_send_iseq_direct(
     let local_size = unsafe { get_iseq_body_local_table_size(iseq) }.to_usize() + forwarded_argc;
     let stack_growth = state.stack_size() + local_size + unsafe { get_iseq_body_stack_max(iseq) }.to_usize();
     gen_stack_overflow_check(jit, asm, function, state, stack_growth);
+
+    if let Some((array, count)) = rest_array_behead {
+        gen_array_behead(jit, asm, function, array, count, state);
+    }
 
     // Save cfp->pc and cfp->sp for the caller frame
     // Can't use gen_prepare_non_leaf_call because we need special SP math.

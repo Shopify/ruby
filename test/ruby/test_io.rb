@@ -1127,9 +1127,12 @@ class TestIO < Test::Unit::TestCase
         end
         t1 = Thread.new { s2.read }
         t2 = Thread.new {
-          ret = IO.copy_stream("megasrc", s1)
-          assert_equal(megacontent.bytesize, ret)
-          s1.close
+          begin
+            ret = IO.copy_stream("megasrc", s1)
+            assert_equal(megacontent.bytesize, ret)
+          ensure
+            s1.close unless s1.closed?
+          end
         }
         result, _ = assert_join_threads([t1, t2])
         assert_equal(megacontent, result)
