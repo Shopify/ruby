@@ -665,8 +665,8 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::AdjustBounds { index, length } => gen_adjust_bounds(asm, opnd!(index), opnd!(length)),
         Insn::ArrayAref { array, index, .. } => gen_array_aref(asm, opnd!(array), opnd!(index)),
         Insn::ArrayArefChecked { array, index, length } => gen_array_aref_checked(jit, asm, opnd!(array), opnd!(index), opnd!(length)),
-        Insn::ArrayAset { array, index, val } => {
-            no_output!(gen_array_aset(asm, opnd!(array), opnd!(index), opnd!(val)))
+        &Insn::ArrayAset { array, index, val, state } => {
+            no_output!(gen_array_aset(jit, asm, opnd!(array), opnd!(index), opnd!(val), &function.frame_state(state)))
         }
         Insn::ArrayPop { array, state } => gen_array_pop(asm, opnd!(array), &function.frame_state(*state)),
         Insn::ArrayLength { array } => gen_array_length(asm, opnd!(array)),
@@ -2371,6 +2371,11 @@ fn gen_adjust_bounds(asm: &mut Assembler, index: Opnd, length: Opnd) -> lir::Opn
 }
 
 /// Compile array access (`array[index]`)
+///
+/// Goes through rb_yarv_ary_entry_internal() rather than reading the buffer
+/// inline: an all-Fixnum array may store its elements narrower than a
+/// VALUE (see RARRAY_STRIDE_MASK), and RARRAY_AREF decodes those in place.
+/// The call is leaf and never allocates.
 fn gen_array_aref(
     asm: &mut Assembler,
     array: Opnd,
@@ -2378,10 +2383,7 @@ fn gen_array_aref(
 ) -> lir::Opnd {
     let unboxed_idx = asm.load_mem(index);
     let array = asm.load_mem(array);
-    let array_ptr = gen_array_ptr(asm, array);
-    let elem_offset = asm.lshift(unboxed_idx, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
-    let elem_ptr = asm.add(array_ptr, elem_offset);
-    asm.load(Opnd::mem(VALUE_BITS, elem_ptr, 0))
+    asm_ccall!(asm, rb_yarv_ary_entry_internal, array, unboxed_idx)
 }
 
 /// Compile checked array access (`array[index]`). If index is out-of-bounds, return `nil`.
@@ -2416,11 +2418,28 @@ fn gen_array_aref_checked(
     let label = jit.get_label(asm, in_bounds_block, hir_block_id);
     asm.write_label(label);
     let array = asm.load_mem(array);
+
+    // A narrow array (see RARRAY_STRIDE_MASK) stores unboxed integers, not
+    // VALUEs, so the inline load below would read the wrong bytes.  Read it
+    // through rb_yarv_ary_entry_internal, which decodes in place (leaf, no
+    // allocation), and keep the inline load for wide arrays.
+    let narrow_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let narrow_edge = Target::Block(Box::new(lir::BranchEdge { target: narrow_block, args: vec![] }));
+    let flags = Opnd::mem(VALUE_BITS, array, RUBY_OFFSET_RBASIC_FLAGS);
+    asm.test(flags, Opnd::UImm(RARRAY_STRIDE_MASK as u64));
+    asm.jnz(jit, narrow_edge);
+
     let array_ptr = gen_array_ptr(asm, array);
     // Multiply the index by the size of a VALUE.
     let elem_offset = asm.lshift(unboxed_idx, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
     let elem_ptr = asm.add(array_ptr, elem_offset);
     let value = asm.load(Opnd::mem(VALUE_BITS, elem_ptr, 0));
+    asm.jmp(result_edge(value));
+
+    asm.set_current_block(narrow_block);
+    let label = jit.get_label(asm, narrow_block, hir_block_id);
+    asm.write_label(label);
+    let value = asm_ccall!(asm, rb_yarv_ary_entry_internal, array, unboxed_idx);
     asm.jmp(result_edge(value));
 
     asm.set_current_block(result_block);
@@ -2431,18 +2450,53 @@ fn gen_array_aref_checked(
     result
 }
 
+/// Inline `array[index] = val` for a wide array.  A narrow array (see
+/// RARRAY_STRIDE_MASK) stores unboxed integers, so its buffer must not be
+/// written as VALUEs: branch to rb_ary_store, which encodes, promotes or
+/// widens as needed.  Mirrors YJIT, which always calls rb_ary_store.
 fn gen_array_aset(
+    jit: &mut JITState,
     asm: &mut Assembler,
     array: Opnd,
     index: Opnd,
     val: Opnd,
+    state: &FrameState,
 ) {
     let unboxed_idx = asm.load_mem(index);
     let array = asm.load_mem(array);
+
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+    let narrow_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let narrow_edge = Target::Block(Box::new(lir::BranchEdge { target: narrow_block, args: vec![] }));
+    let result_edge = Target::Block(Box::new(lir::BranchEdge { target: result_block, args: vec![] }));
+
+    asm_comment!(asm, "array aset: narrow?");
+    let flags = Opnd::mem(VALUE_BITS, array, RUBY_OFFSET_RBASIC_FLAGS);
+    asm.test(flags, Opnd::UImm(RARRAY_STRIDE_MASK as u64));
+    asm.jnz(jit, narrow_edge);
+
+    // Wide: store the VALUE straight into the buffer.
     let array_ptr = gen_array_ptr(asm, array);
     let elem_offset = asm.lshift(unboxed_idx, Opnd::UImm(SIZEOF_VALUE.trailing_zeros() as u64));
     let elem_ptr = asm.add(array_ptr, elem_offset);
     asm.store(Opnd::mem(VALUE_BITS, elem_ptr, 0), val);
+    asm.jmp(result_edge.clone());
+
+    // Narrow: rb_ary_store may reallocate the buffer, so the frame must be
+    // GC-safe.  The index is in bounds (guarded by the caller), so this
+    // never raises.
+    asm.set_current_block(narrow_block);
+    let label = jit.get_label(asm, narrow_block, hir_block_id);
+    asm.write_label(label);
+    gen_prepare_leaf_call_with_gc(asm, state);
+    asm_ccall!(asm, rb_ary_store, array, unboxed_idx, val);
+    asm.jmp(result_edge);
+
+    asm.set_current_block(result_block);
+    let label = jit.get_label(asm, result_block, hir_block_id);
+    asm.write_label(label);
 }
 
 fn gen_array_pop(asm: &mut Assembler, array: Opnd, state: &FrameState) -> lir::Opnd {

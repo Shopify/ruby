@@ -45,6 +45,21 @@ arg_rest_dup(struct args_info *args)
     }
 }
 
+/* Argument setup reads the splat array through RARRAY_CONST_PTR, which would
+ * widen it.  A small embedded array is widened in its slot (no allocation);
+ * anything else gets a wide copy so f(*TABLE) leaves TABLE packed. */
+static inline void
+arg_rest_unnarrow(struct args_info *args)
+{
+    if (RB_UNLIKELY(rb_array_stride(args->rest) != RARRAY_STRIDE_VALUE)) {
+        VALUE wide = rb_ary_wide_or_dup(args->rest);
+        if (wide != args->rest) {
+            args->rest = wide;
+            args->rest_dupped = TRUE;
+        }
+    }
+}
+
 static inline int
 args_argc(struct args_info *args)
 {
@@ -684,6 +699,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
         args->rest_index = 0;
         keyword_hash = locals[--args->argc];
         args->rest = locals[--args->argc];
+        arg_rest_unnarrow(args);
 
         if (ignore_keyword_hash_p(keyword_hash, iseq, &kw_flag, &converted_keyword_hash)) {
             keyword_hash = Qnil;
@@ -735,6 +751,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
         // f(*a)
         args->rest_index = 0;
         args->rest = locals[--args->argc];
+        arg_rest_unnarrow(args);
         int len = RARRAY_LENINT(args->rest);
         given_argc += len - 1;
 

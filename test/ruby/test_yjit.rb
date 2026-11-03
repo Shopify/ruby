@@ -508,7 +508,16 @@ class TestYJIT < Test::Unit::TestCase
   end
 
   def test_expandarray
-    assert_compiles(<<~'RUBY', insns: %i[expandarray], result: [1, 2])
+    # Not an all-Fixnum literal: that would be a narrow array, which
+    # expandarray side-exits on (see test_expandarray_narrow_exits).
+    assert_compiles(<<~'RUBY', insns: %i[expandarray], result: [1, :b])
+      a, b = [1, :b]
+    RUBY
+  end
+
+  def test_expandarray_narrow_exits
+    # A narrow (packed) array is read by the interpreter for now.
+    assert_compiles(<<~'RUBY', insns: %i[expandarray], result: [1, 2], exits: { expandarray: 1 })
       a, b = [1, 2]
     RUBY
   end
