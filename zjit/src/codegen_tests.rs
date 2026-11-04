@@ -218,6 +218,29 @@ fn test_recompile_exit_invalidates_on_first_exit() {
 }
 
 #[test]
+fn test_super_with_block_recompile_exit_invalidates() {
+    set_call_threshold(2);
+    set_num_exits_until_invalidate(1);
+    eval("
+        class SuperWithBlockA
+          def fetch(k) = yield k
+        end
+        class SuperWithBlockB < SuperWithBlockA
+          def fetch(k) = super(k)
+        end
+        SuperWithBlockB.new.fetch(1) { _1 }
+        SuperWithBlockB.new.fetch(1) { _1 }
+    ");
+
+    let iseq = get_instance_method_iseq("SuperWithBlockB", "fetch");
+    let payload = get_or_create_iseq_payload(iseq);
+    assert_eq!(1, payload.versions.len());
+    // The block-handler guard must route through exit_recompile so the ISEQ can
+    // be reprofiled after the block is observed.
+    assert!(unsafe { payload.versions.last().unwrap().as_ref() }.is_invalidated());
+}
+
+#[test]
 fn test_recompile_exit_waits_for_exit_budget() {
     set_call_threshold(2);
     set_num_exits_until_invalidate(3);

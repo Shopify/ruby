@@ -5511,7 +5511,7 @@ impl Function {
                                 expected: Const::Value(VALUE(VM_BLOCK_HANDLER_NONE as usize)),
                                 reason: Box::new(SideExitReason::UnhandledBlockArg),
                                 state,
-                                recompile: None,
+                                recompile: Some(Recompile),
                             });
                         }
 
