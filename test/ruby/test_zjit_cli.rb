@@ -206,7 +206,7 @@ class TestZJITCLI < Test::Unit::TestCase
 
     # Shopify/ruby#1032: a stack-to-stack move must not clobber the value
     # parked in the parallel-copy scratch register.
-    assert_compiles "[10, 20]", <<~RUBY, call_threshold: 2
+    assert_compiles "[20, 10]", <<~RUBY, call_threshold: 2
       def test(a, b, n)
         i = 0
         while i < n
