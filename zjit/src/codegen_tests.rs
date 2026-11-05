@@ -1003,6 +1003,25 @@ fn test_yield_inline_self_is_captured_self() {
 }
 
 #[test]
+fn test_integer_step_fixnum_fastpath() {
+    with_inlining_threshold(200, || {
+        eval(r#"
+            def sum_steps(from, to, by)
+              sum = 0
+              from.step(to, by) { |i| sum += i }
+              sum
+            end
+        "#);
+
+        assert_snapshot!(assert_inlines(r#"
+            [sum_steps(1, 9, 2), sum_steps(9, 1, -2), sum_steps(2, 1, 3), sum_steps(1, 9, 2)]
+        "#), @"[25, 25, 0, 25]");
+        let sum_iseq = get_method_iseq("self", "sum_steps");
+        assert!(!get_or_create_iseq_payload(sum_iseq).versions.is_empty(), "expected sum_steps to be compiled with Integer#step");
+    });
+}
+
+#[test]
 fn test_yield_iseq_guard_miss_recompiles() {
     set_call_threshold(2);
     eval("

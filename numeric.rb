@@ -328,6 +328,44 @@ class Integer
   end
 
   with_jit do
+    if Primitive.rb_builtin_basic_definition_p(:step)
+      undef :step
+
+      def step(*args)
+        Primitive.attr! :inline_block, :c_trace
+
+        unless defined?(yield) &&
+            Primitive.cexpr!('RBOOL(RARRAY_LEN(args) == 2)')
+          return super
+        end
+
+        _to, _by = args
+        unless Primitive.cexpr! 'RBOOL(FIXNUM_P(self) && FIXNUM_P(_to) && FIXNUM_P(_by) && FIX2LONG(_by) != 0)'
+          return super
+        end
+
+        from = self
+        if Primitive.cexpr! 'RBOOL(FIX2LONG(_by) > 0)'
+          while Primitive.cexpr! 'RBOOL(FIX2LONG(from) <= FIX2LONG(_to))'
+            yield from
+            break if Primitive.cexpr! 'RBOOL(FIX2LONG(_to) - FIX2LONG(from) < FIX2LONG(_by))'
+
+            from = Primitive.cexpr! 'LONG2FIX(FIX2LONG(from) + FIX2LONG(_by))'
+          end
+        else
+          while Primitive.cexpr! 'RBOOL(FIX2LONG(from) >= FIX2LONG(_to))'
+            yield from
+            break if Primitive.cexpr! 'RBOOL(FIX2LONG(from) - FIX2LONG(_to) < -FIX2LONG(_by))'
+
+            from = Primitive.cexpr! 'LONG2FIX(FIX2LONG(from) + FIX2LONG(_by))'
+          end
+        end
+        self
+      end
+
+      ruby2_keywords :step # Preserve keyword arguments when falling back to super.
+    end
+
     if Primitive.rb_builtin_basic_definition_p(:downto)
       undef :downto
 
