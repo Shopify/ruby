@@ -21733,15 +21733,17 @@ mod hir_opt_tests {
     }
 
     #[test]
-    fn dont_optimize_call_to_protected_method_iseq() {
-        eval(r#"
+    fn optimize_protected_method_iseq_with_self_guard() {
+        eval(
+            r#"
             class C
               protected def secret = 42
             end
             Obj = C.new
             def test = Obj.secret rescue $!
             test
-        "#);
+        "#,
+        );
         assert_snapshot!(hir_string("test"), @"
         fn test@<compiled>:6:
         bb1():
@@ -21756,10 +21758,63 @@ mod hir_opt_tests {
           PatchPoint SingleRactorMode
           PatchPoint StableConstantNames(0x1000, Obj)
           v12:ObjectSubclass[VALUE(0x1008)] = Const Value(VALUE(0x1008))
-          v14:BasicObject = Send v12, :secret # SendFallbackReason: Send: method private or protected and no FCALL
+          v21:BasicObject = LoadSelf
+          v22:ClassSubclass[C@0x1010] = Const Value(VALUE(0x1010))
+          v23:BoolExact = IsA v21, v22
+          v24:TrueClass = GuardBitEquals v23, Value(true) recompile
+          PatchPoint NoSingletonClass(C@0x1010)
+          PatchPoint MethodRedefined(C@0x1010, secret@0x1011, cme:0x1018)
+          v28:Fixnum[42] = Const Value(42)
           CheckInterrupts
-          Return v14
+          Return v28
         ");
+    }
+
+    #[test]
+    fn dont_optimize_call_to_protected_method_defined_in_module() {
+        eval(
+            r#"
+            module EfeProtectedModule1109
+              protected def secret = 42
+            end
+            class EfeProtectedModuleCaller1109
+              include EfeProtectedModule1109
+            end
+            EfeProtectedModuleObj1109 = EfeProtectedModuleCaller1109.new
+            def test = EfeProtectedModuleObj1109.secret rescue $!
+            test
+        "#,
+        );
+        let hir = hir_string("test");
+        assert!(
+            hir.contains("Send v")
+                && hir.contains("SendFallbackReason: Send: method private or protected and no FCALL"),
+            "expected module-owned protected calls to keep a dynamic send:\n{hir}"
+        );
+    }
+
+    #[test]
+    fn dont_optimize_call_to_protected_method_under_refinement() {
+        eval(
+            r#"
+            class EfeRefinedProtected1109
+            end
+            module EfeProtectedRefinement1109
+              refine EfeRefinedProtected1109 do
+                protected def secret = 42
+              end
+            end
+            using EfeProtectedRefinement1109
+            EfeRefinedProtectedObj1109 = EfeRefinedProtected1109.new
+            def test = EfeRefinedProtectedObj1109.secret rescue $!
+            test
+        "#,
+        );
+        let hir = hir_string("test");
+        assert!(
+            hir.contains("Send v") && !hir.contains(" IsA "),
+            "expected refined protected calls to keep a dynamic send:\n{hir}"
+        );
     }
 
     // Test that when a singleton class has been seen for a class, we skip the

@@ -4087,6 +4087,51 @@ impl Function {
         }
     }
 
+    /// Ensure the current `self` is allowed to make an explicit protected call.
+    /// The receiver's method lookup already proves it inherits the method owner;
+    /// Ruby also requires the caller's `self` to inherit that owner.
+    fn guard_protected_call(&mut self, block: BlockId, owner: VALUE, state: InsnId) -> bool {
+        if self.policy.no_side_exits {
+            return false;
+        }
+        let self_val = self.load_self(block);
+        let owner_type = Type::from_class_inexact(owner);
+        let self_type = self.type_of(self_val);
+        if !self_type.could_be(owner_type) {
+            return false;
+        }
+        if self_type.is_subtype(owner_type) {
+            return true;
+        }
+
+        let class = self.push_insn(
+            block,
+            Insn::Const {
+                val: Const::Value(owner),
+            },
+        );
+        self.insn_types[class] = self.infer_type(class);
+        let allowed = self.push_insn(
+            block,
+            Insn::IsA {
+                val: self_val,
+                class,
+            },
+        );
+        self.insn_types[allowed] = self.infer_type(allowed);
+        self.push_insn(
+            block,
+            Insn::GuardBitEquals {
+                val: allowed,
+                expected: Const::Value(Qtrue),
+                reason: Box::new(SideExitReason::GuardType(owner_type)),
+                state,
+                recompile: Some(Recompile),
+            },
+        );
+        true
+    }
+
     /// Validate and normalize SendDirect arguments without emitting HIR.
     fn build_send_direct_args(&self, caller_args: &CallerArguments, caller_splat: Option<CallerSplat>, iseq: IseqPtr, has_block: bool) -> Result<SendDirectCall, SendDirectFailure> {
         can_direct_send(iseq, caller_args, has_block, caller_splat)?;
@@ -4889,15 +4934,34 @@ impl Function {
                         // It allows you to use a faster ISEQ if possible.
                         cme = unsafe { rb_check_overloaded_cme(cme, ci) };
                         let visibility = unsafe { METHOD_ENTRY_VISI(cme) };
-                        match (visibility, flags & VM_CALL_FCALL != 0) {
-                            (METHOD_VISI_PUBLIC, _) => {}
-                            (METHOD_VISI_PRIVATE, true) => {}
-                            (METHOD_VISI_PROTECTED, true) => {}
-                            _ => {
-                                self.set_dynamic_send_reason(insn_id, SendNotOptimizedNeedPermission);
-                                self.push_insn_id(block, insn_id); continue;
+                        let protected_owner = match (visibility, flags & VM_CALL_FCALL != 0) {
+                            (METHOD_VISI_PUBLIC, _)
+                            | (METHOD_VISI_PRIVATE, true)
+                            | (METHOD_VISI_PROTECTED, true) => None,
+                            (METHOD_VISI_PROTECTED, false) => {
+                                // Refined and module-owned entries need their VM-specific
+                                // protected-call class resolution. Keep those on the dynamic path.
+                                let owner = unsafe { (*cme).defined_class };
+                                if unsafe { RB_TYPE_P(owner, RUBY_T_CLASS) } {
+                                    Some(owner)
+                                } else {
+                                    self.set_dynamic_send_reason(
+                                        insn_id,
+                                        SendNotOptimizedNeedPermission,
+                                    );
+                                    self.push_insn_id(block, insn_id);
+                                    continue;
+                                }
                             }
-                        }
+                            _ => {
+                                self.set_dynamic_send_reason(
+                                    insn_id,
+                                    SendNotOptimizedNeedPermission,
+                                );
+                                self.push_insn_id(block, insn_id);
+                                continue;
+                            }
+                        };
                         let mut def_type = unsafe { get_cme_def_type(cme) };
                         while def_type == VM_METHOD_TYPE_ALIAS {
                             cme = unsafe { rb_aliased_callable_method_entry(cme) };
@@ -4995,6 +5059,29 @@ impl Function {
                             self.count_complex_call_features(block, flags, state);
                             self.set_dynamic_send_reason(insn_id, ComplexArgPass);
                             self.push_insn_id(block, insn_id); continue;
+                        }
+
+                        if let Some(owner) = protected_owner {
+                            let supported = match def_type {
+                                VM_METHOD_TYPE_ISEQ => true,
+                                VM_METHOD_TYPE_CFUNC => {
+                                    !unsafe { rb_zjit_method_tracing_currently_enabled() }
+                                        && !unspecializable_c_call_type(flags)
+                                }
+                                VM_METHOD_TYPE_BMETHOD => !has_block,
+                                VM_METHOD_TYPE_IVAR => !has_block && args.is_empty(),
+                                VM_METHOD_TYPE_ATTRSET => !has_block && args.len() == 1,
+                                VM_METHOD_TYPE_OPTIMIZED => !has_block,
+                                _ => false,
+                            };
+                            if !supported || !self.guard_protected_call(block, owner, state) {
+                                self.set_dynamic_send_reason(
+                                    insn_id,
+                                    SendNotOptimizedNeedPermission,
+                                );
+                                self.push_insn_id(block, insn_id);
+                                continue;
+                            }
                         }
 
                         if def_type == VM_METHOD_TYPE_ISEQ {
