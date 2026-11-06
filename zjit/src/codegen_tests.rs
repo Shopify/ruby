@@ -9288,6 +9288,94 @@ fn test_send_backtrace() {
     "#), @r#"["<compiled>:3:in 'Object#jit_frame1'", "<compiled>:4:in 'Object#entry'", "<compiled>:6:in '<compiled>'", "-e:in 'RubyVM::InstructionSequence#eval'"]"#);
 }
 
+#[test]
+fn test_protected_method_call_checks_caller_self() {
+    eval(
+        r#"
+        class EfeOrderedOptions1109 < Hash
+          alias_method :_get, :[]
+          protected :_get
+        end
+
+        class EfeInheritableOptions1109 < EfeOrderedOptions1109
+          def get_parent(parent, key) = parent._get(key)
+        end
+
+        class EfeOtherHashOptions1109 < Hash
+          def get_parent(parent, key) = parent._get(key)
+        end
+
+        class EfeUnrelatedOptions1109
+          def get_parent(parent, key)
+            parent._get(key)
+          rescue NoMethodError
+            :denied
+          end
+        end
+
+        EfeParent1109 = EfeOrderedOptions1109.new
+        EfeParent1109[:answer] = 42
+        EfeCaller1109 = EfeInheritableOptions1109.new
+        EfeOtherHash1109 = EfeOtherHashOptions1109.new
+        EfeUnrelated1109 = EfeUnrelatedOptions1109.new
+    "#,
+    );
+    let valid = with_inlining_threshold(2, || {
+        assert_compiles_allowing_exits(
+            r#"
+        EfeCaller1109.get_parent(EfeParent1109, :answer)
+        EfeCaller1109.get_parent(EfeParent1109, :answer)
+        EfeCaller1109.get_parent(EfeParent1109, :answer)
+        EfeCaller1109.get_parent(EfeParent1109, :answer)
+        EfeCaller1109.get_parent(EfeParent1109, :answer)
+    "#,
+        )
+    });
+    assert_eq!(valid, "42");
+
+    let iseq = with_rubyvm(|| get_instance_method_iseq("EfeInheritableOptions1109", "get_parent"));
+    unsafe { rb_zjit_profile_disable(iseq) };
+    let mut function = iseq_to_hir(iseq).unwrap();
+    function.optimize();
+    function.validate().unwrap();
+    let hir = format!(
+        "{}",
+        crate::hir::FunctionPrinter::without_snapshot(&function)
+    );
+    assert!(
+        hir.contains("IsA")
+            && hir.contains("CCallWithFrame")
+            && hir.contains("EfeOrderedOptions1109#_get"),
+        "expected a caller-self guard and a direct C function call for the protected alias:\n{hir}"
+    );
+
+    let other_hash = with_inlining_threshold(2, || {
+        assert_compiles_allowing_exits(
+            r#"
+        EfeOtherHash1109.get_parent(EfeParent1109, :answer)
+        EfeOtherHash1109.get_parent(EfeParent1109, :answer)
+        EfeOtherHash1109.get_parent(EfeParent1109, :answer)
+        EfeOtherHash1109.get_parent(EfeParent1109, :answer)
+        EfeOtherHash1109.get_parent(EfeParent1109, :answer)
+    "#,
+        )
+    });
+    assert_eq!(other_hash, "42");
+
+    let invalid = with_inlining_threshold(2, || {
+        assert_compiles_allowing_exits(
+            r#"
+        EfeUnrelated1109.get_parent(EfeParent1109, :answer)
+        EfeUnrelated1109.get_parent(EfeParent1109, :answer)
+        EfeUnrelated1109.get_parent(EfeParent1109, :answer)
+        EfeUnrelated1109.get_parent(EfeParent1109, :answer)
+        EfeUnrelated1109.get_parent(EfeParent1109, :answer)
+    "#,
+        )
+    });
+    assert_eq!(invalid, ":denied");
+}
+
 // Regression test: when specialized_instruction is disabled (as power_assert does),
 // eval'd code uses `send` instead of `opt_send_without_block`, producing SendNoProfiles.
 // The `times` call with a literal block is the SendNoProfiles send whose exit profiling
