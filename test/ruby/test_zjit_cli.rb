@@ -102,6 +102,23 @@ class TestZJITCLI < Test::Unit::TestCase
     }
   end
 
+  def test_integer_downto_comparator_returns_nil
+    assert_runs 'true', <<~RUBY
+      class Integer
+        def <(other)
+          nil
+        end
+      end
+
+      begin
+        1.downto(3.5) {}
+        false
+      rescue ArgumentError => error
+        error.message.include?("comparator returned nil")
+      end
+    RUBY
+  end
+
   def test_enable_through_env
     child_env = {'RUBY_YJIT_ENABLE' => nil, 'RUBY_ZJIT_ENABLE' => '1'}
     assert_in_out_err([child_env, '-v'], '') do |stdout, stderr|

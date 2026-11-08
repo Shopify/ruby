@@ -309,6 +309,10 @@ class TestInteger < Test::Unit::TestCase
     a = []
     assert_equal(y, y.downto(y-2) {|x| a << x })
     assert_equal([y, y-1, y-2], a)
+
+    a = []
+    1.downto(Float::NAN) {|x| a << x; break if a.size == 3 }
+    assert_equal([1, 0, -1], a)
   end
 
   def test_times
