@@ -47,6 +47,28 @@ class TestZJITCLI < Test::Unit::TestCase
     RUBY
   end
 
+  def test_array_aset_shared_array
+    assert_compiles 'true', <<~'RUBY', stats: true
+      def store(array, index, value)
+        array[index] = value
+      end
+
+      # Each slice shares storage with the original until the first write.
+      100.times do
+        original = (0...100).to_a
+        shared = original[1..-2]
+        value = Object.new
+        returned = store(shared, -1, value)
+        raise unless returned.equal?(value)
+        raise unless shared[-1].equal?(value)
+        raise unless original[-2] == 98
+      end
+
+      RubyVM::ZJIT.stats(:compiled_iseq_count) > 0 &&
+        RubyVM::ZJIT.stats(:exit_guard_not_shared_failure) == 0
+    RUBY
+  end
+
   def test_stats_quiet
     # Test that --zjit-stats-quiet collects stats but doesn't print them
     script = <<~RUBY

@@ -665,8 +665,8 @@ fn gen_insn(cb: &mut CodeBlock, jit: &mut JITState, asm: &mut Assembler, functio
         Insn::AdjustBounds { index, length } => gen_adjust_bounds(asm, opnd!(index), opnd!(length)),
         Insn::ArrayAref { array, index, .. } => gen_array_aref(asm, opnd!(array), opnd!(index)),
         Insn::ArrayArefChecked { array, index, length } => gen_array_aref_checked(jit, asm, opnd!(array), opnd!(index), opnd!(length)),
-        Insn::ArrayAset { array, index, val } => {
-            no_output!(gen_array_aset(asm, opnd!(array), opnd!(index), opnd!(val)))
+        Insn::ArrayAset { array, index, val, state } => {
+            no_output!(gen_array_aset(jit, asm, opnd!(array), opnd!(index), opnd!(val), &function.frame_state(*state)))
         }
         Insn::ArrayPop { array, state } => gen_array_pop(asm, opnd!(array), &function.frame_state(*state)),
         Insn::ArrayLength { array } => gen_array_length(asm, opnd!(array)),
@@ -2432,11 +2432,32 @@ fn gen_array_aref_checked(
 }
 
 fn gen_array_aset(
+    jit: &mut JITState,
     asm: &mut Assembler,
     array: Opnd,
     index: Opnd,
     val: Opnd,
+    state: &FrameState,
 ) {
+    let hir_block_id = asm.current_block().hir_block_id;
+    let rpo_idx = asm.current_block().rpo_index;
+    let result_block = asm.new_block(hir_block_id, false, rpo_idx);
+    let result_edge = Target::Block(Box::new(lir::BranchEdge { target: result_block, args: vec![] }));
+
+    let array_value = asm.load_mem(array);
+    let flags = asm.load(Opnd::mem(VALUE_BITS, array_value, RUBY_OFFSET_RBASIC_FLAGS));
+    asm.test(flags, Opnd::UImm(RUBY_ELTS_SHARED as u64));
+    asm.jz(jit, result_edge.clone());
+
+    // Detach copy-on-write arrays before writing through their element pointer.
+    gen_prepare_leaf_call_with_gc(asm, state);
+    asm_ccall!(asm, rb_ary_modify, array_value);
+    asm.jmp(result_edge);
+
+    asm.set_current_block(result_block);
+    let label = jit.get_label(asm, result_block, hir_block_id);
+    asm.write_label(label);
+
     let unboxed_idx = asm.load_mem(index);
     let array = asm.load_mem(array);
     let array_ptr = gen_array_ptr(asm, array);

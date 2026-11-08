@@ -1060,7 +1060,7 @@ pub enum Insn {
     /// adjusted to index 2, so any negative `index` is definitely considered out-of-bounds).
     /// `index` but may be out-of-bounds, in which case it returns `nil`.
     ArrayArefChecked { array: InsnId, index: InsnId, length: InsnId  },
-    ArrayAset { array: InsnId, index: InsnId, val: InsnId },
+    ArrayAset { array: InsnId, index: InsnId, val: InsnId, state: InsnId },
     ArrayPop { array: InsnId, state: InsnId },
     /// Return the length of the array as a C `long` ([`types::CInt64`])
     ArrayLength { array: InsnId },
@@ -1587,10 +1587,11 @@ macro_rules! for_each_operand_impl {
                 $visit_one!(*index);
                 $visit_one!(*length);
             }
-            Insn::ArrayAset { array, index, val } => {
+            Insn::ArrayAset { array, index, val, state } => {
                 $visit_one!(*array);
                 $visit_one!(*index);
                 $visit_one!(*val);
+                $visit_one!(*state);
             }
             Insn::ArrayPop { array, state } => {
                 $visit_one!(*array);

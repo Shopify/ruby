@@ -2252,6 +2252,7 @@ unsafe extern "C" {
     pub fn rb_define_class(name: *const ::std::os::raw::c_char, super_: VALUE) -> VALUE;
     pub fn rb_obj_class(obj: VALUE) -> VALUE;
     pub fn rb_ary_new_capa(capa: rb_len_t) -> VALUE;
+    pub fn rb_ary_modify(ary: VALUE);
     pub fn rb_ary_store(ary: VALUE, key: rb_len_t, val: VALUE);
     pub fn rb_ary_dup(ary: VALUE) -> VALUE;
     pub fn rb_ary_resurrect(ary: VALUE) -> VALUE;
