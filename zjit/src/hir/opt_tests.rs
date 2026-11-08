@@ -14199,6 +14199,24 @@ mod hir_opt_tests {
     }
 
     #[test]
+    fn test_regexp_to_s_returns_string() {
+        eval(r#"
+            def test(regexp) = regexp.to_s
+            test /pattern/
+        "#);
+
+        let hir = hir_string("test");
+        let regexp_to_s_call = hir
+            .lines()
+            .find(|line| line.contains(":Regexp#to_s"))
+            .expect("expected a Regexp#to_s call in HIR");
+        assert!(
+            regexp_to_s_call.contains("StringExact"),
+            "expected Regexp#to_s to return StringExact, got: {regexp_to_s_call}"
+        );
+    }
+
+    #[test]
     fn test_bignum_to_s_returns_string() {
         eval(r#"
             def test(x) = x.to_s
