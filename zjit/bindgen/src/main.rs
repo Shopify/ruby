@@ -154,6 +154,7 @@ fn main() {
         .allowlist_function("rb_hash_new_with_bulk_insert")
         .allowlist_function("rb_hash_stlike_lookup")
         .allowlist_function("rb_ary_new_capa")
+        .allowlist_function("rb_ary_modify")
         .allowlist_function("rb_ary_store")
         .allowlist_function("rb_ary_resurrect")
         .allowlist_function("rb_ary_cat")
