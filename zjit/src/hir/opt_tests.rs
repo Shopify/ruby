@@ -14663,11 +14663,10 @@ mod hir_opt_tests {
           v35:ArrayExact = GuardType v10, ArrayExact recompile
           v36:CUInt64 = LoadField v35, :RBASIC_FLAGS@0x1040
           v37:CUInt64 = GuardNoBitsSet v36, RUBY_FL_FREEZE=CUInt64(2048)
-          v39:CUInt64 = GuardNoBitsSet v37, RUBY_ELTS_SHARED=CUInt64(4096)
-          v48:CInt64[1] = Const CInt64(1)
-          v41:CInt64 = ArrayLength v35
-          v42:CInt64[1] = GuardLess v48, v41
-          ArrayAset v35, v42, v19
+          v46:CInt64[1] = Const CInt64(1)
+          v39:CInt64 = ArrayLength v35
+          v40:CInt64[1] = GuardLess v46, v39
+          ArrayAset v35, v40, v19
           PatchPoint NoEPEscape(test)
           CheckInterrupts
           Return v19
@@ -14706,14 +14705,13 @@ mod hir_opt_tests {
           v40:Fixnum = GuardType v15, Fixnum
           v41:CUInt64 = LoadField v39, :RBASIC_FLAGS@0x1040
           v42:CUInt64 = GuardNoBitsSet v41, RUBY_FL_FREEZE=CUInt64(2048)
-          v44:CUInt64 = GuardNoBitsSet v42, RUBY_ELTS_SHARED=CUInt64(4096)
-          v45:CInt64 = UnboxFixnum v40
-          v46:CInt64 = ArrayLength v39
-          v47:CInt64 = GuardLess v45, v46
-          v48:CInt64 = AdjustBounds v47, v46
-          v49:CInt64[0] = Const CInt64(0)
-          v50:CInt64 = GuardGreaterEq v48, v49
-          ArrayAset v39, v50, v16
+          v43:CInt64 = UnboxFixnum v40
+          v44:CInt64 = ArrayLength v39
+          v45:CInt64 = GuardLess v43, v44
+          v46:CInt64 = AdjustBounds v45, v44
+          v47:CInt64[0] = Const CInt64(0)
+          v48:CInt64 = GuardGreaterEq v46, v47
+          ArrayAset v39, v48, v16
           WriteBarrier v39, v16
           PatchPoint NoEPEscape(test)
           CheckInterrupts
