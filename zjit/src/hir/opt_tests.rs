@@ -2513,10 +2513,9 @@ mod hir_opt_tests {
             test
         ");
 
-        // `add` is inlined at both call sites, giving two `PushInlineFrame`/`PopInlineFrame`
-        // pairs. The first pair keeps `add`'s `PatchPoint` and `CheckInterrupts`, which the
-        // deduplication passes leave on the earliest copy, so it has real work between it and
-        // survives. The second pair and its body are optimized away entirely.
+        // The `Integer#+` PatchPoint is hoisted to the call site because the
+        // inlined prefix is pure. Deduplication then removes the second copy,
+        // allowing both inline frames to be elided.
         assert_snapshot!(hir_string("test"), @"
         fn test@<compiled>:3:
         bb1():
@@ -2532,13 +2531,48 @@ mod hir_opt_tests {
           v13:Fixnum[2] = Const Value(2)
           PatchPoint MethodRedefined(Object@0x1000, add@0x1008, cme:0x1010)
           v32:ObjectSubclass[class_exact*:Object@VALUE(0x1000)] = GuardType v6, ObjectSubclass[class_exact*:Object@VALUE(0x1000)] recompile
-          PushInlineFrame :add, v32 (0x1038), num_args=2
-          PatchPoint MethodRedefined(Integer@0x1058, +@0x1060, cme:0x1068)
-          PopInlineFrame
+          PatchPoint MethodRedefined(Integer@0x1038, +@0x1040, cme:0x1048)
           v88:Fixnum[10] = Const Value(10)
           CheckInterrupts
           Return v88
         ");
+    }
+
+    #[test]
+    fn test_hoist_patch_points_out_of_replayable_inline_frames() {
+        eval("
+            def foo(x) = x + 1
+            def bar(x) = x + 1
+            def test = foo(3) + bar(4)
+            test
+            test
+        ");
+
+        let hir = hir_string("test");
+        assert!(!hir.contains("PushInlineFrame"), "{hir}");
+        assert!(!hir.contains("PopInlineFrame"), "{hir}");
+        assert_eq!(hir.matches("PatchPoint MethodRedefined(Integer").count(), 1, "{hir}");
+    }
+
+    #[test]
+    fn test_do_not_hoist_patch_points_across_effectful_inline_prefix() {
+        eval("
+            def add(x)
+              $seen = x
+              x + 1
+            end
+            def test = add(3) + add(4)
+            test
+            test
+        ");
+
+        let hir = hir_string("test");
+        assert_eq!(hir.matches("PushInlineFrame").count(), 2, "{hir}");
+        assert_eq!(hir.matches("PatchPoint MethodRedefined(Integer").count(), 2, "{hir}");
+        assert!(
+            hir.find("PushInlineFrame").unwrap() < hir.find("PatchPoint MethodRedefined(Integer").unwrap(),
+            "{hir}"
+        );
     }
 
     #[test]

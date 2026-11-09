@@ -7285,10 +7285,101 @@ impl Function {
         }
     }
 
+    /// Whether an instruction can be replayed if a PatchPoint exits to an
+    /// enclosing inline call site. Reads, writes, stats counters, side exits,
+    /// and frame-dependent SP loads all make that replay observably different.
+    fn can_replay_before_patch_point(&self, insn: &Insn) -> bool {
+        let effects = insn.effects_of();
+        abstract_heaps::Empty.includes(effects.read_bits())
+            && abstract_heaps::Empty.includes(effects.write_bits())
+            && self.can_elide_enclosing_frame(insn)
+    }
+
+    /// Move a PatchPoint to the nearest enclosing inline call site when the
+    /// inlined prefix is safe to replay from that call site. This lets a side
+    /// exit restart the call before entering the inlined method, rather than
+    /// requiring its runtime frame to remain present.
+    fn hoist_patch_points_out_of_inline_frames(&mut self) {
+        struct PendingPush {
+            push_id: InsnId,
+            state: InsnId,
+            can_hoist: bool,
+        }
+
+        loop {
+            let mut relocations = Vec::new();
+            for block_id in self.reverse_post_order() {
+                let mut pending_pushes: Vec<PendingPush> = Vec::new();
+                for &insn_id in &self.blocks[block_id].insns {
+                    match self.find_ref(insn_id) {
+                        Insn::PushInlineFrame { state, .. } => {
+                            // Moving a PatchPoint across a nested frame push
+                            // requires restarting at this frame first. A later
+                            // iteration can hoist it further if that prefix is
+                            // also replayable.
+                            for pending in &mut pending_pushes {
+                                pending.can_hoist = false;
+                            }
+                            pending_pushes.push(PendingPush {
+                                push_id: insn_id,
+                                state: *state,
+                                can_hoist: true,
+                            });
+                        }
+                        Insn::PopInlineFrame { .. } => {
+                            pending_pushes.pop();
+                            for pending in &mut pending_pushes {
+                                pending.can_hoist = false;
+                            }
+                        }
+                        Insn::PatchPoint { .. } => {
+                            if let Some(pending) = pending_pushes.last() {
+                                if pending.can_hoist {
+                                    relocations.push((block_id, insn_id, pending.push_id, pending.state));
+                                }
+                            }
+                            // A PatchPoint is itself a side exit and cannot be
+                            // crossed by another hoist in this iteration.
+                            for pending in &mut pending_pushes {
+                                pending.can_hoist = false;
+                            }
+                        }
+                        insn => {
+                            if !pending_pushes.is_empty() && !self.can_replay_before_patch_point(insn) {
+                                for pending in &mut pending_pushes {
+                                    pending.can_hoist = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if relocations.is_empty() {
+                break;
+            }
+
+            for (block_id, patch_point_id, push_id, push_state) in relocations {
+                let instructions = &mut self.blocks[block_id].insns;
+                let patch_point_pos = instructions.iter().position(|id| *id == patch_point_id).unwrap();
+                let push_pos = instructions.iter().position(|id| *id == push_id).unwrap();
+                debug_assert!(patch_point_pos > push_pos);
+                instructions.remove(patch_point_pos);
+                instructions.insert(push_pos, patch_point_id);
+
+                match &mut self.insns[patch_point_id] {
+                    Insn::PatchPoint { state, .. } => *state = push_state,
+                    _ => unreachable!("only PatchPoints are hoisted"),
+                }
+            }
+        }
+    }
+
     /// Remove duplicate PatchPoint instructions within each basic block.
     /// Two PatchPoints are redundant if they assert the same Invariant and no
     /// intervening instruction could invalidate it (i.e., writes to PatchPoint).
     fn remove_redundant_patch_points(&mut self) {
+        self.hoist_patch_points_out_of_inline_frames();
         for block_id in self.reverse_post_order() {
             let mut seen = HashSet::new();
             let insns = std::mem::take(&mut self.blocks[block_id].insns);

@@ -253,6 +253,32 @@ class TestZJITCLI < Test::Unit::TestCase
     }, call_threshold: 2, allowed_iseqs: 'entry@-e:2'
   end
 
+  def test_hoisted_patch_point_deopts_at_inline_call_site
+    assert_runs '70', <<~RUBY, call_threshold: 2
+      def foo(x) = x + 1
+      def bar(x) = x + 1
+      def test = foo(3) + bar(4)
+      test
+      test
+      test
+
+      class Integer
+        alias_method :old_plus, :+
+        def +(other)
+          if self == 3 && other == 1
+            30
+          elsif self == 4 && other == 1
+            40
+          else
+            old_plus(other)
+          end
+        end
+      end
+
+      test
+    RUBY
+  end
+
   def test_opt_new_with_custom_allocator
     assert_compiles '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"', %q{
       require "digest"
