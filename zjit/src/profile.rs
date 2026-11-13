@@ -85,7 +85,7 @@ fn profile_insn_sample(
         YARVINSN_opt_aset  => profile_operands(profiler, profile, 3),
         YARVINSN_opt_not   => profile_operands(profiler, profile, 1),
         YARVINSN_getinstancevariable => profile_self(profiler, profile),
-        YARVINSN_setinstancevariable => profile_self(profiler, profile),
+        YARVINSN_setinstancevariable => profile_setivar_self(profiler, profile),
         YARVINSN_definedivar   => profile_self(profiler, profile),
         YARVINSN_opt_regexpmatch2    => profile_operands(profiler, profile, 2),
         YARVINSN_objtostring   => profile_operands(profiler, profile, 1),
@@ -208,6 +208,20 @@ fn profile_self(profiler: &mut Profiler, profile: &mut IseqProfile) {
     // TODO(max): Handle GC-hidden classes like Array, Hash, etc and make them look normal or
     // drop them or something
     let ty = ProfiledType::new(obj);
+    VALUE::from(profiler.iseq).write_barrier(ty.class());
+    entry.opnd_types[0].observe(ty);
+}
+
+fn profile_setivar_self(profiler: &mut Profiler, profile: &mut IseqProfile) {
+    let entry = profile.entry_mut(profiler.insn_idx);
+    if entry.opnd_types.is_empty() {
+        entry.opnd_types = vec![TypeDistribution::new()];
+    }
+    let obj = profiler.peek_at_self();
+    // Shape transitions belong to the object's real class, even when it has a
+    // singleton class. `rb_yarv_class_of` would profile that singleton class.
+    let mut ty = ProfiledType::new(obj);
+    ty.class = unsafe { rb_obj_class(obj) };
     VALUE::from(profiler.iseq).write_barrier(ty.class());
     entry.opnd_types[0].observe(ty);
 }
@@ -531,6 +545,7 @@ impl IseqProfile {
 #[cfg(test)]
 mod tests {
     use crate::cruby::*;
+    use crate::payload::get_iseq_payload_ptr;
 
     #[test]
     fn can_profile_block_handler() {
@@ -539,5 +554,44 @@ mod tests {
             foo rescue 0
             foo rescue 0
         "));
+    }
+
+    #[test]
+    fn setivar_profiles_real_class_with_singleton_class() {
+        with_rubyvm(|| {
+            eval(
+                r#"
+            class ZjitSetivarProfileTest
+              def write = @value = 1
+            end
+
+            ZJIT_SETIVAR_PROFILE_OBJECT = ZjitSetivarProfileTest.new
+            def ZJIT_SETIVAR_PROFILE_OBJECT.singleton_only; end
+            5.times { ZJIT_SETIVAR_PROFILE_OBJECT.write }
+        "#,
+            );
+
+            let obj =
+                unsafe { rb_const_get(rb_cObject, rust_str_to_id("ZJIT_SETIVAR_PROFILE_OBJECT")) };
+            let real_class =
+                unsafe { rb_const_get(rb_cObject, rust_str_to_id("ZjitSetivarProfileTest")) };
+            assert_ne!(unsafe { rb_singleton_class(obj) }, real_class);
+
+            let iseq = get_instance_method_iseq("ZjitSetivarProfileTest", "write");
+            let payload_ptr = get_iseq_payload_ptr(iseq);
+            assert!(
+                !payload_ptr.is_null(),
+                "setinstancevariable should have a profile payload"
+            );
+            let payload = unsafe { &*payload_ptr };
+            let profiled_type = payload
+                .profile
+                .entries
+                .iter()
+                .find_map(|entry| entry.opnd_types.first()?.each_item().next())
+                .expect("setinstancevariable should have a type profile");
+
+            assert_eq!(profiled_type.class(), real_class);
+        });
     }
 }
